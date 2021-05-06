@@ -2,13 +2,7 @@
 
 # Quickwit
 
-Quickwit is a ?
+This repository will host Quickwit, the big data search engine developed by Quickwit Inc.
+We will progressively polish and opensource our code in the next months.
 
-## Getting started
-TODO
-
-## Documentation
-TODO
-
-## License
-TODO
+Stay tuned.
