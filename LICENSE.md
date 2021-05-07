@@ -4,13 +4,11 @@ Quickwit is offered under the [GNU Affero General Public License v3.0](https://o
 and as commercial software.
 A copy of the AGPL license can be found in LICENSE_AGPLv3.0.txt
 
-Commercial Licensing
-------------------------
+# Commercial Licensing
 For commercial licensing, contact us at hello@quickwit.io.
 
 
-AGPL
-------------------------
+# AGPL
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
 published by the Free Software Foundation, either version 3 of the
