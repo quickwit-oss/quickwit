@@ -1,6 +1,6 @@
 header:
   license:
-    spdx-id: Apache-2.0
+    spdx-id: AGPL-3.0-or-later
     copyright-owner: Quickwit Inc.
 
   content: | # <4>
