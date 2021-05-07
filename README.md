@@ -6,3 +6,5 @@ This repository will host Quickwit, the big data search engine developed by Quic
 We will progressively polish and opensource our code in the next months.
 
 Stay tuned.
+
+Go bot
