@@ -23,6 +23,9 @@ header:
     pattern: |
       Copyright \(C\) 2021 Quickwit Inc\..*commercial.*AGPL
 
+  paths-ignore:
+    - '**/target/**'
+
   paths:
     - '**/*.rs'
 
