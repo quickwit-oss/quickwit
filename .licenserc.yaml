@@ -26,4 +26,4 @@ header:
   paths:
     - '**/*.rs'
 
-comment: on-failure
+  comment: on-failure
