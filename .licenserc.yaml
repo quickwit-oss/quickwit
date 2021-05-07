@@ -1,5 +1,9 @@
-/*
-    Quickwit
+header:
+  license:
+    spdx-id: Apache-2.0
+    copyright-owner: Quickwit Inc.
+
+  content: | # <4>
     Copyright (C) 2021 Quickwit Inc.
 
     Quickwit is offered under the AGPL v3.0 and as commercial software.
@@ -18,15 +22,9 @@
 
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
 
-use clap::App;
-
-fn main() {
-    let app = App::new("Quickwit CLI")
-        .about("Index and search datasets from your terminal.")
-        .author("Quickwit, Inc. <hello@quickwit.io>")
-        .version(env!("CARGO_PKG_VERSION"));
-
-    let _ = app.get_matches();
-}
+  pattern: |
+      Copyright \(C\) 2021 Quickwit Inc\..*commercial.*AGPL
+  paths:
+    - '**/*.rs'
+  comment: on-failure
