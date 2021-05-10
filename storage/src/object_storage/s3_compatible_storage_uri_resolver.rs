@@ -20,14 +20,35 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-mod error;
-mod file_slice_stream;
+use std::sync::Arc;
 
-mod s3_compatible_storage;
-pub use self::s3_compatible_storage::S3CompatibleObjectStorage;
+use rusoto_core::Region;
 
-mod policy;
-pub use crate::object_storage::policy::MultiPartPolicy;
+use crate::{S3CompatibleObjectStorage, StorageFactory};
 
-mod s3_compatible_storage_uri_resolver;
-pub use self::s3_compatible_storage_uri_resolver::S3CompatibleObjectStorageFactory;
+/// S3 Object storage Uri Resolver
+pub struct S3CompatibleObjectStorageFactory {
+    region: Region,
+    protocol: String,
+}
+
+impl S3CompatibleObjectStorageFactory {
+    /// S3 Region
+    pub fn new(region: Region) -> Self {
+        S3CompatibleObjectStorageFactory {
+            region,
+            protocol: "s3".to_string(),
+        }
+    }
+}
+
+impl StorageFactory for S3CompatibleObjectStorageFactory {
+    fn protocol(&self) -> String {
+        self.protocol.to_string()
+    }
+
+    fn resolve(&self, uri: &str) -> crate::StorageResult<std::sync::Arc<dyn crate::Storage>> {
+        let storage = S3CompatibleObjectStorage::from_uri(self.region.clone(), uri)?;
+        Ok(Arc::new(storage))
+    }
+}

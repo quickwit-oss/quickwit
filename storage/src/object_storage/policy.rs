@@ -22,29 +22,30 @@
 
 /// The multipart policy defines when and how multipart upload / download should happen.
 ///
-/// The right settings might be vendor specific, but if not available using
-/// [`S3MultiPartPolicy`] should be safe.
-pub trait MultiPartPolicy: Sync + Send + 'static {
-    /// This function returns the size of the part that should
-    /// be used. We should have `part_num_bytes(len)` < `len`.
-    ///
-    /// If this function returns `len`, then multipart upload
-    /// will not be used.
-    fn part_num_bytes(&self, len: u64) -> u64;
-    /// Limits the number of parts that can be concurrently uploaded.
-    fn max_concurrent_upload(&self) -> usize;
-}
-
-pub struct S3MultiPartPolicy {
+/// The right settings might be vendor specific, but if not available the default values
+/// should be safe.
+pub struct MultiPartPolicy {
+    /// Ideal part size.
+    /// Since S3 has a constraint on the number of parts, it cannot always be
+    /// respected.
     pub target_part_num_bytes: usize,
+    /// Maximum number of parts allowed.
     pub max_num_parts: usize,
+    /// Threshold above which multipart is trigged.
     pub multipart_threshold_num_bytes: u64,
+    /// Maximum size allowed for an object.
     pub max_object_num_bytes: u64,
+    /// Maximum number of part to be upload concurrently.
     pub max_concurrent_upload: usize,
 }
 
-impl MultiPartPolicy for S3MultiPartPolicy {
-    fn part_num_bytes(&self, len: u64) -> u64 {
+impl MultiPartPolicy {
+    /// This function returns the size of the part that should
+    /// be used. We should have `part_num_bytes(len)` <= `len`.
+    ///
+    /// If this function returns `len`, then multipart upload
+    /// will not be used.
+    pub fn part_num_bytes(&self, len: u64) -> u64 {
         assert!(
             len < self.max_object_num_bytes,
             "This objet storage does not support object of that size {}",
@@ -64,16 +65,17 @@ impl MultiPartPolicy for S3MultiPartPolicy {
         (min_part_len).max(self.target_part_num_bytes as u64)
     }
 
-    fn max_concurrent_upload(&self) -> usize {
+    /// Limits the number of parts that can be concurrently uploaded.
+    pub fn max_concurrent_upload(&self) -> usize {
         self.max_concurrent_upload
     }
 }
 
 // Default values from https://github.com/apache/hadoop/blob/trunk/hadoop-tools/hadoop-aws/src/main/java/org/apache/hadoop/fs/s3a/Constants.java
 // The best default value may however differ depending on vendors.
-impl Default for S3MultiPartPolicy {
+impl Default for MultiPartPolicy {
     fn default() -> Self {
-        S3MultiPartPolicy {
+        MultiPartPolicy {
             target_part_num_bytes: 64 * 1_024 * 1_024, // 64 MiB
             multipart_threshold_num_bytes: 128 * 1_024 * 1_024, // 128 MiB
             max_num_parts: 10_000,

@@ -26,13 +26,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 
-use crate::StoreResult;
+use crate::StorageResult;
 
+/// Payload argument of a put request.
 #[derive(Clone)]
 pub enum PutPayload {
-    // Put the data from the local file system.
+    /// Put data from the local file.
     LocalFile(PathBuf),
-    // Put the data from the given Payload.
+    /// Put data from a local buffer
     InMemory(Arc<[u8]>),
 }
 
@@ -74,21 +75,21 @@ impl<'a> From<&'a [u8]> for PutPayload {
 #[async_trait]
 pub trait Storage: Send + Sync + fmt::Debug + 'static {
     /// Saves a file into the storage.
-    async fn put(&self, path: &Path, payload: PutPayload) -> StoreResult<()>;
+    async fn put(&self, path: &Path, payload: PutPayload) -> StorageResult<()>;
 
     /// Downloads an entire file and write it in a from the storage into a local file.
     /// TODO Change the API to support multipart download
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StoreResult<()>;
+    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()>;
 
     /// Downloads a slice of a file from the storage, and returns an in memory buffer
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StoreResult<Vec<u8>>;
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Vec<u8>>;
 
     /// Downloads the entire content of a "small" file, returns an in memory buffer.
     /// For large files prefer `copy_to_file`.
-    async fn get_all(&self, path: &Path) -> StoreResult<Vec<u8>>;
+    async fn get_all(&self, path: &Path) -> StorageResult<Vec<u8>>;
 
     /// Delete file
-    async fn delete(&self, path: &Path) -> StoreResult<()>;
+    async fn delete(&self, path: &Path) -> StorageResult<()>;
 
     /// Returns an URI identifying the storage
     fn uri(&self) -> String;

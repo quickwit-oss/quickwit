@@ -20,7 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::{PutPayload, Storage, StoreErrorKind, StoreResult};
+use crate::{PutPayload, Storage, StorageErrorKind, StorageFactory, StorageResult};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -31,6 +31,9 @@ use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
+/// In Ram implementation of quickwit's storage.
+///
+/// This implementation is mostly useful in unit tests.
 #[derive(Default, Clone)]
 pub struct RamStorage {
     files: Arc<RwLock<HashMap<PathBuf, Arc<[u8]>>>>,
@@ -43,6 +46,11 @@ impl fmt::Debug for RamStorage {
 }
 
 impl RamStorage {
+    /// Creates a [`RamStorageBuilder`]
+    pub fn builder() -> RamStorageBuilder {
+        RamStorageBuilder::default()
+    }
+
     async fn put_data(&self, path: &Path, payload: Arc<[u8]>) {
         self.files.write().await.insert(path.to_path_buf(), payload);
     }
@@ -63,15 +71,15 @@ async fn read_all(put: &PutPayload) -> io::Result<Arc<[u8]>> {
 
 #[async_trait]
 impl Storage for RamStorage {
-    async fn put(&self, path: &Path, payload: PutPayload) -> crate::StoreResult<()> {
+    async fn put(&self, path: &Path, payload: PutPayload) -> crate::StorageResult<()> {
         let payload_bytes = read_all(&payload).await?;
         self.put_data(path, payload_bytes).await;
         Ok(())
     }
 
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StoreResult<()> {
+    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
-            StoreErrorKind::DoesNotExist
+            StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
         })?;
         let mut file = File::create(output_path).await?;
@@ -80,22 +88,22 @@ impl Storage for RamStorage {
         Ok(())
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StoreResult<Vec<u8>> {
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Vec<u8>> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
-            StoreErrorKind::DoesNotExist
+            StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
         })?;
         Ok(payload_bytes[range.start as usize..range.end as usize].to_vec())
     }
 
-    async fn delete(&self, path: &Path) -> StoreResult<()> {
+    async fn delete(&self, path: &Path) -> StorageResult<()> {
         self.files.write().await.remove(path);
         Ok(())
     }
 
-    async fn get_all(&self, path: &Path) -> StoreResult<Vec<u8>> {
+    async fn get_all(&self, path: &Path) -> StorageResult<Vec<u8>> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
-            StoreErrorKind::DoesNotExist
+            StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
         })?;
         Ok(payload_bytes.to_vec())
@@ -103,6 +111,57 @@ impl Storage for RamStorage {
 
     fn uri(&self) -> String {
         "ram://".to_string()
+    }
+}
+
+/// Builder to create a prepopulated [`RamStorage`]. This is mostly useful for tests.
+#[derive(Default)]
+pub struct RamStorageBuilder {
+    files: HashMap<PathBuf, Arc<[u8]>>,
+}
+
+impl RamStorageBuilder {
+    /// Adds a new file into the [`RamStorageBuilder`].
+    pub fn put(mut self, path: &str, payload: &[u8]) -> Self {
+        self.files.insert(
+            PathBuf::from(path),
+            payload.to_vec().into_boxed_slice().into(),
+        );
+        self
+    }
+
+    /// Finalizes the [`RamStorage`] creation.
+    pub fn build(self) -> RamStorage {
+        RamStorage {
+            files: Arc::new(RwLock::new(self.files)),
+        }
+    }
+}
+
+/// In Ram storage resolver
+pub struct RamStorageFactory {
+    ram_storage: Arc<dyn Storage>,
+}
+
+impl Default for RamStorageFactory {
+    fn default() -> Self {
+        RamStorageFactory {
+            ram_storage: Arc::new(RamStorage::default())
+        }
+    }
+}
+
+impl StorageFactory for RamStorageFactory {
+    fn protocol(&self) -> String {
+        "ram".to_string()
+    }
+
+    fn resolve(&self, uri: &str) -> crate::StorageResult<Arc<dyn Storage>> {
+        if uri != "ram://" {
+            let err_msg = anyhow::anyhow!("{:?} is an invalid ram storage uri. Only ram:// is accepted.", uri);
+            return Err(StorageErrorKind::DoesNotExist.with_error(err_msg));
+        }
+        Ok(self.ram_storage.clone())
     }
 }
 
@@ -117,4 +176,25 @@ mod tests {
         storage_test_suite(&mut ram_storage).await?;
         Ok(())
     }
+
+    #[test]
+    fn test_ram_storage_factory() -> anyhow::Result<()> {
+        let ram_storage_factory = RamStorageFactory::default();
+        let err = ram_storage_factory.resolve("ram://toto").unwrap_err();
+        assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_ram_storage_builder() -> anyhow::Result<()> {
+        let storage = RamStorage::builder()
+            .put("path1", b"path1_payload")
+            .put("path2", b"path2_payload")
+            .put("path1", b"path1_payloadb")
+            .build();
+        assert_eq!(&storage.get_all(Path::new("path1")).await?, b"path1_payloadb");
+        assert_eq!(&storage.get_all(Path::new("path2")).await?, b"path2_payload");
+        Ok(())
+    }
 }
+

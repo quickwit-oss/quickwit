@@ -1,23 +1,23 @@
 /*
-    quickwit
-    copyright (c) 2021 quickwit inc.
+    Quickwit
+    Copyright (C) 2021 Quickwit Inc.
 
-    quickwit is offered under the agpl v3.0 and as commercial software.
-    for commercial licensing, contact us at hello@quickwit.io.
+    Quickwit is offered under the AGPL v3.0 and as commercial software.
+    For commercial licensing, contact us at hello@quickwit.io.
 
-    agpl:
-    this program is free software: you can redistribute it and/or modify
-    it under the terms of the gnu affero general public license as
-    published by the free software foundation, either version 3 of the
-    license, or (at your option) any later version.
+    AGPL:
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as
+    published by the Free Software Foundation, either version 3 of the
+    License, or (at your option) any later version.
 
-    this program is distributed in the hope that it will be useful,
-    but without any warranty; without even the implied warranty of
-    merchantability or fitness for a particular purpose.  see the
-    gnu affero general public license for more details.
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
 
-    you should have received a copy of the gnu affero general public license
-    along with this program.  if not, see <http://www.gnu.org/licenses/>.
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 use futures::Future;

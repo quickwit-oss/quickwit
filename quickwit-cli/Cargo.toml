@@ -1,7 +1,7 @@
 [package]
 name = "quickwit-cli"
 version = "0.1.0"
-authors = ["Paul Masurel <paul@quickwit.io>"]
+authors = ["Quickwit <hello@quickwit.io>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

@@ -1,23 +1,23 @@
 /*
-    quickwit
-    copyright (c) 2021 quickwit inc.
+    Quickwit
+    Copyright (C) 2021 Quickwit Inc.
 
-    quickwit is offered under the agpl v3.0 and as commercial software.
-    for commercial licensing, contact us at hello@quickwit.io.
+    Quickwit is offered under the AGPL v3.0 and as commercial software.
+    For commercial licensing, contact us at hello@quickwit.io.
 
-    agpl:
-    this program is free software: you can redistribute it and/or modify
-    it under the terms of the gnu affero general public license as
-    published by the free software foundation, either version 3 of the
-    license, or (at your option) any later version.
+    AGPL:
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as
+    published by the Free Software Foundation, either version 3 of the
+    License, or (at your option) any later version.
 
-    this program is distributed in the hope that it will be useful,
-    but without any warranty; without even the implied warranty of
-    merchantability or fitness for a particular purpose.  see the
-    gnu affero general public license for more details.
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
 
-    you should have received a copy of the gnu affero general public license
-    along with this program.  if not, see <http://www.gnu.org/licenses/>.
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 use std::error::Error as StdError;
@@ -31,7 +31,7 @@ use rusoto_s3::{
 };
 
 use crate::retry::IsRetryable;
-use crate::{StoreError, StoreErrorKind};
+use crate::{StorageError, StorageErrorKind};
 
 pub struct RusotoErrorWrapper<T: StdError>(RusotoError<T>);
 impl<T: StdError> From<RusotoError<T>> for RusotoErrorWrapper<T> {
@@ -75,76 +75,76 @@ impl<T: StdError> IsRetryable for RusotoErrorWrapper<T> {
     }
 }
 
-impl<T> From<RusotoErrorWrapper<T>> for StoreError
+impl<T> From<RusotoErrorWrapper<T>> for StorageError
 where
-    T: Send + Sync + std::error::Error + 'static + ToStoreErrorKind,
+    T: Send + Sync + std::error::Error + 'static + ToStorageErrorKind,
 {
-    fn from(err: RusotoErrorWrapper<T>) -> StoreError {
+    fn from(err: RusotoErrorWrapper<T>) -> StorageError {
         let error_kind = match &err.0 {
-            RusotoError::Credentials(_) => StoreErrorKind::Unauthorized,
+            RusotoError::Credentials(_) => StorageErrorKind::Unauthorized,
             RusotoError::Service(err) => {
                 dbg!(&err);
-                err.to_store_error_kind()
-                // StoreErrorKind::Service
+                err.to_storage_error_kind()
+                // StorageErrorKind::Service
             }
             RusotoError::Unknown(http_resp) => {
                 if http_resp.status == 404 {
-                    StoreErrorKind::DoesNotExist
+                    StorageErrorKind::DoesNotExist
                 } else {
-                    StoreErrorKind::InternalError
+                    StorageErrorKind::InternalError
                 }
             }
-            _ => StoreErrorKind::InternalError,
+            _ => StorageErrorKind::InternalError,
         };
         error_kind.with_error(err)
     }
 }
 
-pub trait ToStoreErrorKind {
-    fn to_store_error_kind(&self) -> StoreErrorKind;
+pub trait ToStorageErrorKind {
+    fn to_storage_error_kind(&self) -> StorageErrorKind;
 }
 
-impl ToStoreErrorKind for GetObjectError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
+impl ToStorageErrorKind for GetObjectError {
+    fn to_storage_error_kind(&self) -> StorageErrorKind {
         match self {
-            GetObjectError::InvalidObjectState(_) => StoreErrorKind::Service,
-            GetObjectError::NoSuchKey(_) => StoreErrorKind::DoesNotExist,
+            GetObjectError::InvalidObjectState(_) => StorageErrorKind::Service,
+            GetObjectError::NoSuchKey(_) => StorageErrorKind::DoesNotExist,
         }
     }
 }
 
-impl ToStoreErrorKind for DeleteObjectError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        StoreErrorKind::Service
+impl ToStorageErrorKind for DeleteObjectError {
+    fn to_storage_error_kind(&self) -> StorageErrorKind {
+        StorageErrorKind::Service
     }
 }
 
-impl ToStoreErrorKind for UploadPartError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        StoreErrorKind::Service
+impl ToStorageErrorKind for UploadPartError {
+    fn to_storage_error_kind(&self) -> StorageErrorKind {
+        StorageErrorKind::Service
     }
 }
 
-impl ToStoreErrorKind for CompleteMultipartUploadError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        StoreErrorKind::Service
+impl ToStorageErrorKind for CompleteMultipartUploadError {
+    fn to_storage_error_kind(&self) -> StorageErrorKind {
+        StorageErrorKind::Service
     }
 }
 
-impl ToStoreErrorKind for AbortMultipartUploadError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        StoreErrorKind::Service
+impl ToStorageErrorKind for AbortMultipartUploadError {
+    fn to_storage_error_kind(&self) -> StorageErrorKind {
+        StorageErrorKind::Service
     }
 }
 
-impl ToStoreErrorKind for CreateMultipartUploadError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        StoreErrorKind::Service
+impl ToStorageErrorKind for CreateMultipartUploadError {
+    fn to_storage_error_kind(&self) -> StorageErrorKind {
+        StorageErrorKind::Service
     }
 }
 
-impl ToStoreErrorKind for PutObjectError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        StoreErrorKind::Service
+impl ToStorageErrorKind for PutObjectError {
+    fn to_storage_error_kind(&self) -> StorageErrorKind {
+        StorageErrorKind::Service
     }
 }

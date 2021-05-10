@@ -20,9 +20,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+// This file is an integration test that assumes that the environement
+// makes it possible to connect to Amazon S3's quickwit-integration-test bucket.
+
 use std::path::Path;
 
-use quickwit_storage::{PutPayload, S3CompatibleObjectStorage, S3MultiPartPolicy, Storage};
+use quickwit_storage::{MultiPartPolicy, PutPayload, S3CompatibleObjectStorage, Storage};
 use rusoto_core::Region;
 
 #[tokio::test]
@@ -44,7 +47,7 @@ async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
     let mut object_storage =
         S3CompatibleObjectStorage::new(Region::UsEast1, "quickwit-integration-test")?;
-    object_storage.set_policy(S3MultiPartPolicy {
+    object_storage.set_policy(MultiPartPolicy {
         target_part_num_bytes: 5 * 1_024 * 1_024, //< the minimum on S3 is 5MB.
         max_num_parts: 10_000,
         multipart_threshold_num_bytes: 10_000_000,
@@ -66,7 +69,7 @@ async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
 async fn test_suite() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
     let mut object_storage =
-        S3CompatibleObjectStorage::new(s3_client(), "quickwit-integration-test");
-    quickwit_storage::tests::storage_test_suite(&mut object_storage).await?;
+        S3CompatibleObjectStorage::new(Region::UsEast1, "quickwit-integration-test")?;
+    quickwit_storage::storage_test_suite(&mut object_storage).await?;
     Ok(())
 }

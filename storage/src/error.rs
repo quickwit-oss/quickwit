@@ -23,8 +23,9 @@
 use std::{fmt, io};
 use thiserror::Error;
 
-#[derive(Debug, Clone, Copy)]
-pub enum StoreErrorKind {
+/// Storage error kind.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum StorageErrorKind {
     /// The target index does not exists
     DoesNotExist,
     /// The request credentials do not allow for this operation.
@@ -37,68 +38,83 @@ pub enum StoreErrorKind {
     Io,
 }
 
+/// Generic Storage Resolver Error.
 #[derive(Error, Debug)]
-pub enum StorageFromURIError {
-    #[error("Invalid URI: `{0}`")]
-    InvalidURI(String),
-    #[error("Create client failure: `{0}`")]
-    Other(anyhow::Error),
+pub enum StorageResolverError {
+    /// The input is not a valid URI.
+    /// A protocol is required for the URI.
+    #[error("Invalid format for URI: required: `{0}`")]
+    InvalidUri(String),
+    /// The protocol is not supported by this resolver.
+    #[error("Unsupported protocol")]
+    ProtocolUnsupported(String),
+    /// The URI is valid, and is meant to be handled by this resolver,
+    /// but the resolver failed to actually connect to the storage.
+    /// e.g. Connection error, credential error, incompatible version,
+    /// internal error in third party etc.
+    #[error("Failed to open storage: `{0}`")]
+    FailedToOpenStorage(crate::StorageError),
 }
 
-impl StoreErrorKind {
-    pub fn with_error<E>(self, source: E) -> StoreError
+impl StorageErrorKind {
+    /// Creates a StorageError.
+    pub fn with_error<E>(self, source: E) -> StorageError
     where
         anyhow::Error: From<E>,
     {
-        StoreError {
+        StorageError {
             kind: self,
             source: From::from(source),
         }
     }
 }
 
-impl From<StoreError> for io::Error {
-    fn from(store_err: StoreError) -> Self {
-        let io_error_kind = match store_err.kind() {
-            StoreErrorKind::DoesNotExist => io::ErrorKind::NotFound,
+impl From<StorageError> for io::Error {
+    fn from(storage_err: StorageError) -> Self {
+        let io_error_kind = match storage_err.kind() {
+            StorageErrorKind::DoesNotExist => io::ErrorKind::NotFound,
             _ => io::ErrorKind::Other,
         };
-        io::Error::new(io_error_kind, store_err.source)
+        io::Error::new(io_error_kind, storage_err.source)
     }
 }
 
+/// Generic StorageError.
 #[derive(Error, Debug)]
-#[error("StoreError(kind={kind:?}, source={source})")]
-pub struct StoreError {
-    kind: StoreErrorKind,
+#[error("StorageError(kind={kind:?}, source={source})")]
+pub struct StorageError {
+    kind: StorageErrorKind,
     #[source]
     source: anyhow::Error,
 }
 
-impl StoreError {
+impl StorageError {
+    /// Add some context to the wrapper error.
     pub fn add_context<C>(self, ctx: C) -> Self
     where
         C: fmt::Display + Send + Sync + 'static,
     {
-        StoreError {
+        StorageError {
             kind: self.kind,
             source: self.source.context(ctx),
         }
     }
 }
 
-pub type StoreResult<T> = Result<T, StoreError>;
+/// Generic Result type for storage operations.
+pub type StorageResult<T> = Result<T, StorageError>;
 
-impl StoreError {
-    pub fn kind(&self) -> StoreErrorKind {
+impl StorageError {
+    /// Returns the corresponding `StorageErrorKind` for this error.
+    pub fn kind(&self) -> StorageErrorKind {
         self.kind
     }
 }
 
-impl From<io::Error> for StoreError {
-    fn from(err: io::Error) -> StoreError {
-        StoreError {
-            kind: StoreErrorKind::Io,
+impl From<io::Error> for StorageError {
+    fn from(err: io::Error) -> StorageError {
+        StorageError {
+            kind: StorageErrorKind::Io,
             source: anyhow::Error::from(err),
         }
     }

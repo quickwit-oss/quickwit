@@ -1,23 +1,23 @@
 /*
-    quickwit
-    copyright (c) 2021 quickwit inc.
+    Quickwit
+    Copyright (C) 2021 Quickwit Inc.
 
-    quickwit is offered under the agpl v3.0 and as commercial software.
-    for commercial licensing, contact us at hello@quickwit.io.
+    Quickwit is offered under the AGPL v3.0 and as commercial software.
+    For commercial licensing, contact us at hello@quickwit.io.
 
-    agpl:
-    this program is free software: you can redistribute it and/or modify
-    it under the terms of the gnu affero general public license as
-    published by the free software foundation, either version 3 of the
-    license, or (at your option) any later version.
+    AGPL:
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as
+    published by the Free Software Foundation, either version 3 of the
+    License, or (at your option) any later version.
 
-    this program is distributed in the hope that it will be useful,
-    but without any warranty; without even the implied warranty of
-    merchantability or fitness for a particular purpose.  see the
-    gnu affero general public license for more details.
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
 
-    you should have received a copy of the gnu affero general public license
-    along with this program.  if not, see <http://www.gnu.org/licenses/>.
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 use super::error::RusotoErrorWrapper;
@@ -47,16 +47,15 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
 use crate::object_storage::file_slice_stream::FileSliceStream;
 use crate::object_storage::MultiPartPolicy;
-use crate::{PutPayload, Storage, StorageFromURIError, StoreErrorKind};
-use crate::{StoreError, StoreResult};
+use crate::{PutPayload, Storage, StorageErrorKind};
+use crate::{StorageError, StorageResult};
 
-use super::policy::S3MultiPartPolicy;
-
+/// S3 Compatible object storage implementation.
 pub struct S3CompatibleObjectStorage {
     s3_client: S3Client,
     bucket: String,
     prefix: PathBuf,
-    multipart_policy: Box<dyn MultiPartPolicy>,
+    multipart_policy: MultiPartPolicy,
 }
 
 impl fmt::Debug for S3CompatibleObjectStorage {
@@ -86,27 +85,31 @@ fn create_s3_client(region: Region) -> anyhow::Result<S3Client> {
 }
 
 impl S3CompatibleObjectStorage {
-    pub fn from_uri(
-        region: Region,
-        uri: &str,
-    ) -> Result<S3CompatibleObjectStorage, StorageFromURIError> {
-        let (bucket, path) =
-            parse_split_uri(uri).ok_or_else(|| StorageFromURIError::InvalidURI(uri.to_string()))?;
-        let s3_compatible_storage =
-            S3CompatibleObjectStorage::new(region, &bucket).map_err(StorageFromURIError::Other)?;
-        Ok(s3_compatible_storage.with_prefix(&path))
-    }
-
+    /// Creates an object storage given a region and a bucket name.
     pub fn new(region: Region, bucket: &str) -> anyhow::Result<S3CompatibleObjectStorage> {
         let s3_client = create_s3_client(region)?;
         Ok(S3CompatibleObjectStorage {
             s3_client,
             bucket: bucket.to_string(),
             prefix: PathBuf::new(),
-            multipart_policy: Box::new(S3MultiPartPolicy::default()),
+            multipart_policy: MultiPartPolicy::default(),
         })
     }
 
+    /// Creates an object storage given a region and an uri.
+    pub fn from_uri(region: Region, uri: &str) -> crate::StorageResult<S3CompatibleObjectStorage> {
+        let (bucket, path) = parse_split_uri(uri).ok_or_else(|| {
+            crate::StorageErrorKind::Io.with_error(anyhow::anyhow!("Invalid uri: {}", uri))
+        })?;
+        let s3_compatible_storage = S3CompatibleObjectStorage::new(region, &bucket)
+            .map_err(|err| crate::StorageErrorKind::Service.with_error(anyhow::anyhow!(err)))?;
+        Ok(s3_compatible_storage.with_prefix(&path))
+    }
+
+    /// Sets a specific for all buckets.
+    ///
+    /// This method overrides any existing prefix. (It does NOT
+    /// append the argument to any existing prefix.)
     pub fn with_prefix(self, prefix: &Path) -> Self {
         S3CompatibleObjectStorage {
             s3_client: self.s3_client,
@@ -116,8 +119,11 @@ impl S3CompatibleObjectStorage {
         }
     }
 
-    pub fn set_policy<P: MultiPartPolicy>(&mut self, multipart_policy: P) {
-        self.multipart_policy = Box::new(multipart_policy);
+    /// Sets the multipart policy.
+    ///
+    /// See `MultiPartPolicy`.
+    pub fn set_policy(&mut self, multipart_policy: MultiPartPolicy) {
+        self.multipart_policy = multipart_policy;
     }
 }
 
@@ -217,7 +223,7 @@ impl S3CompatibleObjectStorage {
         Ok(())
     }
 
-    async fn put_single_part(&self, key: &str, payload: PutPayload, len: u64) -> StoreResult<()> {
+    async fn put_single_part(&self, key: &str, payload: PutPayload, len: u64) -> StorageResult<()> {
         retry(|| self.put_single_part_single_try(key, payload.clone(), len)).await?;
         Ok(())
     }
@@ -298,10 +304,10 @@ impl S3CompatibleObjectStorage {
         key: &str,
         part: Part,
         payload: PutPayload,
-    ) -> Result<CompletedPart, Retry<StoreError>> {
+    ) -> Result<CompletedPart, Retry<StorageError>> {
         let byte_stream = range_byte_stream(&payload, part.range.clone())
             .await
-            .map_err(StoreError::from)
+            .map_err(StorageError::from)
             .map_err(Retry::NotRetryable)?;
         let md5 = base64::encode(part.md5.0);
         let upload_part_req = UploadPartRequest {
@@ -321,9 +327,9 @@ impl S3CompatibleObjectStorage {
             .map_err(RusotoErrorWrapper::from)
             .map_err(|rusoto_err| {
                 if rusoto_err.is_retryable() {
-                    Retry::Retryable(StoreError::from(rusoto_err))
+                    Retry::Retryable(StorageError::from(rusoto_err))
                 } else {
-                    Retry::NotRetryable(StoreError::from(rusoto_err))
+                    Retry::NotRetryable(StorageError::from(rusoto_err))
                 }
             })?;
         Ok(CompletedPart {
@@ -338,7 +344,7 @@ impl S3CompatibleObjectStorage {
         payload: PutPayload,
         part_len: u64,
         len: u64,
-    ) -> StoreResult<()> {
+    ) -> StorageResult<()> {
         let upload_id = self
             .create_multipart_upload(key)
             .await
@@ -347,7 +353,7 @@ impl S3CompatibleObjectStorage {
             .create_multipart_requests(payload.clone(), len, part_len)
             .await?;
         let max_concurrent_upload = self.multipart_policy.max_concurrent_upload();
-        let completed_parts_res: StoreResult<Vec<CompletedPart>> =
+        let completed_parts_res: StorageResult<Vec<CompletedPart>> =
             stream::iter(parts.into_iter().map(|part| {
                 let payload = payload.clone();
                 let upload_id = upload_id.clone();
@@ -367,7 +373,7 @@ impl S3CompatibleObjectStorage {
                     .await
             }
             Err(upload_error) => {
-                let abort_multipart_upload_res: StoreResult<()> =
+                let abort_multipart_upload_res: StorageResult<()> =
                     self.abort_multipart_upload(key, &upload_id.0).await;
                 if let Err(abort_error) = abort_multipart_upload_res {
                     warn!(
@@ -386,7 +392,7 @@ impl S3CompatibleObjectStorage {
         key: &str,
         completed_parts: Vec<CompletedPart>,
         upload_id: &str,
-    ) -> StoreResult<()> {
+    ) -> StorageResult<()> {
         let completed_upload = CompletedMultipartUpload {
             parts: Some(completed_parts),
         };
@@ -407,7 +413,7 @@ impl S3CompatibleObjectStorage {
         Ok(())
     }
 
-    async fn abort_multipart_upload(&self, key: &str, upload_id: &str) -> StoreResult<()> {
+    async fn abort_multipart_upload(&self, key: &str, upload_id: &str) -> StorageResult<()> {
         let abort_upload_req = AbortMultipartUploadRequest {
             bucket: self.bucket.clone(),
             key: key.to_string(),
@@ -443,7 +449,7 @@ impl S3CompatibleObjectStorage {
         &self,
         path: &Path,
         range_opt: Option<Range<usize>>,
-    ) -> StoreResult<Vec<u8>> {
+    ) -> StorageResult<Vec<u8>> {
         let get_object_req = self.create_get_object_request(path, range_opt);
         let get_object_output = self
             .s3_client
@@ -451,7 +457,7 @@ impl S3CompatibleObjectStorage {
             .await
             .map_err(RusotoErrorWrapper::from)?;
         let mut body = get_object_output.body.ok_or_else(|| {
-            StoreErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
+            StorageErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
         })?;
         let mut buf: Vec<u8> = Vec::new();
         download_all(&mut body, &mut buf).await?;
@@ -470,7 +476,7 @@ async fn download_all(byte_stream: &mut ByteStream, output: &mut Vec<u8>) -> io:
 
 #[async_trait]
 impl Storage for S3CompatibleObjectStorage {
-    async fn put(&self, path: &Path, payload: PutPayload) -> StoreResult<()> {
+    async fn put(&self, path: &Path, payload: PutPayload) -> StorageResult<()> {
         let key = self.key(path);
         let len = payload.len().await?;
         let part_num_bytes = self.multipart_policy.part_num_bytes(len);
@@ -484,7 +490,7 @@ impl Storage for S3CompatibleObjectStorage {
     }
 
     // TODO implement multipart
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StoreResult<()> {
+    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
         let get_object_req = self.create_get_object_request(path, None);
         let get_object_output = self
             .s3_client
@@ -492,7 +498,7 @@ impl Storage for S3CompatibleObjectStorage {
             .await
             .map_err(RusotoErrorWrapper::from)?;
         let body = get_object_output.body.ok_or_else(|| {
-            StoreErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
+            StorageErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
         })?;
         let mut body_read = BufReader::new(body.into_async_read());
         let mut dest_file = File::create(output_path).await?;
@@ -501,7 +507,7 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(())
     }
 
-    async fn delete(&self, path: &Path) -> StoreResult<()> {
+    async fn delete(&self, path: &Path) -> StorageResult<()> {
         let key = self.key(path);
         let delete_object_req = DeleteObjectRequest {
             bucket: self.bucket.clone(),
@@ -515,7 +521,7 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(())
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StoreResult<Vec<u8>> {
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Vec<u8>> {
         self.get_to_vec(path, Some(range.clone()))
             .await
             .map_err(|err| {
@@ -527,7 +533,7 @@ impl Storage for S3CompatibleObjectStorage {
             })
     }
 
-    async fn get_all(&self, path: &Path) -> StoreResult<Vec<u8>> {
+    async fn get_all(&self, path: &Path) -> StorageResult<Vec<u8>> {
         self.get_to_vec(path, None)
             .await
             .map_err(|err| err.add_context(format!("Failed to fetch object: {}", self.uri(path))))
