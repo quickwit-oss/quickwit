@@ -1,25 +1,26 @@
 /*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+    quickwit
+    copyright (c) 2021 quickwit inc.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
+    quickwit is offered under the agpl v3.0 and as commercial software.
+    for commercial licensing, contact us at hello@quickwit.io.
 
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
+    agpl:
+    this program is free software: you can redistribute it and/or modify
+    it under the terms of the gnu affero general public license as
+    published by the free software foundation, either version 3 of the
+    license, or (at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
+    this program is distributed in the hope that it will be useful,
+    but without any warranty; without even the implied warranty of
+    merchantability or fitness for a particular purpose.  see the
+    gnu affero general public license for more details.
 
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    you should have received a copy of the gnu affero general public license
+    along with this program.  if not, see <http://www.gnu.org/licenses/>.
 */
 
+use super::error::RusotoErrorWrapper;
 use anyhow::Context;
 use async_trait::async_trait;
 use futures::stream;
@@ -203,7 +204,7 @@ impl S3CompatibleObjectStorage {
         key: &str,
         payload: PutPayload,
         len: u64,
-    ) -> Result<(), RusotoError<PutObjectError>> {
+    ) -> Result<(), RusotoErrorWrapper<PutObjectError>> {
         let body = byte_stream(&payload).await?;
         let request = PutObjectRequest {
             bucket: self.bucket.clone(),
@@ -224,15 +225,17 @@ impl S3CompatibleObjectStorage {
     async fn create_multipart_upload(
         &self,
         key: &str,
-    ) -> Result<MultipartUploadId, RusotoError<CreateMultipartUploadError>> {
+    ) -> Result<MultipartUploadId, RusotoErrorWrapper<CreateMultipartUploadError>> {
         let create_upload_req = CreateMultipartUploadRequest {
             bucket: self.bucket.clone(),
             key: key.to_string(),
             ..Default::default()
         };
-        let upload_id = retry(|| {
+        let upload_id = retry(|| async {
             self.s3_client
                 .create_multipart_upload(create_upload_req.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
         })
         .await?
         .upload_id
@@ -311,17 +314,18 @@ impl S3CompatibleObjectStorage {
             upload_id: upload_id.0,
             ..Default::default()
         };
-        let upload_part_output =
-            self.s3_client
-                .upload_part(upload_part_req)
-                .await
-                .map_err(|rusoto_err| {
-                    if rusoto_err.is_retryable() {
-                        Retry::Retryable(StoreError::from(rusoto_err))
-                    } else {
-                        Retry::NotRetryable(StoreError::from(rusoto_err))
-                    }
-                })?;
+        let upload_part_output = self
+            .s3_client
+            .upload_part(upload_part_req)
+            .await
+            .map_err(RusotoErrorWrapper::from)
+            .map_err(|rusoto_err| {
+                if rusoto_err.is_retryable() {
+                    Retry::Retryable(StoreError::from(rusoto_err))
+                } else {
+                    Retry::NotRetryable(StoreError::from(rusoto_err))
+                }
+            })?;
         Ok(CompletedPart {
             e_tag: upload_part_output.e_tag,
             part_number: Some(part.part_number as i64),
@@ -335,7 +339,10 @@ impl S3CompatibleObjectStorage {
         part_len: u64,
         len: u64,
     ) -> StoreResult<()> {
-        let upload_id = self.create_multipart_upload(key).await?;
+        let upload_id = self
+            .create_multipart_upload(key)
+            .await
+            .map_err(RusotoErrorWrapper::from)?;
         let parts = self
             .create_multipart_requests(payload.clone(), len, part_len)
             .await?;
@@ -390,9 +397,11 @@ impl S3CompatibleObjectStorage {
             upload_id: upload_id.to_string(),
             ..Default::default()
         };
-        retry(|| {
+        retry(|| async {
             self.s3_client
                 .complete_multipart_upload(complete_upload_req.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
         })
         .await?;
         Ok(())
@@ -405,9 +414,11 @@ impl S3CompatibleObjectStorage {
             upload_id: upload_id.to_string(),
             ..Default::default()
         };
-        retry(|| {
+        retry(|| async {
             self.s3_client
                 .abort_multipart_upload(abort_upload_req.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
         })
         .await?;
         Ok(())
@@ -434,7 +445,11 @@ impl S3CompatibleObjectStorage {
         range_opt: Option<Range<usize>>,
     ) -> StoreResult<Vec<u8>> {
         let get_object_req = self.create_get_object_request(path, range_opt);
-        let get_object_output = self.s3_client.get_object(get_object_req).await?;
+        let get_object_output = self
+            .s3_client
+            .get_object(get_object_req)
+            .await
+            .map_err(RusotoErrorWrapper::from)?;
         let mut body = get_object_output.body.ok_or_else(|| {
             StoreErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
         })?;
@@ -471,7 +486,11 @@ impl Storage for S3CompatibleObjectStorage {
     // TODO implement multipart
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StoreResult<()> {
         let get_object_req = self.create_get_object_request(path, None);
-        let get_object_output = self.s3_client.get_object(get_object_req).await?;
+        let get_object_output = self
+            .s3_client
+            .get_object(get_object_req)
+            .await
+            .map_err(RusotoErrorWrapper::from)?;
         let body = get_object_output.body.ok_or_else(|| {
             StoreErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
         })?;
@@ -489,7 +508,10 @@ impl Storage for S3CompatibleObjectStorage {
             key,
             ..Default::default()
         };
-        self.s3_client.delete_object(delete_object_req).await?;
+        self.s3_client
+            .delete_object(delete_object_req)
+            .await
+            .map_err(RusotoErrorWrapper::from)?;
         Ok(())
     }
 

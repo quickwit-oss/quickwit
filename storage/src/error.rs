@@ -20,12 +20,6 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use rusoto_core::RusotoError;
-use rusoto_s3::{
-    AbortMultipartUploadError, CompleteMultipartUploadError, CreateMultipartUploadError,
-    DeleteObjectError, GetObjectError, PutObjectError, UploadPartError,
-};
-use std::error::Error as StdErr;
 use std::{fmt, io};
 use thiserror::Error;
 
@@ -113,80 +107,6 @@ pub type StoreResult<T> = Result<T, StoreError>;
 impl StoreError {
     pub fn kind(&self) -> StoreErrorKind {
         self.kind
-    }
-}
-
-pub trait ToStoreErrorKind {
-    fn to_store_error_kind(&self) -> StoreErrorKind;
-}
-
-impl ToStoreErrorKind for GetObjectError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        match self {
-            GetObjectError::InvalidObjectState(_) => StoreErrorKind::Service,
-            GetObjectError::NoSuchKey(_) => StoreErrorKind::DoesNotExist,
-        }
-    }
-}
-
-impl ToStoreErrorKind for DeleteObjectError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        StoreErrorKind::Service
-    }
-}
-
-impl ToStoreErrorKind for UploadPartError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        StoreErrorKind::Service
-    }
-}
-
-impl ToStoreErrorKind for CompleteMultipartUploadError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        StoreErrorKind::Service
-    }
-}
-
-impl ToStoreErrorKind for AbortMultipartUploadError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        StoreErrorKind::Service
-    }
-}
-
-impl ToStoreErrorKind for CreateMultipartUploadError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        StoreErrorKind::Service
-    }
-}
-
-impl ToStoreErrorKind for PutObjectError {
-    fn to_store_error_kind(&self) -> StoreErrorKind {
-        StoreErrorKind::Service
-    }
-}
-
-impl<T> From<RusotoError<T>> for StoreError
-where
-    T: Send + Sync + StdErr + 'static + ToStoreErrorKind,
-{
-    fn from(err: RusotoError<T>) -> StoreError {
-        let error_kind = match &err {
-            RusotoError::Credentials(_) => StoreErrorKind::Unauthorized,
-            RusotoError::Service(err) => {
-                dbg!(&err);
-                err.to_store_error_kind()
-                // StoreErrorKind::Service
-            }
-            RusotoError::Unknown(http_resp) => {
-                if http_resp.status == 404 {
-                    StoreErrorKind::DoesNotExist
-                } else {
-                    StoreErrorKind::InternalError
-                }
-            }
-            _ => StoreErrorKind::InternalError,
-        };
-        error_kind.with_error(err)
     }
 }
 

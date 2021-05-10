@@ -20,6 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+mod error;
 mod file_slice_stream;
 
 mod s3_compatible_storage;
