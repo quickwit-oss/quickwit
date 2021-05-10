@@ -8,7 +8,7 @@ Describe the proposed changes made in this PR.
 Describe how you tested this PR.
 
 ### Checklist
-- [ ] signed Contributor License Agreement (CLA)
+*Remove or complete this list if required.*
 - [ ] tested locally
 - [ ] added unit tests
 - [ ] included documentation
