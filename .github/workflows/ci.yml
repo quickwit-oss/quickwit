@@ -50,7 +50,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+      - name: Setup localstack
+        run: docker-compose -f localstack.yaml up -d
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-      - run: cargo test --all
+      - name: Create bucket in localstack
+        run: docker-compose -f localstack.yaml exec -T localstack awslocal s3 mb s3://quickwit-integration-tests
+      - name: Run all tests.
+        env:
+          AWS_ACCESS_KEY_ID: dummy-access-key
+          AWS_SECRET_ACCESS_KEY: dummy-secret-key
+        run: cargo test --all
