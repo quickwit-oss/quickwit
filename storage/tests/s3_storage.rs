@@ -28,11 +28,18 @@ use std::path::Path;
 use quickwit_storage::{MultiPartPolicy, PutPayload, S3CompatibleObjectStorage, Storage};
 use rusoto_core::Region;
 
+fn localstack_region() -> Region {
+    Region::Custom {
+        name: "localstack".to_string(),
+        endpoint: "http://localhost:4566".to_string(),
+    }
+}
+
 #[tokio::test]
 async fn test_upload_single_part_file() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
     let object_storage =
-        S3CompatibleObjectStorage::new(Region::UsEast1, "quickwit-integration-test")?;
+        S3CompatibleObjectStorage::new(localstack_region(), "quickwit-integration-tests")?;
     object_storage
         .put(
             Path::new("test-s3-compatible-storage/hello_small.txt"),
@@ -46,7 +53,7 @@ async fn test_upload_single_part_file() -> anyhow::Result<()> {
 async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
     let mut object_storage =
-        S3CompatibleObjectStorage::new(Region::UsEast1, "quickwit-integration-test")?;
+        S3CompatibleObjectStorage::new(localstack_region(), "quickwit-integration-tests")?;
     object_storage.set_policy(MultiPartPolicy {
         target_part_num_bytes: 5 * 1_024 * 1_024, //< the minimum on S3 is 5MB.
         max_num_parts: 10_000,
@@ -68,8 +75,13 @@ async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_suite() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
-    let mut object_storage =
-        S3CompatibleObjectStorage::new(Region::UsEast1, "quickwit-integration-test")?;
+    let mut object_storage = S3CompatibleObjectStorage::new(
+        Region::Custom {
+            name: "localstack".to_string(),
+            endpoint: "http://localhost:4566",
+        },
+        "quickwit-integration-test",
+    )?;
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
     Ok(())
 }

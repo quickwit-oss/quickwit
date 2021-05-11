@@ -146,7 +146,7 @@ pub struct RamStorageFactory {
 impl Default for RamStorageFactory {
     fn default() -> Self {
         RamStorageFactory {
-            ram_storage: Arc::new(RamStorage::default())
+            ram_storage: Arc::new(RamStorage::default()),
         }
     }
 }
@@ -158,7 +158,10 @@ impl StorageFactory for RamStorageFactory {
 
     fn resolve(&self, uri: &str) -> crate::StorageResult<Arc<dyn Storage>> {
         if uri != "ram://" {
-            let err_msg = anyhow::anyhow!("{:?} is an invalid ram storage uri. Only ram:// is accepted.", uri);
+            let err_msg = anyhow::anyhow!(
+                "{:?} is an invalid ram storage uri. Only ram:// is accepted.",
+                uri
+            );
             return Err(StorageErrorKind::DoesNotExist.with_error(err_msg));
         }
         Ok(self.ram_storage.clone())
@@ -192,9 +195,14 @@ mod tests {
             .put("path2", b"path2_payload")
             .put("path1", b"path1_payloadb")
             .build();
-        assert_eq!(&storage.get_all(Path::new("path1")).await?, b"path1_payloadb");
-        assert_eq!(&storage.get_all(Path::new("path2")).await?, b"path2_payload");
+        assert_eq!(
+            &storage.get_all(Path::new("path1")).await?,
+            b"path1_payloadb"
+        );
+        assert_eq!(
+            &storage.get_all(Path::new("path2")).await?,
+            b"path2_payload"
+        );
         Ok(())
     }
 }
-
