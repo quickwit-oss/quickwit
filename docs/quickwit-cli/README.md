@@ -53,25 +53,25 @@ quickwit new
 
 *Options*
 
-`--index-path`  (string) Defines the index location.
-`--timestamp-field`  (string) Creates a time-series index with the specified timestamp field.
-`--no-timestamp-field` (boolean) Creates a non-time-series index.
+`--index-path`  (string) Defines the index location.<br />
+`--timestamp-field`  (string) Creates a time-series index with the specified timestamp field.<br />
+`--no-timestamp-field` (boolean) Creates a non-time-series index.<br />
 `--overwrite` (boolean) Overwrites existing index.
 
 The `timestamp-field` and `no-timestamp-field` options are mutually exclusive.
 
 *Examples*
 
-*Creating a new index on local file system*
+*Creating a new index on local file system*<br />
 `quickwit new --index-path ~/quickwit-indexes/catalog --no-timestamp-field`
 
-*Creating a new index on Amazon S3*
+*Creating a new index on Amazon S3*<br />
 `quickwit new --index-path s3://quickwit-indexes/catalog --no-timestamp-field`
 
-*Replacing an existing index*
+*Replacing an existing index*<br />
 `quickwit new --index-path s3://quickwit-indexes/catalog --no-timestamp-field --overwrite`
 
-*Creating a new time-series index*
+*Creating a new time-series index*<br />
 `quickwit new --index-path s3://quickwit-indexes/nginx --timestamp-field ts`
 
 ### Index
@@ -94,27 +94,26 @@ quickwit index
 
 *Options*
 
-`--index-path` (string) Location of the target index.
-`--input-path` (string) Location of the source dataset.
-`--overwrite` (boolean) Overwrites existing data.
-`--num-thread` (integer) Number of allocated threads for the process.
-`--heap-size` (integer) Amount of allocated memory for the process.
+`--index-path` (string) Location of the target index.<br />
+`--input-path` (string) Location of the source dataset.<br />
+`--overwrite` (boolean) Overwrites existing data.<br />
+`--num-thread` (integer) Number of allocated threads for the process.<br />
+`--heap-size` (integer) Amount of allocated memory for the process.<br />
 `--temp-dir` (string) Path of temporary directory for building the index (defaults to `/tmp`)
 
 *Examples*
 
-*Indexing a local dataset*
+*Indexing a local dataset*<br />
 `quickwit index --index-path s3://quickwit-indexes/nginx --input-path nginx.json`
 
-*Indexing a dataset from stdin*
-`cat nginx.json | quickwit index --index-path s3://quickwit-indexes/nginx`
-
+*Indexing a dataset from stdin*<br />
+`cat nginx.json | quickwit index --index-path s3://quickwit-indexes/nginx`<br />
 `quickwit index --index-path s3://quickwit-indexes/nginx < nginx.json`
 
-*Reindexing a dataset*
+*Reindexing a dataset*<br />
 `quickwit index --index-path s3://quickwit-indexes/nginx --input-path nginx.json --overwrite`
 
-*Customizing the resources allocated to the program*
+*Customizing the resources allocated to the program*<br />
 `quickwit index --index-path s3://quickwit-indexes/nginx --input-path nginx.json --num-threads 8 --heap-size 16GiB`
 
 **Search**
@@ -141,13 +140,13 @@ quickwit search
 
 *Options*
 
-`--index-path` (string) Location of the target index.
-`--query` (string) query TODO: QL syntax?.
-`--max-hits` (integer) Maximum number of hits returned (defaults to `20`).
-`--start-offset` (integer) Skips the first `start-offset` hits (defaults to `0`).
-`--start-datetime` (string) Inclusive lower bound.
-`--end-datetime` (string) Exclusive upper bound.
-`--datetime-format` (string) ? (defaults to `YYYY-MM-DDThh:mm:ss`).
+`--index-path` (string) Location of the target index.<br />
+`--query` (string) query TODO: QL syntax?.<br />
+`--max-hits` (integer) Maximum number of hits returned (defaults to `20`).<br />
+`--start-offset` (integer) Skips the first `start-offset` hits (defaults to `0`).<br />
+`--start-datetime` (string) Inclusive lower bound.<br />
+`--end-datetime` (string) Exclusive upper bound.<br />
+`--datetime-format` (string) ? (defaults to `YYYY-MM-DDThh:mm:ss`).<br />
 `--target-fields` (string) ?.
 
 *Examples*
@@ -190,5 +189,5 @@ quickwit delete
 
 *Deleting an index*<br /> `quickwit delete --index-path s3://quickwit-indexes/catalog`
 
-*Executing in dry run mode<br />
+*Executing in dry run mode*<br />
 `quickwit delete --index-path s3://quickwit-indexes/catalog --dry-run`
