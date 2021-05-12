@@ -116,7 +116,7 @@ quickwit index
 *Customizing the resources allocated to the program*<br />
 `quickwit index --index-path s3://quickwit-indexes/nginx --input-path nginx.json --num-threads 8 --heap-size 16GiB`
 
-**Search**
+### Search
 
 *Description*
 
