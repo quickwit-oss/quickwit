@@ -152,19 +152,19 @@ quickwit search
 
 *Examples*
 
-*Searching a local index*
+*Searching a local index*<br />
 `quickwit search --index-path ~/indexes/wikipedia --query "Barack Obama"`
 
-*Searching a remote index*
+*Searching a remote index*<br />
 `quickwit search --index-path s3://quickwit-indexes/wikipedia --query "Barack Obama"`
 
-*Limiting the result set to 50 hits*
+*Limiting the result set to 50 hits*<br />
 `quickwit search --index-path s3://quickwit-indexes/wikipedia --query "Barack Obama" --max-hits 50`
 
-*Skipping the first 20 hits*
+*Skipping the first 20 hits*<br />
 `quickwit search --index-path s3://quickwit-indexes/wikipedia --query "Barack Obama" --start-offset 20`
 
-*Looking for matches in the title and url fields only*
+*Looking for matches in the title and url fields only*<br />
 `quickwit search --index-path s3://quickwit-indexes/wikipedia --query "Barack Obama" --target-fields title,url`
 
 ### Delete
@@ -188,9 +188,7 @@ quickwit delete
 
 *Examples*
 
-*Deleting an index*
-`quickwit delete --index-path s3://quickwit-indexes/catalog`
+*Deleting an index*<br /> `quickwit delete --index-path s3://quickwit-indexes/catalog`
 
-*Executing in dry run mode*
-
+*Executing in dry run mode<br />
 `quickwit delete --index-path s3://quickwit-indexes/catalog --dry-run`
