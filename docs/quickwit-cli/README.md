@@ -192,4 +192,5 @@ quickwit delete
 `quickwit delete --index-path s3://quickwit-indexes/catalog`
 
 *Executing in dry run mode*
+
 `quickwit delete --index-path s3://quickwit-indexes/catalog --dry-run`
