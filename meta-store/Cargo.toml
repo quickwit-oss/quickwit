@@ -8,3 +8,10 @@ edition = "2018"
 anyhow = '1.0'
 async-trait = '0.1'
 thiserror = '1.0'
+
+quickwit-storage = { version = "0.1.0", path = "../storage" }
+
+[dependencies.rusoto_core]
+version = '0.46'
+default-features = false
+features = ['rustls']

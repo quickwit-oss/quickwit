@@ -20,5 +20,4 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-mod meta_store;
-mod object_storage;
+mod s3_compatible;
