@@ -1,0 +1,107 @@
+name: Quickwit CLI
+about: Index and search structured or unstructured data from the command line
+author: Quickwit, Inc. <hello@quickwit.com>
+
+subcommands:
+    - new:
+        about: Creates an index
+        args:
+            - index-path:
+                help: Location of the target index
+                long: index-path
+                value_name: INDEX PATH
+                required: true
+            - timestamp-field:
+                help: Creates a time-series index with the specified timestamp field
+                long: timestamp-field
+                value_name: FIELD NAME
+            - no-timestamp-field:
+                help: Creates a non-time-series index
+                long: no-timestamp-field
+            - overwrite:
+                help: Overwrites pre-existing index
+                long: overwrite
+        groups:
+            - index-type:
+                required: true
+                args:
+                    - timestamp-field
+                    - no-timestamp-field
+    - index:
+        about: Indexes a dataset
+        args:
+            - index-path:
+                help: Location of the target index
+                long: index-path
+                value_name: INDEX PATH
+                required: true
+            - input-path:
+                help: Location of the source dataset
+                long: input-path
+                value_name: INPUT PATH
+            - temp-dir:
+                help: Creates intermediate files in this directory
+                long: temp-dir
+                value_name: TEMP DIR
+                default_value: /tmp
+            - num-threads:
+                help: Number of threads allocated to the process
+                long: num-threads
+                value_name: NUM THREADS
+                default_value: '2'
+            - heap-size:
+                help: Amount of memory allocated to the process
+                long: heap-size
+                value_name: HEAP SIZE
+                default_value: 2G
+            - overwrite:
+                help: Overwrites pre-existing index
+                long: overwrite
+    - search:
+        about: Searches an index
+        args:
+            - index-path:
+                help: Location of the target index
+                long: index-path
+                value_name: INDEX PATH
+                required: true
+            - query:
+                help: Query expressed in Tantivy syntax
+                long: query
+                value_name: QUERY
+                required: true
+            - max-hits:
+                help: Maximum number of hits returned
+                long: max-hits
+                value_name: MAX HITS
+                default_value: '20'
+            - start-offset:
+                help: Offset in the global result set of the first hit returned
+                long: start-offset
+                value_name: OFFSET
+                default_value: '0'
+            - search-fields:
+                help: Searches only in those fields
+                long: search-fields
+                value_name: FIELD NAME
+                multiple: true
+            - start-timestamp:
+                help: Filters out documents before that timestamp (time-series indexes only)
+                long: start-timestamp
+                value_name: TIMESTAMP
+            - end-timestamp:
+                help: Filters out documents after that timestamp (time-series indexes only)
+                long: end-timestamp
+                value_name: TIMESTAMP
+
+    - delete:
+        about: Deletes an index
+        args:
+            - index-path:
+                help: Location of the target index
+                long: index-path
+                value_name: INDEX PATH
+                required: true
+            - dry-run:
+                help: Executes the command in dry run mode and displays the list of files to delete
+                long: dry-run

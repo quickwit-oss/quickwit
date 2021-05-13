@@ -1,10 +1,14 @@
 [package]
 name = "quickwit-cli"
 version = "0.1.0"
-authors = ["Quickwit <hello@quickwit.io>"]
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = "2.33"
+anyhow = "1"
+byte-unit = "4"
+clap = { version = "2", features = ["yaml"] }
+tracing = '0.1'
+tracing-subscriber = "0.2"
