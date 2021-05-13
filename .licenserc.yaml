@@ -20,8 +20,11 @@ header:
       You should have received a copy of the GNU Affero General Public License
       along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-    pattern: |
-      Copyright \(C\) 2021 Quickwit Inc\..*commercial.*AGPL
+  pattern: |
+    Copyright \(C\) 2021 Quickwit Inc\..*commercial.*AGPL
+
+  paths-ignore:
+    - '**/target/**'
 
   paths:
     - '**/*.rs'
