@@ -32,7 +32,7 @@ pub enum StorageErrorKind {
     Unauthorized,
     /// A third-party service forbids this operation.
     Service,
-    ///
+    /// Any generic internal error
     InternalError,
     /// Io error.
     Io,

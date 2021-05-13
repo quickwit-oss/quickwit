@@ -45,7 +45,10 @@ where
 {
     pub async fn try_new(mut reader: R, range: Range<u64>) -> io::Result<Self> {
         if range.end < range.start {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("range.end({}) < range.start ({})", range.end, range.start)));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("range.end({}) < range.start ({})", range.end, range.start),
+            ));
         }
 
         let seek_from = SeekFrom::Start(range.start);

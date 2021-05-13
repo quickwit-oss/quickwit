@@ -259,12 +259,12 @@ impl S3CompatibleObjectStorage {
     ) -> io::Result<Vec<Part>> {
         assert!(len > 0);
         let chunks = split_range_into_chunks(len, part_len);
-        // Note that it should really the first chunk, but who knows... and it is very cheap to compute this anyway.
+        // Note that it should really be the first chunk, but who knows... and it is very cheap to compute this anyway.
         let largest_chunk_num_bytes = chunks
             .iter()
             .map(|chunk| chunk.end - chunk.start)
             .max()
-            .expect("The policy should never emit no chunks.");
+            .expect("The policy should never emit an empty list of chunk.");
         match payload {
             PutPayload::LocalFile(file_path) => {
                 let mut parts = Vec::with_capacity(chunks.len());

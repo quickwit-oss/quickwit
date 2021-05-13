@@ -21,10 +21,10 @@
 */
 
 use async_trait::async_trait;
+use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::io;
 
 use crate::StorageResult;
 
@@ -77,7 +77,7 @@ pub trait Storage: Send + Sync + 'static {
     /// Saves a file into the storage.
     async fn put(&self, path: &Path, payload: PutPayload) -> StorageResult<()>;
 
-    /// Downloads an entire file and write it in a from the storage into a local file.
+    /// Downloads an entire file and writes it into a local file.
     /// TODO Change the API to support multipart download
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()>;
 

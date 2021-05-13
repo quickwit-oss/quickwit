@@ -79,7 +79,7 @@ pub(crate) mod tests {
             )
             .await?;
         let payload = storage.get_slice(test_path, 3..6).await?;
-        assert_eq!(&payload[..], b"def".as_ref());
+        assert_eq!(&payload[..], b"def");
         Ok(())
     }
 
