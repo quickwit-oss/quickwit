@@ -44,7 +44,9 @@ where
     R: AsyncRead + AsyncSeek + Unpin,
 {
     pub async fn try_new(mut reader: R, range: Range<u64>) -> io::Result<Self> {
-        assert!(range.end >= range.start);
+        if range.end < range.start {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("range.end({}) < range.start ({})", range.end, range.start)));
+        }
 
         let seek_from = SeekFrom::Start(range.start);
         reader.seek(seek_from).await?;

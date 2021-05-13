@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fmt, io};
+use std::io;
 
 use crate::StorageResult;
 
@@ -73,7 +73,7 @@ impl<'a> From<&'a [u8]> for PutPayload {
 /// Object storage are the primary target implementation of this trait,
 /// and its interface is meant to allow for multipart download/upload.
 #[async_trait]
-pub trait Storage: Send + Sync + fmt::Debug + 'static {
+pub trait Storage: Send + Sync + 'static {
     /// Saves a file into the storage.
     async fn put(&self, path: &Path, payload: PutPayload) -> StorageResult<()>;
 

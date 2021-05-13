@@ -88,6 +88,9 @@ pub struct StorageError {
     source: anyhow::Error,
 }
 
+/// Generic Result type for storage operations.
+pub type StorageResult<T> = Result<T, StorageError>;
+
 impl StorageError {
     /// Add some context to the wrapper error.
     pub fn add_context<C>(self, ctx: C) -> Self
@@ -99,12 +102,7 @@ impl StorageError {
             source: self.source.context(ctx),
         }
     }
-}
 
-/// Generic Result type for storage operations.
-pub type StorageResult<T> = Result<T, StorageError>;
-
-impl StorageError {
     /// Returns the corresponding `StorageErrorKind` for this error.
     pub fn kind(&self) -> StorageErrorKind {
         self.kind
