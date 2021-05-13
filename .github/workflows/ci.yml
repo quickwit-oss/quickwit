@@ -3,6 +3,10 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'quickwit-*/**'
 
 name: CI
 
