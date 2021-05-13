@@ -68,7 +68,7 @@ impl<'a> From<&'a [u8]> for PutPayload {
     }
 }
 
-/// Storage meant to receive and server quickwit's split.
+/// Storage meant to receive and serve quickwit's split.
 ///
 /// Object storage are the primary target implementation of this trait,
 /// and its interface is meant to allow for multipart download/upload.
