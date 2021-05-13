@@ -1,0 +1,10 @@
+[package]
+name = "quickwit-meta-store"
+version = "0.1.0"
+authors = ['Quickwit <hello@quickwit.io>']
+edition = "2018"
+
+[dependencies]
+anyhow = '1.0'
+async-trait = '0.1'
+thiserror = '1.0'
