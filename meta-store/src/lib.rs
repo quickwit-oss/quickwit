@@ -21,4 +21,3 @@
 */
 
 mod meta_store;
-mod object_storage;

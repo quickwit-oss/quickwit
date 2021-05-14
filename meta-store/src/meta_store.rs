@@ -20,6 +20,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+mod single_file;
+
 use std::fmt::{Debug, Display};
 use std::io;
 use std::ops::Range;
@@ -147,7 +149,7 @@ impl From<io::Error> for MetaStoreError {
 pub type MetaStoreResult<T> = Result<T, MetaStoreError>;
 
 #[async_trait]
-pub trait MetaStore: Send + Sync + Debug + 'static {
+pub trait MetaStore: Send + Sync + 'static {
     async fn stage_split(&self, split_manifest: SplitManifest) -> MetaStoreResult<SplitId>;
     async fn publish_split(&self, split_id: SplitId) -> MetaStoreResult<()>;
     async fn list_splits(

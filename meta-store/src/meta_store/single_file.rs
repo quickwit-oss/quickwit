@@ -23,36 +23,25 @@
 use std::ops::Range;
 
 use async_trait::async_trait;
-use rusoto_core::Region;
 
-use quickwit_storage::S3CompatibleObjectStorage;
+use quickwit_storage::Storage;
 
 use crate::meta_store::{IndexId, MetaStore, MetaStoreResult, SplitId, SplitManifest, State};
 
-/// S3 Compatible object storage implementation.
-#[derive(Debug)]
-pub struct S3CompatibleMetaStore {
-    storage: S3CompatibleObjectStorage,
+/// Single file meta store implementation.
+pub struct SingleFileMetaStore {
+    storage: Box<dyn Storage>,
 }
 
-impl S3CompatibleMetaStore {
-    /// Creates an object storage given a region and a bucket name.
-    pub fn new(region: Region, bucket: &str) -> anyhow::Result<S3CompatibleMetaStore> {
-        let storage = S3CompatibleObjectStorage::new(region, bucket)?;
-
-        Ok(S3CompatibleMetaStore { storage })
-    }
-
-    /// Creates an object storage given a region and an uri.
-    pub fn from_uri(region: Region, uri: &str) -> anyhow::Result<S3CompatibleMetaStore> {
-        let storage = S3CompatibleObjectStorage::from_uri(region, uri)?;
-
-        Ok(S3CompatibleMetaStore { storage })
+impl SingleFileMetaStore {
+    /// Creates a meta store given a storage.
+    pub fn new(storage: Box<dyn Storage>) -> anyhow::Result<Self> {
+        Ok(SingleFileMetaStore { storage })
     }
 }
 
 #[async_trait]
-impl MetaStore for S3CompatibleMetaStore {
+impl MetaStore for SingleFileMetaStore {
     async fn stage_split(&self, _split_manifest: SplitManifest) -> MetaStoreResult<SplitId> {
         unimplemented!();
     }
