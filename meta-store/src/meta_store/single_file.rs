@@ -31,7 +31,7 @@ use quickwit_storage::{PutPayload, Storage, StorageErrorKind};
 
 use crate::meta_store::{
     IndexMetaData, MetaDataSet, MetaStore, MetaStoreErrorKind, MetaStoreResult, SplitId,
-    SplitManifest, State,
+    SplitManifest, SplitState,
 };
 
 /// Single file meta store implementation.
@@ -112,7 +112,7 @@ impl MetaStore for SingleFileMetaStore {
         split_manifest: SplitManifest,
     ) -> MetaStoreResult<SplitId> {
         let mut new_split_manifest = split_manifest.clone();
-        new_split_manifest.state = State::Staged;
+        new_split_manifest.state = SplitState::Staged;
 
         let mut data = self.data.write().unwrap();
 
@@ -129,7 +129,7 @@ impl MetaStore for SingleFileMetaStore {
 
         // TODO: put it back into storage.
 
-        let new_data = MetaDataSet{
+        let new_data = MetaDataSet {
             index: data.index.clone(),
             splits: data.splits.clone(),
         };
@@ -138,9 +138,8 @@ impl MetaStore for SingleFileMetaStore {
         let contents = match serde_json::to_vec(&new_data) {
             Ok(c) => c,
             Err(e) => {
-                return Err(MetaStoreErrorKind::InvalidManifest.with_error(
-                    anyhow::anyhow!("Failed to serialize meta data: {:?}", e),
-                ));
+                return Err(MetaStoreErrorKind::InvalidManifest
+                    .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e)));
             }
         };
         println!("{:?}", String::from_utf8(contents).unwrap());
@@ -162,7 +161,7 @@ impl MetaStore for SingleFileMetaStore {
 
         match data.splits.get_mut(&split_id) {
             Some(m) => {
-                m.state = State::Published;
+                m.state = SplitState::Published;
             }
             None => {
                 return Err(MetaStoreErrorKind::DoesNotExist
@@ -177,7 +176,7 @@ impl MetaStore for SingleFileMetaStore {
 
     async fn list_splits(
         &self,
-        _state: State,
+        _state: SplitState,
         _time_range: Option<Range<u64>>,
     ) -> MetaStoreResult<()> {
         let _data = self.data.read().unwrap();
@@ -190,7 +189,7 @@ impl MetaStore for SingleFileMetaStore {
 
         match data.splits.get_mut(&split_id) {
             Some(m) => {
-                m.state = State::ScheduledForDeleted;
+                m.state = SplitState::ScheduledForDeleted;
             }
             None => {
                 return Err(MetaStoreErrorKind::DoesNotExist
@@ -209,7 +208,7 @@ impl MetaStore for SingleFileMetaStore {
         match data.splits.get_mut(&split_id) {
             Some(m) => {
                 match m.state {
-                    State::ScheduledForDeleted | State::Staged => {
+                    SplitState::ScheduledForDeleted | SplitState::Staged => {
                         // TODO: delete split form meta data
                     }
                     _ => {
@@ -241,7 +240,7 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use crate::meta_store::single_file::SingleFileMetaStore;
-    use crate::meta_store::{ManifestEntry, MetaStore, SplitManifest, SplitMetaData, State};
+    use crate::meta_store::{ManifestEntry, MetaStore, SplitManifest, SplitMetaData, SplitState};
 
     #[tokio::test]
     async fn test_single_file_meta_store_new() {
@@ -281,7 +280,7 @@ mod tests {
                 file_name: "split_one_file_name".to_string(),
                 file_size_in_bytes: 1,
             }],
-            state: State::Staged,
+            state: SplitState::Staged,
         };
 
         let _ = meta_store

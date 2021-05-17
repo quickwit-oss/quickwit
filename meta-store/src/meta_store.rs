@@ -70,7 +70,7 @@ pub struct ManifestEntry {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum State {
+pub enum SplitState {
     // the splits is almost ready. Some of its files may have been uploaded in the storage.
     Staged,
     // the splits is ready and published.
@@ -91,7 +91,7 @@ pub struct SplitManifest {
     files: Vec<ManifestEntry>,
 
     // The state of split
-    state: State,
+    state: SplitState,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -186,7 +186,7 @@ pub trait MetaStore: Send + Sync + 'static {
     async fn list_splits(
         &self,
         // index_id: IndexId,
-        state: State,
+        state: SplitState,
         time_range: Option<Range<u64>>,
     ) -> MetaStoreResult<()>;
     async fn mark_as_deleted(&self, split_id: SplitId) -> MetaStoreResult<()>;
