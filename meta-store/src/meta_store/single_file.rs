@@ -235,7 +235,7 @@ impl MetaStore for SingleFileMetaStore {
 #[cfg(test)]
 mod tests {
     use std::ops::Range;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     use quickwit_storage::RamStorage;
 
