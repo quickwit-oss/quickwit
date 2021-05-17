@@ -109,10 +109,9 @@ impl MetaStore for SingleFileMetaStore {
     async fn stage_split(
         &self,
         split_id: SplitId,
-        split_manifest: SplitManifest,
+        mut split_manifest: SplitManifest,
     ) -> MetaStoreResult<SplitId> {
-        let mut new_split_manifest = split_manifest.clone();
-        new_split_manifest.state = SplitState::Staged;
+        split_manifest.state = SplitState::Staged;
 
         let mut data = self.data.write().unwrap();
 
@@ -125,7 +124,7 @@ impl MetaStore for SingleFileMetaStore {
             );
         }
 
-        data.splits.insert(split_id.clone(), new_split_manifest);
+        data.splits.insert(split_id.clone(), split_manifest);
 
         // TODO: put it back into storage.
 
