@@ -132,7 +132,7 @@ pub fn parse_split_uri(split_uri: &str) -> Option<(String, PathBuf)> {
     static SPLIT_URI_PTN: OnceCell<Regex> = OnceCell::new();
     SPLIT_URI_PTN
         .get_or_init(|| {
-            // s3://quickwit-dev/quickwit/quickwit-dev-stream/02fba1b7-8344-44b3-bd9f-019c57021dd7
+            // s3://bucket/path/to/split
             Regex::new(r"s3://(?P<bucket>[^/]+)/(?P<path>.*)").unwrap()
         })
         .captures(split_uri)
@@ -600,8 +600,8 @@ mod tests {
     #[test]
     fn test_parse_split_uri() {
         assert_eq!(
-            parse_split_uri("s3://quickwit-dev/quickwit/quickwit-dev-stream/02fba1b7-8344-44b3-bd9f-019c57021dd7"),
-            Some(("quickwit-dev".to_string(), PathBuf::from("quickwit/quickwit-dev-stream/02fba1b7-8344-44b3-bd9f-019c57021dd7") ))
+            parse_split_uri("s3://bucket/path/to/object"),
+            Some(("bucket".to_string(), PathBuf::from("path/to/object")))
         );
     }
 }
