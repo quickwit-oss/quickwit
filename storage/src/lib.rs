@@ -33,6 +33,7 @@ mod storage;
 pub use self::storage::{PutPayload, Storage};
 
 mod error;
+mod file_storage;
 mod object_storage;
 mod ram_storage;
 mod retry;
