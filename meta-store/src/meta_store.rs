@@ -22,25 +22,27 @@
 
 mod single_file;
 
+use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::io;
 use std::ops::Range;
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub type IndexId = String;
+// pub type IndexId = String;
+
 pub type SplitId = String;
 
-pub enum State {
-    // the splits is almost ready. Some of its files may have been uploaded in the storage.
-    Staged,
-    // the splits is ready and published.
-    Published,
-    // the split is scheduled to be deleted.
-    ScheduledForDeleted,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IndexMetaData {
+    version: String,
+    name: String,
+    path: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SplitMetaData {
     // Split uri. In spirit, this uri should be self sufficient
     // to identify a split.
@@ -61,17 +63,42 @@ pub struct SplitMetaData {
     generation: usize,
 }
 
-/// A split manifest carries all meta data about a split
-/// and its files.pub
-pub struct SplitManifest {
-    // the index it belongs to or is destined to belong to.
-    id: IndexId,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ManifestEntry {
+    file_name: String,
+    file_size_in_bytes: u64,
+}
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum State {
+    // the splits is almost ready. Some of its files may have been uploaded in the storage.
+    Staged,
+    // the splits is ready and published.
+    Published,
+    // the split is scheduled to be deleted.
+    ScheduledForDeleted,
+}
+
+/// A split manifest carries all meta data about a split
+/// and its files.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SplitManifest {
     // The set of information required to open the split,
     // and possibly allocate the split.
     metadata: SplitMetaData,
+
     // The list of files associated to the split.
-    // files: Vec<ManifestEntry>,
+    files: Vec<ManifestEntry>,
+
+    // The state of split
+    state: State,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MetaDataSet {
+    index: IndexMetaData,
+    // splits: Arc<RwLock<HashMap<SplitId, SplitManifest>>>,
+    splits: HashMap<SplitId, SplitManifest>,
 }
 
 /// MetaStore error kind.
@@ -150,11 +177,15 @@ pub type MetaStoreResult<T> = Result<T, MetaStoreError>;
 
 #[async_trait]
 pub trait MetaStore: Send + Sync + 'static {
-    async fn stage_split(&self, split_manifest: SplitManifest) -> MetaStoreResult<SplitId>;
+    async fn stage_split(
+        &self,
+        split_id: SplitId,
+        split_manifest: SplitManifest,
+    ) -> MetaStoreResult<SplitId>;
     async fn publish_split(&self, split_id: SplitId) -> MetaStoreResult<()>;
     async fn list_splits(
         &self,
-        index_id: IndexId,
+        // index_id: IndexId,
         state: State,
         time_range: Option<Range<u64>>,
     ) -> MetaStoreResult<()>;
