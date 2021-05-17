@@ -41,7 +41,8 @@ use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
 use rusoto_s3::{
     AbortMultipartUploadRequest, CompleteMultipartUploadRequest, CompletedMultipartUpload,
     CompletedPart, CreateMultipartUploadError, CreateMultipartUploadRequest, DeleteObjectRequest,
-    GetObjectRequest, PutObjectError, PutObjectRequest, S3Client, UploadPartRequest, S3,
+    GetObjectRequest, HeadObjectError, HeadObjectRequest, PutObjectError, PutObjectRequest,
+    S3Client, UploadPartRequest, S3,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
@@ -537,6 +538,34 @@ impl Storage for S3CompatibleObjectStorage {
         self.get_to_vec(path, None)
             .await
             .map_err(|err| err.add_context(format!("Failed to fetch object: {}", self.uri(path))))
+    }
+
+    async fn exists(&self, path: &Path) -> StorageResult<bool> {
+        let key = self.key(path);
+        let head_object_req = HeadObjectRequest {
+            bucket: self.bucket.clone(),
+            key,
+            ..Default::default()
+        };
+        let head_object_output = retry(|| async {
+            self.s3_client
+                .head_object(head_object_req.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await;
+
+        match head_object_output {
+            Ok(_) => Ok(true),
+            Err(RusotoErrorWrapper(RusotoError::Service(HeadObjectError::NoSuchKey(_)))) => {
+                Ok(false)
+            }
+            // Also catching 404 until this issue is fixed: https://github.com/rusoto/rusoto/issues/716
+            Err(RusotoErrorWrapper(RusotoError::Unknown(http_resp))) if http_resp.status == 404 => {
+                Ok(false)
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
     fn uri(&self) -> String {

@@ -27,13 +27,14 @@ use std::io;
 use rusoto_core::RusotoError;
 use rusoto_s3::{
     AbortMultipartUploadError, CompleteMultipartUploadError, CreateMultipartUploadError,
-    DeleteObjectError, GetObjectError, PutObjectError, UploadPartError,
+    DeleteObjectError, GetObjectError, HeadObjectError, PutObjectError, UploadPartError,
 };
 
 use crate::retry::IsRetryable;
 use crate::{StorageError, StorageErrorKind};
 
-pub struct RusotoErrorWrapper<T: StdError>(RusotoError<T>);
+pub struct RusotoErrorWrapper<T: StdError>(pub RusotoError<T>);
+
 impl<T: StdError> From<RusotoError<T>> for RusotoErrorWrapper<T> {
     fn from(err: RusotoError<T>) -> Self {
         RusotoErrorWrapper(err)
@@ -144,6 +145,12 @@ impl ToStorageErrorKind for CreateMultipartUploadError {
 }
 
 impl ToStorageErrorKind for PutObjectError {
+    fn to_storage_error_kind(&self) -> StorageErrorKind {
+        StorageErrorKind::Service
+    }
+}
+
+impl ToStorageErrorKind for HeadObjectError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
         StorageErrorKind::Service
     }

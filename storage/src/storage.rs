@@ -91,6 +91,9 @@ pub trait Storage: Send + Sync + 'static {
     /// Delete file
     async fn delete(&self, path: &Path) -> StorageResult<()>;
 
+    /// Returns whether a file exists or not.
+    async fn exists(&self, path: &Path) -> StorageResult<bool>;
+
     /// Returns an URI identifying the storage
     fn uri(&self) -> String;
 }
