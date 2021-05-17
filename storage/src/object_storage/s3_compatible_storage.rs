@@ -452,11 +452,13 @@ impl S3CompatibleObjectStorage {
         range_opt: Option<Range<usize>>,
     ) -> StorageResult<Vec<u8>> {
         let get_object_req = self.create_get_object_request(path, range_opt);
-        let get_object_output = self
-            .s3_client
-            .get_object(get_object_req)
-            .await
-            .map_err(RusotoErrorWrapper::from)?;
+        let get_object_output = retry(|| async {
+            self.s3_client
+                .get_object(get_object_req.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await?;
         let mut body = get_object_output.body.ok_or_else(|| {
             StorageErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
         })?;
@@ -493,11 +495,13 @@ impl Storage for S3CompatibleObjectStorage {
     // TODO implement multipart
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
         let get_object_req = self.create_get_object_request(path, None);
-        let get_object_output = self
-            .s3_client
-            .get_object(get_object_req)
-            .await
-            .map_err(RusotoErrorWrapper::from)?;
+        let get_object_output = retry(|| async {
+            self.s3_client
+                .get_object(get_object_req.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await?;
         let body = get_object_output.body.ok_or_else(|| {
             StorageErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
         })?;
@@ -515,10 +519,13 @@ impl Storage for S3CompatibleObjectStorage {
             key,
             ..Default::default()
         };
-        self.s3_client
-            .delete_object(delete_object_req)
-            .await
-            .map_err(RusotoErrorWrapper::from)?;
+        retry(|| async {
+            self.s3_client
+                .delete_object(delete_object_req.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await?;
         Ok(())
     }
 
