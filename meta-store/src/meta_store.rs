@@ -171,6 +171,7 @@ impl From<io::Error> for MetaStoreError {
     }
 }
 
+#[allow(dead_code)]
 pub type MetaStoreResult<T> = Result<T, MetaStoreError>;
 
 #[async_trait]
