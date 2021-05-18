@@ -20,128 +20,184 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use anyhow::bail;
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, ArgMatches};
+use std::path::PathBuf;
 use tracing::debug;
 
-fn run_new_subcommand(matches: &ArgMatches) -> anyhow::Result<()> {
-    let index_path = matches.value_of("index-path").unwrap(); // 'index-path' is a required arg
-    let timestamp_field = matches.value_of("timestamp-field");
-    let overwrite = matches.is_present("overwrite");
-    create_index(index_path, timestamp_field, overwrite)
+struct CreateIndexArgs {
+    index_path: PathBuf,
+    timestamp_field: Option<String>,
+    overwrite: bool,
 }
 
-fn create_index(
-    index_path: &str,
-    timestamp_field: Option<&str>,
+struct IndexDataArgs {
+    index_path: PathBuf,
+    input_path: Option<PathBuf>,
+    temp_dir: PathBuf,
+    num_threads: usize,
+    heap_size: u64,
     overwrite: bool,
-) -> anyhow::Result<()> {
+}
+
+struct SearchIndexArgs {
+    index_path: PathBuf,
+    query: String,
+    max_hits: usize,
+    start_offset: usize,
+    search_fields: Option<Vec<String>>,
+    start_timestamp: Option<i64>,
+    end_timestamp: Option<i64>,
+}
+
+struct DeleteIndexArgs {
+    index_path: PathBuf,
+    dry_run: bool,
+}
+
+enum CliCommand {
+    New(CreateIndexArgs),
+    Index(IndexDataArgs),
+    Search(SearchIndexArgs),
+    Delete(DeleteIndexArgs),
+}
+impl CliCommand {
+    fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let (subcommand, submatches_opt) = matches.subcommand();
+        let submatches = submatches_opt.unwrap();
+
+        match subcommand {
+            "new" => Self::parse_new_args(submatches),
+            "index" => Self::parse_index_args(submatches),
+            "search" => Self::parse_search_args(submatches),
+            "delete" => Self::parse_delete_args(submatches),
+            _ => bail!("Subcommand '{}' is not implemented", subcommand),
+        }
+    }
+
+    fn parse_new_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let index_path_str = matches.value_of("index-path").unwrap().to_string(); // 'index-path' is a required arg
+        let index_path = PathBuf::from(index_path_str);
+        let timestamp_field = matches
+            .value_of("timestamp-field")
+            .map(|field| field.to_string());
+        let overwrite = matches.is_present("overwrite");
+
+        Ok(CliCommand::New(CreateIndexArgs {
+            index_path,
+            timestamp_field,
+            overwrite,
+        }))
+    }
+
+    fn parse_index_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let index_path_str = matches.value_of("index-path").unwrap(); // 'index-path' is a required arg
+        let index_path = PathBuf::from(index_path_str);
+        let input_path = matches.value_of("input-path").map(PathBuf::from);
+        let temp_dir_str = matches.value_of("temp-dir").unwrap(); // 'temp-dir' has a default value
+        let temp_dir = PathBuf::from(temp_dir_str);
+        let num_threads = value_t!(matches, "num-threads", usize)?; // 'num-threads' has a default value
+        let heap_size_str = matches.value_of("heap-size").unwrap(); // 'heap-size' has a default value
+        let heap_size = Byte::from_str(heap_size_str)?.get_bytes() as u64;
+        let overwrite = matches.is_present("overwrite");
+
+        Ok(CliCommand::Index(IndexDataArgs {
+            index_path,
+            input_path,
+            temp_dir,
+            num_threads,
+            heap_size,
+            overwrite,
+        }))
+    }
+
+    fn parse_search_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let index_path_str = matches.value_of("index-path").unwrap(); // 'index-path' is a required arg
+        let index_path = PathBuf::from(index_path_str);
+        let query = matches.value_of("query").unwrap().to_string(); // 'query' is a required arg
+        let max_hits = value_t!(matches, "max-hits", usize)?;
+        let start_offset = value_t!(matches, "start-offset", usize)?;
+        let search_fields = matches
+            .values_of("search-fields")
+            .map(|values| values.map(|value| value.to_string()).collect());
+        let start_timestamp = if matches.is_present("start-timestamp") {
+            Some(value_t!(matches, "start-timestamp", i64)?)
+        } else {
+            None
+        };
+        let end_timestamp = if matches.is_present("end-timestamp") {
+            Some(value_t!(matches, "end-timestamp", i64)?)
+        } else {
+            None
+        };
+
+        Ok(CliCommand::Search(SearchIndexArgs {
+            index_path,
+            query,
+            max_hits,
+            start_offset,
+            search_fields,
+            start_timestamp,
+            end_timestamp,
+        }))
+    }
+
+    fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let index_path_str = matches.value_of("index-path").unwrap(); // 'index-path' is a required arg
+        let index_path = PathBuf::from(index_path_str);
+        let dry_run = matches.is_present("dry-run");
+
+        Ok(CliCommand::Delete(DeleteIndexArgs {
+            index_path,
+            dry_run,
+        }))
+    }
+}
+
+fn create_index(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(
-        index_path = index_path,
-        timestamp_field =? timestamp_field,
-        overwrite = overwrite,
+        index_path =% args.index_path.display(),
+        timestamp_field =? args.timestamp_field,
+        overwrite = args.overwrite,
         "create-index"
     );
     Ok(())
 }
 
-fn run_index_subcommand(matches: &ArgMatches) -> anyhow::Result<()> {
-    let index_path = matches.value_of("index-path").unwrap(); // 'index-path' is a required arg
-    let input_path = matches.value_of("input-path");
-    let temp_dir = matches.value_of("temp-dir").unwrap(); // 'temp-dir' has a default value
-    let num_threads = value_t!(matches, "num-threads", usize)?; // 'num-threads' has a default value
-    let heap_size_str = matches.value_of("heap-size").unwrap(); // 'heap-size' has a default value
-    let heap_size = Byte::from_str(heap_size_str)?.get_bytes() as u64;
-    let overwrite = matches.is_present("overwrite");
-    index(
-        index_path,
-        input_path,
-        temp_dir,
-        num_threads,
-        heap_size,
-        overwrite,
-    )
-}
-
-fn index(
-    index_path: &str,
-    input_path: Option<&str>,
-    temp_dir: &str,
-    num_threads: usize,
-    heap_size: u64,
-    overwrite: bool,
-) -> anyhow::Result<()> {
+fn index_data(args: IndexDataArgs) -> anyhow::Result<()> {
     debug!(
-        index_path = index_path,
-        input_path = input_path.unwrap_or("stdin"),
-        temp_dir = temp_dir,
-        num_threads = num_threads,
-        heap_size = heap_size,
-        overwrite = overwrite,
+        index_path =% args.index_path.display(),
+        input_path =% args.input_path.unwrap_or_else(|| PathBuf::from("stdin")).display(),
+        temp_dir =% args.temp_dir.display(),
+        num_threads = args.num_threads,
+        heap_size = args.heap_size,
+        overwrite = args.overwrite,
         "indexing"
     );
     Ok(())
 }
 
-fn run_search_subcommand(matches: &ArgMatches) -> anyhow::Result<()> {
-    let index_path = matches.value_of("index-path").unwrap(); // 'index-path' is a required arg
-    let query = matches.value_of("query").unwrap(); // 'query' is a required arg
-    let max_hits = value_t!(matches, "max-hits", usize)?;
-    let start_offset = value_t!(matches, "start-offset", usize)?;
-    let search_fields = matches
-        .values_of("search-fields")
-        .map(|values| values.collect());
-    let start_timestamp = if matches.is_present("start-timestamp") {
-        Some(value_t!(matches, "start-timestamp", i64)?)
-    } else {
-        None
-    };
-    let end_timestamp = if matches.is_present("end-timestamp") {
-        Some(value_t!(matches, "end-timestamp", i64)?)
-    } else {
-        None
-    };
-    search_index(
-        index_path,
-        query,
-        max_hits,
-        start_offset,
-        search_fields,
-        start_timestamp,
-        end_timestamp,
-    )
-}
-
-fn search_index(
-    index_path: &str,
-    query: &str,
-    max_hits: usize,
-    start_offset: usize,
-    search_fields: Option<Vec<&str>>,
-    start_timestamp: Option<i64>,
-    end_timestamp: Option<i64>,
-) -> anyhow::Result<()> {
+fn search_index(args: SearchIndexArgs) -> anyhow::Result<()> {
     debug!(
-        index_path = index_path,
-        query = query,
-        max_hits = max_hits,
-        start_offset = start_offset,
-        search_fields =? search_fields,
-        start_timestamp =? start_timestamp,
-        end_timestamp =? end_timestamp,
+        index_path =% args.index_path.display(),
+        query =% args.query,
+        max_hits = args.max_hits,
+        start_offset = args.start_offset,
+        search_fields =? args.search_fields,
+        start_timestamp =? args.start_timestamp,
+        end_timestamp =? args.end_timestamp,
         "search-index"
     );
     Ok(())
 }
 
-fn run_delete_subcommand(matches: &ArgMatches) -> anyhow::Result<()> {
-    let index_path = matches.value_of("index-path").unwrap(); // 'index-path' is a required arg
-    let dry_run = matches.is_present("dry-run");
-    delete_index(index_path, dry_run)
-}
-
-fn delete_index(index_path: &str, dry_run: bool) -> anyhow::Result<()> {
-    debug!(index_path = index_path, dry_run = dry_run, "delete-index");
+fn delete_index(args: DeleteIndexArgs) -> anyhow::Result<()> {
+    debug!(
+        index_path =% args.index_path.display(),
+        dry_run = args.dry_run,
+        "delete-index"
+    );
     Ok(())
 }
 
@@ -152,17 +208,21 @@ fn main() {
     let yaml = load_yaml!("cli.yaml");
     let app = App::from(yaml).version(env!("CARGO_PKG_VERSION"));
     let matches = app.get_matches();
-    let (subcommand, submatches) = matches.subcommand();
 
-    let run_subcommand = match subcommand {
-        "new" => run_new_subcommand,
-        "index" => run_index_subcommand,
-        "delete" => run_delete_subcommand,
-        "search" => run_search_subcommand,
-        _ => panic!("Subcommand '{}' is not implemented", subcommand),
+    let command = match CliCommand::parse_cli_args(&matches) {
+        Ok(command) => command,
+        Err(err) => {
+            eprintln!("Failed to parse command arguments: {:?}", err);
+            std::process::exit(1);
+        }
     };
-
-    if let Err(err) = run_subcommand(submatches.unwrap()) {
+    let command_res = match command {
+        CliCommand::New(args) => create_index(args),
+        CliCommand::Index(args) => index_data(args),
+        CliCommand::Search(args) => search_index(args),
+        CliCommand::Delete(args) => delete_index(args),
+    };
+    if let Err(err) = command_res {
         eprintln!("Command failed: {:?}", err);
         std::process::exit(1);
     }
