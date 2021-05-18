@@ -67,7 +67,7 @@ pub struct ManifestEntry {
     file_size_in_bytes: u64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum SplitState {
     // the splits is almost ready. Some of its files may have been uploaded in the storage.
     Staged,
