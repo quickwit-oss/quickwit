@@ -26,13 +26,13 @@ use thiserror::Error;
 /// Storage error kind.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum StorageErrorKind {
-    /// The target index does not exists
+    /// The target index does not exist.
     DoesNotExist,
     /// The request credentials do not allow for this operation.
     Unauthorized,
     /// A third-party service forbids this operation.
     Service,
-    /// Any generic internal error
+    /// Any generic internal error.
     InternalError,
     /// Io error.
     Io,

@@ -88,8 +88,11 @@ pub trait Storage: Send + Sync + 'static {
     /// For large files prefer `copy_to_file`.
     async fn get_all(&self, path: &Path) -> StorageResult<Vec<u8>>;
 
-    /// Delete file
+    /// Deletes a file.
     async fn delete(&self, path: &Path) -> StorageResult<()>;
+
+    /// Returns whether a file exists or not.
+    async fn exists(&self, path: &Path) -> StorageResult<bool>;
 
     /// Returns an URI identifying the storage
     fn uri(&self) -> String;
