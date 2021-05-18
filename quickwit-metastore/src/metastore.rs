@@ -99,9 +99,9 @@ pub struct MetaDataSet {
     splits: HashMap<SplitId, SplitManifest>,
 }
 
-/// MetaStore error kind.
+/// Metastore error kind.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum MetaStoreErrorKind {
+pub enum MetastoreErrorKind {
     InvalidManifest,
     ExistingSplitId,
     InternalError,
@@ -112,82 +112,82 @@ pub enum MetaStoreErrorKind {
     Io,
 }
 
-impl MetaStoreErrorKind {
-    /// Creates a MetaStoreError.
-    pub fn with_error<E>(self, source: E) -> MetaStoreError
+impl MetastoreErrorKind {
+    /// Creates a MetastoreError.
+    pub fn with_error<E>(self, source: E) -> MetastoreError
     where
         anyhow::Error: From<E>,
     {
-        MetaStoreError {
+        MetastoreError {
             kind: self,
             source: From::from(source),
         }
     }
 }
 
-impl From<MetaStoreError> for io::Error {
-    fn from(metastore_err: MetaStoreError) -> Self {
+impl From<MetastoreError> for io::Error {
+    fn from(metastore_err: MetastoreError) -> Self {
         let io_error_kind = match metastore_err.kind() {
-            MetaStoreErrorKind::DoesNotExist => io::ErrorKind::NotFound,
+            MetastoreErrorKind::DoesNotExist => io::ErrorKind::NotFound,
             _ => io::ErrorKind::Other,
         };
         io::Error::new(io_error_kind, metastore_err.source)
     }
 }
 
-/// Generic MetaStore error.
+/// Generic Metastore error.
 #[derive(Error, Debug)]
-#[error("MetaStoreError(kind={kind:?}, source={source})")]
-pub struct MetaStoreError {
-    kind: MetaStoreErrorKind,
+#[error("MetastoreError(kind={kind:?}, source={source})")]
+pub struct MetastoreError {
+    kind: MetastoreErrorKind,
     #[source]
     source: anyhow::Error,
 }
 
-impl MetaStoreError {
+impl MetastoreError {
     /// Add some context to the wrapper error.
     pub fn add_context<C>(self, ctx: C) -> Self
     where
         C: Display + Send + Sync + 'static,
     {
-        MetaStoreError {
+        MetastoreError {
             kind: self.kind,
             source: self.source.context(ctx),
         }
     }
 
-    /// Returns the corresponding `MetaStoreErrorKind` for this error.
-    pub fn kind(&self) -> MetaStoreErrorKind {
+    /// Returns the corresponding `MetastoreErrorKind` for this error.
+    pub fn kind(&self) -> MetastoreErrorKind {
         self.kind
     }
 }
 
-impl From<io::Error> for MetaStoreError {
-    fn from(err: io::Error) -> MetaStoreError {
-        MetaStoreError {
-            kind: MetaStoreErrorKind::Io,
+impl From<io::Error> for MetastoreError {
+    fn from(err: io::Error) -> MetastoreError {
+        MetastoreError {
+            kind: MetastoreErrorKind::Io,
             source: anyhow::Error::from(err),
         }
     }
 }
 
 #[allow(dead_code)]
-pub type MetaStoreResult<T> = Result<T, MetaStoreError>;
+pub type MetastoreResult<T> = Result<T, MetastoreError>;
 
 #[async_trait]
-pub trait MetaStore: Send + Sync + 'static {
+pub trait Metastore: Send + Sync + 'static {
     async fn stage_split(
         &self,
         split_id: SplitId,
         split_manifest: SplitManifest,
-    ) -> MetaStoreResult<SplitId>;
-    async fn publish_split(&self, split_id: SplitId) -> MetaStoreResult<()>;
+    ) -> MetastoreResult<SplitId>;
+    async fn publish_split(&self, split_id: SplitId) -> MetastoreResult<()>;
     async fn list_splits(
         &self,
         // index_id: IndexId,
         state: SplitState,
         time_range: Option<Range<u64>>,
-    ) -> MetaStoreResult<()>;
-    async fn mark_as_deleted(&self, split_id: SplitId) -> MetaStoreResult<()>;
-    async fn delete_split(&self, split_id: SplitId) -> MetaStoreResult<()>;
+    ) -> MetastoreResult<()>;
+    async fn mark_as_deleted(&self, split_id: SplitId) -> MetastoreResult<()>;
+    async fn delete_split(&self, split_id: SplitId) -> MetastoreResult<()>;
 }
