@@ -1,5 +1,5 @@
 [package]
-name = "quickwit-meta-store"
+name = "quickwit-metastore"
 version = "0.1.0"
 authors = ['Quickwit <hello@quickwit.io>']
 edition = "2018"
