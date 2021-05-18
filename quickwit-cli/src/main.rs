@@ -227,3 +227,195 @@ fn main() {
         std::process::exit(1);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{CliCommand, CreateIndexArgs, DeleteIndexArgs, IndexDataArgs, SearchIndexArgs};
+    use clap::{load_yaml, App, AppSettings};
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_parse_new_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "new",
+            "--index-path",
+            "./wikipedia",
+            "--no-timestamp-field",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::New(CreateIndexArgs {
+                index_path,
+                timestamp_field: None,
+                overwrite: false
+            })) if index_path == PathBuf::from("./wikipedia")
+        ));
+
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "new",
+            "--index-path",
+            "./wikipedia",
+            "--timestamp-field",
+            "ts",
+            "--overwrite",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::New(CreateIndexArgs {
+                index_path,
+                timestamp_field: Some(field_name),
+                overwrite: true
+            })) if index_path == PathBuf::from("./wikipedia") && field_name == "ts"
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_index_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec!["index", "--index-path", "./wikipedia"])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Index(IndexDataArgs {
+                index_path,
+                input_path: None,
+                temp_dir,
+                num_threads: 2,
+                heap_size: 2000000000,
+                overwrite: false,
+            })) if index_path == PathBuf::from("./wikipedia") && temp_dir == PathBuf::from("/tmp")
+        ));
+
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "index",
+            "--index-path",
+            "./wikipedia",
+            "--input-path",
+            "./data/wikipedia",
+            "--temp-dir",
+            "./tmp",
+            "--num-threads",
+            "4",
+            "--heap-size",
+            "4gib",
+            "--overwrite",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Index(IndexDataArgs {
+                index_path,
+                input_path: Some(input_path),
+                temp_dir,
+                num_threads: 4,
+                heap_size: 4_294_967_296,
+                overwrite: true,
+            })) if index_path == PathBuf::from("./wikipedia") && input_path == PathBuf::from("./data/wikipedia") && temp_dir == PathBuf::from("./tmp")
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_search_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "search",
+            "--index-path",
+            "./wikipedia",
+            "--query",
+            "Barack Obama",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Search(SearchIndexArgs {
+                index_path,
+                query,
+                max_hits: 20,
+                start_offset: 0,
+                search_fields: None,
+                start_timestamp: None,
+                end_timestamp: None,
+            })) if index_path == PathBuf::from("./wikipedia") && query == "Barack Obama"
+        ));
+
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "search",
+            "--index-path",
+            "./wikipedia",
+            "--query",
+            "Barack Obama",
+            "--max-hits",
+            "50",
+            "--start-offset",
+            "100",
+            "--search-fields",
+            "title",
+            "url",
+            "--start-timestamp",
+            "0",
+            "--end-timestamp",
+            "1",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Search(SearchIndexArgs {
+                index_path,
+                query,
+                max_hits: 50,
+                start_offset: 100,
+                search_fields: Some(field_names),
+                start_timestamp: Some(0),
+                end_timestamp: Some(1),
+            })) if index_path == PathBuf::from("./wikipedia") && query == "Barack Obama" && field_names == vec!["title".to_string(), "url".to_string()]
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_delete_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec!["delete", "--index-path", "./wikipedia"])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Delete(DeleteIndexArgs {
+                index_path,
+                dry_run: false
+            })) if index_path == PathBuf::from("./wikipedia")
+        ));
+
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches =
+            app.get_matches_from_safe(vec!["delete", "--index-path", "./wikipedia", "--dry-run"])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Delete(DeleteIndexArgs {
+                index_path,
+                dry_run: true
+            })) if index_path == PathBuf::from("./wikipedia")
+        ));
+
+        Ok(())
+    }
+}
