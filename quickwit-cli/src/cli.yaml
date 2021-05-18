@@ -50,7 +50,7 @@ subcommands:
                 value_name: NUM THREADS
                 default_value: '2'
             - heap-size:
-                help: Amount of memory allocated to the process
+                help: Amount of memory allocated to the process and split between the indexing threads
                 long: heap-size
                 value_name: HEAP SIZE
                 default_value: 2G
