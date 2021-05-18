@@ -20,8 +20,6 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-mod single_file;
-
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::io;
