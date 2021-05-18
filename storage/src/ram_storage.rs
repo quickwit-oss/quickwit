@@ -109,6 +109,10 @@ impl Storage for RamStorage {
         Ok(payload_bytes.to_vec())
     }
 
+    async fn exists(&self, path: &Path) -> StorageResult<bool> {
+        Ok(self.files.read().await.contains_key(path))
+    }
+
     fn uri(&self) -> String {
         "ram://".to_string()
     }
