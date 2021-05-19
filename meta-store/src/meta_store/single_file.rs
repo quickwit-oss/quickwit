@@ -262,7 +262,7 @@ impl MetaStore for SingleFileMetaStore {
             }
         }
 
-        if splits.len() <= 0 {
+        if splits.len() == 0 {
             return Err(
                 MetaStoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
                     "There are no splits that match the criteria."
@@ -600,13 +600,6 @@ mod tests {
         }
 
         {
-            // publish split (already published)
-            let result = meta_store.publish_split(split_id.clone()).await.unwrap();
-            let expected = ();
-            assert_eq!(result, expected);
-        }
-
-        {
             // publish split (non-existent)
             let result = meta_store
                 .publish_split("non-existant".to_string())
@@ -929,17 +922,8 @@ mod tests {
         }
 
         {
-            // publish split
-            let result = meta_store.publish_split(split_id.clone()).await.unwrap();
-            let expected = ();
-            assert_eq!(result, expected);
-        }
-
-        {
             // mark as deleted
-            let result = meta_store.mark_as_deleted(split_id.clone()).await.unwrap();
-            let expected = ();
-            assert_eq!(result, expected);
+            meta_store.mark_as_deleted(split_id.clone()).await.unwrap();
 
             let data = meta_store.data.read().unwrap();
             assert_eq!(
@@ -950,9 +934,7 @@ mod tests {
 
         {
             // mark as deleted (already marked as deleted)
-            let result = meta_store.mark_as_deleted(split_id.clone()).await.unwrap();
-            let expected = ();
-            assert_eq!(result, expected);
+            meta_store.mark_as_deleted(split_id.clone()).await.unwrap();
         }
 
         {
@@ -1003,9 +985,7 @@ mod tests {
 
         {
             // publish split
-            let result = meta_store.publish_split(split_id.clone()).await.unwrap();
-            let expected = ();
-            assert_eq!(result, expected);
+            meta_store.publish_split(split_id.clone()).await.unwrap();
         }
 
         {
@@ -1021,16 +1001,12 @@ mod tests {
 
         {
             // mark as deleted
-            let result = meta_store.mark_as_deleted(split_id.clone()).await.unwrap();
-            let expected = ();
-            assert_eq!(result, expected);
+            meta_store.mark_as_deleted(split_id.clone()).await.unwrap();
         }
 
         {
             // delete split
-            let result = meta_store.delete_split(split_id.clone()).await.unwrap();
-            let expected = ();
-            assert_eq!(result, expected);
+            meta_store.delete_split(split_id.clone()).await.unwrap();
 
             let data = meta_store.data.read().unwrap();
             assert_eq!(data.splits.contains_key(&split_id), false);
