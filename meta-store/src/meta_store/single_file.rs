@@ -262,7 +262,7 @@ impl MetaStore for SingleFileMetaStore {
             }
         }
 
-        if splits.len() == 0 {
+        if splits.is_empty() {
             return Err(
                 MetaStoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
                     "There are no splits that match the criteria."
