@@ -6,10 +6,10 @@ subcommands:
     - new:
         about: Creates an index
         args:
-            - index-path:
+            - index-uri:
                 help: Location of the target index
-                long: index-path
-                value_name: INDEX PATH
+                long: index-uri
+                value_name: INDEX URI
                 required: true
             - timestamp-field:
                 help: Creates a time-series index with the specified timestamp field
@@ -30,17 +30,17 @@ subcommands:
     - index:
         about: Indexes a dataset
         args:
-            - index-path:
+            - index-uri:
                 help: Location of the target index
-                long: index-path
-                value_name: INDEX PATH
+                long: index-uri
+                value_name: INDEX URI
                 required: true
-            - input-path:
+            - input-uri:
                 help: Location of the source dataset
-                long: input-path
+                long: input-uri
                 value_name: INPUT PATH
             - temp-dir:
-                help: Creates intermediate files in this directory
+                help: Creates intermediate files in this local directory
                 long: temp-dir
                 value_name: TEMP DIR
                 default_value: /tmp
@@ -60,10 +60,10 @@ subcommands:
     - search:
         about: Searches an index
         args:
-            - index-path:
+            - index-uri:
                 help: Location of the target index
-                long: index-path
-                value_name: INDEX PATH
+                long: index-uri
+                value_name: INDEX URI
                 required: true
             - query:
                 help: Query expressed in Tantivy syntax
@@ -97,10 +97,10 @@ subcommands:
     - delete:
         about: Deletes an index
         args:
-            - index-path:
+            - index-uri:
                 help: Location of the target index
-                long: index-path
-                value_name: INDEX PATH
+                long: index-uri
+                value_name: INDEX URI
                 required: true
             - dry-run:
                 help: Executes the command in dry run mode and displays the list of files to delete

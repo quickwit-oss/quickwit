@@ -27,14 +27,14 @@ use std::path::PathBuf;
 use tracing::debug;
 
 struct CreateIndexArgs {
-    index_path: PathBuf,
+    index_uri: PathBuf,
     timestamp_field: Option<String>,
     overwrite: bool,
 }
 
 struct IndexDataArgs {
-    index_path: PathBuf,
-    input_path: Option<PathBuf>,
+    index_uri: PathBuf,
+    input_uri: Option<PathBuf>,
     temp_dir: PathBuf,
     num_threads: usize,
     heap_size: u64,
@@ -42,7 +42,7 @@ struct IndexDataArgs {
 }
 
 struct SearchIndexArgs {
-    index_path: PathBuf,
+    index_uri: PathBuf,
     query: String,
     max_hits: usize,
     start_offset: usize,
@@ -52,7 +52,7 @@ struct SearchIndexArgs {
 }
 
 struct DeleteIndexArgs {
-    index_path: PathBuf,
+    index_uri: PathBuf,
     dry_run: bool,
 }
 
@@ -77,24 +77,24 @@ impl CliCommand {
     }
 
     fn parse_new_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_path_str = matches.value_of("index-path").unwrap().to_string(); // 'index-path' is a required arg
-        let index_path = PathBuf::from(index_path_str);
+        let index_uri_str = matches.value_of("index-uri").unwrap().to_string(); // 'index-uri' is a required arg
+        let index_uri = PathBuf::from(index_uri_str);
         let timestamp_field = matches
             .value_of("timestamp-field")
             .map(|field| field.to_string());
         let overwrite = matches.is_present("overwrite");
 
         Ok(CliCommand::New(CreateIndexArgs {
-            index_path,
+            index_uri,
             timestamp_field,
             overwrite,
         }))
     }
 
     fn parse_index_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_path_str = matches.value_of("index-path").unwrap(); // 'index-path' is a required arg
-        let index_path = PathBuf::from(index_path_str);
-        let input_path = matches.value_of("input-path").map(PathBuf::from);
+        let index_uri_str = matches.value_of("index-uri").unwrap(); // 'index-uri' is a required arg
+        let index_uri = PathBuf::from(index_uri_str);
+        let input_uri = matches.value_of("input-uri").map(PathBuf::from);
         let temp_dir_str = matches.value_of("temp-dir").unwrap(); // 'temp-dir' has a default value
         let temp_dir = PathBuf::from(temp_dir_str);
         let num_threads = value_t!(matches, "num-threads", usize)?; // 'num-threads' has a default value
@@ -103,8 +103,8 @@ impl CliCommand {
         let overwrite = matches.is_present("overwrite");
 
         Ok(CliCommand::Index(IndexDataArgs {
-            index_path,
-            input_path,
+            index_uri,
+            input_uri,
             temp_dir,
             num_threads,
             heap_size,
@@ -113,8 +113,8 @@ impl CliCommand {
     }
 
     fn parse_search_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_path_str = matches.value_of("index-path").unwrap(); // 'index-path' is a required arg
-        let index_path = PathBuf::from(index_path_str);
+        let index_uri_str = matches.value_of("index-uri").unwrap(); // 'index-uri' is a required arg
+        let index_uri = PathBuf::from(index_uri_str);
         let query = matches.value_of("query").unwrap().to_string(); // 'query' is a required arg
         let max_hits = value_t!(matches, "max-hits", usize)?;
         let start_offset = value_t!(matches, "start-offset", usize)?;
@@ -133,7 +133,7 @@ impl CliCommand {
         };
 
         Ok(CliCommand::Search(SearchIndexArgs {
-            index_path,
+            index_uri,
             query,
             max_hits,
             start_offset,
@@ -144,20 +144,17 @@ impl CliCommand {
     }
 
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_path_str = matches.value_of("index-path").unwrap(); // 'index-path' is a required arg
-        let index_path = PathBuf::from(index_path_str);
+        let index_uri_str = matches.value_of("index-uri").unwrap(); // 'index-uri' is a required arg
+        let index_uri = PathBuf::from(index_uri_str);
         let dry_run = matches.is_present("dry-run");
 
-        Ok(CliCommand::Delete(DeleteIndexArgs {
-            index_path,
-            dry_run,
-        }))
+        Ok(CliCommand::Delete(DeleteIndexArgs { index_uri, dry_run }))
     }
 }
 
 fn create_index(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(
-        index_path =% args.index_path.display(),
+        index_uri =% args.index_uri.display(),
         timestamp_field =? args.timestamp_field,
         overwrite = args.overwrite,
         "create-index"
@@ -167,8 +164,8 @@ fn create_index(args: CreateIndexArgs) -> anyhow::Result<()> {
 
 fn index_data(args: IndexDataArgs) -> anyhow::Result<()> {
     debug!(
-        index_path =% args.index_path.display(),
-        input_path =% args.input_path.unwrap_or_else(|| PathBuf::from("stdin")).display(),
+        index_uri =% args.index_uri.display(),
+        input_uri =% args.input_uri.unwrap_or_else(|| PathBuf::from("stdin")).display(),
         temp_dir =% args.temp_dir.display(),
         num_threads = args.num_threads,
         heap_size = args.heap_size,
@@ -180,7 +177,7 @@ fn index_data(args: IndexDataArgs) -> anyhow::Result<()> {
 
 fn search_index(args: SearchIndexArgs) -> anyhow::Result<()> {
     debug!(
-        index_path =% args.index_path.display(),
+        index_uri =% args.index_uri.display(),
         query =% args.query,
         max_hits = args.max_hits,
         start_offset = args.start_offset,
@@ -194,7 +191,7 @@ fn search_index(args: SearchIndexArgs) -> anyhow::Result<()> {
 
 fn delete_index(args: DeleteIndexArgs) -> anyhow::Result<()> {
     debug!(
-        index_path =% args.index_path.display(),
+        index_uri =% args.index_uri.display(),
         dry_run = args.dry_run,
         "delete-index"
     );
@@ -240,7 +237,7 @@ mod tests {
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "new",
-            "--index-path",
+            "--index-uri",
             "./wikipedia",
             "--no-timestamp-field",
         ])?;
@@ -248,17 +245,17 @@ mod tests {
         assert!(matches!(
             command,
             Ok(CliCommand::New(CreateIndexArgs {
-                index_path,
+                index_uri,
                 timestamp_field: None,
                 overwrite: false
-            })) if index_path == PathBuf::from("./wikipedia")
+            })) if index_uri == PathBuf::from("./wikipedia")
         ));
 
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "new",
-            "--index-path",
+            "--index-uri",
             "./wikipedia",
             "--timestamp-field",
             "ts",
@@ -268,10 +265,10 @@ mod tests {
         assert!(matches!(
             command,
             Ok(CliCommand::New(CreateIndexArgs {
-                index_path,
+                index_uri,
                 timestamp_field: Some(field_name),
                 overwrite: true
-            })) if index_path == PathBuf::from("./wikipedia") && field_name == "ts"
+            })) if index_uri == PathBuf::from("./wikipedia") && field_name == "ts"
         ));
 
         Ok(())
@@ -281,27 +278,27 @@ mod tests {
     fn test_parse_index_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec!["index", "--index-path", "./wikipedia"])?;
+        let matches = app.get_matches_from_safe(vec!["index", "--index-uri", "./wikipedia"])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
             Ok(CliCommand::Index(IndexDataArgs {
-                index_path,
-                input_path: None,
+                index_uri,
+                input_uri: None,
                 temp_dir,
                 num_threads: 2,
-                heap_size: 2000000000,
+                heap_size: 2_000_000_000,
                 overwrite: false,
-            })) if index_path == PathBuf::from("./wikipedia") && temp_dir == PathBuf::from("/tmp")
+            })) if index_uri == PathBuf::from("./wikipedia") && temp_dir == PathBuf::from("/tmp")
         ));
 
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "index",
-            "--index-path",
+            "--index-uri",
             "./wikipedia",
-            "--input-path",
+            "--input-uri",
             "./data/wikipedia",
             "--temp-dir",
             "./tmp",
@@ -315,13 +312,13 @@ mod tests {
         assert!(matches!(
             command,
             Ok(CliCommand::Index(IndexDataArgs {
-                index_path,
-                input_path: Some(input_path),
+                index_uri,
+                input_uri: Some(input_uri),
                 temp_dir,
                 num_threads: 4,
                 heap_size: 4_294_967_296,
                 overwrite: true,
-            })) if index_path == PathBuf::from("./wikipedia") && input_path == PathBuf::from("./data/wikipedia") && temp_dir == PathBuf::from("./tmp")
+            })) if index_uri == PathBuf::from("./wikipedia") && input_uri == PathBuf::from("./data/wikipedia") && temp_dir == PathBuf::from("./tmp")
         ));
 
         Ok(())
@@ -333,7 +330,7 @@ mod tests {
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "search",
-            "--index-path",
+            "--index-uri",
             "./wikipedia",
             "--query",
             "Barack Obama",
@@ -342,21 +339,21 @@ mod tests {
         assert!(matches!(
             command,
             Ok(CliCommand::Search(SearchIndexArgs {
-                index_path,
+                index_uri,
                 query,
                 max_hits: 20,
                 start_offset: 0,
                 search_fields: None,
                 start_timestamp: None,
                 end_timestamp: None,
-            })) if index_path == PathBuf::from("./wikipedia") && query == "Barack Obama"
+            })) if index_uri == PathBuf::from("./wikipedia") && query == "Barack Obama"
         ));
 
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "search",
-            "--index-path",
+            "--index-uri",
             "./wikipedia",
             "--query",
             "Barack Obama",
@@ -376,14 +373,14 @@ mod tests {
         assert!(matches!(
             command,
             Ok(CliCommand::Search(SearchIndexArgs {
-                index_path,
+                index_uri,
                 query,
                 max_hits: 50,
                 start_offset: 100,
                 search_fields: Some(field_names),
                 start_timestamp: Some(0),
                 end_timestamp: Some(1),
-            })) if index_path == PathBuf::from("./wikipedia") && query == "Barack Obama" && field_names == vec!["title".to_string(), "url".to_string()]
+            })) if index_uri == PathBuf::from("./wikipedia") && query == "Barack Obama" && field_names == vec!["title".to_string(), "url".to_string()]
         ));
 
         Ok(())
@@ -393,27 +390,27 @@ mod tests {
     fn test_parse_delete_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec!["delete", "--index-path", "./wikipedia"])?;
+        let matches = app.get_matches_from_safe(vec!["delete", "--index-uri", "./wikipedia"])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
             Ok(CliCommand::Delete(DeleteIndexArgs {
-                index_path,
+                index_uri,
                 dry_run: false
-            })) if index_path == PathBuf::from("./wikipedia")
+            })) if index_uri == PathBuf::from("./wikipedia")
         ));
 
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches =
-            app.get_matches_from_safe(vec!["delete", "--index-path", "./wikipedia", "--dry-run"])?;
+            app.get_matches_from_safe(vec!["delete", "--index-uri", "./wikipedia", "--dry-run"])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
             Ok(CliCommand::Delete(DeleteIndexArgs {
-                index_path,
+                index_uri,
                 dry_run: true
-            })) if index_path == PathBuf::from("./wikipedia")
+            })) if index_uri == PathBuf::from("./wikipedia")
         ));
 
         Ok(())
