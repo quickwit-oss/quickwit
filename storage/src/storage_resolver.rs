@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use rusoto_core::Region;
 
-use crate::ram_storage::RamStorageFactory;
+use crate::{local_file_storage::LocalFileStorageFactory, ram_storage::RamStorageFactory};
 use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
 
 /// A storage factory builds a storage given an Uri.
@@ -48,6 +48,7 @@ impl Default for StorageUriResolver {
             per_protocol_resolver: Default::default(),
         };
         resolver.register(RamStorageFactory::default());
+        resolver.register(LocalFileStorageFactory::default());
         resolver.register(S3CompatibleObjectStorageFactory::new(Region::default()));
         resolver
     }
