@@ -20,10 +20,19 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-mod error;
-mod metastore;
-mod metastore_resolver;
+pub enum DocMappingType {
+    Dynamic,
+    Opentelemetry,
+    Static,
+}
 
-pub use error::{MetastoreError, MetastoreErrorKind, MetastoreResolverError, MetastoreResult};
-pub use metastore::{Metastore, SplitMetadata, SplitState};
-pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};
+pub struct DocMappingMetadata {
+    #[allow(dead_code)]
+    doc_mapping_type: DocMappingType,
+}
+
+impl DocMappingMetadata {
+    pub fn new(doc_mapping_type: DocMappingType) -> Self {
+        Self { doc_mapping_type }
+    }
+}

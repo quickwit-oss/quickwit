@@ -20,10 +20,4 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-mod error;
-mod metastore;
-mod metastore_resolver;
-
-pub use error::{MetastoreError, MetastoreErrorKind, MetastoreResolverError, MetastoreResult};
-pub use metastore::{Metastore, SplitMetadata, SplitState};
-pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};
+pub mod index;

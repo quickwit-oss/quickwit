@@ -1,12 +1,17 @@
 [package]
 name = "quickwit-metastore"
 version = "0.1.0"
-authors = ['Quickwit <hello@quickwit.io>']
+authors = ['Quickwit, Inc. <hello@quickwit.io>']
 edition = "2018"
 
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
+quickwit-doc-mapping = { version = "0.1.0", path = "../quickwit-doc-mapping" }
+quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
+
+[dev-dependencies]
+mockall = '0.9'
