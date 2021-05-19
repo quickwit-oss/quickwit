@@ -41,7 +41,8 @@ use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
 use rusoto_s3::{
     AbortMultipartUploadRequest, CompleteMultipartUploadRequest, CompletedMultipartUpload,
     CompletedPart, CreateMultipartUploadError, CreateMultipartUploadRequest, DeleteObjectRequest,
-    GetObjectRequest, PutObjectError, PutObjectRequest, S3Client, UploadPartRequest, S3,
+    GetObjectRequest, HeadObjectError, HeadObjectRequest, PutObjectError, PutObjectRequest,
+    S3Client, UploadPartRequest, S3,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
@@ -131,7 +132,7 @@ pub fn parse_split_uri(split_uri: &str) -> Option<(String, PathBuf)> {
     static SPLIT_URI_PTN: OnceCell<Regex> = OnceCell::new();
     SPLIT_URI_PTN
         .get_or_init(|| {
-            // s3://quickwit-dev/quickwit/quickwit-dev-stream/02fba1b7-8344-44b3-bd9f-019c57021dd7
+            // s3://bucket/path/to/split
             Regex::new(r"s3://(?P<bucket>[^/]+)/(?P<path>.*)").unwrap()
         })
         .captures(split_uri)
@@ -451,11 +452,13 @@ impl S3CompatibleObjectStorage {
         range_opt: Option<Range<usize>>,
     ) -> StorageResult<Vec<u8>> {
         let get_object_req = self.create_get_object_request(path, range_opt);
-        let get_object_output = self
-            .s3_client
-            .get_object(get_object_req)
-            .await
-            .map_err(RusotoErrorWrapper::from)?;
+        let get_object_output = retry(|| async {
+            self.s3_client
+                .get_object(get_object_req.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await?;
         let mut body = get_object_output.body.ok_or_else(|| {
             StorageErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
         })?;
@@ -492,11 +495,13 @@ impl Storage for S3CompatibleObjectStorage {
     // TODO implement multipart
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
         let get_object_req = self.create_get_object_request(path, None);
-        let get_object_output = self
-            .s3_client
-            .get_object(get_object_req)
-            .await
-            .map_err(RusotoErrorWrapper::from)?;
+        let get_object_output = retry(|| async {
+            self.s3_client
+                .get_object(get_object_req.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await?;
         let body = get_object_output.body.ok_or_else(|| {
             StorageErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
         })?;
@@ -514,10 +519,13 @@ impl Storage for S3CompatibleObjectStorage {
             key,
             ..Default::default()
         };
-        self.s3_client
-            .delete_object(delete_object_req)
-            .await
-            .map_err(RusotoErrorWrapper::from)?;
+        retry(|| async {
+            self.s3_client
+                .delete_object(delete_object_req.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await?;
         Ok(())
     }
 
@@ -537,6 +545,34 @@ impl Storage for S3CompatibleObjectStorage {
         self.get_to_vec(path, None)
             .await
             .map_err(|err| err.add_context(format!("Failed to fetch object: {}", self.uri(path))))
+    }
+
+    async fn exists(&self, path: &Path) -> StorageResult<bool> {
+        let key = self.key(path);
+        let head_object_req = HeadObjectRequest {
+            bucket: self.bucket.clone(),
+            key,
+            ..Default::default()
+        };
+        let head_object_output = retry(|| async {
+            self.s3_client
+                .head_object(head_object_req.clone())
+                .await
+                .map_err(RusotoErrorWrapper::from)
+        })
+        .await;
+
+        match head_object_output {
+            Ok(_) => Ok(true),
+            Err(RusotoErrorWrapper(RusotoError::Service(HeadObjectError::NoSuchKey(_)))) => {
+                Ok(false)
+            }
+            // Also catching 404 until this issue is fixed: https://github.com/rusoto/rusoto/issues/716
+            Err(RusotoErrorWrapper(RusotoError::Unknown(http_resp))) if http_resp.status == 404 => {
+                Ok(false)
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
     fn uri(&self) -> String {
@@ -571,8 +607,8 @@ mod tests {
     #[test]
     fn test_parse_split_uri() {
         assert_eq!(
-            parse_split_uri("s3://quickwit-dev/quickwit/quickwit-dev-stream/02fba1b7-8344-44b3-bd9f-019c57021dd7"),
-            Some(("quickwit-dev".to_string(), PathBuf::from("quickwit/quickwit-dev-stream/02fba1b7-8344-44b3-bd9f-019c57021dd7") ))
+            parse_split_uri("s3://bucket/path/to/object"),
+            Some(("bucket".to_string(), PathBuf::from("path/to/object")))
         );
     }
 }

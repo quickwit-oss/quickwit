@@ -123,6 +123,16 @@ pub(crate) mod tests {
         Ok(())
     }
 
+    async fn test_exists(storage: &mut dyn Storage) -> anyhow::Result<()> {
+        let test_path = Path::new("exists");
+        assert!(matches!(storage.exists(test_path).await, Ok(false)));
+        storage
+            .put(test_path, PutPayload::from(b"".as_ref()))
+            .await?;
+        assert!(matches!(storage.exists(test_path).await, Ok(true)));
+        Ok(())
+    }
+
     pub async fn storage_test_suite(storage: &mut dyn Storage) -> anyhow::Result<()> {
         test_get_inexistent_file(storage)
             .await
@@ -139,6 +149,7 @@ pub(crate) mod tests {
         test_write_and_delete(storage)
             .await
             .with_context(|| "write_and_delete")?;
+        test_exists(storage).await.with_context(|| "exists")?;
         Ok(())
     }
 }
