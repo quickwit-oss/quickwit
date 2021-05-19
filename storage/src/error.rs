@@ -111,9 +111,9 @@ impl StorageError {
 
 impl From<io::Error> for StorageError {
     fn from(err: io::Error) -> StorageError {
-        StorageError {
-            kind: StorageErrorKind::Io,
-            source: anyhow::Error::from(err),
+        match err.kind() {
+            io::ErrorKind::NotFound => StorageErrorKind::DoesNotExist.with_error(err),
+            _ => StorageErrorKind::Io.with_error(err),
         }
     }
 }

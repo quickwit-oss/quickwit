@@ -55,11 +55,6 @@ impl LocalFileStorage {
         })?;
         Ok(LocalFileStorage::new(PathBuf::from(root_path)))
     }
-
-    fn uri(&self, relative_path: &Path) -> String {
-        let full_path = self.root.join(relative_path);
-        format!("file://{}", full_path.to_string_lossy().to_string())
-    }
 }
 
 #[async_trait]
@@ -85,12 +80,7 @@ impl Storage for LocalFileStorage {
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Vec<u8>> {
         let full_path = self.root.join(path);
-        let mut file = fs::File::open(full_path).await.map_err(|_| {
-            StorageErrorKind::DoesNotExist.with_error(anyhow::anyhow!(
-                "Failed to find dest_path {}",
-                self.uri(path)
-            ))
-        })?;
+        let mut file = fs::File::open(full_path).await?;
         file.seek(SeekFrom::Start(range.start as u64)).await?;
         let mut content_bytes = vec![0u8; range.len()];
         file.read_exact(&mut content_bytes).await?;
