@@ -22,9 +22,8 @@
 
 use crate::{PutPayload, Storage, StorageErrorKind, StorageFactory, StorageResult};
 use async_trait::async_trait;
-use bytes::BytesMut;
 use std::fmt;
-use std::io::SeekFrom;
+use std::io::{ErrorKind, SeekFrom};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -33,28 +32,28 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 /// File system compatible storage implementation.
 #[derive(Clone)]
-pub struct FileStorage {
+pub struct LocalFileStorage {
     root: PathBuf,
 }
 
-impl fmt::Debug for FileStorage {
+impl fmt::Debug for LocalFileStorage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "FileStorage(root={:?})", &self.root)
+        write!(f, "LocalFileStorage(root={:?})", &self.root)
     }
 }
 
-impl FileStorage {
+impl LocalFileStorage {
     /// Creates a file storage instance given a root path.
-    pub fn new (root: PathBuf) -> Self {
-        Self{ root }
+    pub fn new(root: PathBuf) -> Self {
+        Self { root }
     }
 
     /// Creates a file storage instance given a uri
-    pub fn from_uri(uri: &str) -> StorageResult<FileStorage> {
+    pub fn from_uri(uri: &str) -> StorageResult<LocalFileStorage> {
         let root_path = uri.split("://").nth(1).ok_or_else(|| {
             StorageErrorKind::DoesNotExist.with_error(anyhow::anyhow!("Invalid root path: {}", uri))
         })?;
-        Ok(Self::new(PathBuf::from(root_path)))
+        Ok(LocalFileStorage::new(PathBuf::from(root_path)))
     }
 
     fn uri(&self, relative_path: &Path) -> String {
@@ -64,12 +63,12 @@ impl FileStorage {
 }
 
 #[async_trait]
-impl Storage for FileStorage {
+impl Storage for LocalFileStorage {
     async fn put(&self, path: &Path, payload: PutPayload) -> crate::StorageResult<()> {
         let full_path = self.root.join(path);
         match payload {
             PutPayload::InMemory(data) => {
-                fs::write(full_path, data.clone()).await?;
+                fs::write(full_path, data).await?;
             }
             PutPayload::LocalFile(filepath) => {
                 fs::copy(filepath, full_path).await?;
@@ -93,9 +92,9 @@ impl Storage for FileStorage {
             ))
         })?;
         file.seek(SeekFrom::Start(range.start as u64)).await?;
-        let mut content_bytes = BytesMut::with_capacity(range.len());
-        file.read_buf(&mut content_bytes).await?;
-        Ok(content_bytes.to_vec())
+        let mut content_bytes = vec![0u8; range.len()];
+        file.read_exact(&mut content_bytes).await?;
+        Ok(content_bytes)
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
@@ -113,30 +112,39 @@ impl Storage for FileStorage {
     fn uri(&self) -> String {
         format!("file://{}", self.root.to_string_lossy())
     }
-}
 
-/// A File storage resolver
-#[derive(Debug, Clone)]
-pub struct FileStorageFactory {
-    protocol: String,
-}
-
-impl Default for FileStorageFactory {
-    fn default() -> Self {
-        FileStorageFactory {
-            protocol: "file".to_string(),
+    async fn exists(&self, path: &Path) -> StorageResult<bool> {
+        let full_path = self.root.join(path);
+        match fs::metadata(full_path).await {
+            Ok(_) => Ok(true),
+            Err(err) => {
+                if err.kind() == ErrorKind::NotFound {
+                    Ok(false)
+                } else {
+                    Err(err.into())
+                }
+            }
         }
     }
 }
 
-impl StorageFactory for FileStorageFactory {
+/// A File storage resolver
+#[derive(Debug, Clone)]
+pub struct LocalFileStorageFactory {}
+
+impl Default for LocalFileStorageFactory {
+    fn default() -> Self {
+        LocalFileStorageFactory {}
+    }
+}
+
+impl StorageFactory for LocalFileStorageFactory {
     fn protocol(&self) -> String {
-        self.protocol.clone()
+        "file".to_string()
     }
 
     fn resolve(&self, uri: &str) -> StorageResult<Arc<dyn Storage>> {
-        let pattern = format!("{}://", self.protocol);
-        if !uri.starts_with(pattern.as_str()) {
+        if !uri.starts_with("file://") {
             let err_msg = anyhow::anyhow!(
                 "{:?} is an invalid file storage uri. Only file:// is accepted.",
                 uri
@@ -144,7 +152,7 @@ impl StorageFactory for FileStorageFactory {
             return Err(StorageErrorKind::DoesNotExist.with_error(err_msg));
         }
 
-        let storage = FileStorage::from_uri(uri)?;
+        let storage = LocalFileStorage::from_uri(uri)?;
         Ok(Arc::new(storage))
     }
 }
@@ -159,14 +167,14 @@ mod tests {
     #[tokio::test]
     async fn test_storage() -> anyhow::Result<()> {
         let path_root = tempdir()?;
-        let mut file_storage = FileStorage::new(path_root.into_path());
+        let mut file_storage = LocalFileStorage::new(path_root.into_path());
         storage_test_suite(&mut file_storage).await?;
         Ok(())
     }
 
     #[test]
     fn test_file_storage_factory() -> anyhow::Result<()> {
-        let file_storage_factory = FileStorageFactory::default();
+        let file_storage_factory = LocalFileStorageFactory::default();
         let storage = file_storage_factory.resolve("file://foo/bar")?;
         assert_eq!(storage.uri().as_str(), "file://foo/bar");
 
@@ -180,22 +188,4 @@ mod tests {
         assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
         Ok(())
     }
-
-    // #[tokio::test]
-    // async fn test_file_storage_builder() -> anyhow::Result<()> {
-    //     let storage = FileStorage::builder()
-    //         .put("path1", b"path1_payload")
-    //         .put("path2", b"path2_payload")
-    //         .put("path1", b"path1_payloadb")
-    //         .build();
-    //     assert_eq!(
-    //         &storage.get_all(Path::new("path1")).await?,
-    //         b"path1_payloadb"
-    //     );
-    //     assert_eq!(
-    //         &storage.get_all(Path::new("path2")).await?,
-    //         b"path2_payload"
-    //     );
-    //     Ok(())
-    // }
 }
