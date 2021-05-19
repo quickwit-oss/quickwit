@@ -31,17 +31,21 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-// pub type IndexId = String;
-
+/// A split ID.
 pub type SplitId = String;
 
+/// An index meta data.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexMetaData {
+    /// The meta store version.
     version: String,
+    /// The index name.
     name: String,
+    /// The index path.
     path: String,
 }
 
+/// A Split meta data.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SplitMetaData {
     // Split uri. In spirit, this uri should be self sufficient
@@ -63,19 +67,22 @@ pub struct SplitMetaData {
     generation: usize,
 }
 
+/// A split manifest entry.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ManifestEntry {
+    /// The file name.
     file_name: String,
+    /// File siize in bytes.
     file_size_in_bytes: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum SplitState {
-    // the splits is almost ready. Some of its files may have been uploaded in the storage.
+    // The splits is almost ready. Some of its files may have been uploaded in the storage.
     Staged,
-    // the splits is ready and published.
+    // The splits is ready and published.
     Published,
-    // the split is scheduled to be deleted.
+    // The split is scheduled to be deleted.
     ScheduledForDeleted,
 }
 
@@ -94,23 +101,33 @@ pub struct SplitManifest {
     state: SplitState,
 }
 
+/// A container for index and split metadata.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MetaDataSet {
+    // The index meta data.
     index: IndexMetaData,
-    // splits: Arc<RwLock<HashMap<SplitId, SplitManifest>>>,
+
+    // The list of split manifests.
     splits: HashMap<SplitId, SplitManifest>,
 }
 
 /// MetaStore error kind.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MetaStoreErrorKind {
+    /// The split manifest is invalid.
     InvalidManifest,
+    /// The split ID already exists.
     ExistingSplitId,
+    /// Any generic internal error.
     InternalError,
+    /// The split does not exist.
     DoesNotExist,
+    /// The split is not staged.
     SplitIsNotStaged,
+    /// The index does not exist.
     IndexDoesNotExist,
     Forbidden,
+    /// Io error.
     Io,
 }
 
@@ -177,17 +194,44 @@ pub type MetaStoreResult<T> = Result<T, MetaStoreError>;
 
 #[async_trait]
 pub trait MetaStore: Send + Sync + 'static {
+    /// Stages a splits.
+    /// A split needs to be staged BEFORE uploading any of its files to the storage.
+    /// The SplitId is returned for convenienced but it is not generated
+    /// by the metastore. In fact it was supplied by the client and is present in the split manifest.
     async fn stage_split(
         &self,
         split_id: SplitId,
         split_manifest: SplitManifest,
     ) -> MetaStoreResult<SplitId>;
+    /// Records a split as published.
+    ///
+    /// This API is typically used by an indexer who needs to publish a new split.
+    /// At this point, the split files are assumed to have already uploaded.
+    /// The metastore only updates the state of the split from staging to published.
+    ///
+    /// It has two side effetcs:
+    /// - it makes the split visible to other clients via the ListSplit API.
+    /// - it guards eventual recovery procedure from removing the split files.
+    ///
+    /// Unless specified otherwise in the implementation, the metastore DOES NOT
+    /// do any check on the presence, integrity or validity of the metadata of this split.
+    ///
+    /// A split successfully published MUST eventually be visible to all clients.
+    /// Stronger consistency semantics should be documented in the implementation.
+    ///
+    /// If the split is already published, this API call returns a success.
     async fn publish_split(&self, split_id: SplitId) -> MetaStoreResult<()>;
+    /// Returns the list of published splits intersecting with the given time_range.
+    /// Regardless of the timerange filter, if a split has no timestamp it is always returned.
+    /// Splits are returned in any order
     async fn list_splits(
         &self,
         state: SplitState,
         time_range: Option<Range<u64>>,
     ) -> MetaStoreResult<HashMap<SplitId, SplitManifest>>;
+    /// Marks a split as deleted.
+    /// This function is successful if a split was already marked as deleted.
     async fn mark_as_deleted(&self, split_id: SplitId) -> MetaStoreResult<()>;
+    /// This function only takes split that are in staging or in mark as deleted state.
     async fn delete_split(&self, split_id: SplitId) -> MetaStoreResult<()>;
 }

@@ -35,6 +35,7 @@ use crate::meta_store::{
 };
 
 /// Single file meta store implementation.
+/// Simply serialize all of the splits associated to a single index into one large file.
 struct SingleFileMetaStore {
     storage: Box<dyn Storage>,
     path: PathBuf,
