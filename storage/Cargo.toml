@@ -1,7 +1,7 @@
 [package]
 name = 'quickwit-storage'
 version = '0.1.0'
-authors = ['Quickwit <hello@quickwit.io>']
+authors = ['Quickwit, Inc. <hello@quickwit.io>']
 edition = '2018'
 
 [dependencies]

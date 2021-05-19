@@ -27,16 +27,16 @@ use rusoto_core::Region;
 use crate::{local_file_storage::LocalFileStorageFactory, ram_storage::RamStorageFactory};
 use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
 
-/// A storage factory builds a storage given an Uri.
+/// A storage factory builds a [`Storage`] object from an URI.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 pub trait StorageFactory: Send + Sync + 'static {
-    /// Returns the protocol this uri resolver is serving.
+    /// Returns the protocol this URI resolver is serving.
     fn protocol(&self) -> String;
-    /// Given an uri, returns a Storage object.
+    /// Given an URI, returns a [`Storage`] object.
     fn resolve(&self, uri: &str) -> crate::StorageResult<Arc<dyn Storage>>;
 }
 
-/// Resolve an uri by dispatching it to the right [`StorageFactory`]
+/// Resolves an URI by dispatching it to the right [`StorageFactory`]
 /// based on its protocol.
 pub struct StorageUriResolver {
     per_protocol_resolver: HashMap<String, Arc<dyn StorageFactory>>,
@@ -55,16 +55,16 @@ impl Default for StorageUriResolver {
 }
 
 impl StorageUriResolver {
-    /// Registers another resolver.
+    /// Registers a resolver.
     ///
     /// If a previous resolver was registered for this protocol, it is discarded
-    /// and replaced by this one.
+    /// and replaced with the new one.
     pub fn register<S: StorageFactory>(&mut self, resolver: S) {
         self.per_protocol_resolver
             .insert(resolver.protocol(), Arc::new(resolver));
     }
 
-    /// Resolves the given uri.
+    /// Resolves the given URI.
     pub fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let protocol = uri.split("://").next().ok_or_else(|| {
             StorageResolverError::InvalidUri(format!("Protocol not found in storage uri: {}", uri))

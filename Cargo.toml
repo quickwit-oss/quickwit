@@ -2,6 +2,8 @@
 
 members = [
   "quickwit-cli",
+  "quickwit-core",
+  "quickwit-doc-mapping",
   "quickwit-metastore",
   "storage",
 ]

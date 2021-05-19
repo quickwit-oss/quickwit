@@ -26,6 +26,9 @@ use clap::{load_yaml, value_t, App, ArgMatches};
 use std::path::PathBuf;
 use tracing::debug;
 
+use quickwit_core::index::{create_index as core_create_index, delete_index as core_delete_index};
+use quickwit_doc_mapping::{DocMappingMetadata, DocMappingType};
+
 struct CreateIndexArgs {
     index_uri: PathBuf,
     timestamp_field: Option<String>,
@@ -152,17 +155,24 @@ impl CliCommand {
     }
 }
 
-fn create_index(args: CreateIndexArgs) -> anyhow::Result<()> {
+async fn create_index(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri =% args.index_uri.display(),
         timestamp_field =? args.timestamp_field,
         overwrite = args.overwrite,
         "create-index"
     );
+    let index_uri = args.index_uri.to_string_lossy().to_string();
+    let doc_mapping_metadata = DocMappingMetadata::new(DocMappingType::Dynamic);
+
+    if args.overwrite {
+        core_delete_index(index_uri.clone()).await?;
+    }
+    core_create_index(index_uri, doc_mapping_metadata).await?;
     Ok(())
 }
 
-fn index_data(args: IndexDataArgs) -> anyhow::Result<()> {
+async fn index_data(args: IndexDataArgs) -> anyhow::Result<()> {
     debug!(
         index_uri =% args.index_uri.display(),
         input_uri =% args.input_uri.unwrap_or_else(|| PathBuf::from("stdin")).display(),
@@ -175,7 +185,7 @@ fn index_data(args: IndexDataArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn search_index(args: SearchIndexArgs) -> anyhow::Result<()> {
+async fn search_index(args: SearchIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri =% args.index_uri.display(),
         query =% args.query,
@@ -189,7 +199,7 @@ fn search_index(args: SearchIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn delete_index(args: DeleteIndexArgs) -> anyhow::Result<()> {
+async fn delete_index(args: DeleteIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri =% args.index_uri.display(),
         dry_run = args.dry_run,
@@ -199,7 +209,8 @@ fn delete_index(args: DeleteIndexArgs) -> anyhow::Result<()> {
 }
 
 #[tracing::instrument]
-fn main() {
+#[tokio::main]
+async fn main() {
     tracing_subscriber::fmt::init();
 
     let yaml = load_yaml!("cli.yaml");
@@ -214,10 +225,10 @@ fn main() {
         }
     };
     let command_res = match command {
-        CliCommand::New(args) => create_index(args),
-        CliCommand::Index(args) => index_data(args),
-        CliCommand::Search(args) => search_index(args),
-        CliCommand::Delete(args) => delete_index(args),
+        CliCommand::New(args) => create_index(args).await,
+        CliCommand::Index(args) => index_data(args).await,
+        CliCommand::Search(args) => search_index(args).await,
+        CliCommand::Delete(args) => delete_index(args).await,
     };
     if let Err(err) = command_res {
         eprintln!("Command failed: {:?}", err);
