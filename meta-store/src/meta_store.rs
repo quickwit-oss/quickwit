@@ -20,6 +20,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+mod single_file;
+
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::io;
@@ -171,7 +173,6 @@ impl From<io::Error> for MetaStoreError {
     }
 }
 
-#[allow(dead_code)]
 pub type MetaStoreResult<T> = Result<T, MetaStoreError>;
 
 #[async_trait]
@@ -184,10 +185,9 @@ pub trait MetaStore: Send + Sync + 'static {
     async fn publish_split(&self, split_id: SplitId) -> MetaStoreResult<()>;
     async fn list_splits(
         &self,
-        // index_id: IndexId,
         state: SplitState,
         time_range: Option<Range<u64>>,
-    ) -> MetaStoreResult<()>;
+    ) -> MetaStoreResult<HashMap<SplitId, SplitManifest>>;
     async fn mark_as_deleted(&self, split_id: SplitId) -> MetaStoreResult<()>;
     async fn delete_split(&self, split_id: SplitId) -> MetaStoreResult<()>;
 }
