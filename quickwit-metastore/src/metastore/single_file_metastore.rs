@@ -349,7 +349,7 @@ impl Metastore for SingleFileMetastore {
                             ));
                         }
                     };
-                    if deletable == true {
+                    if deletable {
                         metadata_set.splits.remove(&split_id);
                     }
                     // Serialize meta data.
@@ -625,12 +625,10 @@ mod tests {
         {
             // publish published split
             let split_id = "one".to_string();
-            let result = metastore
+            metastore
                 .publish_split(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
-            let expected = ();
-            assert_eq!(result, expected);
         }
         {
             // publish non-existent split
@@ -1155,12 +1153,10 @@ mod tests {
         {
             // mark as deleted (already marked as deleted)
             let split_id = "one".to_string();
-            let result = metastore
+            metastore
                 .mark_split_as_deleted(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
-            let expected = ();
-            assert_eq!(result, expected);
         }
         {
             // mark as deleted (non-existent)
