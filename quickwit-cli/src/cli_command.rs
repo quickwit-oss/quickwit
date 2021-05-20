@@ -31,6 +31,7 @@ pub struct CreateIndexArgs {
     pub overwrite: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct IndexDataArgs {
     pub index_uri: PathBuf,
     pub input_uri: Option<PathBuf>,

@@ -20,6 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+mod byte_units;
 mod index;
 
 pub use index::index_data;
