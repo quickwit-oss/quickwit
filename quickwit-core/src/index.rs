@@ -20,20 +20,15 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use quickwit_doc_mapping::DocMappingMetadata;
+use quickwit_doc_mapping::DocMapping;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
 
 type IndexUri = String;
 
 // anyhow errors are fine for now but we'll want to move to a proper error type eventually.
-pub async fn create_index(
-    index_uri: IndexUri,
-    doc_mapping_metadata: DocMappingMetadata,
-) -> anyhow::Result<()> {
+pub async fn create_index(index_uri: IndexUri, doc_mapping: DocMapping) -> anyhow::Result<()> {
     let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    metastore
-        .create_index(index_uri, doc_mapping_metadata)
-        .await?;
+    metastore.create_index(index_uri, doc_mapping).await?;
     Ok(())
 }
 

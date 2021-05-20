@@ -20,19 +20,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-pub enum DocMappingType {
+// This is just a placeholder implementation to get going, @fmassot, please take over ;)
+pub enum DocMapping {
     Dynamic,
-    Opentelemetry,
+    OpenTelemetry,
     Static,
-}
-
-pub struct DocMappingMetadata {
-    #[allow(dead_code)]
-    doc_mapping_type: DocMappingType,
-}
-
-impl DocMappingMetadata {
-    pub fn new(doc_mapping_type: DocMappingType) -> Self {
-        Self { doc_mapping_type }
-    }
 }

@@ -26,8 +26,8 @@ use clap::{load_yaml, value_t, App, ArgMatches};
 use std::path::PathBuf;
 use tracing::debug;
 
-use quickwit_core::index::{create_index as core_create_index, delete_index as core_delete_index};
-use quickwit_doc_mapping::{DocMappingMetadata, DocMappingType};
+use quickwit_core::index::{create_index, delete_index};
+use quickwit_doc_mapping::DocMapping;
 
 struct CreateIndexArgs {
     index_uri: PathBuf,
@@ -155,7 +155,7 @@ impl CliCommand {
     }
 }
 
-async fn create_index(args: CreateIndexArgs) -> anyhow::Result<()> {
+async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri =% args.index_uri.display(),
         timestamp_field =? args.timestamp_field,
@@ -163,16 +163,16 @@ async fn create_index(args: CreateIndexArgs) -> anyhow::Result<()> {
         "create-index"
     );
     let index_uri = args.index_uri.to_string_lossy().to_string();
-    let doc_mapping_metadata = DocMappingMetadata::new(DocMappingType::Dynamic);
+    let doc_mapping = DocMapping::Dynamic;
 
     if args.overwrite {
-        core_delete_index(index_uri.clone()).await?;
+        delete_index(index_uri.clone()).await?;
     }
-    core_create_index(index_uri, doc_mapping_metadata).await?;
+    create_index(index_uri, doc_mapping).await?;
     Ok(())
 }
 
-async fn index_data(args: IndexDataArgs) -> anyhow::Result<()> {
+async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     debug!(
         index_uri =% args.index_uri.display(),
         input_uri =% args.input_uri.unwrap_or_else(|| PathBuf::from("stdin")).display(),
@@ -185,7 +185,7 @@ async fn index_data(args: IndexDataArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn search_index(args: SearchIndexArgs) -> anyhow::Result<()> {
+async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri =% args.index_uri.display(),
         query =% args.query,
@@ -199,7 +199,7 @@ async fn search_index(args: SearchIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn delete_index(args: DeleteIndexArgs) -> anyhow::Result<()> {
+async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri =% args.index_uri.display(),
         dry_run = args.dry_run,
@@ -225,10 +225,10 @@ async fn main() {
         }
     };
     let command_res = match command {
-        CliCommand::New(args) => create_index(args).await,
-        CliCommand::Index(args) => index_data(args).await,
-        CliCommand::Search(args) => search_index(args).await,
-        CliCommand::Delete(args) => delete_index(args).await,
+        CliCommand::New(args) => create_index_cli(args).await,
+        CliCommand::Index(args) => index_data_cli(args).await,
+        CliCommand::Search(args) => search_index_cli(args).await,
+        CliCommand::Delete(args) => delete_index_cli(args).await,
     };
     if let Err(err) = command_res {
         eprintln!("Command failed: {:?}", err);
