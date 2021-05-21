@@ -62,12 +62,10 @@ impl Metastore for SingleFileMetastore {
 
         // Check for the existence of index.
         // Load metadata set If it has already been stored in the storage, if not, create a new one.
-
         let exists = self.storage.exists(&path).await.map_err(|e| {
             MetastoreErrorKind::InternalError
                 .with_error(anyhow::anyhow!("Failed to read storage: {:?}", e))
         })?;
-
         let metadata_set = if exists {
             // Get metadata set from storage.
             let contents = self.storage.get_all(&path).await.map_err(|e| {
