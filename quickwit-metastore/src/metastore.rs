@@ -39,6 +39,8 @@ pub type IndexUri = String;
 /// A split ID.
 pub type SplitId = String;
 
+pub static FILE_FORMAT_VERSION: &str = "0";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexMetadata {
     version: String,
