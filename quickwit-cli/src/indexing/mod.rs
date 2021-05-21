@@ -21,6 +21,12 @@
 */
 
 mod byte_units;
+mod document_indexer;
+mod document_retriever;
 mod index;
+mod split;
+mod split_deployer;
+mod split_metadata;
+mod statistics;
 
 pub use index::index_data;

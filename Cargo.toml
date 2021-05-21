@@ -3,5 +3,5 @@
 members = [
   "quickwit-cli",
   "storage",
-  "meta-store"
+  "meta-store",
 ]
