@@ -3,7 +3,6 @@ name = "quickwit-doc-mapping"
 version = "0.1.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 
 [dependencies]
