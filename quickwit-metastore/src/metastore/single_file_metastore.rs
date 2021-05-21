@@ -227,9 +227,6 @@ impl Metastore for SingleFileMetastore {
     ) -> MetastoreResult<Vec<SplitMetadata>> {
         let mut data = self.data.write().await;
 
-        // list of split metadata.
-        let mut splits: Vec<SplitMetadata> = Vec::new();
-
         // Check for the existence of index.
         let metadata_set = data.get_mut(&index_uri).ok_or_else(|| {
             MetastoreErrorKind::IndexDoesNotExist
@@ -241,28 +238,20 @@ impl Metastore for SingleFileMetastore {
             .splits
             .iter()
             .filter(|&(_split_id, split_metadata)| split_metadata.split_state == state);
+
+        let mut splits: Vec<SplitMetadata> = Vec::new();
         for (_, split_metadata) in split_with_meta_matching_state_it {
             match time_range {
                 Some(ref filter_time_range) => {
-                    match &split_metadata.time_range {
-                        Some(split_time_range) => {
-                            // Splits that overlap at least part of the time range of the filter
-                            // and the time range of the split are added to the list as search targets.
-                            if split_time_range.contains(&filter_time_range.start)
-                                || split_time_range.contains(&filter_time_range.end)
-                                || filter_time_range.contains(&split_time_range.start)
-                                || filter_time_range.contains(&split_time_range.end)
-                            {
-                                splits.push(split_metadata.clone());
-                            } else {
-                                // Split's `time_range` is out of range.
-                                continue;
-                            }
-                        }
-                        None => {
-                            // If the time range of the split that stored in meta store is None,
-                            // this split will be ignored.
-                            continue;
+                    if let Some(split_time_range) = &split_metadata.time_range {
+                        // Splits that overlap at least part of the time range of the filter
+                        // and the time range of the split are added to the list as search targets.
+                        if split_time_range.contains(&filter_time_range.start)
+                            || split_time_range.contains(&filter_time_range.end)
+                            || filter_time_range.contains(&split_time_range.start)
+                            || filter_time_range.contains(&split_time_range.end)
+                        {
+                            splits.push(split_metadata.clone());
                         }
                     }
                 }
