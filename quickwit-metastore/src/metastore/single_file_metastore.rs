@@ -62,31 +62,32 @@ impl Metastore for SingleFileMetastore {
 
         // Check for the existence of index.
         // Load metadata set If it has already been stored in the storage, if not, create a new one.
-        let metadata_set;
-        if self.storage.exists(&path).await.map_err(|e| {
+
+        let exists = self.storage.exists(&path).await.map_err(|e| {
             MetastoreErrorKind::InternalError
                 .with_error(anyhow::anyhow!("Failed to read storage: {:?}", e))
-        })? {
+        })?;
+
+        let metadata_set = if exists {
             // Get metadata set from storage.
             let contents = self.storage.get_all(&path).await.map_err(|e| {
                 MetastoreErrorKind::InternalError
                     .with_error(anyhow::anyhow!("Failed to put metadata set: {:?}", e))
             })?;
 
-            metadata_set =
-                serde_json::from_slice::<MetadataSet>(contents.as_slice()).map_err(|e| {
-                    MetastoreErrorKind::InvalidManifest
-                        .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
-                })?;
+            serde_json::from_slice::<MetadataSet>(contents.as_slice()).map_err(|e| {
+                MetastoreErrorKind::InvalidManifest
+                    .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
+            })?
         } else {
             // Create new empty metadata set.
-            metadata_set = MetadataSet {
+            MetadataSet {
                 index: IndexMetadata {
                     version: FILE_FORMAT_VERSION.to_string(),
                 },
                 splits: HashMap::new(),
-            };
-        }
+            }
+        };
 
         // Insert metadata set into local cache.
         data.insert(index_uri.clone(), metadata_set.clone());
