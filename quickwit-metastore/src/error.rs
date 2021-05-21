@@ -29,6 +29,7 @@ use thiserror::Error;
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MetastoreErrorKind {
     DoesNotExist,
+    ExistingIndexUri,
     ExistingSplitId,
     Forbidden,
     IndexDoesNotExist,

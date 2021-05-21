@@ -20,6 +20,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+pub mod single_file_metastore;
+
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Range;
@@ -27,14 +29,17 @@ use std::ops::Range;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::error::MetastoreResult;
 use quickwit_doc_mapping::DocMapping;
+
+use crate::MetastoreResult;
 
 /// An index URI, such as `file:///var/lib/quickwit/indexes/nginx` or `s3://my-bucket/indexes/nginx`.
 pub type IndexUri = String;
 
 /// A split ID.
 pub type SplitId = String;
+
+pub static FILE_FORMAT_VERSION: &str = "0";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexMetadata {
@@ -75,8 +80,8 @@ pub enum SplitState {
     ScheduledForDeletion,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MetaDataSet {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MetadataSet {
     index: IndexMetadata,
     splits: HashMap<SplitId, SplitMetadata>,
 }
