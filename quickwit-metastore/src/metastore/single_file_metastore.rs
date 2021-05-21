@@ -19,9 +19,11 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::Path;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use async_trait::async_trait;
+use tokio::sync::RwLock;
+
 use quickwit_doc_mapping::DocMapping;
 use quickwit_storage::{PutPayload, Storage};
 
@@ -58,7 +60,7 @@ impl Metastore for SingleFileMetastore {
         let contents: Vec<u8>;
 
         {
-            let mut data = self.data.write().unwrap();
+            let mut data = self.data.write().await;
 
             // Check for the existence of index.
             if data.contains_key(&index_uri) {
@@ -99,7 +101,7 @@ impl Metastore for SingleFileMetastore {
 
     async fn delete_index(&self, index_uri: IndexUri) -> MetastoreResult<()> {
         {
-            let mut data = self.data.write().unwrap();
+            let mut data = self.data.write().await;
 
             // Check for the existence of index.
             if !data.contains_key(&index_uri) {
@@ -136,17 +138,16 @@ impl Metastore for SingleFileMetastore {
         let contents: Vec<u8>;
 
         {
-            let mut data = self.data.write().unwrap();
+            let mut data = self.data.write().await;
 
             // Check for the existence of index.
-            if !data.contains_key(&index_uri) {
-                return Err(MetastoreErrorKind::IndexDoesNotExist
-                    .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri)));
-            }
-
-            let metadata_set = data.get_mut(&index_uri).unwrap();
+            let metadata_set = data.get_mut(&index_uri).ok_or_else(|| {
+                MetastoreErrorKind::IndexDoesNotExist
+                    .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri))
+            })?;
 
             // Check for the existence of split.
+            // If split exists, return an error to prevent the split from being registered.
             if metadata_set.splits.contains_key(&split_id) {
                 return Err(MetastoreErrorKind::ExistingSplitId
                     .with_error(anyhow::anyhow!("Split already exists: {:?}", &split_id)));
@@ -156,13 +157,10 @@ impl Metastore for SingleFileMetastore {
             metadata_set.splits.insert(split_id.clone(), split_metadata);
 
             // Serialize metadata set.
-            contents = match serde_json::to_vec(&metadata_set) {
-                Ok(c) => c,
-                Err(e) => {
-                    return Err(MetastoreErrorKind::InvalidManifest
-                        .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e)));
-                }
-            };
+            contents = serde_json::to_vec(&metadata_set).map_err(|e| {
+                MetastoreErrorKind::InvalidManifest
+                    .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
+            })?;
         }
 
         // Put data back into storage.
@@ -182,23 +180,19 @@ impl Metastore for SingleFileMetastore {
         let contents: Vec<u8>;
 
         {
-            let mut data = self.data.write().unwrap();
+            let mut data = self.data.write().await;
 
             // Check for the existence of index.
-            if !data.contains_key(&index_uri) {
-                return Err(MetastoreErrorKind::IndexDoesNotExist
-                    .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri)));
-            }
-
-            let metadata_set = data.get_mut(&index_uri).unwrap();
+            let metadata_set = data.get_mut(&index_uri).ok_or_else(|| {
+                MetastoreErrorKind::IndexDoesNotExist
+                    .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri))
+            })?;
 
             // Check for the existence of split.
-            if !metadata_set.splits.contains_key(&split_id) {
-                return Err(MetastoreErrorKind::DoesNotExist
-                    .with_error(anyhow::anyhow!("Split ID does not exist: {:?}", &split_id)));
-            }
-
-            let split_metadata = metadata_set.splits.get_mut(&split_id).unwrap();
+            let split_metadata = metadata_set.splits.get_mut(&split_id).ok_or_else(|| {
+                MetastoreErrorKind::DoesNotExist
+                    .with_error(anyhow::anyhow!("Split does not exist: {:?}", &split_id))
+            })?;
 
             // Check the split state.
             match split_metadata.split_state {
@@ -216,14 +210,11 @@ impl Metastore for SingleFileMetastore {
                 }
             }
 
-            // Serialize meta data.
-            contents = match serde_json::to_vec(&metadata_set) {
-                Ok(c) => c,
-                Err(e) => {
-                    return Err(MetastoreErrorKind::InvalidManifest
-                        .with_error(anyhow::anyhow!("Failed to serialize metadata set: {:?}", e)));
-                }
-            };
+            // Serialize metadata set.
+            contents = serde_json::to_vec(&metadata_set).map_err(|e| {
+                MetastoreErrorKind::InvalidManifest
+                    .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
+            })?;
         }
 
         // Put data back into storage.
@@ -247,22 +238,20 @@ impl Metastore for SingleFileMetastore {
         // list of split metadata.
         let mut splits: Vec<SplitMetadata> = Vec::new();
 
-        let mut data = self.data.write().unwrap();
+        let mut data = self.data.write().await;
 
         // Check for the existence of index.
-        if !data.contains_key(&index_uri) {
-            return Err(MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri)));
-        }
-
-        let metadata_set = data.get_mut(&index_uri).unwrap();
+        let metadata_set = data.get_mut(&index_uri).ok_or_else(|| {
+            MetastoreErrorKind::IndexDoesNotExist
+                .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri))
+        })?;
 
         // filter by split state.
-        let it = metadata_set
+        let split_with_meta_matching_state_it = metadata_set
             .splits
             .iter()
             .filter(|&(_split_id, split_metadata)| split_metadata.split_state == state);
-        for (_, split_metadata) in it {
+        for (_, split_metadata) in split_with_meta_matching_state_it {
             match time_range {
                 Some(ref filter_time_range) => {
                     match &split_metadata.time_range {
@@ -306,23 +295,19 @@ impl Metastore for SingleFileMetastore {
         let contents: Vec<u8>;
 
         {
-            let mut data = self.data.write().unwrap();
+            let mut data = self.data.write().await;
 
             // Check for the existence of index.
-            if !data.contains_key(&index_uri) {
-                return Err(MetastoreErrorKind::IndexDoesNotExist
-                    .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri)));
-            }
-
-            let metadata_set = data.get_mut(&index_uri).unwrap();
+            let metadata_set = data.get_mut(&index_uri).ok_or_else(|| {
+                MetastoreErrorKind::IndexDoesNotExist
+                    .with_error(anyhow::anyhow!("Index does not exists: {:?}", &index_uri))
+            })?;
 
             // Check for the existence of split.
-            if !metadata_set.splits.contains_key(&split_id) {
-                return Err(MetastoreErrorKind::DoesNotExist
-                    .with_error(anyhow::anyhow!("Split ID does not exist: {:?}", &split_id)));
-            }
-
-            let split_metadata = metadata_set.splits.get_mut(&split_id).unwrap();
+            let split_metadata = metadata_set.splits.get_mut(&split_id).ok_or_else(|| {
+                MetastoreErrorKind::DoesNotExist
+                    .with_error(anyhow::anyhow!("Split does not exists: {:?}", &split_id))
+            })?;
 
             match split_metadata.split_state {
                 SplitState::ScheduledForDeletion => {
@@ -332,14 +317,11 @@ impl Metastore for SingleFileMetastore {
                 _ => split_metadata.split_state = SplitState::ScheduledForDeletion,
             };
 
-            // Serialize meta data.
-            contents = match serde_json::to_vec(&metadata_set) {
-                Ok(c) => c,
-                Err(e) => {
-                    return Err(MetastoreErrorKind::InvalidManifest
-                        .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e)));
-                }
-            };
+            // Serialize metadata set.
+            contents = serde_json::to_vec(&metadata_set).map_err(|e| {
+                MetastoreErrorKind::InvalidManifest
+                    .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
+            })?;
         }
 
         // Put data back into storage.
@@ -359,23 +341,19 @@ impl Metastore for SingleFileMetastore {
         let contents: Vec<u8>;
 
         {
-            let mut data = self.data.write().unwrap();
+            let mut data = self.data.write().await;
 
             // Check for the existence of index.
-            if !data.contains_key(&index_uri) {
-                return Err(MetastoreErrorKind::IndexDoesNotExist
-                    .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri)));
-            }
-
-            let metadata_set = data.get_mut(&index_uri).unwrap();
+            let metadata_set = data.get_mut(&index_uri).ok_or_else(|| {
+                MetastoreErrorKind::IndexDoesNotExist
+                    .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri))
+            })?;
 
             // Check for the existence of split.
-            if !metadata_set.splits.contains_key(&split_id) {
-                return Err(MetastoreErrorKind::DoesNotExist
-                    .with_error(anyhow::anyhow!("Split ID does not exist: {:?}", &split_id)));
-            }
-
-            let split_metadata = metadata_set.splits.get_mut(&split_id).unwrap();
+            let split_metadata = metadata_set.splits.get_mut(&split_id).ok_or_else(|| {
+                MetastoreErrorKind::DoesNotExist
+                    .with_error(anyhow::anyhow!("Split does not exist: {:?}", &split_id))
+            })?;
 
             match split_metadata.split_state {
                 SplitState::ScheduledForDeletion | SplitState::Staged => {
@@ -391,14 +369,11 @@ impl Metastore for SingleFileMetastore {
                 }
             };
 
-            // Serialize meta data.
-            contents = match serde_json::to_vec(&metadata_set) {
-                Ok(c) => c,
-                Err(e) => {
-                    return Err(MetastoreErrorKind::InvalidManifest
-                        .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e)));
-                }
-            };
+            // Serialize metadata set.
+            contents = serde_json::to_vec(&metadata_set).map_err(|e| {
+                MetastoreErrorKind::InvalidManifest
+                    .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
+            })?;
         }
 
         // Put data back into storage.
@@ -438,7 +413,7 @@ mod tests {
                 .create_index(index_uri.clone(), DocMapping::Dynamic)
                 .await
                 .unwrap();
-            let data = metastore.data.read().unwrap();
+            let data = metastore.data.read().await;
             assert_eq!(data.contains_key(&index_uri), true);
         }
 
@@ -472,7 +447,7 @@ mod tests {
         {
             // delete index
             metastore.delete_index(index_uri.clone()).await.unwrap();
-            let data = metastore.data.read().unwrap();
+            let data = metastore.data.read().await;
             assert_eq!(data.contains_key(&index_uri), false);
         }
 
@@ -520,7 +495,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            let data = metastore.data.read().unwrap();
+            let data = metastore.data.read().await;
             assert_eq!(data.get(&index_uri).unwrap().splits.len(), 1);
             assert_eq!(
                 data.get(&index_uri)
@@ -664,7 +639,7 @@ mod tests {
                 .publish_split(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
-            let data = metastore.data.read().unwrap();
+            let data = metastore.data.read().await;
             assert_eq!(
                 data.get(&index_uri)
                     .unwrap()
@@ -1229,7 +1204,7 @@ mod tests {
                 .mark_split_as_deleted(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
-            let data = metastore.data.read().unwrap();
+            let data = metastore.data.read().await;
             assert_eq!(
                 data.get(&index_uri)
                     .unwrap()
@@ -1331,7 +1306,7 @@ mod tests {
                 .delete_split(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
-            let data = metastore.data.read().unwrap();
+            let data = metastore.data.read().await;
             assert_eq!(
                 data.get(&index_uri).unwrap().splits.contains_key(&split_id),
                 false
