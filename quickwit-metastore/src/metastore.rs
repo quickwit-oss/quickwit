@@ -25,10 +25,10 @@ use std::fmt::Debug;
 use std::ops::Range;
 
 use async_trait::async_trait;
+use quickwit_doc_mapping::DocMapperType;
 use serde::{Deserialize, Serialize};
 
 use crate::error::MetastoreResult;
-use quickwit_doc_mapping::DocMapping;
 
 /// An index URI, such as `file:///var/lib/quickwit/indexes/nginx` or `s3://my-bucket/indexes/nginx`.
 pub type IndexUri = String;
@@ -87,7 +87,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn create_index(
         &self,
         index_uri: IndexUri,
-        doc_mapping: DocMapping,
+        doc_mapping: DocMapperType,
     ) -> MetastoreResult<()>;
 
     /// Deletes and index.
