@@ -26,7 +26,7 @@ use clap::{load_yaml, value_t, App, ArgMatches};
 use std::path::PathBuf;
 use tracing::debug;
 
-use quickwit_core::index::{create_index, delete_index};
+use quickwit_core::index::{IndexSettings, create_index, delete_index};
 use quickwit_doc_mapping::DocMapping;
 
 struct CreateIndexArgs {
@@ -163,12 +163,17 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         "create-index"
     );
     let index_uri = args.index_uri.to_string_lossy().to_string();
-    let doc_mapping = DocMapping::Dynamic;
+
+    let index_settings = IndexSettings {
+        uri: index_uri.clone(),
+        sharding_field_name: args.timestamp_field,
+        doc_mapper_type: DocMapping::AllFlatten,
+    };
 
     if args.overwrite {
         delete_index(index_uri.clone()).await?;
     }
-    create_index(index_uri, doc_mapping).await?;
+    create_index(index_settings).await?;
     Ok(())
 }
 

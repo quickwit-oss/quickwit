@@ -20,9 +20,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-// This is just a placeholder implementation to get going, @fmassot, please take over ;)
-pub enum DocMapping {
-    Dynamic,
-    OpenTelemetry,
-    Static,
-}
+mod mapper;
+mod default_mapper;
+mod all_flatten_mapper;
+
+pub use self::mapper::{DocMapperType, DocMapper, DocMapping, build_doc_mapper};
+
