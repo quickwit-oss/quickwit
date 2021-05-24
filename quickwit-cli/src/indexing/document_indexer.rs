@@ -75,30 +75,30 @@ pub async fn index_documents(
                 Split::create(&args, schema.clone()).await?,
             );
 
-            let finalise_split_task = finalize_split(split, statistic_sender.clone()).await?;
-            split_merge_tasks.push(finalise_split_task);
+            let finalize_split_task = finalize_split(split, statistic_sender.clone()).await?;
+            split_merge_tasks.push(finalize_split_task);
         }
     }
 
-    // Finalise last split if it has docs
+    // Finalize last split if it has docs
     if current_split.metadata.num_records > 0 {
         let split = std::mem::replace(
             &mut current_split,
             Split::create(&args, schema.clone()).await?,
         );
 
-        let finalise_split_task = finalize_split(split, statistic_sender.clone()).await?;
-        split_merge_tasks.push(finalise_split_task);
+        let finalize_split_task = finalize_split(split, statistic_sender.clone()).await?;
+        //TODO we need to find a way to keep these tasks from getting out of hand
+        split_merge_tasks.push(finalize_split_task);
     }
 
-    // for all split finilisation tasks
+    // wait for all split finilisation tasks to complete
     let merge_results = futures::future::try_join_all(split_merge_tasks).await?;
-    //TODO let (splits, errors) = merge_results.iter().partition(|item| item.is_ok());
+    //TODO log warning for splits that had errors after many attemps
 
     let splits = merge_results
         .into_iter()
-        .filter(|result| result.is_ok())
-        .map(|result| result.unwrap())
+        .filter_map(|result| result.ok())
         .collect::<Vec<_>>();
 
     Ok(splits)

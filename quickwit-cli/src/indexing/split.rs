@@ -20,11 +20,11 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::indexing::statistics::StatisticEvent;
+use crate::indexing::{index, statistics::StatisticEvent};
 use crate::{cli_command::IndexDataArgs, indexing::split_metadata::SplitMetaData};
 use std::{path::PathBuf, usize};
 use tantivy::{directory::MmapDirectory, merge_policy::NoMergePolicy, schema::Schema, Document};
-use tokio::{fs, sync::mpsc::Sender};
+use tokio::{fs, sync::mpsc::Sender, sync::RwLock};
 use uuid::Uuid;
 
 const MAX_DOC_PER_SPLIT: usize = 5_000_000;
@@ -35,7 +35,7 @@ pub struct Split {
     pub local_directory: PathBuf,
     pub index_uri: String,
     pub index: tantivy::Index,
-    pub index_writer: tantivy::IndexWriter,
+    pub index_writer: Option<tantivy::IndexWriter>,
 }
 
 impl Split {
@@ -56,14 +56,17 @@ impl Split {
             local_directory,
             index_uri,
             index,
-            index_writer,
+            index_writer: Some(index_writer),
         })
     }
 
     pub fn add_document(&mut self, doc: Document) -> anyhow::Result<()> {
         //TODO handle time range
         self.metadata.num_records += 1;
-        self.index_writer.add_document(doc);
+        self.index_writer
+            .as_ref()
+            .ok_or(anyhow::anyhow!("Missing index writer."))?
+            .add_document(doc);
         Ok(())
     }
 
@@ -72,17 +75,29 @@ impl Split {
     }
 
     pub async fn commit(&mut self) -> anyhow::Result<u64> {
-        let opstamp = self.index_writer.commit()?;
-        let hotcache_path = self.local_directory.join("hotcache");
-        let mut _hotcache_file = fs::File::create(&hotcache_path).await?;
-        let _mmap_directory = MmapDirectory::open(self.local_directory.clone())?;
-        //write_hotcache(mmap_directory, &mut hotcache_file)?;
-        Ok(opstamp)
+        let directory_path = self.local_directory.to_path_buf();
+        let mut index_writer = self.index_writer.take().unwrap();
+
+        let (moved_index_writer, commit_opstamp) = tokio::task::spawn_blocking(move || {
+            let opstamp = index_writer.commit()?;
+            let hotcache_path = directory_path.join("hotcache");
+            let mut _hotcache_file = std::fs::File::create(&hotcache_path)?;
+            let _mmap_directory = MmapDirectory::open(directory_path)?;
+            //write_hotcache(mmap_directory, &mut hotcache_file)?;
+            anyhow::Result::<(tantivy::IndexWriter, u64)>::Ok((index_writer, opstamp))
+        })
+        .await
+        .map_err(|error| anyhow::anyhow!(error))??;
+
+        self.index_writer = Some(moved_index_writer);
+        Ok(commit_opstamp)
     }
 
     pub async fn merge_all_segments(&mut self) -> anyhow::Result<tantivy::SegmentMeta> {
         let segment_ids = self.index.searchable_segment_ids()?;
         self.index_writer
+            .as_mut()
+            .ok_or(anyhow::anyhow!("Missing index writer."))?
             .merge(&segment_ids)
             .await
             .map_err(|e| e.into())
@@ -90,7 +105,6 @@ impl Split {
 
     pub async fn stage(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<()> {
         //TODO using metastore
-
         statistic_sender
             .send(StatisticEvent::SplitStage {
                 id: self.id.to_string(),
