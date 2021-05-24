@@ -17,3 +17,4 @@ tokio = {version="1.6", features=["full"]}
 
 [dev-dependencies]
 mockall = '0.9'
+quickwit-storage = { version = "0.1.0", path = "../quickwit-storage", features=["testsuite"]}

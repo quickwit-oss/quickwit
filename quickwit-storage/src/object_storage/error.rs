@@ -84,7 +84,6 @@ where
         let error_kind = match &err.0 {
             RusotoError::Credentials(_) => StorageErrorKind::Unauthorized,
             RusotoError::Service(err) => {
-                dbg!(&err);
                 err.to_storage_error_kind()
                 // StorageErrorKind::Service
             }

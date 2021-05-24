@@ -73,14 +73,15 @@ async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
 
 #[cfg(feature = "testsuite")]
 #[tokio::test]
-async fn test_suite() -> anyhow::Result<()> {
+// Weirdly this does not work for localstack. The error messages seem off.
+async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
     let mut object_storage = S3CompatibleObjectStorage::new(
         Region::Custom {
             name: "localstack".to_string(),
-            endpoint: "http://localhost:4566",
+            endpoint: "http://localhost:4566".to_string(),
         },
-        "quickwit-integration-test",
+        "quickwit-integration-tests",
     )?;
     quickwit_storage::storage_test_suite(&mut object_storage).await?;
     Ok(())
