@@ -72,6 +72,7 @@ impl<'a> From<&'a [u8]> for PutPayload {
 ///
 /// Object storage are the primary target implementation of this trait,
 /// and its interface is meant to allow for multipart download/upload.
+#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Storage: Send + Sync + 'static {
     /// Saves a file into the storage.

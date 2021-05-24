@@ -47,6 +47,8 @@ pub use self::storage_resolver::{StorageFactory, StorageUriResolver};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 #[cfg(feature = "testsuite")]
+pub use self::storage::MockStorage;
+#[cfg(feature = "testsuite")]
 pub use self::storage_resolver::MockStorageFactory;
 
 #[cfg(feature = "testsuite")]
@@ -131,9 +133,11 @@ pub(crate) mod tests {
             .put(test_path, PutPayload::from(b"".as_ref()))
             .await?;
         assert!(matches!(storage.exists(test_path).await, Ok(true)));
+        assert!(matches!(storage.delete(test_path).await, Ok(())));
         Ok(())
     }
 
+    /// Generic test suite for a storage.
     pub async fn storage_test_suite(storage: &mut dyn Storage) -> anyhow::Result<()> {
         test_get_inexistent_file(storage)
             .await

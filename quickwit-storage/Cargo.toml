@@ -36,10 +36,18 @@ features = ['full']
 version = '0.6'
 features = ['full']
 
+[dependencies.mockall]
+version = "0.9"
+optional = true
+
+[dependencies.tempfile]
+version = "3"
+optional = true
+
 [dev-dependencies]
 tracing-subscriber = '0.2'
 tempfile = '3'
 mockall = '0.9'
 
 [features]
-testsuite = []
+testsuite = ["mockall", "tempfile"]
