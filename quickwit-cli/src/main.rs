@@ -68,7 +68,8 @@ enum CliCommand {
 impl CliCommand {
     fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches_opt) = matches.subcommand();
-        let submatches = submatches_opt.unwrap();
+        let submatches =
+            submatches_opt.ok_or_else(|| anyhow::anyhow!("Unable to parse sub matches"))?;
 
         match subcommand {
             "new" => Self::parse_new_args(submatches),
