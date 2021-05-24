@@ -33,6 +33,7 @@ pub enum MetastoreErrorKind {
     ExistingSplitId,
     Forbidden,
     IndexDoesNotExist,
+    IndexIsNotOpen,
     InternalError,
     InvalidManifest,
     Io,
