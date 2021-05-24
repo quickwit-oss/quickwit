@@ -22,7 +22,7 @@
 
 use anyhow::bail;
 use byte_unit::Byte;
-use clap::{load_yaml, value_t, App, ArgMatches};
+use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use std::path::PathBuf;
 use tracing::debug;
 
@@ -68,7 +68,8 @@ enum CliCommand {
 impl CliCommand {
     fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches_opt) = matches.subcommand();
-        let submatches = submatches_opt.unwrap();
+        let submatches =
+            submatches_opt.ok_or_else(|| anyhow::anyhow!("Unable to parse sub matches"))?;
 
         match subcommand {
             "new" => Self::parse_new_args(submatches),
@@ -214,7 +215,9 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let yaml = load_yaml!("cli.yaml");
-    let app = App::from(yaml).version(env!("CARGO_PKG_VERSION"));
+    let app = App::from(yaml)
+        .setting(AppSettings::ArgRequiredElseHelp)
+        .version(env!("CARGO_PKG_VERSION"));
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
