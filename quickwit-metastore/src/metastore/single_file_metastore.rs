@@ -1,24 +1,28 @@
 /*
     Quickwit
     Copyright (C) 2021 Quickwit Inc.
+
     Quickwit is offered under the AGPL v3.0 and as commercial software.
     For commercial licensing, contact us at hello@quickwit.io.
+
     AGPL:
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as
     published by the Free Software Foundation, either version 3 of the
     License, or (at your option) any later version.
+
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU Affero General Public License for more details.
+
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 use std::collections::HashMap;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -31,6 +35,18 @@ use crate::{
     IndexMetadata, IndexUri, MetadataSet, Metastore, MetastoreErrorKind, MetastoreResult, SplitId,
     SplitMetadata, SplitState, FILE_FORMAT_VERSION,
 };
+
+const META_FILENAME: &str = "quickwit.json";
+
+/// Create a path to the metadata file from the given index path.
+fn meta_uri(index_uri: IndexUri) -> PathBuf {
+    Path::new(&index_uri).join(Path::new(META_FILENAME))
+}
+
+/// Takes 2 semi-open intervals and returns true iff their intersection is empty
+fn is_disjoint(left: &Range<u64>, right: &Range<u64>) -> bool {
+    left.end <= right.start || right.end <= left.start
+}
 
 /// Single file meta store implementation.
 pub struct SingleFileMetastore {
@@ -47,54 +63,97 @@ impl SingleFileMetastore {
             data: Arc::new(RwLock::new(HashMap::new())),
         })
     }
+
+    async fn split_exists(&self, index_uri: IndexUri, split_id: SplitId) -> MetastoreResult<bool> {
+        let data = self.data.read().await;
+
+        // Check for the existence of index.
+        let metadata_set = data.get(&index_uri).ok_or_else(|| {
+            MetastoreErrorKind::IndexIsNotOpen
+                .with_error(anyhow::anyhow!("Index is not open: {:?}", &index_uri))
+        })?;
+
+        // Check for the existence of split.
+        let exist = metadata_set.splits.contains_key(&split_id);
+
+        Ok(exist)
+    }
+
+    /// Get split metadata.
+    pub async fn get_split(
+        &self,
+        index_uri: IndexUri,
+        split_id: SplitId,
+    ) -> MetastoreResult<SplitMetadata> {
+        let data = self.data.read().await;
+
+        // Check for the existence of index.
+        let metadata_set = data.get(&index_uri).ok_or_else(|| {
+            MetastoreErrorKind::IndexIsNotOpen
+                .with_error(anyhow::anyhow!("Index is not open: {:?}", &index_uri))
+        })?;
+
+        // Check for the existence of split.
+        let split_metadata = metadata_set.splits.get(&split_id).ok_or_else(|| {
+            MetastoreErrorKind::DoesNotExist
+                .with_error(anyhow::anyhow!("Split does not exist: {:?}", &split_id))
+        })?;
+
+        Ok(split_metadata.clone())
+    }
 }
 
 #[async_trait]
 impl Metastore for SingleFileMetastore {
+    async fn index_exists(&self, index_uri: IndexUri) -> MetastoreResult<bool> {
+        let path = meta_uri(index_uri);
+
+        let exist = self.storage.exists(&path).await.map_err(|e| {
+            MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
+                "Failed to check the existence of the index: {:?}",
+                e
+            ))
+        })?;
+
+        Ok(exist)
+    }
+
     async fn create_index(
         &self,
         index_uri: IndexUri,
         _doc_mapping: DocMapping,
     ) -> MetastoreResult<()> {
-        let mut data = self.data.write().await;
-
-        let path = Path::new(&index_uri);
-
         // Check for the existence of index.
-        // Load metadata set If it has already been stored in the storage, if not, create a new one.
-        let exists = self.storage.exists(&path).await.map_err(|e| {
-            MetastoreErrorKind::InternalError
-                .with_error(anyhow::anyhow!("Failed to read storage: {:?}", e))
+        let exists = self.index_exists(index_uri.clone()).await.map_err(|e| {
+            MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
+                "Failed to check the existence of the index: {:?}",
+                e
+            ))
         })?;
-        let metadata_set = if exists {
-            // Get metadata set from storage.
-            let contents = self.storage.get_all(&path).await.map_err(|e| {
-                MetastoreErrorKind::InternalError
-                    .with_error(anyhow::anyhow!("Failed to put metadata set: {:?}", e))
-            })?;
+        if exists {
+            return Err(
+                MetastoreErrorKind::ExistingIndexUri.with_error(anyhow::anyhow!(
+                    "The index already exists: {:?}",
+                    &index_uri
+                )),
+            );
+        }
 
-            serde_json::from_slice::<MetadataSet>(contents.as_slice()).map_err(|e| {
-                MetastoreErrorKind::InvalidManifest
-                    .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
-            })?
-        } else {
-            // Create new empty metadata set.
-            MetadataSet {
-                index: IndexMetadata {
-                    version: FILE_FORMAT_VERSION.to_string(),
-                },
-                splits: HashMap::new(),
-            }
+        // Create new empty metadata set.
+        let metadata_set = MetadataSet {
+            index: IndexMetadata {
+                version: FILE_FORMAT_VERSION.to_string(),
+            },
+            splits: HashMap::new(),
         };
-
-        // Insert metadata set into local cache.
-        data.insert(index_uri.clone(), metadata_set.clone());
 
         // Serialize metadata set.
         let contents = serde_json::to_vec(&metadata_set).map_err(|e| {
             MetastoreErrorKind::InvalidManifest
                 .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
         })?;
+
+        let path = meta_uri(index_uri.clone());
 
         // Put data back into storage.
         self.storage
@@ -105,23 +164,80 @@ impl Metastore for SingleFileMetastore {
                     .with_error(anyhow::anyhow!("Failed to put metadata set: {:?}", e))
             })?;
 
+        // Update the internal data if the storage is successfully updated.
+        let mut data = self.data.write().await;
+        data.insert(index_uri.clone(), metadata_set.clone());
+
+        Ok(())
+    }
+
+    async fn open_index(&self, index_uri: IndexUri) -> MetastoreResult<()> {
+        // Check for the existence of index.
+        let exists = self.index_exists(index_uri.clone()).await.map_err(|e| {
+            MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
+                "Failed to check the existence of the index: {:?}",
+                e
+            ))
+        })?;
+        if !exists {
+            return Err(
+                MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
+                    "The index does not exist.: {:?}",
+                    &index_uri
+                )),
+            );
+        }
+
+        let path = meta_uri(index_uri.clone());
+
+        // Get metadata set from storage.
+        let contents = self.storage.get_all(&path).await.map_err(|e| {
+            MetastoreErrorKind::InternalError
+                .with_error(anyhow::anyhow!("Failed to put metadata set: {:?}", e))
+        })?;
+
+        // Deserialize metadata.
+        let metadata_set =
+            serde_json::from_slice::<MetadataSet>(contents.as_slice()).map_err(|e| {
+                MetastoreErrorKind::InvalidManifest
+                    .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
+            })?;
+
+        // Update the internal data if the storage is successfully updated.
+        let mut data = self.data.write().await;
+        data.insert(index_uri.clone(), metadata_set.clone());
+
         Ok(())
     }
 
     async fn delete_index(&self, index_uri: IndexUri) -> MetastoreResult<()> {
-        let mut data = self.data.write().await;
+        // Check for the existence of index.
+        let exists = self.index_exists(index_uri.clone()).await.map_err(|e| {
+            MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
+                "Failed to check the existence of the index: {:?}",
+                e
+            ))
+        })?;
+        if !exists {
+            return Err(
+                MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
+                    "The index does not exist.: {:?}",
+                    &index_uri
+                )),
+            );
+        }
 
-        // Delete metadata set from local cache.
-        data.remove(&index_uri);
+        let path = meta_uri(index_uri.clone());
 
         // Delete metadata set form storage.
-        self.storage
-            .delete(&Path::new(&index_uri))
-            .await
-            .map_err(|e| {
-                MetastoreErrorKind::InternalError
-                    .with_error(anyhow::anyhow!("Failed to delete metadata set: {:?}", e))
-            })?;
+        self.storage.delete(&path).await.map_err(|e| {
+            MetastoreErrorKind::InternalError
+                .with_error(anyhow::anyhow!("Failed to delete metadata set: {:?}", e))
+        })?;
+
+        // Update the internal data if the storage is successfully updated.
+        let mut data = self.data.write().await;
+        data.remove(&index_uri);
 
         Ok(())
     }
@@ -132,12 +248,12 @@ impl Metastore for SingleFileMetastore {
         split_id: SplitId,
         mut split_metadata: SplitMetadata,
     ) -> MetastoreResult<SplitId> {
-        let mut data = self.data.write().await;
+        let mut tmp_data = self.data.read().await.clone();
 
         // Check for the existence of index.
-        let metadata_set = data.get_mut(&index_uri).ok_or_else(|| {
-            MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri))
+        let metadata_set = tmp_data.get_mut(&index_uri).ok_or_else(|| {
+            MetastoreErrorKind::IndexIsNotOpen
+                .with_error(anyhow::anyhow!("Index is not open: {:?}", &index_uri))
         })?;
 
         // Check for the existence of split.
@@ -157,25 +273,31 @@ impl Metastore for SingleFileMetastore {
                 .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
         })?;
 
+        let path = meta_uri(index_uri.clone());
+
         // Put data back into storage.
         self.storage
-            .put(&Path::new(&index_uri), PutPayload::from(contents))
+            .put(&path, PutPayload::from(contents))
             .await
             .map_err(|e| {
                 MetastoreErrorKind::InternalError
                     .with_error(anyhow::anyhow!("Failed to put metadata set: {:?}", e))
             })?;
 
+        // Update the internal data if the storage is successfully updated.
+        let mut data = self.data.write().await;
+        data.insert(index_uri.clone(), metadata_set.clone());
+
         Ok(split_id)
     }
 
     async fn publish_split(&self, index_uri: IndexUri, split_id: SplitId) -> MetastoreResult<()> {
-        let mut data = self.data.write().await;
+        let mut tmp_data = self.data.read().await.clone();
 
         // Check for the existence of index.
-        let metadata_set = data.get_mut(&index_uri).ok_or_else(|| {
-            MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri))
+        let metadata_set = tmp_data.get_mut(&index_uri).ok_or_else(|| {
+            MetastoreErrorKind::IndexIsNotOpen
+                .with_error(anyhow::anyhow!("Index is not open: {:?}", &index_uri))
         })?;
 
         // Check for the existence of split.
@@ -206,14 +328,20 @@ impl Metastore for SingleFileMetastore {
                 .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
         })?;
 
+        let path = meta_uri(index_uri.clone());
+
         // Put data back into storage.
         self.storage
-            .put(&Path::new(&index_uri), PutPayload::from(contents))
+            .put(&path, PutPayload::from(contents))
             .await
             .map_err(|e| {
                 MetastoreErrorKind::InternalError
                     .with_error(anyhow::anyhow!("Failed to put metadata set: {:?}", e))
             })?;
+
+        // Update the internal data if the storage is successfully updated.
+        let mut data = self.data.write().await;
+        data.insert(index_uri.clone(), metadata_set.clone());
 
         Ok(())
     }
@@ -222,12 +350,12 @@ impl Metastore for SingleFileMetastore {
         &self,
         index_uri: IndexUri,
         state: SplitState,
-        time_range: Option<Range<u64>>,
+        time_range_opt: Option<Range<u64>>,
     ) -> MetastoreResult<Vec<SplitMetadata>> {
-        let mut data = self.data.write().await;
+        let data = self.data.read().await;
 
         // Check for the existence of index.
-        let metadata_set = data.get_mut(&index_uri).ok_or_else(|| {
+        let metadata_set = data.get(&index_uri).ok_or_else(|| {
             MetastoreErrorKind::IndexDoesNotExist
                 .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri))
         })?;
@@ -240,24 +368,35 @@ impl Metastore for SingleFileMetastore {
 
         let mut splits: Vec<SplitMetadata> = Vec::new();
         for (_, split_metadata) in split_with_meta_matching_state_it {
-            match time_range {
-                Some(ref filter_time_range) => {
-                    if let Some(split_time_range) = &split_metadata.time_range {
-                        // Splits that overlap at least part of the time range of the filter
-                        // and the time range of the split are added to the list as search targets.
-                        if split_time_range.contains(&filter_time_range.start)
-                            || split_time_range.contains(&filter_time_range.end)
-                            || filter_time_range.contains(&split_time_range.start)
-                            || filter_time_range.contains(&split_time_range.end)
-                        {
-                            splits.push(split_metadata.clone());
-                        }
+            // match time_range {
+            //     Some(ref filter_time_range) => {
+            //         if let Some(split_time_range) = &split_metadata.time_range {
+            //             // Splits that overlap at least part of the time range of the filter
+            //             // and the time range of the split are added to the list as search targets.
+            //             if split_time_range.contains(&filter_time_range.start)
+            //                 || split_time_range.contains(&filter_time_range.end)
+            //                 || filter_time_range.contains(&split_time_range.start)
+            //                 || filter_time_range.contains(&split_time_range.end)
+            //             {
+            //                 splits.push(split_metadata.clone());
+            //             }
+            //         }
+            //     }
+            //     None => {
+            //         // if `time_range` is omitted, the metadata is not filtered.
+            //         splits.push(split_metadata.clone());
+            //     }
+            // }
+            let match_filter_time_range =
+                match (time_range_opt.as_ref(), split_metadata.time_range.as_ref()) {
+                    (Some(filter_time_range), Some(split_time_range)) => {
+                        !is_disjoint(split_time_range, filter_time_range)
                     }
-                }
-                None => {
-                    // if `time_range` is omitted, the metadata is not filtered.
-                    splits.push(split_metadata.clone());
-                }
+                    (None, _) => true, //< if `time_range` is omitted, the metadata is not filtered.
+                    _ => false, //< we could log an error. a time filter was provided, but the split has no timestamp.
+                };
+            if match_filter_time_range {
+                splits.push(split_metadata.clone());
             }
         }
 
@@ -269,12 +408,12 @@ impl Metastore for SingleFileMetastore {
         index_uri: IndexUri,
         split_id: SplitId,
     ) -> MetastoreResult<()> {
-        let mut data = self.data.write().await;
+        let mut tmp_data = self.data.read().await.clone();
 
         // Check for the existence of index.
-        let metadata_set = data.get_mut(&index_uri).ok_or_else(|| {
-            MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not exists: {:?}", &index_uri))
+        let metadata_set = tmp_data.get_mut(&index_uri).ok_or_else(|| {
+            MetastoreErrorKind::IndexIsNotOpen
+                .with_error(anyhow::anyhow!("Index is not open: {:?}", &index_uri))
         })?;
 
         // Check for the existence of split.
@@ -297,25 +436,31 @@ impl Metastore for SingleFileMetastore {
                 .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
         })?;
 
+        let path = meta_uri(index_uri.clone());
+
         // Put data back into storage.
         self.storage
-            .put(&Path::new(&index_uri), PutPayload::from(contents))
+            .put(&path, PutPayload::from(contents))
             .await
             .map_err(|e| {
                 MetastoreErrorKind::InternalError
                     .with_error(anyhow::anyhow!("Failed to put metadata set: {:?}", e))
             })?;
 
+        // Update the internal data if the storage is successfully updated.
+        let mut data = self.data.write().await;
+        data.insert(index_uri.clone(), metadata_set.clone());
+
         Ok(())
     }
 
     async fn delete_split(&self, index_uri: IndexUri, split_id: SplitId) -> MetastoreResult<()> {
-        let mut data = self.data.write().await;
+        let mut tmp_data = self.data.read().await.clone();
 
         // Check for the existence of index.
-        let metadata_set = data.get_mut(&index_uri).ok_or_else(|| {
-            MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not exist: {:?}", &index_uri))
+        let metadata_set = tmp_data.get_mut(&index_uri).ok_or_else(|| {
+            MetastoreErrorKind::IndexIsNotOpen
+                .with_error(anyhow::anyhow!("Index is not open: {:?}", &index_uri))
         })?;
 
         // Check for the existence of split.
@@ -344,14 +489,20 @@ impl Metastore for SingleFileMetastore {
                 .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
         })?;
 
+        let path = meta_uri(index_uri.clone());
+
         // Put data back into storage.
         self.storage
-            .put(&Path::new(&index_uri), PutPayload::from(contents))
+            .put(&path, PutPayload::from(contents))
             .await
             .map_err(|e| {
                 MetastoreErrorKind::InternalError
                     .with_error(anyhow::anyhow!("Failed to put metadata set: {:?}", e))
             })?;
+
+        // Update the internal data if the storage is successfully updated.
+        let mut data = self.data.write().await;
+        data.insert(index_uri.clone(), metadata_set.clone());
 
         Ok(())
     }
@@ -371,6 +522,32 @@ mod tests {
     };
 
     #[tokio::test]
+    async fn test_single_file_metastore_index_exists() {
+        let resolver = StorageUriResolver::default();
+        let storage = resolver.resolve("ram://").unwrap();
+        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let index_uri = IndexUri::from("ram://test/index");
+
+        {
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = false;
+            assert_eq!(result, expected);
+
+            // Create index
+            metastore
+                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .await
+                .unwrap();
+
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = true;
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[tokio::test]
     async fn test_single_file_metastore_create_index() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
@@ -378,13 +555,68 @@ mod tests {
         let index_uri = IndexUri::from("ram://test/index");
 
         {
-            // create index
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = false;
+            assert_eq!(result, expected);
+
+            // Create index
             metastore
                 .create_index(index_uri.clone(), DocMapping::Dynamic)
                 .await
                 .unwrap();
-            let data = metastore.data.read().await;
-            assert_eq!(data.contains_key(&index_uri), true);
+
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = true;
+            assert_eq!(result, expected);
+
+            // Create an index that already exists.
+            let result = metastore
+                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::ExistingIndexUri;
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_single_file_metastore_open_index() {
+        let resolver = StorageUriResolver::default();
+        let storage = resolver.resolve("ram://").unwrap();
+        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let index_uri = IndexUri::from("ram://test/index");
+
+        {
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = false;
+            assert_eq!(result, expected);
+
+            // Create index
+            metastore
+                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .await
+                .unwrap();
+
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = true;
+            assert_eq!(result, expected);
+
+            // Open index
+            metastore.open_index(index_uri.clone()).await.unwrap();
+
+            // Open a non-existent index.
+            let result = metastore
+                .open_index("ram://test/non-existent-index".to_string())
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::IndexDoesNotExist;
+            assert_eq!(result, expected);
         }
     }
 
@@ -396,18 +628,33 @@ mod tests {
         let index_uri = IndexUri::from("ram://test/index");
 
         {
-            // create index
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = false;
+            assert_eq!(result, expected);
+
+            // Create index
             metastore
                 .create_index(index_uri.clone(), DocMapping::Dynamic)
                 .await
                 .unwrap();
-        }
 
-        {
-            // delete index
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = true;
+            assert_eq!(result, expected);
+
+            // Delete index
             metastore.delete_index(index_uri.clone()).await.unwrap();
-            let data = metastore.data.read().await;
-            assert_eq!(data.contains_key(&index_uri), false);
+
+            // Delete a non-existent index.
+            let result = metastore
+                .delete_index("ram://test/non-existent-index".to_string())
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::IndexDoesNotExist;
+            assert_eq!(result, expected);
         }
     }
 
@@ -417,32 +664,41 @@ mod tests {
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
         let index_uri = IndexUri::from("ram://test/index");
+        let split_id = "one".to_string();
+        let split_metadata = SplitMetadata {
+            split_id: "one".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(Range { start: 0, end: 100 }),
+            generation: 3,
+        };
 
         {
-            // create index
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = false;
+            assert_eq!(result, expected);
+
+            // Create index
             metastore
                 .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .await
+                .unwrap();
+
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = true;
+            assert_eq!(result, expected);
+
+            // stage split
+            metastore
+                .stage_split(index_uri.clone(), split_id.clone(), split_metadata.clone())
                 .await
                 .unwrap();
         }
 
         {
-            // stage split
-            let split_id = "one".to_string();
-            let split_metadata = SplitMetadata {
-                split_id: "one".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(Range { start: 0, end: 100 }),
-                generation: 3,
-            };
-
-            metastore
-                .stage_split(index_uri.clone(), split_id.clone(), split_metadata)
-                .await
-                .unwrap();
-
             let data = metastore.data.read().await;
             assert_eq!(data.get(&index_uri).unwrap().splits.len(), 1);
             assert_eq!(
@@ -503,18 +759,8 @@ mod tests {
 
         {
             // stage split (existing split id)
-            let split_id = "one".to_string();
-            let split_metadata = SplitMetadata {
-                split_id: "one".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(Range { start: 0, end: 100 }),
-                generation: 3,
-            };
-
             let result = metastore
-                .stage_split(index_uri.clone(), split_id.clone(), split_metadata)
+                .stage_split(index_uri.clone(), split_id.clone(), split_metadata.clone())
                 .await
                 .unwrap_err()
                 .kind();
@@ -524,26 +770,16 @@ mod tests {
 
         {
             // stage split (non-existent index uri)
-            let split_id = "one".to_string();
-            let split_metadata = SplitMetadata {
-                split_id: "one".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(Range { start: 0, end: 100 }),
-                generation: 3,
-            };
-
             let result = metastore
                 .stage_split(
                     "ram://test/non-existent-index".to_string(),
                     split_id.clone(),
-                    split_metadata,
+                    split_metadata.clone(),
                 )
                 .await
                 .unwrap_err()
                 .kind();
-            let expected = MetastoreErrorKind::IndexDoesNotExist;
+            let expected = MetastoreErrorKind::IndexIsNotOpen;
             assert_eq!(result, expected);
         }
     }
@@ -554,39 +790,47 @@ mod tests {
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
         let index_uri = IndexUri::from("ram://test/index");
+        let split_id = "one".to_string();
+        let split_metadata = SplitMetadata {
+            split_id: "one".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(Range { start: 0, end: 100 }),
+            generation: 3,
+        };
 
         {
-            // create index
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = false;
+            assert_eq!(result, expected);
+
+            // Create index
             metastore
                 .create_index(index_uri.clone(), DocMapping::Dynamic)
                 .await
                 .unwrap();
-        }
 
-        {
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = true;
+            assert_eq!(result, expected);
+
             // stage split
-            let split_id = "one".to_string();
-            let split_metadata = SplitMetadata {
-                split_id: "one".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(Range { start: 0, end: 100 }),
-                generation: 3,
-            };
             metastore
-                .stage_split(index_uri.clone(), split_id.clone(), split_metadata)
+                .stage_split(index_uri.clone(), split_id.clone(), split_metadata.clone())
                 .await
                 .unwrap();
-        }
 
-        {
             // publish split
-            let split_id = "one".to_string();
             metastore
                 .publish_split(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
+        }
+
+        {
             let data = metastore.data.read().await;
             assert_eq!(
                 data.get(&index_uri)
@@ -601,14 +845,34 @@ mod tests {
 
         {
             // publish published split
-            let split_id = "one".to_string();
             metastore
                 .publish_split(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
-        }
 
-        {
+            // publish non-staged split
+            let split_id = "one".to_string();
+            metastore
+                .mark_split_as_deleted(index_uri.clone(), split_id.clone()) // mark as deleted
+                .await
+                .unwrap();
+            let result = metastore
+                .publish_split(index_uri.clone(), split_id.clone()) // publish
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::SplitIsNotStaged;
+            assert_eq!(result, expected);
+
+            // publish non-existent index
+            let result = metastore
+                .publish_split("ram://test/non-existent-inde".to_string(), split_id.clone())
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::IndexIsNotOpen;
+            assert_eq!(result, expected);
+
             // publish non-existent split
             let result = metastore
                 .publish_split(index_uri.clone(), "non-existant-split".to_string())
@@ -616,23 +880,6 @@ mod tests {
                 .unwrap_err()
                 .kind();
             let expected = MetastoreErrorKind::DoesNotExist;
-            assert_eq!(result, expected);
-        }
-
-        {
-            // publish non-staged split
-            let split_id = "one".to_string();
-            metastore
-                .mark_split_as_deleted(index_uri.clone(), split_id.clone()) // mark as deleted
-                .await
-                .unwrap();
-
-            let result = metastore
-                .publish_split(index_uri.clone(), split_id.clone()) // publish
-                .await
-                .unwrap_err()
-                .kind();
-            let expected = MetastoreErrorKind::SplitIsNotStaged;
             assert_eq!(result, expected);
         }
     }
@@ -732,10 +979,10 @@ mod tests {
             for split_metadata in splits {
                 split_id_vec.push(split_metadata.split_id);
             }
-            assert_eq!(split_id_vec.contains(&"one".to_string()), true);
-            assert_eq!(split_id_vec.contains(&"two".to_string()), false);
-            assert_eq!(split_id_vec.contains(&"three".to_string()), false);
-            assert_eq!(split_id_vec.contains(&"four".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"one".to_string()), true); // (0..100)
+            assert_eq!(split_id_vec.contains(&"two".to_string()), false); // (100..200)
+            assert_eq!(split_id_vec.contains(&"three".to_string()), false); // (200..300)
+            assert_eq!(split_id_vec.contains(&"four".to_string()), false); // (300..400)
         }
 
         {
@@ -749,10 +996,10 @@ mod tests {
             for split_metadata in splits {
                 split_id_vec.push(split_metadata.split_id);
             }
-            assert_eq!(split_id_vec.contains(&"one".to_string()), true);
-            assert_eq!(split_id_vec.contains(&"two".to_string()), true);
-            assert_eq!(split_id_vec.contains(&"three".to_string()), false);
-            assert_eq!(split_id_vec.contains(&"four".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"one".to_string()), true); // (0..100)
+            assert_eq!(split_id_vec.contains(&"two".to_string()), false); // (100..200)
+            assert_eq!(split_id_vec.contains(&"three".to_string()), false); // (200..300)
+            assert_eq!(split_id_vec.contains(&"four".to_string()), false); // (300..400)
         }
 
         {
@@ -802,7 +1049,7 @@ mod tests {
             }
             assert_eq!(split_id_vec.contains(&"one".to_string()), true);
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
-            assert_eq!(split_id_vec.contains(&"three".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"three".to_string()), false);
             assert_eq!(split_id_vec.contains(&"four".to_string()), false);
         }
 
@@ -854,7 +1101,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"one".to_string()), true);
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
-            assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"four".to_string()), false);
         }
 
         {
@@ -910,7 +1157,7 @@ mod tests {
             }
             assert_eq!(split_id_vec.contains(&"one".to_string()), false);
             assert_eq!(split_id_vec.contains(&"two".to_string()), false);
-            assert_eq!(split_id_vec.contains(&"three".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"three".to_string()), false);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
         }
 
@@ -969,7 +1216,7 @@ mod tests {
                 split_id_vec.push(split_metadata.split_id);
             }
             assert_eq!(split_id_vec.contains(&"one".to_string()), false);
-            assert_eq!(split_id_vec.contains(&"two".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"two".to_string()), false);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
         }
@@ -1048,7 +1295,7 @@ mod tests {
             for split_metadata in splits {
                 split_id_vec.push(split_metadata.split_id);
             }
-            assert_eq!(split_id_vec.contains(&"one".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"one".to_string()), false);
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
@@ -1101,6 +1348,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"one".to_string()), true);
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"four".to_string()), true);
         }
     }
 
@@ -1110,48 +1358,54 @@ mod tests {
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
         let index_uri = IndexUri::from("ram://test/index");
+        let split_id = "one".to_string();
+        let split_metadata = SplitMetadata {
+            split_id: "one".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(Range { start: 0, end: 100 }),
+            generation: 3,
+        };
 
         {
-            // create index
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = false;
+            assert_eq!(result, expected);
+
+            // Create index
             metastore
                 .create_index(index_uri.clone(), DocMapping::Dynamic)
                 .await
                 .unwrap();
-        }
 
-        {
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = true;
+            assert_eq!(result, expected);
+
             // stage split
-            let split_id = "one".to_string();
-            let split_metadata = SplitMetadata {
-                split_id: "one".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(Range { start: 0, end: 100 }),
-                generation: 3,
-            };
             metastore
-                .stage_split(index_uri.clone(), split_id.clone(), split_metadata)
+                .stage_split(index_uri.clone(), split_id.clone(), split_metadata.clone())
                 .await
                 .unwrap();
-        }
 
-        {
             // publish split
-            let split_id = "one".to_string();
             metastore
                 .publish_split(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
-        }
 
-        {
-            // mark as deleted
+            // mark split as deleted
             let split_id = "one".to_string();
             metastore
                 .mark_split_as_deleted(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
+        }
+
+        {
             let data = metastore.data.read().await;
             assert_eq!(
                 data.get(&index_uri)
@@ -1165,16 +1419,22 @@ mod tests {
         }
 
         {
-            // mark as deleted (already marked as deleted)
-            let split_id = "one".to_string();
+            // mark split as deleted (already marked as deleted)
             metastore
                 .mark_split_as_deleted(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
-        }
 
-        {
-            // mark as deleted (non-existent)
+            // mark split as deleted (non-existent index)
+            let result = metastore
+                .mark_split_as_deleted("ram://test/non-existent-inde".to_string(), split_id.clone())
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::IndexIsNotOpen;
+            assert_eq!(result, expected);
+
+            // mark split as deleted (non-existent)
             let result = metastore
                 .mark_split_as_deleted(index_uri.clone(), "non-existant-split".to_string())
                 .await
@@ -1191,44 +1451,46 @@ mod tests {
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
         let index_uri = IndexUri::from("ram://test/index");
+        let split_id = "one".to_string();
+        let split_metadata = SplitMetadata {
+            split_id: "one".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(Range { start: 0, end: 100 }),
+            generation: 3,
+        };
 
         {
-            // create index
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = false;
+            assert_eq!(result, expected);
+
+            // Create index
             metastore
                 .create_index(index_uri.clone(), DocMapping::Dynamic)
                 .await
                 .unwrap();
-        }
 
-        {
+            // Check for the existence of index.
+            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let expected = true;
+            assert_eq!(result, expected);
+
             // stage split
-            let split_id = "one".to_string();
-            let split_metadata = SplitMetadata {
-                split_id: "one".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(Range { start: 0, end: 100 }),
-                generation: 3,
-            };
             metastore
-                .stage_split(index_uri.clone(), split_id.clone(), split_metadata)
+                .stage_split(index_uri.clone(), split_id.clone(), split_metadata.clone())
                 .await
                 .unwrap();
-        }
 
-        {
             // publish split
-            let split_id = "one".to_string();
             metastore
                 .publish_split(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
-        }
 
-        {
             // delete split (published split)
-            let split_id = "one".to_string();
             let result = metastore
                 .delete_split(index_uri.clone(), split_id.clone())
                 .await
@@ -1236,24 +1498,21 @@ mod tests {
                 .kind();
             let expected = MetastoreErrorKind::Forbidden;
             assert_eq!(result, expected);
-        }
 
-        {
-            // mark as deleted
-            let split_id = "one".to_string();
+            // mark split as deleted
             metastore
                 .mark_split_as_deleted(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
-        }
 
-        {
             // delete split
-            let split_id = "one".to_string();
             metastore
                 .delete_split(index_uri.clone(), split_id.clone())
                 .await
                 .unwrap();
+        }
+
+        {
             let data = metastore.data.read().await;
             assert_eq!(
                 data.get(&index_uri).unwrap().splits.contains_key(&split_id),
@@ -1262,7 +1521,16 @@ mod tests {
         }
 
         {
-            // delete split (non-existent)
+            // mark split as deleted (non-existent index)
+            let result = metastore
+                .delete_split("ram://test/non-existent-inde".to_string(), split_id.clone())
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::IndexIsNotOpen;
+            assert_eq!(result, expected);
+
+            // delete split (non-existent split)
             let result = metastore
                 .delete_split(index_uri.clone(), "non-existant-split".to_string())
                 .await
