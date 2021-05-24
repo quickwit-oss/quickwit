@@ -360,9 +360,11 @@ impl Metastore for SingleFileMetastore {
 #[cfg(test)]
 mod tests {
     use std::ops::Range;
+    use std::path::Path;
+    use std::sync::Arc;
 
     use quickwit_doc_mapping::DocMapping;
-    use quickwit_storage::StorageUriResolver;
+    use quickwit_storage::{MockStorage, StorageErrorKind, StorageUriResolver};
 
     use crate::{
         IndexUri, Metastore, MetastoreErrorKind, SingleFileMetastore, SplitMetadata, SplitState,
@@ -1269,5 +1271,71 @@ mod tests {
             let expected = MetastoreErrorKind::DoesNotExist;
             assert_eq!(result, expected);
         }
+    }
+
+    #[tokio::test]
+    async fn test_storage_failing() {
+        // The single file metastore should not update its internal state if the storage fails.
+        let mut mock_storage = MockStorage::default();
+        mock_storage // remove this if we end up changing the semantics of create.
+            .expect_exists()
+            .returning(|_| Ok(false));
+        mock_storage.expect_put().times(2).returning(|uri, _| {
+            assert_eq!(uri, Path::new("ram://test/index")); // TODO change uri once we fix the meta.json file
+            Ok(())
+        });
+        mock_storage.expect_put().times(1).returning(|_uri, _| {
+            Err(StorageErrorKind::Io
+                .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
+        });
+        let metastore = SingleFileMetastore::new(Arc::new(mock_storage))
+            .await
+            .unwrap();
+        let index_uri = IndexUri::from("ram://test/index");
+        {
+            // create index
+            metastore
+                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .await
+                .unwrap();
+        }
+        let split_id = "one".to_string();
+        {
+            // stage split
+            let split_metadata = SplitMetadata {
+                split_id: split_id.clone(),
+                split_state: SplitState::Staged,
+                num_records: 1,
+                size_in_bytes: 2,
+                time_range: None,
+                generation: 3,
+            };
+            metastore
+                .stage_split(index_uri.clone(), split_id.clone(), split_metadata)
+                .await
+                .unwrap();
+        }
+        {
+            // publish split fails
+            let err = metastore
+                .publish_split(index_uri.clone(), split_id.clone())
+                .await;
+            assert!(err.is_err());
+        }
+        // TODO(mosuka) Fixme
+        // {
+        //     let split = metastore
+        //         .list_splits(index_uri.clone(), SplitState::Published, None)
+        //         .await
+        //         .unwrap();
+        //     assert!(split.is_empty());
+        // }
+        // {
+        //     let split = metastore
+        //         .list_splits(index_uri.clone(), SplitState::Staged, None)
+        //         .await
+        //         .unwrap();
+        //     assert!(!split.is_empty());
+        // }
     }
 }
