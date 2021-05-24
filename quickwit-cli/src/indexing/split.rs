@@ -23,6 +23,8 @@
 use crate::indexing::{index, statistics::StatisticEvent};
 use crate::{cli_command::IndexDataArgs, indexing::split_metadata::SplitMetaData};
 use std::{path::PathBuf, usize};
+use anyhow::bail;
+use futures::TryFutureExt;
 use tantivy::{directory::MmapDirectory, merge_policy::NoMergePolicy, schema::Schema, Document};
 use tokio::{fs, sync::mpsc::Sender, sync::RwLock};
 use uuid::Uuid;
@@ -40,18 +42,19 @@ pub struct Split {
 
 impl Split {
     pub async fn create(args: &IndexDataArgs, schema: Schema) -> anyhow::Result<Self> {
-        let id = Uuid::new_v4();
-        let local_directory = args.temp_dir.join(format!("/{}", id));
-        fs::create_dir(local_directory.as_path()).await?;
-
+        let split_id = Uuid::new_v4();
+        let local_directory = args.temp_dir.join(split_id.to_string());
+        fs::create_dir(local_directory.as_path())
+            .await
+            .map_err(|error| anyhow::anyhow!("fail to create temp dir `{}`: {}", local_directory.to_string_lossy(), error.to_string()))?;
         let index = tantivy::Index::create_in_dir(local_directory.as_path(), schema)?;
         let index_writer =
             index.writer_with_num_threads(args.num_threads, args.heap_size as usize)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
         let index_uri = args.index_uri.to_string_lossy().to_string();
-        let metadata = SplitMetaData::new(id, index_uri.clone());
+        let metadata = SplitMetaData::new(split_id, index_uri.clone());
         Ok(Self {
-            id,
+            id: split_id,
             metadata,
             local_directory,
             index_uri,
