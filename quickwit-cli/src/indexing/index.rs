@@ -21,12 +21,15 @@
 */
 
 use crate::cli_command::IndexDataArgs;
+use futures::try_join;
 use tokio::sync::mpsc::channel;
 
 use crate::indexing::document_indexer::index_documents;
 use crate::indexing::document_retriever::retrieve_documents;
 use crate::indexing::split_deployer::deploy_splits;
 use crate::indexing::statistics::StatisticsCollector;
+
+static DOCUMENT_CHANNEL_SIZE: usize = 1000;
 
 pub async fn index_data(args: IndexDataArgs) -> anyhow::Result<()> {
     if args.overwrite {
@@ -39,13 +42,13 @@ pub async fn index_data(args: IndexDataArgs) -> anyhow::Result<()> {
 
     let mut statistic_collector = StatisticsCollector::new();
     let statistic_sender = statistic_collector.start_collection();
+    let (document_sender, document_receiver) = channel::<String>(DOCUMENT_CHANNEL_SIZE);
+    let retrieve_fut = retrieve_documents(args.input_uri.clone(), document_sender);
+    let index_fut = index_documents(&args, document_receiver, statistic_sender.clone());
+    let (_, splits) = try_join!(retrieve_fut, index_fut)?;
 
-    let (document_sender, document_receiver) = channel::<String>(1000);
-    retrieve_documents(args.input_uri.clone(), document_sender).await?;
-    let splits = index_documents(&args, document_receiver, statistic_sender.clone()).await?;
-
+    // TODO: this is a little bit subobtimal, we might want to deploy progressively the splits once they are ready
     let searchable_splits = deploy_splits(splits, statistic_sender.clone()).await?;
-
     statistic_collector.display_report();
 
     Ok(())
