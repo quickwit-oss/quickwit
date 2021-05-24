@@ -24,40 +24,9 @@ use anyhow::bail;
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use std::path::PathBuf;
-use tracing::debug;
 
-use quickwit_core::index::{create_index, delete_index};
-use quickwit_doc_mapping::DocMapping;
-
-struct CreateIndexArgs {
-    index_uri: PathBuf,
-    timestamp_field: Option<String>,
-    overwrite: bool,
-}
-
-struct IndexDataArgs {
-    index_uri: PathBuf,
-    input_uri: Option<PathBuf>,
-    temp_dir: PathBuf,
-    num_threads: usize,
-    heap_size: u64,
-    overwrite: bool,
-}
-
-struct SearchIndexArgs {
-    index_uri: PathBuf,
-    query: String,
-    max_hits: usize,
-    start_offset: usize,
-    search_fields: Option<Vec<String>>,
-    start_timestamp: Option<i64>,
-    end_timestamp: Option<i64>,
-}
-
-struct DeleteIndexArgs {
-    index_uri: PathBuf,
-    dry_run: bool,
-}
+use quickwit_core::{create_index_cli, delete_index_cli, index_data_cli, search_index_cli};
+use quickwit_core::{CreateIndexArgs, DeleteIndexArgs, IndexDataArgs, SearchIndexArgs};
 
 enum CliCommand {
     New(CreateIndexArgs),
@@ -156,59 +125,6 @@ impl CliCommand {
     }
 }
 
-async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri =% args.index_uri.display(),
-        timestamp_field =? args.timestamp_field,
-        overwrite = args.overwrite,
-        "create-index"
-    );
-    let index_uri = args.index_uri.to_string_lossy().to_string();
-    let doc_mapping = DocMapping::Dynamic;
-
-    if args.overwrite {
-        delete_index(index_uri.clone()).await?;
-    }
-    create_index(index_uri, doc_mapping).await?;
-    Ok(())
-}
-
-async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri =% args.index_uri.display(),
-        input_uri =% args.input_uri.unwrap_or_else(|| PathBuf::from("stdin")).display(),
-        temp_dir =% args.temp_dir.display(),
-        num_threads = args.num_threads,
-        heap_size = args.heap_size,
-        overwrite = args.overwrite,
-        "indexing"
-    );
-    Ok(())
-}
-
-async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri =% args.index_uri.display(),
-        query =% args.query,
-        max_hits = args.max_hits,
-        start_offset = args.start_offset,
-        search_fields =? args.search_fields,
-        start_timestamp =? args.start_timestamp,
-        end_timestamp =? args.end_timestamp,
-        "search-index"
-    );
-    Ok(())
-}
-
-async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri =% args.index_uri.display(),
-        dry_run = args.dry_run,
-        "delete-index"
-    );
-    Ok(())
-}
-
 #[tracing::instrument]
 #[tokio::main]
 async fn main() {
@@ -241,8 +157,9 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
-    use crate::{CliCommand, CreateIndexArgs, DeleteIndexArgs, IndexDataArgs, SearchIndexArgs};
+    use crate::CliCommand;
     use clap::{load_yaml, App, AppSettings};
+    use quickwit_core::{CreateIndexArgs, DeleteIndexArgs, IndexDataArgs, SearchIndexArgs};
     use std::path::PathBuf;
 
     #[test]

@@ -20,14 +20,29 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-mod command_args;
-mod create_index;
-mod delete_index;
-mod index_data;
-mod search_index;
+use tracing::debug;
 
-pub use command_args::{CreateIndexArgs, DeleteIndexArgs, IndexDataArgs, SearchIndexArgs};
-pub use create_index::create_index_cli;
-pub use delete_index::delete_index_cli;
-pub use index_data::index_data_cli;
-pub use search_index::search_index_cli;
+use crate::SearchIndexArgs;
+
+pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
+    debug!(
+        index_uri =% args.index_uri.display(),
+        query =% args.query,
+        max_hits = args.max_hits,
+        start_offset = args.start_offset,
+        search_fields =? args.search_fields,
+        start_timestamp =? args.start_timestamp,
+        end_timestamp =? args.end_timestamp,
+        "search-index"
+    );
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_search_index() -> anyhow::Result<()> {
+        Ok(())
+    }
+}

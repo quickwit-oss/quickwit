@@ -20,59 +20,37 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use quickwit_doc_mapping::DocMapping;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
+use std::path::PathBuf;
+use tracing::debug;
 
-type IndexUri = String;
+use crate::IndexDataArgs;
 
-// anyhow errors are fine for now but we'll want to move to a proper error type eventually.
-pub async fn create_index(index_uri: IndexUri, doc_mapping: DocMapping) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    metastore.create_index(index_uri, doc_mapping).await?;
-    Ok(())
-}
+pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
+    debug!(
+        index_uri =% args.index_uri.display(),
+        input_uri =% args.input_uri.unwrap_or_else(|| PathBuf::from("stdin")).display(),
+        temp_dir =% args.temp_dir.display(),
+        num_threads = args.num_threads,
+        heap_size = args.heap_size,
+        overwrite = args.overwrite,
+        "indexing"
+    );
 
-// TODO
-pub async fn index_data(index_uri: IndexUri) -> anyhow::Result<()> {
-    let _metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    Ok(())
-}
+    let index_uri = args.index_uri.to_string_lossy().to_string();
 
-// TODO
-pub async fn search_index(index_uri: IndexUri) -> anyhow::Result<()> {
     let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
     let _splits = metastore
         .list_splits(index_uri, SplitState::Published, None)
         .await?;
-    Ok(())
-}
 
-pub async fn delete_index(index_uri: IndexUri) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    metastore.delete_index(index_uri).await?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-
     #[test]
-    fn test_create_index() -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[test]
-    fn test_index_data() -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[test]
-    fn test_search_index() -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[test]
-    fn test_delete_index() -> anyhow::Result<()> {
+    fn test_index_data_cli() -> anyhow::Result<()> {
         Ok(())
     }
 }

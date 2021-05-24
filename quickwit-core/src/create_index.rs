@@ -20,14 +20,36 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-mod command_args;
-mod create_index;
-mod delete_index;
-mod index_data;
-mod search_index;
+use quickwit_metastore::MetastoreUriResolver;
+use tracing::debug;
 
-pub use command_args::{CreateIndexArgs, DeleteIndexArgs, IndexDataArgs, SearchIndexArgs};
-pub use create_index::create_index_cli;
-pub use delete_index::delete_index_cli;
-pub use index_data::index_data_cli;
-pub use search_index::search_index_cli;
+use quickwit_doc_mapping::DocMapping;
+
+use crate::CreateIndexArgs;
+
+pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
+    debug!(
+        index_uri =% args.index_uri.display(),
+        timestamp_field =? args.timestamp_field,
+        overwrite = args.overwrite,
+        "create-index"
+    );
+    let index_uri = args.index_uri.to_string_lossy().to_string();
+    let doc_mapping = DocMapping::Dynamic;
+
+    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
+    if args.overwrite {
+        metastore.delete_index(index_uri.clone()).await?;
+    }
+
+    metastore.create_index(index_uri, doc_mapping).await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_create_index_cli() -> anyhow::Result<()> {
+        Ok(())
+    }
+}

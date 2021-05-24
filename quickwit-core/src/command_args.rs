@@ -20,14 +20,35 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-mod command_args;
-mod create_index;
-mod delete_index;
-mod index_data;
-mod search_index;
+use std::path::PathBuf;
 
-pub use command_args::{CreateIndexArgs, DeleteIndexArgs, IndexDataArgs, SearchIndexArgs};
-pub use create_index::create_index_cli;
-pub use delete_index::delete_index_cli;
-pub use index_data::index_data_cli;
-pub use search_index::search_index_cli;
+pub struct CreateIndexArgs {
+    pub index_uri: PathBuf,
+    pub timestamp_field: Option<String>,
+    pub overwrite: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexDataArgs {
+    pub index_uri: PathBuf,
+    pub input_uri: Option<PathBuf>,
+    pub temp_dir: PathBuf,
+    pub num_threads: usize,
+    pub heap_size: u64,
+    pub overwrite: bool,
+}
+
+pub struct SearchIndexArgs {
+    pub index_uri: PathBuf,
+    pub query: String,
+    pub max_hits: usize,
+    pub start_offset: usize,
+    pub search_fields: Option<Vec<String>>,
+    pub start_timestamp: Option<i64>,
+    pub end_timestamp: Option<i64>,
+}
+
+pub struct DeleteIndexArgs {
+    pub index_uri: PathBuf,
+    pub dry_run: bool,
+}

@@ -20,14 +20,30 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-mod command_args;
-mod create_index;
-mod delete_index;
-mod index_data;
-mod search_index;
+use quickwit_metastore::MetastoreUriResolver;
+use tracing::debug;
 
-pub use command_args::{CreateIndexArgs, DeleteIndexArgs, IndexDataArgs, SearchIndexArgs};
-pub use create_index::create_index_cli;
-pub use delete_index::delete_index_cli;
-pub use index_data::index_data_cli;
-pub use search_index::search_index_cli;
+use crate::DeleteIndexArgs;
+
+pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
+    debug!(
+        index_uri =% args.index_uri.display(),
+        dry_run = args.dry_run,
+        "delete-index"
+    );
+
+    let index_uri = args.index_uri.to_string_lossy().to_string();
+
+    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
+    metastore.delete_index(index_uri).await?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_delete_index_cli() -> anyhow::Result<()> {
+        Ok(())
+    }
+}
