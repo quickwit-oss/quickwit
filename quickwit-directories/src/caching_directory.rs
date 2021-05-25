@@ -122,7 +122,6 @@ pub struct CachingDirectory {
     underlying: Arc<dyn Directory>,
     // TODO fixme: that's a pretty ugly cache we have here.
     cache: Arc<SliceCache>,
-    filter_suffix: String,
 }
 
 impl CachingDirectory {
@@ -140,12 +139,10 @@ impl CachingDirectory {
     pub fn new_with_capacity_in_bytes(
         underlying: Arc<dyn Directory>,
         capacity_in_bytes: usize,
-        filter_suffix: String,
     ) -> CachingDirectory {
         CachingDirectory {
             underlying,
             cache: Arc::new(SliceCache::with_capacity_in_bytes(capacity_in_bytes)),
-            filter_suffix,
         }
     }
 }
@@ -225,9 +222,6 @@ impl Directory for CachingDirectory {
         path: &Path,
     ) -> std::result::Result<Box<dyn FileHandle>, OpenReadError> {
         let underlying_filehandle = self.underlying.get_file_handle(path)?;
-        if !path.to_string_lossy().ends_with(&self.filter_suffix) {
-            return Ok(underlying_filehandle);
-        }
         let caching_file_handle = CachingFileHandle {
             path: path.to_path_buf(),
             cache: self.cache.clone(),
@@ -312,11 +306,8 @@ mod tests {
         let test_path = Path::new("test");
         ram_directory.atomic_write(test_path, &b"test"[..])?;
         let debug_proxy_directory = Arc::new(DebugProxyDirectory::wrap(ram_directory));
-        let caching_directory = CachingDirectory::new_with_capacity_in_bytes(
-            debug_proxy_directory.clone(),
-            10_000,
-            "".to_string(),
-        );
+        let caching_directory =
+            CachingDirectory::new_with_capacity_in_bytes(debug_proxy_directory.clone(), 10_000);
         caching_directory.atomic_read(test_path)?;
         caching_directory.atomic_read(test_path)?;
         let records: Vec<crate::ReadOperation> =
