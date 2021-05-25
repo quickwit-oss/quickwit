@@ -28,15 +28,34 @@ use thiserror::Error;
 /// Metastore error kinds.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MetastoreErrorKind {
-    DoesNotExist,
+    /// The target index already exists.
     ExistingIndexUri,
+
+    /// The target split already exists.
     ExistingSplitId,
+
+    /// Forbidden error.
     Forbidden,
+
+    /// The target index does not exist.
     IndexDoesNotExist,
+
+    /// The target index is not open.
     IndexIsNotOpen,
+
+    /// Any generic internal error.
     InternalError,
+
+    /// Invalid manifest.
     InvalidManifest,
+
+    /// Io error.
     Io,
+
+    /// The target split does not exist.
+    SplitDoesNotExist,
+
+    /// The target split is not staged.
     SplitIsNotStaged,
 }
 
@@ -56,7 +75,7 @@ impl MetastoreErrorKind {
 impl From<MetastoreError> for io::Error {
     fn from(metastore_err: MetastoreError) -> Self {
         let io_error_kind = match metastore_err.kind() {
-            MetastoreErrorKind::DoesNotExist => io::ErrorKind::NotFound,
+            MetastoreErrorKind::SplitDoesNotExist => io::ErrorKind::NotFound,
             _ => io::ErrorKind::Other,
         };
         io::Error::new(io_error_kind, metastore_err.source)
@@ -99,6 +118,7 @@ impl From<io::Error> for MetastoreError {
     }
 }
 
+/// Generic Result type for metastore operations.
 pub type MetastoreResult<T> = Result<T, MetastoreError>;
 
 /// Generic Storage Resolver Error.
@@ -108,9 +128,11 @@ pub enum MetastoreResolverError {
     /// A protocol is required for the URI.
     #[error("Invalid format for URI: required: `{0}`")]
     InvalidUri(String),
+
     /// The protocol is not supported by this resolver.
     #[error("Unsupported protocol")]
     ProtocolUnsupported(String),
+
     /// The URI is valid, and is meant to be handled by this resolver,
     /// but the resolver failed to actually connect to the storage.
     /// e.g. Connection error, credential error, incompatible version,
