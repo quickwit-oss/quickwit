@@ -39,13 +39,16 @@ pub type IndexUri = String;
 /// A split ID.
 pub type SplitId = String;
 
-pub static FILE_FORMAT_VERSION: &str = "0";
+/// A file format version.
+const FILE_FORMAT_VERSION: &str = "0";
 
+/// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexMetadata {
     version: String,
 }
 
+/// A split metadata carries all meta data about a split.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SplitMetadata {
     // Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
@@ -70,22 +73,27 @@ pub struct SplitMetadata {
     generation: usize,
 }
 
+/// A split state.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum SplitState {
-    // The split is almost ready. Some of its files may have been uploaded in the storage.
+    /// The split is almost ready. Some of its files may have been uploaded in the storage.
     Staged,
-    // The split is ready and published.
+
+    /// The split is ready and published.
     Published,
-    // The split is scheduled for deletion.
+
+    /// The split is scheduled for deletion.
     ScheduledForDeletion,
 }
 
+/// A MetadataSet carries an index metadata and its split metadata.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetadataSet {
     index: IndexMetadata,
     splits: HashMap<SplitId, SplitMetadata>,
 }
 
+/// Metastore meant to manage quickwit's indices and its splits.
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
     /// Index exists.
@@ -123,6 +131,7 @@ pub trait Metastore: Send + Sync + 'static {
         time_range: Option<Range<u64>>,
     ) -> MetastoreResult<Vec<SplitMetadata>>;
 
+    /// Marks split as deleted.
     async fn mark_split_as_deleted(
         &self,
         index_uri: IndexUri,
