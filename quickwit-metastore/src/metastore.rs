@@ -78,10 +78,10 @@ pub struct SplitMetadata {
 pub enum SplitState {
     /// The split is almost ready. Some of its files may have been uploaded in the storage.
     Staged,
-    
+
     /// The split is ready and published.
     Published,
-    
+
     /// The split is scheduled for deletion.
     ScheduledForDeletion,
 }

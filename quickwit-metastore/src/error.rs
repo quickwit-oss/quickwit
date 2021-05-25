@@ -30,31 +30,31 @@ use thiserror::Error;
 pub enum MetastoreErrorKind {
     /// The target index already exists.
     ExistingIndexUri,
-    
+
     /// The target split already exists.
     ExistingSplitId,
-    
+
     /// Forbidden error.
     Forbidden,
-    
+
     /// The target index does not exist.
     IndexDoesNotExist,
-    
+
     /// The target index is not open.
     IndexIsNotOpen,
-    
+
     /// Any generic internal error.
     InternalError,
-    
+
     /// Invalid manifest.
     InvalidManifest,
-    
+
     /// Io error.
     Io,
-    
+
     /// The target split does not exist.
     SplitDoesNotExist,
-    
+
     /// The target split is not staged.
     SplitIsNotStaged,
 }
@@ -128,11 +128,11 @@ pub enum MetastoreResolverError {
     /// A protocol is required for the URI.
     #[error("Invalid format for URI: required: `{0}`")]
     InvalidUri(String),
-    
+
     /// The protocol is not supported by this resolver.
     #[error("Unsupported protocol")]
     ProtocolUnsupported(String),
-    
+
     /// The URI is valid, and is meant to be handled by this resolver,
     /// but the resolver failed to actually connect to the storage.
     /// e.g. Connection error, credential error, incompatible version,
