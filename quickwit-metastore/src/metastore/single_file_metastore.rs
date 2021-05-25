@@ -1523,7 +1523,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_storage_failing() {
+    async fn test_single_file_metastore_storage_failing() {
         // The single file metastore should not update its internal state if the storage fails.
         let mut mock_storage = MockStorage::default();
 
