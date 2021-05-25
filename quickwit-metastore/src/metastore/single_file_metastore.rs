@@ -36,6 +36,7 @@ use crate::{
     SplitMetadata, SplitState, FILE_FORMAT_VERSION,
 };
 
+/// A metadata filename.
 const META_FILENAME: &str = "quickwit.json";
 
 /// Create a path to the metadata file from the given index path.

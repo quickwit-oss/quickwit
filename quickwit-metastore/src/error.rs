@@ -28,15 +28,25 @@ use thiserror::Error;
 /// Metastore error kinds.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MetastoreErrorKind {
+    /// The target split does not exist.
     DoesNotExist,
+    /// The target index exists.
     ExistingIndexUri,
+    /// The target split exists.
     ExistingSplitId,
+    /// Forbidden error.
     Forbidden,
+    /// The target index does not exist.
     IndexDoesNotExist,
+    /// The target index is not open.
     IndexIsNotOpen,
+    /// Any generic internal error.
     InternalError,
+    /// Invalid manifest.
     InvalidManifest,
+    /// Io error.
     Io,
+    /// The target split is not staged.
     SplitIsNotStaged,
 }
 
@@ -99,6 +109,7 @@ impl From<io::Error> for MetastoreError {
     }
 }
 
+/// Generic Result type for metastore operations.
 pub type MetastoreResult<T> = Result<T, MetastoreError>;
 
 /// Generic Storage Resolver Error.

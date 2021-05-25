@@ -21,6 +21,10 @@
 */
 #![warn(missing_docs)]
 
+/*! `quickwit-metastore` is the abstraction used in quickwit to interface itself to different metastore:
+- single file metastore
+etc.
+*/
 mod error;
 mod metastore;
 mod metastore_resolver;
