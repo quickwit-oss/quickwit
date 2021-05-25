@@ -28,14 +28,14 @@ This crate contains all of the building pieces that make quickwit's IO possible.
 - The `CachingDirectory` wraps a Directory with a dynamic cache.
 - The `DebugDirectory` acts as a proxy to another directory to instrument it and record all of its IO.
 */
-#![allow(missing_docs)]
+#![warn(missing_docs)]
 
 mod caching_directory;
 mod debug_proxy_directory;
 mod hot_directory;
 mod storage_directory;
 
-pub use self::caching_directory::{Cache, CachingDirectory};
+pub use self::caching_directory::CachingDirectory;
 pub use self::debug_proxy_directory::{DebugProxyDirectory, ReadOperation};
 pub use self::hot_directory::{write_hotcache, HotDirectory};
 pub use self::storage_directory::StorageDirectory;
