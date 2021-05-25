@@ -33,12 +33,6 @@ pub async fn create_index(index_uri: IndexUri, doc_mapping: DocMapping) -> anyho
 }
 
 // TODO
-pub async fn index_data(index_uri: IndexUri) -> anyhow::Result<()> {
-    let _metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    Ok(())
-}
-
-// TODO
 pub async fn search_index(index_uri: IndexUri) -> anyhow::Result<()> {
     let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
     let _splits = metastore

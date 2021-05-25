@@ -9,3 +9,16 @@ license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwi
 anyhow = "1.0"
 quickwit-doc-mapping = { version = "0.1.0", path = "../quickwit-doc-mapping" }
 quickwit-metastore = { version = "0.1.0", path = "../quickwit-metastore" }
+quickwit-hot-directory = { version = "0.1.0", path = "../quickwit-hot-directory" }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.6", features = ["full"] }
+rand = "0.8"
+tantivy = { git= "https://github.com/quickwit-inc/tantivy", branch = "async", features = ["lz4-compression"] }
+futures = "0.3"
+futures-util = { version = "0.3.1", default-features = false }
+uuid = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = '0.1'
+tracing-subscriber = "0.2"
+tokio-stream = "0.1.6"

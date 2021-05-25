@@ -52,26 +52,42 @@ pub struct SplitMetadata {
     // should be enough to uniquely identify a split.
     // In reality, some information may be implicitly configured
     // in the storage URI resolver: for instance, the Amazon S3 region.
-    split_id: String,
+    pub split_id: String,
 
     // The state of the split
-    split_state: SplitState,
+    pub split_state: SplitState,
 
     // Number of records (or documents) in the split.
-    num_records: u64,
+    pub num_records: usize,
 
     // Weight of the split in bytes.
-    size_in_bytes: u64,
+    pub size_in_bytes: usize,
 
     // If a timestamp field is available, the min / max timestamp in the split.
-    time_range: Option<Range<u64>>,
+    pub time_range: Option<Range<u64>>,
 
     // Number of merge this segment has been subjected to during its lifetime.
-    generation: usize,
+    pub generation: usize,
+}
+
+impl SplitMetadata {
+    /// Creates a new instance of split metadata
+    pub fn new(split_id: String) -> Self {
+        Self {
+            split_id,
+            split_state: SplitState::New,
+            num_records: 0,
+            size_in_bytes: 0,
+            time_range: None,
+            generation: 0,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum SplitState {
+    // The split is newly created
+    New,
     // The split is almost ready. Some of its files may have been uploaded in the storage.
     Staged,
     // The split is ready and published.
