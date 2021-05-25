@@ -31,12 +31,13 @@ use tokio::sync::RwLock;
 use quickwit_doc_mapping::DocMapping;
 use quickwit_storage::{PutPayload, Storage};
 
+use crate::metastore::FILE_FORMAT_VERSION;
 use crate::{
     IndexMetadata, IndexUri, MetadataSet, Metastore, MetastoreErrorKind, MetastoreResult, SplitId,
-    SplitMetadata, SplitState, FILE_FORMAT_VERSION,
+    SplitMetadata, SplitState,
 };
 
-/// A metadata filename.
+/// A metadata filename that managed by SingleFileMetastore.
 const META_FILENAME: &str = "quickwit.json";
 
 /// Create a path to the metadata file from the given index path.
@@ -249,7 +250,7 @@ impl Metastore for SingleFileMetastore {
 
         // Check for the existence of split.
         let split_metadata = metadata_set.splits.get_mut(&split_id).ok_or_else(|| {
-            MetastoreErrorKind::DoesNotExist
+            MetastoreErrorKind::SplitDoesNotExist
                 .with_error(anyhow::anyhow!("Split does not exist: {:?}", &split_id))
         })?;
 
@@ -346,7 +347,7 @@ impl Metastore for SingleFileMetastore {
 
         // Check for the existence of split.
         let split_metadata = metadata_set.splits.get_mut(&split_id).ok_or_else(|| {
-            MetastoreErrorKind::DoesNotExist
+            MetastoreErrorKind::SplitDoesNotExist
                 .with_error(anyhow::anyhow!("Split does not exists: {:?}", &split_id))
         })?;
 
@@ -393,7 +394,7 @@ impl Metastore for SingleFileMetastore {
 
         // Check for the existence of split.
         let split_metadata = metadata_set.splits.get_mut(&split_id).ok_or_else(|| {
-            MetastoreErrorKind::DoesNotExist
+            MetastoreErrorKind::SplitDoesNotExist
                 .with_error(anyhow::anyhow!("Split does not exist: {:?}", &split_id))
         })?;
 
@@ -807,7 +808,7 @@ mod tests {
                 .await
                 .unwrap_err()
                 .kind();
-            let expected = MetastoreErrorKind::DoesNotExist;
+            let expected = MetastoreErrorKind::SplitDoesNotExist;
             assert_eq!(result, expected);
         }
     }
@@ -1368,7 +1369,7 @@ mod tests {
                 .await
                 .unwrap_err()
                 .kind();
-            let expected = MetastoreErrorKind::DoesNotExist;
+            let expected = MetastoreErrorKind::SplitDoesNotExist;
             assert_eq!(result, expected);
         }
     }
@@ -1464,7 +1465,7 @@ mod tests {
                 .await
                 .unwrap_err()
                 .kind();
-            let expected = MetastoreErrorKind::DoesNotExist;
+            let expected = MetastoreErrorKind::SplitDoesNotExist;
             assert_eq!(result, expected);
         }
     }

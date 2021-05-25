@@ -40,9 +40,9 @@ pub type IndexUri = String;
 pub type SplitId = String;
 
 /// A file format version.
-pub static FILE_FORMAT_VERSION: &str = "0";
+const FILE_FORMAT_VERSION: &str = "0";
 
-/// An index metadata carries all meta data about a split.
+/// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexMetadata {
     version: String,
@@ -78,8 +78,10 @@ pub struct SplitMetadata {
 pub enum SplitState {
     /// The split is almost ready. Some of its files may have been uploaded in the storage.
     Staged,
+    
     /// The split is ready and published.
     Published,
+    
     /// The split is scheduled for deletion.
     ScheduledForDeletion,
 }

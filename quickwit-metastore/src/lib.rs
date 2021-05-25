@@ -33,6 +33,5 @@ pub use error::{MetastoreError, MetastoreErrorKind, MetastoreResolverError, Meta
 pub use metastore::single_file_metastore::SingleFileMetastore;
 pub use metastore::{
     IndexMetadata, IndexUri, MetadataSet, Metastore, SplitId, SplitMetadata, SplitState,
-    FILE_FORMAT_VERSION,
 };
 pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};
