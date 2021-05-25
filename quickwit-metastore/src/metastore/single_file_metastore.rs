@@ -63,44 +63,6 @@ impl SingleFileMetastore {
             data: Arc::new(RwLock::new(HashMap::new())),
         })
     }
-
-    async fn split_exists(&self, index_uri: IndexUri, split_id: SplitId) -> MetastoreResult<bool> {
-        let data = self.data.read().await;
-
-        // Check for the existence of index.
-        let metadata_set = data.get(&index_uri).ok_or_else(|| {
-            MetastoreErrorKind::IndexIsNotOpen
-                .with_error(anyhow::anyhow!("Index is not open: {:?}", &index_uri))
-        })?;
-
-        // Check for the existence of split.
-        let exist = metadata_set.splits.contains_key(&split_id);
-
-        Ok(exist)
-    }
-
-    /// Get split metadata.
-    pub async fn get_split(
-        &self,
-        index_uri: IndexUri,
-        split_id: SplitId,
-    ) -> MetastoreResult<SplitMetadata> {
-        let data = self.data.read().await;
-
-        // Check for the existence of index.
-        let metadata_set = data.get(&index_uri).ok_or_else(|| {
-            MetastoreErrorKind::IndexIsNotOpen
-                .with_error(anyhow::anyhow!("Index is not open: {:?}", &index_uri))
-        })?;
-
-        // Check for the existence of split.
-        let split_metadata = metadata_set.splits.get(&split_id).ok_or_else(|| {
-            MetastoreErrorKind::DoesNotExist
-                .with_error(anyhow::anyhow!("Split does not exist: {:?}", &split_id))
-        })?;
-
-        Ok(split_metadata.clone())
-    }
 }
 
 #[async_trait]
