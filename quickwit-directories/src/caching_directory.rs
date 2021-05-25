@@ -38,15 +38,15 @@ struct SliceAddress {
     byte_range: Range<usize>,
 }
 
-struct NeedMutCache {
+struct NeedMutSliceCache {
     lru_cache: LruCache<SliceAddress, OwnedBytes>,
     num_bytes: usize,
     capacity_in_bytes: usize,
 }
 
-impl NeedMutCache {
-    pub fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
-        NeedMutCache {
+impl NeedMutSliceCache {
+    fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
+        NeedMutSliceCache {
             // The limit will be decided by the amount of memory in the cache,
             // not the number of items in the cache.
             // Enforcing this limit is done in the `NeedMutCache` impl.
@@ -88,17 +88,22 @@ impl NeedMutCache {
     }
 }
 
-pub struct Cache {
-    inner: Mutex<NeedMutCache>,
+/// A simple in-resident memory slice cache.
+pub(crate) struct SliceCache {
+    inner: Mutex<NeedMutSliceCache>,
 }
 
-impl Cache {
+impl SliceCache {
+    /// Creates an slice cache with the given capacity.
+    ///
+    /// The SliceCache is guaranteed to not store more than `capcity_in_bytes`.
     pub fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
-        Cache {
-            inner: Mutex::new(NeedMutCache::with_capacity_in_bytes(capacity_in_bytes)),
+        SliceCache {
+            inner: Mutex::new(NeedMutSliceCache::with_capacity_in_bytes(capacity_in_bytes)),
         }
     }
 
+    /// If available, returns the cached view of the slice.
     fn get(&self, cache_key: &SliceAddress) -> Option<OwnedBytes> {
         self.inner.lock().unwrap().get(cache_key)
     }
@@ -116,8 +121,7 @@ impl Cache {
 pub struct CachingDirectory {
     underlying: Arc<dyn Directory>,
     // TODO fixme: that's a pretty ugly cache we have here.
-    cache: Arc<Cache>,
-    filter_suffix: String,
+    cache: Arc<SliceCache>,
 }
 
 impl CachingDirectory {
@@ -135,24 +139,10 @@ impl CachingDirectory {
     pub fn new_with_capacity_in_bytes(
         underlying: Arc<dyn Directory>,
         capacity_in_bytes: usize,
-        filter_suffix: String,
     ) -> CachingDirectory {
         CachingDirectory {
             underlying,
-            cache: Arc::new(Cache::with_capacity_in_bytes(capacity_in_bytes)),
-            filter_suffix,
-        }
-    }
-
-    pub fn new_with_cache(
-        underlying: Arc<dyn Directory>,
-        cache: Arc<Cache>,
-        filter_suffix: String,
-    ) -> CachingDirectory {
-        CachingDirectory {
-            underlying,
-            cache,
-            filter_suffix,
+            cache: Arc::new(SliceCache::with_capacity_in_bytes(capacity_in_bytes)),
         }
     }
 }
@@ -165,7 +155,7 @@ impl fmt::Debug for CachingDirectory {
 
 struct CachingFileHandle {
     path: PathBuf,
-    cache: Arc<Cache>,
+    cache: Arc<SliceCache>,
     underlying_filehandle: Box<dyn FileHandle>,
 }
 
@@ -232,9 +222,6 @@ impl Directory for CachingDirectory {
         path: &Path,
     ) -> std::result::Result<Box<dyn FileHandle>, OpenReadError> {
         let underlying_filehandle = self.underlying.get_file_handle(path)?;
-        if !path.to_string_lossy().ends_with(&self.filter_suffix) {
-            return Ok(underlying_filehandle);
-        }
         let caching_file_handle = CachingFileHandle {
             path: path.to_path_buf(),
             cache: self.cache.clone(),
@@ -275,7 +262,7 @@ impl Directory for CachingDirectory {
 #[cfg(test)]
 mod tests {
 
-    use super::{Cache, CachingDirectory};
+    use super::{CachingDirectory, SliceCache};
     use crate::caching_directory::SliceAddress;
     use crate::DebugProxyDirectory;
     use std::path::{Path, PathBuf};
@@ -285,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_cache() {
-        let cache = Cache::with_capacity_in_bytes(10_000);
+        let cache = SliceCache::with_capacity_in_bytes(10_000);
         let slice_address = SliceAddress {
             path: PathBuf::from("hello.seg"),
             byte_range: 1..3,
@@ -301,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_cache_different_slice() {
-        let cache = Cache::with_capacity_in_bytes(10_000);
+        let cache = SliceCache::with_capacity_in_bytes(10_000);
         let mut slice_address = SliceAddress {
             path: PathBuf::from("hello.seg"),
             byte_range: 1..3,
@@ -319,11 +306,8 @@ mod tests {
         let test_path = Path::new("test");
         ram_directory.atomic_write(test_path, &b"test"[..])?;
         let debug_proxy_directory = Arc::new(DebugProxyDirectory::wrap(ram_directory));
-        let caching_directory = CachingDirectory::new_with_capacity_in_bytes(
-            debug_proxy_directory.clone(),
-            10_000,
-            "".to_string(),
-        );
+        let caching_directory =
+            CachingDirectory::new_with_capacity_in_bytes(debug_proxy_directory.clone(), 10_000);
         caching_directory.atomic_read(test_path)?;
         caching_directory.atomic_read(test_path)?;
         let records: Vec<crate::ReadOperation> =
