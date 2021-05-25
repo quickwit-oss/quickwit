@@ -922,10 +922,10 @@ mod tests {
             for split_metadata in splits {
                 split_id_vec.push(split_metadata.split_id);
             }
-            assert_eq!(split_id_vec.contains(&"one".to_string()), true); // (0..100)
-            assert_eq!(split_id_vec.contains(&"two".to_string()), false); // (100..200)
-            assert_eq!(split_id_vec.contains(&"three".to_string()), false); // (200..300)
-            assert_eq!(split_id_vec.contains(&"four".to_string()), false); // (300..400)
+            assert_eq!(split_id_vec.contains(&"one".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"two".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"three".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"four".to_string()), false);
         }
 
         {
@@ -939,10 +939,10 @@ mod tests {
             for split_metadata in splits {
                 split_id_vec.push(split_metadata.split_id);
             }
-            assert_eq!(split_id_vec.contains(&"one".to_string()), true); // (0..100)
-            assert_eq!(split_id_vec.contains(&"two".to_string()), false); // (100..200)
-            assert_eq!(split_id_vec.contains(&"three".to_string()), false); // (200..300)
-            assert_eq!(split_id_vec.contains(&"four".to_string()), false); // (300..400)
+            assert_eq!(split_id_vec.contains(&"one".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"two".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"three".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"four".to_string()), false);
         }
 
         {
