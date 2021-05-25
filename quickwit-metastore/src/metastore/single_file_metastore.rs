@@ -134,28 +134,12 @@ impl Metastore for SingleFileMetastore {
     }
 
     async fn open_index(&self, index_uri: IndexUri) -> MetastoreResult<()> {
-        // Check for the existence of index.
-        let exists = self.index_exists(index_uri.clone()).await.map_err(|e| {
-            MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
-                "Failed to check the existence of the index: {:?}",
-                e
-            ))
-        })?;
-        if !exists {
-            return Err(
-                MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
-                    "The index does not exist.: {:?}",
-                    &index_uri
-                )),
-            );
-        }
-
         let path = meta_uri(index_uri.clone());
 
         // Get metadata set from storage.
         let contents = self.storage.get_all(&path).await.map_err(|e| {
-            MetastoreErrorKind::InternalError
-                .with_error(anyhow::anyhow!("Failed to put metadata set: {:?}", e))
+            MetastoreErrorKind::IndexDoesNotExist
+                .with_error(anyhow::anyhow!("The index does not exist: {:?}", e))
         })?;
 
         // Deserialize metadata.
