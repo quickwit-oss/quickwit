@@ -163,10 +163,10 @@ impl StaticDirectoryCache {
 
         let slices = slice_offsets
             .windows(2)
-            .map(|w| {
-                let path = w[0].0.clone();
-                let start = w[0].1 as usize;
-                let end = w[1].1 as usize;
+            .map(|slice_offsets_window| {
+                let path = slice_offsets_window[0].0.clone();
+                let start = slice_offsets_window[0].1 as usize;
+                let end = slice_offsets_window[1].1 as usize;
                 StaticSliceCache::open(bytes.slice(start..end)).map(|s| (path, Arc::new(s)))
             })
             .collect::<tantivy::Result<_>>()?;
@@ -317,12 +317,21 @@ impl fmt::Debug for StaticSliceCache {
     }
 }
 
+/// The hot directory accelerates a given directory,
+/// by placing a static cache in front of a directory.
+///
+/// The `HotDirectory` does not implement write operations. It has been
+/// designed for quickwit in order to regroup all of the small random
+/// read operations required to open an index.
+/// All of these operations are gather into a single file called the
+/// hotcache.
 #[derive(Clone)]
 pub struct HotDirectory {
     inner: Arc<InnerHotDirectory>,
 }
 
 impl HotDirectory {
+    /// Wraps an index, with a static cache serialized into `hot_cache_bytes`.
     pub fn open<D: Directory>(
         underlying: D,
         hot_cache_bytes: OwnedBytes,

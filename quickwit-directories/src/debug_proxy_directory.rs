@@ -251,10 +251,6 @@ impl DebugProxyDirectory<StorageDirectory> {
         self.register_async(read_operation).await;
         Ok(payload)
     }
-
-    pub fn underlying(&self) -> &StorageDirectory {
-        &self.underlying
-    }
 }
 
 #[cfg(test)]
