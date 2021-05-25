@@ -20,6 +20,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use quickwit_storage::StorageUriResolver;
+use std::sync::Arc;
 use tantivy::{schema::Schema, Document};
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -29,7 +31,7 @@ use crate::indexing::split::Split;
 
 use super::IndexDataParams;
 
-/// Receives json documents, parses and adds them to a `tantivy::Index` 
+/// Receives json documents, parses and adds them to a `tantivy::Index`
 pub async fn index_documents(
     params: &IndexDataParams,
     mut document_receiver: Receiver<String>,
@@ -37,14 +39,18 @@ pub async fn index_documents(
     statistic_sender: Sender<StatisticEvent>,
 ) -> anyhow::Result<()> {
     //TODO replace with  DocMapper::schema()
+    // let doc_mapper = DocMapping::Dynamic;
     let schema = Schema::builder().build();
 
-    let mut current_split = Split::create(&params, schema.clone()).await?;
+    let storage_resolver = Arc::new(StorageUriResolver::default());
+
+    let mut current_split =
+        Split::create(&params, storage_resolver.clone(), schema.clone()).await?;
     while let Some(raw_doc) = document_receiver.recv().await {
         let doc_size = raw_doc.as_bytes().len();
         //TODO: replace with DocMapper::doc_from_json(raw_doc)
         let parse_result = parse_document(raw_doc);
-        
+
         let doc = match parse_result {
             Ok(doc) => {
                 statistic_sender
@@ -68,12 +74,12 @@ pub async fn index_documents(
                 continue;
             }
         };
-        println!("EVAN");
+
         current_split.add_document(doc)?;
         if current_split.has_enough_docs() {
             let split = std::mem::replace(
                 &mut current_split,
-                Split::create(&params, schema.clone()).await?,
+                Split::create(&params, storage_resolver.clone(), schema.clone()).await?,
             );
             split_sender.send(split).await?;
         }
@@ -83,7 +89,7 @@ pub async fn index_documents(
     if current_split.metadata.num_records > 0 {
         let split = std::mem::replace(
             &mut current_split,
-            Split::create(&params, schema.clone()).await?,
+            Split::create(&params, storage_resolver, schema.clone()).await?,
         );
         split_sender.send(split).await?;
     }

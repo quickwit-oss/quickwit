@@ -9,7 +9,8 @@ license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwi
 anyhow = "1.0"
 quickwit-doc-mapping = { version = "0.1.0", path = "../quickwit-doc-mapping" }
 quickwit-metastore = { version = "0.1.0", path = "../quickwit-metastore" }
-quickwit-hot-directory = { version = "0.1.0", path = "../quickwit-hot-directory" }
+quickwit-directories = { version = "0.1.0", path = "../quickwit-directories" }
+quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.6", features = ["full"] }
 rand = "0.8"

@@ -23,6 +23,7 @@
 mod document_indexer;
 mod document_retriever;
 mod index;
+mod manifest;
 mod split;
 mod split_finalizer;
 mod statistics;

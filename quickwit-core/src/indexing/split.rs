@@ -20,29 +20,46 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::fmt;
+use std::{fmt, path::Path};
 
-use crate::indexing::statistics::StatisticEvent;
-use quickwit_hot_directory::write_hotcache;
-use quickwit_metastore::SplitMetadata;
+use crate::indexing::{manifest::Manifest, statistics::StatisticEvent};
+use anyhow::{self, Context};
+use quickwit_directories::write_hotcache;
+use quickwit_metastore::{MetastoreUriResolver, SplitMetadata};
+use quickwit_storage::{PutPayload, Storage, StorageUriResolver};
+use std::sync::Arc;
+use std::time::Instant;
 use std::{path::PathBuf, usize};
+use tantivy::Directory;
 use tantivy::{directory::MmapDirectory, merge_policy::NoMergePolicy, schema::Schema, Document};
 use tokio::{fs, sync::mpsc::Sender};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use super::IndexDataParams;
 
-const MAX_DOC_PER_SPLIT: usize = 5_000_000;
+const MAX_DOC_PER_SPLIT: usize = if cfg!(test) { 100 } else { 5_000_000 };
 
 /// Struct that represents an instance of split
 pub struct Split {
+    /// Id of the split.
     pub id: Uuid,
-    pub metadata: SplitMetadata,
-    pub local_directory: PathBuf,
+    /// uri of the index this split belongs to.
     pub index_uri: String,
+    /// A combination of index_uri & split_id.
+    pub split_uri: String,
+    /// The split metadata.
+    pub metadata: SplitMetadata,
+    /// The local directory hosting this split artifacts.
+    pub local_directory: PathBuf,
+    /// The tantivy index for this split.
     pub index: tantivy::Index,
+    /// The configured index writer for this split.
     pub index_writer: Option<tantivy::IndexWriter>,
+    /// The number of parsing errors occurred during this split construction
     pub num_parsing_errors: usize,
+    /// The storage instance for this split.
+    pub storage: Arc<dyn Storage>,
 }
 
 impl fmt::Debug for Split {
@@ -60,7 +77,11 @@ impl fmt::Debug for Split {
 
 impl Split {
     /// Create a new instance of an index split.
-    pub async fn create(params: &IndexDataParams, schema: Schema) -> anyhow::Result<Self> {
+    pub async fn create(
+        params: &IndexDataParams,
+        storage_resolver: Arc<StorageUriResolver>,
+        schema: Schema,
+    ) -> anyhow::Result<Self> {
         let id = Uuid::new_v4();
         let local_directory = params.temp_dir.join(format!("{}", id));
         fs::create_dir(local_directory.as_path()).await?;
@@ -70,14 +91,19 @@ impl Split {
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
         let index_uri = params.index_uri.to_string_lossy().to_string();
         let metadata = SplitMetadata::new(id.to_string());
+
+        let split_uri = format!("{}/{}", index_uri, id);
+        let storage = storage_resolver.resolve(&split_uri)?;
         Ok(Self {
             id,
+            index_uri,
+            split_uri,
             metadata,
             local_directory,
-            index_uri,
             index,
             index_writer: Some(index_writer),
             num_parsing_errors: 0,
+            storage,
         })
     }
 
@@ -130,7 +156,14 @@ impl Split {
 
     /// Stage a split in the metastore.
     pub async fn stage(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<()> {
-        //TODO: using metastore
+        let metastore = MetastoreUriResolver::default().resolve(&self.index_uri)?;
+        metastore
+            .stage_split(
+                self.index_uri.clone(),
+                self.id.to_string(),
+                self.metadata.clone(),
+            )
+            .await?;
         statistic_sender
             .send(StatisticEvent::SplitStage {
                 id: self.id.to_string(),
@@ -142,8 +175,7 @@ impl Split {
 
     /// Upload all split artifacts using the storage.
     pub async fn upload(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<()> {
-        //TODO: using storage
-
+        put_to_storage(&*self.storage, self).await?;
         statistic_sender
             .send(StatisticEvent::SplitUpload {
                 uri: self.id.to_string(),
@@ -155,8 +187,10 @@ impl Split {
 
     /// Publish the split in the metastore.
     pub async fn publish(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<()> {
-        //TODO: using metastore
-
+        let metastore = MetastoreUriResolver::default().resolve(&self.index_uri)?;
+        metastore
+            .publish_split(self.index_uri.clone(), self.id.to_string())
+            .await?;
         statistic_sender
             .send(StatisticEvent::SplitPublish {
                 uri: self.id.to_string(),
@@ -165,4 +199,84 @@ impl Split {
             .await?;
         Ok(())
     }
+}
+
+async fn put_to_storage(storage: &dyn Storage, split: &Split) -> anyhow::Result<Manifest> {
+    info!("upload-split");
+    let start = Instant::now();
+
+    let mut manifest = Manifest::new(split.metadata.clone());
+    manifest.segments = split.index.searchable_segment_ids()?;
+
+    let mut files_to_upload: Vec<PathBuf> = split
+        .index
+        .searchable_segment_metas()?
+        .into_iter()
+        .flat_map(|segment_meta| segment_meta.list_files())
+        .filter(|filepath| {
+            // the list given by segment_meta.list_files() can contain false positives.
+            // Some of those files actually do not exists.
+            // Lets' filter them out.
+            // TODO modify tantivy to make this list
+            split.index.directory().exists(filepath).unwrap_or(true) //< true might look like a very odd choice here.
+                                                                     // It has the benefit of triggering an error when we will effectively try to upload the files.
+        })
+        .map(|relative_filepath| split.local_directory.join(relative_filepath))
+        .collect();
+    files_to_upload.push(split.local_directory.join("meta.json"));
+    files_to_upload.push(split.local_directory.join("hotcache"));
+
+    let mut upload_res_futures = vec![];
+
+    for path in files_to_upload {
+        let file: tokio::fs::File = tokio::fs::File::open(&path)
+            .await
+            .with_context(|| format!("Failed to get metadata for {:?}", &path))?;
+        let metadata = file.metadata().await?;
+        let file_name = match path.file_name() {
+            Some(fname) => fname.to_string_lossy().to_string(),
+            _ => {
+                warn!(path = %path.display(), "Could not extract path as string");
+                continue;
+            }
+        };
+
+        manifest.push(&file_name, metadata.len());
+        let key = Path::new(&split.split_uri).join(&file_name);
+        let payload = quickwit_storage::PutPayload::from(path.clone());
+        let upload_res_future = async move {
+            storage.put(&key, payload).await.with_context(|| {
+                format!(
+                    "Failed uploading key {} in bucket {}",
+                    key.display(),
+                    split.index_uri
+                )
+            })?;
+            Result::<(), anyhow::Error>::Ok(())
+        };
+
+        upload_res_futures.push(upload_res_future);
+    }
+
+    futures::future::try_join_all(upload_res_futures).await?;
+
+    let manifest_body = manifest.to_json()?.into_bytes();
+    let manifest_path = Path::new(split.index_uri.as_str()).join(".manifest");
+    storage
+        .put(&manifest_path, PutPayload::from(manifest_body))
+        .await?;
+
+    let elapsed_secs = start.elapsed().as_secs();
+    let file_statistics = manifest.file_statistics();
+    info!(
+        min_file_size_in_bytes = %file_statistics.min_file_size_in_bytes,
+        max_file_size_in_bytes = %file_statistics.max_file_size_in_bytes,
+        avg_file_size_in_bytes = %file_statistics.avg_file_size_in_bytes,
+        split_size_in_megabytes = %manifest.split_size_in_bytes / 1000,
+        elapsed_secs = %elapsed_secs,
+        throughput_mb_s = %manifest.split_size_in_bytes / 1000 / elapsed_secs.max(1),
+        "Uploaded split to storage"
+    );
+
+    Ok(manifest)
 }

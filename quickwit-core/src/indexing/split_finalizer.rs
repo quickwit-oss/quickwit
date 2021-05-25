@@ -33,7 +33,7 @@ use tokio::{
 use crate::indexing::split::Split;
 use crate::indexing::statistics::StatisticEvent;
 
-const MAX_CONCURRENT_SPLIT_TASKS: usize = 20;
+const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 20 };
 
 /// Finilizes a split by performing the following actions
 /// - Commit the split

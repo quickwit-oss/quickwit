@@ -39,34 +39,37 @@ pub type IndexUri = String;
 /// A split ID.
 pub type SplitId = String;
 
-pub static FILE_FORMAT_VERSION: &str = "0";
+/// A file format version.
+const FILE_FORMAT_VERSION: &str = "0";
 
+/// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexMetadata {
     version: String,
 }
 
+/// A split metadata carries all meta data about a split.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SplitMetadata {
-    // Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
-    // should be enough to uniquely identify a split.
-    // In reality, some information may be implicitly configured
-    // in the storage URI resolver: for instance, the Amazon S3 region.
+    /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
+    /// should be enough to uniquely identify a split.
+    /// In reality, some information may be implicitly configured
+    /// in the storage URI resolver: for instance, the Amazon S3 region.
     pub split_id: String,
 
-    // The state of the split
+    /// The state of the split
     pub split_state: SplitState,
 
-    // Number of records (or documents) in the split.
+    /// Number of records (or documents) in the split.
     pub num_records: usize,
 
-    // Weight of the split in bytes.
+    /// Weight of the split in bytes.
     pub size_in_bytes: usize,
 
-    // If a timestamp field is available, the min / max timestamp in the split.
+    /// If a timestamp field is available, the min / max timestamp in the split.
     pub time_range: Option<Range<u64>>,
 
-    // Number of merge this segment has been subjected to during its lifetime.
+    /// Number of merge this segment has been subjected to during its lifetime.
     pub generation: usize,
 }
 
@@ -84,24 +87,29 @@ impl SplitMetadata {
     }
 }
 
+/// A split state.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum SplitState {
-    // The split is newly created
+    /// The split is newly created
     New,
-    // The split is almost ready. Some of its files may have been uploaded in the storage.
+    /// The split is almost ready. Some of its files may have been uploaded in the storage.
     Staged,
-    // The split is ready and published.
+
+    /// The split is ready and published.
     Published,
-    // The split is scheduled for deletion.
+
+    /// The split is scheduled for deletion.
     ScheduledForDeletion,
 }
 
+/// A MetadataSet carries an index metadata and its split metadata.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetadataSet {
     index: IndexMetadata,
     splits: HashMap<SplitId, SplitMetadata>,
 }
 
+/// Metastore meant to manage quickwit's indices and its splits.
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
     /// Index exists.
@@ -139,6 +147,7 @@ pub trait Metastore: Send + Sync + 'static {
         time_range: Option<Range<u64>>,
     ) -> MetastoreResult<Vec<SplitMetadata>>;
 
+    /// Marks split as deleted.
     async fn mark_split_as_deleted(
         &self,
         index_uri: IndexUri,
