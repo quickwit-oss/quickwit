@@ -189,9 +189,9 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
 
 async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     debug!(
-        index_uri =% args.index_uri.clone().display(),
-        input_uri =% args.input_uri.clone().unwrap_or_else(|| PathBuf::from("stdin")).display(),
-        temp_dir =% args.temp_dir.display(),
+        index_uri = %args.index_uri,
+        input_uri = ?args.input_path,
+        temp_dir = %args.temp_dir.display(),
         num_threads = args.num_threads,
         heap_size = args.heap_size,
         overwrite = args.overwrite,
@@ -199,8 +199,8 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     );
 
     let params = IndexDataParams {
-        index_uri: args.index_uri,
-        input_uri: args.input_uri,
+        index_uri: PathBuf::from(args.index_uri),
+        input_uri: args.input_path,
         temp_dir: args.temp_dir,
         num_threads: args.num_threads,
         heap_size: args.heap_size,
