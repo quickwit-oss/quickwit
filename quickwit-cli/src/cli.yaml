@@ -35,9 +35,9 @@ subcommands:
                 long: index-uri
                 value_name: INDEX URI
                 required: true
-            - input-uri:
+            - input-path:
                 help: Location of the source dataset
-                long: input-uri
+                long: input-path
                 value_name: INPUT PATH
             - temp-dir:
                 help: Creates intermediate files in this local directory
