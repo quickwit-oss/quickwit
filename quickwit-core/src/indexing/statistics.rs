@@ -20,6 +20,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::{
     sync::mpsc::{channel, Sender},
     task,
@@ -37,7 +39,7 @@ pub enum StatisticEvent {
         id: String,
         num_docs: usize,
         size_in_bytes: usize,
-        num_failed_to_parse_docs: usize,
+        num_parse_errors: usize,
     },
     SplitStage {
         id: String,
@@ -45,6 +47,7 @@ pub enum StatisticEvent {
     },
     SplitUpload {
         uri: String,
+        upload_size: usize,
         error: bool,
     },
     SplitPublish {
@@ -58,15 +61,22 @@ pub enum StatisticEvent {
 /// as we are indexing.
 #[derive(Debug)]
 pub struct StatisticsCollector {
+    /// Number of document processed
     num_docs: usize,
-    num_failed_to_parse_docs: usize,
+    /// Number of document parse error
+    num_parse_errors: usize,
+    /// Number of created split
     num_local_splits: usize,
+    /// Number of staged splits
     num_staged_splits: usize,
+    /// Number of uploaded splits
     num_uploaded_splits: usize,
+    ///Number of published splits
     num_published_splits: usize,
+    /// Size in byte of document processed
     total_bytes_processed: usize,
+    /// Size in bytes of resulting split
     total_size_splits: usize,
-    event_sender: Option<Sender<StatisticEvent>>,
 }
 
 impl StatisticsCollector {
@@ -74,32 +84,81 @@ impl StatisticsCollector {
     pub fn new() -> Self {
         Self {
             num_docs: 0,
-            num_failed_to_parse_docs: 0,
+            num_parse_errors: 0,
             num_local_splits: 0,
             num_staged_splits: 0,
             num_uploaded_splits: 0,
             num_published_splits: 0,
             total_bytes_processed: 0,
             total_size_splits: 0,
-            event_sender: None,
         }
     }
 
-    /// Start tokio task that listen to the statistics event channel.
-    pub fn start_collection(&mut self) -> Sender<StatisticEvent> {
+    /// Start a tokio task that listen to the statistics event channel
+    /// and updates the statistic data
+    pub fn start_collection() -> (Arc<Mutex<StatisticsCollector>>, Sender<StatisticEvent>) {
+        let statistics_collector = Arc::new(Mutex::new(StatisticsCollector::new()));
+        let moved_statistics_collector = statistics_collector.clone();
         let (event_sender, mut event_receiver) = channel(1000);
-        self.event_sender = Some(event_sender.clone());
         task::spawn(async move {
             while let Some(event) = event_receiver.recv().await {
                 //TODO: discuss the grannular level of changes we want to display
-                debug!(event =? event,"statistic-event");
+                // live in the terminal
+                let mut statistics = moved_statistics_collector.lock().await;
+
+                match event {
+                    StatisticEvent::NewDocument {
+                        size_in_bytes,
+                        error,
+                    } => {
+                        debug!(size =% size_in_bytes, error = error, "New document");
+                        statistics.num_docs += 1;
+                        statistics.total_bytes_processed += size_in_bytes;
+                        if error {
+                            statistics.num_parse_errors += 1;
+                        }
+                    }
+                    StatisticEvent::SplitCreated {
+                        id,
+                        num_docs,
+                        size_in_bytes,
+                        num_parse_errors,
+                    } => {
+                        debug!(split_id =% id, num_docs = num_docs,  size_in_bytes = size_in_bytes, parse_errors = num_parse_errors, "Split created");
+                        statistics.num_local_splits += 1;
+                    }
+                    StatisticEvent::SplitStage { id, error } => {
+                        debug!(split_id =% id, error = error, "Split staged");
+                        if !error {
+                            statistics.num_staged_splits += 1;
+                        }
+                    }
+                    StatisticEvent::SplitUpload {
+                        uri,
+                        upload_size,
+                        error,
+                    } => {
+                        debug!(split_uri =% uri, error = error, "Split uploaded");
+                        if !error {
+                            statistics.num_uploaded_splits += 1;
+                            statistics.total_size_splits += upload_size;
+                        }
+                    }
+                    StatisticEvent::SplitPublish { uri, error } => {
+                        debug!(split_uri =% uri, error = error, "Split published");
+                        if !error {
+                            statistics.num_published_splits += 1;
+                        }
+                    }
+                }
             }
         });
-        event_sender
+        (statistics_collector, event_sender)
     }
 
     /// Display a one-shot report.
     pub fn display_report(&self) {
+        //TODO: better display stats
         println!("Statistics: {:?}", self);
     }
 }

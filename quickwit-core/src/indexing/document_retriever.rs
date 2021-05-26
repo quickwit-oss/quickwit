@@ -20,34 +20,91 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use anyhow::Context;
+use async_trait::async_trait;
 use std::path::PathBuf;
-use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::{self, BufReader};
-use tokio::sync::mpsc::Sender;
+use tokio::{
+    fs::File,
+    io::{Lines, Stdin},
+};
+
+#[cfg(test)]
+use std::io::Cursor;
+
+/// A trait for retrieving input content online at a time
+#[async_trait]
+pub trait DocumentRetriever {
+    /// Reads one line from underlying input buffer.
+    async fn next_document(&mut self) -> anyhow::Result<Option<String>>;
+}
 
 /// Retrieves new-line delimited json documents from StdIn or from a local File
-pub async fn retrieve_documents(
-    input_uri: Option<PathBuf>,
-    document_sender: Sender<String>,
-) -> anyhow::Result<()> {
-    match input_uri {
-        Some(path_buf) => {
-            let file = File::open(path_buf).await?;
-            let reader = BufReader::new(file);
-            let mut lines = reader.lines();
-            while let Some(line) = lines.next_line().await? {
-                document_sender.send(line).await?;
+pub enum FileOrStdInDocumentRetriever {
+    StdIn(Lines<BufReader<Stdin>>),
+    File(Lines<BufReader<File>>),
+}
+
+impl FileOrStdInDocumentRetriever {
+    /// creates an instance of [`DocumentRetriever`]
+    pub async fn create(input_uri: &Option<PathBuf>) -> anyhow::Result<Self> {
+        match input_uri {
+            Some(path_buf) => {
+                let file = File::open(path_buf).await?;
+                let reader = BufReader::new(file);
+                Ok(Self::File(reader.lines()))
+            }
+            None => {
+                let file = io::stdin();
+                let reader = BufReader::new(file);
+                Ok(Self::StdIn(reader.lines()))
             }
         }
-        None => {
-            let file = io::stdin();
-            let reader = BufReader::new(file);
-            let mut lines = reader.lines();
-            while let Some(line) = lines.next_line().await? {
-                document_sender.send(line).await?;
-            }
+    }
+}
+
+#[async_trait]
+impl DocumentRetriever for FileOrStdInDocumentRetriever {
+    /// Reads one line from this [`DocumentRetriever`] input (File or StdIn)
+    async fn next_document(&mut self) -> anyhow::Result<Option<String>> {
+        match self {
+            Self::StdIn(stdin_lines) => stdin_lines
+                .next_line()
+                .await
+                .with_context(|| "Failed to read next line from StdIn".to_string()),
+            Self::File(file_lines) => file_lines
+                .next_line()
+                .await
+                .with_context(|| "Failed to read next line from File".to_string()),
         }
-    };
-    Ok(())
+    }
+}
+
+#[cfg(test)]
+pub struct CursorDocumentRetriever {
+    lines: Lines<BufReader<Cursor<&'static str>>>,
+}
+
+#[cfg(test)]
+impl CursorDocumentRetriever {
+    /// Creates an instance of this doc retriever
+    pub fn new(data: &'static str) -> Self {
+        let cursor = Cursor::new(data);
+        let reader = BufReader::new(cursor);
+        Self {
+            lines: reader.lines(),
+        }
+    }
+}
+
+#[cfg(test)]
+#[async_trait]
+impl DocumentRetriever for CursorDocumentRetriever {
+    async fn next_document(&mut self) -> anyhow::Result<Option<String>> {
+        self.lines
+            .next_line()
+            .await
+            .with_context(|| "Failed to read next line from cursor".to_string())
+    }
 }

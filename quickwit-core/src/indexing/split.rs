@@ -38,7 +38,7 @@ use uuid::Uuid;
 
 use super::IndexDataParams;
 
-const MAX_DOC_PER_SPLIT: usize = if cfg!(test) { 100 } else { 5_000_000 };
+const MAX_DOC_PER_SPLIT: usize = if cfg!(test) { 100 } else { 50 };
 
 /// Struct that represents an instance of split
 pub struct Split {
@@ -109,7 +109,7 @@ impl Split {
 
     /// Add document to the index split.
     pub fn add_document(&mut self, doc: Document) -> anyhow::Result<()> {
-        //TODO: handle time range
+        //TODO: handle time range when docMapper is available
         self.metadata.num_records += 1;
         self.index_writer
             .as_ref()
@@ -155,49 +155,68 @@ impl Split {
     }
 
     /// Stage a split in the metastore.
-    pub async fn stage(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<()> {
+    pub async fn stage(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<String> {
         let metastore = MetastoreUriResolver::default().resolve(&self.index_uri)?;
-        metastore
+        let stage_result = metastore
             .stage_split(
                 self.index_uri.clone(),
                 self.id.to_string(),
                 self.metadata.clone(),
             )
-            .await?;
+            .await;
+
         statistic_sender
             .send(StatisticEvent::SplitStage {
                 id: self.id.to_string(),
-                error: false,
+                error: stage_result.is_err(),
             })
             .await?;
-        Ok(())
+        stage_result.map_err(|err| err.into())
     }
 
     /// Upload all split artifacts using the storage.
-    pub async fn upload(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<()> {
-        put_to_storage(&*self.storage, self).await?;
-        statistic_sender
-            .send(StatisticEvent::SplitUpload {
-                uri: self.id.to_string(),
-                error: false,
-            })
-            .await?;
-        Ok(())
+    pub async fn upload(
+        &self,
+        statistic_sender: Sender<StatisticEvent>,
+    ) -> anyhow::Result<Manifest> {
+        let upload_result = put_to_storage(&*self.storage, self).await;
+        match upload_result {
+            Ok(manifest) => {
+                statistic_sender
+                    .send(StatisticEvent::SplitUpload {
+                        uri: self.id.to_string(),
+                        upload_size: manifest.split_size_in_bytes as usize,
+                        error: false,
+                    })
+                    .await?;
+                Ok(manifest)
+            }
+            Err(err) => {
+                statistic_sender
+                    .send(StatisticEvent::SplitUpload {
+                        uri: self.id.to_string(),
+                        upload_size: 0,
+                        error: true,
+                    })
+                    .await?;
+                Err(err)
+            }
+        }
     }
 
     /// Publish the split in the metastore.
     pub async fn publish(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<()> {
         let metastore = MetastoreUriResolver::default().resolve(&self.index_uri)?;
-        metastore
+        let publish_result = metastore
             .publish_split(self.index_uri.clone(), self.id.to_string())
-            .await?;
+            .await;
         statistic_sender
             .send(StatisticEvent::SplitPublish {
                 uri: self.id.to_string(),
-                error: false,
+                error: publish_result.is_err(),
             })
             .await?;
-        Ok(())
+        publish_result.map_err(|err| err.into())
     }
 }
 
@@ -279,4 +298,40 @@ async fn put_to_storage(storage: &dyn Storage, split: &Split) -> anyhow::Result<
     );
 
     Ok(manifest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[tokio::test]
+    async fn test_split() -> anyhow::Result<()> {
+        let split_dir = tempfile::tempdir()?;
+        let params = &IndexDataParams {
+            index_uri: PathBuf::from_str("file://test")?,
+            input_uri: None,
+            temp_dir: split_dir.into_path(),
+            num_threads: 1,
+            heap_size: 3000000,
+            overwrite: false,
+        };
+        let schema = Schema::builder().build();
+        let storage_resolver = Arc::new(StorageUriResolver::default());
+
+        let split_result = Split::create(params, storage_resolver, schema).await;
+        println!("{:?}", split_result);
+        assert_eq!(split_result.is_ok(), true);
+
+        let mut split = split_result?;
+
+        for _ in 0..10 {
+            split.add_document(Document::default())?;
+        }
+
+        assert_eq!(split.metadata.num_records, 10);
+        assert_eq!(split.num_parsing_errors, 0);
+
+        Ok(())
+    }
 }

@@ -20,20 +20,14 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::sync::Arc;
-
-use tokio::{
-    sync::{
-        mpsc::{Receiver, Sender},
-        Semaphore,
-    },
-    task,
-};
-
 use crate::indexing::split::Split;
 use crate::indexing::statistics::StatisticEvent;
+use futures::StreamExt;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio_stream::wrappers::ReceiverStream;
+use tracing::warn;
 
-const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 20 };
+const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 
 /// Finilizes a split by performing the following actions
 /// - Commit the split
@@ -43,44 +37,43 @@ const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 20 };
 /// - Publish the split
 ///
 pub async fn finalize_split(
-    mut split_receiver: Receiver<Split>,
+    split_receiver: Receiver<Split>,
     statistic_sender: Sender<StatisticEvent>,
 ) -> anyhow::Result<()> {
-    // use semaphre to limit the number in flight tasks
-    // https://docs.rs/tokio/1.6.0/tokio/sync/struct.Semaphore.html
-    let finalise_task_authoriser = Arc::new(Semaphore::new(MAX_CONCURRENT_SPLIT_TASKS));
-    let mut finalize_tasks = vec![];
-    while let Some(mut split) = split_receiver.recv().await {
-        // request a task execution permit.
-        // this will block if `MAX_CONCURRENT_SPLIT_TASKS` are already running until
-        // one of them completes.
-        let permit = Arc::clone(&finalise_task_authoriser)
-            .acquire_owned()
-            .await?;
+    let stream = ReceiverStream::new(split_receiver);
+    let mut stream = stream
+        .map(|mut split| {
+            let moved_statistic_sender = statistic_sender.clone();
+            async move {
+                // announce new split reception.
+                moved_statistic_sender
+                    .send(StatisticEvent::SplitCreated {
+                        id: split.id.to_string(),
+                        num_docs: split.metadata.num_records,
+                        size_in_bytes: split.metadata.size_in_bytes,
+                        num_parse_errors: split.num_parsing_errors,
+                    })
+                    .await?;
 
-        // announce new split reception.
-        statistic_sender
-            .send(StatisticEvent::SplitCreated {
-                id: split.id.to_string(),
-                num_docs: split.metadata.num_records,
-                size_in_bytes: split.metadata.size_in_bytes,
-                num_failed_to_parse_docs: split.num_parsing_errors,
-            })
-            .await?;
+                split.commit().await?;
+                split.merge_all_segments().await?;
+                split.stage(moved_statistic_sender.clone()).await?;
+                split.upload(moved_statistic_sender.clone()).await?;
+                split.publish(moved_statistic_sender).await?;
+                anyhow::Result::<Split>::Ok(split)
+            }
+        })
+        .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
 
-        let moved_statistic_sender = statistic_sender.clone();
-        let finalize_task = task::spawn(async move {
-            let _permit = permit;
-            split.commit().await?;
-            split.merge_all_segments().await?;
-            split.stage(moved_statistic_sender.clone()).await?;
-            split.upload(moved_statistic_sender.clone()).await?;
-            split.publish(moved_statistic_sender).await?;
-            anyhow::Result::<()>::Ok(())
-        });
-        finalize_tasks.push(finalize_task);
+    let mut num_erros: usize = 0;
+    while let Some(finalize_result) = stream.next().await {
+        if finalize_result.is_err() {
+            num_erros += 1;
+        }
     }
 
-    futures::future::try_join_all(finalize_tasks).await?;
+    if num_erros > 0 {
+        warn!("Some splits were not finalised.");
+    }
     Ok(())
 }

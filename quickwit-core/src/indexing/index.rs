@@ -26,12 +26,11 @@ use futures::try_join;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
 use tokio::sync::mpsc::channel;
 
-use crate::indexing::document_retriever::retrieve_documents;
+use crate::indexing::document_retriever::FileOrStdInDocumentRetriever;
 use crate::indexing::split_finalizer::finalize_split;
 use crate::indexing::statistics::StatisticsCollector;
 use crate::indexing::{document_indexer::index_documents, split::Split};
 
-const DOCUMENT_CHANNEL_SIZE: usize = 1000;
 const SPLIT_CHANNEL_SIZE: usize = 30;
 
 /// A struct to bundle index cli args
@@ -58,23 +57,21 @@ pub async fn index_data(params: IndexDataParams) -> anyhow::Result<()> {
         println!("Please enter your new line delimited json documents.");
     }
 
-    let mut statistic_collector = StatisticsCollector::new();
-    let statistic_sender = statistic_collector.start_collection();
-    let (document_sender, document_receiver) = channel::<String>(DOCUMENT_CHANNEL_SIZE);
+    let document_retriever =
+        Box::new(FileOrStdInDocumentRetriever::create(&params.input_uri).await?);
+    let (statistic_collector, statistic_sender) = StatisticsCollector::start_collection();
     let (split_sender, split_receiver) = channel::<Split>(SPLIT_CHANNEL_SIZE);
-
     try_join!(
-        retrieve_documents(params.input_uri.clone(), document_sender),
         index_documents(
             &params,
-            document_receiver,
+            document_retriever,
             split_sender,
             statistic_sender.clone()
         ),
         finalize_split(split_receiver, statistic_sender.clone()),
     )?;
 
-    statistic_collector.display_report();
+    statistic_collector.lock().await.display_report();
     Ok(())
 }
 

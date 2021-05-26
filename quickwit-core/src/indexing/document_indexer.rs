@@ -23,30 +23,28 @@
 use quickwit_storage::StorageUriResolver;
 use std::sync::Arc;
 use tantivy::{schema::Schema, Document};
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::Sender;
 
-use crate::indexing::statistics::StatisticEvent;
-
+use crate::indexing::document_retriever::DocumentRetriever;
 use crate::indexing::split::Split;
+use crate::indexing::statistics::StatisticEvent;
 
 use super::IndexDataParams;
 
 /// Receives json documents, parses and adds them to a `tantivy::Index`
 pub async fn index_documents(
     params: &IndexDataParams,
-    mut document_receiver: Receiver<String>,
+    mut document_retriever: Box<dyn DocumentRetriever>,
     split_sender: Sender<Split>,
     statistic_sender: Sender<StatisticEvent>,
 ) -> anyhow::Result<()> {
     //TODO replace with  DocMapper::schema()
-    // let doc_mapper = DocMapping::Dynamic;
     let schema = Schema::builder().build();
-
     let storage_resolver = Arc::new(StorageUriResolver::default());
 
     let mut current_split =
         Split::create(&params, storage_resolver.clone(), schema.clone()).await?;
-    while let Some(raw_doc) = document_receiver.recv().await {
+    while let Some(raw_doc) = document_retriever.next_document().await? {
         let doc_size = raw_doc.as_bytes().len();
         //TODO: replace with DocMapper::doc_from_json(raw_doc)
         let parse_result = parse_document(raw_doc);
@@ -100,4 +98,55 @@ pub async fn index_documents(
 fn parse_document(_raw_doc: String) -> anyhow::Result<Document> {
     //TODO: remove this when using docMapper
     Ok(Document::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{path::PathBuf, str::FromStr};
+
+    use tokio::sync::mpsc::channel;
+
+    use crate::indexing::{
+        document_retriever::CursorDocumentRetriever, split::Split, statistics::StatisticEvent,
+        IndexDataParams,
+    };
+
+    use super::index_documents;
+
+    #[tokio::test]
+    async fn test_index_document() -> anyhow::Result<()> {
+        let split_dir = tempfile::tempdir()?;
+        let params = IndexDataParams {
+            index_uri: PathBuf::from_str("file://test")?,
+            input_uri: None,
+            temp_dir: split_dir.into_path(),
+            num_threads: 1,
+            heap_size: 3000000,
+            overwrite: false,
+        };
+
+        let document_retriever = Box::new(CursorDocumentRetriever::new("one\ntwo\nthree\nfour"));
+        let (split_sender, _split_receiver) = channel::<Split>(20);
+        let (statistic_sender, mut statistic_receiver) = channel::<StatisticEvent>(20);
+
+        let index_future =
+            index_documents(&params, document_retriever, split_sender, statistic_sender);
+        let test_statistic_future = async move {
+            let mut num_docs = 0;
+            let mut size_bytes = 0;
+            while let Some(event) = statistic_receiver.recv().await {
+                //TODO: check constructed split when all is good
+                if let StatisticEvent::NewDocument { size_in_bytes, .. } = event {
+                    num_docs += 1;
+                    size_bytes += size_in_bytes;
+                }
+            }
+
+            assert_eq!(num_docs, 4);
+            assert_eq!(size_bytes, 15);
+        };
+
+        let _ = futures::future::join(index_future, test_statistic_future).await;
+        Ok(())
+    }
 }
