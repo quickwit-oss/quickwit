@@ -34,7 +34,7 @@ use crate::indexing::{document_indexer::index_documents, split::Split};
 const SPLIT_CHANNEL_SIZE: usize = 30;
 
 /// A struct to bundle index cli args
-/// TODO: remove when ther is a better structure
+/// TODO: remove when there is a better structure
 #[derive(Debug, Clone)]
 pub struct IndexDataParams {
     pub index_uri: PathBuf,
