@@ -65,10 +65,8 @@ impl SingleFileMetastore {
             data: Arc::new(RwLock::new(HashMap::new())),
         })
     }
-}
 
-#[async_trait]
-impl Metastore for SingleFileMetastore {
+    /// Check the index exists in storage.
     async fn index_exists(&self, index_uri: IndexUri) -> MetastoreResult<bool> {
         let path = meta_uri(index_uri);
 
@@ -82,6 +80,33 @@ impl Metastore for SingleFileMetastore {
         Ok(exist)
     }
 
+    /// Reads the index metadata set from the storage and loads it into the local cache.
+    async fn open_index(&self, index_uri: IndexUri) -> MetastoreResult<()> {
+        let path = meta_uri(index_uri.clone());
+
+        // Get metadata set from storage.
+        let contents = self.storage.get_all(&path).await.map_err(|e| {
+            MetastoreErrorKind::IndexDoesNotExist
+                .with_error(anyhow::anyhow!("The index does not exist: {:?}", e))
+        })?;
+
+        // Deserialize metadata.
+        let metadata_set =
+            serde_json::from_slice::<MetadataSet>(contents.as_slice()).map_err(|e| {
+                MetastoreErrorKind::InvalidManifest
+                    .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
+            })?;
+
+        // Update the internal data if the storage is successfully updated.
+        let mut data = self.data.write().await;
+        data.insert(index_uri.clone(), metadata_set.clone());
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Metastore for SingleFileMetastore {
     async fn create_index(
         &self,
         index_uri: IndexUri,
@@ -126,29 +151,6 @@ impl Metastore for SingleFileMetastore {
             .map_err(|e| {
                 MetastoreErrorKind::InternalError
                     .with_error(anyhow::anyhow!("Failed to put metadata set: {:?}", e))
-            })?;
-
-        // Update the internal data if the storage is successfully updated.
-        let mut data = self.data.write().await;
-        data.insert(index_uri.clone(), metadata_set.clone());
-
-        Ok(())
-    }
-
-    async fn open_index(&self, index_uri: IndexUri) -> MetastoreResult<()> {
-        let path = meta_uri(index_uri.clone());
-
-        // Get metadata set from storage.
-        let contents = self.storage.get_all(&path).await.map_err(|e| {
-            MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("The index does not exist: {:?}", e))
-        })?;
-
-        // Deserialize metadata.
-        let metadata_set =
-            serde_json::from_slice::<MetadataSet>(contents.as_slice()).map_err(|e| {
-                MetastoreErrorKind::InvalidManifest
-                    .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
             })?;
 
         // Update the internal data if the storage is successfully updated.
