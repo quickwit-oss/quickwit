@@ -320,7 +320,6 @@ mod tests {
         let storage_resolver = Arc::new(StorageUriResolver::default());
 
         let split_result = Split::create(params, storage_resolver, schema).await;
-        println!("{:?}", split_result);
         assert_eq!(split_result.is_ok(), true);
 
         let mut split = split_result?;
