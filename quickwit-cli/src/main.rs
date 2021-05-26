@@ -20,7 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use std::path::PathBuf;
@@ -30,14 +30,14 @@ use quickwit_core::index::{create_index, delete_index};
 use quickwit_doc_mapping::DocMapping;
 
 struct CreateIndexArgs {
-    index_uri: PathBuf,
+    index_uri: String,
     timestamp_field: Option<String>,
     overwrite: bool,
 }
 
 struct IndexDataArgs {
-    index_uri: PathBuf,
-    input_uri: Option<PathBuf>,
+    index_uri: String,
+    input_path: Option<PathBuf>,
     temp_dir: PathBuf,
     num_threads: usize,
     heap_size: u64,
@@ -45,7 +45,7 @@ struct IndexDataArgs {
 }
 
 struct SearchIndexArgs {
-    index_uri: PathBuf,
+    index_uri: String,
     query: String,
     max_hits: usize,
     start_offset: usize,
@@ -55,7 +55,7 @@ struct SearchIndexArgs {
 }
 
 struct DeleteIndexArgs {
-    index_uri: PathBuf,
+    index_uri: String,
     dry_run: bool,
 }
 
@@ -81,8 +81,10 @@ impl CliCommand {
     }
 
     fn parse_new_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_uri_str = matches.value_of("index-uri").unwrap().to_string(); // 'index-uri' is a required arg
-        let index_uri = PathBuf::from(index_uri_str);
+        let index_uri = matches
+            .value_of("index-uri")
+            .context("'index-uri' is a required arg")?
+            .to_string();
         let timestamp_field = matches
             .value_of("timestamp-field")
             .map(|field| field.to_string());
@@ -96,19 +98,24 @@ impl CliCommand {
     }
 
     fn parse_index_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_uri_str = matches.value_of("index-uri").unwrap(); // 'index-uri' is a required arg
-        let index_uri = PathBuf::from(index_uri_str);
-        let input_uri = matches.value_of("input-uri").map(PathBuf::from);
-        let temp_dir_str = matches.value_of("temp-dir").unwrap(); // 'temp-dir' has a default value
+        let index_uri = matches
+            .value_of("index-uri")
+            .context("index-uri is required")?
+            .to_string();
+        let input_path = matches.value_of("input-path").map(PathBuf::from);
+        let temp_dir_str = matches
+            .value_of("temp-dir")
+            .context("temp-dir has a default value")?;
         let temp_dir = PathBuf::from(temp_dir_str);
         let num_threads = value_t!(matches, "num-threads", usize)?; // 'num-threads' has a default value
-        let heap_size_str = matches.value_of("heap-size").unwrap(); // 'heap-size' has a default value
+        let heap_size_str = matches
+            .value_of("heap-size")
+            .context("heap-size has a default value")?;
         let heap_size = Byte::from_str(heap_size_str)?.get_bytes() as u64;
         let overwrite = matches.is_present("overwrite");
-
         Ok(CliCommand::Index(IndexDataArgs {
             index_uri,
-            input_uri,
+            input_path,
             temp_dir,
             num_threads,
             heap_size,
@@ -117,9 +124,14 @@ impl CliCommand {
     }
 
     fn parse_search_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_uri_str = matches.value_of("index-uri").unwrap(); // 'index-uri' is a required arg
-        let index_uri = PathBuf::from(index_uri_str);
-        let query = matches.value_of("query").unwrap().to_string(); // 'query' is a required arg
+        let index_uri = matches
+            .value_of("index-uri")
+            .context("'index-uri' is a required arg")?
+            .to_string();
+        let query = matches
+            .value_of("query")
+            .context("query is a required arg")?
+            .to_string();
         let max_hits = value_t!(matches, "max-hits", usize)?;
         let start_offset = value_t!(matches, "start-offset", usize)?;
         let search_fields = matches
@@ -148,22 +160,23 @@ impl CliCommand {
     }
 
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_uri_str = matches.value_of("index-uri").unwrap(); // 'index-uri' is a required arg
-        let index_uri = PathBuf::from(index_uri_str);
+        let index_uri = matches
+            .value_of("index-uri")
+            .context("'index-uri' is a required arg")?
+            .to_string();
         let dry_run = matches.is_present("dry-run");
-
         Ok(CliCommand::Delete(DeleteIndexArgs { index_uri, dry_run }))
     }
 }
 
 async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(
-        index_uri =% args.index_uri.display(),
-        timestamp_field =? args.timestamp_field,
+        index_uri = %args.index_uri,
+        timestamp_field = ?args.timestamp_field,
         overwrite = args.overwrite,
         "create-index"
     );
-    let index_uri = args.index_uri.to_string_lossy().to_string();
+    let index_uri = args.index_uri;
     let doc_mapping = DocMapping::Dynamic;
 
     if args.overwrite {
@@ -175,9 +188,9 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
 
 async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     debug!(
-        index_uri =% args.index_uri.display(),
-        input_uri =% args.input_uri.unwrap_or_else(|| PathBuf::from("stdin")).display(),
-        temp_dir =% args.temp_dir.display(),
+        index_uri = %args.index_uri,
+        input_uri = ?args.input_path,
+        temp_dir = %args.temp_dir.display(),
         num_threads = args.num_threads,
         heap_size = args.heap_size,
         overwrite = args.overwrite,
@@ -188,13 +201,13 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
 
 async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     debug!(
-        index_uri =% args.index_uri.display(),
-        query =% args.query,
+        index_uri = %args.index_uri,
+        query = %args.query,
         max_hits = args.max_hits,
         start_offset = args.start_offset,
-        search_fields =? args.search_fields,
-        start_timestamp =? args.start_timestamp,
-        end_timestamp =? args.end_timestamp,
+        search_fields = ?args.search_fields,
+        start_timestamp = ?args.start_timestamp,
+        end_timestamp = ?args.end_timestamp,
         "search-index"
     );
     Ok(())
@@ -202,7 +215,7 @@ async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
 
 async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     debug!(
-        index_uri =% args.index_uri.display(),
+        index_uri = %args.index_uri,
         dry_run = args.dry_run,
         "delete-index"
     );
@@ -243,7 +256,7 @@ async fn main() {
 mod tests {
     use crate::{CliCommand, CreateIndexArgs, DeleteIndexArgs, IndexDataArgs, SearchIndexArgs};
     use clap::{load_yaml, App, AppSettings};
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn test_parse_new_args() -> anyhow::Result<()> {
@@ -252,7 +265,7 @@ mod tests {
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
-            "./wikipedia",
+            "file:///indexes/wikipedia",
             "--no-timestamp-field",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
@@ -262,7 +275,7 @@ mod tests {
                 index_uri,
                 timestamp_field: None,
                 overwrite: false
-            })) if index_uri == PathBuf::from("./wikipedia")
+            })) if &index_uri == "file:///indexes/wikipedia"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -270,7 +283,7 @@ mod tests {
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
-            "./wikipedia",
+            "file:///indexes/wikipedia",
             "--timestamp-field",
             "ts",
             "--overwrite",
@@ -282,7 +295,7 @@ mod tests {
                 index_uri,
                 timestamp_field: Some(field_name),
                 overwrite: true
-            })) if index_uri == PathBuf::from("./wikipedia") && field_name == "ts"
+            })) if &index_uri == "file:///indexes/wikipedia" && field_name == "ts"
         ));
 
         Ok(())
@@ -292,18 +305,19 @@ mod tests {
     fn test_parse_index_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec!["index", "--index-uri", "./wikipedia"])?;
+        let matches =
+            app.get_matches_from_safe(vec!["index", "--index-uri", "file:///indexes/wikipedia"])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
             Ok(CliCommand::Index(IndexDataArgs {
                 index_uri,
-                input_uri: None,
+                input_path: None,
                 temp_dir,
                 num_threads: 2,
                 heap_size: 2_000_000_000,
                 overwrite: false,
-            })) if index_uri == PathBuf::from("./wikipedia") && temp_dir == PathBuf::from("/tmp")
+            })) if &index_uri == "file:///indexes/wikipedia" && temp_dir == PathBuf::from("/tmp")
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -311,9 +325,9 @@ mod tests {
         let matches = app.get_matches_from_safe(vec![
             "index",
             "--index-uri",
-            "./wikipedia",
-            "--input-uri",
-            "./data/wikipedia",
+            "file:///indexes/wikipedia",
+            "--input-path",
+            "/data/wikipedia.json",
             "--temp-dir",
             "./tmp",
             "--num-threads",
@@ -327,12 +341,12 @@ mod tests {
             command,
             Ok(CliCommand::Index(IndexDataArgs {
                 index_uri,
-                input_uri: Some(input_uri),
+                input_path: Some(input_path),
                 temp_dir,
                 num_threads: 4,
                 heap_size: 4_294_967_296,
                 overwrite: true,
-            })) if index_uri == PathBuf::from("./wikipedia") && input_uri == PathBuf::from("./data/wikipedia") && temp_dir == PathBuf::from("./tmp")
+            })) if &index_uri == "file:///indexes/wikipedia" && input_path == Path::new("/data/wikipedia.json") && temp_dir == PathBuf::from("./tmp")
         ));
 
         Ok(())
@@ -360,7 +374,7 @@ mod tests {
                 search_fields: None,
                 start_timestamp: None,
                 end_timestamp: None,
-            })) if index_uri == PathBuf::from("./wikipedia") && query == "Barack Obama"
+            })) if index_uri == "./wikipedia" && query == "Barack Obama"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -394,7 +408,7 @@ mod tests {
                 search_fields: Some(field_names),
                 start_timestamp: Some(0),
                 end_timestamp: Some(1),
-            })) if index_uri == PathBuf::from("./wikipedia") && query == "Barack Obama" && field_names == vec!["title".to_string(), "url".to_string()]
+            })) if index_uri == "./wikipedia" && query == "Barack Obama" && field_names == vec!["title".to_string(), "url".to_string()]
         ));
 
         Ok(())
@@ -404,27 +418,32 @@ mod tests {
     fn test_parse_delete_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec!["delete", "--index-uri", "./wikipedia"])?;
+        let matches =
+            app.get_matches_from_safe(vec!["delete", "--index-uri", "file:///indexes/wikipedia"])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
             Ok(CliCommand::Delete(DeleteIndexArgs {
                 index_uri,
                 dry_run: false
-            })) if index_uri == PathBuf::from("./wikipedia")
+            })) if &index_uri == "file:///indexes/wikipedia"
         ));
 
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches =
-            app.get_matches_from_safe(vec!["delete", "--index-uri", "./wikipedia", "--dry-run"])?;
+        let matches = app.get_matches_from_safe(vec![
+            "delete",
+            "--index-uri",
+            "file:///indexes/wikipedia",
+            "--dry-run",
+        ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
             Ok(CliCommand::Delete(DeleteIndexArgs {
                 index_uri,
                 dry_run: true
-            })) if index_uri == PathBuf::from("./wikipedia")
+            })) if &index_uri == "file:///indexes/wikipedia"
         ));
 
         Ok(())
