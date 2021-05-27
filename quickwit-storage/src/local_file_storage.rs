@@ -22,6 +22,7 @@
 
 use crate::{PutPayload, Storage, StorageErrorKind, StorageFactory, StorageResult};
 use async_trait::async_trait;
+use futures::future::{BoxFuture, FutureExt};
 use std::fmt;
 use std::io::{ErrorKind, SeekFrom};
 use std::ops::Range;
@@ -29,6 +30,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tracing::warn;
 
 /// File system compatible storage implementation.
 #[derive(Clone)]
@@ -61,10 +63,33 @@ impl LocalFileStorage {
     }
 }
 
+fn try_delete_dir_all(root: PathBuf, path: Option<&Path>) -> BoxFuture<'_, std::io::Result<()>> {
+    async move {
+        if path.is_none() {
+            return Ok(());
+        }
+        let path = path.unwrap();
+
+        // return if this directory is not empty
+        let full_path = root.join(path);
+        let is_empty = full_path.read_dir()?.next().is_none();
+        if !is_empty {
+            return Ok(());
+        }
+
+        fs::remove_dir(full_path).await?;
+        try_delete_dir_all(root, path.parent()).await
+    }
+    .boxed()
+}
+
 #[async_trait]
 impl Storage for LocalFileStorage {
     async fn put(&self, path: &Path, payload: PutPayload) -> crate::StorageResult<()> {
         let full_path = self.root.join(path);
+        if let Some(parent_dir) = full_path.parent() {
+            fs::create_dir_all(parent_dir).await?;
+        }
         match payload {
             PutPayload::InMemory(data) => {
                 fs::write(full_path, data).await?;
@@ -94,6 +119,10 @@ impl Storage for LocalFileStorage {
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let full_path = self.root.join(path);
         fs::remove_file(full_path).await?;
+        let delete_result = try_delete_dir_all(self.root.to_path_buf(), path.parent()).await;
+        if delete_result.is_err() {
+            warn!(path =% path.display(), "failed to clean the path");
+        }
         Ok(())
     }
 
@@ -182,6 +211,30 @@ mod tests {
 
         let err = file_storage_factory.resolve("test://").err().unwrap();
         assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_try_delete_dir_all() -> anyhow::Result<()> {
+        let path_root = tempdir()?.into_path();
+        let dir_path = path_root.clone().join("foo/bar/baz");
+        tokio::fs::create_dir_all(dir_path.clone()).await?;
+
+        // check all empty directory
+        assert_eq!(dir_path.exists(), true);
+        try_delete_dir_all(path_root.clone(), Some(dir_path.as_path())).await?;
+        assert_eq!(dir_path.exists(), false);
+        assert_eq!(dir_path.parent().unwrap().exists(), false);
+
+        // check with intermediate file
+        tokio::fs::create_dir_all(dir_path.clone()).await?;
+        let intermediate_file = dir_path.parent().unwrap().join("fizz.txt");
+        tokio::fs::File::create(intermediate_file.clone()).await?;
+        assert_eq!(dir_path.exists(), true);
+        assert_eq!(intermediate_file.exists(), true);
+        try_delete_dir_all(path_root, Some(dir_path.as_path())).await?;
+        assert_eq!(dir_path.exists(), false);
+        assert_eq!(dir_path.parent().unwrap().exists(), true);
         Ok(())
     }
 }

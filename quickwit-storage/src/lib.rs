@@ -138,6 +138,24 @@ pub(crate) mod tests {
         Ok(())
     }
 
+    async fn test_write_and_delete_with_dir_separator(
+        storage: &mut dyn Storage,
+    ) -> anyhow::Result<()> {
+        let test_path = Path::new("foo/bar/write_and_delete_with_separator");
+        let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
+        storage
+            .put(test_path, PutPayload::from(payload_bytes))
+            .await?;
+        storage.delete(test_path).await?;
+
+        assert!(matches!(
+            storage.exists(Path::new("foo/bar")).await,
+            Ok(false)
+        ));
+        assert!(matches!(storage.exists(Path::new("foo")).await, Ok(false)));
+        Ok(())
+    }
+
     /// Generic test suite for a storage.
     pub async fn storage_test_suite(storage: &mut dyn Storage) -> anyhow::Result<()> {
         test_get_inexistent_file(storage)
@@ -156,6 +174,9 @@ pub(crate) mod tests {
             .await
             .with_context(|| "write_and_delete")?;
         test_exists(storage).await.with_context(|| "exists")?;
+        test_write_and_delete_with_dir_separator(storage)
+            .await
+            .with_context(|| "write_and_delete_with_separator")?;
         Ok(())
     }
 }

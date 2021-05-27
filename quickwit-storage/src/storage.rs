@@ -72,6 +72,13 @@ impl<'a> From<&'a [u8]> for PutPayload {
 ///
 /// Object storage are the primary target implementation of this trait,
 /// and its interface is meant to allow for multipart download/upload.
+///
+/// Note that Storage does not have the notion of directory separators.
+/// For underlying implementation where directory separator have meaning,
+/// The implementation should treat directory separators as exactly the same way
+/// object storage treat them. This means when directory separators a present
+/// in the storage operation path, the storage implementation should create and remove transparently
+/// these intermediate directories.  
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Storage: Send + Sync + 'static {
