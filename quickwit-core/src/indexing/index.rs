@@ -67,8 +67,6 @@ pub async fn index_data(params: IndexDataParams) -> anyhow::Result<()> {
         println!("Please enter your new line delimited json documents.");
     }
 
-    
-
     let document_retriever = Box::new(DocumentSource::create(&params.input_uri).await?);
     let (statistic_collector, statistic_sender) = StatisticsCollector::start_collection();
     let (split_sender, split_receiver) = channel::<Split>(SPLIT_CHANNEL_SIZE);
@@ -93,7 +91,11 @@ pub async fn index_data(params: IndexDataParams) -> anyhow::Result<()> {
 /// - delete the artifacts of all splits marked as deleted using garbage collection
 /// - delete the splits from the metastore
 ///
-async fn reset_index(index_uri: IndexUri, storage_resolver: Arc<StorageUriResolver>, metastore: Arc<dyn Metastore>) -> anyhow::Result<()> {
+async fn reset_index(
+    index_uri: IndexUri,
+    storage_resolver: Arc<StorageUriResolver>,
+    metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<()> {
     let splits = metastore
         .list_splits(index_uri.clone(), SplitState::Published, None)
         .await?;
