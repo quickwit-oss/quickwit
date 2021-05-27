@@ -19,20 +19,13 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#![warn(missing_docs)]
 
-/*! `quickwit-metastore` is the abstraction used in quickwit to interface itself to different metastore:
-- single file metastore
-etc.
-*/
-mod error;
-mod metastore;
-mod metastore_resolver;
+mod document_indexer;
+mod document_retriever;
+mod index;
+mod manifest;
+mod split;
+mod split_finalizer;
+mod statistics;
 
-pub use error::{MetastoreError, MetastoreErrorKind, MetastoreResolverError, MetastoreResult};
-pub use metastore::single_file_metastore::SingleFileMetastore;
-pub use metastore::{IndexMetadata, MetadataSet, Metastore, SplitMetadata, SplitState};
-pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};
-
-#[cfg(feature = "testsuite")]
-pub use metastore::MockMetastore;
+pub use index::{index_data, IndexDataParams};

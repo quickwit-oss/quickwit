@@ -20,8 +20,11 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use std::sync::Arc;
+
 use quickwit_doc_mapping::DocMapping;
-use quickwit_metastore::MetastoreUriResolver;
+use quickwit_metastore::{Metastore, MetastoreUriResolver, SplitState};
+use quickwit_storage::Storage;
 
 // anyhow errors are fine for now but we'll want to move to a proper error type eventually.
 pub async fn create_index(
@@ -35,16 +38,49 @@ pub async fn create_index(
 }
 
 // TODO
-pub async fn index_data(_index_id: &str) -> anyhow::Result<()> {
-    unimplemented!()
+pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
+    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?;
+    let _splits = metastore
+        .list_splits(index_id, SplitState::Published, None)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
+    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?;
+    metastore.delete_index(index_id).await?;
+    Ok(())
 }
 
 // TODO
-pub async fn search_index(_index_id: &str) -> anyhow::Result<()> {
-    unimplemented!()
+pub async fn garbage_collect(
+    _index_uri: &str,
+    _storage: Arc<dyn Storage>,
+    _metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<()> {
+    Ok(())
 }
 
-// TODO
-pub async fn delete_index(_metastore_uri: &str, _index_id: &str) -> anyhow::Result<()> {
-    unimplemented!()
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_create_index() -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_data() -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[test]
+    fn test_search_index() -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_index() -> anyhow::Result<()> {
+        Ok(())
+    }
 }

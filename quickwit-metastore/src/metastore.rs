@@ -45,31 +45,47 @@ pub struct IndexMetadata {
 /// A split metadata carries all meta data about a split.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SplitMetadata {
-    // Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
-    // should be enough to uniquely identify a split.
-    // In reality, some information may be implicitly configured
-    // in the storage URI resolver: for instance, the Amazon S3 region.
-    split_id: String,
+    /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
+    /// should be enough to uniquely identify a split.
+    /// In reality, some information may be implicitly configured
+    /// in the storage URI resolver: for instance, the Amazon S3 region.
+    pub split_id: String,
 
-    // The state of the split
-    split_state: SplitState,
+    /// The state of the split
+    pub split_state: SplitState,
 
-    // Number of records (or documents) in the split.
-    num_records: u64,
+    /// Number of records (or documents) in the split.
+    pub num_records: usize,
 
-    // Weight of the split in bytes.
-    size_in_bytes: u64,
+    /// Weight of the split in bytes.
+    pub size_in_bytes: usize,
 
-    // If a timestamp field is available, the min / max timestamp in the split.
-    time_range: Option<Range<u64>>,
+    /// If a timestamp field is available, the min / max timestamp in the split.
+    pub time_range: Option<Range<u64>>,
 
-    // Number of merge this segment has been subjected to during its lifetime.
-    generation: usize,
+    /// Number of merge this segment has been subjected to during its lifetime.
+    pub generation: usize,
+}
+
+impl SplitMetadata {
+    /// Creates a new instance of split metadata
+    pub fn new(split_id: String) -> Self {
+        Self {
+            split_id,
+            split_state: SplitState::New,
+            num_records: 0,
+            size_in_bytes: 0,
+            time_range: None,
+            generation: 0,
+        }
+    }
 }
 
 /// A split state.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum SplitState {
+    /// The split is newly created
+    New,
     /// The split is almost ready. Some of its files may have been uploaded in the storage.
     Staged,
 
@@ -88,6 +104,7 @@ pub struct MetadataSet {
 }
 
 /// Metastore meant to manage quickwit's indices and its splits.
+#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
     /// Creates an index.

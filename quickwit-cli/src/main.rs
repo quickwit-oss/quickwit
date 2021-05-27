@@ -27,6 +27,7 @@ use std::path::PathBuf;
 use tracing::debug;
 
 use quickwit_core::index::{create_index, delete_index};
+use quickwit_core::indexing::{index_data, IndexDataParams};
 use quickwit_doc_mapping::DocMapping;
 
 struct CreateIndexArgs {
@@ -219,6 +220,21 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         overwrite = args.overwrite,
         "indexing"
     );
+
+    let params = IndexDataParams {
+        index_uri: PathBuf::from(args.index_uri.clone()),
+        input_uri: args.input_path,
+        temp_dir: args.temp_dir,
+        num_threads: args.num_threads,
+        heap_size: args.heap_size,
+        overwrite: args.overwrite,
+    };
+
+    let (metastore_uri, index_id) =
+        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+    let doc_mapping = DocMapping::Dynamic;
+
+    index_data(metastore_uri, index_id, doc_mapping, params).await?;
     Ok(())
 }
 

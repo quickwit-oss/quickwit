@@ -21,3 +21,4 @@
 */
 
 pub mod index;
+pub mod indexing;
