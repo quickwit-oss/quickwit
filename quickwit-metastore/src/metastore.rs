@@ -96,18 +96,12 @@ pub struct MetadataSet {
 /// Metastore meant to manage quickwit's indices and its splits.
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
-    /// Index exists.
-    async fn index_exists(&self, index_uri: IndexUri) -> MetastoreResult<bool>;
-
     /// Creates an index.
     async fn create_index(
         &self,
         index_uri: IndexUri,
         doc_mapping: DocMapping,
     ) -> MetastoreResult<()>;
-
-    /// Opens an index.
-    async fn open_index(&self, index_uri: IndexUri) -> MetastoreResult<()>;
 
     /// Deletes an index.
     async fn delete_index(&self, index_uri: IndexUri) -> MetastoreResult<()>;

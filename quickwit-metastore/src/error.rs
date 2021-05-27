@@ -40,9 +40,6 @@ pub enum MetastoreErrorKind {
     /// The target index does not exist.
     IndexDoesNotExist,
 
-    /// The target index is not open.
-    IndexIsNotOpen,
-
     /// Any generic internal error.
     InternalError,
 
