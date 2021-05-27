@@ -35,3 +35,6 @@ pub use metastore::{
     IndexMetadata, IndexUri, MetadataSet, Metastore, SplitId, SplitMetadata, SplitState,
 };
 pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};
+
+#[cfg(feature = "testsuite")]
+pub use metastore::MockMetastore;

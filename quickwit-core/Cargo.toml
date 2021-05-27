@@ -10,6 +10,7 @@ anyhow = "1.0"
 async-trait = "0.1"
 quickwit-doc-mapping = { version = "0.1.0", path = "../quickwit-doc-mapping" }
 quickwit-metastore = { version = "0.1.0", path = "../quickwit-metastore" }
+
 quickwit-directories = { version = "0.1.0", path = "../quickwit-directories" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
 tokio = { version = "1", features = ["full"] }
@@ -27,3 +28,5 @@ tokio-stream = "0.1.6"
 
 [dev-dependencies]
 tempfile = '3'
+mockall = '0.9'
+quickwit-metastore = { version = "0.1.0", path = "../quickwit-metastore", features=["testsuite"]}

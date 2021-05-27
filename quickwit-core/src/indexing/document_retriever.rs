@@ -41,13 +41,13 @@ pub trait DocumentRetriever {
 }
 
 /// Retrieves new-line delimited json documents from StdIn or from a local File
-pub enum FileOrStdInDocumentRetriever {
+pub enum DocumentSource {
     StdIn(Lines<BufReader<Stdin>>),
     File(Lines<BufReader<File>>),
 }
 
-impl FileOrStdInDocumentRetriever {
-    /// creates an instance of [`DocumentRetriever`]
+impl DocumentSource {
+    /// creates an instance of [`DocumentSource`]
     pub async fn create(input_uri: &Option<PathBuf>) -> anyhow::Result<Self> {
         match input_uri {
             Some(path_buf) => {
@@ -65,7 +65,7 @@ impl FileOrStdInDocumentRetriever {
 }
 
 #[async_trait]
-impl DocumentRetriever for FileOrStdInDocumentRetriever {
+impl DocumentRetriever for DocumentSource {
     /// Reads one line from this [`DocumentRetriever`] input (File or StdIn)
     async fn next_document(&mut self) -> anyhow::Result<Option<String>> {
         match self {
@@ -82,14 +82,14 @@ impl DocumentRetriever for FileOrStdInDocumentRetriever {
 }
 
 #[cfg(test)]
-pub struct CursorDocumentRetriever {
-    lines: Lines<BufReader<Cursor<&'static str>>>,
+pub struct StringDocumentSource {
+    lines: Lines<BufReader<Cursor<String>>>,
 }
 
 #[cfg(test)]
-impl CursorDocumentRetriever {
+impl StringDocumentSource {
     /// Creates an instance of this doc retriever
-    pub fn new(data: &'static str) -> Self {
+    pub fn new(data: String) -> Self {
         let cursor = Cursor::new(data);
         let reader = BufReader::new(cursor);
         Self {
@@ -100,7 +100,7 @@ impl CursorDocumentRetriever {
 
 #[cfg(test)]
 #[async_trait]
-impl DocumentRetriever for CursorDocumentRetriever {
+impl DocumentRetriever for StringDocumentSource {
     async fn next_document(&mut self) -> anyhow::Result<Option<String>> {
         self.lines
             .next_line()

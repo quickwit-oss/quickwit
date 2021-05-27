@@ -110,6 +110,7 @@ pub struct MetadataSet {
 }
 
 /// Metastore meant to manage quickwit's indices and its splits.
+#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
     /// Index exists.

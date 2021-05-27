@@ -25,7 +25,8 @@ use std::{fmt, path::Path};
 use crate::indexing::{manifest::Manifest, statistics::StatisticEvent};
 use anyhow::{self, Context};
 use quickwit_directories::write_hotcache;
-use quickwit_metastore::{MetastoreUriResolver, SplitMetadata};
+use quickwit_metastore::Metastore;
+use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageUriResolver};
 use std::sync::Arc;
 use std::time::Instant;
@@ -38,7 +39,7 @@ use uuid::Uuid;
 
 use super::IndexDataParams;
 
-const MAX_DOC_PER_SPLIT: usize = if cfg!(test) { 100 } else { 5_000_000 };
+pub const MAX_DOC_PER_SPLIT: usize = if cfg!(test) { 100 } else { 5_000_000 };
 
 /// Struct that represents an instance of split
 pub struct Split {
@@ -60,6 +61,8 @@ pub struct Split {
     pub num_parsing_errors: usize,
     /// The storage instance for this split.
     pub storage: Arc<dyn Storage>,
+    /// The metastore instance.
+    pub metastore: Arc<dyn Metastore>,
 }
 
 impl fmt::Debug for Split {
@@ -80,6 +83,7 @@ impl Split {
     pub async fn create(
         params: &IndexDataParams,
         storage_resolver: Arc<StorageUriResolver>,
+        metastore: Arc<dyn Metastore>,
         schema: Schema,
     ) -> anyhow::Result<Self> {
         let id = Uuid::new_v4();
@@ -104,6 +108,7 @@ impl Split {
             index_writer: Some(index_writer),
             num_parsing_errors: 0,
             storage,
+            metastore,
         })
     }
 
@@ -156,8 +161,8 @@ impl Split {
 
     /// Stage a split in the metastore.
     pub async fn stage(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<String> {
-        let metastore = MetastoreUriResolver::default().resolve(&self.index_uri)?;
-        let stage_result = metastore
+        let stage_result = self
+            .metastore
             .stage_split(
                 self.index_uri.clone(),
                 self.id.to_string(),
@@ -206,8 +211,8 @@ impl Split {
 
     /// Publish the split in the metastore.
     pub async fn publish(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<()> {
-        let metastore = MetastoreUriResolver::default().resolve(&self.index_uri)?;
-        let publish_result = metastore
+        let publish_result = self
+            .metastore
             .publish_split(self.index_uri.clone(), self.id.to_string())
             .await;
         statistic_sender
@@ -303,13 +308,15 @@ async fn put_to_storage(storage: &dyn Storage, split: &Split) -> anyhow::Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use quickwit_metastore::MockMetastore;
     use std::str::FromStr;
+    use tokio::{sync::mpsc::channel, task};
 
     #[tokio::test]
     async fn test_split() -> anyhow::Result<()> {
         let split_dir = tempfile::tempdir()?;
         let params = &IndexDataParams {
-            index_uri: PathBuf::from_str("file://test")?,
+            index_uri: PathBuf::from_str("ram://test")?,
             input_uri: None,
             temp_dir: split_dir.into_path(),
             num_threads: 1,
@@ -318,18 +325,50 @@ mod tests {
         };
         let schema = Schema::builder().build();
         let storage_resolver = Arc::new(StorageUriResolver::default());
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_stage_split()
+            .times(1)
+            .returning(|index_uri, split_id, _| {
+                assert_eq!(index_uri, "ram://test".to_string());
+                Ok(split_id)
+            });
+        mock_metastore
+            .expect_publish_split()
+            .times(1)
+            .returning(|_uri, _id| Ok(()));
 
-        let split_result = Split::create(params, storage_resolver, schema).await;
+        let metastore = Arc::new(mock_metastore);
+        let split_result = Split::create(params, storage_resolver, metastore, schema).await;
         assert_eq!(split_result.is_ok(), true);
 
         let mut split = split_result?;
-
-        for _ in 0..10 {
+        for _ in 0..20 {
             split.add_document(Document::default())?;
         }
-
-        assert_eq!(split.metadata.num_records, 10);
+        assert_eq!(split.metadata.num_records, 20);
         assert_eq!(split.num_parsing_errors, 0);
+        assert_eq!(split.has_enough_docs(), false);
+
+        for _ in 0..90 {
+            split.add_document(Document::default())?;
+        }
+        assert_eq!(split.metadata.num_records, 110);
+        assert_eq!(split.has_enough_docs(), true);
+
+        let commit_result = split.commit().await;
+        assert_eq!(commit_result.is_ok(), true);
+
+        let merge_result = split.merge_all_segments().await;
+        assert_eq!(merge_result.is_ok(), true);
+
+        let (statistic_sender, _statistic_receiver) = channel::<StatisticEvent>(20);
+        task::spawn(async move {
+            split.stage(statistic_sender.clone()).await?;
+            split.upload(statistic_sender.clone()).await?;
+            split.publish(statistic_sender).await
+        })
+        .await??;
 
         Ok(())
     }

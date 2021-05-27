@@ -20,6 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 use std::sync::Arc;
 use tantivy::{schema::Schema, Document};
@@ -34,6 +35,7 @@ use super::IndexDataParams;
 /// Receives json documents, parses and adds them to a `tantivy::Index`
 pub async fn index_documents(
     params: &IndexDataParams,
+    metastore: Arc<dyn Metastore>,
     mut document_retriever: Box<dyn DocumentRetriever>,
     split_sender: Sender<Split>,
     statistic_sender: Sender<StatisticEvent>,
@@ -42,8 +44,13 @@ pub async fn index_documents(
     let schema = Schema::builder().build();
     let storage_resolver = Arc::new(StorageUriResolver::default());
 
-    let mut current_split =
-        Split::create(&params, storage_resolver.clone(), schema.clone()).await?;
+    let mut current_split = Split::create(
+        &params,
+        storage_resolver.clone(),
+        metastore.clone(),
+        schema.clone(),
+    )
+    .await?;
     while let Some(raw_doc) = document_retriever.next_document().await? {
         let doc_size = raw_doc.as_bytes().len();
         //TODO: replace with DocMapper::doc_from_json(raw_doc)
@@ -77,7 +84,13 @@ pub async fn index_documents(
         if current_split.has_enough_docs() {
             let split = std::mem::replace(
                 &mut current_split,
-                Split::create(&params, storage_resolver.clone(), schema.clone()).await?,
+                Split::create(
+                    &params,
+                    storage_resolver.clone(),
+                    metastore.clone(),
+                    schema.clone(),
+                )
+                .await?,
             );
             split_sender.send(split).await?;
         }
@@ -87,7 +100,7 @@ pub async fn index_documents(
     if current_split.metadata.num_records > 0 {
         let split = std::mem::replace(
             &mut current_split,
-            Split::create(&params, storage_resolver, schema.clone()).await?,
+            Split::create(&params, storage_resolver, metastore, schema.clone()).await?,
         );
         split_sender.send(split).await?;
     }
@@ -102,14 +115,14 @@ fn parse_document(_raw_doc: String) -> anyhow::Result<Document> {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, str::FromStr};
-
-    use tokio::sync::mpsc::channel;
+    use std::{path::PathBuf, str::FromStr, sync::Arc};
 
     use crate::indexing::{
-        document_retriever::CursorDocumentRetriever, split::Split, statistics::StatisticEvent,
+        document_retriever::StringDocumentSource, split::Split, statistics::StatisticEvent,
         IndexDataParams,
     };
+    use quickwit_metastore::MockMetastore;
+    use tokio::sync::mpsc::channel;
 
     use super::index_documents;
 
@@ -117,7 +130,7 @@ mod tests {
     async fn test_index_document() -> anyhow::Result<()> {
         let split_dir = tempfile::tempdir()?;
         let params = IndexDataParams {
-            index_uri: PathBuf::from_str("file://test")?,
+            index_uri: PathBuf::from_str("ram://test")?,
             input_uri: None,
             temp_dir: split_dir.into_path(),
             num_threads: 1,
@@ -125,25 +138,51 @@ mod tests {
             overwrite: false,
         };
 
-        let document_retriever = Box::new(CursorDocumentRetriever::new("one\ntwo\nthree\nfour"));
+        const NUM_DOCS: usize = 780;
+
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_stage_split()
+            .times(0)
+            .returning(|_index_uri, split_id, _| Ok(split_id));
+        mock_metastore
+            .expect_publish_split()
+            .times(0)
+            .returning(|_uri, _id| Ok(()));
+        let metastore = Arc::new(mock_metastore);
+
+        let docs = (0..NUM_DOCS)
+            .map(|num| format!("doc_{}", num))
+            .collect::<Vec<String>>();
+        let total_bytes = docs
+            .iter()
+            .fold(0, |total, size| total + size.as_bytes().len());
+        let input = docs.join("\n");
+
+        let document_retriever = Box::new(StringDocumentSource::new(input));
         let (split_sender, _split_receiver) = channel::<Split>(20);
         let (statistic_sender, mut statistic_receiver) = channel::<StatisticEvent>(20);
 
-        let index_future =
-            index_documents(&params, document_retriever, split_sender, statistic_sender);
+        let index_future = index_documents(
+            &params,
+            metastore,
+            document_retriever,
+            split_sender,
+            statistic_sender,
+        );
         let test_statistic_future = async move {
-            let mut num_docs = 0;
-            let mut size_bytes = 0;
+            let mut received_num_docs = 0;
+            let mut received_size_bytes = 0;
             while let Some(event) = statistic_receiver.recv().await {
                 //TODO: check constructed split when all is good
                 if let StatisticEvent::NewDocument { size_in_bytes, .. } = event {
-                    num_docs += 1;
-                    size_bytes += size_in_bytes;
+                    received_num_docs += 1;
+                    received_size_bytes += size_in_bytes;
                 }
             }
 
-            assert_eq!(num_docs, 4);
-            assert_eq!(size_bytes, 15);
+            assert_eq!(received_num_docs, NUM_DOCS);
+            assert_eq!(received_size_bytes, total_bytes);
         };
 
         let _ = futures::future::join(index_future, test_statistic_future).await;

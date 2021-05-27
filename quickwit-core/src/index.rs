@@ -20,8 +20,11 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use std::sync::Arc;
+
 use quickwit_doc_mapping::DocMapping;
-use quickwit_metastore::{MetastoreUriResolver, SplitState};
+use quickwit_metastore::{Metastore, MetastoreUriResolver, SplitState};
+use quickwit_storage::Storage;
 
 type IndexUri = String;
 
@@ -44,6 +47,15 @@ pub async fn search_index(index_uri: IndexUri) -> anyhow::Result<()> {
 pub async fn delete_index(index_uri: IndexUri) -> anyhow::Result<()> {
     let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
     metastore.delete_index(index_uri).await?;
+    Ok(())
+}
+
+// TODO
+pub async fn garbage_collect(
+    _index_uri: IndexUri,
+    _storage: Arc<dyn Storage>,
+    _metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<()> {
     Ok(())
 }
 

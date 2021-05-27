@@ -161,7 +161,7 @@ impl StorageFactory for RamStorageFactory {
     }
 
     fn resolve(&self, uri: &str) -> crate::StorageResult<Arc<dyn Storage>> {
-        if uri != "ram://" {
+        if !uri.starts_with("ram://") {
             let err_msg = anyhow::anyhow!(
                 "{:?} is an invalid ram storage uri. Only ram:// is accepted.",
                 uri
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn test_ram_storage_factory() -> anyhow::Result<()> {
         let ram_storage_factory = RamStorageFactory::default();
-        let err = ram_storage_factory.resolve("ram://toto").err().unwrap();
+        let err = ram_storage_factory.resolve("rom://toto").err().unwrap();
         assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
         Ok(())
     }

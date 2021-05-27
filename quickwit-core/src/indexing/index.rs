@@ -25,8 +25,10 @@ use std::path::PathBuf;
 use futures::try_join;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
 use tokio::sync::mpsc::channel;
+use tracing::warn;
 
-use crate::indexing::document_retriever::FileOrStdInDocumentRetriever;
+use crate::index::garbage_collect;
+use crate::indexing::document_retriever::DocumentSource;
 use crate::indexing::split_finalizer::finalize_split;
 use crate::indexing::statistics::StatisticsCollector;
 use crate::indexing::{document_indexer::index_documents, split::Split};
@@ -57,13 +59,16 @@ pub async fn index_data(params: IndexDataParams) -> anyhow::Result<()> {
         println!("Please enter your new line delimited json documents.");
     }
 
-    let document_retriever =
-        Box::new(FileOrStdInDocumentRetriever::create(&params.input_uri).await?);
+    let index_uri = params.index_uri.to_string_lossy().to_string();
+    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
+
+    let document_retriever = Box::new(DocumentSource::create(&params.input_uri).await?);
     let (statistic_collector, statistic_sender) = StatisticsCollector::start_collection();
     let (split_sender, split_receiver) = channel::<Split>(SPLIT_CHANNEL_SIZE);
     try_join!(
         index_documents(
             &params,
+            metastore,
             document_retriever,
             split_sender,
             statistic_sender.clone()
@@ -75,8 +80,11 @@ pub async fn index_data(params: IndexDataParams) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Clears the index by un-publishing all published splits.
-/// TODO: is this ok? should we hard delete using the storage?
+/// Clears the index by applying the following actions
+/// - mark all split as deleted
+/// - delete the artifacts of all splits marked as deleted using garbage collection
+/// - delete the splits from the metastore
+///
 async fn reset_index(params: IndexDataParams) -> anyhow::Result<()> {
     let index_uri = params.index_uri.to_string_lossy().to_string();
     let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
@@ -84,11 +92,24 @@ async fn reset_index(params: IndexDataParams) -> anyhow::Result<()> {
         .list_splits(index_uri.clone(), SplitState::Published, None)
         .await?;
 
+    let mark_split_as_deleted_tasks = splits
+        .iter()
+        .map(|split| metastore.mark_split_as_deleted(index_uri.clone(), split.split_id.clone()))
+        .collect::<Vec<_>>();
+    futures::future::try_join_all(mark_split_as_deleted_tasks).await?;
+
+    let storage = quickwit_storage::StorageUriResolver::default().resolve(&index_uri)?;
+    let garbage_collection_result =
+        garbage_collect(index_uri.clone(), storage, metastore.clone()).await;
+    if garbage_collection_result.is_err() {
+        warn!(index_uri =% index_uri, "All split files could not be removed during garbage collection.");
+    }
+
     let delete_tasks = splits
         .iter()
         .map(|split| metastore.delete_split(index_uri.clone(), split.split_id.clone()))
         .collect::<Vec<_>>();
-
     futures::future::try_join_all(delete_tasks).await?;
+
     Ok(())
 }
