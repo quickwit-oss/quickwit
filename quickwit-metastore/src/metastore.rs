@@ -33,12 +33,6 @@ use quickwit_doc_mapping::DocMapping;
 
 use crate::MetastoreResult;
 
-/// An index URI, such as `file:///var/lib/quickwit/indexes/nginx` or `s3://my-bucket/indexes/nginx`.
-pub type IndexUri = String;
-
-/// A split ID.
-pub type SplitId = String;
-
 /// A file format version.
 const FILE_FORMAT_VERSION: &str = "0";
 
@@ -106,55 +100,40 @@ pub enum SplitState {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetadataSet {
     index: IndexMetadata,
-    splits: HashMap<SplitId, SplitMetadata>,
+    splits: HashMap<String, SplitMetadata>,
 }
 
 /// Metastore meant to manage quickwit's indices and its splits.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
-    /// Index exists.
-    async fn index_exists(&self, index_uri: IndexUri) -> MetastoreResult<bool>;
-
     /// Creates an index.
-    async fn create_index(
-        &self,
-        index_uri: IndexUri,
-        doc_mapping: DocMapping,
-    ) -> MetastoreResult<()>;
-
-    /// Opens an index.
-    async fn open_index(&self, index_uri: IndexUri) -> MetastoreResult<()>;
+    async fn create_index(&self, index_id: &str, doc_mapping: DocMapping) -> MetastoreResult<()>;
 
     /// Deletes an index.
-    async fn delete_index(&self, index_uri: IndexUri) -> MetastoreResult<()>;
+    async fn delete_index(&self, index_id: &str) -> MetastoreResult<()>;
 
     /// Stages a split.
     async fn stage_split(
         &self,
-        index_uri: IndexUri,
-        split_id: SplitId,
+        index_id: &str,
         split_metadata: SplitMetadata,
-    ) -> MetastoreResult<SplitId>;
+    ) -> MetastoreResult<()>;
 
     /// Publishes a split.
-    async fn publish_split(&self, index_uri: IndexUri, split_id: SplitId) -> MetastoreResult<()>;
+    async fn publish_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
 
     /// Lists the splits.
     async fn list_splits(
         &self,
-        index_uri: IndexUri,
+        index_id: &str,
         split_state: SplitState,
         time_range: Option<Range<u64>>,
     ) -> MetastoreResult<Vec<SplitMetadata>>;
 
     /// Marks split as deleted.
-    async fn mark_split_as_deleted(
-        &self,
-        index_uri: IndexUri,
-        split_id: SplitId,
-    ) -> MetastoreResult<()>;
+    async fn mark_split_as_deleted(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
 
     /// Deletes a split.
-    async fn delete_split(&self, index_uri: IndexUri, split_id: SplitId) -> MetastoreResult<()>;
+    async fn delete_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
 }

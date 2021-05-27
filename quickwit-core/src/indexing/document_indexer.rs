@@ -34,6 +34,7 @@ use super::IndexDataParams;
 
 /// Receives json documents, parses and adds them to a `tantivy::Index`
 pub async fn index_documents(
+    index_id: String,
     params: &IndexDataParams,
     metastore: Arc<dyn Metastore>,
     storage_resolver: Arc<StorageUriResolver>,
@@ -45,6 +46,7 @@ pub async fn index_documents(
     let schema = Schema::builder().build();
 
     let mut current_split = Split::create(
+        index_id.to_string(),
         &params,
         storage_resolver.clone(),
         metastore.clone(),
@@ -85,6 +87,7 @@ pub async fn index_documents(
             let split = std::mem::replace(
                 &mut current_split,
                 Split::create(
+                    index_id.to_string(),
                     &params,
                     storage_resolver.clone(),
                     metastore.clone(),
@@ -100,7 +103,13 @@ pub async fn index_documents(
     if current_split.metadata.num_records > 0 {
         let split = std::mem::replace(
             &mut current_split,
-            Split::create(&params, storage_resolver, metastore, schema.clone()).await?,
+            Split::create(
+                index_id.to_string(),
+                &params, 
+                storage_resolver, 
+                metastore, 
+                schema.clone()
+            ).await?,
         );
         split_sender.send(split).await?;
     }
@@ -130,6 +139,7 @@ mod tests {
     #[tokio::test]
     async fn test_index_document() -> anyhow::Result<()> {
         let split_dir = tempfile::tempdir()?;
+        let index_id = "test";
         let params = IndexDataParams {
             index_uri: PathBuf::from_str("file://test")?,
             input_uri: None,
@@ -143,7 +153,7 @@ mod tests {
         mock_metastore
             .expect_stage_split()
             .times(0)
-            .returning(|_index_uri, split_id, _| Ok(split_id));
+            .returning(|_index_uri, _split_id| Ok(()));
         mock_metastore
             .expect_publish_split()
             .times(0)
@@ -165,6 +175,7 @@ mod tests {
         let (statistic_sender, mut statistic_receiver) = channel::<StatisticEvent>(20);
 
         let index_future = index_documents(
+            index_id.to_owned(),
             &params,
             metastore,
             storage_resolver,

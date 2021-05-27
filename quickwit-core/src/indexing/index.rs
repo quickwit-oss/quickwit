@@ -24,7 +24,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::try_join;
-use quickwit_metastore::IndexUri;
+use quickwit_doc_mapping::DocMapping;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
 use quickwit_storage::StorageUriResolver;
@@ -54,13 +54,18 @@ pub struct IndexDataParams {
 /// The entry point for the index command.
 /// It reads a new-line deleimited json documents, add them to the index while building
 /// and publishing splits metastore.
-pub async fn index_data(params: IndexDataParams) -> anyhow::Result<()> {
+pub async fn index_data(
+    metastore_uri: &str, 
+    index_id: &str, 
+    _doc_mapping: DocMapping,
+    params: IndexDataParams,
+) -> anyhow::Result<()> {
     let index_uri = params.index_uri.to_string_lossy().to_string();
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
+    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?;
     let storage_resolver = Arc::new(StorageUriResolver::default());
 
     if params.overwrite {
-        reset_index(index_uri, storage_resolver.clone(), metastore.clone()).await?;
+        reset_index(&index_uri, index_id, storage_resolver.clone(), metastore.clone()).await?;
     }
 
     if params.input_uri.is_none() {
@@ -72,6 +77,7 @@ pub async fn index_data(params: IndexDataParams) -> anyhow::Result<()> {
     let (split_sender, split_receiver) = channel::<Split>(SPLIT_CHANNEL_SIZE);
     try_join!(
         index_documents(
+            index_id.to_owned(),
             &params,
             metastore,
             storage_resolver,
@@ -92,17 +98,18 @@ pub async fn index_data(params: IndexDataParams) -> anyhow::Result<()> {
 /// - delete the splits from the metastore
 ///
 async fn reset_index(
-    index_uri: IndexUri,
+    index_uri: &str,
+    index_id: &str,
     storage_resolver: Arc<StorageUriResolver>,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<()> {
     let splits = metastore
-        .list_splits(index_uri.clone(), SplitState::Published, None)
+        .list_splits(index_id, SplitState::Published, None)
         .await?;
 
     let mark_split_as_deleted_tasks = splits
         .iter()
-        .map(|split| metastore.mark_split_as_deleted(index_uri.clone(), split.split_id.clone()))
+        .map(|split| metastore.mark_split_as_deleted(index_id, &split.split_id))
         .collect::<Vec<_>>();
     futures::future::try_join_all(mark_split_as_deleted_tasks).await?;
 
@@ -115,7 +122,7 @@ async fn reset_index(
 
     let delete_tasks = splits
         .iter()
-        .map(|split| metastore.delete_split(index_uri.clone(), split.split_id.clone()))
+        .map(|split| metastore.delete_split(index_uri.clone(), &split.split_id))
         .collect::<Vec<_>>();
     futures::future::try_join_all(delete_tasks).await?;
 

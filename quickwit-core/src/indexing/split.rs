@@ -47,6 +47,8 @@ pub struct Split {
     pub id: Uuid,
     /// uri of the index this split belongs to.
     pub index_uri: String,
+    /// id of the index relative to the metastore
+    pub index_id: String,
     /// A combination of index_uri & split_id.
     pub split_uri: String,
     /// The split metadata.
@@ -81,6 +83,7 @@ impl fmt::Debug for Split {
 impl Split {
     /// Create a new instance of an index split.
     pub async fn create(
+        index_id: String,
         params: &IndexDataParams,
         storage_resolver: Arc<StorageUriResolver>,
         metastore: Arc<dyn Metastore>,
@@ -101,6 +104,7 @@ impl Split {
         Ok(Self {
             id,
             index_uri,
+            index_id,
             split_uri,
             metadata,
             local_directory,
@@ -163,11 +167,7 @@ impl Split {
     pub async fn stage(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<String> {
         let stage_result = self
             .metastore
-            .stage_split(
-                self.index_uri.clone(),
-                self.id.to_string(),
-                self.metadata.clone(),
-            )
+            .stage_split(&self.index_id, self.metadata.clone())
             .await;
 
         statistic_sender
@@ -215,7 +215,7 @@ impl Split {
     pub async fn publish(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<()> {
         let publish_result = self
             .metastore
-            .publish_split(self.index_uri.clone(), self.id.to_string())
+            .publish_split(&self.index_uri, &self.id.to_string())
             .await;
         statistic_sender
             .send(StatisticEvent::SplitPublish {
@@ -339,9 +339,9 @@ mod tests {
         let storage_resolver = Arc::new(StorageUriResolver::default());
         let mut mock_metastore = MockMetastore::default();
         mock_metastore.expect_stage_split().times(1).returning(
-            move |expected_index_uri, split_id, _| {
-                assert_eq!(index_uri.clone(), expected_index_uri);
-                Ok(split_id)
+            move |expected_index_uri, _split_id| {
+                assert_eq!(index_uri.clone(), format!("file://{}", expected_index_uri));
+                Ok(())
             },
         );
         mock_metastore
@@ -350,7 +350,13 @@ mod tests {
             .returning(|_uri, _id| Ok(()));
 
         let metastore = Arc::new(mock_metastore);
-        let split_result = Split::create(params, storage_resolver, metastore, schema).await;
+        let split_result = Split::create(
+            index_dir.path().display().to_string(),
+            params, 
+            storage_resolver, 
+            metastore, 
+            schema
+        ).await;
         assert_eq!(split_result.is_ok(), true);
 
         let mut split = split_result?;

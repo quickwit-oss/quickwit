@@ -23,7 +23,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::metastore::single_file_metastore::SingleFileMetastoreFactory;
 use crate::{Metastore, MetastoreResolverError};
 
 /// A metastore factory builds a [`Metastore`] object from an URI.
@@ -43,10 +42,10 @@ pub struct MetastoreUriResolver {
 
 impl Default for MetastoreUriResolver {
     fn default() -> Self {
-        let mut resolver = MetastoreUriResolver {
+        let resolver = MetastoreUriResolver {
             per_protocol_resolver: Default::default(),
         };
-        resolver.register(SingleFileMetastoreFactory::default());
+        //resolver.register(SingleFileMetastoreFactory::default());
         resolver
     }
 }

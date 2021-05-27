@@ -26,33 +26,38 @@ use quickwit_doc_mapping::DocMapping;
 use quickwit_metastore::{Metastore, MetastoreUriResolver, SplitState};
 use quickwit_storage::Storage;
 
-type IndexUri = String;
-
 // anyhow errors are fine for now but we'll want to move to a proper error type eventually.
-pub async fn create_index(index_uri: IndexUri, doc_mapping: DocMapping) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    metastore.create_index(index_uri, doc_mapping).await?;
+pub async fn create_index(
+    metastore_uri: &str, // file://quickwit/indexes
+    index_id: &str, // wikipedia
+    doc_mapping: DocMapping,
+) -> anyhow::Result<()> {
+    // metastore mounted on file://quickwit/indexes
+    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?; 
+    // create index wikipedia
+    metastore.create_index(index_id, doc_mapping).await?;
+    // => file://quickwit/indexes/wikipedia/metadata.json
     Ok(())
 }
 
 // TODO
-pub async fn search_index(index_uri: IndexUri) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
+pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
+    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?;
     let _splits = metastore
-        .list_splits(index_uri, SplitState::Published, None)
+        .list_splits(index_id, SplitState::Published, None)
         .await?;
     Ok(())
 }
 
-pub async fn delete_index(index_uri: IndexUri) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    metastore.delete_index(index_uri).await?;
+pub async fn delete_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
+    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?;
+    metastore.delete_index(index_id).await?;
     Ok(())
 }
 
 // TODO
 pub async fn garbage_collect(
-    _index_uri: IndexUri,
+    _index_uri: &str,
     _storage: Arc<dyn Storage>,
     _metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<()> {
