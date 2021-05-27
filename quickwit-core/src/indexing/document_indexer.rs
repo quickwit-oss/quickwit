@@ -36,13 +36,13 @@ use super::IndexDataParams;
 pub async fn index_documents(
     params: &IndexDataParams,
     metastore: Arc<dyn Metastore>,
+    storage_resolver: Arc<StorageUriResolver>,
     mut document_retriever: Box<dyn DocumentRetriever>,
     split_sender: Sender<Split>,
     statistic_sender: Sender<StatisticEvent>,
 ) -> anyhow::Result<()> {
     //TODO replace with  DocMapper::schema()
     let schema = Schema::builder().build();
-    let storage_resolver = Arc::new(StorageUriResolver::default());
 
     let mut current_split = Split::create(
         &params,
@@ -122,6 +122,7 @@ mod tests {
         IndexDataParams,
     };
     use quickwit_metastore::MockMetastore;
+    use quickwit_storage::StorageUriResolver;
     use tokio::sync::mpsc::channel;
 
     use super::index_documents;
@@ -138,8 +139,6 @@ mod tests {
             overwrite: false,
         };
 
-        const NUM_DOCS: usize = 780;
-
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_stage_split()
@@ -150,7 +149,9 @@ mod tests {
             .times(0)
             .returning(|_uri, _id| Ok(()));
         let metastore = Arc::new(mock_metastore);
+        let storage_resolver = Arc::new(StorageUriResolver::default());
 
+        const NUM_DOCS: usize = 780;
         let docs = (0..NUM_DOCS)
             .map(|num| format!("doc_{}", num))
             .collect::<Vec<String>>();
@@ -166,6 +167,7 @@ mod tests {
         let index_future = index_documents(
             &params,
             metastore,
+            storage_resolver,
             document_retriever,
             split_sender,
             statistic_sender,

@@ -21,9 +21,13 @@
 */
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use futures::try_join;
+use quickwit_metastore::IndexUri;
+use quickwit_metastore::Metastore;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
+use quickwit_storage::StorageUriResolver;
 use tokio::sync::mpsc::channel;
 use tracing::warn;
 
@@ -51,16 +55,19 @@ pub struct IndexDataParams {
 /// It reads a new-line deleimited json documents, add them to the index while building
 /// and publishing splits metastore.
 pub async fn index_data(params: IndexDataParams) -> anyhow::Result<()> {
+    let index_uri = params.index_uri.to_string_lossy().to_string();
+    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
+    let storage_resolver = Arc::new(StorageUriResolver::default());
+
     if params.overwrite {
-        reset_index(params.clone()).await?;
+        reset_index(index_uri, storage_resolver.clone(), metastore.clone()).await?;
     }
 
     if params.input_uri.is_none() {
         println!("Please enter your new line delimited json documents.");
     }
 
-    let index_uri = params.index_uri.to_string_lossy().to_string();
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
+    
 
     let document_retriever = Box::new(DocumentSource::create(&params.input_uri).await?);
     let (statistic_collector, statistic_sender) = StatisticsCollector::start_collection();
@@ -69,6 +76,7 @@ pub async fn index_data(params: IndexDataParams) -> anyhow::Result<()> {
         index_documents(
             &params,
             metastore,
+            storage_resolver,
             document_retriever,
             split_sender,
             statistic_sender.clone()
@@ -85,9 +93,7 @@ pub async fn index_data(params: IndexDataParams) -> anyhow::Result<()> {
 /// - delete the artifacts of all splits marked as deleted using garbage collection
 /// - delete the splits from the metastore
 ///
-async fn reset_index(params: IndexDataParams) -> anyhow::Result<()> {
-    let index_uri = params.index_uri.to_string_lossy().to_string();
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
+async fn reset_index(index_uri: IndexUri, storage_resolver: Arc<StorageUriResolver>, metastore: Arc<dyn Metastore>) -> anyhow::Result<()> {
     let splits = metastore
         .list_splits(index_uri.clone(), SplitState::Published, None)
         .await?;
@@ -98,7 +104,7 @@ async fn reset_index(params: IndexDataParams) -> anyhow::Result<()> {
         .collect::<Vec<_>>();
     futures::future::try_join_all(mark_split_as_deleted_tasks).await?;
 
-    let storage = quickwit_storage::StorageUriResolver::default().resolve(&index_uri)?;
+    let storage = storage_resolver.resolve(&index_uri)?;
     let garbage_collection_result =
         garbage_collect(index_uri.clone(), storage, metastore.clone()).await;
     if garbage_collection_result.is_err() {
