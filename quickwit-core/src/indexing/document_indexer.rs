@@ -131,7 +131,7 @@ mod tests {
     async fn test_index_document() -> anyhow::Result<()> {
         let split_dir = tempfile::tempdir()?;
         let params = IndexDataParams {
-            index_uri: PathBuf::from_str("ram://test")?,
+            index_uri: PathBuf::from_str("file://test")?,
             input_uri: None,
             temp_dir: split_dir.into_path(),
             num_threads: 1,
@@ -176,7 +176,7 @@ mod tests {
             let mut received_num_docs = 0;
             let mut received_size_bytes = 0;
             while let Some(event) = statistic_receiver.recv().await {
-                //TODO: check constructed split when all is good
+                //TODO: check constructed split when all metastore feature complete
                 if let StatisticEvent::NewDocument { size_in_bytes, .. } = event {
                     received_num_docs += 1;
                     received_size_bytes += size_in_bytes;

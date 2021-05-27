@@ -26,12 +26,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_storage::StorageResolverError;
+use quickwit_storage::StorageUriResolver;
 use tokio::sync::RwLock;
 
 use quickwit_doc_mapping::DocMapping;
 use quickwit_storage::{PutPayload, Storage};
 
 use crate::metastore::FILE_FORMAT_VERSION;
+use crate::MetastoreFactory;
+use crate::MetastoreResolverError;
 use crate::{
     IndexMetadata, IndexUri, MetadataSet, Metastore, MetastoreErrorKind, MetastoreResult, SplitId,
     SplitMetadata, SplitState,
@@ -59,11 +63,11 @@ pub struct SingleFileMetastore {
 #[allow(dead_code)]
 impl SingleFileMetastore {
     /// Creates a meta store given a storage.
-    pub async fn new(storage: Arc<dyn Storage>) -> MetastoreResult<Self> {
-        Ok(SingleFileMetastore {
+    pub fn new(storage: Arc<dyn Storage>) -> Self {
+        SingleFileMetastore {
             storage,
             data: Arc::new(RwLock::new(HashMap::new())),
-        })
+        }
     }
 }
 
@@ -437,6 +441,42 @@ impl Metastore for SingleFileMetastore {
     }
 }
 
+/// A SingeFileMetastore factory
+#[derive(Debug, Clone)]
+pub struct SingleFileMetastoreFactory {}
+
+impl Default for SingleFileMetastoreFactory {
+    fn default() -> Self {
+        SingleFileMetastoreFactory {}
+    }
+}
+
+impl MetastoreFactory for SingleFileMetastoreFactory {
+    fn protocol(&self) -> String {
+        "file".to_string()
+    }
+
+    fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+        let storage = StorageUriResolver::default()
+            .resolve(uri)
+            .map_err(|err| match err {
+                StorageResolverError::InvalidUri(err_msg) => {
+                    MetastoreResolverError::InvalidUri(err_msg)
+                }
+                StorageResolverError::ProtocolUnsupported(err_msg) => {
+                    MetastoreResolverError::ProtocolUnsupported(err_msg)
+                }
+                StorageResolverError::FailedToOpenStorage(err) => {
+                    MetastoreResolverError::FailedToOpenMetastore(
+                        MetastoreErrorKind::InternalError.with_error(err),
+                    )
+                }
+            })?;
+        let metastore = SingleFileMetastore::new(storage);
+        Ok(Arc::new(metastore))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::Range;
@@ -454,7 +494,7 @@ mod tests {
     async fn test_single_file_metastore_index_exists() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_uri = IndexUri::from("ram://test/index");
 
         {
@@ -480,7 +520,7 @@ mod tests {
     async fn test_single_file_metastore_create_index() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_uri = IndexUri::from("ram://test/index");
 
         {
@@ -515,7 +555,7 @@ mod tests {
     async fn test_single_file_metastore_open_index() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_uri = IndexUri::from("ram://test/index");
 
         {
@@ -553,7 +593,7 @@ mod tests {
     async fn test_single_file_metastore_delete_index() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_uri = IndexUri::from("ram://test/index");
 
         {
@@ -591,7 +631,7 @@ mod tests {
     async fn test_single_file_metastore_stage_split() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_uri = IndexUri::from("ram://test/index");
         let split_id = "one".to_string();
         let split_metadata = SplitMetadata {
@@ -717,7 +757,7 @@ mod tests {
     async fn test_single_file_metastore_publish_split() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_uri = IndexUri::from("ram://test/index");
         let split_id = "one".to_string();
         let split_metadata = SplitMetadata {
@@ -817,7 +857,7 @@ mod tests {
     async fn test_single_file_metastore_list_splits() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_uri = IndexUri::from("ram://test/index");
 
         {
@@ -1285,7 +1325,7 @@ mod tests {
     async fn test_single_file_metastore_mark_split_as_deleted() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_uri = IndexUri::from("ram://test/index");
         let split_id = "one".to_string();
         let split_metadata = SplitMetadata {
@@ -1378,7 +1418,7 @@ mod tests {
     async fn test_single_file_metastore_delete_split() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_uri = IndexUri::from("ram://test/index");
         let split_id = "one".to_string();
         let split_metadata = SplitMetadata {
@@ -1488,9 +1528,7 @@ mod tests {
                 .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
         });
 
-        let metastore = SingleFileMetastore::new(Arc::new(mock_storage))
-            .await
-            .unwrap();
+        let metastore = SingleFileMetastore::new(Arc::new(mock_storage));
 
         let index_uri = IndexUri::from("ram://test/index");
         let split_id = "one".to_string();

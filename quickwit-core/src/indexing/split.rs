@@ -20,7 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::{fmt, path::Path};
+use std::fmt;
 
 use crate::indexing::{manifest::Manifest, statistics::StatisticEvent};
 use anyhow::{self, Context};
@@ -176,7 +176,9 @@ impl Split {
                 error: stage_result.is_err(),
             })
             .await?;
-        stage_result.map_err(|err| err.into())
+        //TODO: Take care of error when create index command is done
+        //stage_result.map_err(|err| err.into())
+        Ok(self.id.to_string())
     }
 
     /// Upload all split artifacts using the storage.
@@ -221,7 +223,9 @@ impl Split {
                 error: publish_result.is_err(),
             })
             .await?;
-        publish_result.map_err(|err| err.into())
+        //TODO: Take care of error when create index command is done
+        // publish_result.map_err(|err| err.into())
+        Ok(())
     }
 }
 
@@ -266,7 +270,10 @@ async fn put_to_storage(storage: &dyn Storage, split: &Split) -> anyhow::Result<
         };
 
         manifest.push(&file_name, metadata.len());
-        let key = Path::new(&split.split_uri).join(&file_name);
+        // TODO fix LocalFileStorage bug (https://github.com/quickwit-inc/quickwit/issues/59)
+        // for now this dirsty hack allows to work with LocalFileStorage
+        // let key = Path::new(&split.split_uri).join(&file_name);
+        let key = PathBuf::from(file_name);
         let payload = quickwit_storage::PutPayload::from(path.clone());
         let upload_res_future = async move {
             storage.put(&key, payload).await.with_context(|| {
@@ -285,7 +292,10 @@ async fn put_to_storage(storage: &dyn Storage, split: &Split) -> anyhow::Result<
     futures::future::try_join_all(upload_res_futures).await?;
 
     let manifest_body = manifest.to_json()?.into_bytes();
-    let manifest_path = Path::new(split.index_uri.as_str()).join(".manifest");
+    // TODO fix LocalFileStorage bug (https://github.com/quickwit-inc/quickwit/issues/59)
+    // for now this dirsty hack allows to work with LocalFileStorage
+    // let manifest_path = Path::new(split.index_uri.as_str()).join(".manifest");
+    let manifest_path = PathBuf::from(".manifest");
     storage
         .put(&manifest_path, PutPayload::from(manifest_body))
         .await?;
@@ -315,10 +325,12 @@ mod tests {
     #[tokio::test]
     async fn test_split() -> anyhow::Result<()> {
         let split_dir = tempfile::tempdir()?;
+        let index_dir = tempfile::tempdir()?;
+        let index_uri = format!("file://{}", index_dir.path().display());
         let params = &IndexDataParams {
-            index_uri: PathBuf::from_str("ram://test")?,
+            index_uri: PathBuf::from_str(&index_uri)?,
             input_uri: None,
-            temp_dir: split_dir.into_path(),
+            temp_dir: split_dir.path().to_path_buf(),
             num_threads: 1,
             heap_size: 3000000,
             overwrite: false,
@@ -326,13 +338,12 @@ mod tests {
         let schema = Schema::builder().build();
         let storage_resolver = Arc::new(StorageUriResolver::default());
         let mut mock_metastore = MockMetastore::default();
-        mock_metastore
-            .expect_stage_split()
-            .times(1)
-            .returning(|index_uri, split_id, _| {
-                assert_eq!(index_uri, "ram://test".to_string());
+        mock_metastore.expect_stage_split().times(1).returning(
+            move |expected_index_uri, split_id, _| {
+                assert_eq!(index_uri.clone(), expected_index_uri);
                 Ok(split_id)
-            });
+            },
+        );
         mock_metastore
             .expect_publish_split()
             .times(1)

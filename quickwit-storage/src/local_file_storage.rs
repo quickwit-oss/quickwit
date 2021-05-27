@@ -53,6 +53,10 @@ impl LocalFileStorage {
         let root_path = uri.split("://").nth(1).ok_or_else(|| {
             StorageErrorKind::DoesNotExist.with_error(anyhow::anyhow!("Invalid root path: {}", uri))
         })?;
+
+        // TODO remove when fixed: https://github.com/quickwit-inc/quickwit/issues/59
+        std::fs::create_dir_all(root_path).map_err(|err| StorageErrorKind::Io.with_error(err))?;
+
         Ok(LocalFileStorage::new(PathBuf::from(root_path)))
     }
 }
@@ -164,9 +168,11 @@ mod tests {
 
     #[test]
     fn test_file_storage_factory() -> anyhow::Result<()> {
+        let test_dir = tempfile::tempdir()?;
+        let index_dir_uri = format!("file://{}/foo/bar", test_dir.path().display());
         let file_storage_factory = LocalFileStorageFactory::default();
-        let storage = file_storage_factory.resolve("file://foo/bar")?;
-        assert_eq!(storage.uri().as_str(), "file://foo/bar");
+        let storage = file_storage_factory.resolve(&index_dir_uri)?;
+        assert_eq!(storage.uri().as_str(), index_dir_uri);
 
         let err = file_storage_factory
             .resolve("test://foo/bar")
