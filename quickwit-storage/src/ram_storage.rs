@@ -185,11 +185,10 @@ mod tests {
     }
 
     #[test]
-    fn test_ram_storage_factory() -> anyhow::Result<()> {
+    fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
         let err = ram_storage_factory.resolve("ram://toto").err().unwrap();
         assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
-        Ok(())
     }
 
     #[tokio::test]

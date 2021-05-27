@@ -169,6 +169,28 @@ impl CliCommand {
     }
 }
 
+/// For the moment, the only metastore available is the
+/// a one file per index store, located on the same storage as the
+/// index.
+/// For a simpler UX, we let the user define an `index_url` instead
+/// of a metastore and an index_id.
+/// This function takes such a index_url and breaks it into
+/// s3://my_bucket/some_path_containing_my_indices / my_index
+/// \--------------------------------------------/ \------/
+///        metastore_uri                           index_id
+///
+/// TODO force the presence of a protocol and a specific format using a regex?
+fn extract_metastore_uri_and_index_id_from_index_uri(
+    index_uri: &str,
+) -> anyhow::Result<(&str, &str)> {
+    let parts: Vec<&str> = index_uri.rsplitn(2, '/').collect();
+    if parts.len() == 2 {
+        Ok((parts[0], parts[1]))
+    } else {
+        anyhow::bail!("Failed to parse the uri into a metastore_uri and an index_id.");
+    }
+}
+
 async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri = %args.index_uri,
@@ -176,13 +198,14 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         overwrite = args.overwrite,
         "create-index"
     );
-    let index_uri = args.index_uri;
+    let (metastore_uri, index_id) =
+        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
     let doc_mapping = DocMapping::Dynamic;
 
     if args.overwrite {
-        delete_index(index_uri.clone()).await?;
+        delete_index(metastore_uri, index_id).await?;
     }
-    create_index(index_uri, doc_mapping).await?;
+    create_index(metastore_uri, index_id, doc_mapping).await?;
     Ok(())
 }
 
@@ -445,7 +468,6 @@ mod tests {
                 dry_run: true
             })) if &index_uri == "file:///indexes/wikipedia"
         ));
-
         Ok(())
     }
 }

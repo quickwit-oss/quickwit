@@ -136,12 +136,11 @@ mod tests {
     }
 
     #[test]
-    fn test_storage_resolver_unsupported_protocol() -> anyhow::Result<()> {
+    fn test_storage_resolver_unsupported_protocol() {
         let storage_resolver = StorageUriResolver::default();
         assert!(matches!(
             storage_resolver.resolve("protocol://hello"),
             Err(crate::StorageResolverError::ProtocolUnsupported(protocol)) if protocol == "protocol"
         ));
-        Ok(())
     }
 }

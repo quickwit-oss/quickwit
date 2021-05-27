@@ -33,16 +33,16 @@ use quickwit_storage::{PutPayload, Storage};
 
 use crate::metastore::FILE_FORMAT_VERSION;
 use crate::{
-    IndexMetadata, IndexUri, MetadataSet, Metastore, MetastoreErrorKind, MetastoreResult, SplitId,
-    SplitMetadata, SplitState,
+    IndexMetadata, MetadataSet, Metastore, MetastoreErrorKind, MetastoreResult, SplitMetadata,
+    SplitState,
 };
 
 /// A metadata filename that managed by SingleFileMetastore.
 const META_FILENAME: &str = "quickwit.json";
 
 /// Create a path to the metadata file from the given index path.
-fn meta_uri(index_uri: IndexUri) -> PathBuf {
-    Path::new(&index_uri).join(Path::new(META_FILENAME))
+fn meta_path(index_id: &str) -> PathBuf {
+    Path::new(index_id).join(Path::new(META_FILENAME))
 }
 
 /// Takes 2 semi-open intervals and returns true iff their intersection is empty
@@ -53,7 +53,7 @@ fn is_disjoint(left: &Range<u64>, right: &Range<u64>) -> bool {
 /// Single file meta store implementation.
 pub struct SingleFileMetastore {
     storage: Arc<dyn Storage>,
-    cache: Arc<RwLock<HashMap<IndexUri, MetadataSet>>>,
+    cache: Arc<RwLock<HashMap<String, MetadataSet>>>,
 }
 
 #[allow(dead_code)]
@@ -67,8 +67,8 @@ impl SingleFileMetastore {
     }
 
     /// Check the index exists in storage.
-    async fn index_exists(&self, index_uri: IndexUri) -> MetastoreResult<bool> {
-        let path = meta_uri(index_uri);
+    async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
+        let path = meta_path(index_id);
 
         let exist = self.storage.exists(&path).await.map_err(|e| {
             MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
@@ -81,8 +81,8 @@ impl SingleFileMetastore {
     }
 
     /// Reads the index metadata set from the storage and loads it into the local cache.
-    async fn open_index(&self, index_uri: IndexUri) -> MetastoreResult<()> {
-        let path = meta_uri(index_uri.clone());
+    async fn open_index(&self, index_id: &str) -> MetastoreResult<()> {
+        let path = meta_path(index_id);
 
         // Get metadata set from storage.
         let contents = self.storage.get_all(&path).await.map_err(|e| {
@@ -103,40 +103,31 @@ impl SingleFileMetastore {
 
         // Update the internal data if the storage is successfully updated.
         let mut cache = self.cache.write().await;
-        cache.insert(index_uri.clone(), metadata_set.clone());
+        cache.insert(index_id.to_string(), metadata_set.clone());
 
         Ok(())
     }
 
     /// Returns true if the cache contains a metadataset for the specified index uri.
-    async fn contains_index(&self, index_uri: IndexUri) -> bool {
+    async fn contains_index(&self, index_id: &str) -> bool {
         let cache = self.cache.read().await;
-
-        cache.contains_key(&index_uri)
+        cache.contains_key(index_id)
     }
 }
 
 #[async_trait]
 impl Metastore for SingleFileMetastore {
-    async fn create_index(
-        &self,
-        index_uri: IndexUri,
-        _doc_mapping: DocMapping,
-    ) -> MetastoreResult<()> {
+    async fn create_index(&self, index_id: &str, _doc_mapping: DocMapping) -> MetastoreResult<()> {
         // Check for the existence of index.
-        let exists = self.index_exists(index_uri.clone()).await.map_err(|e| {
+        let exists = self.index_exists(index_id).await.map_err(|e| {
             MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
                 "Failed to check the existence of the index on storage: {:?}",
                 e
             ))
         })?;
         if exists {
-            return Err(
-                MetastoreErrorKind::ExistingIndexUri.with_error(anyhow::anyhow!(
-                    "The index already exists: {:?}",
-                    &index_uri
-                )),
-            );
+            return Err(MetastoreErrorKind::ExistingIndexUri
+                .with_error(anyhow::anyhow!("The index already exists: {:?}", index_id)));
         }
 
         // Create new empty metadata set.
@@ -153,7 +144,7 @@ impl Metastore for SingleFileMetastore {
                 .with_error(anyhow::anyhow!("Failed to serialize metadata set: {:?}", e))
         })?;
 
-        let path = meta_uri(index_uri.clone());
+        let path = meta_path(index_id);
 
         // Put data back into storage.
         self.storage
@@ -166,29 +157,25 @@ impl Metastore for SingleFileMetastore {
 
         // Update the internal data if the storage is successfully updated.
         let mut cache = self.cache.write().await;
-        cache.insert(index_uri.clone(), metadata_set.clone());
+        cache.insert(index_id.to_string(), metadata_set.clone());
 
         Ok(())
     }
 
-    async fn delete_index(&self, index_uri: IndexUri) -> MetastoreResult<()> {
+    async fn delete_index(&self, index_id: &str) -> MetastoreResult<()> {
         // Check for the existence of index.
-        let exists = self.index_exists(index_uri.clone()).await.map_err(|e| {
+        let exists = self.index_exists(index_id).await.map_err(|e| {
             MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
                 "Failed to check the existence of the index on storage: {:?}",
                 e
             ))
         })?;
         if !exists {
-            return Err(
-                MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
-                    "The index does not exist: {:?}",
-                    &index_uri
-                )),
-            );
+            return Err(MetastoreErrorKind::IndexDoesNotExist
+                .with_error(anyhow::anyhow!("The index does not exist: {:?}", index_id)));
         }
 
-        let path = meta_uri(index_uri.clone());
+        let path = meta_path(index_id);
 
         // Delete metadata set form storage.
         self.storage.delete(&path).await.map_err(|e| {
@@ -200,19 +187,18 @@ impl Metastore for SingleFileMetastore {
 
         // Update the internal data if the storage is successfully updated.
         let mut cache = self.cache.write().await;
-        cache.remove(&index_uri);
+        cache.remove(index_id);
 
         Ok(())
     }
 
     async fn stage_split(
         &self,
-        index_uri: IndexUri,
-        split_id: SplitId,
+        index_id: &str,
         mut split_metadata: SplitMetadata,
-    ) -> MetastoreResult<SplitId> {
-        if !self.contains_index(index_uri.clone()).await {
-            self.open_index(index_uri.clone()).await.map_err(|e| {
+    ) -> MetastoreResult<()> {
+        if !self.contains_index(index_id).await {
+            self.open_index(index_id).await.map_err(|e| {
                 MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
                     "Failed to load index metadata on storage: {:?}",
                     e
@@ -223,21 +209,27 @@ impl Metastore for SingleFileMetastore {
         let mut tmp_cache = self.cache.read().await.clone();
 
         // Check for the existence of index.
-        let metadata_set = tmp_cache.get_mut(&index_uri).ok_or_else(|| {
+        let metadata_set = tmp_cache.get_mut(index_id).ok_or_else(|| {
             MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", &index_uri))
+                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", index_id))
         })?;
 
         // Check for the existence of split.
         // If split exists, return an error to prevent the split from being registered.
-        if metadata_set.splits.contains_key(&split_id) {
-            return Err(MetastoreErrorKind::ExistingSplitId
-                .with_error(anyhow::anyhow!("Split already exists: {:?}", &split_id)));
+        if metadata_set.splits.contains_key(&split_metadata.split_id) {
+            return Err(
+                MetastoreErrorKind::ExistingSplitId.with_error(anyhow::anyhow!(
+                    "Split already exists: {:?}",
+                    &split_metadata.split_id
+                )),
+            );
         }
 
         // Insert a new split metadata as `Staged` state.
         split_metadata.split_state = SplitState::Staged;
-        metadata_set.splits.insert(split_id.clone(), split_metadata);
+        metadata_set
+            .splits
+            .insert(split_metadata.split_id.to_string(), split_metadata);
 
         // Serialize metadata set.
         let contents = serde_json::to_vec(&metadata_set).map_err(|e| {
@@ -245,7 +237,7 @@ impl Metastore for SingleFileMetastore {
                 .with_error(anyhow::anyhow!("Failed to serialize metadata: {:?}", e))
         })?;
 
-        let path = meta_uri(index_uri.clone());
+        let path = meta_path(index_id);
 
         // Put data back into storage.
         self.storage
@@ -260,14 +252,14 @@ impl Metastore for SingleFileMetastore {
 
         // Update the internal data if the storage is successfully updated.
         let mut cache = self.cache.write().await;
-        cache.insert(index_uri.clone(), metadata_set.clone());
+        cache.insert(index_id.to_string(), metadata_set.clone());
 
-        Ok(split_id)
+        Ok(())
     }
 
-    async fn publish_split(&self, index_uri: IndexUri, split_id: SplitId) -> MetastoreResult<()> {
-        if !self.contains_index(index_uri.clone()).await {
-            self.open_index(index_uri.clone()).await.map_err(|e| {
+    async fn publish_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()> {
+        if !self.contains_index(index_id).await {
+            self.open_index(index_id).await.map_err(|e| {
                 MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
                     "Failed to load index metadata on storage: {:?}",
                     e
@@ -278,15 +270,15 @@ impl Metastore for SingleFileMetastore {
         let mut tmp_cache = self.cache.read().await.clone();
 
         // Check for the existence of index.
-        let metadata_set = tmp_cache.get_mut(&index_uri).ok_or_else(|| {
+        let metadata_set = tmp_cache.get_mut(index_id).ok_or_else(|| {
             MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", &index_uri))
+                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", index_id))
         })?;
 
         // Check for the existence of split.
-        let split_metadata = metadata_set.splits.get_mut(&split_id).ok_or_else(|| {
+        let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
             MetastoreErrorKind::SplitDoesNotExist
-                .with_error(anyhow::anyhow!("Split does not exist: {:?}", &split_id))
+                .with_error(anyhow::anyhow!("Split does not exist: {:?}", split_id))
         })?;
 
         // Check the split state.
@@ -301,7 +293,7 @@ impl Metastore for SingleFileMetastore {
             }
             _ => {
                 return Err(MetastoreErrorKind::SplitIsNotStaged
-                    .with_error(anyhow::anyhow!("Split ID is not staged: {:?}", &split_id)));
+                    .with_error(anyhow::anyhow!("Split ID is not staged: {:?}", split_id)));
             }
         }
 
@@ -311,7 +303,7 @@ impl Metastore for SingleFileMetastore {
                 .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
         })?;
 
-        let path = meta_uri(index_uri.clone());
+        let path = meta_path(index_id);
 
         // Put data back into storage.
         self.storage
@@ -326,19 +318,19 @@ impl Metastore for SingleFileMetastore {
 
         // Update the internal data if the storage is successfully updated.
         let mut cache = self.cache.write().await;
-        cache.insert(index_uri.clone(), metadata_set.clone());
+        cache.insert(index_id.to_string(), metadata_set.clone());
 
         Ok(())
     }
 
     async fn list_splits(
         &self,
-        index_uri: IndexUri,
+        index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<u64>>,
     ) -> MetastoreResult<Vec<SplitMetadata>> {
-        if !self.contains_index(index_uri.clone()).await {
-            self.open_index(index_uri.clone()).await.map_err(|e| {
+        if !self.contains_index(index_id).await {
+            self.open_index(index_id).await.map_err(|e| {
                 MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
                     "Failed to load index metadata on storage: {:?}",
                     e
@@ -349,9 +341,9 @@ impl Metastore for SingleFileMetastore {
         let cache = self.cache.read().await;
 
         // Check for the existence of index.
-        let metadata_set = cache.get(&index_uri).ok_or_else(|| {
+        let metadata_set = cache.get(index_id).ok_or_else(|| {
             MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", &index_uri))
+                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", index_id))
         })?;
 
         // filter by split state.
@@ -378,13 +370,9 @@ impl Metastore for SingleFileMetastore {
         Ok(splits)
     }
 
-    async fn mark_split_as_deleted(
-        &self,
-        index_uri: IndexUri,
-        split_id: SplitId,
-    ) -> MetastoreResult<()> {
-        if !self.contains_index(index_uri.clone()).await {
-            self.open_index(index_uri.clone()).await.map_err(|e| {
+    async fn mark_split_as_deleted(&self, index_id: &str, split_id: &str) -> MetastoreResult<()> {
+        if !self.contains_index(index_id).await {
+            self.open_index(index_id).await.map_err(|e| {
                 MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
                     "Failed to load index metadata on storage: {:?}",
                     e
@@ -395,15 +383,15 @@ impl Metastore for SingleFileMetastore {
         let mut tmp_cache = self.cache.read().await.clone();
 
         // Check for the existence of index.
-        let metadata_set = tmp_cache.get_mut(&index_uri).ok_or_else(|| {
+        let metadata_set = tmp_cache.get_mut(index_id).ok_or_else(|| {
             MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", &index_uri))
+                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", index_id))
         })?;
 
         // Check for the existence of split.
-        let split_metadata = metadata_set.splits.get_mut(&split_id).ok_or_else(|| {
+        let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
             MetastoreErrorKind::SplitDoesNotExist
-                .with_error(anyhow::anyhow!("Split does not exists: {:?}", &split_id))
+                .with_error(anyhow::anyhow!("Split does not exists: {:?}", split_id))
         })?;
 
         match split_metadata.split_state {
@@ -420,7 +408,7 @@ impl Metastore for SingleFileMetastore {
                 .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
         })?;
 
-        let path = meta_uri(index_uri.clone());
+        let path = meta_path(index_id);
 
         // Put data back into storage.
         self.storage
@@ -435,14 +423,14 @@ impl Metastore for SingleFileMetastore {
 
         // Update the internal data if the storage is successfully updated.
         let mut cache = self.cache.write().await;
-        cache.insert(index_uri.clone(), metadata_set.clone());
+        cache.insert(index_id.to_string(), metadata_set.clone());
 
         Ok(())
     }
 
-    async fn delete_split(&self, index_uri: IndexUri, split_id: SplitId) -> MetastoreResult<()> {
-        if !self.contains_index(index_uri.clone()).await {
-            self.open_index(index_uri.clone()).await.map_err(|e| {
+    async fn delete_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()> {
+        if !self.contains_index(index_id).await {
+            self.open_index(index_id).await.map_err(|e| {
                 MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
                     "Failed to load index metadata on storage: {:?}",
                     e
@@ -453,26 +441,26 @@ impl Metastore for SingleFileMetastore {
         let mut tmp_cache = self.cache.read().await.clone();
 
         // Check for the existence of index.
-        let metadata_set = tmp_cache.get_mut(&index_uri).ok_or_else(|| {
+        let metadata_set = tmp_cache.get_mut(index_id).ok_or_else(|| {
             MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", &index_uri))
+                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", index_id))
         })?;
 
         // Check for the existence of split.
-        let split_metadata = metadata_set.splits.get_mut(&split_id).ok_or_else(|| {
+        let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
             MetastoreErrorKind::SplitDoesNotExist
-                .with_error(anyhow::anyhow!("Split does not exist: {:?}", &split_id))
+                .with_error(anyhow::anyhow!("Split does not exist: {:?}", split_id))
         })?;
 
         match split_metadata.split_state {
             SplitState::ScheduledForDeletion | SplitState::Staged => {
                 // Only `ScheduledForDeletion` and `Staged` can be deleted
-                metadata_set.splits.remove(&split_id);
+                metadata_set.splits.remove(split_id);
             }
             _ => {
                 return Err(MetastoreErrorKind::Forbidden.with_error(anyhow::anyhow!(
                     "This split is not a deletable state: {:?}:{:?}",
-                    &split_id,
+                    split_id,
                     &split_metadata.split_state
                 )));
             }
@@ -484,7 +472,7 @@ impl Metastore for SingleFileMetastore {
                 .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
         })?;
 
-        let path = meta_uri(index_uri.clone());
+        let path = meta_path(index_id);
 
         // Put data back into storage.
         self.storage
@@ -499,7 +487,7 @@ impl Metastore for SingleFileMetastore {
 
         // Update the internal data if the storage is successfully updated.
         let mut cache = self.cache.write().await;
-        cache.insert(index_uri.clone(), metadata_set.clone());
+        cache.insert(index_id.to_string(), metadata_set.clone());
 
         Ok(())
     }
@@ -507,38 +495,36 @@ impl Metastore for SingleFileMetastore {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::ops::Range;
+    use std::path::Path;
     use std::sync::Arc;
 
+    use crate::{Metastore, MetastoreErrorKind, SingleFileMetastore, SplitMetadata, SplitState};
     use quickwit_doc_mapping::DocMapping;
     use quickwit_storage::{MockStorage, StorageErrorKind, StorageUriResolver};
-
-    use crate::metastore::single_file_metastore::meta_uri;
-    use crate::{
-        IndexUri, Metastore, MetastoreErrorKind, SingleFileMetastore, SplitMetadata, SplitState,
-    };
 
     #[tokio::test]
     async fn test_single_file_metastore_index_exists() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
-        let index_uri = IndexUri::from("ram://test/index");
+        let index_id = "my-index";
 
         {
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = false;
             assert_eq!(result, expected);
 
             // Create index
             metastore
-                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .create_index(index_id, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = true;
             assert_eq!(result, expected);
         }
@@ -549,28 +535,28 @@ mod tests {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
-        let index_uri = IndexUri::from("ram://test/index");
+        let index_id = "my-index";
 
         {
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = false;
             assert_eq!(result, expected);
 
             // Create index
             metastore
-                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .create_index(index_id, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = true;
             assert_eq!(result, expected);
 
             // Create an index that already exists.
             let result = metastore
-                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .create_index(index_id, DocMapping::Dynamic)
                 .await
                 .unwrap_err()
                 .kind();
@@ -584,31 +570,31 @@ mod tests {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
-        let index_uri = IndexUri::from("ram://test/index");
+        let index_id = "my-index";
 
         {
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = false;
             assert_eq!(result, expected);
 
             // Create index
             metastore
-                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .create_index(index_id, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = true;
             assert_eq!(result, expected);
 
             // Open index
-            metastore.open_index(index_uri.clone()).await.unwrap();
+            metastore.open_index(index_id).await.unwrap();
 
             // Open a non-existent index.
             let result = metastore
-                .open_index("ram://test/non-existent-index".to_string())
+                .open_index("non-existent-index")
                 .await
                 .unwrap_err()
                 .kind();
@@ -622,31 +608,31 @@ mod tests {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
-        let index_uri = IndexUri::from("ram://test/index");
+        let index_id = "my-index";
 
         {
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = false;
             assert_eq!(result, expected);
 
             // Create index
             metastore
-                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .create_index(index_id, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = true;
             assert_eq!(result, expected);
 
             // Delete index
-            metastore.delete_index(index_uri.clone()).await.unwrap();
+            metastore.delete_index(index_id).await.unwrap();
 
             // Delete a non-existent index.
             let result = metastore
-                .delete_index("ram://test/non-existent-index".to_string())
+                .delete_index("non-existent-index")
                 .await
                 .unwrap_err()
                 .kind();
@@ -660,10 +646,10 @@ mod tests {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
-        let index_uri = IndexUri::from("ram://test/index");
-        let split_id = "one".to_string();
+        let index_id = "my-index";
+        let split_id = "one";
         let split_metadata = SplitMetadata {
-            split_id: "one".to_string(),
+            split_id: split_id.to_string(),
             split_state: SplitState::Staged,
             num_records: 1,
             size_in_bytes: 2,
@@ -673,87 +659,87 @@ mod tests {
 
         {
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = false;
             assert_eq!(result, expected);
 
             // Create index
             metastore
-                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .create_index(index_id, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = true;
             assert_eq!(result, expected);
 
             // stage split
             metastore
-                .stage_split(index_uri.clone(), split_id.clone(), split_metadata.clone())
+                .stage_split(index_id, split_metadata.clone())
                 .await
                 .unwrap();
         }
 
         {
             let cache = metastore.cache.read().await;
-            assert_eq!(cache.get(&index_uri).unwrap().splits.len(), 1);
+            assert_eq!(cache.get(index_id).unwrap().splits.len(), 1);
             assert_eq!(
                 cache
-                    .get(&index_uri)
+                    .get(index_id)
                     .unwrap()
                     .splits
-                    .get(&split_id)
+                    .get(split_id)
                     .unwrap()
                     .split_id,
                 "one".to_string()
             );
             assert_eq!(
                 cache
-                    .get(&index_uri)
+                    .get(index_id)
                     .unwrap()
                     .splits
-                    .get(&split_id)
+                    .get(split_id)
                     .unwrap()
                     .split_state,
                 SplitState::Staged
             );
             assert_eq!(
                 cache
-                    .get(&index_uri)
+                    .get(index_id)
                     .unwrap()
                     .splits
-                    .get(&split_id)
+                    .get(split_id)
                     .unwrap()
                     .num_records,
                 1
             );
             assert_eq!(
                 cache
-                    .get(&index_uri)
+                    .get(index_id)
                     .unwrap()
                     .splits
-                    .get(&split_id)
+                    .get(split_id)
                     .unwrap()
                     .size_in_bytes,
                 2
             );
             assert_eq!(
                 cache
-                    .get(&index_uri)
+                    .get(index_id)
                     .unwrap()
                     .splits
-                    .get(&split_id)
+                    .get(split_id)
                     .unwrap()
                     .time_range,
                 Some(Range { start: 0, end: 100 })
             );
             assert_eq!(
                 cache
-                    .get(&index_uri)
+                    .get(index_id)
                     .unwrap()
                     .splits
-                    .get(&split_id)
+                    .get(split_id)
                     .unwrap()
                     .generation,
                 3
@@ -763,7 +749,7 @@ mod tests {
         {
             // stage split (existing split id)
             let result = metastore
-                .stage_split(index_uri.clone(), split_id.clone(), split_metadata.clone())
+                .stage_split(index_id, split_metadata.clone())
                 .await
                 .unwrap_err()
                 .kind();
@@ -774,11 +760,7 @@ mod tests {
         {
             // stage split (non-existent index uri)
             let result = metastore
-                .stage_split(
-                    "ram://test/non-existent-index".to_string(),
-                    split_id.clone(),
-                    split_metadata.clone(),
-                )
+                .stage_split("non-existent-index", split_metadata.clone())
                 .await
                 .unwrap_err()
                 .kind();
@@ -792,10 +774,10 @@ mod tests {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
-        let index_uri = IndexUri::from("ram://test/index");
-        let split_id = "one".to_string();
+        let index_id = "my-index";
+        let split_id = "one";
         let split_metadata = SplitMetadata {
-            split_id: "one".to_string(),
+            split_id: split_id.to_string(),
             split_state: SplitState::Staged,
             num_records: 1,
             size_in_bytes: 2,
@@ -805,42 +787,39 @@ mod tests {
 
         {
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = false;
             assert_eq!(result, expected);
 
             // Create index
             metastore
-                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .create_index(index_id, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = true;
             assert_eq!(result, expected);
 
             // stage split
             metastore
-                .stage_split(index_uri.clone(), split_id.clone(), split_metadata.clone())
+                .stage_split(index_id, split_metadata.clone())
                 .await
                 .unwrap();
 
             // publish split
-            metastore
-                .publish_split(index_uri.clone(), split_id.clone())
-                .await
-                .unwrap();
+            metastore.publish_split(index_id, split_id).await.unwrap();
         }
 
         {
             let cache = metastore.cache.read().await;
             assert_eq!(
                 cache
-                    .get(&index_uri)
+                    .get(index_id)
                     .unwrap()
                     .splits
-                    .get(&split_id)
+                    .get(split_id)
                     .unwrap()
                     .split_state,
                 SplitState::Published
@@ -849,19 +828,16 @@ mod tests {
 
         {
             // publish published split
-            metastore
-                .publish_split(index_uri.clone(), split_id.clone())
-                .await
-                .unwrap();
+            metastore.publish_split(index_id, split_id).await.unwrap();
 
             // publish non-staged split
-            let split_id = "one".to_string();
+            let split_id = "one";
             metastore
-                .mark_split_as_deleted(index_uri.clone(), split_id.clone()) // mark as deleted
+                .mark_split_as_deleted(index_id, split_id) // mark as deleted
                 .await
                 .unwrap();
             let result = metastore
-                .publish_split(index_uri.clone(), split_id.clone()) // publish
+                .publish_split(index_id, split_id) // publish
                 .await
                 .unwrap_err()
                 .kind();
@@ -870,7 +846,7 @@ mod tests {
 
             // publish non-existent index
             let result = metastore
-                .publish_split("ram://test/non-existent-inde".to_string(), split_id.clone())
+                .publish_split("non-existent-index", split_id)
                 .await
                 .unwrap_err()
                 .kind();
@@ -879,7 +855,7 @@ mod tests {
 
             // publish non-existent split
             let result = metastore
-                .publish_split(index_uri.clone(), "non-existant-split".to_string())
+                .publish_split(index_id, "non-existent-split")
                 .await
                 .unwrap_err()
                 .kind();
@@ -893,19 +869,18 @@ mod tests {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
-        let index_uri = IndexUri::from("ram://test/index");
+        let index_id = "my-index";
 
         {
             // create index
             metastore
-                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .create_index(index_id, DocMapping::Dynamic)
                 .await
                 .unwrap();
         }
 
         {
             // stage split
-            let split_id_1 = "one".to_string();
             let split_metadata_1 = SplitMetadata {
                 split_id: "one".to_string(),
                 split_state: SplitState::Staged,
@@ -915,7 +890,6 @@ mod tests {
                 generation: 3,
             };
 
-            let split_id_2 = "two".to_string();
             let split_metadata_2 = SplitMetadata {
                 split_id: "two".to_string(),
                 split_state: SplitState::Staged,
@@ -928,7 +902,6 @@ mod tests {
                 generation: 3,
             };
 
-            let split_id_3 = "three".to_string();
             let split_metadata_3 = SplitMetadata {
                 split_id: "three".to_string(),
                 split_state: SplitState::Staged,
@@ -941,7 +914,6 @@ mod tests {
                 generation: 3,
             };
 
-            let split_id_4 = "four".to_string();
             let split_metadata_4 = SplitMetadata {
                 split_id: "four".to_string(),
                 split_state: SplitState::Staged,
@@ -955,19 +927,19 @@ mod tests {
             };
 
             metastore
-                .stage_split(index_uri.clone(), split_id_1.clone(), split_metadata_1)
+                .stage_split(index_id, split_metadata_1)
                 .await
                 .unwrap();
             metastore
-                .stage_split(index_uri.clone(), split_id_2.clone(), split_metadata_2)
+                .stage_split(index_id, split_metadata_2)
                 .await
                 .unwrap();
             metastore
-                .stage_split(index_uri.clone(), split_id_3.clone(), split_metadata_3)
+                .stage_split(index_id, split_metadata_3)
                 .await
                 .unwrap();
             metastore
-                .stage_split(index_uri.clone(), split_id_4.clone(), split_metadata_4)
+                .stage_split(index_id, split_metadata_4)
                 .await
                 .unwrap();
         }
@@ -976,24 +948,24 @@ mod tests {
             // list
             let range = Some(Range { start: 0, end: 99 });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
-            let mut split_id_vec = Vec::new();
-            for split_metadata in splits {
-                split_id_vec.push(split_metadata.split_id);
-            }
-            assert_eq!(split_id_vec.contains(&"one".to_string()), true);
-            assert_eq!(split_id_vec.contains(&"two".to_string()), false);
-            assert_eq!(split_id_vec.contains(&"three".to_string()), false);
-            assert_eq!(split_id_vec.contains(&"four".to_string()), false);
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|split_metadata| split_metadata.split_id)
+                .collect();
+            assert_eq!(split_ids.contains("one"), true);
+            assert_eq!(split_ids.contains("two"), false);
+            assert_eq!(split_ids.contains("three"), false);
+            assert_eq!(split_ids.contains("four"), false);
         }
 
         {
             // list
             let range = Some(Range { start: 0, end: 100 });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1010,7 +982,7 @@ mod tests {
             // list
             let range = Some(Range { start: 0, end: 101 });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1027,7 +999,7 @@ mod tests {
             // list
             let range = Some(Range { start: 0, end: 199 });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1044,7 +1016,7 @@ mod tests {
             // list
             let range = Some(Range { start: 0, end: 200 });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1061,7 +1033,7 @@ mod tests {
             // list
             let range = Some(Range { start: 0, end: 201 });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1078,7 +1050,7 @@ mod tests {
             // list
             let range = Some(Range { start: 0, end: 299 });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1095,7 +1067,7 @@ mod tests {
             // list
             let range = Some(Range { start: 0, end: 300 });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1112,7 +1084,7 @@ mod tests {
             // list
             let range = Some(Range { start: 0, end: 301 });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1132,7 +1104,7 @@ mod tests {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1152,7 +1124,7 @@ mod tests {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1172,7 +1144,7 @@ mod tests {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1192,7 +1164,7 @@ mod tests {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1212,7 +1184,7 @@ mod tests {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1232,7 +1204,7 @@ mod tests {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1252,7 +1224,7 @@ mod tests {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1272,7 +1244,7 @@ mod tests {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1292,7 +1264,7 @@ mod tests {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1312,7 +1284,7 @@ mod tests {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1332,7 +1304,7 @@ mod tests {
                 end: 1100,
             });
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             assert_eq!(splits.len(), 0);
@@ -1342,7 +1314,7 @@ mod tests {
             // list
             let range = None;
             let splits = metastore
-                .list_splits(index_uri.clone(), SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1361,10 +1333,10 @@ mod tests {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
-        let index_uri = IndexUri::from("ram://test/index");
-        let split_id = "one".to_string();
+        let index_id = "my-index";
+        let split_id = "split-one";
         let split_metadata = SplitMetadata {
-            split_id: "one".to_string(),
+            split_id: split_id.to_string(),
             split_state: SplitState::Staged,
             num_records: 1,
             size_in_bytes: 2,
@@ -1374,37 +1346,33 @@ mod tests {
 
         {
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = false;
             assert_eq!(result, expected);
 
             // Create index
             metastore
-                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .create_index(index_id, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = true;
             assert_eq!(result, expected);
 
             // stage split
             metastore
-                .stage_split(index_uri.clone(), split_id.clone(), split_metadata.clone())
+                .stage_split(index_id, split_metadata.clone())
                 .await
                 .unwrap();
 
             // publish split
-            metastore
-                .publish_split(index_uri.clone(), split_id.clone())
-                .await
-                .unwrap();
+            metastore.publish_split(index_id, split_id).await.unwrap();
 
             // mark split as deleted
-            let split_id = "one".to_string();
             metastore
-                .mark_split_as_deleted(index_uri.clone(), split_id.clone())
+                .mark_split_as_deleted(index_id, split_id)
                 .await
                 .unwrap();
         }
@@ -1413,10 +1381,10 @@ mod tests {
             let cache = metastore.cache.read().await;
             assert_eq!(
                 cache
-                    .get(&index_uri)
+                    .get(index_id)
                     .unwrap()
                     .splits
-                    .get(&split_id)
+                    .get(split_id)
                     .unwrap()
                     .split_state,
                 SplitState::ScheduledForDeletion
@@ -1426,13 +1394,13 @@ mod tests {
         {
             // mark split as deleted (already marked as deleted)
             metastore
-                .mark_split_as_deleted(index_uri.clone(), split_id.clone())
+                .mark_split_as_deleted(index_id, split_id)
                 .await
                 .unwrap();
 
             // mark split as deleted (non-existent index)
             let result = metastore
-                .mark_split_as_deleted("ram://test/non-existent-inde".to_string(), split_id.clone())
+                .mark_split_as_deleted("non-existent-index", split_id)
                 .await
                 .unwrap_err()
                 .kind();
@@ -1441,7 +1409,7 @@ mod tests {
 
             // mark split as deleted (non-existent)
             let result = metastore
-                .mark_split_as_deleted(index_uri.clone(), "non-existant-split".to_string())
+                .mark_split_as_deleted(index_id, "non-existent-split")
                 .await
                 .unwrap_err()
                 .kind();
@@ -1455,10 +1423,10 @@ mod tests {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage).await.unwrap();
-        let index_uri = IndexUri::from("ram://test/index");
-        let split_id = "one".to_string();
+        let index_id = "my-index";
+        let split_id = "split-one";
         let split_metadata = SplitMetadata {
-            split_id: "one".to_string(),
+            split_id: split_id.to_string(),
             split_state: SplitState::Staged,
             num_records: 1,
             size_in_bytes: 2,
@@ -1468,36 +1436,33 @@ mod tests {
 
         {
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = false;
             assert_eq!(result, expected);
 
             // Create index
             metastore
-                .create_index(index_uri.clone(), DocMapping::Dynamic)
+                .create_index(index_id, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
             // Check for the existence of index.
-            let result = metastore.index_exists(index_uri.clone()).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = true;
             assert_eq!(result, expected);
 
             // stage split
             metastore
-                .stage_split(index_uri.clone(), split_id.clone(), split_metadata.clone())
+                .stage_split(index_id, split_metadata.clone())
                 .await
                 .unwrap();
 
             // publish split
-            metastore
-                .publish_split(index_uri.clone(), split_id.clone())
-                .await
-                .unwrap();
+            metastore.publish_split(index_id, split_id).await.unwrap();
 
             // delete split (published split)
             let result = metastore
-                .delete_split(index_uri.clone(), split_id.clone())
+                .delete_split(index_id, split_id)
                 .await
                 .unwrap_err()
                 .kind();
@@ -1506,25 +1471,18 @@ mod tests {
 
             // mark split as deleted
             metastore
-                .mark_split_as_deleted(index_uri.clone(), split_id.clone())
+                .mark_split_as_deleted(index_id, split_id)
                 .await
                 .unwrap();
 
             // delete split
-            metastore
-                .delete_split(index_uri.clone(), split_id.clone())
-                .await
-                .unwrap();
+            metastore.delete_split(index_id, split_id).await.unwrap();
         }
 
         {
             let cache = metastore.cache.read().await;
             assert_eq!(
-                cache
-                    .get(&index_uri)
-                    .unwrap()
-                    .splits
-                    .contains_key(&split_id),
+                cache.get(index_id).unwrap().splits.contains_key(split_id),
                 false
             );
         }
@@ -1532,7 +1490,7 @@ mod tests {
         {
             // mark split as deleted (non-existent index)
             let result = metastore
-                .delete_split("ram://test/non-existent-inde".to_string(), split_id.clone())
+                .delete_split("non-existent-index", split_id)
                 .await
                 .unwrap_err()
                 .kind();
@@ -1541,7 +1499,7 @@ mod tests {
 
             // delete split (non-existent split)
             let result = metastore
-                .delete_split(index_uri.clone(), "non-existant-split".to_string())
+                .delete_split(index_id, "non-existent-split")
                 .await
                 .unwrap_err()
                 .kind();
@@ -1559,8 +1517,7 @@ mod tests {
             .expect_exists()
             .returning(|_| Ok(false));
         mock_storage.expect_put().times(2).returning(|uri, _| {
-            let path = meta_uri("ram://test/index".to_string());
-            assert_eq!(uri, path);
+            assert_eq!(uri, Path::new("my-index/quickwit.json"));
             Ok(())
         });
         mock_storage.expect_put().times(1).returning(|_uri, _| {
@@ -1572,10 +1529,10 @@ mod tests {
             .await
             .unwrap();
 
-        let index_uri = IndexUri::from("ram://test/index");
-        let split_id = "one".to_string();
+        let index_id = "my-index";
+        let split_id = "split-one";
         let split_metadata = SplitMetadata {
-            split_id: split_id.clone(),
+            split_id: split_id.to_string(),
             split_state: SplitState::Staged,
             num_records: 1,
             size_in_bytes: 2,
@@ -1585,32 +1542,30 @@ mod tests {
 
         // create index
         metastore
-            .create_index(index_uri.clone(), DocMapping::Dynamic)
+            .create_index(index_id, DocMapping::Dynamic)
             .await
             .unwrap();
 
         // stage split
         metastore
-            .stage_split(index_uri.clone(), split_id.clone(), split_metadata)
+            .stage_split(index_id, split_metadata)
             .await
             .unwrap();
 
         // publish split fails
-        let err = metastore
-            .publish_split(index_uri.clone(), split_id.clone())
-            .await;
+        let err = metastore.publish_split(index_id, split_id).await;
         assert!(err.is_err());
 
         // empty
         let split = metastore
-            .list_splits(index_uri.clone(), SplitState::Published, None)
+            .list_splits(index_id, SplitState::Published, None)
             .await
             .unwrap();
         assert!(split.is_empty());
 
         // not empty
         let split = metastore
-            .list_splits(index_uri.clone(), SplitState::Staged, None)
+            .list_splits(index_id, SplitState::Staged, None)
             .await
             .unwrap();
         assert!(!split.is_empty());
