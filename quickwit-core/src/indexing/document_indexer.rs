@@ -105,11 +105,12 @@ pub async fn index_documents(
             &mut current_split,
             Split::create(
                 index_id.to_string(),
-                &params, 
-                storage_resolver, 
-                metastore, 
-                schema.clone()
-            ).await?,
+                &params,
+                storage_resolver,
+                metastore,
+                schema.clone(),
+            )
+            .await?,
         );
         split_sender.send(split).await?;
     }

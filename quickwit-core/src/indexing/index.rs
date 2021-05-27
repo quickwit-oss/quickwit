@@ -55,8 +55,8 @@ pub struct IndexDataParams {
 /// It reads a new-line deleimited json documents, add them to the index while building
 /// and publishing splits metastore.
 pub async fn index_data(
-    metastore_uri: &str, 
-    index_id: &str, 
+    metastore_uri: &str,
+    index_id: &str,
     _doc_mapping: DocMapping,
     params: IndexDataParams,
 ) -> anyhow::Result<()> {
@@ -65,7 +65,13 @@ pub async fn index_data(
     let storage_resolver = Arc::new(StorageUriResolver::default());
 
     if params.overwrite {
-        reset_index(&index_uri, index_id, storage_resolver.clone(), metastore.clone()).await?;
+        reset_index(
+            &index_uri,
+            index_id,
+            storage_resolver.clone(),
+            metastore.clone(),
+        )
+        .await?;
     }
 
     if params.input_uri.is_none() {
@@ -83,7 +89,7 @@ pub async fn index_data(
             storage_resolver,
             document_retriever,
             split_sender,
-            statistic_sender.clone()
+            statistic_sender.clone(),
         ),
         finalize_split(split_receiver, statistic_sender.clone()),
     )?;
@@ -114,15 +120,14 @@ async fn reset_index(
     futures::future::try_join_all(mark_split_as_deleted_tasks).await?;
 
     let storage = storage_resolver.resolve(&index_uri)?;
-    let garbage_collection_result =
-        garbage_collect(index_uri.clone(), storage, metastore.clone()).await;
+    let garbage_collection_result = garbage_collect(index_uri, storage, metastore.clone()).await;
     if garbage_collection_result.is_err() {
         warn!(index_uri =% index_uri, "All split files could not be removed during garbage collection.");
     }
 
     let delete_tasks = splits
         .iter()
-        .map(|split| metastore.delete_split(index_uri.clone(), &split.split_id))
+        .map(|split| metastore.delete_split(index_uri, &split.split_id))
         .collect::<Vec<_>>();
     futures::future::try_join_all(delete_tasks).await?;
 

@@ -352,11 +352,12 @@ mod tests {
         let metastore = Arc::new(mock_metastore);
         let split_result = Split::create(
             index_dir.path().display().to_string(),
-            params, 
-            storage_resolver, 
-            metastore, 
-            schema
-        ).await;
+            params,
+            storage_resolver,
+            metastore,
+            schema,
+        )
+        .await;
         assert_eq!(split_result.is_ok(), true);
 
         let mut split = split_result?;

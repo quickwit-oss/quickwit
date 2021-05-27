@@ -28,15 +28,12 @@ use quickwit_storage::Storage;
 
 // anyhow errors are fine for now but we'll want to move to a proper error type eventually.
 pub async fn create_index(
-    metastore_uri: &str, // file://quickwit/indexes
-    index_id: &str, // wikipedia
+    metastore_uri: &str,
+    index_id: &str,
     doc_mapping: DocMapping,
 ) -> anyhow::Result<()> {
-    // metastore mounted on file://quickwit/indexes
-    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?; 
-    // create index wikipedia
+    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?;
     metastore.create_index(index_id, doc_mapping).await?;
-    // => file://quickwit/indexes/wikipedia/metadata.json
     Ok(())
 }
 

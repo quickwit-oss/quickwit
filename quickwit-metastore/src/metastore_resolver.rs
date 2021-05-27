@@ -42,11 +42,11 @@ pub struct MetastoreUriResolver {
 
 impl Default for MetastoreUriResolver {
     fn default() -> Self {
-        let resolver = MetastoreUriResolver {
+        MetastoreUriResolver {
             per_protocol_resolver: Default::default(),
-        };
+        }
         //resolver.register(SingleFileMetastoreFactory::default());
-        resolver
+        //resolver
     }
 }
 
