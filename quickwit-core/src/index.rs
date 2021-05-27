@@ -21,58 +21,30 @@
 */
 
 use quickwit_doc_mapping::DocMapping;
-use quickwit_metastore::{MetastoreUriResolver, SplitState};
-
-type IndexUri = String;
+use quickwit_metastore::MetastoreUriResolver;
 
 // anyhow errors are fine for now but we'll want to move to a proper error type eventually.
-pub async fn create_index(index_uri: IndexUri, doc_mapping: DocMapping) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    metastore.create_index(index_uri, doc_mapping).await?;
+pub async fn create_index(
+    metastore_uri: &str,
+    index_id: &str,
+    doc_mapping: DocMapping,
+) -> anyhow::Result<()> {
+    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?;
+    metastore.create_index(index_id, doc_mapping).await?;
     Ok(())
 }
 
 // TODO
-pub async fn index_data(index_uri: IndexUri) -> anyhow::Result<()> {
-    let _metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    Ok(())
+pub async fn index_data(_index_id: &str) -> anyhow::Result<()> {
+    unimplemented!()
 }
 
 // TODO
-pub async fn search_index(index_uri: IndexUri) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    let _splits = metastore
-        .list_splits(index_uri, SplitState::Published, None)
-        .await?;
-    Ok(())
+pub async fn search_index(_index_id: &str) -> anyhow::Result<()> {
+    unimplemented!()
 }
 
-pub async fn delete_index(index_uri: IndexUri) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    metastore.delete_index(index_uri).await?;
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn test_create_index() -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[test]
-    fn test_index_data() -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[test]
-    fn test_search_index() -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[test]
-    fn test_delete_index() -> anyhow::Result<()> {
-        Ok(())
-    }
+// TODO
+pub async fn delete_index(_metastore_uri: &str, _index_id: &str) -> anyhow::Result<()> {
+    unimplemented!()
 }

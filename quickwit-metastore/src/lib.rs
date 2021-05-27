@@ -31,7 +31,5 @@ mod metastore_resolver;
 
 pub use error::{MetastoreError, MetastoreErrorKind, MetastoreResolverError, MetastoreResult};
 pub use metastore::single_file_metastore::SingleFileMetastore;
-pub use metastore::{
-    IndexMetadata, IndexUri, MetadataSet, Metastore, SplitId, SplitMetadata, SplitState,
-};
+pub use metastore::{IndexMetadata, MetadataSet, Metastore, SplitMetadata, SplitState};
 pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};
