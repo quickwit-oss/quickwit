@@ -151,7 +151,7 @@ impl Directory for StorageDirectory {
     }
 
     fn delete(&self, path: &std::path::Path) -> Result<(), DeleteError> {
-        Err(DeleteError::IOError {
+        Err(DeleteError::IoError {
             io_error: unsupported_operation(path),
             filepath: path.to_path_buf(),
         })
