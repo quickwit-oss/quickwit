@@ -121,6 +121,7 @@ pub trait Metastore: Send + Sync + 'static {
     /// Stages a split.
     /// A split needs to be Staged before uploading any of its files to the storage.
     /// An error will occur if an index that does not exist in the storage is specified.
+    /// Also, an error will occur if you specify a split that already exists.
     async fn stage_split(
         &self,
         index_id: &str,
@@ -131,7 +132,7 @@ pub trait Metastore: Send + Sync + 'static {
     /// This API only updates the state of the split from Staged to Published.
     /// At this point, the split files are assumed to have already been uploaded.
     /// If the split is already published, this API call returns a success.
-    /// An error will occur if an index that does not exist in the storage is specified.
+    /// An error will occur if you specify an index or split that does not exist in the storage.
     async fn publish_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
 
     /// Lists the splits.
@@ -148,12 +149,12 @@ pub trait Metastore: Send + Sync + 'static {
     /// Marks split as deleted.
     /// This API will change the state to ScheduledForDeletion so that it is not referenced by the client.
     /// It does not actually remove the split from storage.
-    /// An error will occur if an index that does not exist in the storage is specified.
+    /// An error will occur if you specify an index or split that does not exist in the storage.
     async fn mark_split_as_deleted(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
 
     /// Deletes a split.
     /// This API only takes a split that is in Staged or ScheduledForDeletion state.
     /// This removes the split metadata from the metastore, but does not remove the split from storage.
-    /// An error will occur if an index that does not exist in the storage is specified.
+    /// An error will occur if you specify an index or split that does not exist in the storage.
     async fn delete_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
 }
