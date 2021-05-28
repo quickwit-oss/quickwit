@@ -33,12 +33,6 @@ use quickwit_doc_mapping::DocMapping;
 
 use crate::MetastoreResult;
 
-/// An index URI, such as `file:///var/lib/quickwit/indexes/nginx` or `s3://my-bucket/indexes/nginx`.
-pub type IndexUri = String;
-
-/// A split ID.
-pub type SplitId = String;
-
 /// A file format version.
 const FILE_FORMAT_VERSION: &str = "0";
 
@@ -51,31 +45,47 @@ pub struct IndexMetadata {
 /// A split metadata carries all meta data about a split.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SplitMetadata {
-    // Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
-    // should be enough to uniquely identify a split.
-    // In reality, some information may be implicitly configured
-    // in the storage URI resolver: for instance, the Amazon S3 region.
-    split_id: String,
+    /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
+    /// should be enough to uniquely identify a split.
+    /// In reality, some information may be implicitly configured
+    /// in the storage URI resolver: for instance, the Amazon S3 region.
+    pub split_id: String,
 
-    // The state of the split
-    split_state: SplitState,
+    /// The state of the split
+    pub split_state: SplitState,
 
-    // Number of records (or documents) in the split.
-    num_records: u64,
+    /// Number of records (or documents) in the split.
+    pub num_records: usize,
 
-    // Weight of the split in bytes.
-    size_in_bytes: u64,
+    /// Weight of the split in bytes.
+    pub size_in_bytes: usize,
 
-    // If a timestamp field is available, the min / max timestamp in the split.
-    time_range: Option<Range<u64>>,
+    /// If a timestamp field is available, the min / max timestamp in the split.
+    pub time_range: Option<Range<u64>>,
 
-    // Number of merge this segment has been subjected to during its lifetime.
-    generation: usize,
+    /// Number of merge this segment has been subjected to during its lifetime.
+    pub generation: usize,
+}
+
+impl SplitMetadata {
+    /// Creates a new instance of split metadata
+    pub fn new(split_id: String) -> Self {
+        Self {
+            split_id,
+            split_state: SplitState::New,
+            num_records: 0,
+            size_in_bytes: 0,
+            time_range: None,
+            generation: 0,
+        }
+    }
 }
 
 /// A split state.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum SplitState {
+    /// The split is newly created
+    New,
     /// The split is almost ready. Some of its files may have been uploaded in the storage.
     Staged,
 
@@ -90,25 +100,22 @@ pub enum SplitState {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetadataSet {
     index: IndexMetadata,
-    splits: HashMap<SplitId, SplitMetadata>,
+    splits: HashMap<String, SplitMetadata>,
 }
 
 /// Metastore meant to manage quickwit's indices and its splits.
+#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
     /// Creates an index.
     /// This API creates index metadata set in the metastore.
     /// If the index metadata set already exists, it will be loaded.
-    async fn create_index(
-        &self,
-        index_uri: IndexUri,
-        doc_mapping: DocMapping,
-    ) -> MetastoreResult<()>;
+    async fn create_index(&self, index_id: &str, doc_mapping: DocMapping) -> MetastoreResult<()>;
 
     /// Deletes an index.
     /// This API removes the specified index metadata set from the metastore.
     /// Removing an index metadata set from the metastore does not delete the indexes on the storage.
-    async fn delete_index(&self, index_uri: IndexUri) -> MetastoreResult<()>;
+    async fn delete_index(&self, index_id: &str) -> MetastoreResult<()>;
 
     /// Stages a split.
     /// A split needs to be staged BEFORE uploading any of its files to the storage.
@@ -116,16 +123,15 @@ pub trait Metastore: Send + Sync + 'static {
     /// In fact it was supplied by the client and is present in the split metadata.
     async fn stage_split(
         &self,
-        index_uri: IndexUri,
-        split_id: SplitId,
+        index_id: &str,
         split_metadata: SplitMetadata,
-    ) -> MetastoreResult<SplitId>;
+    ) -> MetastoreResult<()>;
 
     /// Publishes a split.
     /// This API only updates the state of the split from Staged to Published.
     /// At this point, the split files are assumed to have already been uploaded.
     /// If the split is already published, this API call returns a success.
-    async fn publish_split(&self, index_uri: IndexUri, split_id: SplitId) -> MetastoreResult<()>;
+    async fn publish_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
 
     /// Lists the splits.
     /// Returns a list of splits that intersect the given time_rangeand split_state.
@@ -133,7 +139,7 @@ pub trait Metastore: Send + Sync + 'static {
     /// Splits are returned in any order.
     async fn list_splits(
         &self,
-        index_uri: IndexUri,
+        index_id: &str,
         split_state: SplitState,
         time_range: Option<Range<u64>>,
     ) -> MetastoreResult<Vec<SplitMetadata>>;
@@ -141,14 +147,10 @@ pub trait Metastore: Send + Sync + 'static {
     /// Marks split as deleted.
     /// This API only marks the split as deleted so that it is not referenced by the search client.
     /// It does not actually remove the split from storage.
-    async fn mark_split_as_deleted(
-        &self,
-        index_uri: IndexUri,
-        split_id: SplitId,
-    ) -> MetastoreResult<()>;
+    async fn mark_split_as_deleted(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
 
     /// Deletes a split.
     /// This API only takes a split that is in Staged or ScheduledForDeletion state.
     /// This removes the split metadata from the metastore, but does not remove the split from storage.
-    async fn delete_split(&self, index_uri: IndexUri, split_id: SplitId) -> MetastoreResult<()>;
+    async fn delete_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
 }

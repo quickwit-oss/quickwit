@@ -31,7 +31,7 @@ pub trait MetastoreFactory: Send + Sync + 'static {
     /// Returns the protocol this URI resolver is serving.
     fn protocol(&self) -> String;
     /// Given an URI, returns a [`Metastore`] object.
-    fn resolve(&self, uri: &str) -> crate::MetastoreResult<Arc<dyn Metastore>>;
+    fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError>;
 }
 
 /// Resolves an URI by dispatching it to the right [`MetastoreFactory`]
@@ -42,13 +42,11 @@ pub struct MetastoreUriResolver {
 
 impl Default for MetastoreUriResolver {
     fn default() -> Self {
-        // let mut resolver = MetastoreUriResolver {
-        //     per_protocol_resolver: Default::default(),
-        // };
-        // resolver.register(SingleFileMetastoreFactory::default());
         MetastoreUriResolver {
             per_protocol_resolver: Default::default(),
         }
+        //resolver.register(SingleFileMetastoreFactory::default());
+        //resolver
     }
 }
 
@@ -74,9 +72,7 @@ impl MetastoreUriResolver {
             .per_protocol_resolver
             .get(protocol)
             .ok_or_else(|| MetastoreResolverError::ProtocolUnsupported(protocol.to_string()))?;
-        let metastore = resolver
-            .resolve(uri)
-            .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
+        let metastore = resolver.resolve(uri)?;
         Ok(metastore)
     }
 }
