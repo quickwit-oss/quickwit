@@ -146,6 +146,10 @@ pub(crate) mod tests {
         storage
             .put(test_path, PutPayload::from(payload_bytes))
             .await?;
+        assert!(matches!(
+            storage.exists(Path::new("foo/bar")).await,
+            Ok(false)
+        ));
         storage.delete(test_path).await?;
 
         assert!(matches!(

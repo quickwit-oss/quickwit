@@ -141,7 +141,13 @@ impl Storage for LocalFileStorage {
     async fn exists(&self, path: &Path) -> StorageResult<bool> {
         let full_path = self.root.join(path);
         match fs::metadata(full_path).await {
-            Ok(_) => Ok(true),
+            Ok(metadata) => {
+                if metadata.is_file() {
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
             Err(err) => {
                 if err.kind() == ErrorKind::NotFound {
                     Ok(false)
