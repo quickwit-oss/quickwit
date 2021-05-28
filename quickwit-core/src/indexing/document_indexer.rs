@@ -22,6 +22,8 @@
 
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
+use tantivy::schema::TextFieldIndexing;
+use tantivy::schema::TextOptions;
 use std::sync::Arc;
 use tantivy::{schema::Schema, Document};
 use tokio::sync::mpsc::Sender;
@@ -43,7 +45,13 @@ pub async fn index_documents(
     statistic_sender: Sender<StatisticEvent>,
 ) -> anyhow::Result<()> {
     //TODO replace with  DocMapper::schema()
-    let schema = Schema::builder().build();
+    let mut schema_builder = Schema::builder(); 
+    let text_options = TextOptions::default()
+        .set_stored()
+        .set_indexing_options(TextFieldIndexing::default());
+    schema_builder.add_text_field("title", text_options.clone());
+    schema_builder.add_text_field("body", text_options);
+    let schema = schema_builder.build();
 
     let mut current_split = Split::create(
         index_id.to_string(),
@@ -56,7 +64,7 @@ pub async fn index_documents(
     while let Some(raw_doc) = document_retriever.next_document().await? {
         let doc_size = raw_doc.as_bytes().len();
         //TODO: replace with DocMapper::doc_from_json(raw_doc)
-        let parse_result = parse_document(raw_doc);
+        let parse_result = parse_document(&raw_doc, &schema);
 
         let doc = match parse_result {
             Ok(doc) => {
@@ -118,9 +126,10 @@ pub async fn index_documents(
     Ok(())
 }
 
-fn parse_document(_raw_doc: String) -> anyhow::Result<Document> {
+fn parse_document(doc_json: &str, schema: &Schema) -> anyhow::Result<Document> {
     //TODO: remove this when using docMapper
-    Ok(Document::default())
+    schema.parse_document(doc_json)
+        .map_err(|error| anyhow::Error::new(error))
 }
 
 #[cfg(test)]
