@@ -186,7 +186,7 @@ fn extract_metastore_uri_and_index_id_from_index_uri(
 ) -> anyhow::Result<(&str, &str)> {
     let parts: Vec<&str> = index_uri.rsplitn(2, '/').collect();
     if parts.len() == 2 {
-        Ok((parts[0], parts[1]))
+        Ok((parts[1], parts[0]))
     } else {
         anyhow::bail!("Failed to parse the uri into a metastore_uri and an index_id.");
     }
@@ -293,7 +293,10 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
-    use crate::{CliCommand, CreateIndexArgs, DeleteIndexArgs, IndexDataArgs, SearchIndexArgs};
+    use crate::{
+        extract_metastore_uri_and_index_id_from_index_uri, CliCommand, CreateIndexArgs,
+        DeleteIndexArgs, IndexDataArgs, SearchIndexArgs,
+    };
     use clap::{load_yaml, App, AppSettings};
     use std::path::{Path, PathBuf};
 
@@ -484,6 +487,16 @@ mod tests {
                 dry_run: true
             })) if &index_uri == "file:///indexes/wikipedia"
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_extract_metastore_uri_and_index_id_from_index_uri() -> anyhow::Result<()> {
+        let index_uri = "file:///indexes/wikipedia";
+        let (metastore_uri, index_id) =
+            extract_metastore_uri_and_index_id_from_index_uri(index_uri)?;
+        assert_eq!("file:///indexes", metastore_uri);
+        assert_eq!("wikipedia", index_id);
         Ok(())
     }
 }
