@@ -63,24 +63,20 @@ impl LocalFileStorage {
     }
 }
 
-/// This function deletes a directory path recursively from inside out
-///  with the condition that the directory is empty
-fn try_delete_dir_all(root: PathBuf, path: Option<&Path>) -> BoxFuture<'_, std::io::Result<()>> {
+/// Delete empty directories starting from `{root}/{path}` directory and stopping at `{root}`
+/// directory. Note that the `{root}` directory is not deleted.
+fn delete_all_dirs(root: PathBuf, path: &Path) -> BoxFuture<'_, std::io::Result<()>> {
     async move {
-        if path.is_none() {
-            return Ok(());
-        }
-        let path = path.unwrap();
-
-        // return if this directory is not empty
         let full_path = root.join(path);
-        let is_empty = full_path.read_dir()?.next().is_none();
-        if !is_empty {
+        let is_not_empty = full_path.read_dir()?.next().is_some();
+        if is_not_empty {
             return Ok(());
         }
-
         fs::remove_dir(full_path).await?;
-        try_delete_dir_all(root, path.parent()).await
+        if let Some(parent) = path.parent() {
+            delete_all_dirs(root, parent).await?;
+        }
+        Ok(())
     }
     .boxed()
 }
@@ -121,7 +117,11 @@ impl Storage for LocalFileStorage {
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let full_path = self.root.join(path);
         fs::remove_file(full_path).await?;
-        let delete_result = try_delete_dir_all(self.root.to_path_buf(), path.parent()).await;
+        let parent = path.parent();
+        if parent.is_none() {
+            return Ok(());
+        }
+        let delete_result = delete_all_dirs(self.root.to_path_buf(), parent.unwrap()).await;
         if delete_result.is_err() {
             warn!(path =% path.display(), "failed to clean the path");
         }
@@ -224,7 +224,7 @@ mod tests {
 
         // check all empty directory
         assert_eq!(dir_path.exists(), true);
-        try_delete_dir_all(path_root.clone(), Some(dir_path.as_path())).await?;
+        delete_all_dirs(path_root.clone(), dir_path.as_path()).await?;
         assert_eq!(dir_path.exists(), false);
         assert_eq!(dir_path.parent().unwrap().exists(), false);
 
@@ -234,7 +234,7 @@ mod tests {
         tokio::fs::File::create(intermediate_file.clone()).await?;
         assert_eq!(dir_path.exists(), true);
         assert_eq!(intermediate_file.exists(), true);
-        try_delete_dir_all(path_root, Some(dir_path.as_path())).await?;
+        delete_all_dirs(path_root, dir_path.as_path()).await?;
         assert_eq!(dir_path.exists(), false);
         assert_eq!(dir_path.parent().unwrap().exists(), true);
         Ok(())
