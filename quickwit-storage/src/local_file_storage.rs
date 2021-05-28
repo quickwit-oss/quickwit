@@ -63,6 +63,8 @@ impl LocalFileStorage {
     }
 }
 
+/// This function deletes a directory path recursively from inside out
+///  with the condition that the directory is empty
 fn try_delete_dir_all(root: PathBuf, path: Option<&Path>) -> BoxFuture<'_, std::io::Result<()>> {
     async move {
         if path.is_none() {
