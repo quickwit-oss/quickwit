@@ -20,18 +20,21 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::metastore::single_file_metastore::SingleFileMetastoreFactory;
 use crate::{Metastore, MetastoreResolverError};
 
 /// A metastore factory builds a [`Metastore`] object from an URI.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
+#[async_trait]
 pub trait MetastoreFactory: Send + Sync + 'static {
     /// Returns the protocol this URI resolver is serving.
     fn protocol(&self) -> String;
     /// Given an URI, returns a [`Metastore`] object.
-    fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError>;
+    async fn resolve(&self, uri: String) -> Result<Arc<dyn Metastore>, MetastoreResolverError>;
 }
 
 /// Resolves an URI by dispatching it to the right [`MetastoreFactory`]
@@ -42,11 +45,11 @@ pub struct MetastoreUriResolver {
 
 impl Default for MetastoreUriResolver {
     fn default() -> Self {
-        MetastoreUriResolver {
+        let mut resolver = MetastoreUriResolver {
             per_protocol_resolver: Default::default(),
-        }
-        //resolver.register(SingleFileMetastoreFactory::default());
-        //resolver
+        };
+        resolver.register(SingleFileMetastoreFactory::default());
+        resolver
     }
 }
 
@@ -61,7 +64,7 @@ impl MetastoreUriResolver {
     }
 
     /// Resolves the given URI.
-    pub fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+    pub async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
         let protocol = uri.split("://").next().ok_or_else(|| {
             MetastoreResolverError::InvalidUri(format!(
                 "Protocol not found in metastore uri: {}",
@@ -72,7 +75,7 @@ impl MetastoreUriResolver {
             .per_protocol_resolver
             .get(protocol)
             .ok_or_else(|| MetastoreResolverError::ProtocolUnsupported(protocol.to_string()))?;
-        let metastore = resolver.resolve(uri)?;
+        let metastore = resolver.resolve(uri.to_string()).await?;
         Ok(metastore)
     }
 }
