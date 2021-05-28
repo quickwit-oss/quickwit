@@ -63,11 +63,11 @@ pub struct SingleFileMetastore {
 #[allow(dead_code)]
 impl SingleFileMetastore {
     /// Creates a meta store given a storage.
-    pub async fn new(storage: Arc<dyn Storage>) -> MetastoreResult<Self> {
-        Ok(SingleFileMetastore {
+    pub fn new(storage: Arc<dyn Storage>) -> Self {
+        SingleFileMetastore {
             storage,
             cache: Arc::new(RwLock::new(HashMap::new())),
-        })
+        }
     }
 
     /// Check the index exists in storage.
@@ -530,7 +530,7 @@ impl MetastoreFactory for SingleFileMetastoreFactory {
                 }
             })?;
         // TODO: remove unwrap
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         Ok(Arc::new(metastore))
     }
 }
@@ -550,7 +550,7 @@ mod tests {
     async fn test_single_file_metastore_index_exists() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_id = "my-index";
 
         {
@@ -576,7 +576,7 @@ mod tests {
     async fn test_single_file_metastore_create_index() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_id = "my-index";
 
         {
@@ -611,7 +611,7 @@ mod tests {
     async fn test_single_file_metastore_open_index() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_id = "my-index";
 
         {
@@ -649,7 +649,7 @@ mod tests {
     async fn test_single_file_metastore_delete_index() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_id = "my-index";
 
         {
@@ -687,7 +687,7 @@ mod tests {
     async fn test_single_file_metastore_stage_split() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_id = "my-index";
         let split_id = "one";
         let split_metadata = SplitMetadata {
@@ -815,7 +815,7 @@ mod tests {
     async fn test_single_file_metastore_publish_split() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_id = "my-index";
         let split_id = "one";
         let split_metadata = SplitMetadata {
@@ -910,7 +910,7 @@ mod tests {
     async fn test_single_file_metastore_list_splits() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_id = "my-index";
 
         {
@@ -1374,7 +1374,7 @@ mod tests {
     async fn test_single_file_metastore_mark_split_as_deleted() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_id = "my-index";
         let split_id = "split-one";
         let split_metadata = SplitMetadata {
@@ -1464,7 +1464,7 @@ mod tests {
     async fn test_single_file_metastore_delete_split() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        let metastore = SingleFileMetastore::new(storage);
         let index_id = "my-index";
         let split_id = "split-one";
         let split_metadata = SplitMetadata {
@@ -1567,9 +1567,7 @@ mod tests {
                 .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
         });
 
-        let metastore = SingleFileMetastore::new(Arc::new(mock_storage))
-            .await
-            .unwrap();
+        let metastore = SingleFileMetastore::new(Arc::new(mock_storage));
 
         let index_id = "my-index";
         let split_id = "split-one";
