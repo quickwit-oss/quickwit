@@ -363,8 +363,8 @@ impl Metastore for SingleFileMetastore {
                     (Some(filter_time_range), Some(split_time_range)) => {
                         !is_disjoint(split_time_range, filter_time_range)
                     }
-                    (None, _) => true, //< if `time_range` is omitted, the metadata is not filtered.
-                    _ => false, //< we could log an error. a time filter was provided, but the split has no timestamp.
+                    _ => true, //< `time_range` is omitted or regardless of the time range filter,
+                               // if a split has no timestamp it is always returned.
                 };
             if match_filter_time_range {
                 splits.push(split_metadata.clone());
@@ -967,6 +967,14 @@ mod tests {
                 }),
                 generation: 3,
             };
+            let split_metadata_5 = SplitMetadata {
+                split_id: "five".to_string(),
+                split_state: SplitState::Staged,
+                num_records: 1,
+                size_in_bytes: 2,
+                time_range: None,
+                generation: 3,
+            };
 
             metastore
                 .stage_split(index_id, split_metadata_1)
@@ -982,6 +990,10 @@ mod tests {
                 .unwrap();
             metastore
                 .stage_split(index_id, split_metadata_4)
+                .await
+                .unwrap();
+            metastore
+                .stage_split(index_id, split_metadata_5)
                 .await
                 .unwrap();
         }
@@ -1001,6 +1013,7 @@ mod tests {
             assert_eq!(split_ids.contains("two"), false);
             assert_eq!(split_ids.contains("three"), false);
             assert_eq!(split_ids.contains("four"), false);
+            assert_eq!(split_ids.contains("five"), true);
         }
 
         {
@@ -1018,6 +1031,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), false);
             assert_eq!(split_id_vec.contains(&"three".to_string()), false);
             assert_eq!(split_id_vec.contains(&"four".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1035,6 +1049,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), false);
             assert_eq!(split_id_vec.contains(&"four".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1052,6 +1067,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), false);
             assert_eq!(split_id_vec.contains(&"four".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1069,6 +1085,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), false);
             assert_eq!(split_id_vec.contains(&"four".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1086,6 +1103,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1103,6 +1121,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1120,6 +1139,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1137,6 +1157,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1157,6 +1178,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), false);
             assert_eq!(split_id_vec.contains(&"three".to_string()), false);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1177,6 +1199,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), false);
             assert_eq!(split_id_vec.contains(&"three".to_string()), false);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1197,6 +1220,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), false);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1217,6 +1241,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), false);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1237,6 +1262,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), false);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1257,6 +1283,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1277,6 +1304,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1297,6 +1325,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1317,6 +1346,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1337,6 +1367,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1349,7 +1380,15 @@ mod tests {
                 .list_splits(index_id, SplitState::Staged, range)
                 .await
                 .unwrap();
-            assert_eq!(splits.len(), 0);
+            let mut split_id_vec = Vec::new();
+            for split_metadata in splits {
+                split_id_vec.push(split_metadata.split_id);
+            }
+            assert_eq!(split_id_vec.contains(&"one".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"two".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"three".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"four".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
 
         {
@@ -1367,6 +1406,7 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
     }
 
