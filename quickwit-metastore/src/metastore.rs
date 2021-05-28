@@ -86,6 +86,7 @@ impl SplitMetadata {
 pub enum SplitState {
     /// The split is newly created
     New,
+
     /// The split is almost ready. Some of its files may have been uploaded in the storage.
     Staged,
 
@@ -104,6 +105,31 @@ pub struct MetadataSet {
 }
 
 /// Metastore meant to manage quickwit's indices and its splits.
+/// 
+/// Quickwit needs a way to ensure that we can cleanup unused files,
+/// and this process needs to be resilient to any fail-stop failures.
+/// We rely atomically shifting the status of splits.
+/// 
+/// The split state goes into the following life cycle:
+/// 1. New
+///   - Create new split and start indexing.
+/// 2. Staged
+///   - Start uploading the split files.
+/// 3. Published
+///   - Uploading the split files are complete and searchable.
+/// 4. ScheduledForDeletion
+///   - Mark the splits for deletion.
+/// 
+/// If a split has a files in the storage, it MUST be registered in the metastore,
+/// and its state can be follows.
+/// - Staged : The split is almost ready. Some of its files may have been uploaded in the storage.
+/// - Published : The split is ready and published.
+/// - ScheduledForDeletion : The split is scheduled for deletion.
+/// 
+/// Before creating any file, we need to be Staged the split. If there is a failure, upon recovery we schedule for delete all of the staged splits.
+/// A client may not necessarily remove file from storage right after marking it as deleted.
+/// A CLI client may delete files right away, but a more serious deployment should probably
+/// only delete these files after a period of time to give some time to running search queries to finish.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
