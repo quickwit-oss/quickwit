@@ -61,7 +61,9 @@ pub async fn index_data(
     params: IndexDataParams,
 ) -> anyhow::Result<()> {
     let index_uri = params.index_uri.to_string_lossy().to_string();
-    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?;
+    let metastore = MetastoreUriResolver::default()
+        .resolve(&metastore_uri)
+        .await?;
     let storage_resolver = Arc::new(StorageUriResolver::default());
 
     if params.overwrite {

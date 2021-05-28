@@ -32,14 +32,18 @@ pub async fn create_index(
     index_id: &str,
     doc_mapping: DocMapping,
 ) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?;
+    let metastore = MetastoreUriResolver::default()
+        .resolve(&metastore_uri)
+        .await?;
     metastore.create_index(index_id, doc_mapping).await?;
     Ok(())
 }
 
 // TODO
 pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?;
+    let metastore = MetastoreUriResolver::default()
+        .resolve(&metastore_uri)
+        .await?;
     let _splits = metastore
         .list_splits(index_id, SplitState::Published, None)
         .await?;
@@ -47,7 +51,9 @@ pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result
 }
 
 pub async fn delete_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&metastore_uri)?;
+    let metastore = MetastoreUriResolver::default()
+        .resolve(&metastore_uri)
+        .await?;
     metastore.delete_index(index_id).await?;
     Ok(())
 }
