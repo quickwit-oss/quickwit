@@ -135,7 +135,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn publish_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
 
     /// Lists the splits.
-    /// Returns a list of splits that intersect the given time_rangeand split_state.
+    /// Returns a list of splits that intersect the given time_range and split_state.
     /// Regardless of the time range filter, if a split has no timestamp it is always returned.
     /// An error will occur if an index that does not exist in the storage is specified.
     async fn list_splits(
