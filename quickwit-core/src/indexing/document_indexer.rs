@@ -129,9 +129,7 @@ pub async fn index_documents(
 
 fn parse_document(doc_json: &str, schema: &Schema) -> anyhow::Result<Document> {
     //TODO: remove this when using docMapper
-    schema
-        .parse_document(doc_json)
-        .map_err(anyhow::Error::new)
+    schema.parse_document(doc_json).map_err(anyhow::Error::new)
 }
 
 #[cfg(test)]
