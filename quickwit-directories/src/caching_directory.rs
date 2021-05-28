@@ -267,7 +267,7 @@ mod tests {
     use crate::DebugProxyDirectory;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
-    use tantivy::directory::{OwnedBytes, RAMDirectory};
+    use tantivy::directory::{OwnedBytes, RamDirectory};
     use tantivy::Directory;
 
     #[test]
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_caching_directory() -> tantivy::Result<()> {
-        let ram_directory = RAMDirectory::default();
+        let ram_directory = RamDirectory::default();
         let test_path = Path::new("test");
         ram_directory.atomic_write(test_path, &b"test"[..])?;
         let debug_proxy_directory = Arc::new(DebugProxyDirectory::wrap(ram_directory));
