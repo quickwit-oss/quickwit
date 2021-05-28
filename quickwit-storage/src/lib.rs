@@ -35,6 +35,7 @@ pub use self::storage::{PutPayload, Storage};
 mod error;
 mod local_file_storage;
 mod object_storage;
+mod prefix_storage;
 mod ram_storage;
 mod retry;
 mod storage_resolver;
@@ -43,6 +44,7 @@ pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
+pub use self::prefix_storage::add_prefix_to_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::storage_resolver::{StorageFactory, StorageUriResolver};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
