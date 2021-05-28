@@ -139,10 +139,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_index_document() -> anyhow::Result<()> {
-        let split_dir = tempfile::tempdir()?;
         let index_id = "test";
+        let split_dir = tempfile::tempdir()?;
+        let index_dir = tempfile::tempdir()?;
+        let index_uri = format!("file://{}/{}", index_dir.path().display(), index_id);
         let params = IndexDataParams {
-            index_uri: PathBuf::from_str("file://test")?,
+            index_uri: PathBuf::from_str(&index_uri)?,
             input_uri: None,
             temp_dir: split_dir.into_path(),
             num_threads: 1,
