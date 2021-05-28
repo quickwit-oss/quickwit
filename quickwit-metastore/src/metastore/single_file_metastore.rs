@@ -26,12 +26,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_storage::StorageResolverError;
+use quickwit_storage::StorageUriResolver;
 use tokio::sync::RwLock;
 
 use quickwit_doc_mapping::DocMapping;
 use quickwit_storage::{PutPayload, Storage};
 
 use crate::metastore::FILE_FORMAT_VERSION;
+use crate::MetastoreFactory;
+use crate::MetastoreResolverError;
 use crate::{
     IndexMetadata, MetadataSet, Metastore, MetastoreErrorKind, MetastoreResult, SplitMetadata,
     SplitState,
@@ -490,6 +494,44 @@ impl Metastore for SingleFileMetastore {
         cache.insert(index_id.to_string(), metadata_set.clone());
 
         Ok(())
+    }
+}
+
+/// A SingeFileMetastore factory
+#[derive(Debug, Clone)]
+pub struct SingleFileMetastoreFactory {}
+
+impl Default for SingleFileMetastoreFactory {
+    fn default() -> Self {
+        SingleFileMetastoreFactory {}
+    }
+}
+
+#[async_trait]
+impl MetastoreFactory for SingleFileMetastoreFactory {
+    fn protocol(&self) -> String {
+        "file".to_string()
+    }
+
+    async fn resolve(&self, uri: String) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+        let storage = StorageUriResolver::default()
+            .resolve(&uri)
+            .map_err(|err| match err {
+                StorageResolverError::InvalidUri(err_msg) => {
+                    MetastoreResolverError::InvalidUri(err_msg)
+                }
+                StorageResolverError::ProtocolUnsupported(err_msg) => {
+                    MetastoreResolverError::ProtocolUnsupported(err_msg)
+                }
+                StorageResolverError::FailedToOpenStorage(err) => {
+                    MetastoreResolverError::FailedToOpenMetastore(
+                        MetastoreErrorKind::InternalError.with_error(err),
+                    )
+                }
+            })?;
+        // TODO: remove unwrap
+        let metastore = SingleFileMetastore::new(storage).await.unwrap();
+        Ok(Arc::new(metastore))
     }
 }
 
