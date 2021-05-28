@@ -1,9 +1,9 @@
+use async_trait::async_trait;
 use std::{
     ops::Range,
     path::{Path, PathBuf},
     sync::Arc,
 };
-use async_trait::async_trait;
 
 use crate::Storage;
 
@@ -50,6 +50,7 @@ impl Storage for PrefixStorage {
     }
 }
 
+/// Creates a [`PrefixStorage`] using an underlying storage and a prefix.
 pub fn add_prefix_to_storage(storage: Arc<dyn Storage>, prefix: PathBuf) -> Arc<dyn Storage> {
     Arc::new(PrefixStorage { storage, prefix })
 }

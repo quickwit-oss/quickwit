@@ -20,6 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use crate::add_prefix_to_storage;
 use crate::{PutPayload, Storage, StorageErrorKind, StorageFactory, StorageResult};
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -144,12 +145,14 @@ impl RamStorageBuilder {
 
 /// In Ram storage resolver
 pub struct RamStorageFactory {
+    storage_cache: std::sync::RwLock<HashMap<PathBuf, Arc<dyn Storage>>>,
     ram_storage: Arc<dyn Storage>,
 }
 
 impl Default for RamStorageFactory {
     fn default() -> Self {
         RamStorageFactory {
+            storage_cache: std::sync::RwLock::new(HashMap::default()),
             ram_storage: Arc::new(RamStorage::default()),
         }
     }
@@ -161,14 +164,30 @@ impl StorageFactory for RamStorageFactory {
     }
 
     fn resolve(&self, uri: &str) -> crate::StorageResult<Arc<dyn Storage>> {
-        if uri != "ram://" {
+        if !uri.starts_with("ram://") {
             let err_msg = anyhow::anyhow!(
                 "{:?} is an invalid ram storage uri. Only ram:// is accepted.",
                 uri
             );
             return Err(StorageErrorKind::DoesNotExist.with_error(err_msg));
         }
-        Ok(self.ram_storage.clone())
+
+        let prefix = uri.split("://").nth(1).ok_or_else(|| {
+            StorageErrorKind::DoesNotExist
+                .with_error(anyhow::anyhow!("Invalid prefix path: {}", uri))
+        })?;
+
+        let prefix_path = PathBuf::from(prefix);
+        let mut storage_cache = self.storage_cache.write().map_err(|err| {
+            StorageErrorKind::InternalError
+                .with_error(anyhow::anyhow!("Could not get the storage cache: {}", err))
+        })?;
+
+        let storage = storage_cache
+            .entry(prefix_path.clone())
+            .or_insert_with(|| add_prefix_to_storage(self.ram_storage.clone(), prefix_path));
+
+        Ok(storage.clone())
     }
 }
 
@@ -187,8 +206,15 @@ mod tests {
     #[test]
     fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
-        let err = ram_storage_factory.resolve("ram://toto").err().unwrap();
+        let err = ram_storage_factory.resolve("rom://toto").err().unwrap();
         assert_eq!(err.kind(), StorageErrorKind::DoesNotExist);
+
+        let data_result = ram_storage_factory.resolve("ram://data").ok().unwrap();
+        let home_result = ram_storage_factory.resolve("ram://home/data").ok().unwrap();
+        assert_ne!(data_result.uri(), home_result.uri());
+
+        let data_result_two = ram_storage_factory.resolve("ram://data").ok().unwrap();
+        assert_eq!(data_result.uri(), data_result_two.uri());
     }
 
     #[tokio::test]
