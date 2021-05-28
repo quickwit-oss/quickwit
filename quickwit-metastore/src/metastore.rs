@@ -118,7 +118,7 @@ pub struct MetadataSet {
 /// 3. Published
 ///   - Uploading the split files are complete and searchable.
 /// 4. ScheduledForDeletion
-///   - Mark the splits for deletion.
+///   - Mark the split for deletion.
 /// 
 /// If a split has a files in the storage, it MUST be registered in the metastore,
 /// and its state can be follows.
