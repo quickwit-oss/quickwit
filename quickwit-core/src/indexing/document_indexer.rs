@@ -22,9 +22,9 @@
 
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
+use std::sync::Arc;
 use tantivy::schema::TextFieldIndexing;
 use tantivy::schema::TextOptions;
-use std::sync::Arc;
 use tantivy::{schema::Schema, Document};
 use tokio::sync::mpsc::Sender;
 
@@ -45,12 +45,13 @@ pub async fn index_documents(
     statistic_sender: Sender<StatisticEvent>,
 ) -> anyhow::Result<()> {
     //TODO replace with  DocMapper::schema()
-    let mut schema_builder = Schema::builder(); 
+    let mut schema_builder = Schema::builder();
     let text_options = TextOptions::default()
         .set_stored()
         .set_indexing_options(TextFieldIndexing::default());
     schema_builder.add_text_field("title", text_options.clone());
-    schema_builder.add_text_field("body", text_options);
+    schema_builder.add_text_field("body", text_options.clone());
+    schema_builder.add_text_field("url", text_options);
     let schema = schema_builder.build();
 
     let mut current_split = Split::create(
@@ -128,8 +129,9 @@ pub async fn index_documents(
 
 fn parse_document(doc_json: &str, schema: &Schema) -> anyhow::Result<Document> {
     //TODO: remove this when using docMapper
-    schema.parse_document(doc_json)
-        .map_err(|error| anyhow::Error::new(error))
+    schema
+        .parse_document(doc_json)
+        .map_err(anyhow::Error::new)
 }
 
 #[cfg(test)]

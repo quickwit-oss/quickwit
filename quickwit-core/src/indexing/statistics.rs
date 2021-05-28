@@ -21,6 +21,7 @@
 */
 
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::Mutex;
 use tokio::{
     sync::mpsc::{channel, Sender},
@@ -77,6 +78,8 @@ pub struct StatisticsCollector {
     total_bytes_processed: usize,
     /// Size in bytes of resulting split
     total_size_splits: usize,
+    /// Denotes the time this collector started
+    start_time: Instant,
 }
 
 impl StatisticsCollector {
@@ -91,6 +94,7 @@ impl StatisticsCollector {
             num_published_splits: 0,
             total_bytes_processed: 0,
             total_size_splits: 0,
+            start_time: Instant::now(),
         }
     }
 
@@ -158,7 +162,18 @@ impl StatisticsCollector {
 
     /// Display a one-shot report.
     pub fn display_report(&self) {
-        //TODO: better display stats
-        println!("Statistics: {:?}", self);
+        // TODO: better display stats
+        let elapsed_secs = self.start_time.elapsed().as_secs();
+        println!("Statistics");
+        println!("Num documents: {}", self.num_docs);
+        println!("Num parse errors: {}", self.num_parse_errors);
+        println!("Num splits: {}", self.num_local_splits);
+
+        println!("Total size: {} MB", self.total_bytes_processed / 1_000_000);
+        println!("Index size: {} MB", self.total_size_splits / 1_000_000);
+
+        let throughput_mb_s =
+            self.total_bytes_processed as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
+        println!("Indexing throughput: {} MB/s", throughput_mb_s);
     }
 }
