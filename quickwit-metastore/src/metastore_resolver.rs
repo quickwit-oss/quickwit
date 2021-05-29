@@ -62,8 +62,7 @@ impl MetastoreUriResolver {
         let suported_protocols = resolver.protocols();
         let factory = Arc::new(resolver);
         for protocol in suported_protocols {
-            self.per_protocol_resolver
-            .insert(protocol, factory.clone());
+            self.per_protocol_resolver.insert(protocol, factory.clone());
         }
     }
 

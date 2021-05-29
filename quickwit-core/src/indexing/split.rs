@@ -39,7 +39,7 @@ use uuid::Uuid;
 
 use super::IndexDataParams;
 
-pub const MAX_DOC_PER_SPLIT: usize = if cfg!(test) { 100 } else { 5_0000_000 };
+pub const MAX_DOC_PER_SPLIT: usize = if cfg!(test) { 100 } else { 5_000_000 };
 
 /// Struct that represents an instance of split
 pub struct Split {

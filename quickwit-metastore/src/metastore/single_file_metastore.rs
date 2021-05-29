@@ -378,10 +378,7 @@ impl Default for SingleFileMetastoreFactory {
 #[async_trait]
 impl MetastoreFactory for SingleFileMetastoreFactory {
     fn protocols(&self) -> Vec<String> {
-        vec![
-            "file".to_string(),
-            "s3".to_string()
-        ]
+        vec!["file".to_string(), "s3".to_string()]
     }
 
     async fn resolve(&self, uri: String) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
