@@ -121,7 +121,7 @@ impl StatisticsCollector {
                         if error {
                             statistics.num_parse_errors += 1;
                         }
-                        println!("new doc -> {}", statistics.num_docs);
+                        //println!("new doc -> {}", statistics.num_docs);
                     }
                     StatisticEvent::SplitCreated {
                         id,
@@ -131,7 +131,7 @@ impl StatisticsCollector {
                     } => {
                         debug!(split_id =% id, num_docs = num_docs,  size_in_bytes = size_in_bytes, parse_errors = num_parse_errors, "Split created");
                         statistics.num_local_splits += 1;
-                        println!("new split -> {}", statistics.num_local_splits);
+                        //println!("new split -> {}", statistics.num_local_splits);
                     }
                     StatisticEvent::SplitStage { id, error } => {
                         debug!(split_id =% id, error = error, "Split staged");
@@ -169,7 +169,7 @@ impl StatisticsCollector {
         println!("Statistics");
         println!("Num documents: {}", self.num_docs);
         println!("Num parse errors: {}", self.num_parse_errors);
-        println!("Num splits: {}", (self.num_local_splits-1).max(1));
+        println!("Num splits: {}", self.num_local_splits);
 
         println!("Total size: {} MB", self.total_bytes_processed / 1_000_000);
         println!("Index size: {} MB", self.total_size_splits / 1_000_000);

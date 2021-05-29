@@ -32,7 +32,7 @@ use crate::{Metastore, MetastoreResolverError};
 #[async_trait]
 pub trait MetastoreFactory: Send + Sync + 'static {
     /// Returns the protocol this URI resolver is serving.
-    fn protocol(&self) -> String;
+    fn protocols(&self) -> Vec<String>;
     /// Given an URI, returns a [`Metastore`] object.
     async fn resolve(&self, uri: String) -> Result<Arc<dyn Metastore>, MetastoreResolverError>;
 }
@@ -59,8 +59,12 @@ impl MetastoreUriResolver {
     /// If a previous resolver was registered for this protocol, it is discarded
     /// and replaced with the new one.
     pub fn register<S: MetastoreFactory>(&mut self, resolver: S) {
-        self.per_protocol_resolver
-            .insert(resolver.protocol(), Arc::new(resolver));
+        let suported_protocols = resolver.protocols();
+        let factory = Arc::new(resolver);
+        for protocol in suported_protocols {
+            self.per_protocol_resolver
+            .insert(protocol, factory.clone());
+        }
     }
 
     /// Resolves the given URI.
