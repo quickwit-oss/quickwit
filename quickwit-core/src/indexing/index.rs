@@ -97,6 +97,7 @@ pub async fn index_data(
     )?;
 
     statistic_collector.lock().await.display_report();
+    println!("You can now query your index with `quickwit search --index-path {} --query \"barack obama\"`" , params.index_uri.display());
     Ok(())
 }
 

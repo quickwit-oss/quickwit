@@ -20,6 +20,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use crossterm::{cursor, QueueableCommand};
+use std::io::{stdout, Stdout};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
@@ -80,6 +82,8 @@ pub struct StatisticsCollector {
     total_size_splits: usize,
     /// Denotes the time this collector started
     start_time: Instant,
+    /// stdout handle for displaying live statistics
+    stdout: Stdout,
 }
 
 impl StatisticsCollector {
@@ -95,6 +99,7 @@ impl StatisticsCollector {
             total_bytes_processed: 0,
             total_size_splits: 0,
             start_time: Instant::now(),
+            stdout: stdout(),
         }
     }
 
@@ -155,6 +160,7 @@ impl StatisticsCollector {
                         }
                     }
                 }
+                statistics.display_inline_report().unwrap();
             }
         });
         (statistics_collector, event_sender)
@@ -162,27 +168,37 @@ impl StatisticsCollector {
 
     /// Display a one-shot report.
     pub fn display_report(&self) {
-        //TODO: better display stats
         let elapsed_secs = self.start_time.elapsed().as_secs();
-        println!("Statistics");
-        println!("Num documents: {}", self.num_docs);
-        println!("Num parse errors: {}", self.num_parse_errors);
-        println!("Num splits: {}", self.num_local_splits);
-
-        println!("Total size: {} MB", self.total_bytes_processed / 1_000_000);
-        println!("Index size: {} MB", self.total_size_splits / 1_000_000);
-
-        let throughput_mb_s =
-            self.total_bytes_processed as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
-        println!("Indexing throughput: {:.1$}MB/s", throughput_mb_s, 2);
         if elapsed_secs >= 60 {
             println!(
-                "Elapsed time: {:.1$}min",
+                "\nIndexded {} documents {:.2$}min",
+                self.num_docs,
                 elapsed_secs.max(1) as f64 / 60f64,
                 2
             );
         } else {
-            println!("Ekapsed time: {}s", elapsed_secs.max(1));
+            println!(
+                "\nIndexded {} documents {}s",
+                self.num_docs,
+                elapsed_secs.max(1)
+            );
         }
+    }
+
+    fn display_inline_report(&mut self) -> anyhow::Result<()> {
+        let elapsed_secs = self.start_time.elapsed().as_secs();
+        self.stdout.queue(cursor::SavePosition)?;
+        let throughput_mb_s =
+            self.total_bytes_processed as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
+
+        println!("Documents: {}   Errors: {}  Splits: {}  Dataset Size: {}  Index Size: {} Throughput:  {:.6$}MB/s", 
+            self.num_docs, self.num_parse_errors,  self.num_local_splits,
+            self.total_bytes_processed / 1_000_000,
+            self.total_size_splits / 1_000_000,
+            throughput_mb_s, 2
+        );
+
+        self.stdout.queue(cursor::RestorePosition)?;
+        Ok(())
     }
 }
