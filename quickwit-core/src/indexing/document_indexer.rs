@@ -75,7 +75,6 @@ pub async fn index_documents(
                         error: false,
                     })
                     .await?;
-                current_split.metadata.num_records += 1;
                 current_split.metadata.size_in_bytes += doc_size;
                 doc
             }

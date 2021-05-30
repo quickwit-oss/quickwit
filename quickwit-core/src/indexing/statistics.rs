@@ -121,7 +121,6 @@ impl StatisticsCollector {
                         if error {
                             statistics.num_parse_errors += 1;
                         }
-                        //println!("new doc -> {}", statistics.num_docs);
                     }
                     StatisticEvent::SplitCreated {
                         id,
@@ -131,7 +130,6 @@ impl StatisticsCollector {
                     } => {
                         debug!(split_id =% id, num_docs = num_docs,  size_in_bytes = size_in_bytes, parse_errors = num_parse_errors, "Split created");
                         statistics.num_local_splits += 1;
-                        //println!("new split -> {}", statistics.num_local_splits);
                     }
                     StatisticEvent::SplitStage { id, error } => {
                         debug!(split_id =% id, error = error, "Split staged");
@@ -179,7 +177,7 @@ impl StatisticsCollector {
         println!("Indexing throughput: {:.1$}MB/s", throughput_mb_s, 2);
         if elapsed_secs >= 60 {
             println!(
-                "Ekapsed time: {:.1$}min",
+                "Elapsed time: {:.1$}min",
                 elapsed_secs.max(1) as f64 / 60f64,
                 2
             );

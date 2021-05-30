@@ -123,6 +123,7 @@ impl Split {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing index writer."))?
             .add_document(doc);
+        self.metadata.num_records += 1;
         Ok(())
     }
 
