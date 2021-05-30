@@ -79,6 +79,8 @@ pub async fn finalize_split(
         warn!("Some splits were not finalised.");
     }
 
+    // TODO: we want to atomically publish all splits.
+    // See [https://github.com/quickwit-inc/quickwit/issues/71]
     let mut publish_stream = tokio_stream::iter(splits)
         .map(|split| {
             let moved_statistic_sender = statistic_sender.clone();
