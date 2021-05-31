@@ -65,17 +65,17 @@ pub async fn finalize_split(
         .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
 
     let mut splits = vec![];
-    let mut finalize_erros: usize = 0;
+    let mut finalize_errors: usize = 0;
     while let Some(finalize_result) = finalize_stream.next().await {
         if finalize_result.is_ok() {
             let split = finalize_result?;
             splits.push(split);
         } else {
-            finalize_erros += 1;
+            finalize_errors += 1;
         }
     }
 
-    if finalize_erros > 0 {
+    if finalize_errors > 0 {
         warn!("Some splits were not finalised.");
     }
 
