@@ -357,7 +357,7 @@ mod tests {
             "--index-uri",
             "file:///indexes/wikipedia",
             "--doc-mapper-type",
-            "allflatten",
+            "all_flatten",
             "--timestamp-field",
             "ts",
             "--overwrite",

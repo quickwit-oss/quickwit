@@ -489,19 +489,33 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper_type: DocMapperType::Wikipedia,
             };
 
             // Create index
-            metastore.create_index(index_metadata).await.unwrap();
+            metastore
+                .create_index(index_metadata.clone())
+                .await
+                .unwrap();
 
             // Check for the existence of index.
             let result = metastore.index_exists(index_id).await.unwrap();
             let expected = true;
             assert_eq!(result, expected);
 
-            // Open index
-            metastore.get_index(index_id).await.unwrap();
+            // Open index and check its metadata
+            let created_index = metastore.get_index(index_id).await.unwrap();
+            assert_eq!(created_index.index.index_id, index_metadata.index_id);
+            assert_eq!(
+                created_index.index.index_uri.clone(),
+                index_metadata.index_uri
+            );
+            match created_index.index.doc_mapper_type {
+                DocMapperType::Wikipedia => (),
+                _ => {
+                    panic!("Wrong DocMapperType");
+                }
+            }
 
             // Open a non-existent index.
             let result = metastore

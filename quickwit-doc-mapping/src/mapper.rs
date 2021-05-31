@@ -56,6 +56,7 @@ pub struct SearchRequest {}
 
 /// A `DocMapperType` describe a set of rules to build a document, query and schema.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "config", rename_all = "snake_case")]
 pub enum DocMapperType {
     /// Default doc mapper which is build from a config file
     Default(DocMapperConfig),
@@ -70,7 +71,7 @@ impl TryFrom<&str> for DocMapperType {
 
     fn try_from(doc_mapper_type_str: &str) -> Result<Self, Self::Error> {
         match doc_mapper_type_str.trim().to_lowercase().as_str() {
-            "allflatten" => Ok(Self::AllFlatten),
+            "all_flatten" => Ok(Self::AllFlatten),
             "wikipedia" => Ok(Self::Wikipedia),
             "default" => Ok(Self::Default(DocMapperConfig::default())),
             _ => Err(format!(
@@ -93,5 +94,45 @@ pub fn build_doc_mapper(mapper_type: DocMapperType) -> anyhow::Result<Box<dyn Do
         DocMapperType::Wikipedia => {
             WikipediaMapper::new().map(|mapper| Box::new(mapper) as Box<dyn DocMapper>)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DocMapperType;
+
+    const JSON_ALL_FLATTEN_DOC_MAPPER: &str = r#"
+        {
+            "type": "all_flatten"
+        }"#;
+
+    const JSON_DEFAULT_DOC_MAPPER: &str = r#"
+        {
+            "type": "default",
+            "config": {
+                "store_source": true,
+                "ignore_unknown_fields": false,
+                "properties": []
+            }
+        }"#;
+
+    #[test]
+    fn test_deserialize_doc_mapper_type() -> anyhow::Result<()> {
+        let all_flatten_mapper =
+            serde_json::from_str::<DocMapperType>(JSON_ALL_FLATTEN_DOC_MAPPER)?;
+        let default_mapper = serde_json::from_str::<DocMapperType>(JSON_DEFAULT_DOC_MAPPER)?;
+        match all_flatten_mapper {
+            DocMapperType::AllFlatten => (),
+            _ => panic!("Wrong doc mapper, should be AllFlatten."),
+        }
+        match default_mapper {
+            DocMapperType::Default(config) => {
+                assert_eq!(config.store_source, true);
+                assert_eq!(config.ignore_unknown_fields, false);
+            }
+            _ => panic!("Wrong doc mapper, should be Default."),
+        }
+
+        Ok(())
     }
 }
