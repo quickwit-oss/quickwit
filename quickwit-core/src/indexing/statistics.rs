@@ -171,14 +171,14 @@ impl StatisticsCollector {
         println!();
         if elapsed_secs >= 60 {
             println!(
-                "Indexded {} documents in {:.2$}min",
+                "Indexed {} documents in {:.2$}min",
                 self.num_docs,
                 elapsed_secs.max(1) as f64 / 60f64,
                 2
             );
         } else {
             println!(
-                "Indexded {} documents in {}s",
+                "Indexed {} documents in {}s",
                 self.num_docs,
                 elapsed_secs.max(1)
             );
