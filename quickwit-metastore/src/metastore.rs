@@ -27,9 +27,8 @@ use std::fmt::Debug;
 use std::ops::Range;
 
 use async_trait::async_trait;
+use quickwit_doc_mapping::DocMapper;
 use serde::{Deserialize, Serialize};
-
-use quickwit_doc_mapping::DocMapping;
 
 use crate::MetastoreResult;
 
@@ -142,7 +141,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn create_index(
         &self,
         index_metadata: IndexMetadata,
-        doc_mapping: DocMapping,
+        doc_mapper: Box<dyn DocMapper>,
     ) -> MetastoreResult<()>;
 
     /// Returns the index_metadata for a given index.

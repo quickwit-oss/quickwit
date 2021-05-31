@@ -23,13 +23,13 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
+use quickwit_doc_mapping::{build_doc_mapper, DocMapperType};
 use quickwit_metastore::IndexMetadata;
 use std::path::PathBuf;
 use tracing::debug;
 
 use quickwit_core::index::{create_index, delete_index};
 use quickwit_core::indexing::{index_data, IndexDataParams};
-use quickwit_doc_mapping::DocMapping;
 
 struct CreateIndexArgs {
     index_uri: String,
@@ -202,8 +202,6 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     );
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let doc_mapping = DocMapping::Dynamic;
-
     if args.overwrite {
         delete_index(metastore_uri, index_id).await?;
     }
@@ -211,7 +209,8 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         index_id: index_id.to_string(),
         index_uri: args.index_uri.to_string(),
     };
-    create_index(metastore_uri, index_metadata, doc_mapping).await?;
+    let mapper = build_doc_mapper(DocMapperType::AllFlatten)?;
+    create_index(metastore_uri, index_metadata, mapper).await?;
     Ok(())
 }
 
@@ -237,9 +236,8 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
 
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let doc_mapping = DocMapping::Dynamic;
-
-    index_data(metastore_uri, index_id, doc_mapping, params).await?;
+    let mapper = build_doc_mapper(DocMapperType::AllFlatten)?;
+    index_data(metastore_uri, index_id, mapper, params).await?;
     Ok(())
 }
 
