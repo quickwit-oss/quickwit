@@ -23,7 +23,7 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
-use quickwit_doc_mapping::{build_doc_mapper, DocMapperType};
+use quickwit_doc_mapping::DocMapperType;
 use quickwit_metastore::IndexMetadata;
 use std::convert::TryFrom;
 use std::path::PathBuf;
@@ -223,9 +223,9 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: args.index_uri.to_string(),
+        doc_mapper_type: args.doc_mapper_type,
     };
-    let mapper = build_doc_mapper(DocMapperType::AllFlatten)?;
-    create_index(metastore_uri, index_metadata, mapper).await?;
+    create_index(metastore_uri, index_metadata).await?;
     Ok(())
 }
 
@@ -251,8 +251,7 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
 
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let mapper = build_doc_mapper(DocMapperType::AllFlatten)?;
-    index_data(metastore_uri, index_id, mapper, params).await?;
+    index_data(metastore_uri, index_id, params).await?;
     Ok(())
 }
 
@@ -358,7 +357,7 @@ mod tests {
             "--index-uri",
             "file:///indexes/wikipedia",
             "--doc-mapper-type",
-            "allflatten",
+            "all_flatten",
             "--timestamp-field",
             "ts",
             "--overwrite",

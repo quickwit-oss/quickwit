@@ -138,9 +138,9 @@ impl DocMapper for DefaultDocMapper {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct DocMapperConfig {
-    store_source: bool,
-    ignore_unknown_fields: bool,
-    properties: Vec<FieldEntry>,
+    pub store_source: bool,
+    pub ignore_unknown_fields: bool,
+    pub properties: Vec<FieldEntry>,
 }
 
 impl DocMapperConfig {
