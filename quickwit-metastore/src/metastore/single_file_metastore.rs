@@ -75,20 +75,28 @@ impl SingleFileMetastore {
         let path = meta_path(index_id);
 
         let exist = self.storage.exists(&path).await.map_err(|e| {
-            MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
-                "Failed to check the existence of the index on storage: {:?}",
-                e
-            ))
+            MetastoreErrorKind::InternalError
+                .with_error(e.add_context("Failed to check the existence of the index on storage"))
         })?;
 
         Ok(exist)
     }
 
-    /// Reads the index metadata set from the storage and loads it into the local cache.
-    async fn open_index(&self, index_id: &str) -> MetastoreResult<()> {
-        let path = meta_path(index_id);
+    /// Returns all of the data associated with the given index.
+    ///
+    /// If the value is already in cache, then the call returns right away.
+    /// If not, it is fetched from the storage.
+    async fn get_index(&self, index_id: &str) -> MetastoreResult<MetadataSet> {
+        // We first check if the index is in the cache...
+        {
+            let cache = self.cache.read().await;
+            if let Some(index_metadata) = cache.get(index_id) {
+                return Ok(index_metadata.clone());
+            }
+        }
 
-        // Get metadata set from storage.
+        // It is not in the cache yet, let's fetch it from the storage...
+        let path = meta_path(index_id);
         let contents = self.storage.get_all(&path).await.map_err(|e| {
             MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
                 "The index does not exist on storage: {:?}",
@@ -96,11 +104,37 @@ impl SingleFileMetastore {
             ))
         })?;
 
-        // Deserialize metadata.
         let metadata_set =
             serde_json::from_slice::<MetadataSet>(contents.as_slice()).map_err(|e| {
                 MetastoreErrorKind::InvalidManifest.with_error(anyhow::anyhow!(
                     "Failed to deserialize metadata set: {:?}",
+                    e
+                ))
+            })?;
+
+        // And update the cache accordingly
+        let mut cache = self.cache.write().await;
+        cache.insert(index_id.to_string(), metadata_set.clone());
+
+        Ok(metadata_set)
+    }
+
+    async fn put_index(&self, index_id: &str, metadata_set: MetadataSet) -> MetastoreResult<()> {
+        // Serialize metadata set.
+        let contents = serde_json::to_vec(&metadata_set).map_err(|e| {
+            MetastoreErrorKind::InvalidManifest
+                .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
+        })?;
+
+        let path = meta_path(index_id);
+
+        // Put data back into storage.
+        self.storage
+            .put(&path, PutPayload::from(contents))
+            .await
+            .map_err(|e| {
+                MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
+                    "Failed to put metadata set back into storage: {:?}",
                     e
                 ))
             })?;
@@ -110,12 +144,6 @@ impl SingleFileMetastore {
         cache.insert(index_id.to_string(), metadata_set.clone());
 
         Ok(())
-    }
-
-    /// Returns true if the cache contains a metadataset for the specified index uri.
-    async fn contains_index(&self, index_id: &str) -> bool {
-        let cache = self.cache.read().await;
-        cache.contains_key(index_id)
     }
 }
 
@@ -134,7 +162,6 @@ impl Metastore for SingleFileMetastore {
                 .with_error(anyhow::anyhow!("The index already exists: {:?}", index_id)));
         }
 
-        // Create new empty metadata set.
         let metadata_set = MetadataSet {
             index: IndexMetadata {
                 version: FILE_FORMAT_VERSION.to_string(),
@@ -142,26 +169,7 @@ impl Metastore for SingleFileMetastore {
             splits: HashMap::new(),
         };
 
-        // Serialize metadata set.
-        let contents = serde_json::to_vec(&metadata_set).map_err(|e| {
-            MetastoreErrorKind::InvalidManifest
-                .with_error(anyhow::anyhow!("Failed to serialize metadata set: {:?}", e))
-        })?;
-
-        let path = meta_path(index_id);
-
-        // Put data back into storage.
-        self.storage
-            .put(&path, PutPayload::from(contents))
-            .await
-            .map_err(|e| {
-                MetastoreErrorKind::InternalError
-                    .with_error(anyhow::anyhow!("Failed to put metadata set: {:?}", e))
-            })?;
-
-        // Update the internal data if the storage is successfully updated.
-        let mut cache = self.cache.write().await;
-        cache.insert(index_id.to_string(), metadata_set.clone());
+        self.put_index(index_id, metadata_set).await?;
 
         Ok(())
     }
@@ -201,22 +209,7 @@ impl Metastore for SingleFileMetastore {
         index_id: &str,
         mut split_metadata: SplitMetadata,
     ) -> MetastoreResult<()> {
-        if !self.contains_index(index_id).await {
-            self.open_index(index_id).await.map_err(|e| {
-                MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
-                    "Failed to load index metadata on storage: {:?}",
-                    e
-                ))
-            })?;
-        }
-
-        let mut tmp_cache = self.cache.read().await.clone();
-
-        // Check for the existence of index.
-        let metadata_set = tmp_cache.get_mut(index_id).ok_or_else(|| {
-            MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", index_id))
-        })?;
+        let mut metadata_set = self.get_index(index_id).await?;
 
         // Check for the existence of split.
         // If split exists, return an error to prevent the split from being registered.
@@ -235,49 +228,13 @@ impl Metastore for SingleFileMetastore {
             .splits
             .insert(split_metadata.split_id.to_string(), split_metadata);
 
-        // Serialize metadata set.
-        let contents = serde_json::to_vec(&metadata_set).map_err(|e| {
-            MetastoreErrorKind::InvalidManifest
-                .with_error(anyhow::anyhow!("Failed to serialize metadata: {:?}", e))
-        })?;
-
-        let path = meta_path(index_id);
-
-        // Put data back into storage.
-        self.storage
-            .put(&path, PutPayload::from(contents))
-            .await
-            .map_err(|e| {
-                MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
-                    "Failed to put metadata set back into storage: {:?}",
-                    e
-                ))
-            })?;
-
-        // Update the internal data if the storage is successfully updated.
-        let mut cache = self.cache.write().await;
-        cache.insert(index_id.to_string(), metadata_set.clone());
+        self.put_index(index_id, metadata_set).await?;
 
         Ok(())
     }
 
     async fn publish_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()> {
-        if !self.contains_index(index_id).await {
-            self.open_index(index_id).await.map_err(|e| {
-                MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
-                    "Failed to load index metadata on storage: {:?}",
-                    e
-                ))
-            })?;
-        }
-
-        let mut tmp_cache = self.cache.read().await.clone();
-
-        // Check for the existence of index.
-        let metadata_set = tmp_cache.get_mut(index_id).ok_or_else(|| {
-            MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", index_id))
-        })?;
+        let mut metadata_set = self.get_index(index_id).await?;
 
         // Check for the existence of split.
         let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
@@ -301,28 +258,7 @@ impl Metastore for SingleFileMetastore {
             }
         }
 
-        // Serialize metadata set.
-        let contents = serde_json::to_vec(&metadata_set).map_err(|e| {
-            MetastoreErrorKind::InvalidManifest
-                .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
-        })?;
-
-        let path = meta_path(index_id);
-
-        // Put data back into storage.
-        self.storage
-            .put(&path, PutPayload::from(contents))
-            .await
-            .map_err(|e| {
-                MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
-                    "Failed to put metadata set back into storage: {:?}",
-                    e
-                ))
-            })?;
-
-        // Update the internal data if the storage is successfully updated.
-        let mut cache = self.cache.write().await;
-        cache.insert(index_id.to_string(), metadata_set.clone());
+        self.put_index(index_id, metadata_set).await?;
 
         Ok(())
     }
@@ -333,22 +269,7 @@ impl Metastore for SingleFileMetastore {
         state: SplitState,
         time_range_opt: Option<Range<u64>>,
     ) -> MetastoreResult<Vec<SplitMetadata>> {
-        if !self.contains_index(index_id).await {
-            self.open_index(index_id).await.map_err(|e| {
-                MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
-                    "Failed to load index metadata on storage: {:?}",
-                    e
-                ))
-            })?;
-        }
-
-        let cache = self.cache.read().await;
-
-        // Check for the existence of index.
-        let metadata_set = cache.get(index_id).ok_or_else(|| {
-            MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", index_id))
-        })?;
+        let metadata_set = self.get_index(index_id).await?;
 
         // filter by split state.
         let split_with_meta_matching_state_it = metadata_set
@@ -375,22 +296,7 @@ impl Metastore for SingleFileMetastore {
     }
 
     async fn mark_split_as_deleted(&self, index_id: &str, split_id: &str) -> MetastoreResult<()> {
-        if !self.contains_index(index_id).await {
-            self.open_index(index_id).await.map_err(|e| {
-                MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
-                    "Failed to load index metadata on storage: {:?}",
-                    e
-                ))
-            })?;
-        }
-
-        let mut tmp_cache = self.cache.read().await.clone();
-
-        // Check for the existence of index.
-        let metadata_set = tmp_cache.get_mut(index_id).ok_or_else(|| {
-            MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", index_id))
-        })?;
+        let mut metadata_set = self.get_index(index_id).await?;
 
         // Check for the existence of split.
         let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
@@ -398,57 +304,20 @@ impl Metastore for SingleFileMetastore {
                 .with_error(anyhow::anyhow!("Split does not exists: {:?}", split_id))
         })?;
 
-        match split_metadata.split_state {
-            SplitState::ScheduledForDeletion => {
-                // If the split is already scheduled for deleted, this API call returns a success.
-                return Ok(());
-            }
-            _ => split_metadata.split_state = SplitState::ScheduledForDeletion,
-        };
+        if split_metadata.split_state == SplitState::ScheduledForDeletion {
+            // If the split is already scheduled for deleted, this API call returns a success.
+            return Ok(());
+        }
 
-        // Serialize metadata set.
-        let contents = serde_json::to_vec(&metadata_set).map_err(|e| {
-            MetastoreErrorKind::InvalidManifest
-                .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
-        })?;
+        split_metadata.split_state = SplitState::ScheduledForDeletion;
 
-        let path = meta_path(index_id);
-
-        // Put data back into storage.
-        self.storage
-            .put(&path, PutPayload::from(contents))
-            .await
-            .map_err(|e| {
-                MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
-                    "Failed to put metadata set back into storage: {:?}",
-                    e
-                ))
-            })?;
-
-        // Update the internal data if the storage is successfully updated.
-        let mut cache = self.cache.write().await;
-        cache.insert(index_id.to_string(), metadata_set.clone());
+        self.put_index(index_id, metadata_set).await?;
 
         Ok(())
     }
 
     async fn delete_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()> {
-        if !self.contains_index(index_id).await {
-            self.open_index(index_id).await.map_err(|e| {
-                MetastoreErrorKind::IndexDoesNotExist.with_error(anyhow::anyhow!(
-                    "Failed to load index metadata on storage: {:?}",
-                    e
-                ))
-            })?;
-        }
-
-        let mut tmp_cache = self.cache.read().await.clone();
-
-        // Check for the existence of index.
-        let metadata_set = tmp_cache.get_mut(index_id).ok_or_else(|| {
-            MetastoreErrorKind::IndexDoesNotExist
-                .with_error(anyhow::anyhow!("Index does not loaded: {:?}", index_id))
-        })?;
+        let mut metadata_set = self.get_index(index_id).await?;
 
         // Check for the existence of split.
         let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
@@ -470,30 +339,14 @@ impl Metastore for SingleFileMetastore {
             }
         };
 
-        // Serialize metadata set.
-        let contents = serde_json::to_vec(&metadata_set).map_err(|e| {
-            MetastoreErrorKind::InvalidManifest
-                .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
-        })?;
-
-        let path = meta_path(index_id);
-
-        // Put data back into storage.
-        self.storage
-            .put(&path, PutPayload::from(contents))
-            .await
-            .map_err(|e| {
-                MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
-                    "Failed to put metadata set back into storage: {:?}",
-                    e
-                ))
-            })?;
-
-        // Update the internal data if the storage is successfully updated.
-        let mut cache = self.cache.write().await;
-        cache.insert(index_id.to_string(), metadata_set.clone());
+        self.put_index(index_id, metadata_set).await?;
 
         Ok(())
+    }
+
+    async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
+        let index_metadata = self.get_index(index_id).await?;
+        Ok(index_metadata.index)
     }
 }
 
@@ -608,7 +461,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_single_file_metastore_open_index() {
+    async fn test_single_file_metastore_get_index() {
         let resolver = StorageUriResolver::default();
         let storage = resolver.resolve("ram://").unwrap();
         let metastore = SingleFileMetastore::new(storage);
@@ -632,11 +485,11 @@ mod tests {
             assert_eq!(result, expected);
 
             // Open index
-            metastore.open_index(index_id).await.unwrap();
+            metastore.get_index(index_id).await.unwrap();
 
             // Open a non-existent index.
             let result = metastore
-                .open_index("non-existent-index")
+                .get_index("non-existent-index")
                 .await
                 .unwrap_err()
                 .kind();
@@ -1000,9 +853,12 @@ mod tests {
 
         {
             // list
-            let range = Some(Range { start: 0, end: 99 });
+            let time_range_opt = Some(Range {
+                start: 0u64,
+                end: 99u64,
+            });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, time_range_opt)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits

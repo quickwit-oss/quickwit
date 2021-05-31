@@ -138,6 +138,11 @@ pub trait Metastore: Send + Sync + 'static {
     /// An error will occur if an index that exists in the storage is specified.
     async fn create_index(&self, index_id: &str, doc_mapping: DocMapping) -> MetastoreResult<()>;
 
+    /// Returns the index_metadata for a given index.
+    ///
+    /// TODO consider merging with list_splits to remove one round-trip
+    async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata>;
+
     /// Deletes an index.
     /// This API removes the specified index metadata set from the metastore,
     /// but does not remove the index from the storage.
