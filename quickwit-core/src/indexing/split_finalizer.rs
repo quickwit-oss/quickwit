@@ -41,7 +41,7 @@ pub async fn finalize_split(
     statistic_sender: Sender<StatisticEvent>,
 ) -> anyhow::Result<()> {
     let stream = ReceiverStream::new(split_receiver);
-    let mut stream = stream
+    let mut finalize_stream = stream
         .map(|mut split| {
             let moved_statistic_sender = statistic_sender.clone();
             async move {
@@ -59,21 +59,48 @@ pub async fn finalize_split(
                 split.merge_all_segments().await?;
                 split.stage(moved_statistic_sender.clone()).await?;
                 split.upload(moved_statistic_sender.clone()).await?;
-                split.publish(moved_statistic_sender).await?;
                 anyhow::Result::<Split>::Ok(split)
             }
         })
         .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
 
-    let mut num_erros: usize = 0;
-    while let Some(finalize_result) = stream.next().await {
-        if finalize_result.is_err() {
-            num_erros += 1;
+    let mut splits = vec![];
+    let mut finalize_erros: usize = 0;
+    while let Some(finalize_result) = finalize_stream.next().await {
+        if finalize_result.is_ok() {
+            let split = finalize_result?;
+            splits.push(split);
+        } else {
+            finalize_erros += 1;
         }
     }
 
-    if num_erros > 0 {
+    if finalize_erros > 0 {
         warn!("Some splits were not finalised.");
     }
+
+    // TODO: we want to atomically publish all splits.
+    // See [https://github.com/quickwit-inc/quickwit/issues/71]
+    let mut publish_stream = tokio_stream::iter(splits)
+        .map(|split| {
+            let moved_statistic_sender = statistic_sender.clone();
+            async move {
+                split.publish(moved_statistic_sender.clone()).await?;
+                anyhow::Result::<()>::Ok(())
+            }
+        })
+        .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
+
+    let mut publish_errors: usize = 0;
+    while let Some(publish_result) = publish_stream.next().await {
+        if publish_result.is_err() {
+            publish_errors += 1;
+        }
+    }
+
+    if publish_errors > 0 {
+        warn!("Some splits were not published.");
+    }
+
     Ok(())
 }
