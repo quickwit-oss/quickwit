@@ -69,6 +69,8 @@ impl MetastoreUriResolver {
 
     /// Resolves the given URI.
     pub async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+        // TODO: be a little bit more restrictive on the uri, currently we accept
+        // path like `file://` which will certainly not work.
         let protocol = uri.split("://").next().ok_or_else(|| {
             MetastoreResolverError::InvalidUri(format!(
                 "Protocol not found in metastore uri: {}",
@@ -98,5 +100,21 @@ impl MetastoreUriResolver {
             })?;
         let single_file_metastore = Arc::new(SingleFileMetastore::new(storage));
         Ok(single_file_metastore)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::MetastoreUriResolver;
+
+    #[tokio::test]
+    async fn test_metastore_resolver_should_not_raise_errors_on_file_and_s3() -> anyhow::Result<()>
+    {
+        let metastore_resolver = MetastoreUriResolver::default();
+        metastore_resolver.resolve("file://").await?;
+        metastore_resolver
+            .resolve("s3://bucket/path/to/object")
+            .await?;
+        Ok(())
     }
 }
