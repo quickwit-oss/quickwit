@@ -136,7 +136,7 @@ impl DocMapper for DefaultDocMapper {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct DocMapperConfig {
     store_source: bool,
     ignore_unknown_fields: bool,
