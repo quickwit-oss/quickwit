@@ -17,7 +17,7 @@ subcommands:
                 value_name: DOC MAPPER
                 default_value: default
             - doc-mapper-config-path:
-                help: Configuration of the document mapper
+                help: Path of the document mapper configuration
                 long: doc-mapper-config-path
                 value_name: DOC MAPPER CONFIG
                 required_if:
