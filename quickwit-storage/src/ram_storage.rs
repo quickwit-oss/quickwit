@@ -145,14 +145,12 @@ impl RamStorageBuilder {
 
 /// In Ram storage resolver
 pub struct RamStorageFactory {
-    storage_cache: std::sync::RwLock<HashMap<PathBuf, Arc<dyn Storage>>>,
     ram_storage: Arc<dyn Storage>,
 }
 
 impl Default for RamStorageFactory {
     fn default() -> Self {
         RamStorageFactory {
-            storage_cache: std::sync::RwLock::new(HashMap::default()),
             ram_storage: Arc::new(RamStorage::default()),
         }
     }
@@ -178,16 +176,7 @@ impl StorageFactory for RamStorageFactory {
         })?;
 
         let prefix_path = PathBuf::from(prefix);
-        let mut storage_cache = self.storage_cache.write().map_err(|err| {
-            StorageErrorKind::InternalError
-                .with_error(anyhow::anyhow!("Could not get the storage cache: {}", err))
-        })?;
-
-        let storage = storage_cache
-            .entry(prefix_path.clone())
-            .or_insert_with(|| add_prefix_to_storage(self.ram_storage.clone(), prefix_path));
-
-        Ok(storage.clone())
+        Ok(add_prefix_to_storage(self.ram_storage.clone(), prefix_path))
     }
 }
 
