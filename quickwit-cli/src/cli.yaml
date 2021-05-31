@@ -11,6 +11,17 @@ subcommands:
                 long: index-uri
                 value_name: INDEX URI
                 required: true
+            - doc-mapper-type:
+                help: Type of the document mapper
+                long: doc-mapper-type
+                value_name: DOC MAPPER
+                default_value: default
+            - doc-mapper-config-path:
+                help: Configuration of the document mapper
+                long: doc-mapper-config-path
+                value_name: DOC MAPPER CONFIG
+                required_if:
+                - [doc-mapper-type, default]
             - timestamp-field:
                 help: Creates a time-series index with the specified timestamp field
                 long: timestamp-field

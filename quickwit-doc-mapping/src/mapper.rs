@@ -20,6 +20,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use std::convert::TryFrom;
+
 use crate::{
     all_flatten_mapper::AllFlattenDocMapper,
     default_mapper::{DefaultDocMapper, DocMapperConfig},
@@ -52,7 +54,7 @@ pub trait DocMapper: Send + Sync + 'static {
 pub struct SearchRequest {}
 
 /// A `DocMapperType` describe a set of rules to build a document, query and schema.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum DocMapperType {
     /// Default doc mapper which is build from a config file
     Default(DocMapperConfig),
@@ -60,6 +62,22 @@ pub enum DocMapperType {
     AllFlatten,
     /// Wikipedia doc mapper
     Wikipedia,
+}
+
+impl TryFrom<&str> for DocMapperType {
+    type Error = String;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        match s.trim().to_lowercase().as_str() {
+            "allflatten" => Ok(Self::AllFlatten),
+            "wikipedia" => Ok(Self::Wikipedia),
+            "default" => Ok(Self::Default(DocMapperConfig::default())),
+            _ => Err(format!(
+                "Could not parse `{}`  as valid doc mapper type.",
+                s
+            )),
+        }
+    }
 }
 
 /// Build a doc mapper given the doc mapper type.

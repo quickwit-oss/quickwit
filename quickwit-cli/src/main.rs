@@ -25,6 +25,7 @@ use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use quickwit_doc_mapping::{build_doc_mapper, DocMapperType};
 use quickwit_metastore::IndexMetadata;
+use std::convert::TryFrom;
 use std::path::PathBuf;
 use tracing::debug;
 
@@ -33,6 +34,8 @@ use quickwit_core::indexing::{index_data, IndexDataParams};
 
 struct CreateIndexArgs {
     index_uri: String,
+    doc_mapper_type: DocMapperType,
+    doc_mapper_config_path: Option<PathBuf>,
     timestamp_field: Option<String>,
     overwrite: bool,
 }
@@ -87,6 +90,14 @@ impl CliCommand {
             .value_of("index-uri")
             .context("'index-uri' is a required arg")?
             .to_string();
+        let doc_mapper_type = matches
+            .value_of("doc-mapper-type")
+            .map(DocMapperType::try_from)
+            .context("doc-mapper-type has a default value")?
+            .map_err(|err| anyhow::anyhow!(err))?;
+        let doc_mapper_config_path = matches
+            .value_of("doc-mapper-config-path")
+            .map(PathBuf::from);
         let timestamp_field = matches
             .value_of("timestamp-field")
             .map(|field| field.to_string());
@@ -94,6 +105,8 @@ impl CliCommand {
 
         Ok(CliCommand::New(CreateIndexArgs {
             index_uri,
+            doc_mapper_type,
+            doc_mapper_config_path,
             timestamp_field,
             overwrite,
         }))
@@ -196,6 +209,8 @@ fn extract_metastore_uri_and_index_id_from_index_uri(
 async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri = %args.index_uri,
+        doc_mapper_type = ?args.doc_mapper_type,
+        doc_mapper_config_path = ?args.doc_mapper_config_path,
         timestamp_field = ?args.timestamp_field,
         overwrite = args.overwrite,
         "create-index"
@@ -301,16 +316,28 @@ mod tests {
         DeleteIndexArgs, IndexDataArgs, SearchIndexArgs,
     };
     use clap::{load_yaml, App, AppSettings};
+    use quickwit_doc_mapping::DocMapperType;
     use std::path::{Path, PathBuf};
 
     #[test]
     fn test_parse_new_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches_result = app.get_matches_from_safe(vec![
+            "new",
+            "--index-uri",
+            "file:///indexes/wikipedia",
+            "--no-timestamp-field",
+        ]);
+        assert!(matches!(matches_result, Err(_)));
+
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
             "file:///indexes/wikipedia",
+            "--doc-mapper-config-path",
+            "./config.json",
             "--no-timestamp-field",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
@@ -318,17 +345,20 @@ mod tests {
             command,
             Ok(CliCommand::New(CreateIndexArgs {
                 index_uri,
+                doc_mapper_type: DocMapperType::Default(_),
+                doc_mapper_config_path: Some(path),
                 timestamp_field: None,
                 overwrite: false
-            })) if &index_uri == "file:///indexes/wikipedia"
+            })) if &index_uri == "file:///indexes/wikipedia" && path == Path::new("./config.json")
         ));
 
-        let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
             "file:///indexes/wikipedia",
+            "--doc-mapper-type",
+            "allflatten",
             "--timestamp-field",
             "ts",
             "--overwrite",
@@ -338,6 +368,8 @@ mod tests {
             command,
             Ok(CliCommand::New(CreateIndexArgs {
                 index_uri,
+                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper_config_path: None,
                 timestamp_field: Some(field_name),
                 overwrite: true
             })) if &index_uri == "file:///indexes/wikipedia" && field_name == "ts"
