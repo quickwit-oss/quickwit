@@ -22,7 +22,7 @@
 
 use std::sync::Arc;
 
-use quickwit_doc_mapping::DocMapping;
+use quickwit_doc_mapping::DocMapper;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver, SplitState};
 use quickwit_storage::Storage;
 
@@ -30,12 +30,12 @@ use quickwit_storage::Storage;
 pub async fn create_index(
     metastore_uri: &str,
     index_metadata: IndexMetadata,
-    doc_mapping: DocMapping,
+    doc_mapper: Box<dyn DocMapper>,
 ) -> anyhow::Result<()> {
     let metastore = MetastoreUriResolver::default()
         .resolve(&metastore_uri)
         .await?;
-    metastore.create_index(index_metadata, doc_mapping).await?;
+    metastore.create_index(index_metadata, doc_mapper).await?;
     Ok(())
 }
 

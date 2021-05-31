@@ -24,7 +24,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::try_join;
-use quickwit_doc_mapping::DocMapping;
+use quickwit_doc_mapping::DocMapper;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
 use quickwit_storage::StorageUriResolver;
@@ -57,7 +57,7 @@ pub struct IndexDataParams {
 pub async fn index_data(
     metastore_uri: &str,
     index_id: &str,
-    _doc_mapping: DocMapping,
+    _doc_mapper: Box<dyn DocMapper>,
     params: IndexDataParams,
 ) -> anyhow::Result<()> {
     let index_uri = params.index_uri.to_string_lossy().to_string();
