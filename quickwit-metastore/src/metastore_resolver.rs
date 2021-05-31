@@ -26,9 +26,9 @@ use quickwit_storage::StorageUriResolver;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::metastore::single_file_metastore::SingleFileMetastoreFactory;
 use crate::MetastoreErrorKind;
 use crate::SingleFileMetastore;
-use crate::metastore::single_file_metastore::SingleFileMetastoreFactory;
 use crate::{Metastore, MetastoreResolverError};
 
 /// A metastore factory builds a [`Metastore`] object from an URI.
@@ -76,13 +76,11 @@ impl MetastoreUriResolver {
             ))
         })?;
 
-        if let Some(resolver) = self
-            .per_protocol_resolver
-            .get(protocol) {
+        if let Some(resolver) = self.per_protocol_resolver.get(protocol) {
             let metastore = resolver.resolve(uri.to_string()).await?;
             return Ok(metastore);
         }
- 
+
         let storage = StorageUriResolver::default()
             .resolve(&uri)
             .map_err(|err| match err {
