@@ -33,13 +33,14 @@ use quickwit_doc_mapping::DocMapping;
 
 use crate::MetastoreResult;
 
-/// A file format version.
-const FILE_FORMAT_VERSION: &str = "0";
-
 /// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexMetadata {
-    version: String,
+    /// Index Id. The index id serves to identify the index when querying the metastore.
+    pub index_id: String,
+    /// Index Uri. The index uri defines the location of the storage that contains the
+    /// split files.
+    pub index_uri: String,
 }
 
 /// A split metadata carries all meta data about a split.
@@ -100,8 +101,10 @@ pub enum SplitState {
 /// A MetadataSet carries an index metadata and its split metadata.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetadataSet {
-    index: IndexMetadata,
-    splits: HashMap<String, SplitMetadata>,
+    /// Metadata specific to the index
+    pub index: IndexMetadata,
+    /// List of split belonging to the index.
+    pub splits: HashMap<String, SplitMetadata>,
 }
 
 /// Metastore meant to manage quickwit's indices and its splits.
@@ -136,7 +139,11 @@ pub trait Metastore: Send + Sync + 'static {
     /// Creates an index.
     /// This API creates index metadata set in the metastore.
     /// An error will occur if an index that exists in the storage is specified.
-    async fn create_index(&self, index_id: &str, doc_mapping: DocMapping) -> MetastoreResult<()>;
+    async fn create_index(
+        &self,
+        index_metadata: IndexMetadata,
+        doc_mapping: DocMapping,
+    ) -> MetastoreResult<()>;
 
     /// Returns the index_metadata for a given index.
     ///
