@@ -23,6 +23,7 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
+use quickwit_metastore::IndexMetadata;
 use std::path::PathBuf;
 use tracing::debug;
 
@@ -206,7 +207,11 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     if args.overwrite {
         delete_index(metastore_uri, index_id).await?;
     }
-    create_index(metastore_uri, index_id, doc_mapping).await?;
+    let index_metadata = IndexMetadata {
+        index_id: index_id.to_string(),
+        index_uri: args.index_uri.to_string(),
+    };
+    create_index(metastore_uri, index_metadata, doc_mapping).await?;
     Ok(())
 }
 

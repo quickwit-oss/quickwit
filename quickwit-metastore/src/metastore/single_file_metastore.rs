@@ -33,7 +33,6 @@ use tokio::sync::RwLock;
 use quickwit_doc_mapping::DocMapping;
 use quickwit_storage::{PutPayload, Storage};
 
-use crate::metastore::FILE_FORMAT_VERSION;
 use crate::MetastoreFactory;
 use crate::MetastoreResolverError;
 use crate::{
@@ -62,6 +61,12 @@ pub struct SingleFileMetastore {
 
 #[allow(dead_code)]
 impl SingleFileMetastore {
+    #[cfg(test)]
+    pub fn for_test() -> Self {
+        use quickwit_storage::RamStorage;
+        SingleFileMetastore::new(Arc::new(RamStorage::default()))
+    }
+
     /// Creates a meta store given a storage.
     pub fn new(storage: Arc<dyn Storage>) -> Self {
         SingleFileMetastore {
@@ -119,14 +124,15 @@ impl SingleFileMetastore {
         Ok(metadata_set)
     }
 
-    async fn put_index(&self, index_id: &str, metadata_set: MetadataSet) -> MetastoreResult<()> {
+    async fn put_index(&self, metadata_set: MetadataSet) -> MetastoreResult<()> {
         // Serialize metadata set.
         let contents = serde_json::to_vec(&metadata_set).map_err(|e| {
             MetastoreErrorKind::InvalidManifest
                 .with_error(anyhow::anyhow!("Failed to serialize meta data: {:?}", e))
         })?;
 
-        let path = meta_path(index_id);
+        let index_id = metadata_set.index.index_id.clone();
+        let path = meta_path(&index_id);
 
         // Put data back into storage.
         self.storage
@@ -141,7 +147,7 @@ impl SingleFileMetastore {
 
         // Update the internal data if the storage is successfully updated.
         let mut cache = self.cache.write().await;
-        cache.insert(index_id.to_string(), metadata_set.clone());
+        cache.insert(index_id, metadata_set.clone());
 
         Ok(())
     }
@@ -149,27 +155,36 @@ impl SingleFileMetastore {
 
 #[async_trait]
 impl Metastore for SingleFileMetastore {
-    async fn create_index(&self, index_id: &str, _doc_mapping: DocMapping) -> MetastoreResult<()> {
+    async fn create_index(
+        &self,
+        index_metadata: IndexMetadata,
+        _doc_mapping: DocMapping,
+    ) -> MetastoreResult<()> {
         // Check for the existence of index.
-        let exists = self.index_exists(index_id).await.map_err(|e| {
-            MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
-                "Failed to check the existence of the index on storage: {:?}",
-                e
-            ))
-        })?;
+        let exists = self
+            .index_exists(&index_metadata.index_id)
+            .await
+            .map_err(|e| {
+                MetastoreErrorKind::InternalError.with_error(anyhow::anyhow!(
+                    "Failed to check the existence of the index on storage: {:?}",
+                    e
+                ))
+            })?;
         if exists {
-            return Err(MetastoreErrorKind::ExistingIndexUri
-                .with_error(anyhow::anyhow!("The index already exists: {:?}", index_id)));
+            return Err(
+                MetastoreErrorKind::ExistingIndexUri.with_error(anyhow::anyhow!(
+                    "The index already exists: {:?}",
+                    index_metadata.index_id
+                )),
+            );
         }
 
         let metadata_set = MetadataSet {
-            index: IndexMetadata {
-                version: FILE_FORMAT_VERSION.to_string(),
-            },
+            index: index_metadata,
             splits: HashMap::new(),
         };
 
-        self.put_index(index_id, metadata_set).await?;
+        self.put_index(metadata_set).await?;
 
         Ok(())
     }
@@ -228,7 +243,7 @@ impl Metastore for SingleFileMetastore {
             .splits
             .insert(split_metadata.split_id.to_string(), split_metadata);
 
-        self.put_index(index_id, metadata_set).await?;
+        self.put_index(metadata_set).await?;
 
         Ok(())
     }
@@ -258,7 +273,7 @@ impl Metastore for SingleFileMetastore {
             }
         }
 
-        self.put_index(index_id, metadata_set).await?;
+        self.put_index(metadata_set).await?;
 
         Ok(())
     }
@@ -311,7 +326,7 @@ impl Metastore for SingleFileMetastore {
 
         split_metadata.split_state = SplitState::ScheduledForDeletion;
 
-        self.put_index(index_id, metadata_set).await?;
+        self.put_index(metadata_set).await?;
 
         Ok(())
     }
@@ -339,7 +354,7 @@ impl Metastore for SingleFileMetastore {
             }
         };
 
-        self.put_index(index_id, metadata_set).await?;
+        self.put_index(metadata_set).await?;
 
         Ok(())
     }
@@ -395,15 +410,14 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
+    use crate::IndexMetadata;
     use crate::{Metastore, MetastoreErrorKind, SingleFileMetastore, SplitMetadata, SplitState};
     use quickwit_doc_mapping::DocMapping;
-    use quickwit_storage::{MockStorage, StorageErrorKind, StorageUriResolver};
+    use quickwit_storage::{MockStorage, StorageErrorKind};
 
     #[tokio::test]
     async fn test_single_file_metastore_index_exists() {
-        let resolver = StorageUriResolver::default();
-        let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage);
+        let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
 
         {
@@ -412,9 +426,14 @@ mod tests {
             let expected = false;
             assert_eq!(result, expected);
 
+            let index_metadata = IndexMetadata {
+                index_id: index_id.to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
+            };
+
             // Create index
             metastore
-                .create_index(index_id, DocMapping::Dynamic)
+                .create_index(index_metadata, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
@@ -427,9 +446,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_file_metastore_create_index() {
-        let resolver = StorageUriResolver::default();
-        let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage);
+        let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
 
         {
@@ -438,9 +455,14 @@ mod tests {
             let expected = false;
             assert_eq!(result, expected);
 
+            let index_metadata = IndexMetadata {
+                index_id: index_id.to_string(),
+                index_uri: "ram://indexes//my-index".to_string(),
+            };
+
             // Create index
             metastore
-                .create_index(index_id, DocMapping::Dynamic)
+                .create_index(index_metadata.clone(), DocMapping::Dynamic)
                 .await
                 .unwrap();
 
@@ -449,9 +471,8 @@ mod tests {
             let expected = true;
             assert_eq!(result, expected);
 
-            // Create an index that already exists.
             let result = metastore
-                .create_index(index_id, DocMapping::Dynamic)
+                .create_index(index_metadata, DocMapping::Dynamic)
                 .await
                 .unwrap_err()
                 .kind();
@@ -462,9 +483,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_file_metastore_get_index() {
-        let resolver = StorageUriResolver::default();
-        let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage);
+        let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
 
         {
@@ -473,9 +492,13 @@ mod tests {
             let expected = false;
             assert_eq!(result, expected);
 
+            let index_metadata = IndexMetadata {
+                index_id: index_id.to_string(),
+                index_uri: "ram://indexes//my-index".to_string(),
+            };
             // Create index
             metastore
-                .create_index(index_id, DocMapping::Dynamic)
+                .create_index(index_metadata, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
@@ -500,9 +523,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_file_metastore_delete_index() {
-        let resolver = StorageUriResolver::default();
-        let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage);
+        let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
 
         {
@@ -511,9 +532,14 @@ mod tests {
             let expected = false;
             assert_eq!(result, expected);
 
+            let index_metadata = IndexMetadata {
+                index_id: index_id.to_string(),
+                index_uri: "ram://indexes//my-index".to_string(),
+            };
+
             // Create index
             metastore
-                .create_index(index_id, DocMapping::Dynamic)
+                .create_index(index_metadata, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
@@ -538,9 +564,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_file_metastore_stage_split() {
-        let resolver = StorageUriResolver::default();
-        let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage);
+        let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
         let split_id = "one";
         let split_metadata = SplitMetadata {
@@ -558,9 +582,14 @@ mod tests {
             let expected = false;
             assert_eq!(result, expected);
 
+            let index_metadata = IndexMetadata {
+                index_id: index_id.to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
+            };
+
             // Create index
             metastore
-                .create_index(index_id, DocMapping::Dynamic)
+                .create_index(index_metadata, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
@@ -666,9 +695,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_file_metastore_publish_split() {
-        let resolver = StorageUriResolver::default();
-        let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage);
+        let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
         let split_id = "one";
         let split_metadata = SplitMetadata {
@@ -686,9 +713,13 @@ mod tests {
             let expected = false;
             assert_eq!(result, expected);
 
+            let index_metadata = IndexMetadata {
+                index_id: index_id.to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
+            };
             // Create index
             metastore
-                .create_index(index_id, DocMapping::Dynamic)
+                .create_index(index_metadata, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
@@ -761,15 +792,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_file_metastore_list_splits() {
-        let resolver = StorageUriResolver::default();
-        let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage);
+        let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
 
         {
+            let index_metadata = IndexMetadata {
+                index_id: index_id.to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
+            };
             // create index
             metastore
-                .create_index(index_id, DocMapping::Dynamic)
+                .create_index(index_metadata, DocMapping::Dynamic)
                 .await
                 .unwrap();
         }
@@ -1268,9 +1301,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_file_metastore_mark_split_as_deleted() {
-        let resolver = StorageUriResolver::default();
-        let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage);
+        let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
         let split_id = "split-one";
         let split_metadata = SplitMetadata {
@@ -1288,9 +1319,14 @@ mod tests {
             let expected = false;
             assert_eq!(result, expected);
 
+            let index_metadata = IndexMetadata {
+                index_id: index_id.to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
+            };
+
             // Create index
             metastore
-                .create_index(index_id, DocMapping::Dynamic)
+                .create_index(index_metadata, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
@@ -1358,9 +1394,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_file_metastore_delete_split() {
-        let resolver = StorageUriResolver::default();
-        let storage = resolver.resolve("ram://").unwrap();
-        let metastore = SingleFileMetastore::new(storage);
+        let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
         let split_id = "split-one";
         let split_metadata = SplitMetadata {
@@ -1378,9 +1412,14 @@ mod tests {
             let expected = false;
             assert_eq!(result, expected);
 
+            let index_metadata = IndexMetadata {
+                index_id: index_id.to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
+            };
+
             // Create index
             metastore
-                .create_index(index_id, DocMapping::Dynamic)
+                .create_index(index_metadata, DocMapping::Dynamic)
                 .await
                 .unwrap();
 
@@ -1476,9 +1515,14 @@ mod tests {
             generation: 3,
         };
 
+        let index_metadata = IndexMetadata {
+            index_id: index_id.to_string(),
+            index_uri: "ram://my-indexes/my-index".to_string(),
+        };
+
         // create index
         metastore
-            .create_index(index_id, DocMapping::Dynamic)
+            .create_index(index_metadata, DocMapping::Dynamic)
             .await
             .unwrap();
 

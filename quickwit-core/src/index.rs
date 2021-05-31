@@ -23,19 +23,19 @@
 use std::sync::Arc;
 
 use quickwit_doc_mapping::DocMapping;
-use quickwit_metastore::{Metastore, MetastoreUriResolver, SplitState};
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver, SplitState};
 use quickwit_storage::Storage;
 
 // anyhow errors are fine for now but we'll want to move to a proper error type eventually.
 pub async fn create_index(
     metastore_uri: &str,
-    index_id: &str,
+    index_metadata: IndexMetadata,
     doc_mapping: DocMapping,
 ) -> anyhow::Result<()> {
     let metastore = MetastoreUriResolver::default()
         .resolve(&metastore_uri)
         .await?;
-    metastore.create_index(index_id, doc_mapping).await?;
+    metastore.create_index(index_metadata, doc_mapping).await?;
     Ok(())
 }
 
