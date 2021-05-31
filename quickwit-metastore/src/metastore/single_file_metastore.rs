@@ -26,7 +26,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_doc_mapping::DocMapper;
 use quickwit_storage::StorageResolverError;
 use quickwit_storage::StorageUriResolver;
 use tokio::sync::RwLock;
@@ -155,11 +154,7 @@ impl SingleFileMetastore {
 
 #[async_trait]
 impl Metastore for SingleFileMetastore {
-    async fn create_index(
-        &self,
-        index_metadata: IndexMetadata,
-        _doc_mapper: Box<dyn DocMapper>,
-    ) -> MetastoreResult<()> {
+    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
         // Check for the existence of index.
         let exists = self
             .index_exists(&index_metadata.index_id)
@@ -412,7 +407,7 @@ mod tests {
 
     use crate::IndexMetadata;
     use crate::{Metastore, MetastoreErrorKind, SingleFileMetastore, SplitMetadata, SplitState};
-    use quickwit_doc_mapping::{build_doc_mapper, DocMapperType};
+    use quickwit_doc_mapping::DocMapperType;
     use quickwit_storage::{MockStorage, StorageErrorKind};
 
     #[tokio::test]
@@ -429,14 +424,11 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
+                doc_mapper_type: DocMapperType::AllFlatten,
             };
-            let mapper = build_doc_mapper(DocMapperType::AllFlatten).unwrap();
 
             // Create index
-            metastore
-                .create_index(index_metadata, mapper)
-                .await
-                .unwrap();
+            metastore.create_index(index_metadata).await.unwrap();
 
             // Check for the existence of index.
             let result = metastore.index_exists(index_id).await.unwrap();
@@ -459,12 +451,12 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
+                doc_mapper_type: DocMapperType::AllFlatten,
             };
-            let mapper = build_doc_mapper(DocMapperType::AllFlatten).unwrap();
 
             // Create index
             metastore
-                .create_index(index_metadata.clone(), mapper)
+                .create_index(index_metadata.clone())
                 .await
                 .unwrap();
 
@@ -473,9 +465,8 @@ mod tests {
             let expected = true;
             assert_eq!(result, expected);
 
-            let mapper = build_doc_mapper(DocMapperType::AllFlatten).unwrap();
             let result = metastore
-                .create_index(index_metadata, mapper)
+                .create_index(index_metadata)
                 .await
                 .unwrap_err()
                 .kind();
@@ -498,13 +489,11 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
+                doc_mapper_type: DocMapperType::AllFlatten,
             };
-            let mapper = build_doc_mapper(DocMapperType::AllFlatten).unwrap();
+
             // Create index
-            metastore
-                .create_index(index_metadata, mapper)
-                .await
-                .unwrap();
+            metastore.create_index(index_metadata).await.unwrap();
 
             // Check for the existence of index.
             let result = metastore.index_exists(index_id).await.unwrap();
@@ -539,14 +528,11 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
+                doc_mapper_type: DocMapperType::AllFlatten,
             };
-            let mapper = build_doc_mapper(DocMapperType::AllFlatten).unwrap();
 
             // Create index
-            metastore
-                .create_index(index_metadata, mapper)
-                .await
-                .unwrap();
+            metastore.create_index(index_metadata).await.unwrap();
 
             // Check for the existence of index.
             let result = metastore.index_exists(index_id).await.unwrap();
@@ -590,14 +576,11 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
+                doc_mapper_type: DocMapperType::AllFlatten,
             };
-            let mapper = build_doc_mapper(DocMapperType::AllFlatten).unwrap();
 
             // Create index
-            metastore
-                .create_index(index_metadata, mapper)
-                .await
-                .unwrap();
+            metastore.create_index(index_metadata).await.unwrap();
 
             // Check for the existence of index.
             let result = metastore.index_exists(index_id).await.unwrap();
@@ -722,13 +705,11 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
+                doc_mapper_type: DocMapperType::AllFlatten,
             };
-            let mapper = build_doc_mapper(DocMapperType::AllFlatten).unwrap();
+
             // Create index
-            metastore
-                .create_index(index_metadata, mapper)
-                .await
-                .unwrap();
+            metastore.create_index(index_metadata).await.unwrap();
 
             // Check for the existence of index.
             let result = metastore.index_exists(index_id).await.unwrap();
@@ -806,14 +787,11 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
+                doc_mapper_type: DocMapperType::AllFlatten,
             };
-            let mapper = build_doc_mapper(DocMapperType::AllFlatten).unwrap();
 
             // create index
-            metastore
-                .create_index(index_metadata, mapper)
-                .await
-                .unwrap();
+            metastore.create_index(index_metadata).await.unwrap();
         }
 
         {
@@ -1331,14 +1309,11 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
+                doc_mapper_type: DocMapperType::AllFlatten,
             };
-            let mapper = build_doc_mapper(DocMapperType::AllFlatten).unwrap();
 
             // Create index
-            metastore
-                .create_index(index_metadata, mapper)
-                .await
-                .unwrap();
+            metastore.create_index(index_metadata).await.unwrap();
 
             // Check for the existence of index.
             let result = metastore.index_exists(index_id).await.unwrap();
@@ -1425,14 +1400,11 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
+                doc_mapper_type: DocMapperType::AllFlatten,
             };
-            let mapper = build_doc_mapper(DocMapperType::AllFlatten).unwrap();
 
             // Create index
-            metastore
-                .create_index(index_metadata, mapper)
-                .await
-                .unwrap();
+            metastore.create_index(index_metadata).await.unwrap();
 
             // Check for the existence of index.
             let result = metastore.index_exists(index_id).await.unwrap();
@@ -1529,14 +1501,11 @@ mod tests {
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
             index_uri: "ram://my-indexes/my-index".to_string(),
+            doc_mapper_type: DocMapperType::AllFlatten,
         };
-        let mapper = build_doc_mapper(DocMapperType::AllFlatten).unwrap();
 
         // create index
-        metastore
-            .create_index(index_metadata, mapper)
-            .await
-            .unwrap();
+        metastore.create_index(index_metadata).await.unwrap();
 
         // stage split
         metastore

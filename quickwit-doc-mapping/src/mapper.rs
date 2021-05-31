@@ -27,6 +27,7 @@ use crate::{
     default_mapper::{DefaultDocMapper, DocMapperConfig},
     wikipedia_mapper::WikipediaMapper,
 };
+use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
     schema::{DocParsingError, Schema},
@@ -54,7 +55,7 @@ pub trait DocMapper: Send + Sync + 'static {
 pub struct SearchRequest {}
 
 /// A `DocMapperType` describe a set of rules to build a document, query and schema.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum DocMapperType {
     /// Default doc mapper which is build from a config file
     Default(DocMapperConfig),
@@ -73,7 +74,7 @@ impl TryFrom<&str> for DocMapperType {
             "wikipedia" => Ok(Self::Wikipedia),
             "default" => Ok(Self::Default(DocMapperConfig::default())),
             _ => Err(format!(
-                "Could not parse `{}`  as valid doc mapper type.",
+                "Could not parse `{}` as valid doc mapper type.",
                 doc_mapper_type_str
             )),
         }
