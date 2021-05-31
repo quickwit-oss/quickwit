@@ -35,7 +35,7 @@ use crate::{Metastore, MetastoreResolverError};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait MetastoreFactory: Send + Sync + 'static {
-    /// Returns the protocols this URI resolver is serving.
+    /// Returns the protocol this URI resolver is serving.
     fn protocol(&self) -> String;
     /// Given an URI, returns a [`Metastore`] object.
     async fn resolve(&self, uri: String) -> Result<Arc<dyn Metastore>, MetastoreResolverError>;
