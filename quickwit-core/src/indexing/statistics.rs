@@ -20,6 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use crossterm::terminal::{Clear, ClearType};
 use crossterm::{cursor, QueueableCommand};
 use std::io::{stdout, Stdout};
 use std::sync::Arc;
@@ -169,16 +170,17 @@ impl StatisticsCollector {
     /// Display a one-shot report.
     pub fn display_report(&self) {
         let elapsed_secs = self.start_time.elapsed().as_secs();
+        println!();
         if elapsed_secs >= 60 {
             println!(
-                "\nIndexded {} documents {:.2$}min",
+                "Indexded {} documents in {:.2$}min",
                 self.num_docs,
                 elapsed_secs.max(1) as f64 / 60f64,
                 2
             );
         } else {
             println!(
-                "\nIndexded {} documents {}s",
+                "Indexded {} documents in {}s",
                 self.num_docs,
                 elapsed_secs.max(1)
             );
@@ -187,11 +189,12 @@ impl StatisticsCollector {
 
     fn display_inline_report(&mut self) -> anyhow::Result<()> {
         let elapsed_secs = self.start_time.elapsed().as_secs();
+        self.stdout.queue(Clear(ClearType::CurrentLine))?;
         self.stdout.queue(cursor::SavePosition)?;
         let throughput_mb_s =
             self.total_bytes_processed as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
 
-        println!("Documents: {}   Errors: {}  Splits: {}  Dataset Size: {}  Index Size: {} Throughput:  {:.6$}MB/s", 
+        println!("Documents: {} Errors: {}  Splits: {} Dataset Size: {} Index Size: {} Throughput: {:.6$}MB/s \nPlease hold on.", 
             self.num_docs, self.num_parse_errors,  self.num_local_splits,
             self.total_bytes_processed / 1_000_000,
             self.total_size_splits / 1_000_000,
