@@ -67,14 +67,14 @@ pub enum DocMapperType {
 impl TryFrom<&str> for DocMapperType {
     type Error = String;
 
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        match s.trim().to_lowercase().as_str() {
+    fn try_from(doc_mapper_type_str: &str) -> Result<Self, Self::Error> {
+        match doc_mapper_type_str.trim().to_lowercase().as_str() {
             "allflatten" => Ok(Self::AllFlatten),
             "wikipedia" => Ok(Self::Wikipedia),
             "default" => Ok(Self::Default(DocMapperConfig::default())),
             _ => Err(format!(
                 "Could not parse `{}`  as valid doc mapper type.",
-                s
+                doc_mapper_type_str
             )),
         }
     }
