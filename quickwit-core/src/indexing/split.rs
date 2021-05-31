@@ -119,11 +119,11 @@ impl Split {
     /// Add document to the index split.
     pub fn add_document(&mut self, doc: Document) -> anyhow::Result<()> {
         //TODO: handle time range when docMapper is available
-        self.metadata.num_records += 1;
         self.index_writer
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing index writer."))?
             .add_document(doc);
+        self.metadata.num_records += 1;
         Ok(())
     }
 
@@ -270,9 +270,6 @@ async fn put_to_storage(storage: &dyn Storage, split: &Split) -> anyhow::Result<
         };
 
         manifest.push(&file_name, metadata.len());
-        // TODO fix LocalFileStorage bug (https://github.com/quickwit-inc/quickwit/issues/59)
-        // for now this dirsty hack allows to work with LocalFileStorage
-        // let key = Path::new(&split.split_uri).join(&file_name);
         let key = PathBuf::from(file_name);
         let payload = quickwit_storage::PutPayload::from(path.clone());
         let upload_res_future = async move {
@@ -292,9 +289,6 @@ async fn put_to_storage(storage: &dyn Storage, split: &Split) -> anyhow::Result<
     futures::future::try_join_all(upload_res_futures).await?;
 
     let manifest_body = manifest.to_json()?.into_bytes();
-    // TODO fix LocalFileStorage bug (https://github.com/quickwit-inc/quickwit/issues/59)
-    // for now this dirsty hack allows to work with LocalFileStorage
-    // let manifest_path = Path::new(split.index_uri.as_str()).join(".manifest");
     let manifest_path = PathBuf::from(".manifest");
     storage
         .put(&manifest_path, PutPayload::from(manifest_body))
