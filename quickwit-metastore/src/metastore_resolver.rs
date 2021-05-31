@@ -117,4 +117,14 @@ mod tests {
             .await?;
         Ok(())
     }
+
+    #[tokio::test]
+    #[should_panic(expected = "ProtocolUnsupported(\"s4\")")]
+    async fn test_metastore_resolver_should_raise_error_on_storage_error() {
+        let metastore_resolver = MetastoreUriResolver::default();
+        metastore_resolver
+            .resolve("s4://bucket/path/to/object")
+            .await
+            .unwrap();
+    }
 }
