@@ -26,7 +26,10 @@ use tantivy::{
     schema::{DocParsingError, Schema, SchemaBuilder, STORED},
     Document,
 };
+use serde::{Deserialize, Serialize};
 
+
+#[derive(Serialize, Deserialize)]
 pub struct AllFlattenDocMapper {
     schema: Schema,
 }
@@ -41,6 +44,7 @@ impl AllFlattenDocMapper {
     }
 }
 
+#[typetag::serde]
 impl DocMapper for AllFlattenDocMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let source = self

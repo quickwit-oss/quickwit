@@ -26,7 +26,9 @@ use tantivy::{
     schema::{DocParsingError, Schema, TextFieldIndexing, TextOptions},
     Document,
 };
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct WikipediaMapper {
     schema: Schema,
 }
@@ -46,6 +48,7 @@ impl WikipediaMapper {
     }
 }
 
+#[typetag::serde]
 impl DocMapper for WikipediaMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         self.schema.parse_document(doc_json)

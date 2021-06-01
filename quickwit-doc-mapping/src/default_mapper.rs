@@ -30,6 +30,7 @@ use tantivy::{
     Document,
 };
 
+#[derive(Serialize, Deserialize)]
 pub struct DefaultDocMapper {
     schema: Schema, // transient
     config: DocMapperConfig,
@@ -105,6 +106,7 @@ fn get_json_paths_and_values(
     }
 }
 
+#[typetag::serde]
 impl DocMapper for DefaultDocMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let mut document = Document::default();

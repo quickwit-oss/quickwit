@@ -43,6 +43,7 @@ use tantivy::{
 /// - a way to build a tantivy::Query from a SearchRequest
 /// - a way to build a tantivy:Schema
 ///
+#[typetag::serde(tag = "type", content = "config")]
 pub trait DocMapper: Send + Sync + 'static {
     /// Returns the document built from a json string.
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError>;
@@ -51,6 +52,25 @@ pub trait DocMapper: Send + Sync + 'static {
     /// Returns the query.
     fn query(&self, _request: SearchRequest) -> Box<dyn Query>;
 }
+
+impl TryFrom<&str> for Box<dyn DocMapper> {
+    type Error = String;
+
+    fn try_from(doc_mapper_type_str: &str) -> Result<Self, Self::Error> {
+        match doc_mapper_type_str.trim().to_lowercase().as_str() {
+            "all_flatten" => Ok(Box::new(WikipediaMapper::new()) as Box<dyn DocMapper>),
+            "wikipedia" => Ok(Self::Wikipedia),
+            "default" => Ok(Self::Default(DocMapperConfig::default())),
+            _ => Err(format!(
+                "Could not parse `{}` as valid doc mapper type.",
+                doc_mapper_type_str
+            )),
+        }
+    }
+}
+
+
+
 // TODO: this is a placeholder, to be removed when it will be implementend in the search-api crate
 pub struct SearchRequest {}
 
@@ -81,6 +101,9 @@ impl TryFrom<&str> for DocMapperType {
         }
     }
 }
+
+
+
 
 /// Build a doc mapper given the doc mapper type.
 pub fn build_doc_mapper(mapper_type: DocMapperType) -> anyhow::Result<Box<dyn DocMapper>> {
