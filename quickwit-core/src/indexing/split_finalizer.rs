@@ -93,7 +93,7 @@ pub async fn finalize_split(
         warn!("Some splits were not published.");
     }
 
-    // notify others that the indexing is completed
+    // notify everyone that the indexing is completed
     task_completed_sender.send(true)?;
 
     Ok(())

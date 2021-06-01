@@ -24,7 +24,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
 /// Represent an atomic counter we can use to collect metrics.
-/// This underlying atomic type uses [`Ordering::Relaxed`] ordering
+/// The underlying atomic type uses [`Ordering::Relaxed`] ordering
 #[derive(Debug, Default)]
 pub struct AtomicCounter(AtomicUsize);
 
