@@ -39,7 +39,7 @@ const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 ///
 pub async fn finalize_split(split_receiver: Receiver<Split>) -> anyhow::Result<()> {
     let stream = ReceiverStream::new(split_receiver);
-    let mut stream = stream
+    let mut finalize_stream = stream
         .map(|mut split| {
             async move {
                 debug!(split_id =% split.id, num_docs = split.metadata.num_records,  size_in_bytes = split.metadata.size_in_bytes, parse_errors = split.num_parsing_errors, "Split created");
@@ -49,21 +49,48 @@ pub async fn finalize_split(split_receiver: Receiver<Split>) -> anyhow::Result<(
                 split.merge_all_segments().await?;
                 split.stage().await?;
                 split.upload().await?;
-                split.publish().await?;
                 anyhow::Result::<Split>::Ok(split)
             }
         })
         .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
 
-    let mut num_erros: usize = 0;
-    while let Some(finalize_result) = stream.next().await {
-        if finalize_result.is_err() {
-            num_erros += 1;
+    let mut splits = vec![];
+    let mut finalize_errors: usize = 0;
+    while let Some(finalize_result) = finalize_stream.next().await {
+        if finalize_result.is_ok() {
+            let split = finalize_result?;
+            splits.push(split);
+        } else {
+            finalize_errors += 1;
         }
     }
 
-    if num_erros > 0 {
+    if finalize_errors > 0 {
         warn!("Some splits were not finalised.");
     }
+
+    // TODO: we want to atomically publish all splits.
+    // See [https://github.com/quickwit-inc/quickwit/issues/71]
+    let mut publish_stream = tokio_stream::iter(splits)
+        .map(|split| {
+            let moved_statistic_sender = statistic_sender.clone();
+            async move {
+                split.publish().await?;
+                anyhow::Result::<()>::Ok(())
+            }
+        })
+        .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
+
+    let mut publish_errors: usize = 0;
+    while let Some(publish_result) = publish_stream.next().await {
+        if publish_result.is_err() {
+            publish_errors += 1;
+        }
+    }
+
+    if publish_errors > 0 {
+        warn!("Some splits were not published.");
+    }
+
     Ok(())
 }

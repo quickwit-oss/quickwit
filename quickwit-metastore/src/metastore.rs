@@ -27,9 +27,8 @@ use std::fmt::Debug;
 use std::ops::Range;
 
 use async_trait::async_trait;
+use quickwit_doc_mapping::DocMapperType;
 use serde::{Deserialize, Serialize};
-
-use quickwit_doc_mapping::DocMapping;
 
 use crate::MetastoreResult;
 
@@ -41,6 +40,8 @@ pub struct IndexMetadata {
     /// Index Uri. The index uri defines the location of the storage that contains the
     /// split files.
     pub index_uri: String,
+    /// The doc mapper type used for this index
+    pub doc_mapper_type: DocMapperType,
 }
 
 /// A split metadata carries all meta data about a split.
@@ -139,11 +140,7 @@ pub trait Metastore: Send + Sync + 'static {
     /// Creates an index.
     /// This API creates index metadata set in the metastore.
     /// An error will occur if an index that exists in the storage is specified.
-    async fn create_index(
-        &self,
-        index_metadata: IndexMetadata,
-        doc_mapping: DocMapping,
-    ) -> MetastoreResult<()>;
+    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()>;
 
     /// Returns the index_metadata for a given index.
     ///

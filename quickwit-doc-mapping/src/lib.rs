@@ -19,13 +19,15 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+
 #![warn(missing_docs)]
 
 //! Doc mapping defines the way to convert a json like documents to
 //! a document indexable by tantivy engine, aka tantivy::Document.
 
-/// Placeholder implementation before merging the DocMapper PR
-pub enum DocMapping {
-    /// Dynamic mapper...
-    Dynamic,
-}
+mod all_flatten_mapper;
+mod default_mapper;
+mod mapper;
+mod wikipedia_mapper;
+
+pub use self::mapper::{build_doc_mapper, DocMapper, DocMapperType};
