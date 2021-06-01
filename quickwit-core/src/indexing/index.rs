@@ -34,7 +34,7 @@ use tracing::warn;
 use crate::index::garbage_collect;
 use crate::indexing::document_retriever::DocumentSource;
 use crate::indexing::split_finalizer::finalize_split;
-use crate::indexing::statistics::StatisticsCollector;
+use crate::indexing::statistics::start_statistics_reporting;
 use crate::indexing::{document_indexer::index_documents, split::Split};
 
 const SPLIT_CHANNEL_SIZE: usize = 30;
@@ -81,7 +81,7 @@ pub async fn index_data(
     }
 
     let document_retriever = Box::new(DocumentSource::create(&params.input_uri).await?);
-    let (statistic_collector, statistic_sender) = StatisticsCollector::start_collection();
+    start_statistics_reporting();
     let (split_sender, split_receiver) = channel::<Split>(SPLIT_CHANNEL_SIZE);
     try_join!(
         index_documents(
@@ -91,12 +91,11 @@ pub async fn index_data(
             storage_resolver,
             document_retriever,
             split_sender,
-            statistic_sender.clone(),
         ),
-        finalize_split(split_receiver, statistic_sender.clone()),
+        finalize_split(split_receiver),
     )?;
 
-    statistic_collector.lock().await.display_report();
+    //display_report();
     println!("You can now query your index with `quickwit search --index-path {} --query \"barack obama\"`" , params.index_uri.display());
     Ok(())
 }

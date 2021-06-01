@@ -22,3 +22,4 @@
 
 pub mod index;
 pub mod indexing;
+pub mod counter;

@@ -28,8 +28,8 @@ use tokio::sync::mpsc::Sender;
 
 use crate::indexing::document_retriever::DocumentRetriever;
 use crate::indexing::split::Split;
-use crate::indexing::statistics::StatisticEvent;
 
+use super::INDEXING_STATISTICS;
 use super::IndexDataParams;
 
 /// Receives json documents, parses and adds them to a `tantivy::Index`
@@ -40,7 +40,6 @@ pub async fn index_documents(
     storage_resolver: Arc<StorageUriResolver>,
     mut document_retriever: Box<dyn DocumentRetriever>,
     split_sender: Sender<Split>,
-    statistic_sender: Sender<StatisticEvent>,
 ) -> anyhow::Result<()> {
     //TODO replace with  DocMapper::schema()
     let schema = Schema::builder().build();
@@ -60,24 +59,19 @@ pub async fn index_documents(
 
         let doc = match parse_result {
             Ok(doc) => {
-                statistic_sender
-                    .send(StatisticEvent::NewDocument {
-                        size_in_bytes: doc_size,
-                        error: false,
-                    })
-                    .await?;
                 current_split.metadata.num_records += 1;
                 current_split.metadata.size_in_bytes += doc_size;
+
+                INDEXING_STATISTICS.num_docs.inc();
+                INDEXING_STATISTICS.total_bytes_processed.add(doc_size);
                 doc
             }
             Err(_) => {
-                statistic_sender
-                    .send(StatisticEvent::NewDocument {
-                        size_in_bytes: doc_size,
-                        error: true,
-                    })
-                    .await?;
                 current_split.num_parsing_errors += 1;
+
+                INDEXING_STATISTICS.num_docs.inc();
+                INDEXING_STATISTICS.num_parse_errors.inc();
+                INDEXING_STATISTICS.total_bytes_processed.add(doc_size);
                 continue;
             }
         };
@@ -127,10 +121,7 @@ fn parse_document(_raw_doc: String) -> anyhow::Result<Document> {
 mod tests {
     use std::{path::PathBuf, str::FromStr, sync::Arc};
 
-    use crate::indexing::{
-        document_retriever::StringDocumentSource, split::Split, statistics::StatisticEvent,
-        IndexDataParams,
-    };
+    use crate::indexing::{INDEXING_STATISTICS, IndexDataParams, document_retriever::StringDocumentSource, split::Split};
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::StorageUriResolver;
     use tokio::sync::mpsc::channel;
@@ -173,33 +164,18 @@ mod tests {
 
         let document_retriever = Box::new(StringDocumentSource::new(input));
         let (split_sender, _split_receiver) = channel::<Split>(20);
-        let (statistic_sender, mut statistic_receiver) = channel::<StatisticEvent>(20);
 
-        let index_future = index_documents(
+        index_documents(
             index_id.to_owned(),
             &params,
             metastore,
             storage_resolver,
             document_retriever,
             split_sender,
-            statistic_sender,
-        );
-        let test_statistic_future = async move {
-            let mut received_num_docs = 0;
-            let mut received_size_bytes = 0;
-            while let Some(event) = statistic_receiver.recv().await {
-                //TODO: check constructed split when all metastore feature complete
-                if let StatisticEvent::NewDocument { size_in_bytes, .. } = event {
-                    received_num_docs += 1;
-                    received_size_bytes += size_in_bytes;
-                }
-            }
+        ).await?;
 
-            assert_eq!(received_num_docs, NUM_DOCS);
-            assert_eq!(received_size_bytes, total_bytes);
-        };
-
-        let _ = futures::future::join(index_future, test_statistic_future).await;
+        assert_eq!(INDEXING_STATISTICS.num_docs.get(), NUM_DOCS);
+        assert_eq!(INDEXING_STATISTICS.total_bytes_processed.get(), total_bytes);
         Ok(())
     }
 }

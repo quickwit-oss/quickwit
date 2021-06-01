@@ -20,11 +20,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use crate::indexing::INDEXING_STATISTICS;
 use crate::indexing::split::Split;
-use crate::indexing::statistics::StatisticEvent;
 use futures::StreamExt;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::Receiver;
 use tokio_stream::wrappers::ReceiverStream;
+use tracing::debug;
 use tracing::warn;
 
 const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
@@ -36,30 +37,19 @@ const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 /// - Upload all split artifacts
 /// - Publish the split
 ///
-pub async fn finalize_split(
-    split_receiver: Receiver<Split>,
-    statistic_sender: Sender<StatisticEvent>,
-) -> anyhow::Result<()> {
+pub async fn finalize_split(split_receiver: Receiver<Split>) -> anyhow::Result<()> {
     let stream = ReceiverStream::new(split_receiver);
     let mut stream = stream
         .map(|mut split| {
-            let moved_statistic_sender = statistic_sender.clone();
             async move {
-                // announce new split reception.
-                moved_statistic_sender
-                    .send(StatisticEvent::SplitCreated {
-                        id: split.id.to_string(),
-                        num_docs: split.metadata.num_records,
-                        size_in_bytes: split.metadata.size_in_bytes,
-                        num_parse_errors: split.num_parsing_errors,
-                    })
-                    .await?;
+                debug!(split_id =% split.id, num_docs = split.metadata.num_records,  size_in_bytes = split.metadata.size_in_bytes, parse_errors = split.num_parsing_errors, "Split created");
+                INDEXING_STATISTICS.num_local_splits.inc();
 
                 split.commit().await?;
                 split.merge_all_segments().await?;
-                split.stage(moved_statistic_sender.clone()).await?;
-                split.upload(moved_statistic_sender.clone()).await?;
-                split.publish(moved_statistic_sender).await?;
+                split.stage().await?;
+                split.upload().await?;
+                split.publish().await?;
                 anyhow::Result::<Split>::Ok(split)
             }
         })
