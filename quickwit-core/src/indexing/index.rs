@@ -28,6 +28,7 @@ use quickwit_metastore::Metastore;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
 use quickwit_storage::StorageUriResolver;
 use tokio::sync::mpsc::channel;
+use tokio::sync::watch;
 use tracing::warn;
 
 use crate::index::garbage_collect;
@@ -79,8 +80,8 @@ pub async fn index_data(
     }
 
     let document_retriever = Box::new(DocumentSource::create(&params.input_uri).await?);
-    start_statistics_reporting();
     let (split_sender, split_receiver) = channel::<Split>(SPLIT_CHANNEL_SIZE);
+    let (task_completed_sender, task_completed_receiver) = watch::channel::<bool>(false);
     try_join!(
         index_documents(
             index_id.to_owned(),
@@ -90,10 +91,10 @@ pub async fn index_data(
             document_retriever,
             split_sender,
         ),
-        finalize_split(split_receiver),
+        finalize_split(split_receiver, task_completed_sender),
+        start_statistics_reporting(task_completed_receiver),
     )?;
 
-    //display_report();
     println!("You can now query your index with `quickwit search --index-path {} --query \"barack obama\"`" , params.index_uri.display());
     Ok(())
 }

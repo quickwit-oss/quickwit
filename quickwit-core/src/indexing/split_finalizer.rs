@@ -20,10 +20,11 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::indexing::INDEXING_STATISTICS;
 use crate::indexing::split::Split;
+use crate::indexing::INDEXING_STATISTICS;
 use futures::StreamExt;
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::watch::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug;
 use tracing::warn;
@@ -37,7 +38,10 @@ const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 /// - Upload all split artifacts
 /// - Publish the split
 ///
-pub async fn finalize_split(split_receiver: Receiver<Split>) -> anyhow::Result<()> {
+pub async fn finalize_split(
+    split_receiver: Receiver<Split>,
+    task_completed_sender: Sender<bool>,
+) -> anyhow::Result<()> {
     let stream = ReceiverStream::new(split_receiver);
     let mut finalize_stream = stream
         .map(|mut split| {
@@ -72,12 +76,9 @@ pub async fn finalize_split(split_receiver: Receiver<Split>) -> anyhow::Result<(
     // TODO: we want to atomically publish all splits.
     // See [https://github.com/quickwit-inc/quickwit/issues/71]
     let mut publish_stream = tokio_stream::iter(splits)
-        .map(|split| {
-            let moved_statistic_sender = statistic_sender.clone();
-            async move {
-                split.publish().await?;
-                anyhow::Result::<()>::Ok(())
-            }
+        .map(|split| async move {
+            split.publish().await?;
+            anyhow::Result::<()>::Ok(())
         })
         .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
 
@@ -91,6 +92,9 @@ pub async fn finalize_split(split_receiver: Receiver<Split>) -> anyhow::Result<(
     if publish_errors > 0 {
         warn!("Some splits were not published.");
     }
+
+    // notify others that the indexing is completed
+    task_completed_sender.send(true)?;
 
     Ok(())
 }

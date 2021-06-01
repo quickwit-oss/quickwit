@@ -22,14 +22,19 @@
 
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::{cursor, QueueableCommand};
-use std::io::{stdout, Stdout};
-use std::time::{Duration, Instant};
-use tokio::task;
-use tracing::debug;
 use once_cell::sync::Lazy;
+use std::io::{stdout, Write};
+use std::time::{Duration, Instant};
+use tokio::sync::watch;
+use tokio::task;
+use tokio::time::timeout;
 
 use crate::counter::AtomicCounter;
 
+/// The global indexing statistics holder.
+pub static INDEXING_STATISTICS: Lazy<IndexingStatistics> = Lazy::new(IndexingStatistics::default);
+
+/// A Struct that holds all statistical data about indexing
 #[derive(Debug, Default)]
 pub struct IndexingStatistics {
     /// Number of document processed
@@ -50,66 +55,67 @@ pub struct IndexingStatistics {
     pub total_size_splits: AtomicCounter,
 }
 
-pub static INDEXING_STATISTICS: Lazy<IndexingStatistics> = Lazy::new(IndexingStatistics::default);
-
-
-
-/// Start a tokio task that listen to the statistics event channel
-/// and updates the statistic data
-pub fn start_statistics_reporting()  {
-    // let statistics_collector = Arc::new(Mutex::new(StatisticsCollector::new()));
-    // let moved_statistics_collector = statistics_collector.clone();
-    // let (event_sender, mut event_receiver) = channel(1000);
+/// Starts a tokio task that displays the indexing statistics
+/// every once in awhile.
+pub async fn start_statistics_reporting(
+    task_completed_receiver: watch::Receiver<bool>,
+) -> anyhow::Result<()> {
     task::spawn(async move {
-        let stdout = stdout();
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        let mut stdout_handle = stdout();
         let start_time = Instant::now();
         loop {
-            interval.tick().await;
-            println!("hello");
-            // display_inline_report()
+            // Try to receive with a timeout of 1 second.
+            // 1 second is also the frequency at which we update statistic in the console
+            let mut receiver = task_completed_receiver.clone();
+            let is_done = timeout(Duration::from_secs(1), receiver.changed())
+                .await
+                .is_ok();
+
+            let elapsed_secs = start_time.elapsed().as_secs();
+            let throughput_mb_s = INDEXING_STATISTICS.total_bytes_processed.get() as f64
+                / 1_000_000f64
+                / elapsed_secs.max(1) as f64;
+            let report_line = format!(
+                "Documents: {} Errors: {}  Splits: {} Dataset Size: {}MB Throughput: {:.5$}MB/s",
+                INDEXING_STATISTICS.num_docs.get(),
+                INDEXING_STATISTICS.num_parse_errors.get(),
+                INDEXING_STATISTICS.num_local_splits.get(),
+                INDEXING_STATISTICS.total_bytes_processed.get() / 1_000_000,
+                throughput_mb_s,
+                2
+            );
+
+            stdout_handle.queue(cursor::SavePosition)?;
+            stdout_handle.queue(Clear(ClearType::CurrentLine))?;
+            stdout_handle.write_all(report_line.as_bytes())?;
+            stdout_handle.write_all("\nPlease hold on.".as_bytes())?;
+            stdout_handle.queue(cursor::RestorePosition)?;
+            stdout_handle.flush()?;
+
+            if is_done {
+                break;
+            }
         }
-    });
 
-    
-    
+        //display end of task report
+        println!();
+        let elapsed_secs = start_time.elapsed().as_secs();
+        if elapsed_secs >= 60 {
+            println!(
+                "Indexed {} documents in {:.2$}min",
+                INDEXING_STATISTICS.num_docs.get(),
+                elapsed_secs.max(1) as f64 / 60f64,
+                2
+            );
+        } else {
+            println!(
+                "Indexed {} documents in {}s",
+                INDEXING_STATISTICS.num_docs.get(),
+                elapsed_secs.max(1)
+            );
+        }
+
+        anyhow::Result::<()>::Ok(())
+    })
+    .await?
 }
-
-// Display a one-shot report.
-// pub fn display_report() {
-//     let elapsed_secs = self.start_time.elapsed().as_secs();
-//     println!();
-//     if elapsed_secs >= 60 {
-//         println!(
-//             "Indexed {} documents in {:.2$}min",
-//             self.num_docs,
-//             elapsed_secs.max(1) as f64 / 60f64,
-//             2
-//         );
-//     } else {
-//         println!(
-//             "Indexed {} documents in {}s",
-//             self.num_docs,
-//             elapsed_secs.max(1)
-//         );
-//     }
-// }
-
-// fn display_inline_report() -> anyhow::Result<()> {
-//     let elapsed_secs = self.start_time.elapsed().as_secs();
-//     self.stdout.queue(Clear(ClearType::CurrentLine))?;
-//     self.stdout.queue(cursor::SavePosition)?;
-//     let throughput_mb_s =
-//         self.total_bytes_processed as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
-
-//     println!("Documents: {} Errors: {}  Splits: {} Dataset Size: {} Index Size: {} Throughput: {:.6$}MB/s \nPlease hold on.", 
-//         self.num_docs, self.num_parse_errors,  self.num_local_splits,
-//         self.total_bytes_processed / 1_000_000,
-//         self.total_size_splits / 1_000_000,
-//         throughput_mb_s, 2
-//     );
-
-//     self.stdout.queue(cursor::RestorePosition)?;
-//     Ok(())
-// }
-

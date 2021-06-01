@@ -37,8 +37,8 @@ use tokio::fs;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use super::INDEXING_STATISTICS;
 use super::IndexDataParams;
+use super::INDEXING_STATISTICS;
 
 pub const MAX_DOC_PER_SPLIT: usize = if cfg!(test) { 100 } else { 5_000_000 };
 
@@ -179,7 +179,9 @@ impl Split {
         let manifest = put_to_storage(&*self.storage, self).await?;
 
         INDEXING_STATISTICS.num_uploaded_splits.inc();
-        INDEXING_STATISTICS.total_size_splits.add(manifest.split_size_in_bytes as usize);
+        INDEXING_STATISTICS
+            .total_size_splits
+            .add(manifest.split_size_in_bytes as usize);
         Ok(manifest)
     }
 
@@ -188,7 +190,7 @@ impl Split {
         self.metastore
             .publish_split(&self.index_uri, &self.id.to_string())
             .await?;
-            
+
         INDEXING_STATISTICS.num_published_splits.inc();
         Ok(())
     }
@@ -279,7 +281,7 @@ mod tests {
     use super::*;
     use quickwit_metastore::MockMetastore;
     use std::str::FromStr;
-    use tokio::{sync::mpsc::channel, task};
+    use tokio::task;
 
     #[tokio::test]
     async fn test_split() -> anyhow::Result<()> {

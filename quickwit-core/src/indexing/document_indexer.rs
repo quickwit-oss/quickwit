@@ -29,8 +29,8 @@ use tokio::sync::mpsc::Sender;
 use crate::indexing::document_retriever::DocumentRetriever;
 use crate::indexing::split::Split;
 
-use super::INDEXING_STATISTICS;
 use super::IndexDataParams;
+use super::INDEXING_STATISTICS;
 
 /// Receives json documents, parses and adds them to a `tantivy::Index`
 pub async fn index_documents(
@@ -59,7 +59,6 @@ pub async fn index_documents(
 
         let doc = match parse_result {
             Ok(doc) => {
-                current_split.metadata.num_records += 1;
                 current_split.metadata.size_in_bytes += doc_size;
 
                 INDEXING_STATISTICS.num_docs.inc();
@@ -121,7 +120,10 @@ fn parse_document(_raw_doc: String) -> anyhow::Result<Document> {
 mod tests {
     use std::{path::PathBuf, str::FromStr, sync::Arc};
 
-    use crate::indexing::{INDEXING_STATISTICS, IndexDataParams, document_retriever::StringDocumentSource, split::Split};
+    use crate::indexing::{
+        document_retriever::StringDocumentSource, split::Split, IndexDataParams,
+        INDEXING_STATISTICS,
+    };
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::StorageUriResolver;
     use tokio::sync::mpsc::channel;
@@ -174,7 +176,8 @@ mod tests {
             storage_resolver,
             document_retriever,
             split_sender,
-        ).await?;
+        )
+        .await?;
 
         assert_eq!(INDEXING_STATISTICS.num_docs.get(), NUM_DOCS);
         assert_eq!(INDEXING_STATISTICS.total_bytes_processed.get(), total_bytes);
