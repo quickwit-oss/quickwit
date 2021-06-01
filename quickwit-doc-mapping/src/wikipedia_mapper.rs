@@ -21,16 +21,23 @@
 */
 
 use crate::{mapper::SearchRequest, DocMapper};
+use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
-    schema::{DocParsingError, Schema, TextFieldIndexing, TextOptions},
+    schema::{DocParsingError, Schema, SchemaBuilder, TextFieldIndexing, TextOptions},
     Document,
 };
-use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct WikipediaMapper {
+    #[serde(skip_serializing, default = "WikipediaMapper::default_schema")]
     schema: Schema,
+}
+
+impl std::fmt::Debug for WikipediaMapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "WikipediaMapper")
+    }
 }
 
 impl WikipediaMapper {
@@ -46,9 +53,13 @@ impl WikipediaMapper {
             schema: schema_builder.build(),
         })
     }
+
+    fn default_schema() -> Schema {
+        SchemaBuilder::new().build()
+    }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "wikipedia")]
 impl DocMapper for WikipediaMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         self.schema.parse_document(doc_json)

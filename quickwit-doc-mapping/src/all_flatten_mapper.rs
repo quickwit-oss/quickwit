@@ -21,17 +21,23 @@
 */
 
 use crate::{mapper::SearchRequest, DocMapper};
+use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
     schema::{DocParsingError, Schema, SchemaBuilder, STORED},
     Document,
 };
-use serde::{Deserialize, Serialize};
 
-
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AllFlattenDocMapper {
+    #[serde(skip_serializing, default = "AllFlattenDocMapper::default_schema")]
     schema: Schema,
+}
+
+impl std::fmt::Debug for AllFlattenDocMapper {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "AllFlattenDocMapper")
+    }
 }
 
 impl AllFlattenDocMapper {
@@ -42,9 +48,13 @@ impl AllFlattenDocMapper {
             schema: schema_builder.build(),
         })
     }
+
+    fn default_schema() -> Schema {
+        SchemaBuilder::new().build()
+    }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "all_flatten")]
 impl DocMapper for AllFlattenDocMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let source = self

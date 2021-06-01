@@ -365,7 +365,7 @@ mod tests {
 
     use crate::IndexMetadata;
     use crate::{Metastore, MetastoreErrorKind, SingleFileMetastore, SplitMetadata, SplitState};
-    use quickwit_doc_mapping::DocMapperType;
+    use quickwit_doc_mapping::build_doc_mapper;
     use quickwit_storage::{MockStorage, StorageErrorKind};
 
     #[tokio::test]
@@ -382,7 +382,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: build_doc_mapper("all_flatten", None).unwrap(),
             };
 
             // Create index
@@ -409,7 +409,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: build_doc_mapper("all_flatten", None).unwrap(),
             };
 
             // Create index
@@ -447,7 +447,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper_type: DocMapperType::Wikipedia,
+                doc_mapper: build_doc_mapper("all_flatten", None).unwrap(),
             };
 
             // Create index
@@ -468,12 +468,11 @@ mod tests {
                 created_index.index.index_uri.clone(),
                 index_metadata.index_uri
             );
-            match created_index.index.doc_mapper_type {
-                DocMapperType::Wikipedia => (),
-                _ => {
-                    panic!("Wrong DocMapperType");
-                }
-            }
+
+            assert_eq!(
+                format!("{:?}", created_index.index.doc_mapper),
+                "AllFlattenDocMapper".to_string()
+            );
 
             // Open a non-existent index.
             let result = metastore
@@ -500,7 +499,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: build_doc_mapper("all_flatten", None).unwrap(),
             };
 
             // Create index
@@ -548,7 +547,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: build_doc_mapper("all_flatten", None).unwrap(),
             };
 
             // Create index
@@ -677,7 +676,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: build_doc_mapper("all_flatten", None).unwrap(),
             };
 
             // Create index
@@ -759,7 +758,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: build_doc_mapper("all_flatten", None).unwrap(),
             };
 
             // create index
@@ -1281,7 +1280,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: build_doc_mapper("all_flatten", None).unwrap(),
             };
 
             // Create index
@@ -1372,7 +1371,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: build_doc_mapper("all_flatten", None).unwrap(),
             };
 
             // Create index
@@ -1473,7 +1472,7 @@ mod tests {
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
             index_uri: "ram://my-indexes/my-index".to_string(),
-            doc_mapper_type: DocMapperType::AllFlatten,
+            doc_mapper: build_doc_mapper("all_flatten", None).unwrap(),
         };
 
         // create index

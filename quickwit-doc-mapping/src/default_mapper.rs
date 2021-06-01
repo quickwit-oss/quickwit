@@ -30,10 +30,21 @@ use tantivy::{
     Document,
 };
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DefaultDocMapper {
+    #[serde(skip_serializing, default = "DefaultDocMapper::default_schema")]
     schema: Schema, // transient
+
     config: DocMapperConfig,
+}
+
+impl std::fmt::Debug for DefaultDocMapper {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter
+            .debug_struct("DefaultDocMapper")
+            .field("config", &self.config)
+            .finish()
+    }
 }
 
 impl DefaultDocMapper {
@@ -42,6 +53,10 @@ impl DefaultDocMapper {
             schema: config.schema(),
             config,
         })
+    }
+
+    fn default_schema() -> Schema {
+        SchemaBuilder::new().build()
     }
 
     /// Walk through the json object and for each json path :
@@ -106,7 +121,7 @@ fn get_json_paths_and_values(
     }
 }
 
-#[typetag::serde]
+#[typetag::serde(name = "default")]
 impl DocMapper for DefaultDocMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let mut document = Document::default();

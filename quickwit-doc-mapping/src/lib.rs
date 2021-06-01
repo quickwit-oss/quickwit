@@ -30,4 +30,4 @@ mod default_mapper;
 mod mapper;
 mod wikipedia_mapper;
 
-pub use self::mapper::{build_doc_mapper, DocMapper, DocMapperType};
+pub use self::mapper::{build_doc_mapper, DocMapper};
