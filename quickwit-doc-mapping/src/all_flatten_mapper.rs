@@ -28,6 +28,7 @@ use tantivy::{
     Document,
 };
 
+/// A mapper that flatten the document to have all fields at top level.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AllFlattenDocMapper {
     #[serde(skip_serializing, default = "AllFlattenDocMapper::default_schema")]
@@ -40,7 +41,16 @@ impl std::fmt::Debug for AllFlattenDocMapper {
     }
 }
 
+impl Default for AllFlattenDocMapper {
+    fn default() -> Self {
+        AllFlattenDocMapper {
+            schema: SchemaBuilder::new().build(),
+        }
+    }
+}
+
 impl AllFlattenDocMapper {
+    /// Creates new instance of all flatten mapper
     pub fn new() -> anyhow::Result<Self> {
         let mut schema_builder = SchemaBuilder::new();
         schema_builder.add_text_field("_source", STORED);
