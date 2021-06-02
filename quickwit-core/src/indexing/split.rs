@@ -176,7 +176,6 @@ impl Split {
         let manifest = put_to_storage(&*self.storage, self).await?;
         Ok(manifest)
     }
-
 }
 
 async fn put_to_storage(storage: &dyn Storage, split: &Split) -> anyhow::Result<Manifest> {
