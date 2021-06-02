@@ -272,8 +272,9 @@ impl Metastore for SingleFileMetastore {
 
         // Update the splits state to `Published`.
         updatable_split_ids.into_iter().for_each(|split_id| {
-            let split_metadata = metadata_set.splits.get_mut(split_id).unwrap();
-            split_metadata.split_state = SplitState::Published;
+            if let Some(split_metadata) = metadata_set.splits.get_mut(split_id) {
+                split_metadata.split_state = SplitState::Published;
+            };
         });
 
         self.put_index(metadata_set).await?;
@@ -781,7 +782,7 @@ mod tests {
         {
             // publish one non-staged split and one non-existent split
             let result = metastore
-                .publish_splits(index_id, vec![split_id_one, split_id_two]) // publish
+                .publish_splits(index_id, vec![split_id_one, split_id_two])
                 .await
                 .unwrap_err()
                 .kind();
@@ -794,7 +795,7 @@ mod tests {
                 .await
                 .unwrap();
             let result = metastore
-                .publish_splits(index_id, vec![split_id_one, split_id_two]) // publish
+                .publish_splits(index_id, vec![split_id_one, split_id_two])
                 .await
                 .unwrap_err()
                 .kind();
@@ -807,7 +808,7 @@ mod tests {
                 .await
                 .unwrap();
             let result = metastore
-                .publish_splits(index_id, vec![split_id_one, split_id_two]) // publish
+                .publish_splits(index_id, vec![split_id_one, split_id_two])
                 .await
                 .unwrap_err()
                 .kind();
