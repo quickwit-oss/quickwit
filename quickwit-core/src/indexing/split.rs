@@ -177,13 +177,13 @@ impl Split {
         Ok(manifest)
     }
 
-    /// Publish the split in the metastore.
-    pub async fn publish(&self) -> anyhow::Result<()> {
-        self.metastore
-            .publish_split(&self.index_uri, &self.id.to_string())
-            .await?;
-        Ok(())
-    }
+    // /// Publish the split in the metastore.
+    // pub async fn publish(&self) -> anyhow::Result<()> {
+    //     self.metastore
+    //         .publish_split(&self.index_uri, &self.id.to_string())
+    //         .await?;
+    //     Ok(())
+    // }
 }
 
 async fn put_to_storage(storage: &dyn Storage, split: &Split) -> anyhow::Result<Manifest> {
@@ -297,7 +297,7 @@ mod tests {
         );
         mock_metastore
             .expect_publish_splits()
-            .times(1)
+            .times(0)
             .returning(|_uri, _id| Ok(()));
 
         let metastore = Arc::new(mock_metastore);
@@ -333,8 +333,7 @@ mod tests {
 
         task::spawn(async move {
             split.stage().await?;
-            split.upload().await?;
-            split.publish().await
+            split.upload().await
         })
         .await??;
 

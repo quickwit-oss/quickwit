@@ -25,7 +25,7 @@ use std::sync::Arc;
 use crate::indexing::split::Split;
 use futures::StreamExt;
 use quickwit_metastore::Metastore;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::Receiver;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug;
 use tracing::warn;
@@ -74,9 +74,9 @@ pub async fn finalize_split(
     let mut index_id_opt = None;
     let mut split_ids = vec![];
     while let Some(finalize_result) = finalize_stream.next().await {
-        let split = finalize_result.map_err(|e| {
+        let split = finalize_result.map_err(|error| {
             warn!("Some splits were not finalised.");
-            e
+            error
         })?;
         if index_id_opt.is_none() {
             index_id_opt = Some(split.index_id.clone());
@@ -85,7 +85,7 @@ pub async fn finalize_split(
     }
 
     // publish all splits atomically
-    let index_id = index_id_opt.unwrap_or("".to_string());
+    let index_id = index_id_opt.ok_or_else(|| anyhow::anyhow!("Could not get the index_id"))?;
     let split_ids = split_ids
         .iter()
         .map(|split_id| split_id.as_str())
