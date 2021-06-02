@@ -23,12 +23,14 @@
 use std::sync::Arc;
 
 use crate::indexing::split::Split;
-use crate::indexing::statistics::StatisticEvent;
 use futures::StreamExt;
 use quickwit_metastore::Metastore;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_stream::wrappers::ReceiverStream;
+use tracing::debug;
 use tracing::warn;
+
+use super::IndexingStatistics;
 
 const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 
@@ -42,27 +44,28 @@ const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 pub async fn finalize_split(
     split_receiver: Receiver<Split>,
     metastore: Arc<dyn Metastore>,
-    statistic_sender: Sender<StatisticEvent>,
+    statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
     let stream = ReceiverStream::new(split_receiver);
     let mut finalize_stream = stream
         .map(|mut split| {
-            let moved_statistic_sender = statistic_sender.clone();
+            let moved_statistics = statistics.clone();
             async move {
-                // announce new split reception.
-                moved_statistic_sender
-                    .send(StatisticEvent::SplitCreated {
-                        id: split.id.to_string(),
-                        num_docs: split.metadata.num_records,
-                        size_in_bytes: split.metadata.size_in_bytes,
-                        num_parse_errors: split.num_parsing_errors,
-                    })
-                    .await?;
+                debug!(split_id =% split.id, num_docs = split.metadata.num_records,  size_in_bytes = split.metadata.size_in_bytes, parse_errors = split.num_parsing_errors, "Split created");
+                moved_statistics.num_local_splits.inc();
 
                 split.commit().await?;
                 split.merge_all_segments().await?;
-                split.stage(moved_statistic_sender.clone()).await?;
-                split.upload(moved_statistic_sender.clone()).await?;
+
+                split.stage().await?;
+                moved_statistics.num_staged_splits.inc();
+
+                let manifest = split.upload().await?;
+                moved_statistics.num_uploaded_splits.inc();
+                moved_statistics
+                    .total_size_splits
+                    .add(manifest.split_size_in_bytes as usize);
+
                 anyhow::Result::<Split>::Ok(split)
             }
         })

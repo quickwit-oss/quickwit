@@ -22,7 +22,7 @@
 
 use std::fmt;
 
-use crate::indexing::{manifest::Manifest, statistics::StatisticEvent};
+use crate::indexing::manifest::Manifest;
 use anyhow::{self, Context};
 use quickwit_directories::write_hotcache;
 use quickwit_metastore::Metastore;
@@ -33,7 +33,7 @@ use std::time::Instant;
 use std::{path::PathBuf, usize};
 use tantivy::Directory;
 use tantivy::{directory::MmapDirectory, merge_policy::NoMergePolicy, schema::Schema, Document};
-use tokio::{fs, sync::mpsc::Sender};
+use tokio::fs;
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -164,67 +164,24 @@ impl Split {
     }
 
     /// Stage a split in the metastore.
-    pub async fn stage(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<String> {
-        let stage_result = self
-            .metastore
+    pub async fn stage(&self) -> anyhow::Result<String> {
+        self.metastore
             .stage_split(&self.index_id, self.metadata.clone())
-            .await;
-
-        statistic_sender
-            .send(StatisticEvent::SplitStage {
-                id: self.id.to_string(),
-                error: stage_result.is_err(),
-            })
             .await?;
-        //TODO: Take care of error when create index command is done
-        //stage_result.map_err(|err| err.into())
         Ok(self.id.to_string())
     }
 
     /// Upload all split artifacts using the storage.
-    pub async fn upload(
-        &self,
-        statistic_sender: Sender<StatisticEvent>,
-    ) -> anyhow::Result<Manifest> {
-        let upload_result = put_to_storage(&*self.storage, self).await;
-        match upload_result {
-            Ok(manifest) => {
-                statistic_sender
-                    .send(StatisticEvent::SplitUpload {
-                        uri: self.id.to_string(),
-                        upload_size: manifest.split_size_in_bytes as usize,
-                        error: false,
-                    })
-                    .await?;
-                Ok(manifest)
-            }
-            Err(err) => {
-                statistic_sender
-                    .send(StatisticEvent::SplitUpload {
-                        uri: self.id.to_string(),
-                        upload_size: 0,
-                        error: true,
-                    })
-                    .await?;
-                Err(err)
-            }
-        }
+    pub async fn upload(&self) -> anyhow::Result<Manifest> {
+        let manifest = put_to_storage(&*self.storage, self).await?;
+        Ok(manifest)
     }
 
     /// Publish the split in the metastore.
-    pub async fn publish(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<()> {
-        let publish_result = self
-            .metastore
-            .publish_splits(&self.index_uri, vec![&self.id.to_string()])
-            .await;
-        statistic_sender
-            .send(StatisticEvent::SplitPublish {
-                uri: self.id.to_string(),
-                error: publish_result.is_err(),
-            })
+    pub async fn publish(&self) -> anyhow::Result<()> {
+        self.metastore
+            .publish_split(&self.index_uri, &self.id.to_string())
             .await?;
-        //TODO: Take care of error when create index command is done
-        // publish_result.map_err(|err| err.into())
         Ok(())
     }
 }
@@ -314,7 +271,7 @@ mod tests {
     use super::*;
     use quickwit_metastore::MockMetastore;
     use std::str::FromStr;
-    use tokio::{sync::mpsc::channel, task};
+    use tokio::task;
 
     #[tokio::test]
     async fn test_split() -> anyhow::Result<()> {
@@ -374,11 +331,10 @@ mod tests {
         let merge_result = split.merge_all_segments().await;
         assert_eq!(merge_result.is_ok(), true);
 
-        let (statistic_sender, _statistic_receiver) = channel::<StatisticEvent>(20);
         task::spawn(async move {
-            split.stage(statistic_sender.clone()).await?;
-            split.upload(statistic_sender.clone()).await?;
-            split.publish(statistic_sender).await
+            split.stage().await?;
+            split.upload().await?;
+            split.publish().await
         })
         .await??;
 
