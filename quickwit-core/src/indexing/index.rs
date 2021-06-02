@@ -33,8 +33,9 @@ use tracing::warn;
 use crate::index::garbage_collect;
 use crate::indexing::document_retriever::DocumentSource;
 use crate::indexing::split_finalizer::finalize_split;
-use crate::indexing::statistics::StatisticsCollector;
 use crate::indexing::{document_indexer::index_documents, split::Split};
+
+use super::IndexingStatistics;
 
 const SPLIT_CHANNEL_SIZE: usize = 30;
 
@@ -57,6 +58,7 @@ pub async fn index_data(
     metastore_uri: &str,
     index_id: &str,
     params: IndexDataParams,
+    statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
     let index_uri = params.index_uri.to_string_lossy().to_string();
     let metastore = MetastoreUriResolver::default()
@@ -79,7 +81,6 @@ pub async fn index_data(
     }
 
     let document_retriever = Box::new(DocumentSource::create(&params.input_uri).await?);
-    let (statistic_collector, statistic_sender) = StatisticsCollector::start_collection();
     let (split_sender, split_receiver) = channel::<Split>(SPLIT_CHANNEL_SIZE);
     try_join!(
         index_documents(
@@ -89,12 +90,11 @@ pub async fn index_data(
             storage_resolver,
             document_retriever,
             split_sender,
-            statistic_sender.clone(),
+            statistics.clone(),
         ),
-        finalize_split(split_receiver, statistic_sender.clone()),
+        finalize_split(split_receiver, statistics.clone()),
     )?;
 
-    statistic_collector.lock().await.display_report();
     Ok(())
 }
 

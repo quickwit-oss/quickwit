@@ -20,25 +20,32 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::counter::AtomicCounter;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
-/// A Struct that holds all statistical data about indexing
+/// Represent an atomic counter we can use to collect metrics.
+/// The underlying atomic type uses [`Ordering::Relaxed`] ordering
 #[derive(Debug, Default)]
-pub struct IndexingStatistics {
-    /// Number of document processed
-    pub num_docs: AtomicCounter,
-    /// Number of document parse error
-    pub num_parse_errors: AtomicCounter,
-    /// Number of created split
-    pub num_local_splits: AtomicCounter,
-    /// Number of staged splits
-    pub num_staged_splits: AtomicCounter,
-    /// Number of uploaded splits
-    pub num_uploaded_splits: AtomicCounter,
-    ///Number of published splits
-    pub num_published_splits: AtomicCounter,
-    /// Size in byte of document processed
-    pub total_bytes_processed: AtomicCounter,
-    /// Size in bytes of resulting split
-    pub total_size_splits: AtomicCounter,
+pub struct AtomicCounter(AtomicUsize);
+
+impl AtomicCounter {
+    /// Increment the underlying value.
+    pub fn inc(&self) -> usize {
+        self.add(1)
+    }
+
+    /// Add amount to the underlying value
+    pub fn add(&self, amount: usize) -> usize {
+        self.0.fetch_add(amount, Ordering::Relaxed)
+    }
+
+    /// Get the underlying value
+    pub fn get(&self) -> usize {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    /// Reset the underlying value to zero.
+    pub fn reset(&self) -> usize {
+        self.0.swap(0, Ordering::Relaxed)
+    }
 }

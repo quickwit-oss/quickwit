@@ -29,3 +29,4 @@ mod split_finalizer;
 mod statistics;
 
 pub use index::{index_data, IndexDataParams};
+pub use statistics::IndexingStatistics;
