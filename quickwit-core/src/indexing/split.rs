@@ -215,7 +215,7 @@ impl Split {
     pub async fn publish(&self, statistic_sender: Sender<StatisticEvent>) -> anyhow::Result<()> {
         let publish_result = self
             .metastore
-            .publish_split(&self.index_uri, &self.id.to_string())
+            .publish_splits(&self.index_uri, vec![&self.id.to_string()])
             .await;
         statistic_sender
             .send(StatisticEvent::SplitPublish {
@@ -339,7 +339,7 @@ mod tests {
             },
         );
         mock_metastore
-            .expect_publish_split()
+            .expect_publish_splits()
             .times(1)
             .returning(|_uri, _id| Ok(()));
 

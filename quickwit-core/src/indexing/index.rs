@@ -85,13 +85,13 @@ pub async fn index_data(
         index_documents(
             index_id.to_owned(),
             &params,
-            metastore,
+            metastore.clone(),
             storage_resolver,
             document_retriever,
             split_sender,
             statistic_sender.clone(),
         ),
-        finalize_split(split_receiver, statistic_sender.clone()),
+        finalize_split(split_receiver, metastore, statistic_sender.clone()),
     )?;
 
     statistic_collector.lock().await.display_report();

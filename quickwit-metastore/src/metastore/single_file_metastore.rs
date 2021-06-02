@@ -239,30 +239,42 @@ impl Metastore for SingleFileMetastore {
         Ok(())
     }
 
-    async fn publish_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()> {
+    async fn publish_splits<'a>(
+        &self,
+        index_id: &str,
+        split_ids: Vec<&'a str>,
+    ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
 
-        // Check for the existence of split.
-        let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
-            MetastoreErrorKind::SplitDoesNotExist
-                .with_error(anyhow::anyhow!("Split does not exist: {:?}", split_id))
-        })?;
+        let mut updatable_split_ids = vec![];
+        for split_id in split_ids {
+            // Check for the existence of split.
+            let split_metadata = metadata_set.splits.get(split_id).ok_or_else(|| {
+                MetastoreErrorKind::SplitDoesNotExist
+                    .with_error(anyhow::anyhow!("Split does not exist: {:?}", split_id))
+            })?;
 
-        // Check the split state.
-        match split_metadata.split_state {
-            SplitState::Published => {
-                // If the split is already published, this API call returns a success.
-                return Ok(());
-            }
-            SplitState::Staged => {
-                // Update the split state to `Published`.
-                split_metadata.split_state = SplitState::Published;
-            }
-            _ => {
-                return Err(MetastoreErrorKind::SplitIsNotStaged
-                    .with_error(anyhow::anyhow!("Split ID is not staged: {:?}", split_id)));
+            match split_metadata.split_state {
+                SplitState::Published => {
+                    // Split is already published. This is fine, we just skip it.
+                    continue;
+                }
+                SplitState::Staged => {
+                    // The split state needs to be updated.
+                    updatable_split_ids.push(split_id);
+                }
+                _ => {
+                    return Err(MetastoreErrorKind::SplitIsNotStaged
+                        .with_error(anyhow::anyhow!("Split ID is not staged: {:?}", split_id)));
+                }
             }
         }
+
+        // Update the splits state to `Published`.
+        updatable_split_ids.into_iter().for_each(|split_id| {
+            let split_metadata = metadata_set.splits.get_mut(split_id).unwrap();
+            split_metadata.split_state = SplitState::Published;
+        });
 
         self.put_index(metadata_set).await?;
 
@@ -658,14 +670,26 @@ mod tests {
     async fn test_single_file_metastore_publish_split() {
         let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
-        let split_id = "one";
-        let split_metadata = SplitMetadata {
-            split_id: split_id.to_string(),
+        let split_id_one = "one";
+        let split_id_two = "two";
+        let split_metadata_one = SplitMetadata {
+            split_id: split_id_one.to_string(),
             split_state: SplitState::Staged,
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(Range { start: 0, end: 100 }),
             generation: 3,
+        };
+        let split_metadata_two = SplitMetadata {
+            split_id: split_id_two.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 5,
+            size_in_bytes: 6,
+            time_range: Some(Range {
+                start: 30,
+                end: 100,
+            }),
+            generation: 2,
         };
 
         {
@@ -690,12 +714,15 @@ mod tests {
 
             // stage split
             metastore
-                .stage_split(index_id, split_metadata.clone())
+                .stage_split(index_id, split_metadata_one.clone())
                 .await
                 .unwrap();
 
             // publish split
-            metastore.publish_split(index_id, split_id).await.unwrap();
+            metastore
+                .publish_splits(index_id, vec![split_id_one])
+                .await
+                .unwrap();
         }
 
         {
@@ -705,7 +732,7 @@ mod tests {
                     .get(index_id)
                     .unwrap()
                     .splits
-                    .get(split_id)
+                    .get(split_id_one)
                     .unwrap()
                     .split_state,
                 SplitState::Published
@@ -714,16 +741,18 @@ mod tests {
 
         {
             // publish published split
-            metastore.publish_split(index_id, split_id).await.unwrap();
+            metastore
+                .publish_splits(index_id, vec![split_id_one])
+                .await
+                .unwrap();
 
             // publish non-staged split
-            let split_id = "one";
             metastore
-                .mark_split_as_deleted(index_id, split_id) // mark as deleted
+                .mark_split_as_deleted(index_id, split_id_one) // mark as deleted
                 .await
                 .unwrap();
             let result = metastore
-                .publish_split(index_id, split_id) // publish
+                .publish_splits(index_id, vec![split_id_one]) // publish
                 .await
                 .unwrap_err()
                 .kind();
@@ -732,7 +761,7 @@ mod tests {
 
             // publish non-existent index
             let result = metastore
-                .publish_split("non-existent-index", split_id)
+                .publish_splits("non-existent-index", vec![split_id_one])
                 .await
                 .unwrap_err()
                 .kind();
@@ -741,12 +770,65 @@ mod tests {
 
             // publish non-existent split
             let result = metastore
-                .publish_split(index_id, "non-existent-split")
+                .publish_splits(index_id, vec!["non-existent-split"])
                 .await
                 .unwrap_err()
                 .kind();
             let expected = MetastoreErrorKind::SplitDoesNotExist;
             assert_eq!(result, expected);
+        }
+
+        {
+            // publish one non-staged split and one non-existent split
+            let result = metastore
+                .publish_splits(index_id, vec![split_id_one, split_id_two]) // publish
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::SplitIsNotStaged;
+            assert_eq!(result, expected);
+
+            // publish two non-existent splits
+            metastore
+                .delete_split(index_id, split_id_one)
+                .await
+                .unwrap();
+            let result = metastore
+                .publish_splits(index_id, vec![split_id_one, split_id_two]) // publish
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::SplitDoesNotExist;
+            assert_eq!(result, expected);
+
+            // publish one staged split and one non-exitent split
+            metastore
+                .stage_split(index_id, split_metadata_one.clone())
+                .await
+                .unwrap();
+            let result = metastore
+                .publish_splits(index_id, vec![split_id_one, split_id_two]) // publish
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::SplitDoesNotExist;
+            assert_eq!(result, expected);
+
+            // publish two staged splits
+            metastore
+                .stage_split(index_id, split_metadata_two.clone())
+                .await
+                .unwrap();
+            metastore
+                .publish_splits(index_id, vec![split_id_one, split_id_two])
+                .await
+                .unwrap();
+
+            //publishe two published splits
+            metastore
+                .publish_splits(index_id, vec![split_id_one, split_id_two])
+                .await
+                .unwrap();
         }
     }
 
@@ -1299,7 +1381,10 @@ mod tests {
                 .unwrap();
 
             // publish split
-            metastore.publish_split(index_id, split_id).await.unwrap();
+            metastore
+                .publish_splits(index_id, vec![split_id])
+                .await
+                .unwrap();
 
             // mark split as deleted
             metastore
@@ -1390,7 +1475,10 @@ mod tests {
                 .unwrap();
 
             // publish split
-            metastore.publish_split(index_id, split_id).await.unwrap();
+            metastore
+                .publish_splits(index_id, vec![split_id])
+                .await
+                .unwrap();
 
             // delete split (published split)
             let result = metastore
@@ -1486,7 +1574,7 @@ mod tests {
             .unwrap();
 
         // publish split fails
-        let err = metastore.publish_split(index_id, split_id).await;
+        let err = metastore.publish_splits(index_id, vec![split_id]).await;
         assert!(err.is_err());
 
         // empty
