@@ -26,7 +26,6 @@ use quickwit_storage::StorageUriResolver;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::metastore::single_file_metastore::SingleFileMetastoreFactory;
 use crate::MetastoreErrorKind;
 use crate::SingleFileMetastore;
 use crate::{Metastore, MetastoreResolverError};
@@ -45,15 +44,15 @@ pub trait MetastoreFactory: Send + Sync + 'static {
 /// based on its protocol.
 pub struct MetastoreUriResolver {
     per_protocol_resolver: HashMap<String, Arc<dyn MetastoreFactory>>,
+    default_storage_resolver: StorageUriResolver,
 }
 
 impl Default for MetastoreUriResolver {
     fn default() -> Self {
-        let mut resolver = MetastoreUriResolver {
+        MetastoreUriResolver {
             per_protocol_resolver: Default::default(),
-        };
-        resolver.register(SingleFileMetastoreFactory::default());
-        resolver
+            default_storage_resolver: Default::default(),
+        }
     }
 }
 
@@ -83,7 +82,8 @@ impl MetastoreUriResolver {
             return Ok(metastore);
         }
 
-        let storage = StorageUriResolver::default()
+        let storage = self
+            .default_storage_resolver
             .resolve(&uri)
             .map_err(|err| match err {
                 StorageResolverError::InvalidUri(err_msg) => {
