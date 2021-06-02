@@ -24,6 +24,7 @@ use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use quickwit_core::indexing::IndexingStatistics;
+use quickwit_doc_mapping::build_doc_mapper;
 use quickwit_metastore::IndexMetadata;
 use std::path::PathBuf;
 use std::sync::Arc;
