@@ -30,7 +30,7 @@ use crate::indexing::document_retriever::DocumentRetriever;
 use crate::indexing::split::Split;
 
 use super::IndexDataParams;
-use super::INDEXING_STATISTICS;
+use super::IndexingStatistics;
 
 /// Receives json documents, parses and adds them to a `tantivy::Index`
 pub async fn index_documents(
@@ -40,6 +40,7 @@ pub async fn index_documents(
     storage_resolver: Arc<StorageUriResolver>,
     mut document_retriever: Box<dyn DocumentRetriever>,
     split_sender: Sender<Split>,
+    statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
     //TODO replace with  DocMapper::schema()
     let schema = Schema::builder().build();
@@ -61,16 +62,16 @@ pub async fn index_documents(
             Ok(doc) => {
                 current_split.metadata.size_in_bytes += doc_size;
 
-                INDEXING_STATISTICS.num_docs.inc();
-                INDEXING_STATISTICS.total_bytes_processed.add(doc_size);
+                statistics.num_docs.inc();
+                statistics.total_bytes_processed.add(doc_size);
                 doc
             }
             Err(_) => {
                 current_split.num_parsing_errors += 1;
 
-                INDEXING_STATISTICS.num_docs.inc();
-                INDEXING_STATISTICS.num_parse_errors.inc();
-                INDEXING_STATISTICS.total_bytes_processed.add(doc_size);
+                statistics.num_docs.inc();
+                statistics.num_parse_errors.inc();
+                statistics.total_bytes_processed.add(doc_size);
                 continue;
             }
         };
@@ -121,8 +122,7 @@ mod tests {
     use std::{path::PathBuf, str::FromStr, sync::Arc};
 
     use crate::indexing::{
-        document_retriever::StringDocumentSource, split::Split, IndexDataParams,
-        INDEXING_STATISTICS,
+        document_retriever::StringDocumentSource, split::Split, IndexDataParams, IndexingStatistics,
     };
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::StorageUriResolver;
@@ -169,6 +169,7 @@ mod tests {
         let document_retriever = Box::new(StringDocumentSource::new(input));
         let (split_sender, _split_receiver) = channel::<Split>(20);
 
+        let statistics = Arc::new(IndexingStatistics::default());
         index_documents(
             index_id.to_owned(),
             &params,
@@ -176,11 +177,12 @@ mod tests {
             storage_resolver,
             document_retriever,
             split_sender,
+            statistics.clone(),
         )
         .await?;
 
-        assert_eq!(INDEXING_STATISTICS.num_docs.get(), NUM_DOCS);
-        assert_eq!(INDEXING_STATISTICS.total_bytes_processed.get(), total_bytes);
+        assert_eq!(statistics.num_docs.get(), NUM_DOCS);
+        assert_eq!(statistics.total_bytes_processed.get(), total_bytes);
         Ok(())
     }
 }

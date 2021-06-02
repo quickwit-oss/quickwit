@@ -23,11 +23,22 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
+use tokio::try_join;
+use quickwit_core::indexing::IndexingStatistics;
 use quickwit_doc_mapping::DocMapperType;
 use quickwit_metastore::IndexMetadata;
 use std::convert::TryFrom;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::debug;
+
+use crossterm::terminal::{Clear, ClearType};
+use crossterm::{cursor, QueueableCommand};
+use std::io::{stdout, Write};
+use std::time::{Duration, Instant};
+use tokio::sync::watch;
+use tokio::task;
+use tokio::time::timeout;
 
 use quickwit_core::index::{create_index, delete_index};
 use quickwit_core::indexing::{index_data, IndexDataParams};
@@ -251,7 +262,18 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
 
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    index_data(metastore_uri, index_id, params).await?;
+
+    let statistics = Arc::new(IndexingStatistics::default());
+    let (task_completed_sender, task_completed_receiver) = watch::channel::<bool>(false);
+    let reporting_future = start_statistics_reporting(statistics.clone(), task_completed_receiver);
+    let index_future = async move {
+        index_data(metastore_uri, index_id, params, statistics.clone()).await?;
+        task_completed_sender.send(true)?;
+        anyhow::Result::<()>::Ok(())
+    };
+    try_join!(index_future, reporting_future)?;
+
+    println!("You can now query your index with `quickwit search --index-path {} --query \"barack obama\"`" , args.index_uri);
     Ok(())
 }
 
@@ -276,6 +298,72 @@ async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         "delete-index"
     );
     Ok(())
+}
+
+/// Starts a tokio task that displays the indexing statistics
+/// every once in awhile.
+pub async fn start_statistics_reporting(
+    statistics: Arc<IndexingStatistics>,
+    task_completed_receiver: watch::Receiver<bool>,
+) -> anyhow::Result<()> {
+    task::spawn(async move {
+        let mut stdout_handle = stdout();
+        let start_time = Instant::now();
+        loop {
+            // Try to receive with a timeout of 1 second.
+            // 1 second is also the frequency at which we update statistic in the console
+            let mut receiver = task_completed_receiver.clone();
+            let is_done = timeout(Duration::from_secs(1), receiver.changed())
+                .await
+                .is_ok();
+
+            let elapsed_secs = start_time.elapsed().as_secs();
+            let throughput_mb_s = statistics.total_bytes_processed.get() as f64
+                / 1_000_000f64
+                / elapsed_secs.max(1) as f64;
+            let report_line = format!(
+                "Documents: {} Errors: {}  Splits: {} Dataset Size: {}MB Throughput: {:.5$}MB/s",
+                statistics.num_docs.get(),
+                statistics.num_parse_errors.get(),
+                statistics.num_local_splits.get(),
+                statistics.total_bytes_processed.get() / 1_000_000,
+                throughput_mb_s,
+                2
+            );
+
+            stdout_handle.queue(cursor::SavePosition)?;
+            stdout_handle.queue(Clear(ClearType::CurrentLine))?;
+            stdout_handle.write_all(report_line.as_bytes())?;
+            stdout_handle.write_all("\nPlease hold on.".as_bytes())?;
+            stdout_handle.queue(cursor::RestorePosition)?;
+            stdout_handle.flush()?;
+
+            if is_done {
+                break;
+            }
+        }
+
+        //display end of task report
+        println!();
+        let elapsed_secs = start_time.elapsed().as_secs();
+        if elapsed_secs >= 60 {
+            println!(
+                "Indexed {} documents in {:.2$}min",
+                statistics.num_docs.get(),
+                elapsed_secs.max(1) as f64 / 60f64,
+                2
+            );
+        } else {
+            println!(
+                "Indexed {} documents in {}s",
+                statistics.num_docs.get(),
+                elapsed_secs.max(1)
+            );
+        }
+
+        anyhow::Result::<()>::Ok(())
+    })
+    .await?
 }
 
 #[tracing::instrument]

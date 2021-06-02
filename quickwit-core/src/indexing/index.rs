@@ -28,14 +28,14 @@ use quickwit_metastore::Metastore;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
 use quickwit_storage::StorageUriResolver;
 use tokio::sync::mpsc::channel;
-use tokio::sync::watch;
 use tracing::warn;
 
 use crate::index::garbage_collect;
 use crate::indexing::document_retriever::DocumentSource;
 use crate::indexing::split_finalizer::finalize_split;
-use crate::indexing::statistics::start_statistics_reporting;
 use crate::indexing::{document_indexer::index_documents, split::Split};
+
+use super::IndexingStatistics;
 
 const SPLIT_CHANNEL_SIZE: usize = 30;
 
@@ -58,6 +58,7 @@ pub async fn index_data(
     metastore_uri: &str,
     index_id: &str,
     params: IndexDataParams,
+    statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
     let index_uri = params.index_uri.to_string_lossy().to_string();
     let metastore = MetastoreUriResolver::default()
@@ -81,7 +82,6 @@ pub async fn index_data(
 
     let document_retriever = Box::new(DocumentSource::create(&params.input_uri).await?);
     let (split_sender, split_receiver) = channel::<Split>(SPLIT_CHANNEL_SIZE);
-    let (task_completed_sender, task_completed_receiver) = watch::channel::<bool>(false);
     try_join!(
         index_documents(
             index_id.to_owned(),
@@ -90,12 +90,11 @@ pub async fn index_data(
             storage_resolver,
             document_retriever,
             split_sender,
+            statistics.clone(),
         ),
-        finalize_split(split_receiver, task_completed_sender),
-        start_statistics_reporting(task_completed_receiver),
+        finalize_split(split_receiver, statistics.clone()),
     )?;
 
-    println!("You can now query your index with `quickwit search --index-path {} --query \"barack obama\"`" , params.index_uri.display());
     Ok(())
 }
 

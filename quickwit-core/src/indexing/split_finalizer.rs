@@ -20,14 +20,16 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use std::sync::Arc;
+
 use crate::indexing::split::Split;
-use crate::indexing::INDEXING_STATISTICS;
 use futures::StreamExt;
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::watch::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug;
 use tracing::warn;
+
+use super::IndexingStatistics;
 
 const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 
@@ -40,19 +42,28 @@ const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 ///
 pub async fn finalize_split(
     split_receiver: Receiver<Split>,
-    task_completed_sender: Sender<bool>,
+    statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
     let stream = ReceiverStream::new(split_receiver);
     let mut finalize_stream = stream
         .map(|mut split| {
+            let moved_statistics = statistics.clone();
             async move {
                 debug!(split_id =% split.id, num_docs = split.metadata.num_records,  size_in_bytes = split.metadata.size_in_bytes, parse_errors = split.num_parsing_errors, "Split created");
-                INDEXING_STATISTICS.num_local_splits.inc();
+                moved_statistics.num_local_splits.inc();
 
                 split.commit().await?;
                 split.merge_all_segments().await?;
+
                 split.stage().await?;
-                split.upload().await?;
+                moved_statistics.num_staged_splits.inc();
+
+                let manifest = split.upload().await?;
+                moved_statistics.num_uploaded_splits.inc();
+                moved_statistics
+                    .total_size_splits
+                    .add(manifest.split_size_in_bytes as usize);
+
                 anyhow::Result::<Split>::Ok(split)
             }
         })
@@ -76,9 +87,13 @@ pub async fn finalize_split(
     // TODO: we want to atomically publish all splits.
     // See [https://github.com/quickwit-inc/quickwit/issues/71]
     let mut publish_stream = tokio_stream::iter(splits)
-        .map(|split| async move {
-            split.publish().await?;
-            anyhow::Result::<()>::Ok(())
+        .map(|split| {
+            let moved_statistics = statistics.clone();
+            async move {
+                split.publish().await?;
+                moved_statistics.num_published_splits.inc();
+                anyhow::Result::<()>::Ok(())
+            }
         })
         .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
 
@@ -92,9 +107,6 @@ pub async fn finalize_split(
     if publish_errors > 0 {
         warn!("Some splits were not published.");
     }
-
-    // notify everyone that the indexing is completed
-    task_completed_sender.send(true)?;
 
     Ok(())
 }
