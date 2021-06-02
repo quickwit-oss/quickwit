@@ -20,14 +20,32 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#![warn(missing_docs)]
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
-//! Doc mapping defines the way to convert a json like documents to
-//! a document indexable by tantivy engine, aka tantivy::Document.
+/// Represent an atomic counter we can use to collect metrics.
+/// The underlying atomic type uses [`Ordering::Relaxed`] ordering
+#[derive(Debug, Default)]
+pub struct AtomicCounter(AtomicUsize);
 
-mod all_flatten_mapper;
-mod default_mapper;
-mod mapper;
-mod wikipedia_mapper;
+impl AtomicCounter {
+    /// Increment the underlying value.
+    pub fn inc(&self) -> usize {
+        self.add(1)
+    }
 
-pub use self::mapper::{build_doc_mapper, DocMapper, DocMapperType};
+    /// Add amount to the underlying value
+    pub fn add(&self, amount: usize) -> usize {
+        self.0.fetch_add(amount, Ordering::Relaxed)
+    }
+
+    /// Get the underlying value
+    pub fn get(&self) -> usize {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    /// Reset the underlying value to zero.
+    pub fn reset(&self) -> usize {
+        self.0.swap(0, Ordering::Relaxed)
+    }
+}

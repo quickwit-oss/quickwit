@@ -20,14 +20,13 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#![warn(missing_docs)]
+mod document_indexer;
+mod document_retriever;
+mod index;
+mod manifest;
+mod split;
+mod split_finalizer;
+mod statistics;
 
-//! Doc mapping defines the way to convert a json like documents to
-//! a document indexable by tantivy engine, aka tantivy::Document.
-
-mod all_flatten_mapper;
-mod default_mapper;
-mod mapper;
-mod wikipedia_mapper;
-
-pub use self::mapper::{build_doc_mapper, DocMapper, DocMapperType};
+pub use index::{index_data, IndexDataParams};
+pub use statistics::IndexingStatistics;

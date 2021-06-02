@@ -20,14 +20,22 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/*!
+This crate contains all of the building pieces that make quickwit's IO possible.
+
+- The `StorageDirectory` justs wraps a `Storage` trait to make it compatible with tantivy's Directory API.
+- The `HotDirectory` wraps another directory with a static cache.
+- The `CachingDirectory` wraps a Directory with a dynamic cache.
+- The `DebugDirectory` acts as a proxy to another directory to instrument it and record all of its IO.
+*/
 #![warn(missing_docs)]
 
-//! Doc mapping defines the way to convert a json like documents to
-//! a document indexable by tantivy engine, aka tantivy::Document.
+mod caching_directory;
+mod debug_proxy_directory;
+mod hot_directory;
+mod storage_directory;
 
-mod all_flatten_mapper;
-mod default_mapper;
-mod mapper;
-mod wikipedia_mapper;
-
-pub use self::mapper::{build_doc_mapper, DocMapper, DocMapperType};
+pub use self::caching_directory::CachingDirectory;
+pub use self::debug_proxy_directory::{DebugProxyDirectory, ReadOperation};
+pub use self::hot_directory::{write_hotcache, HotDirectory};
+pub use self::storage_directory::StorageDirectory;

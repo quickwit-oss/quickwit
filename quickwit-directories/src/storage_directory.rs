@@ -85,6 +85,15 @@ impl FileHandle for StorageDirectoryFileHandle {
     }
 }
 
+/// Directory backed a quickwit `Storage` abstraction.
+///
+/// It should not be used in a context outside quickwit, as it contains
+/// several pitfalls:
+/// Fetching data synchronously panics.
+/// Writing data panics.
+///
+/// This directory is fetch slices of data to a possibly distant storage
+/// everytime `read_bytes` is called.
 #[derive(Clone)]
 pub struct StorageDirectory {
     storage: Arc<dyn Storage>,
@@ -97,6 +106,7 @@ impl Debug for StorageDirectory {
 }
 
 impl StorageDirectory {
+    /// Creates a new StorageDirectory, backed by the given `storage`.
     pub fn new(storage: Arc<dyn Storage>) -> StorageDirectory {
         StorageDirectory { storage }
     }
@@ -141,7 +151,7 @@ impl Directory for StorageDirectory {
     }
 
     fn delete(&self, path: &std::path::Path) -> Result<(), DeleteError> {
-        Err(DeleteError::IOError {
+        Err(DeleteError::IoError {
             io_error: unsupported_operation(path),
             filepath: path.to_path_buf(),
         })

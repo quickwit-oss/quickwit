@@ -20,36 +20,48 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use quickwit_doc_mapping::DocMapping;
-use quickwit_metastore::{MetastoreUriResolver, SplitState};
+use std::sync::Arc;
 
-type IndexUri = String;
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver, SplitState};
+use quickwit_storage::Storage;
 
 // anyhow errors are fine for now but we'll want to move to a proper error type eventually.
-pub async fn create_index(index_uri: IndexUri, doc_mapping: DocMapping) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    metastore.create_index(index_uri, doc_mapping).await?;
+pub async fn create_index(
+    metastore_uri: &str,
+    index_metadata: IndexMetadata,
+) -> anyhow::Result<()> {
+    let metastore = MetastoreUriResolver::default()
+        .resolve(&metastore_uri)
+        .await?;
+    metastore.create_index(index_metadata).await?;
     Ok(())
 }
 
 // TODO
-pub async fn index_data(index_uri: IndexUri) -> anyhow::Result<()> {
-    let _metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    Ok(())
-}
-
-// TODO
-pub async fn search_index(index_uri: IndexUri) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
+pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
+    let metastore = MetastoreUriResolver::default()
+        .resolve(&metastore_uri)
+        .await?;
     let _splits = metastore
-        .list_splits(index_uri, SplitState::Published, None)
+        .list_splits(index_id, SplitState::Published, None)
         .await?;
     Ok(())
 }
 
-pub async fn delete_index(index_uri: IndexUri) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default().resolve(&index_uri)?;
-    metastore.delete_index(index_uri).await?;
+pub async fn delete_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
+    let metastore = MetastoreUriResolver::default()
+        .resolve(&metastore_uri)
+        .await?;
+    metastore.delete_index(index_id).await?;
+    Ok(())
+}
+
+// TODO
+pub async fn garbage_collect(
+    _index_uri: &str,
+    _storage: Arc<dyn Storage>,
+    _metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<()> {
     Ok(())
 }
 

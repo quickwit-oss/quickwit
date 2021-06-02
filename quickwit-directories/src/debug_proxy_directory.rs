@@ -251,10 +251,6 @@ impl DebugProxyDirectory<StorageDirectory> {
         self.register_async(read_operation).await;
         Ok(payload)
     }
-
-    pub fn underlying(&self) -> &StorageDirectory {
-        &self.underlying
-    }
 }
 
 #[cfg(test)]
@@ -262,14 +258,14 @@ mod tests {
     use super::DebugProxyDirectory;
     use std::io::Write;
     use std::path::Path;
-    use tantivy::directory::{RAMDirectory, TerminatingWrite};
+    use tantivy::directory::{RamDirectory, TerminatingWrite};
     use tantivy::Directory;
 
     const TEST_PATH: &str = "test.file";
     const TEST_PAYLOAD: &[u8] = b"hello happy tax payer";
 
-    fn make_test_directory() -> tantivy::Result<RAMDirectory> {
-        let ram_directory = RAMDirectory::create();
+    fn make_test_directory() -> tantivy::Result<RamDirectory> {
+        let ram_directory = RamDirectory::create();
         let mut wrt = ram_directory.open_write(Path::new(TEST_PATH))?;
         wrt.write_all(TEST_PAYLOAD)?;
         wrt.flush()?;

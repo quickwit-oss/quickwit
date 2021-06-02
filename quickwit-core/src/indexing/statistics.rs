@@ -20,22 +20,25 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/*!
-This crate contains all of the building pieces that make quickwit's IO possible.
+use crate::counter::AtomicCounter;
 
-- The `StorageDirectory` justs wraps a `Storage` trait to make it compatible with tantivy's Directory API.
-- The `HotDirectory` wraps another directory with a static cache.
-- The `CachingDirectory` wraps a Directory with a dynamic cache.
-- The `DebugDirectory` acts as a proxy to another directory to instrument it and record all of its IO.
-*/
-#![allow(missing_docs)]
-
-mod caching_directory;
-mod debug_proxy_directory;
-mod hot_directory;
-mod storage_directory;
-
-pub use self::caching_directory::{Cache, CachingDirectory};
-pub use self::debug_proxy_directory::{DebugProxyDirectory, ReadOperation};
-pub use self::hot_directory::{write_hotcache, HotDirectory};
-pub use self::storage_directory::StorageDirectory;
+/// A Struct that holds all statistical data about indexing
+#[derive(Debug, Default)]
+pub struct IndexingStatistics {
+    /// Number of document processed
+    pub num_docs: AtomicCounter,
+    /// Number of document parse error
+    pub num_parse_errors: AtomicCounter,
+    /// Number of created split
+    pub num_local_splits: AtomicCounter,
+    /// Number of staged splits
+    pub num_staged_splits: AtomicCounter,
+    /// Number of uploaded splits
+    pub num_uploaded_splits: AtomicCounter,
+    ///Number of published splits
+    pub num_published_splits: AtomicCounter,
+    /// Size in byte of document processed
+    pub total_bytes_processed: AtomicCounter,
+    /// Size in bytes of resulting split
+    pub total_size_splits: AtomicCounter,
+}

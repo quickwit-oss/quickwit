@@ -21,4 +21,6 @@
 */
 #![warn(missing_docs)]
 
+pub mod counter;
 pub mod index;
+pub mod indexing;
