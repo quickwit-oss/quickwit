@@ -23,13 +23,13 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
-use tokio::try_join;
 use quickwit_core::indexing::IndexingStatistics;
 use quickwit_doc_mapping::DocMapperType;
 use quickwit_metastore::IndexMetadata;
 use std::convert::TryFrom;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::try_join;
 use tracing::debug;
 
 use crossterm::terminal::{Clear, ClearType};
