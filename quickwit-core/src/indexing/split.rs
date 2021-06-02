@@ -177,13 +177,6 @@ impl Split {
         Ok(manifest)
     }
 
-    // /// Publish the split in the metastore.
-    // pub async fn publish(&self) -> anyhow::Result<()> {
-    //     self.metastore
-    //         .publish_split(&self.index_uri, &self.id.to_string())
-    //         .await?;
-    //     Ok(())
-    // }
 }
 
 async fn put_to_storage(storage: &dyn Storage, split: &Split) -> anyhow::Result<Manifest> {
