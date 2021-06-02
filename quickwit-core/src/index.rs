@@ -25,7 +25,12 @@ use std::sync::Arc;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver, SplitState};
 use quickwit_storage::Storage;
 
-// anyhow errors are fine for now but we'll want to move to a proper error type eventually.
+/// Creates an index at `index-path` extracted from `metastore_uri`. The command fails if an index
+/// already exists at `index-path`.
+///
+/// * `metastore_uri` - The metastore Uri for accessing the metastore.
+/// * `index_metadata` - The metadata used to create the target index.
+///
 pub async fn create_index(
     metastore_uri: &str,
     index_metadata: IndexMetadata,
@@ -37,7 +42,13 @@ pub async fn create_index(
     Ok(())
 }
 
-// TODO
+/// Searches the index with `index_id` and returns the documents matching the query query.
+/// The offset of the first hit returned and the number of hits returned can be set with the `start-offset`
+/// and max-hits options.
+/// By default, the search fields  are those specified at index creation unless restricted to `target-fields`.
+///
+/// TODO: interface does not currently match the docs.
+///
 pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
     let metastore = MetastoreUriResolver::default()
         .resolve(&metastore_uri)
@@ -48,6 +59,13 @@ pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result
     Ok(())
 }
 
+/// Deletes the index specified with `index_id`.
+/// This is equivalent to running `rm -rf <index path>` for a local index or
+/// `aws s3 rm --recursive <index path>` for a remote Amazon S3 index.
+///
+/// * `metastore_uri` - The metastore Uri for accessing the metastore.
+/// * `index_id` - The target index Id.
+///
 pub async fn delete_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
     let metastore = MetastoreUriResolver::default()
         .resolve(&metastore_uri)
@@ -56,7 +74,13 @@ pub async fn delete_index(metastore_uri: &str, index_id: &str) -> anyhow::Result
     Ok(())
 }
 
-// TODO
+/// Removes all danglings files from an index specified at `index_uri`.
+/// It should leave the index  and its metastore in good state.
+///
+/// * `index_uri` - The target index uri.
+/// * `storage` - The storage object.
+/// * `metastore` - The metastore object.
+///
 pub async fn garbage_collect(
     _index_uri: &str,
     _storage: Arc<dyn Storage>,

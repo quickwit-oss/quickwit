@@ -43,17 +43,30 @@ const SPLIT_CHANNEL_SIZE: usize = 30;
 /// TODO: remove when there is a better structure
 #[derive(Debug, Clone)]
 pub struct IndexDataParams {
+    /// Index uri.
     pub index_uri: PathBuf,
+    /// Input path from where to read new-line delimited json documents
     pub input_uri: Option<PathBuf>,
+    /// Tempory directory to use for indexing.
     pub temp_dir: PathBuf,
+    /// Number of thread to use for indexing.
     pub num_threads: usize,
+    /// Amount of memory shared among indexing threads.
     pub heap_size: u64,
+    /// Clear existing indexed data before indexing.
     pub overwrite: bool,
 }
 
-/// The entry point for the index command.
-/// It reads a new-line deleimited json documents, add them to the index while building
-/// and publishing splits metastore.
+/// Indexes a Newline Delimited JSON (NDJSON) dataset located at `params.index_uri` or read from stdin.
+/// The data is appended to the target index specified by `params.index_uri`.
+/// When `params.overwrite` is specified, the previously indexed data is cleared before proceeding.
+/// The indexing also takes an [`IndexingStatistics`] object for collecting various indexing metrics.
+///
+/// * `metastore_uri` - The metastore uri.
+/// * `index_id` - The target index Id.
+/// * `params` - The indexing parameters; see [`IndexDataParams`].
+/// * `statistics` - The statistic counter object; see [`IndexingStatistics`].
+///
 pub async fn index_data(
     metastore_uri: &str,
     index_id: &str,
@@ -98,10 +111,15 @@ pub async fn index_data(
     Ok(())
 }
 
-/// Clears the index by applying the following actions
-/// - mark all split as deleted
-/// - delete the artifacts of all splits marked as deleted using garbage collection
-/// - delete the splits from the metastore
+/// Clears the index by applying the following actions:
+/// - mark all split as deleted.
+/// - delete the files of all splits marked as deleted using garbage collection.
+/// - delete the splits from the metastore.
+///
+/// * `index_uri` - The target index Uri.
+/// * `index_id` - The target index Id.
+/// * `storage_resolver` - A storage resolver object to access the storage.
+/// * `metastore` - A emtastore object for interracting with the metastore.
 ///
 async fn reset_index(
     index_uri: &str,
