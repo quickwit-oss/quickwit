@@ -287,10 +287,6 @@ mod tests {
                 Ok(())
             },
         );
-        mock_metastore
-            .expect_publish_splits()
-            .times(0)
-            .returning(|_uri, _id| Ok(()));
 
         let metastore = Arc::new(mock_metastore);
         let split_result = Split::create(

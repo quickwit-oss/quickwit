@@ -246,10 +246,9 @@ impl Metastore for SingleFileMetastore {
     ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
 
-        let mut updatable_split_ids = vec![];
         for split_id in split_ids {
             // Check for the existence of split.
-            let split_metadata = metadata_set.splits.get(split_id).ok_or_else(|| {
+            let mut split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
                 MetastoreErrorKind::SplitDoesNotExist
                     .with_error(anyhow::anyhow!("Split does not exist: {:?}", split_id))
             })?;
@@ -261,7 +260,7 @@ impl Metastore for SingleFileMetastore {
                 }
                 SplitState::Staged => {
                     // The split state needs to be updated.
-                    updatable_split_ids.push(split_id);
+                    split_metadata.split_state = SplitState::Published;
                 }
                 _ => {
                     return Err(MetastoreErrorKind::SplitIsNotStaged
@@ -269,13 +268,6 @@ impl Metastore for SingleFileMetastore {
                 }
             }
         }
-
-        // Update the splits state to `Published`.
-        updatable_split_ids.into_iter().for_each(|split_id| {
-            if let Some(split_metadata) = metadata_set.splits.get_mut(split_id) {
-                split_metadata.split_state = SplitState::Published;
-            };
-        });
 
         self.put_index(metadata_set).await?;
 
