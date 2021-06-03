@@ -24,11 +24,6 @@ use dyn_clone::clone_trait_object;
 use dyn_clone::DynClone;
 use std::fmt::Debug;
 
-use crate::{
-    all_flatten_mapper::AllFlattenDocMapper,
-    default_mapper::{DefaultDocMapper, DocMapperConfig},
-    wikipedia_mapper::WikipediaMapper,
-};
 use tantivy::{
     query::Query,
     schema::{DocParsingError, Schema},
@@ -59,28 +54,6 @@ clone_trait_object!(DocMapper);
 // TODO: this is a placeholder, to be removed when it will be implementend in the search-api crate
 pub struct SearchRequest {}
 
-/// Build a doc mapper given the doc mapper type.
-pub fn build_doc_mapper(
-    mapper_type: &str,
-    _mapper_config: Option<&str>,
-) -> anyhow::Result<Box<dyn DocMapper>> {
-    match mapper_type.trim().to_lowercase().as_str() {
-        "default" => {
-            // TODO: build config from `mapper_config` json string
-            let config = DocMapperConfig::default();
-            DefaultDocMapper::new(config).map(|mapper| Box::new(mapper) as Box<dyn DocMapper>)
-        }
-        "all_flatten" => {
-            AllFlattenDocMapper::new().map(|mapper| Box::new(mapper) as Box<dyn DocMapper>)
-        }
-        "wikipedia" => WikipediaMapper::new().map(|mapper| Box::new(mapper) as Box<dyn DocMapper>),
-        _ => Err(anyhow::anyhow!(format!(
-            "Could not parse `{}` as valid doc mapper type.",
-            mapper_type
-        ))),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -96,12 +69,10 @@ mod tests {
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
         {
             "type": "default",
-            "attributes": {
-                "config": {
-                    "store_source": true,
-                    "ignore_unknown_fields": false,
-                    "properties": []
-                }
+            "config": {
+                "store_source": true,
+                "ignore_unknown_fields": false,
+                "properties": []
             }
         }"#;
 

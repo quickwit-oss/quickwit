@@ -30,6 +30,7 @@ use tantivy::{
     Document,
 };
 
+/// A default [`DocMapper`] implementation.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DefaultDocMapper {
     #[serde(skip_serializing, default = "DefaultDocMapper::default_schema")]
@@ -48,6 +49,7 @@ impl std::fmt::Debug for DefaultDocMapper {
 }
 
 impl DefaultDocMapper {
+    /// Create an instance of [`DefaultDocMapper`].
     pub fn new(config: DocMapperConfig) -> anyhow::Result<DefaultDocMapper> {
         Ok(DefaultDocMapper {
             schema: config.schema(),
@@ -153,10 +155,14 @@ impl DocMapper for DefaultDocMapper {
     }
 }
 
+/// A struct that represents the configuration for [`DefaultDocMapper`]
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct DocMapperConfig {
+    /// Store the source document.
     pub store_source: bool,
+    /// Ignore unknown fields without raising a document parsing error.
     pub ignore_unknown_fields: bool,
+    /// The list of field entry.
     pub properties: Vec<FieldEntry>,
 }
 

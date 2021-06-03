@@ -28,6 +28,7 @@ use tantivy::{
     Document,
 };
 
+/// A document mapper tailored for the wikipedia corpus.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct WikipediaMapper {
     #[serde(skip_serializing, default = "WikipediaMapper::default_schema")]
@@ -41,6 +42,7 @@ impl std::fmt::Debug for WikipediaMapper {
 }
 
 impl WikipediaMapper {
+    /// Create a new instance of wikipedia document mapper.
     pub fn new() -> anyhow::Result<Self> {
         let mut schema_builder = Schema::builder();
         let text_options = TextOptions::default()
