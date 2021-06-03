@@ -44,7 +44,7 @@ use tantivy::{
 /// - a way to build a tantivy::Query from a SearchRequest
 /// - a way to build a tantivy:Schema
 ///
-#[typetag::serde(tag = "type", content = "attributes")]
+#[typetag::serde(tag = "type")]
 pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the document built from a json string.
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError>;
