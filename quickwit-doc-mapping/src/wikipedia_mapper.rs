@@ -24,7 +24,7 @@ use crate::{mapper::SearchRequest, DocMapper};
 use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
-    schema::{DocParsingError, Schema, SchemaBuilder, TextFieldIndexing, TextOptions},
+    schema::{DocParsingError, Schema, TextFieldIndexing, TextOptions},
     Document,
 };
 
@@ -44,6 +44,12 @@ impl std::fmt::Debug for WikipediaMapper {
 impl WikipediaMapper {
     /// Create a new instance of wikipedia document mapper.
     pub fn new() -> anyhow::Result<Self> {
+        Ok(WikipediaMapper {
+            schema: Self::default_schema(),
+        })
+    }
+
+    fn default_schema() -> Schema {
         let mut schema_builder = Schema::builder();
         let text_options = TextOptions::default()
             .set_stored()
@@ -51,13 +57,7 @@ impl WikipediaMapper {
         schema_builder.add_text_field("title", text_options.clone());
         schema_builder.add_text_field("body", text_options.clone());
         schema_builder.add_text_field("url", text_options);
-        Ok(WikipediaMapper {
-            schema: schema_builder.build(),
-        })
-    }
-
-    fn default_schema() -> Schema {
-        SchemaBuilder::new().build()
+        schema_builder.build()
     }
 }
 

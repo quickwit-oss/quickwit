@@ -23,7 +23,6 @@
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 use std::sync::Arc;
-use tantivy::{schema::Schema, Document};
 use tokio::sync::mpsc::Sender;
 
 use crate::indexing::document_retriever::DocumentRetriever;
@@ -42,8 +41,8 @@ pub async fn index_documents(
     split_sender: Sender<Split>,
     statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
-    //TODO replace with  DocMapper::schema()
-    let schema = Schema::builder().build();
+    let index_metadata = metastore.index_metadata(&index_id).await?;
+    let schema = index_metadata.doc_mapper.schema();
 
     let mut current_split = Split::create(
         index_id.to_string(),
@@ -53,10 +52,9 @@ pub async fn index_documents(
         schema.clone(),
     )
     .await?;
-    while let Some(raw_doc) = document_retriever.next_document().await? {
-        let doc_size = raw_doc.as_bytes().len();
-        //TODO: replace with DocMapper::doc_from_json(raw_doc)
-        let parse_result = parse_document(raw_doc);
+    while let Some(raw_json_doc) = document_retriever.next_document().await? {
+        let doc_size = raw_json_doc.as_bytes().len();
+        let parse_result = index_metadata.doc_mapper.doc_from_json(&raw_json_doc);
 
         let doc = match parse_result {
             Ok(doc) => {
@@ -112,11 +110,6 @@ pub async fn index_documents(
     Ok(())
 }
 
-fn parse_document(_raw_doc: String) -> anyhow::Result<Document> {
-    //TODO: remove this when using docMapper
-    Ok(Document::default())
-}
-
 #[cfg(test)]
 mod tests {
     use std::{path::PathBuf, str::FromStr, sync::Arc};
@@ -124,7 +117,8 @@ mod tests {
     use crate::indexing::{
         document_retriever::StringDocumentSource, split::Split, IndexDataParams, IndexingStatistics,
     };
-    use quickwit_metastore::MockMetastore;
+    use quickwit_doc_mapping::{AllFlattenDocMapper, DocMapper};
+    use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_storage::StorageUriResolver;
     use tokio::sync::mpsc::channel;
 
@@ -147,13 +141,17 @@ mod tests {
 
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
-            .expect_stage_split()
-            .times(0)
-            .returning(|_index_uri, _split_id| Ok(()));
-        mock_metastore
-            .expect_publish_splits()
-            .times(0)
-            .returning(|_uri, _id| Ok(()));
+            .expect_index_metadata()
+            .times(1)
+            .returning(move |index_id| {
+                Ok(IndexMetadata {
+                    index_id: index_id.to_string(),
+                    index_uri: index_uri.clone(),
+                    doc_mapper: AllFlattenDocMapper::new()
+                        .map(|mapper| Box::new(mapper) as Box<dyn DocMapper>)
+                        .unwrap(),
+                })
+            });
         let metastore = Arc::new(mock_metastore);
         let storage_resolver = Arc::new(StorageUriResolver::default());
 
