@@ -168,7 +168,11 @@ pub trait Metastore: Send + Sync + 'static {
     /// At this point, the split files are assumed to have already been uploaded.
     /// If the split is already published, this API call returns a success.
     /// An error will occur if you specify an index or split that does not exist in the storage.
-    async fn publish_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
+    async fn publish_splits<'a>(
+        &self,
+        index_id: &str,
+        split_ids: Vec<&'a str>,
+    ) -> MetastoreResult<()>;
 
     /// Lists the splits.
     /// Returns a list of splits that intersect the given time_range and split_state.
