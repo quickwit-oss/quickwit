@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use crate::indexing::split::Split;
 use futures::StreamExt;
+use quickwit_metastore::Metastore;
 use tokio::sync::mpsc::Receiver;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug;
@@ -42,6 +43,7 @@ const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 ///
 pub async fn finalize_split(
     split_receiver: Receiver<Split>,
+    metastore: Arc<dyn Metastore>,
     statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
     let stream = ReceiverStream::new(split_receiver);
@@ -69,44 +71,28 @@ pub async fn finalize_split(
         })
         .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
 
-    let mut splits = vec![];
-    let mut finalize_errors: usize = 0;
+    let mut index_id_opt = None;
+    let mut split_ids = vec![];
     while let Some(finalize_result) = finalize_stream.next().await {
-        if finalize_result.is_ok() {
-            let split = finalize_result?;
-            splits.push(split);
-        } else {
-            finalize_errors += 1;
+        let split = finalize_result.map_err(|error| {
+            warn!("Some splits were not finalised.");
+            error
+        })?;
+        if index_id_opt.is_none() {
+            index_id_opt = Some(split.index_id.clone());
         }
+        split_ids.push(split.id.to_string());
     }
 
-    if finalize_errors > 0 {
-        warn!("Some splits were not finalised.");
-    }
-
-    // TODO: we want to atomically publish all splits.
-    // See [https://github.com/quickwit-inc/quickwit/issues/71]
-    let mut publish_stream = tokio_stream::iter(splits)
-        .map(|split| {
-            let moved_statistics = statistics.clone();
-            async move {
-                split.publish().await?;
-                moved_statistics.num_published_splits.inc();
-                anyhow::Result::<()>::Ok(())
-            }
-        })
-        .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
-
-    let mut publish_errors: usize = 0;
-    while let Some(publish_result) = publish_stream.next().await {
-        if publish_result.is_err() {
-            publish_errors += 1;
-        }
-    }
-
-    if publish_errors > 0 {
-        warn!("Some splits were not published.");
-    }
+    // publish all splits atomically
+    let index_id = index_id_opt.ok_or_else(|| anyhow::anyhow!("Could not get the index_id"))?;
+    let split_ids = split_ids
+        .iter()
+        .map(|split_id| split_id.as_str())
+        .collect::<Vec<_>>();
+    metastore
+        .publish_splits(index_id.as_str(), split_ids)
+        .await?;
 
     Ok(())
 }
