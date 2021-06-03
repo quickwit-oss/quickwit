@@ -20,14 +20,10 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::convert::TryFrom;
+use dyn_clone::clone_trait_object;
+use dyn_clone::DynClone;
+use std::fmt::Debug;
 
-use crate::{
-    all_flatten_mapper::AllFlattenDocMapper,
-    default_mapper::{DefaultDocMapper, DocMapperConfig},
-    wikipedia_mapper::WikipediaMapper,
-};
-use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
     schema::{DocParsingError, Schema},
@@ -43,7 +39,8 @@ use tantivy::{
 /// - a way to build a tantivy::Query from a SearchRequest
 /// - a way to build a tantivy:Schema
 ///
-pub trait DocMapper: Send + Sync + 'static {
+#[typetag::serde(tag = "type")]
+pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the document built from a json string.
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError>;
     /// Returns the schema.
@@ -51,59 +48,22 @@ pub trait DocMapper: Send + Sync + 'static {
     /// Returns the query.
     fn query(&self, _request: SearchRequest) -> Box<dyn Query>;
 }
+
+clone_trait_object!(DocMapper);
+
 // TODO: this is a placeholder, to be removed when it will be implementend in the search-api crate
 pub struct SearchRequest {}
 
-/// A `DocMapperType` describe a set of rules to build a document, query and schema.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type", content = "config", rename_all = "snake_case")]
-pub enum DocMapperType {
-    /// Default doc mapper which is build from a config file
-    Default(DocMapperConfig),
-    /// All flatten doc mapper which indexes everything in one single field
-    AllFlatten,
-    /// Wikipedia doc mapper
-    Wikipedia,
-}
-
-impl TryFrom<&str> for DocMapperType {
-    type Error = String;
-
-    fn try_from(doc_mapper_type_str: &str) -> Result<Self, Self::Error> {
-        match doc_mapper_type_str.trim().to_lowercase().as_str() {
-            "all_flatten" => Ok(Self::AllFlatten),
-            "wikipedia" => Ok(Self::Wikipedia),
-            "default" => Ok(Self::Default(DocMapperConfig::default())),
-            _ => Err(format!(
-                "Could not parse `{}` as valid doc mapper type.",
-                doc_mapper_type_str
-            )),
-        }
-    }
-}
-
-/// Build a doc mapper given the doc mapper type.
-pub fn build_doc_mapper(mapper_type: DocMapperType) -> anyhow::Result<Box<dyn DocMapper>> {
-    match mapper_type {
-        DocMapperType::Default(config) => {
-            DefaultDocMapper::new(config).map(|mapper| Box::new(mapper) as Box<dyn DocMapper>)
-        }
-        DocMapperType::AllFlatten => {
-            AllFlattenDocMapper::new().map(|mapper| Box::new(mapper) as Box<dyn DocMapper>)
-        }
-        DocMapperType::Wikipedia => {
-            WikipediaMapper::new().map(|mapper| Box::new(mapper) as Box<dyn DocMapper>)
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::DocMapperType;
+    use crate::{
+        default_mapper::{DefaultDocMapper, DocMapperConfig},
+        DocMapper,
+    };
 
     const JSON_ALL_FLATTEN_DOC_MAPPER: &str = r#"
         {
-            "type": "all_flatten"
+            "type": "all_flatten", "attributes": {}
         }"#;
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -117,21 +77,26 @@ mod tests {
         }"#;
 
     #[test]
-    fn test_deserialize_doc_mapper_type() -> anyhow::Result<()> {
+    fn test_deserialize_doc_mapper() -> anyhow::Result<()> {
         let all_flatten_mapper =
-            serde_json::from_str::<DocMapperType>(JSON_ALL_FLATTEN_DOC_MAPPER)?;
-        let default_mapper = serde_json::from_str::<DocMapperType>(JSON_DEFAULT_DOC_MAPPER)?;
-        match all_flatten_mapper {
-            DocMapperType::AllFlatten => (),
-            _ => panic!("Wrong doc mapper, should be AllFlatten."),
-        }
-        match default_mapper {
-            DocMapperType::Default(config) => {
-                assert_eq!(config.store_source, true);
-                assert_eq!(config.ignore_unknown_fields, false);
-            }
-            _ => panic!("Wrong doc mapper, should be Default."),
-        }
+            serde_json::from_str::<Box<dyn DocMapper>>(JSON_ALL_FLATTEN_DOC_MAPPER)?;
+        let deserialized_default_mapper =
+            serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
+
+        assert_eq!(
+            format!("{:?}", all_flatten_mapper),
+            "AllFlattenDocMapper".to_string()
+        );
+
+        let expected_default_mapper = DefaultDocMapper::new(DocMapperConfig {
+            store_source: true,
+            ignore_unknown_fields: false,
+            properties: vec![],
+        })?;
+        assert_eq!(
+            format!("{:?}", deserialized_default_mapper),
+            format!("{:?}", expected_default_mapper),
+        );
 
         Ok(())
     }

@@ -21,17 +21,36 @@
 */
 
 use crate::{mapper::SearchRequest, DocMapper};
+use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
     schema::{DocParsingError, Schema, SchemaBuilder, STORED},
     Document,
 };
 
+/// A mapper that flatten the document to have all fields at top level.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AllFlattenDocMapper {
+    #[serde(skip_serializing, default = "AllFlattenDocMapper::default_schema")]
     schema: Schema,
 }
 
+impl std::fmt::Debug for AllFlattenDocMapper {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "AllFlattenDocMapper")
+    }
+}
+
+impl Default for AllFlattenDocMapper {
+    fn default() -> Self {
+        AllFlattenDocMapper {
+            schema: SchemaBuilder::new().build(),
+        }
+    }
+}
+
 impl AllFlattenDocMapper {
+    /// Creates new instance of all flatten mapper
     pub fn new() -> anyhow::Result<Self> {
         let mut schema_builder = SchemaBuilder::new();
         schema_builder.add_text_field("_source", STORED);
@@ -39,8 +58,13 @@ impl AllFlattenDocMapper {
             schema: schema_builder.build(),
         })
     }
+
+    fn default_schema() -> Schema {
+        SchemaBuilder::new().build()
+    }
 }
 
+#[typetag::serde(name = "all_flatten")]
 impl DocMapper for AllFlattenDocMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let source = self
