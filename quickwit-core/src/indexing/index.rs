@@ -99,13 +99,13 @@ pub async fn index_data(
         index_documents(
             index_id.to_owned(),
             &params,
-            metastore,
+            metastore.clone(),
             storage_resolver,
             document_retriever,
             split_sender,
             statistics.clone(),
         ),
-        finalize_split(split_receiver, statistics.clone()),
+        finalize_split(split_receiver, metastore, statistics.clone()),
     )?;
 
     Ok(())

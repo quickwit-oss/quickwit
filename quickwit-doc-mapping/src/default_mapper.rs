@@ -30,17 +30,35 @@ use tantivy::{
     Document,
 };
 
+/// A default [`DocMapper`] implementation.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DefaultDocMapper {
+    #[serde(skip_serializing, default = "DefaultDocMapper::default_schema")]
     schema: Schema, // transient
+
     config: DocMapperConfig,
 }
 
+impl std::fmt::Debug for DefaultDocMapper {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter
+            .debug_struct("DefaultDocMapper")
+            .field("config", &self.config)
+            .finish()
+    }
+}
+
 impl DefaultDocMapper {
+    /// Create an instance of [`DefaultDocMapper`].
     pub fn new(config: DocMapperConfig) -> anyhow::Result<DefaultDocMapper> {
         Ok(DefaultDocMapper {
             schema: config.schema(),
             config,
         })
+    }
+
+    fn default_schema() -> Schema {
+        SchemaBuilder::new().build()
     }
 
     /// Walk through the json object and for each json path :
@@ -105,6 +123,7 @@ fn get_json_paths_and_values(
     }
 }
 
+#[typetag::serde(name = "default")]
 impl DocMapper for DefaultDocMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let mut document = Document::default();
@@ -136,10 +155,14 @@ impl DocMapper for DefaultDocMapper {
     }
 }
 
+/// A struct that represents the configuration for [`DefaultDocMapper`]
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct DocMapperConfig {
+    /// Store the source document.
     pub store_source: bool,
+    /// Ignore unknown fields without raising a document parsing error.
     pub ignore_unknown_fields: bool,
+    /// The list of field entry.
     pub properties: Vec<FieldEntry>,
 }
 

@@ -239,28 +239,33 @@ impl Metastore for SingleFileMetastore {
         Ok(())
     }
 
-    async fn publish_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()> {
+    async fn publish_splits<'a>(
+        &self,
+        index_id: &str,
+        split_ids: Vec<&'a str>,
+    ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
 
-        // Check for the existence of split.
-        let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
-            MetastoreErrorKind::SplitDoesNotExist
-                .with_error(anyhow::anyhow!("Split does not exist: {:?}", split_id))
-        })?;
+        for split_id in split_ids {
+            // Check for the existence of split.
+            let mut split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
+                MetastoreErrorKind::SplitDoesNotExist
+                    .with_error(anyhow::anyhow!("Split does not exist: {:?}", split_id))
+            })?;
 
-        // Check the split state.
-        match split_metadata.split_state {
-            SplitState::Published => {
-                // If the split is already published, this API call returns a success.
-                return Ok(());
-            }
-            SplitState::Staged => {
-                // Update the split state to `Published`.
-                split_metadata.split_state = SplitState::Published;
-            }
-            _ => {
-                return Err(MetastoreErrorKind::SplitIsNotStaged
-                    .with_error(anyhow::anyhow!("Split ID is not staged: {:?}", split_id)));
+            match split_metadata.split_state {
+                SplitState::Published => {
+                    // Split is already published. This is fine, we just skip it.
+                    continue;
+                }
+                SplitState::Staged => {
+                    // The split state needs to be updated.
+                    split_metadata.split_state = SplitState::Published;
+                }
+                _ => {
+                    return Err(MetastoreErrorKind::SplitIsNotStaged
+                        .with_error(anyhow::anyhow!("Split ID is not staged: {:?}", split_id)));
+                }
             }
         }
 
@@ -365,7 +370,7 @@ mod tests {
 
     use crate::IndexMetadata;
     use crate::{Metastore, MetastoreErrorKind, SingleFileMetastore, SplitMetadata, SplitState};
-    use quickwit_doc_mapping::DocMapperType;
+    use quickwit_doc_mapping::AllFlattenDocMapper;
     use quickwit_storage::{MockStorage, StorageErrorKind};
 
     #[tokio::test]
@@ -382,7 +387,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -409,7 +414,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -447,7 +452,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper_type: DocMapperType::Wikipedia,
+                doc_mapper: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -468,12 +473,11 @@ mod tests {
                 created_index.index.index_uri.clone(),
                 index_metadata.index_uri
             );
-            match created_index.index.doc_mapper_type {
-                DocMapperType::Wikipedia => (),
-                _ => {
-                    panic!("Wrong DocMapperType");
-                }
-            }
+
+            assert_eq!(
+                format!("{:?}", created_index.index.doc_mapper),
+                "AllFlattenDocMapper".to_string()
+            );
 
             // Open a non-existent index.
             let result = metastore
@@ -500,7 +504,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -548,7 +552,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -658,14 +662,26 @@ mod tests {
     async fn test_single_file_metastore_publish_split() {
         let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
-        let split_id = "one";
-        let split_metadata = SplitMetadata {
-            split_id: split_id.to_string(),
+        let split_id_one = "one";
+        let split_id_two = "two";
+        let split_metadata_one = SplitMetadata {
+            split_id: split_id_one.to_string(),
             split_state: SplitState::Staged,
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(Range { start: 0, end: 100 }),
             generation: 3,
+        };
+        let split_metadata_two = SplitMetadata {
+            split_id: split_id_two.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 5,
+            size_in_bytes: 6,
+            time_range: Some(Range {
+                start: 30,
+                end: 100,
+            }),
+            generation: 2,
         };
 
         {
@@ -677,7 +693,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -690,12 +706,15 @@ mod tests {
 
             // stage split
             metastore
-                .stage_split(index_id, split_metadata.clone())
+                .stage_split(index_id, split_metadata_one.clone())
                 .await
                 .unwrap();
 
             // publish split
-            metastore.publish_split(index_id, split_id).await.unwrap();
+            metastore
+                .publish_splits(index_id, vec![split_id_one])
+                .await
+                .unwrap();
         }
 
         {
@@ -705,7 +724,7 @@ mod tests {
                     .get(index_id)
                     .unwrap()
                     .splits
-                    .get(split_id)
+                    .get(split_id_one)
                     .unwrap()
                     .split_state,
                 SplitState::Published
@@ -714,16 +733,18 @@ mod tests {
 
         {
             // publish published split
-            metastore.publish_split(index_id, split_id).await.unwrap();
+            metastore
+                .publish_splits(index_id, vec![split_id_one])
+                .await
+                .unwrap();
 
             // publish non-staged split
-            let split_id = "one";
             metastore
-                .mark_split_as_deleted(index_id, split_id) // mark as deleted
+                .mark_split_as_deleted(index_id, split_id_one) // mark as deleted
                 .await
                 .unwrap();
             let result = metastore
-                .publish_split(index_id, split_id) // publish
+                .publish_splits(index_id, vec![split_id_one]) // publish
                 .await
                 .unwrap_err()
                 .kind();
@@ -732,7 +753,7 @@ mod tests {
 
             // publish non-existent index
             let result = metastore
-                .publish_split("non-existent-index", split_id)
+                .publish_splits("non-existent-index", vec![split_id_one])
                 .await
                 .unwrap_err()
                 .kind();
@@ -741,12 +762,65 @@ mod tests {
 
             // publish non-existent split
             let result = metastore
-                .publish_split(index_id, "non-existent-split")
+                .publish_splits(index_id, vec!["non-existent-split"])
                 .await
                 .unwrap_err()
                 .kind();
             let expected = MetastoreErrorKind::SplitDoesNotExist;
             assert_eq!(result, expected);
+        }
+
+        {
+            // publish one non-staged split and one non-existent split
+            let result = metastore
+                .publish_splits(index_id, vec![split_id_one, split_id_two])
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::SplitIsNotStaged;
+            assert_eq!(result, expected);
+
+            // publish two non-existent splits
+            metastore
+                .delete_split(index_id, split_id_one)
+                .await
+                .unwrap();
+            let result = metastore
+                .publish_splits(index_id, vec![split_id_one, split_id_two])
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::SplitDoesNotExist;
+            assert_eq!(result, expected);
+
+            // publish one staged split and one non-exitent split
+            metastore
+                .stage_split(index_id, split_metadata_one.clone())
+                .await
+                .unwrap();
+            let result = metastore
+                .publish_splits(index_id, vec![split_id_one, split_id_two])
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::SplitDoesNotExist;
+            assert_eq!(result, expected);
+
+            // publish two staged splits
+            metastore
+                .stage_split(index_id, split_metadata_two.clone())
+                .await
+                .unwrap();
+            metastore
+                .publish_splits(index_id, vec![split_id_one, split_id_two])
+                .await
+                .unwrap();
+
+            //publishe two published splits
+            metastore
+                .publish_splits(index_id, vec![split_id_one, split_id_two])
+                .await
+                .unwrap();
         }
     }
 
@@ -759,7 +833,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: Box::new(AllFlattenDocMapper::default()),
             };
 
             // create index
@@ -1281,7 +1355,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -1299,7 +1373,10 @@ mod tests {
                 .unwrap();
 
             // publish split
-            metastore.publish_split(index_id, split_id).await.unwrap();
+            metastore
+                .publish_splits(index_id, vec![split_id])
+                .await
+                .unwrap();
 
             // mark split as deleted
             metastore
@@ -1372,7 +1449,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper_type: DocMapperType::AllFlatten,
+                doc_mapper: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -1390,7 +1467,10 @@ mod tests {
                 .unwrap();
 
             // publish split
-            metastore.publish_split(index_id, split_id).await.unwrap();
+            metastore
+                .publish_splits(index_id, vec![split_id])
+                .await
+                .unwrap();
 
             // delete split (published split)
             let result = metastore
@@ -1473,7 +1553,7 @@ mod tests {
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
             index_uri: "ram://my-indexes/my-index".to_string(),
-            doc_mapper_type: DocMapperType::AllFlatten,
+            doc_mapper: Box::new(AllFlattenDocMapper::default()),
         };
 
         // create index
@@ -1486,7 +1566,7 @@ mod tests {
             .unwrap();
 
         // publish split fails
-        let err = metastore.publish_split(index_id, split_id).await;
+        let err = metastore.publish_splits(index_id, vec![split_id]).await;
         assert!(err.is_err());
 
         // empty

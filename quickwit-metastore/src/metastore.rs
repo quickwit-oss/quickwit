@@ -27,7 +27,7 @@ use std::fmt::Debug;
 use std::ops::Range;
 
 use async_trait::async_trait;
-use quickwit_doc_mapping::DocMapperType;
+use quickwit_doc_mapping::DocMapper;
 use serde::{Deserialize, Serialize};
 
 use crate::MetastoreResult;
@@ -40,8 +40,8 @@ pub struct IndexMetadata {
     /// Index Uri. The index uri defines the location of the storage that contains the
     /// split files.
     pub index_uri: String,
-    /// The doc mapper type used for this index
-    pub doc_mapper_type: DocMapperType,
+    /// The doc mapper used for this index
+    pub doc_mapper: Box<dyn DocMapper>,
 }
 
 /// A split metadata carries all meta data about a split.
@@ -168,7 +168,11 @@ pub trait Metastore: Send + Sync + 'static {
     /// At this point, the split files are assumed to have already been uploaded.
     /// If the split is already published, this API call returns a success.
     /// An error will occur if you specify an index or split that does not exist in the storage.
-    async fn publish_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
+    async fn publish_splits<'a>(
+        &self,
+        index_id: &str,
+        split_ids: Vec<&'a str>,
+    ) -> MetastoreResult<()>;
 
     /// Lists the splits.
     /// Returns a list of splits that intersect the given time_range and split_state.
