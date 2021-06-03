@@ -23,7 +23,6 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
-use quickwit_core::indexing::IndexingStatistics;
 use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
 };
