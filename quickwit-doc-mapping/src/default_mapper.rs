@@ -140,7 +140,7 @@ impl DocMapper for DefaultDocMapper {
             } else {
                 format!("{:?}...", &doc_json[0..20])
             };
-            DocParsingError::NotJSON(doc_json_sample)
+            DocParsingError::NotJson(doc_json_sample)
         })?;
         self.fill_document(&json_obj, &mut document)?;
         Ok(document)
