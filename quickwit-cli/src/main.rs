@@ -23,7 +23,6 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
-use quickwit_core::indexing::IndexingStatistics;
 use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
 };
@@ -41,8 +40,7 @@ use tokio::sync::watch;
 use tokio::task;
 use tokio::time::timeout;
 
-use quickwit_core::index::{create_index, delete_index};
-use quickwit_core::indexing::{index_data, IndexDataParams};
+use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, IndexingStatistics};
 
 struct CreateIndexArgs {
     index_uri: String,

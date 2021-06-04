@@ -19,7 +19,18 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+#![warn(missing_docs)]
 
-pub mod counter;
-pub mod index;
-pub mod indexing;
+/*! `quickwit-core` provides all the core functions used in quickwit cli:
+- `create_index` for creating a new index
+- `index_data` for indexing new-line delimited json documents
+- `search_index` for searching an index
+- `delete_index` for deleting an index
+*/
+
+mod counter;
+mod index;
+mod indexing;
+
+pub use self::index::{create_index, delete_index, search_index};
+pub use self::indexing::{index_data, IndexDataParams, IndexingStatistics};
