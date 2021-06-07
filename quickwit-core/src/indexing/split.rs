@@ -350,6 +350,9 @@ mod tests {
         let merge_result = split.merge_all_segments().await;
         assert_eq!(merge_result.is_ok(), true);
 
+        let hotcache_result = split.build_hotcache().await;
+        assert_eq!(hotcache_result.is_ok(), true);
+
         task::spawn(async move {
             split.stage().await?;
             split.upload().await
