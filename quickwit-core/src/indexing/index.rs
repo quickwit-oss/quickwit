@@ -20,6 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -99,7 +100,12 @@ pub async fn index_data(
             split_sender,
             statistics.clone(),
         ),
-        finalize_split(split_receiver, metastore, statistics.clone()),
+        finalize_split(
+            index_id.to_owned(),
+            split_receiver,
+            metastore,
+            statistics.clone()
+        ),
     )?;
 
     Ok(())

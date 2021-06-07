@@ -280,7 +280,8 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
 
     let statistics = Arc::new(IndexingStatistics::default());
     let (task_completed_sender, task_completed_receiver) = watch::channel::<bool>(false);
-    let reporting_future = start_statistics_reporting(statistics.clone(), task_completed_receiver);
+    let reporting_future =
+        start_statistics_reporting(statistics.clone(), task_completed_receiver, is_stdin_atty);
     let index_future = async move {
         index_data(
             metastore_uri,
@@ -293,9 +294,12 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         task_completed_sender.send(true)?;
         anyhow::Result::<()>::Ok(())
     };
-    try_join!(index_future, reporting_future)?;
 
-    println!("You can now query your index with `quickwit search --index-path {} --query \"barack obama\"`" , args.index_uri);
+    let (_, num_published_splits) = try_join!(index_future, reporting_future)?;
+    if num_published_splits > 0 {
+        println!("You can now query your index with `quickwit search --index-path {} --query \"barack obama\"`" , args.index_uri);
+    }
+
     Ok(())
 }
 
@@ -341,7 +345,8 @@ async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
 pub async fn start_statistics_reporting(
     statistics: Arc<IndexingStatistics>,
     task_completed_receiver: watch::Receiver<bool>,
-) -> anyhow::Result<()> {
+    is_stdin_atty: bool,
+) -> anyhow::Result<usize> {
     task::spawn(async move {
         let mut stdout_handle = stdout();
         let start_time = Instant::now();
@@ -353,32 +358,19 @@ pub async fn start_statistics_reporting(
                 .await
                 .is_ok();
 
-            let elapsed_secs = start_time.elapsed().as_secs();
-            let throughput_mb_s = statistics.total_bytes_processed.get() as f64
-                / 1_000_000f64
-                / elapsed_secs.max(1) as f64;
-            let report_line = format!(
-                "Documents: {} Errors: {}  Splits: {} Dataset Size: {}MB Throughput: {:.5$}MB/s",
-                statistics.num_docs.get(),
-                statistics.num_parse_errors.get(),
-                statistics.num_local_splits.get(),
-                statistics.total_bytes_processed.get() / 1_000_000,
-                throughput_mb_s,
-                2
-            );
-
-            stdout_handle.queue(cursor::SavePosition)?;
-            stdout_handle.queue(Clear(ClearType::CurrentLine))?;
-            stdout_handle.write_all(report_line.as_bytes())?;
-            stdout_handle.write_all("\nPlease hold on.".as_bytes())?;
-            stdout_handle.queue(cursor::RestorePosition)?;
-            stdout_handle.flush()?;
+            // Let's not display live statistics to allow screen to scroll.
+            if !is_stdin_atty {
+                display_statistics(&mut stdout_handle, start_time, statistics.clone())?;
+            }
 
             if is_done {
                 break;
             }
         }
 
+        if is_stdin_atty {
+            display_statistics(&mut stdout_handle, start_time, statistics.clone())?;
+        }
         //display end of task report
         println!();
         let elapsed_secs = start_time.elapsed().as_secs();
@@ -397,9 +389,36 @@ pub async fn start_statistics_reporting(
             );
         }
 
-        anyhow::Result::<()>::Ok(())
+        anyhow::Result::<usize>::Ok(statistics.num_published_splits.get())
     })
     .await?
+}
+
+fn display_statistics(
+    stdout_handle: &mut Stdout,
+    start_time: Instant,
+    statistics: Arc<IndexingStatistics>,
+) -> anyhow::Result<()> {
+    let elapsed_secs = start_time.elapsed().as_secs();
+    let throughput_mb_s =
+        statistics.total_bytes_processed.get() as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
+    let report_line = format!(
+        "Documents: {} Errors: {}  Splits: {} Dataset Size: {}MB Throughput: {:.5$}MB/s",
+        statistics.num_docs.get(),
+        statistics.num_parse_errors.get(),
+        statistics.num_published_splits.get(),
+        statistics.total_bytes_processed.get() / 1_000_000,
+        throughput_mb_s,
+        2
+    );
+
+    stdout_handle.queue(cursor::SavePosition)?;
+    stdout_handle.queue(Clear(ClearType::CurrentLine))?;
+    stdout_handle.write_all(report_line.as_bytes())?;
+    stdout_handle.write_all("\nPlease hold on.".as_bytes())?;
+    stdout_handle.queue(cursor::RestorePosition)?;
+    stdout_handle.flush()?;
+    Ok(())
 }
 
 #[tracing::instrument]
