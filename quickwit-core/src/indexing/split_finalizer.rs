@@ -57,6 +57,7 @@ pub async fn finalize_split(
 
                 split.commit().await?;
                 split.merge_all_segments().await?;
+                split.build_hotcache().await?;
 
                 split.stage().await?;
                 moved_statistics.num_staged_splits.inc();

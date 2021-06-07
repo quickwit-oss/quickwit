@@ -265,8 +265,13 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         "indexing"
     );
 
+<<<<<<< HEAD
     let input_path = args.input_path.clone();
     let document_source = create_document_source_from_args(input_path).await?;
+=======
+    let is_stdin_atty = atty::is(atty::Stream::Stdin);
+    println!("IS_ATTY: {}", is_stdin_atty);
+>>>>>>> now generating hotcache after merge
     let params = IndexDataParams {
         index_uri: PathBuf::from(args.index_uri.clone()),
         temp_dir: args.temp_dir,
@@ -359,7 +364,7 @@ pub async fn start_statistics_reporting(
                 .is_ok();
 
             // Let's not display live statistics to allow screen to scroll.
-            if !is_stdin_atty {
+            if is_stdin_atty {
                 display_statistics(&mut stdout_handle, start_time, statistics.clone())?;
             }
 
@@ -368,7 +373,7 @@ pub async fn start_statistics_reporting(
             }
         }
 
-        if is_stdin_atty {
+        if !is_stdin_atty {
             display_statistics(&mut stdout_handle, start_time, statistics.clone())?;
         }
         //display end of task report
@@ -403,7 +408,7 @@ fn display_statistics(
     let throughput_mb_s =
         statistics.total_bytes_processed.get() as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
     let report_line = format!(
-        "Documents: {} Errors: {}  Splits: {} Dataset Size: {}MB Throughput: {:.5$}MB/s",
+        "Documents Read: {} Parse Errors: {}  Published Splits: {} Dataset Size: {}MB Throughput: {:.5$}MB/s",
         statistics.num_docs.get(),
         statistics.num_parse_errors.get(),
         statistics.num_published_splits.get(),
