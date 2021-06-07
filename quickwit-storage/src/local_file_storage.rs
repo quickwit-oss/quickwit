@@ -56,9 +56,6 @@ impl LocalFileStorage {
             StorageErrorKind::DoesNotExist.with_error(anyhow::anyhow!("Invalid root path: {}", uri))
         })?;
 
-        // TODO remove when fixed: https://github.com/quickwit-inc/quickwit/issues/59
-        std::fs::create_dir_all(root_path).map_err(|err| StorageErrorKind::Io.with_error(err))?;
-
         Ok(LocalFileStorage::new(PathBuf::from(root_path)))
     }
 }
