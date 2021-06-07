@@ -93,18 +93,7 @@ pub async fn index_documents(
 
     // build last split if it has docs
     if current_split.metadata.num_records > 0 {
-        let split = std::mem::replace(
-            &mut current_split,
-            Split::create(
-                index_id.to_string(),
-                &params,
-                storage_resolver,
-                metastore,
-                schema.clone(),
-            )
-            .await?,
-        );
-        split_sender.send(split).await?;
+        split_sender.send(current_split).await?;
     }
 
     Ok(())

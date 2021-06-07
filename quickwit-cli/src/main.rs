@@ -112,7 +112,7 @@ impl CliCommand {
             .map(|field| field.to_string());
         let overwrite = matches.is_present("overwrite");
 
-        // TODO: find better way to build doc mapper when when we clarify the specs.
+        // TODO: find better way to build doc mapper when we clarify the specs.
         let doc_mapper = match doc_mapper_type.trim().to_lowercase().as_str() {
             "all_flatten" => {
                 AllFlattenDocMapper::new().map(|mapper| Box::new(mapper) as Box<dyn DocMapper>)
