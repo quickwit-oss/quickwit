@@ -69,7 +69,7 @@ pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result
 ///
 /// * `metastore_uri` - The metastore Uri for accessing the metastore.
 /// * `index_id` - The target index Id.
-/// * `dry_run` - Should this returns a list of affected files without performing file deletion.
+/// * `dry_run` - Should this only return a list of affected files without performing deletion.
 ///
 pub async fn delete_index(
     metastore_uri: &str,
@@ -141,7 +141,7 @@ pub async fn garbage_collect(
     let mut files = vec![];
     while let Some(delete_result) = delete_stream.next().await {
         let deleted_files = delete_result.map_err(|error| {
-            warn!("Some splits were not deleted.");
+            warn!("Some split files were not deleted.");
             error
         })?;
         files.extend(deleted_files);

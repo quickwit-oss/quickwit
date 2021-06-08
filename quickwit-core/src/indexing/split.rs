@@ -203,6 +203,7 @@ impl Split {
     }
 }
 
+/// Upload all files within a single split to the storage
 async fn put_split_files_to_storage(
     storage: &dyn Storage,
     split: &Split,
@@ -286,13 +287,13 @@ async fn put_split_files_to_storage(
     Ok(manifest)
 }
 
-/// Removes all files contained within a single split at `split_uri`.
+/// Removes all files contained within a single split from storage at `split_uri`.
 /// This function only cares about cleaning up files without any concern for the metastore.
-/// You should therefore make sure the metastore is left good state.
+/// You should therefore make sure the metastore is left in good state.
 ///
 /// * `split_uri` - The target index split uri.
 /// * `storage_resolver` - The storage resolver object.
-/// * `dry_run` - Should this returns a list of affected files without performing file deletion.
+/// * `dry_run` - Should this only return a list of affected files without performing deletion.
 ///
 pub async fn remove_split_files_from_storage(
     split_uri: &str,

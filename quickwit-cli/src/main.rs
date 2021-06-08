@@ -309,14 +309,13 @@ async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
 
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let deleted_files = delete_index(metastore_uri, index_id, args.dry_run).await?;
-
+    let affected_files = delete_index(metastore_uri, index_id, args.dry_run).await?;
     if args.dry_run {
         println!(
             "The following files will be removed from the index at `{}`",
             args.index_uri
         );
-        for file in deleted_files {
+        for file in affected_files {
             println!(" - {}", file.display());
         }
     } else {

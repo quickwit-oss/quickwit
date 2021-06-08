@@ -24,7 +24,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::try_join;
-use quickwit_metastore::{MetastoreUriResolver, SplitState};
+use quickwit_metastore::MetastoreUriResolver;
 use quickwit_storage::StorageUriResolver;
 use tokio::sync::mpsc::channel;
 use tracing::warn;
@@ -122,15 +122,13 @@ async fn reset_index(
         .resolve(&metastore_uri)
         .await?;
 
-    let splits = metastore
-        .list_splits(index_id, SplitState::Published, None)
-        .await?;
+    let splits = metastore.list_all_splits(index_id).await?;
     let split_ids = splits
         .iter()
         .map(|split_meta| split_meta.split_id.as_str())
         .collect::<Vec<_>>();
     metastore
-        .mark_splits_as_deleted(index_id, split_ids)
+        .mark_splits_as_deleted(index_id, split_ids.clone())
         .await?;
 
     let garbage_collection_result =
@@ -139,11 +137,7 @@ async fn reset_index(
         warn!(metastore_uri =% metastore_uri, "All split files could not be removed during garbage collection.");
     }
 
-    let delete_tasks = splits
-        .iter()
-        .map(|split| metastore.delete_split(index_id, &split.split_id))
-        .collect::<Vec<_>>();
-    futures::future::try_join_all(delete_tasks).await?;
+    metastore.delete_splits(index_id, split_ids).await?;
 
     Ok(())
 }
