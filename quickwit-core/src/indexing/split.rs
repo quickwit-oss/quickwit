@@ -32,6 +32,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use std::{path::PathBuf, usize};
 use tantivy::Directory;
+use tantivy::SegmentId;
+use tantivy::SegmentMeta;
 use tantivy::{directory::MmapDirectory, merge_policy::NoMergePolicy, schema::Schema, Document};
 use tokio::fs;
 use tracing::{info, warn};
@@ -77,6 +79,19 @@ impl fmt::Debug for Split {
             .field("index_uri", &self.index_uri)
             .field("num_parsing_errors", &self.num_parsing_errors)
             .finish()
+    }
+}
+
+/// returns true iff merge is required to reach a state where
+/// we have zero, or a single segment with no deletes segment.
+fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
+    match &segment_metas {
+        // there are no segment to merge
+        [] => false,
+        // if there is only segment but it has deletes, it
+        // still makes sense to merge it alone in order to remove deleted documents.
+        [segment_meta] => segment_meta.has_deletes(),
+        _ => true,
     }
 }
 
@@ -153,14 +168,23 @@ impl Split {
     }
 
     /// Merge all segments of the split into one.
-    pub async fn merge_all_segments(&mut self) -> anyhow::Result<tantivy::SegmentMeta> {
-        let segment_ids = self.index.searchable_segment_ids()?;
+    ///
+    /// If there is only one segment and it has no delete, avoid doing anything them.
+    pub async fn merge_all_segments(&mut self) -> anyhow::Result<()> {
+        let segment_metas = self.index.searchable_segment_metas()?;
+        if !is_merge_required(&segment_metas[..]) {
+            return Ok(());
+        }
+        let segment_ids: Vec<SegmentId> = segment_metas
+            .into_iter()
+            .map(|segment_meta| segment_meta.id())
+            .collect();
         self.index_writer
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Missing index writer."))?
             .merge(&segment_ids)
-            .await
-            .map_err(|e| e.into())
+            .await?;
+        Ok(())
     }
 
     /// Stage a split in the metastore.
