@@ -32,7 +32,7 @@ use tracing::warn;
 
 use super::IndexingStatistics;
 
-const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
+pub const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 
 /// Finilizes a split by performing the following actions
 /// - Commit the split

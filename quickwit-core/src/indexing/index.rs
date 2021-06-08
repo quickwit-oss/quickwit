@@ -24,7 +24,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::try_join;
-use quickwit_metastore::Metastore;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
 use quickwit_storage::StorageUriResolver;
 use tokio::sync::mpsc::channel;
@@ -73,20 +72,13 @@ pub async fn index_data(
     params: IndexDataParams,
     statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
-    let index_uri = params.index_uri.to_string_lossy().to_string();
     let metastore = MetastoreUriResolver::default()
         .resolve(&metastore_uri)
         .await?;
     let storage_resolver = Arc::new(StorageUriResolver::default());
 
     if params.overwrite {
-        reset_index(
-            &index_uri,
-            index_id,
-            storage_resolver.clone(),
-            metastore.clone(),
-        )
-        .await?;
+        reset_index(metastore_uri, index_id, storage_resolver.clone()).await?;
     }
 
     if params.input_uri.is_none() {
@@ -122,30 +114,34 @@ pub async fn index_data(
 /// * `metastore` - A emtastore object for interracting with the metastore.
 ///
 async fn reset_index(
-    index_uri: &str,
+    metastore_uri: &str,
     index_id: &str,
     storage_resolver: Arc<StorageUriResolver>,
-    metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<()> {
+    let metastore = MetastoreUriResolver::default()
+        .resolve(&metastore_uri)
+        .await?;
+
     let splits = metastore
         .list_splits(index_id, SplitState::Published, None)
         .await?;
-
-    let mark_split_as_deleted_tasks = splits
+    let split_ids = splits
         .iter()
-        .map(|split| metastore.mark_split_as_deleted(index_id, &split.split_id))
+        .map(|split_meta| split_meta.split_id.as_str())
         .collect::<Vec<_>>();
-    futures::future::try_join_all(mark_split_as_deleted_tasks).await?;
+    metastore
+        .mark_splits_as_deleted(index_id, split_ids)
+        .await?;
 
-    let storage = storage_resolver.resolve(&index_uri)?;
-    let garbage_collection_result = garbage_collect(index_uri, storage, metastore.clone()).await;
+    let garbage_collection_result =
+        garbage_collect(metastore_uri, index_id, storage_resolver).await;
     if garbage_collection_result.is_err() {
-        warn!(index_uri =% index_uri, "All split files could not be removed during garbage collection.");
+        warn!(metastore_uri =% metastore_uri, "All split files could not be removed during garbage collection.");
     }
 
     let delete_tasks = splits
         .iter()
-        .map(|split| metastore.delete_split(index_uri, &split.split_id))
+        .map(|split| metastore.delete_split(index_id, &split.split_id))
         .collect::<Vec<_>>();
     futures::future::try_join_all(delete_tasks).await?;
 

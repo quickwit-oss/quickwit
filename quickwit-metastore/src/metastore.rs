@@ -185,11 +185,19 @@ pub trait Metastore: Send + Sync + 'static {
         time_range: Option<Range<u64>>,
     ) -> MetastoreResult<Vec<SplitMetadata>>;
 
+    /// Lists the splits.
+    /// Returns a list of all splits currently known to the metastore regardless of their state.
+    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitMetadata>>;
+
     /// Marks split as deleted.
     /// This API will change the state to ScheduledForDeletion so that it is not referenced by the client.
     /// It does not actually remove the split from storage.
     /// An error will occur if you specify an index or split that does not exist in the storage.
-    async fn mark_split_as_deleted(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
+    async fn mark_splits_as_deleted<'a>(
+        &self,
+        index_id: &str,
+        split_ids: Vec<&'a str>,
+    ) -> MetastoreResult<()>;
 
     /// Deletes a split.
     /// This API only takes a split that is in Staged or ScheduledForDeletion state.

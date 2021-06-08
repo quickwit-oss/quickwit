@@ -29,4 +29,6 @@ mod split_finalizer;
 mod statistics;
 
 pub use index::{index_data, IndexDataParams};
+pub use split::remove_split_files_from_storage;
+pub use split_finalizer::MAX_CONCURRENT_SPLIT_TASKS;
 pub use statistics::IndexingStatistics;
