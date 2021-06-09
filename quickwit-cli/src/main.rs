@@ -23,12 +23,17 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
+use quickwit_core::DocumentSource;
 use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
 };
 use quickwit_metastore::IndexMetadata;
+use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::fs::File;
+use tokio::io::AsyncBufReadExt;
+use tokio::io::BufReader;
 use tokio::try_join;
 use tracing::debug;
 
@@ -260,9 +265,10 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         "indexing"
     );
 
+    let input_path = args.input_path.clone();
+    let document_source = create_document_source_from_args(input_path).await?;
     let params = IndexDataParams {
         index_uri: PathBuf::from(args.index_uri.clone()),
-        input_uri: args.input_path,
         temp_dir: args.temp_dir,
         num_threads: args.num_threads,
         heap_size: args.heap_size,
@@ -276,7 +282,14 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let (task_completed_sender, task_completed_receiver) = watch::channel::<bool>(false);
     let reporting_future = start_statistics_reporting(statistics.clone(), task_completed_receiver);
     let index_future = async move {
-        index_data(metastore_uri, index_id, params, statistics.clone()).await?;
+        index_data(
+            metastore_uri,
+            index_id,
+            params,
+            document_source,
+            statistics.clone(),
+        )
+        .await?;
         task_completed_sender.send(true)?;
         anyhow::Result::<()>::Ok(())
     };
@@ -284,6 +297,20 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
 
     println!("You can now query your index with `quickwit search --index-path {} --query \"barack obama\"`" , args.index_uri);
     Ok(())
+}
+
+async fn create_document_source_from_args(
+    input_path_opt: Option<PathBuf>,
+) -> io::Result<Box<dyn DocumentSource>> {
+    if let Some(input_path) = input_path_opt {
+        let file = File::open(input_path).await?;
+        let reader = BufReader::new(file);
+        Ok(Box::new(reader.lines()))
+    } else {
+        let stdin = tokio::io::stdin();
+        let reader = BufReader::new(stdin);
+        Ok(Box::new(reader.lines()))
+    }
 }
 
 async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {

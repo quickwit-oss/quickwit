@@ -31,9 +31,9 @@ use tokio::sync::mpsc::channel;
 use tracing::warn;
 
 use crate::index::garbage_collect;
-use crate::indexing::document_retriever::DocumentSource;
 use crate::indexing::split_finalizer::finalize_split;
 use crate::indexing::{document_indexer::index_documents, split::Split};
+use crate::DocumentSource;
 
 use super::IndexingStatistics;
 
@@ -45,8 +45,6 @@ const SPLIT_CHANNEL_SIZE: usize = 30;
 pub struct IndexDataParams {
     /// Index uri.
     pub index_uri: PathBuf,
-    /// Input path from where to read new-line delimited json documents
-    pub input_uri: Option<PathBuf>,
     /// Tempory directory to use for indexing.
     pub temp_dir: PathBuf,
     /// Number of thread to use for indexing.
@@ -65,12 +63,13 @@ pub struct IndexDataParams {
 /// * `metastore_uri` - The metastore uri.
 /// * `index_id` - The target index Id.
 /// * `params` - The indexing parameters; see [`IndexDataParams`].
+/// * `input_uri` - Input path from where to read new-line delimited json documents
 /// * `statistics` - The statistic counter object; see [`IndexingStatistics`].
-///
 pub async fn index_data(
     metastore_uri: &str,
     index_id: &str,
     params: IndexDataParams,
+    document_source: Box<dyn DocumentSource>,
     statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
     let index_uri = params.index_uri.to_string_lossy().to_string();
@@ -89,11 +88,6 @@ pub async fn index_data(
         .await?;
     }
 
-    if params.input_uri.is_none() {
-        println!("Please enter your new line delimited json documents.");
-    }
-
-    let document_retriever = Box::new(DocumentSource::create(&params.input_uri).await?);
     let (split_sender, split_receiver) = channel::<Split>(SPLIT_CHANNEL_SIZE);
     try_join!(
         index_documents(
@@ -101,7 +95,7 @@ pub async fn index_data(
             &params,
             metastore.clone(),
             storage_resolver,
-            document_retriever,
+            document_source,
             split_sender,
             statistics.clone(),
         ),
