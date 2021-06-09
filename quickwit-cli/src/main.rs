@@ -361,7 +361,7 @@ pub async fn start_statistics_reporting(
                 .is_ok();
 
             // Let's not display live statistics to allow screen to scroll.
-            if is_stdin_atty {
+            if is_stdin_atty && statistics.num_docs.get() > 0 {
                 display_statistics(&mut stdout_handle, start_time, statistics.clone())?;
             }
 
@@ -370,10 +370,10 @@ pub async fn start_statistics_reporting(
             }
         }
 
-        // If we have received zero docs at this point, 
+        // If we have received zero docs at this point,
         // there is no point in displaying report.
         if statistics.num_docs.get() == 0 {
-            return anyhow::Result::<usize>::Ok(0)
+            return anyhow::Result::<usize>::Ok(0);
         }
 
         if !is_stdin_atty {
