@@ -163,7 +163,7 @@ pub trait Metastore: Send + Sync + 'static {
         split_metadata: SplitMetadata,
     ) -> MetastoreResult<()>;
 
-    /// Publishes a split.
+    /// Publishes a list splits.
     /// This API only updates the state of the split from Staged to Published.
     /// At this point, the split files are assumed to have already been uploaded.
     /// If the split is already published, this API call returns a success.
@@ -185,15 +185,27 @@ pub trait Metastore: Send + Sync + 'static {
         time_range: Option<Range<u64>>,
     ) -> MetastoreResult<Vec<SplitMetadata>>;
 
-    /// Marks split as deleted.
+    /// Lists the splits without filtering.
+    /// Returns a list of all splits currently known to the metastore regardless of their state.
+    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitMetadata>>;
+
+    /// Marks a list of splits as deleted.
     /// This API will change the state to ScheduledForDeletion so that it is not referenced by the client.
     /// It does not actually remove the split from storage.
     /// An error will occur if you specify an index or split that does not exist in the storage.
-    async fn mark_split_as_deleted(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
+    async fn mark_splits_as_deleted<'a>(
+        &self,
+        index_id: &str,
+        split_ids: Vec<&'a str>,
+    ) -> MetastoreResult<()>;
 
-    /// Deletes a split.
+    /// Deletes a list of splits.
     /// This API only takes a split that is in Staged or ScheduledForDeletion state.
     /// This removes the split metadata from the metastore, but does not remove the split from storage.
     /// An error will occur if you specify an index or split that does not exist in the storage.
-    async fn delete_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()>;
+    async fn delete_splits<'a>(
+        &self,
+        index_id: &str,
+        split_ids: Vec<&'a str>,
+    ) -> MetastoreResult<()>;
 }

@@ -21,6 +21,7 @@
 */
 
 use std::fmt;
+use std::path::Path;
 
 use crate::indexing::manifest::Manifest;
 use anyhow::{self, Context};
@@ -205,12 +206,16 @@ impl Split {
 
     /// Upload all split artifacts using the storage.
     pub async fn upload(&self) -> anyhow::Result<Manifest> {
-        let manifest = put_to_storage(&*self.storage, self).await?;
+        let manifest = put_split_files_to_storage(&*self.storage, self).await?;
         Ok(manifest)
     }
 }
 
-async fn put_to_storage(storage: &dyn Storage, split: &Split) -> anyhow::Result<Manifest> {
+/// Upload all files within a single split to the storage
+async fn put_split_files_to_storage(
+    storage: &dyn Storage,
+    split: &Split,
+) -> anyhow::Result<Manifest> {
     info!("upload-split");
     let start = Instant::now();
 
@@ -288,6 +293,47 @@ async fn put_to_storage(storage: &dyn Storage, split: &Split) -> anyhow::Result<
     );
 
     Ok(manifest)
+}
+
+/// Removes all files contained within a single split from storage at `split_uri`.
+/// This function only cares about cleaning up files without any concern for the metastore.
+/// You should therefore make sure the metastore is left in good state.
+///
+/// * `split_uri` - The target index split uri.
+/// * `storage_resolver` - The storage resolver object.
+/// * `dry_run` - Should this only return a list of affected files without performing deletion.
+///
+pub async fn remove_split_files_from_storage(
+    split_uri: &str,
+    storage_resolver: Arc<StorageUriResolver>,
+    dry_run: bool,
+) -> anyhow::Result<Vec<PathBuf>> {
+    info!(split_uri =% split_uri, "delete-split");
+    let storage = storage_resolver.resolve(split_uri)?;
+
+    let manifest_file = Path::new(".manifest");
+    let data = storage.get_all(manifest_file).await?;
+    let manifest: Manifest = serde_json::from_slice(&data)?;
+
+    if !dry_run {
+        let mut delete_file_futures: Vec<_> = manifest
+            .files
+            .iter()
+            .map(|entry| storage.delete(Path::new(&entry.file_name)))
+            .collect();
+        delete_file_futures.push(storage.delete(manifest_file));
+
+        futures::future::try_join_all(delete_file_futures).await?;
+    }
+
+    let mut files: Vec<_> = manifest
+        .files
+        .iter()
+        .map(|entry| PathBuf::from(format!("{}/{}", split_uri, entry.file_name)))
+        .collect();
+    files.push(PathBuf::from(format!("{}/{}", split_uri, ".manifest")));
+
+    Ok(files)
 }
 
 #[cfg(test)]

@@ -306,49 +306,76 @@ impl Metastore for SingleFileMetastore {
         Ok(splits)
     }
 
-    async fn mark_split_as_deleted(&self, index_id: &str, split_id: &str) -> MetastoreResult<()> {
-        let mut metadata_set = self.get_index(index_id).await?;
+    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitMetadata>> {
+        let metadata_set = self.get_index(index_id).await?;
 
-        // Check for the existence of split.
-        let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
-            MetastoreErrorKind::SplitDoesNotExist
-                .with_error(anyhow::anyhow!("Split does not exists: {:?}", split_id))
-        })?;
-
-        if split_metadata.split_state == SplitState::ScheduledForDeletion {
-            // If the split is already scheduled for deleted, this API call returns a success.
-            return Ok(());
+        let mut splits: Vec<SplitMetadata> = Vec::new();
+        for (_, split_metadata) in metadata_set.splits {
+            splits.push(split_metadata.clone());
         }
 
-        split_metadata.split_state = SplitState::ScheduledForDeletion;
+        Ok(splits)
+    }
 
-        self.put_index(metadata_set).await?;
+    async fn mark_splits_as_deleted<'a>(
+        &self,
+        index_id: &str,
+        split_ids: Vec<&'a str>,
+    ) -> MetastoreResult<()> {
+        let mut metadata_set = self.get_index(index_id).await?;
+
+        let mut is_modified = false;
+        for split_id in split_ids {
+            // Check for the existence of split.
+            let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
+                MetastoreErrorKind::SplitDoesNotExist
+                    .with_error(anyhow::anyhow!("Split does not exists: {:?}", split_id))
+            })?;
+
+            if split_metadata.split_state == SplitState::ScheduledForDeletion {
+                // If the split is already scheduled for deleted, this API call returns a success.
+                continue;
+            }
+
+            split_metadata.split_state = SplitState::ScheduledForDeletion;
+            is_modified = true;
+        }
+
+        if is_modified {
+            self.put_index(metadata_set).await?;
+        }
 
         Ok(())
     }
 
-    async fn delete_split(&self, index_id: &str, split_id: &str) -> MetastoreResult<()> {
+    async fn delete_splits<'a>(
+        &self,
+        index_id: &str,
+        split_ids: Vec<&'a str>,
+    ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
 
-        // Check for the existence of split.
-        let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
-            MetastoreErrorKind::SplitDoesNotExist
-                .with_error(anyhow::anyhow!("Split does not exist: {:?}", split_id))
-        })?;
+        for split_id in split_ids {
+            // Check for the existence of split.
+            let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
+                MetastoreErrorKind::SplitDoesNotExist
+                    .with_error(anyhow::anyhow!("Split does not exist: {:?}", split_id))
+            })?;
 
-        match split_metadata.split_state {
-            SplitState::ScheduledForDeletion | SplitState::Staged => {
-                // Only `ScheduledForDeletion` and `Staged` can be deleted
-                metadata_set.splits.remove(split_id);
-            }
-            _ => {
-                return Err(MetastoreErrorKind::Forbidden.with_error(anyhow::anyhow!(
-                    "This split is not a deletable state: {:?}:{:?}",
-                    split_id,
-                    &split_metadata.split_state
-                )));
-            }
-        };
+            match split_metadata.split_state {
+                SplitState::ScheduledForDeletion | SplitState::Staged => {
+                    // Only `ScheduledForDeletion` and `Staged` can be deleted
+                    metadata_set.splits.remove(split_id);
+                }
+                _ => {
+                    return Err(MetastoreErrorKind::Forbidden.with_error(anyhow::anyhow!(
+                        "This split is not a deletable state: {:?}:{:?}",
+                        split_id,
+                        &split_metadata.split_state
+                    )));
+                }
+            };
+        }
 
         self.put_index(metadata_set).await?;
 
@@ -740,7 +767,7 @@ mod tests {
 
             // publish non-staged split
             metastore
-                .mark_split_as_deleted(index_id, split_id_one) // mark as deleted
+                .mark_splits_as_deleted(index_id, vec![split_id_one]) // mark as deleted
                 .await
                 .unwrap();
             let result = metastore
@@ -782,7 +809,7 @@ mod tests {
 
             // publish two non-existent splits
             metastore
-                .delete_split(index_id, split_id_one)
+                .delete_splits(index_id, vec![split_id_one])
                 .await
                 .unwrap();
             let result = metastore
@@ -1378,9 +1405,18 @@ mod tests {
                 .await
                 .unwrap();
 
+            // mark splits as deleted (one non-existent)
+            let result = metastore
+                .mark_splits_as_deleted(index_id, vec![split_id, "non-existent-split"])
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::SplitDoesNotExist;
+            assert_eq!(result, expected);
+
             // mark split as deleted
             metastore
-                .mark_split_as_deleted(index_id, split_id)
+                .mark_splits_as_deleted(index_id, vec![split_id])
                 .await
                 .unwrap();
         }
@@ -1402,13 +1438,13 @@ mod tests {
         {
             // mark split as deleted (already marked as deleted)
             metastore
-                .mark_split_as_deleted(index_id, split_id)
+                .mark_splits_as_deleted(index_id, vec![split_id])
                 .await
                 .unwrap();
 
             // mark split as deleted (non-existent index)
             let result = metastore
-                .mark_split_as_deleted("non-existent-index", split_id)
+                .mark_splits_as_deleted("non-existent-index", vec![split_id])
                 .await
                 .unwrap_err()
                 .kind();
@@ -1417,7 +1453,7 @@ mod tests {
 
             // mark split as deleted (non-existent)
             let result = metastore
-                .mark_split_as_deleted(index_id, "non-existent-split")
+                .mark_splits_as_deleted(index_id, vec!["non-existent-split"])
                 .await
                 .unwrap_err()
                 .kind();
@@ -1474,7 +1510,7 @@ mod tests {
 
             // delete split (published split)
             let result = metastore
-                .delete_split(index_id, split_id)
+                .delete_splits(index_id, vec![split_id])
                 .await
                 .unwrap_err()
                 .kind();
@@ -1483,12 +1519,24 @@ mod tests {
 
             // mark split as deleted
             metastore
-                .mark_split_as_deleted(index_id, split_id)
+                .mark_splits_as_deleted(index_id, vec![split_id])
                 .await
                 .unwrap();
 
+            // mark splits as deleted (one non-existent split)
+            let result = metastore
+                .mark_splits_as_deleted(index_id, vec![split_id, "non-existent-split"])
+                .await
+                .unwrap_err()
+                .kind();
+            let expected = MetastoreErrorKind::SplitDoesNotExist;
+            assert_eq!(result, expected);
+
             // delete split
-            metastore.delete_split(index_id, split_id).await.unwrap();
+            metastore
+                .delete_splits(index_id, vec![split_id])
+                .await
+                .unwrap();
         }
 
         {
@@ -1502,7 +1550,7 @@ mod tests {
         {
             // mark split as deleted (non-existent index)
             let result = metastore
-                .delete_split("non-existent-index", split_id)
+                .delete_splits("non-existent-index", vec![split_id])
                 .await
                 .unwrap_err()
                 .kind();
@@ -1511,7 +1559,7 @@ mod tests {
 
             // delete split (non-existent split)
             let result = metastore
-                .delete_split(index_id, "non-existent-split")
+                .delete_splits(index_id, vec!["non-existent-split"])
                 .await
                 .unwrap_err()
                 .kind();

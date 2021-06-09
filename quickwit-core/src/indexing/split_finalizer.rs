@@ -32,7 +32,7 @@ use tracing::warn;
 
 use super::IndexingStatistics;
 
-const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
+pub const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 
 /// Finilizes a split by performing the following actions
 /// - Commit the split
@@ -59,6 +59,7 @@ pub async fn finalize_split(
                 split.merge_all_segments().await?;
                 split.build_hotcache().await?;
 
+                //TODO: discuss & fix possible data race see `Metastore::stage_split`
                 split.stage().await?;
                 moved_statistics.num_staged_splits.inc();
 
