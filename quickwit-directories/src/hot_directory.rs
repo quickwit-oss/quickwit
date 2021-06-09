@@ -639,12 +639,11 @@ mod tests {
     }
 
     #[test]
-    fn test_slice_cache_overlapping_entries() -> tantivy::Result<()> {
+    fn test_slice_cache_overlapping_entries() {
         let mut slice_cache_builder = StaticSliceCacheBuilder::new(100u64);
         slice_cache_builder.add_bytes(b"abcd", 2);
         slice_cache_builder.add_bytes(b"def", 5);
         assert!(slice_cache_builder.flush().is_err());
-        Ok(())
     }
 
     #[test]
