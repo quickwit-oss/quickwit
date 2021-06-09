@@ -18,3 +18,4 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.6", features = ["full"] }
 crossterm = "0.19.0"
 atty = "0.2"
+regex = "1"

@@ -227,6 +227,11 @@ fn extract_metastore_uri_and_index_id_from_index_uri(
 ) -> anyhow::Result<(&str, &str)> {
     let parts: Vec<&str> = index_uri.rsplitn(2, '/').collect();
     if parts.len() == 2 {
+        let index_id_pattern = regex::Regex::new(r"^[a-zA-Z][a-zA-Z0-9_\-]*$").unwrap();
+        if !index_id_pattern.is_match(parts[0]) {
+            let error_message = format!("Invalid index_id `{}`. Only alpha-numeric, `-` and `_` characters allowed. Cannot start with `-`, `_` or digit.", parts[0]);
+            anyhow::bail!(error_message);
+        }
         Ok((parts[1], parts[0]))
     } else {
         anyhow::bail!("Failed to parse the uri into a metastore_uri and an index_id.");
@@ -687,11 +692,19 @@ mod tests {
 
     #[test]
     fn test_extract_metastore_uri_and_index_id_from_index_uri() -> anyhow::Result<()> {
-        let index_uri = "file:///indexes/wikipedia";
+        let index_uri = "file:///indexes/wikipedia-xd_1";
         let (metastore_uri, index_id) =
             extract_metastore_uri_and_index_id_from_index_uri(index_uri)?;
         assert_eq!("file:///indexes", metastore_uri);
-        assert_eq!("wikipedia", index_id);
+        assert_eq!("wikipedia-xd_1", index_id);
+        extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/_wikipedia")
+            .unwrap_err();
+        extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/-wikipedia")
+            .unwrap_err();
+        extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/2-wiki-pedia")
+            .unwrap_err();
+        extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/01wikipedia")
+            .unwrap_err();
         Ok(())
     }
 }
