@@ -36,6 +36,7 @@ fn localstack_region() -> Region {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_upload_single_part_file() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
     let object_storage =
@@ -50,6 +51,7 @@ async fn test_upload_single_part_file() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
     let mut object_storage =
@@ -73,6 +75,7 @@ async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
 
 #[cfg(feature = "testsuite")]
 #[tokio::test]
+#[ignore]
 // Weirdly this does not work for localstack. The error messages seem off.
 async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
