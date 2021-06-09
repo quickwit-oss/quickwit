@@ -28,7 +28,9 @@ use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
 };
 use quickwit_metastore::IndexMetadata;
+use std::env;
 use std::io;
+use std::io::Stdout;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::fs::File;
@@ -275,12 +277,26 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         overwrite: args.overwrite,
     };
 
+    let is_stdin_atty = atty::is(atty::Stream::Stdin);
+    if args.input_path.is_none() && is_stdin_atty {
+        let eof_shortcut = match env::consts::OS {
+            "windows" => "CTRL+Z",
+            "macos" => "CMD+D",
+            _ => "CTRL+D",
+        };
+        println!("Please enter your new line delimited json documents one line at a time.\nEnd your input using {}.", eof_shortcut);
+    }
+
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
 
     let statistics = Arc::new(IndexingStatistics::default());
     let (task_completed_sender, task_completed_receiver) = watch::channel::<bool>(false);
-    let reporting_future = start_statistics_reporting(statistics.clone(), task_completed_receiver);
+    let reporting_future = start_statistics_reporting(
+        statistics.clone(),
+        task_completed_receiver,
+        args.input_path.clone(),
+    );
     let index_future = async move {
         index_data(
             metastore_uri,
@@ -293,9 +309,12 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         task_completed_sender.send(true)?;
         anyhow::Result::<()>::Ok(())
     };
-    try_join!(index_future, reporting_future)?;
 
-    println!("You can now query your index with `quickwit search --index-path {} --query \"barack obama\"`" , args.index_uri);
+    let (_, num_published_splits) = try_join!(index_future, reporting_future)?;
+    if num_published_splits > 0 {
+        println!("You can now query your index with `quickwit search --index-path {} --query \"barack obama\"`" , args.index_uri);
+    }
+
     Ok(())
 }
 
@@ -341,7 +360,8 @@ async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
 pub async fn start_statistics_reporting(
     statistics: Arc<IndexingStatistics>,
     task_completed_receiver: watch::Receiver<bool>,
-) -> anyhow::Result<()> {
+    input_path_opt: Option<PathBuf>,
+) -> anyhow::Result<usize> {
     task::spawn(async move {
         let mut stdout_handle = stdout();
         let start_time = Instant::now();
@@ -353,32 +373,25 @@ pub async fn start_statistics_reporting(
                 .await
                 .is_ok();
 
-            let elapsed_secs = start_time.elapsed().as_secs();
-            let throughput_mb_s = statistics.total_bytes_processed.get() as f64
-                / 1_000_000f64
-                / elapsed_secs.max(1) as f64;
-            let report_line = format!(
-                "Documents: {} Errors: {}  Splits: {} Dataset Size: {}MB Throughput: {:.5$}MB/s",
-                statistics.num_docs.get(),
-                statistics.num_parse_errors.get(),
-                statistics.num_local_splits.get(),
-                statistics.total_bytes_processed.get() / 1_000_000,
-                throughput_mb_s,
-                2
-            );
-
-            stdout_handle.queue(cursor::SavePosition)?;
-            stdout_handle.queue(Clear(ClearType::CurrentLine))?;
-            stdout_handle.write_all(report_line.as_bytes())?;
-            stdout_handle.write_all("\nPlease hold on.".as_bytes())?;
-            stdout_handle.queue(cursor::RestorePosition)?;
-            stdout_handle.flush()?;
+            // Let's not display live statistics to allow screen to scroll.
+            if input_path_opt.is_some() && statistics.num_docs.get() > 0 {
+                display_statistics(&mut stdout_handle, start_time, statistics.clone())?;
+            }
 
             if is_done {
                 break;
             }
         }
 
+        // If we have received zero docs at this point,
+        // there is no point in displaying report.
+        if statistics.num_docs.get() == 0 {
+            return anyhow::Result::<usize>::Ok(0);
+        }
+
+        if input_path_opt.is_none() {
+            display_statistics(&mut stdout_handle, start_time, statistics.clone())?;
+        }
         //display end of task report
         println!();
         let elapsed_secs = start_time.elapsed().as_secs();
@@ -397,9 +410,36 @@ pub async fn start_statistics_reporting(
             );
         }
 
-        anyhow::Result::<()>::Ok(())
+        anyhow::Result::<usize>::Ok(statistics.num_published_splits.get())
     })
     .await?
+}
+
+fn display_statistics(
+    stdout_handle: &mut Stdout,
+    start_time: Instant,
+    statistics: Arc<IndexingStatistics>,
+) -> anyhow::Result<()> {
+    let elapsed_secs = start_time.elapsed().as_secs();
+    let throughput_mb_s =
+        statistics.total_bytes_processed.get() as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
+    let report_line = format!(
+        "Documents Read: {} Parse Errors: {}  Published Splits: {} Dataset Size: {}MB Throughput: {:.5$}MB/s",
+        statistics.num_docs.get(),
+        statistics.num_parse_errors.get(),
+        statistics.num_published_splits.get(),
+        statistics.total_bytes_processed.get() / 1_000_000,
+        throughput_mb_s,
+        2
+    );
+
+    stdout_handle.queue(cursor::SavePosition)?;
+    stdout_handle.queue(Clear(ClearType::CurrentLine))?;
+    stdout_handle.write_all(report_line.as_bytes())?;
+    stdout_handle.write_all("\nPlease hold on.".as_bytes())?;
+    stdout_handle.queue(cursor::RestorePosition)?;
+    stdout_handle.flush()?;
+    Ok(())
 }
 
 #[tracing::instrument]

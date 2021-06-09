@@ -42,6 +42,7 @@ const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 /// - Publish the split
 ///
 pub async fn finalize_split(
+    index_id: String,
     split_receiver: Receiver<Split>,
     metastore: Arc<dyn Metastore>,
     statistics: Arc<IndexingStatistics>,
@@ -56,6 +57,7 @@ pub async fn finalize_split(
 
                 split.commit().await?;
                 split.merge_all_segments().await?;
+                split.build_hotcache().await?;
 
                 split.stage().await?;
                 moved_statistics.num_staged_splits.inc();
@@ -71,28 +73,26 @@ pub async fn finalize_split(
         })
         .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
 
-    let mut index_id_opt = None;
     let mut split_ids = vec![];
     while let Some(finalize_result) = finalize_stream.next().await {
         let split = finalize_result.map_err(|error| {
             warn!("Some splits were not finalised.");
             error
         })?;
-        if index_id_opt.is_none() {
-            index_id_opt = Some(split.index_id.clone());
-        }
         split_ids.push(split.id.to_string());
     }
 
     // publish all splits atomically
-    let index_id = index_id_opt.ok_or_else(|| anyhow::anyhow!("Could not get the index_id"))?;
     let split_ids = split_ids
         .iter()
         .map(|split_id| split_id.as_str())
         .collect::<Vec<_>>();
+    let num_splits = split_ids.len();
     metastore
         .publish_splits(index_id.as_str(), split_ids)
         .await?;
+
+    statistics.num_published_splits.add(num_splits);
 
     Ok(())
 }

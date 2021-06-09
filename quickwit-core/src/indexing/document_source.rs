@@ -25,7 +25,7 @@ use std::io;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::Lines;
 
-/// A trait for retrieving input content online at a time
+/// A trait for retrieving input content one line at a time
 #[async_trait]
 pub trait DocumentSource: 'static {
     /// Reads one line from underlying input buffer.

@@ -45,7 +45,7 @@ const SPLIT_CHANNEL_SIZE: usize = 30;
 pub struct IndexDataParams {
     /// Index uri.
     pub index_uri: PathBuf,
-    /// Tempory directory to use for indexing.
+    /// Tempory directory to use for indexing
     pub temp_dir: PathBuf,
     /// Number of thread to use for indexing.
     pub num_threads: usize,
@@ -99,7 +99,12 @@ pub async fn index_data(
             split_sender,
             statistics.clone(),
         ),
-        finalize_split(split_receiver, metastore, statistics.clone()),
+        finalize_split(
+            index_id.to_owned(),
+            split_receiver,
+            metastore,
+            statistics.clone()
+        ),
     )?;
 
     Ok(())
