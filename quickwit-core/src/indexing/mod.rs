@@ -21,13 +21,14 @@
 */
 
 mod document_indexer;
-mod document_retriever;
+mod document_source;
 mod index;
 mod manifest;
 mod split;
 mod split_finalizer;
 mod statistics;
 
+pub use document_source::DocumentSource;
 pub use index::{index_data, IndexDataParams};
 pub use split::remove_split_files_from_storage;
 pub use split_finalizer::MAX_CONCURRENT_SPLIT_TASKS;

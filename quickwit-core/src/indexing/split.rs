@@ -150,15 +150,9 @@ impl Split {
 
     /// Commits the split.
     pub async fn commit(&mut self) -> anyhow::Result<u64> {
-        let directory_path = self.local_directory.to_path_buf();
         let mut index_writer = self.index_writer.take().unwrap();
-
         let (moved_index_writer, commit_opstamp) = tokio::task::spawn_blocking(move || {
             let opstamp = index_writer.commit()?;
-            let hotcache_path = directory_path.join("hotcache");
-            let mut hotcache_file = std::fs::File::create(&hotcache_path)?;
-            let mmap_directory = MmapDirectory::open(directory_path)?;
-            write_hotcache(mmap_directory, &mut hotcache_file)?;
             anyhow::Result::<(tantivy::IndexWriter, u64)>::Ok((index_writer, opstamp))
         })
         .await
@@ -186,6 +180,20 @@ impl Split {
             .merge(&segment_ids)
             .await?;
         Ok(())
+    }
+
+    /// Build the split hotcache file
+    pub async fn build_hotcache(&mut self) -> anyhow::Result<()> {
+        let directory_path = self.local_directory.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let hotcache_path = directory_path.join("hotcache");
+            let mut hotcache_file = std::fs::File::create(&hotcache_path)?;
+            let mmap_directory = MmapDirectory::open(directory_path)?;
+            write_hotcache(mmap_directory, &mut hotcache_file)?;
+            anyhow::Result::<()>::Ok(())
+        })
+        .await
+        .map_err(|error| anyhow::anyhow!(error))?
     }
 
     /// Stage a split in the metastore.
@@ -342,7 +350,6 @@ mod tests {
         let index_uri = format!("file://{}", index_dir.path().display());
         let params = &IndexDataParams {
             index_uri: PathBuf::from_str(&index_uri)?,
-            input_uri: None,
             temp_dir: split_dir.path().to_path_buf(),
             num_threads: 1,
             heap_size: 3000000,
@@ -388,6 +395,9 @@ mod tests {
 
         let merge_result = split.merge_all_segments().await;
         assert_eq!(merge_result.is_ok(), true);
+
+        let hotcache_result = split.build_hotcache().await;
+        assert_eq!(hotcache_result.is_ok(), true);
 
         task::spawn(async move {
             split.stage().await?;
