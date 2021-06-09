@@ -28,7 +28,9 @@ use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
 };
 use quickwit_metastore::IndexMetadata;
+use std::env;
 use std::io;
+use std::io::Stdout;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::fs::File;
@@ -265,10 +267,8 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         "indexing"
     );
 
-
     let input_path = args.input_path.clone();
     let document_source = create_document_source_from_args(input_path).await?;
-    let is_stdin_atty = atty::is(atty::Stream::Stdin);
     let params = IndexDataParams {
         index_uri: PathBuf::from(args.index_uri.clone()),
         temp_dir: args.temp_dir,
@@ -277,13 +277,26 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         overwrite: args.overwrite,
     };
 
+    let is_stdin_atty = atty::is(atty::Stream::Stdin);
+    if args.input_path.is_none() && is_stdin_atty {
+        let eof_shortcut = match env::consts::OS {
+            "windows" => "CTRL+Z",
+            "macos" => "CMD+D",
+            _ => "CTRL+D",
+        };
+        println!("Please enter your new line delimited json documents one line at a time.\nEnd your input using {}.", eof_shortcut);
+    }
+
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
 
     let statistics = Arc::new(IndexingStatistics::default());
     let (task_completed_sender, task_completed_receiver) = watch::channel::<bool>(false);
-    let reporting_future =
-        start_statistics_reporting(statistics.clone(), task_completed_receiver, is_stdin_atty);
+    let reporting_future = start_statistics_reporting(
+        statistics.clone(),
+        task_completed_receiver,
+        args.input_path.clone(),
+    );
     let index_future = async move {
         index_data(
             metastore_uri,
@@ -347,7 +360,7 @@ async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
 pub async fn start_statistics_reporting(
     statistics: Arc<IndexingStatistics>,
     task_completed_receiver: watch::Receiver<bool>,
-    is_stdin_atty: bool,
+    input_path_opt: Option<PathBuf>,
 ) -> anyhow::Result<usize> {
     task::spawn(async move {
         let mut stdout_handle = stdout();
@@ -361,7 +374,7 @@ pub async fn start_statistics_reporting(
                 .is_ok();
 
             // Let's not display live statistics to allow screen to scroll.
-            if is_stdin_atty && statistics.num_docs.get() > 0 {
+            if input_path_opt.is_some() && statistics.num_docs.get() > 0 {
                 display_statistics(&mut stdout_handle, start_time, statistics.clone())?;
             }
 
@@ -376,7 +389,7 @@ pub async fn start_statistics_reporting(
             return anyhow::Result::<usize>::Ok(0);
         }
 
-        if !is_stdin_atty {
+        if input_path_opt.is_none() {
             display_statistics(&mut stdout_handle, start_time, statistics.clone())?;
         }
         //display end of task report

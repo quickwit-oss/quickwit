@@ -20,7 +20,6 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -46,7 +45,7 @@ const SPLIT_CHANNEL_SIZE: usize = 30;
 pub struct IndexDataParams {
     /// Index uri.
     pub index_uri: PathBuf,
-    /// Tempory directory to use for indexing.
+    /// Tempory directory to use for indexing
     pub temp_dir: PathBuf,
     /// Number of thread to use for indexing.
     pub num_threads: usize,
