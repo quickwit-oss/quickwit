@@ -19,10 +19,9 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+use rusoto_core::Region;
 use std::collections::HashMap;
 use std::sync::Arc;
-
-use rusoto_core::Region;
 
 use crate::{local_file_storage::LocalFileStorageFactory, ram_storage::RamStorageFactory};
 use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
@@ -38,30 +37,49 @@ pub trait StorageFactory: Send + Sync + 'static {
 
 /// Resolves an URI by dispatching it to the right [`StorageFactory`]
 /// based on its protocol.
+#[derive(Clone)]
 pub struct StorageUriResolver {
+    per_protocol_resolver: Arc<HashMap<String, Arc<dyn StorageFactory>>>,
+}
+
+#[derive(Default)]
+pub struct StorageUriResolverBuilder {
     per_protocol_resolver: HashMap<String, Arc<dyn StorageFactory>>,
 }
 
-impl Default for StorageUriResolver {
-    fn default() -> Self {
-        let mut resolver = StorageUriResolver {
-            per_protocol_resolver: Default::default(),
-        };
-        resolver.register(RamStorageFactory::default());
-        resolver.register(LocalFileStorageFactory::default());
-        resolver.register(S3CompatibleObjectStorageFactory::new(Region::default()));
-        resolver
-    }
-}
-
-impl StorageUriResolver {
+impl StorageUriResolverBuilder {
     /// Registers a resolver.
     ///
     /// If a previous resolver was registered for this protocol, it is discarded
     /// and replaced with the new one.
-    pub fn register<S: StorageFactory>(&mut self, resolver: S) {
+    pub fn register<S: StorageFactory>(mut self, resolver: S) -> Self {
         self.per_protocol_resolver
             .insert(resolver.protocol(), Arc::new(resolver));
+        self
+    }
+
+    /// Builds the `StorageUriResolver`.
+    pub fn build(self) -> StorageUriResolver {
+        StorageUriResolver {
+            per_protocol_resolver: Arc::new(self.per_protocol_resolver),
+        }
+    }
+}
+
+impl Default for StorageUriResolver {
+    fn default() -> Self {
+        StorageUriResolver::builder()
+            .register(RamStorageFactory::default())
+            .register(LocalFileStorageFactory::default())
+            .register(S3CompatibleObjectStorageFactory::new(Region::default()))
+            .build()
+    }
+}
+
+impl StorageUriResolver {
+    /// Creates an empty `StorageUriResolver`.
+    pub fn builder() -> StorageUriResolverBuilder {
+        StorageUriResolverBuilder::default()
     }
 
     /// Resolves the given URI.
@@ -90,7 +108,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_storage_resolver_simple() -> anyhow::Result<()> {
-        let mut storage_resolver = StorageUriResolver::default();
         let mut first = MockStorageFactory::new();
         first.expect_protocol().returning(|| "first".to_string());
         let mut second = MockStorageFactory::new();
@@ -102,8 +119,10 @@ mod tests {
                     .build(),
             ))
         });
-        storage_resolver.register(first);
-        storage_resolver.register(second);
+        let storage_resolver = StorageUriResolver::builder()
+            .register(first)
+            .register(second)
+            .build();
         let resolved = storage_resolver.resolve("second://")?;
         let data = resolved.get_all(Path::new("hello")).await?;
         assert_eq!(data, b"hello_content_second");
@@ -112,7 +131,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_storage_resolver_override() -> anyhow::Result<()> {
-        let mut storage_resolver = StorageUriResolver::default();
         let mut first = MockStorageFactory::new();
         first.expect_protocol().returning(|| "protocol".to_string());
         let mut second = MockStorageFactory::new();
@@ -127,8 +145,10 @@ mod tests {
                     .build(),
             ))
         });
-        storage_resolver.register(first);
-        storage_resolver.register(second);
+        let storage_resolver = StorageUriResolver::builder()
+            .register(first)
+            .register(second)
+            .build();
         let resolved = storage_resolver.resolve("protocol://mystorage")?;
         let data = resolved.get_all(Path::new("hello")).await?;
         assert_eq!(data, b"hello_content_second");

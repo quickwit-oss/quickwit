@@ -57,6 +57,16 @@ impl Default for MetastoreUriResolver {
 }
 
 impl MetastoreUriResolver {
+    /// Creates a `MetaStoreUriResolver` with a specific storage resolver.
+    pub fn with_storage_resolver(
+        default_storage_resolver: StorageUriResolver,
+    ) -> MetastoreUriResolver {
+        MetastoreUriResolver {
+            per_protocol_resolver: Default::default(),
+            default_storage_resolver,
+        }
+    }
+
     /// Registers a resolver.
     ///
     /// If a previous resolver was registered for this protocol, it is discarded
