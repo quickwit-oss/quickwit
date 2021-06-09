@@ -103,6 +103,7 @@ pub async fn delete_index(
         .await?;
 
     let files = garbage_collect(metastore_uri, index_id, storage_resolver).await?;
+    //TODO: discuss & fix possible data race
     metastore.delete_index(index_id).await?;
 
     Ok(files)

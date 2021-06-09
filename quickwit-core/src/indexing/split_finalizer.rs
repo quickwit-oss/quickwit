@@ -59,6 +59,7 @@ pub async fn finalize_split(
                 split.merge_all_segments().await?;
                 split.build_hotcache().await?;
 
+                //TODO: discuss & fix possible data race see `Metastore::stage_split`
                 split.stage().await?;
                 moved_statistics.num_staged_splits.inc();
 
