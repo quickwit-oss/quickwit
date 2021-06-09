@@ -25,8 +25,8 @@ use quickwit_storage::StorageUriResolver;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
-use crate::indexing::document_retriever::DocumentRetriever;
 use crate::indexing::split::Split;
+use crate::indexing::DocumentSource;
 
 use super::IndexDataParams;
 use super::IndexingStatistics;
@@ -37,7 +37,7 @@ pub async fn index_documents(
     params: &IndexDataParams,
     metastore: Arc<dyn Metastore>,
     storage_resolver: Arc<StorageUriResolver>,
-    mut document_retriever: Box<dyn DocumentRetriever>,
+    mut document_source: Box<dyn DocumentSource>,
     split_sender: Sender<Split>,
     statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
@@ -52,7 +52,7 @@ pub async fn index_documents(
         schema.clone(),
     )
     .await?;
-    while let Some(raw_json_doc) = document_retriever.next_document().await? {
+    while let Some(raw_json_doc) = document_source.next_document().await? {
         let doc_size = raw_json_doc.as_bytes().len();
         let parse_result = index_metadata.doc_mapper.doc_from_json(&raw_json_doc);
 
@@ -101,14 +101,13 @@ pub async fn index_documents(
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, str::FromStr, sync::Arc};
-
-    use crate::indexing::{
-        document_retriever::StringDocumentSource, split::Split, IndexDataParams, IndexingStatistics,
-    };
+    use crate::indexing::document_source::test_documents;
+    use crate::indexing::split::Split;
+    use crate::indexing::{IndexDataParams, IndexingStatistics};
     use quickwit_doc_mapping::{AllFlattenDocMapper, DocMapper};
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_storage::StorageUriResolver;
+    use std::{path::PathBuf, str::FromStr, sync::Arc};
     use tokio::sync::mpsc::channel;
 
     use super::index_documents;
@@ -121,7 +120,6 @@ mod tests {
         let index_uri = format!("file://{}/{}", index_dir.path().display(), index_id);
         let params = IndexDataParams {
             index_uri: PathBuf::from_str(&index_uri)?,
-            input_uri: None,
             temp_dir: split_dir.into_path(),
             num_threads: 1,
             heap_size: 3000000,
@@ -145,15 +143,15 @@ mod tests {
         let storage_resolver = Arc::new(StorageUriResolver::default());
 
         const NUM_DOCS: usize = 780;
-        let docs = (0..NUM_DOCS)
-            .map(|num| format!("doc_{}", num))
-            .collect::<Vec<String>>();
-        let total_bytes = docs
+        let test_docs: Vec<serde_json::Value> = (0..NUM_DOCS)
+            .map(|num| serde_json::json!({ "id": format!("doc_{}", num) }))
+            .collect();
+        let total_bytes: usize = test_docs
             .iter()
-            .fold(0, |total, size| total + size.as_bytes().len());
-        let input = docs.join("\n");
+            .map(|doc_json| serde_json::to_string(&doc_json).unwrap().len())
+            .sum();
 
-        let document_retriever = Box::new(StringDocumentSource::new(input));
+        let document_source = test_documents(test_docs);
         let (split_sender, _split_receiver) = channel::<Split>(20);
 
         let statistics = Arc::new(IndexingStatistics::default());
@@ -162,7 +160,7 @@ mod tests {
             &params,
             metastore,
             storage_resolver,
-            document_retriever,
+            document_source,
             split_sender,
             statistics.clone(),
         )

@@ -296,7 +296,6 @@ mod tests {
         let index_uri = format!("file://{}", index_dir.path().display());
         let params = &IndexDataParams {
             index_uri: PathBuf::from_str(&index_uri)?,
-            input_uri: None,
             temp_dir: split_dir.path().to_path_buf(),
             num_threads: 1,
             heap_size: 3000000,
