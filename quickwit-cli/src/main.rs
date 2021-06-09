@@ -265,13 +265,10 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         "indexing"
     );
 
-<<<<<<< HEAD
+
     let input_path = args.input_path.clone();
     let document_source = create_document_source_from_args(input_path).await?;
-=======
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
-    println!("IS_ATTY: {}", is_stdin_atty);
->>>>>>> now generating hotcache after merge
     let params = IndexDataParams {
         index_uri: PathBuf::from(args.index_uri.clone()),
         temp_dir: args.temp_dir,
@@ -371,6 +368,12 @@ pub async fn start_statistics_reporting(
             if is_done {
                 break;
             }
+        }
+
+        // If we have received zero docs at this point, 
+        // there is no point in displaying report.
+        if statistics.num_docs.get() == 0 {
+            return anyhow::Result::<usize>::Ok(0)
         }
 
         if !is_stdin_atty {
