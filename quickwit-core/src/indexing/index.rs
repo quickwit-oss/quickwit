@@ -20,12 +20,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::try_join;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
+use tempfile::TempDir;
 use tokio::sync::mpsc::channel;
 use tracing::warn;
 
@@ -45,7 +45,7 @@ pub struct IndexDataParams {
     /// The index id.
     pub index_id: String,
     /// Tempory directory to use for indexing
-    pub temp_dir: PathBuf,
+    pub temp_dir: Arc<TempDir>,
     /// Number of thread to use for indexing.
     pub num_threads: usize,
     /// Amount of memory shared among indexing threads.
@@ -66,14 +66,13 @@ pub struct IndexDataParams {
 /// * `statistics` - The statistic counter object; see [`IndexingStatistics`].
 pub async fn index_data(
     metastore: Arc<dyn Metastore>,
-    index_id: &str,
     params: IndexDataParams,
     document_source: Box<dyn DocumentSource>,
     storage_resolver: StorageUriResolver,
     statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
     if params.overwrite {
-        reset_index(&*metastore, index_id, storage_resolver.clone()).await?;
+        reset_index(&*metastore, &params.index_id, storage_resolver.clone()).await?;
     }
 
     let (split_sender, split_receiver) = channel::<Split>(SPLIT_CHANNEL_SIZE);
@@ -87,7 +86,7 @@ pub async fn index_data(
             statistics.clone(),
         ),
         finalize_split(
-            index_id.to_owned(),
+            params.index_id.clone(),
             split_receiver,
             metastore,
             statistics.clone()

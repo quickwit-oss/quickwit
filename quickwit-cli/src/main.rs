@@ -35,6 +35,7 @@ use std::io;
 use std::io::Stdout;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tempfile::TempDir;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
@@ -61,7 +62,7 @@ struct CreateIndexArgs {
 struct IndexDataArgs {
     index_uri: String,
     input_path: Option<PathBuf>,
-    temp_dir: PathBuf,
+    temp_dir: Option<PathBuf>,
     num_threads: usize,
     heap_size: u64,
     overwrite: bool,
@@ -145,11 +146,8 @@ impl CliCommand {
             .value_of("index-uri")
             .context("index-uri is required")?
             .to_string();
-        let input_path = matches.value_of("input-path").map(PathBuf::from);
-        let temp_dir_str = matches
-            .value_of("temp-dir")
-            .context("temp-dir has a default value")?;
-        let temp_dir = PathBuf::from(temp_dir_str);
+        let input_path: Option<PathBuf> = matches.value_of("input-path").map(PathBuf::from);
+        let temp_dir: Option<PathBuf> = matches.value_of("temp-dir").map(PathBuf::from);
         let num_threads = value_t!(matches, "num-threads", usize)?; // 'num-threads' has a default value
         let heap_size_str = matches
             .value_of("heap-size")
@@ -257,11 +255,20 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn create_index_scratch_dir(path_tempdir_opt: Option<&PathBuf>) -> anyhow::Result<Arc<TempDir>> {
+    let scratch_dir = if let Some(path_tempdir) = path_tempdir_opt {
+        tempfile::tempdir_in(&path_tempdir)?
+    } else {
+        tempfile::tempdir()?
+    };
+    Ok(Arc::new(scratch_dir))
+}
+
 async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     debug!(
         index_uri = %args.index_uri,
         input_uri = ?args.input_path,
-        temp_dir = %args.temp_dir.display(),
+        temp_dir = ?args.temp_dir,
         num_threads = args.num_threads,
         heap_size = args.heap_size,
         overwrite = args.overwrite,
@@ -272,9 +279,10 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let document_source = create_document_source_from_args(input_path).await?;
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+    let temp_dir = create_index_scratch_dir(args.temp_dir.as_ref())?;
     let params = IndexDataParams {
         index_id: index_id.to_string(),
-        temp_dir: args.temp_dir,
+        temp_dir,
         num_threads: args.num_threads,
         heap_size: args.heap_size,
         overwrite: args.overwrite,
@@ -304,7 +312,6 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let index_future = async move {
         index_data(
             metastore,
-            index_id,
             params,
             document_source,
             storage_uri_resolver,
@@ -571,11 +578,11 @@ mod tests {
             Ok(CliCommand::Index(IndexDataArgs {
                 index_uri,
                 input_path: None,
-                temp_dir,
+                temp_dir: None,
                 num_threads: 2,
                 heap_size: 2_000_000_000,
                 overwrite: false,
-            })) if &index_uri == "file:///indexes/wikipedia" && temp_dir == PathBuf::from("/tmp")
+            })) if &index_uri == "file:///indexes/wikipedia"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -604,7 +611,7 @@ mod tests {
                 num_threads: 4,
                 heap_size: 4_294_967_296,
                 overwrite: true,
-            })) if &index_uri == "file:///indexes/wikipedia" && input_path == Path::new("/data/wikipedia.json") && temp_dir == PathBuf::from("./tmp")
+            })) if &index_uri == "file:///indexes/wikipedia" && input_path == Path::new("/data/wikipedia.json") && temp_dir == Some(PathBuf::from("./tmp"))
         ));
 
         Ok(())
