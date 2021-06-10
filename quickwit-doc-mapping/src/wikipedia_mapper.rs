@@ -20,19 +20,21 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::{mapper::SearchRequest, DocMapper};
+use crate::DocMapper;
+use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
-use tantivy::{
-    query::Query,
-    schema::{DocParsingError, Schema, TextFieldIndexing, TextOptions},
-    Document,
-};
+use tantivy::query::{Query, QueryParser};
+use tantivy::schema::{DocParsingError, Schema, TextFieldIndexing, TextOptions};
+use tantivy::tokenizer::TokenizerManager;
+use tantivy::Document;
 
 /// A document mapper tailored for the wikipedia corpus.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct WikipediaMapper {
     #[serde(skip_serializing, default = "WikipediaMapper::default_schema")]
     schema: Schema,
+    #[serde(skip_deserializing, skip_serializing, default)]
+    tokenizer_manager: TokenizerManager,
 }
 
 impl std::fmt::Debug for WikipediaMapper {
@@ -46,6 +48,7 @@ impl WikipediaMapper {
     pub fn new() -> Self {
         WikipediaMapper {
             schema: Self::default_schema(),
+            tokenizer_manager: Default::default(),
         }
     }
 
@@ -73,8 +76,16 @@ impl DocMapper for WikipediaMapper {
         self.schema.parse_document(doc_json)
     }
 
-    fn query(&self, _request: SearchRequest) -> Box<dyn Query> {
-        todo!()
+    fn query(&self, request: &SearchRequest) -> anyhow::Result<Box<dyn Query>> {
+        let schema = self.schema();
+        let default_fields = vec![
+            schema.get_field("body").unwrap(),
+            schema.get_field("title").unwrap(),
+        ];
+        // TODO include query_parser in WikipediaMapper.
+        let query_parser = QueryParser::new(schema, default_fields, self.tokenizer_manager.clone());
+        let query = query_parser.parse_query(&request.query)?;
+        Ok(query)
     }
 
     fn schema(&self) -> Schema {

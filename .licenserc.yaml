@@ -25,6 +25,7 @@ header:
 
   paths-ignore:
     - '**/target/**'
+    - 'quickwit-proto/src/quickwit.rs'
 
   paths:
     - '**/*.rs'

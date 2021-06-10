@@ -30,6 +30,8 @@ use quickwit_doc_mapping::{
 };
 use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::MetastoreUriResolver;
+use quickwit_proto::SearchRequest;
+use quickwit_search::single_node_search;
 use quickwit_storage::StorageUriResolver;
 use regex::Regex;
 use std::env;
@@ -362,6 +364,24 @@ async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
         end_timestamp = ?args.end_timestamp,
         "search-index"
     );
+    let (metastore_uri, index_id) =
+        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+    let storage_uri_resolver = StorageUriResolver::default();
+    let metastore_uri_resolver =
+        MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone());
+    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
+    let search_request = SearchRequest {
+        index_id: index_id.to_string(),
+        query: args.query.clone(),
+        start_timestamp: args.start_timestamp,
+        end_timestamp: args.end_timestamp,
+        max_hits: args.max_hits as u64,
+        start_offset: args.start_offset as u64,
+    };
+    let search_result =
+        single_node_search(&search_request, &*metastore, storage_uri_resolver).await?;
+    let search_result_json = serde_json::to_string_pretty(&search_result)?;
+    println!("{}", search_result_json);
     Ok(())
 }
 
