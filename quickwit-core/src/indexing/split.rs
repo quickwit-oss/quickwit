@@ -101,7 +101,7 @@ impl Split {
     pub async fn create(
         index_id: String,
         params: &IndexDataParams,
-        storage_resolver: Arc<StorageUriResolver>,
+        storage_resolver: StorageUriResolver,
         metastore: Arc<dyn Metastore>,
         schema: Schema,
     ) -> anyhow::Result<Self> {
@@ -305,7 +305,7 @@ async fn put_split_files_to_storage(
 ///
 pub async fn remove_split_files_from_storage(
     split_uri: &str,
-    storage_resolver: Arc<StorageUriResolver>,
+    storage_resolver: StorageUriResolver,
     dry_run: bool,
 ) -> anyhow::Result<Vec<PathBuf>> {
     info!(split_uri =% split_uri, "delete-split");
@@ -356,7 +356,6 @@ mod tests {
             overwrite: false,
         };
         let schema = Schema::builder().build();
-        let storage_resolver = Arc::new(StorageUriResolver::default());
         let mut mock_metastore = MockMetastore::default();
         mock_metastore.expect_stage_split().times(1).returning(
             move |expected_index_uri, _split_id| {
@@ -369,7 +368,7 @@ mod tests {
         let split_result = Split::create(
             index_dir.path().display().to_string(),
             params,
-            storage_resolver,
+            StorageUriResolver::default(),
             metastore,
             schema,
         )

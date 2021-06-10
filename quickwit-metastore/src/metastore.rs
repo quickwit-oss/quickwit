@@ -208,4 +208,7 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
         split_ids: Vec<&'a str>,
     ) -> MetastoreResult<()>;
+
+    /// Returns the Metastore uri.
+    fn uri(&self) -> String;
 }

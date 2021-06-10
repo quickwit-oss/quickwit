@@ -28,6 +28,7 @@ use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
 };
 use quickwit_metastore::IndexMetadata;
+use quickwit_storage::StorageUriResolver;
 use std::env;
 use std::io;
 use std::io::Stdout;
@@ -303,6 +304,7 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
             index_id,
             params,
             document_source,
+            StorageUriResolver::default(),
             statistics.clone(),
         )
         .await?;

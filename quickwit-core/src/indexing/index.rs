@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures::try_join;
+use quickwit_metastore::Metastore;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_storage::StorageUriResolver;
 use tokio::sync::mpsc::channel;
@@ -69,15 +70,14 @@ pub async fn index_data(
     index_id: &str,
     params: IndexDataParams,
     document_source: Box<dyn DocumentSource>,
+    storage_resolver: StorageUriResolver,
     statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default()
+    let metastore = MetastoreUriResolver::with_storage_resolver(storage_resolver.clone())
         .resolve(&metastore_uri)
         .await?;
-    let storage_resolver = Arc::new(StorageUriResolver::default());
-
     if params.overwrite {
-        reset_index(metastore_uri, index_id, storage_resolver.clone()).await?;
+        reset_index(&*metastore, index_id, storage_resolver.clone()).await?;
     }
 
     let (split_sender, split_receiver) = channel::<Split>(SPLIT_CHANNEL_SIZE);
@@ -113,14 +113,10 @@ pub async fn index_data(
 /// * `metastore` - A emtastore object for interracting with the metastore.
 ///
 async fn reset_index(
-    metastore_uri: &str,
+    metastore: &dyn Metastore,
     index_id: &str,
-    storage_resolver: Arc<StorageUriResolver>,
+    storage_resolver: StorageUriResolver,
 ) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default()
-        .resolve(&metastore_uri)
-        .await?;
-
     let splits = metastore.list_all_splits(index_id).await?;
     let split_ids = splits
         .iter()
@@ -130,10 +126,9 @@ async fn reset_index(
         .mark_splits_as_deleted(index_id, split_ids.clone())
         .await?;
 
-    let garbage_collection_result =
-        garbage_collect(metastore_uri, index_id, storage_resolver).await;
+    let garbage_collection_result = garbage_collect(metastore, index_id, storage_resolver).await;
     if garbage_collection_result.is_err() {
-        warn!(metastore_uri =% metastore_uri, "All split files could not be removed during garbage collection.");
+        warn!(metastore_uri = %metastore.uri(), "All split files could not be removed during garbage collection.");
     }
 
     metastore.delete_splits(index_id, split_ids).await?;

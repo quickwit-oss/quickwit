@@ -39,10 +39,8 @@ impl<I: AsyncBufReadExt + 'static + Unpin + Send> DocumentSource for Lines<I> {
     }
 }
 
-#[cfg(test)]
 struct TestDocuments<I>(pub I);
 
-#[cfg(test)]
 #[async_trait]
 impl<I> DocumentSource for TestDocuments<I>
 where
@@ -59,8 +57,10 @@ where
     }
 }
 
-#[cfg(test)]
-pub fn test_documents<I>(doc_jsons: I) -> Box<dyn DocumentSource>
+/// Creates a document source from an iterator over json values.
+///
+/// This function is useful for creating tests.
+pub fn test_document_source<I>(doc_jsons: I) -> Box<dyn DocumentSource>
 where
     I: IntoIterator<Item = serde_json::Value> + 'static,
     I::IntoIter: Send,

@@ -386,6 +386,10 @@ impl Metastore for SingleFileMetastore {
         let index_metadata = self.get_index(index_id).await?;
         Ok(index_metadata.index)
     }
+
+    fn uri(&self) -> String {
+        self.storage.uri()
+    }
 }
 
 #[cfg(test)]
