@@ -23,11 +23,13 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
+use once_cell::sync::Lazy;
 use quickwit_core::DocumentSource;
 use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
 };
 use quickwit_metastore::IndexMetadata;
+use regex::Regex;
 use std::env;
 use std::io;
 use std::io::Stdout;
@@ -225,12 +227,12 @@ impl CliCommand {
 fn extract_metastore_uri_and_index_id_from_index_uri(
     index_uri: &str,
 ) -> anyhow::Result<(&str, &str)> {
+    static INDEX_ID_PATTERN: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9_\-]*$").unwrap());
     let parts: Vec<&str> = index_uri.rsplitn(2, '/').collect();
     if parts.len() == 2 {
-        let index_id_pattern = regex::Regex::new(r"^[a-zA-Z][a-zA-Z0-9_\-]*$").unwrap();
-        if !index_id_pattern.is_match(parts[0]) {
-            let error_message = format!("Invalid index_id `{}`. Only alpha-numeric, `-` and `_` characters allowed. Cannot start with `-`, `_` or digit.", parts[0]);
-            anyhow::bail!(error_message);
+        if !INDEX_ID_PATTERN.is_match(parts[0]) {
+            anyhow::bail!("Invalid index_id `{}`. Only alpha-numeric, `-` and `_` characters allowed. Cannot start with `-`, `_` or digit.", parts[0]);
         }
         Ok((parts[1], parts[0]))
     } else {
