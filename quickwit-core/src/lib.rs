@@ -33,4 +33,6 @@ mod index;
 mod indexing;
 
 pub use self::index::{create_index, delete_index, search_index};
-pub use self::indexing::{index_data, DocumentSource, IndexDataParams, IndexingStatistics};
+pub use self::indexing::{
+    index_data, test_document_source, DocumentSource, IndexDataParams, IndexingStatistics,
+};
