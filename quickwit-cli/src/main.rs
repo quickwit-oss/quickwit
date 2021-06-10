@@ -284,7 +284,6 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     if args.input_path.is_none() && is_stdin_atty {
         let eof_shortcut = match env::consts::OS {
             "windows" => "CTRL+Z",
-            "macos" => "CMD+D",
             _ => "CTRL+D",
         };
         println!("Please enter your new line delimited json documents one line at a time.\nEnd your input using {}.", eof_shortcut);
