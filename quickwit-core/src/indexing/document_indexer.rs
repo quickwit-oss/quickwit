@@ -36,7 +36,7 @@ pub async fn index_documents(
     index_id: String,
     params: &IndexDataParams,
     metastore: Arc<dyn Metastore>,
-    storage_resolver: Arc<StorageUriResolver>,
+    storage_resolver: StorageUriResolver,
     mut document_source: Box<dyn DocumentSource>,
     split_sender: Sender<Split>,
     statistics: Arc<IndexingStatistics>,
@@ -101,7 +101,7 @@ pub async fn index_documents(
 
 #[cfg(test)]
 mod tests {
-    use crate::indexing::document_source::test_documents;
+    use crate::indexing::document_source::test_document_source;
     use crate::indexing::split::Split;
     use crate::indexing::{IndexDataParams, IndexingStatistics};
     use quickwit_doc_mapping::{AllFlattenDocMapper, DocMapper};
@@ -140,7 +140,6 @@ mod tests {
                 })
             });
         let metastore = Arc::new(mock_metastore);
-        let storage_resolver = Arc::new(StorageUriResolver::default());
 
         const NUM_DOCS: usize = 780;
         let test_docs: Vec<serde_json::Value> = (0..NUM_DOCS)
@@ -151,7 +150,7 @@ mod tests {
             .map(|doc_json| serde_json::to_string(&doc_json).unwrap().len())
             .sum();
 
-        let document_source = test_documents(test_docs);
+        let document_source = test_document_source(test_docs);
         let (split_sender, _split_receiver) = channel::<Split>(20);
 
         let statistics = Arc::new(IndexingStatistics::default());
@@ -159,7 +158,7 @@ mod tests {
             index_id.to_owned(),
             &params,
             metastore,
-            storage_resolver,
+            StorageUriResolver::default(),
             document_source,
             split_sender,
             statistics.clone(),

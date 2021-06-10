@@ -30,6 +30,8 @@ use quickwit_doc_mapping::{
 };
 use quickwit_metastore::IndexMetadata;
 use regex::Regex;
+use quickwit_metastore::MetastoreUriResolver;
+use quickwit_storage::StorageUriResolver;
 use std::env;
 use std::io;
 use std::io::Stdout;
@@ -251,7 +253,7 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
     if args.overwrite {
-        delete_index(metastore_uri, index_id).await?;
+        delete_index(metastore_uri, index_id, false).await?;
     }
 
     let index_metadata = IndexMetadata {
@@ -304,12 +306,17 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         task_completed_receiver,
         args.input_path.clone(),
     );
+    let storage_uri_resolver = StorageUriResolver::default();
+    let metastore_uri_resolver =
+        MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone());
+    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
     let index_future = async move {
         index_data(
-            metastore_uri,
+            metastore,
             index_id,
             params,
             document_source,
+            storage_uri_resolver,
             statistics.clone(),
         )
         .await?;
@@ -359,6 +366,22 @@ async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         dry_run = args.dry_run,
         "delete-index"
     );
+
+    let (metastore_uri, index_id) =
+        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+    let affected_files = delete_index(metastore_uri, index_id, args.dry_run).await?;
+    if args.dry_run {
+        println!(
+            "The following files will be removed from the index at `{}`",
+            args.index_uri
+        );
+        for file in affected_files {
+            println!(" - {}", file.display());
+        }
+    } else {
+        println!("Index successfully deleted at `{}`", args.index_uri);
+    }
+
     Ok(())
 }
 

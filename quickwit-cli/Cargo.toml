@@ -11,6 +11,7 @@ byte-unit = "4"
 clap = { version = "2", features = ["yaml"] }
 quickwit-core = { version = "0.1.0", path = "../quickwit-core" }
 quickwit-metastore = { version = "0.1.0", path = "../quickwit-metastore" }
+quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
 quickwit-doc-mapping = { version = "0.1.0", path = "../quickwit-doc-mapping" }
 tracing = '0.1'
 tracing-subscriber = "0.2"
