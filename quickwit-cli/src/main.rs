@@ -28,6 +28,7 @@ use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
 };
 use quickwit_metastore::IndexMetadata;
+use quickwit_metastore::MetastoreUriResolver;
 use quickwit_storage::StorageUriResolver;
 use std::env;
 use std::io;
@@ -298,13 +299,17 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         task_completed_receiver,
         args.input_path.clone(),
     );
+    let storage_uri_resolver = StorageUriResolver::default();
+    let metastore_uri_resolver =
+        MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone());
+    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
     let index_future = async move {
         index_data(
-            metastore_uri,
+            metastore,
             index_id,
             params,
             document_source,
-            StorageUriResolver::default(),
+            storage_uri_resolver,
             statistics.clone(),
         )
         .await?;

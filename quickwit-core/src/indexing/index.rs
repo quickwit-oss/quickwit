@@ -25,7 +25,6 @@ use std::sync::Arc;
 
 use futures::try_join;
 use quickwit_metastore::Metastore;
-use quickwit_metastore::MetastoreUriResolver;
 use quickwit_storage::StorageUriResolver;
 use tokio::sync::mpsc::channel;
 use tracing::warn;
@@ -66,16 +65,13 @@ pub struct IndexDataParams {
 /// * `input_uri` - Input path from where to read new-line delimited json documents
 /// * `statistics` - The statistic counter object; see [`IndexingStatistics`].
 pub async fn index_data(
-    metastore_uri: &str,
+    metastore: Arc<dyn Metastore>,
     index_id: &str,
     params: IndexDataParams,
     document_source: Box<dyn DocumentSource>,
     storage_resolver: StorageUriResolver,
     statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::with_storage_resolver(storage_resolver.clone())
-        .resolve(&metastore_uri)
-        .await?;
     if params.overwrite {
         reset_index(&*metastore, index_id, storage_resolver.clone()).await?;
     }
