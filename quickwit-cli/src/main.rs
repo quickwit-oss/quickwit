@@ -122,16 +122,15 @@ impl CliCommand {
         let overwrite = matches.is_present("overwrite");
 
         // TODO: find better way to build doc mapper when we clarify the specs.
-        let doc_mapper = match doc_mapper_type.trim().to_lowercase().as_str() {
-            "all_flatten" => {
-                AllFlattenDocMapper::new().map(|mapper| Box::new(mapper) as Box<dyn DocMapper>)
+        let doc_mapper: Box<dyn DocMapper> = match doc_mapper_type.trim().to_lowercase().as_str() {
+            "all_flatten" => Box::new(AllFlattenDocMapper::new()) as Box<dyn DocMapper>,
+            "wikipedia" => Box::new(WikipediaMapper::new()) as Box<dyn DocMapper>,
+            _ =>
+            // TODO return an error if the type is unknown
+            {
+                Box::new(DefaultDocMapper::new(DocMapperConfig::default())) as Box<dyn DocMapper>
             }
-            "wikipedia" => {
-                WikipediaMapper::new().map(|mapper| Box::new(mapper) as Box<dyn DocMapper>)
-            }
-            _ => DefaultDocMapper::new(DocMapperConfig::default())
-                .map(|mapper| Box::new(mapper) as Box<dyn DocMapper>),
-        }?;
+        };
 
         Ok(CliCommand::New(CreateIndexArgs {
             index_uri,
@@ -271,8 +270,10 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
 
     let input_path = args.input_path.clone();
     let document_source = create_document_source_from_args(input_path).await?;
+    let (metastore_uri, index_id) =
+        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
     let params = IndexDataParams {
-        index_uri: PathBuf::from(args.index_uri.clone()),
+        index_id: index_id.to_string(),
         temp_dir: args.temp_dir,
         num_threads: args.num_threads,
         heap_size: args.heap_size,
@@ -288,9 +289,6 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         };
         println!("Please enter your new line delimited json documents one line at a time.\nEnd your input using {}.", eof_shortcut);
     }
-
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
 
     let statistics = Arc::new(IndexingStatistics::default());
     let (task_completed_sender, task_completed_receiver) = watch::channel::<bool>(false);

@@ -51,12 +51,12 @@ impl Default for AllFlattenDocMapper {
 
 impl AllFlattenDocMapper {
     /// Creates new instance of all flatten mapper
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new() -> Self {
         let mut schema_builder = SchemaBuilder::new();
         schema_builder.add_text_field("_source", STORED);
-        Ok(AllFlattenDocMapper {
+        AllFlattenDocMapper {
             schema: schema_builder.build(),
-        })
+        }
     }
 
     fn default_schema() -> Schema {

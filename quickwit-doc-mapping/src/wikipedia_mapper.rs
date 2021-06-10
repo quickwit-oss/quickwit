@@ -43,10 +43,10 @@ impl std::fmt::Debug for WikipediaMapper {
 
 impl WikipediaMapper {
     /// Create a new instance of wikipedia document mapper.
-    pub fn new() -> anyhow::Result<Self> {
-        Ok(WikipediaMapper {
+    pub fn new() -> Self {
+        WikipediaMapper {
             schema: Self::default_schema(),
-        })
+        }
     }
 
     fn default_schema() -> Schema {
@@ -58,6 +58,12 @@ impl WikipediaMapper {
         schema_builder.add_text_field("body", text_options.clone());
         schema_builder.add_text_field("url", text_options);
         schema_builder.build()
+    }
+}
+
+impl Default for WikipediaMapper {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

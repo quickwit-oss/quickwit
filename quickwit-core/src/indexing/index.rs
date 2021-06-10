@@ -42,8 +42,8 @@ const SPLIT_CHANNEL_SIZE: usize = 30;
 /// TODO: remove when there is a better structure
 #[derive(Debug, Clone)]
 pub struct IndexDataParams {
-    /// Index uri.
-    pub index_uri: PathBuf,
+    /// The index id.
+    pub index_id: String,
     /// Tempory directory to use for indexing
     pub temp_dir: PathBuf,
     /// Number of thread to use for indexing.
@@ -79,7 +79,6 @@ pub async fn index_data(
     let (split_sender, split_receiver) = channel::<Split>(SPLIT_CHANNEL_SIZE);
     try_join!(
         index_documents(
-            index_id.to_owned(),
             &params,
             metastore.clone(),
             storage_resolver,
