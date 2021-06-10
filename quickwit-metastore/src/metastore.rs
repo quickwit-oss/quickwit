@@ -35,12 +35,12 @@ use crate::MetastoreResult;
 /// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexMetadata {
-    /// Index Id. The index id serves to identify the index when querying the metastore.
+    /// Index ID. The index ID identifies the index when querying the metastore.
     pub index_id: String,
-    /// Index Uri. The index uri defines the location of the storage that contains the
+    /// Index URI. The index URI defines the location of the storage that contains the
     /// split files.
     pub index_uri: String,
-    /// The doc mapper used for this index
+    /// The doc mapper used for this index.
     pub doc_mapper: Box<dyn DocMapper>,
 }
 
@@ -53,7 +53,7 @@ pub struct SplitMetadata {
     /// in the storage URI resolver: for instance, the Amazon S3 region.
     pub split_id: String,
 
-    /// The state of the split
+    /// The state of the split.
     pub split_state: SplitState,
 
     /// Number of records (or documents) in the split.
@@ -65,12 +65,12 @@ pub struct SplitMetadata {
     /// If a timestamp field is available, the min / max timestamp in the split.
     pub time_range: Option<Range<u64>>,
 
-    /// Number of merge this segment has been subjected to during its lifetime.
+    /// Number of merges this segment has been subjected to during its lifetime.
     pub generation: usize,
 }
 
 impl SplitMetadata {
-    /// Creates a new instance of split metadata
+    /// Creates a new instance of split metadata.
     pub fn new(split_id: String) -> Self {
         Self {
             split_id,
@@ -86,7 +86,7 @@ impl SplitMetadata {
 /// A split state.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum SplitState {
-    /// The split is newly created
+    /// The split is newly created.
     New,
 
     /// The split is almost ready. Some of its files may have been uploaded in the storage.
@@ -102,44 +102,44 @@ pub enum SplitState {
 /// A MetadataSet carries an index metadata and its split metadata.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetadataSet {
-    /// Metadata specific to the index
+    /// Metadata specific to the index.
     pub index: IndexMetadata,
-    /// List of split belonging to the index.
+    /// List of splits belonging to the index.
     pub splits: HashMap<String, SplitMetadata>,
 }
 
-/// Metastore meant to manage quickwit's indices and its splits.
+/// Metastore meant to manage Quickwit's indexes and their splits.
 ///
 /// Quickwit needs a way to ensure that we can cleanup unused files,
 /// and this process needs to be resilient to any fail-stop failures.
-/// We rely atomically shifting the status of splits.
+/// We rely on atomically transitioning the status of splits.
 ///
-/// The split state goes into the following life cycle:
-/// 1. New
+/// The split state goes through the following life cycle:
+/// 1. `New`
 ///   - Create new split and start indexing.
-/// 2. Staged
+/// 2. `Staged`
 ///   - Start uploading the split files.
-/// 3. Published
-///   - Uploading the split files are complete and searchable.
-/// 4. ScheduledForDeletion
+/// 3. `Published`
+///   - Uploading the split files is complete and the split is searchable.
+/// 4. `ScheduledForDeletion`
 ///   - Mark the split for deletion.
 ///
-/// If a split has a files in the storage, it MUST be registered in the metastore,
-/// and its state can be follows.
-/// - Staged : The split is almost ready. Some of its files may have been uploaded in the storage.
-/// - Published : The split is ready and published.
-/// - ScheduledForDeletion : The split is scheduled for deletion.
+/// If a split has a file in the storage, it MUST be registered in the metastore,
+/// and its state can be as follows:
+/// - `Staged`: The split is almost ready. Some of its files may have been uploaded in the storage.
+/// - `Published`: The split is ready and published.
+/// - `ScheduledForDeletion`: The split is scheduled for deletion.
 ///
-/// Before creating any file, we need to be Staged the split. If there is a failure, upon recovery we schedule for delete all of the staged splits.
-/// A client may not necessarily remove file from storage right after marking it as deleted.
+/// Before creating any file, we need to stage the split. If there is a failure, upon recovery, we schedule for deletion all the staged splits.
+/// A client may not necessarily remove files from storage right after marking it as deleted.
 /// A CLI client may delete files right away, but a more serious deployment should probably
-/// only delete these files after a period of time to give some time to running search queries to finish.
+/// only delete those files after a grace period so that the running search queries can complete.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
     /// Creates an index.
     /// This API creates index metadata set in the metastore.
-    /// An error will occur if an index that exists in the storage is specified.
+    /// An error will occur if an index that already exists in the storage is specified.
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()>;
 
     /// Returns the index_metadata for a given index.
@@ -154,7 +154,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn delete_index(&self, index_id: &str) -> MetastoreResult<()>;
 
     /// Stages a split.
-    /// A split needs to be Staged before uploading any of its files to the storage.
+    /// A split needs to be staged before uploading any of its files to the storage.
     /// An error will occur if an index that does not exist in the storage is specified.
     /// Also, an error will occur if you specify a split that already exists.
     async fn stage_split(
@@ -164,7 +164,7 @@ pub trait Metastore: Send + Sync + 'static {
     ) -> MetastoreResult<()>;
 
     /// Publishes a list splits.
-    /// This API only updates the state of the split from Staged to Published.
+    /// This API only updates the state of the split from `Staged` to `Published`.
     /// At this point, the split files are assumed to have already been uploaded.
     /// If the split is already published, this API call returns a success.
     /// An error will occur if you specify an index or split that does not exist in the storage.
@@ -175,8 +175,8 @@ pub trait Metastore: Send + Sync + 'static {
     ) -> MetastoreResult<()>;
 
     /// Lists the splits.
-    /// Returns a list of splits that intersect the given time_range and split_state.
-    /// Regardless of the timerange filter, if a split has no timestamp it is always returned.
+    /// Returns a list of splits that intersects the given `time_range` and `split_state`.
+    /// Regardless of the time range filter, if a split has no timestamp it is always returned.
     /// An error will occur if an index that does not exist in the storage is specified.
     async fn list_splits(
         &self,
@@ -190,8 +190,8 @@ pub trait Metastore: Send + Sync + 'static {
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitMetadata>>;
 
     /// Marks a list of splits as deleted.
-    /// This API will change the state to ScheduledForDeletion so that it is not referenced by the client.
-    /// It does not actually remove the split from storage.
+    /// This API will change the state to `ScheduledForDeletion` so that it is not referenced by the client.
+    /// It actually does not remove the split from storage.
     /// An error will occur if you specify an index or split that does not exist in the storage.
     async fn mark_splits_as_deleted<'a>(
         &self,
@@ -200,7 +200,7 @@ pub trait Metastore: Send + Sync + 'static {
     ) -> MetastoreResult<()>;
 
     /// Deletes a list of splits.
-    /// This API only takes a split that is in Staged or ScheduledForDeletion state.
+    /// This API only takes a split that is in `Staged` or `ScheduledForDeletion` state.
     /// This removes the split metadata from the metastore, but does not remove the split from storage.
     /// An error will occur if you specify an index or split that does not exist in the storage.
     async fn delete_splits<'a>(
