@@ -29,9 +29,9 @@ use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
 };
 use quickwit_metastore::IndexMetadata;
-use regex::Regex;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_storage::StorageUriResolver;
+use regex::Regex;
 use std::env;
 use std::io;
 use std::io::Stdout;
