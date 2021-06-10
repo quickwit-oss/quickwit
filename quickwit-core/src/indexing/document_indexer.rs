@@ -33,7 +33,6 @@ use super::IndexingStatistics;
 
 /// Receives json documents, parses and adds them to a `tantivy::Index`
 pub async fn index_documents(
-    index_id: String,
     params: &IndexDataParams,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
@@ -41,11 +40,10 @@ pub async fn index_documents(
     split_sender: Sender<Split>,
     statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
-    let index_metadata = metastore.index_metadata(&index_id).await?;
+    let index_metadata = metastore.index_metadata(&params.index_id).await?;
     let schema = index_metadata.doc_mapper.schema();
 
     let mut current_split = Split::create(
-        index_id.to_string(),
         &params,
         storage_resolver.clone(),
         metastore.clone(),
@@ -79,7 +77,6 @@ pub async fn index_documents(
             let split = std::mem::replace(
                 &mut current_split,
                 Split::create(
-                    index_id.to_string(),
                     &params,
                     storage_resolver.clone(),
                     metastore.clone(),
@@ -104,10 +101,10 @@ mod tests {
     use crate::indexing::document_source::test_document_source;
     use crate::indexing::split::Split;
     use crate::indexing::{IndexDataParams, IndexingStatistics};
-    use quickwit_doc_mapping::{AllFlattenDocMapper, DocMapper};
+    use quickwit_doc_mapping::AllFlattenDocMapper;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_storage::StorageUriResolver;
-    use std::{path::PathBuf, str::FromStr, sync::Arc};
+    use std::sync::Arc;
     use tokio::sync::mpsc::channel;
 
     use super::index_documents;
@@ -116,27 +113,24 @@ mod tests {
     async fn test_index_document() -> anyhow::Result<()> {
         let index_id = "test";
         let split_dir = tempfile::tempdir()?;
-        let index_dir = tempfile::tempdir()?;
-        let index_uri = format!("file://{}/{}", index_dir.path().display(), index_id);
         let params = IndexDataParams {
-            index_uri: PathBuf::from_str(&index_uri)?,
+            index_id: index_id.to_string(),
             temp_dir: split_dir.into_path(),
             num_threads: 1,
             heap_size: 3000000,
             overwrite: false,
         };
+        let index_uri = "ram://test-indicess/test";
 
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_index_metadata()
-            .times(1)
+            .times(2)
             .returning(move |index_id| {
                 Ok(IndexMetadata {
                     index_id: index_id.to_string(),
-                    index_uri: index_uri.clone(),
-                    doc_mapper: AllFlattenDocMapper::new()
-                        .map(|mapper| Box::new(mapper) as Box<dyn DocMapper>)
-                        .unwrap(),
+                    index_uri: index_uri.to_string(),
+                    doc_mapper: Box::new(AllFlattenDocMapper::new()),
                 })
             });
         let metastore = Arc::new(mock_metastore);
@@ -155,7 +149,6 @@ mod tests {
 
         let statistics = Arc::new(IndexingStatistics::default());
         index_documents(
-            index_id.to_owned(),
             &params,
             metastore,
             StorageUriResolver::default(),

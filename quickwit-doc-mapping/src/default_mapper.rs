@@ -50,11 +50,11 @@ impl std::fmt::Debug for DefaultDocMapper {
 
 impl DefaultDocMapper {
     /// Create an instance of [`DefaultDocMapper`].
-    pub fn new(config: DocMapperConfig) -> anyhow::Result<DefaultDocMapper> {
-        Ok(DefaultDocMapper {
+    pub fn new(config: DocMapperConfig) -> DefaultDocMapper {
+        DefaultDocMapper {
             schema: config.schema(),
             config,
-        })
+        }
     }
 
     fn default_schema() -> Schema {
@@ -223,7 +223,7 @@ mod tests {
                     "fast": "single",
                     "stored": false
                 }
-            }, 
+            },
             {
                 "name": "severity_text",
                 "type": "text",
@@ -234,7 +234,7 @@ mod tests {
                     },
                     "stored": false
                 }
-            }, 
+            },
             {
                 "name": "resources.label",
                 "type": "text",
@@ -324,7 +324,7 @@ mod tests {
     fn test_parsing_document() -> anyhow::Result<()> {
         let config = serde_json::from_str::<DocMapperConfig>(JSON_MAPPING_VALUE)?;
         let schema = config.schema();
-        let doc_mapper = DefaultDocMapper::new(config)?;
+        let doc_mapper = DefaultDocMapper::new(config);
         let document = doc_mapper.doc_from_json(JSON_DOC_VALUE)?;
         // 6 fields with 1 value + one field with two values
         assert_eq!(document.len(), 8);

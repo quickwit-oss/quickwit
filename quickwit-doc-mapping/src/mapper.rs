@@ -92,7 +92,7 @@ mod tests {
             store_source: true,
             ignore_unknown_fields: false,
             properties: vec![],
-        })?;
+        });
         assert_eq!(
             format!("{:?}", deserialized_default_mapper),
             format!("{:?}", expected_default_mapper),
