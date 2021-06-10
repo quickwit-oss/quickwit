@@ -99,7 +99,6 @@ fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
 impl Split {
     /// Create a new instance of an index split.
     pub async fn create(
-        index_id: String,
         params: &IndexDataParams,
         storage_resolver: StorageUriResolver,
         metastore: Arc<dyn Metastore>,
@@ -112,7 +111,7 @@ impl Split {
         let index_writer =
             index.writer_with_num_threads(params.num_threads, params.heap_size as usize)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
-        let index_uri = params.index_uri.to_string_lossy().to_string();
+        let index_uri = metastore.index_metadata(&params.index_id).await?.index_uri;
         let metadata = SplitMetadata::new(id.to_string());
 
         let split_uri = format!("{}/{}", index_uri, id);
@@ -120,7 +119,7 @@ impl Split {
         Ok(Self {
             id,
             index_uri,
-            index_id,
+            index_id: params.index_id.clone(),
             split_uri,
             metadata,
             local_directory,
@@ -339,17 +338,17 @@ pub async fn remove_split_files_from_storage(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use quickwit_doc_mapping::AllFlattenDocMapper;
+    use quickwit_metastore::IndexMetadata;
     use quickwit_metastore::MockMetastore;
-    use std::str::FromStr;
     use tokio::task;
 
     #[tokio::test]
     async fn test_split() -> anyhow::Result<()> {
         let split_dir = tempfile::tempdir()?;
-        let index_dir = tempfile::tempdir()?;
-        let index_uri = format!("file://{}", index_dir.path().display());
+        let index_uri = "ram://test-index/index";
         let params = &IndexDataParams {
-            index_uri: PathBuf::from_str(&index_uri)?,
+            index_id: "test".to_string(),
             temp_dir: split_dir.path().to_path_buf(),
             num_threads: 1,
             heap_size: 3000000,
@@ -357,22 +356,27 @@ mod tests {
         };
         let schema = Schema::builder().build();
         let mut mock_metastore = MockMetastore::default();
-        mock_metastore.expect_stage_split().times(1).returning(
-            move |expected_index_uri, _split_id| {
-                assert_eq!(index_uri.clone(), format!("file://{}", expected_index_uri));
+        mock_metastore
+            .expect_index_metadata()
+            .times(1)
+            .returning(move |index_id| {
+                Ok(IndexMetadata {
+                    index_id: index_id.to_string(),
+                    index_uri: index_uri.to_string(),
+                    doc_mapper: Box::new(AllFlattenDocMapper::new()),
+                })
+            });
+        mock_metastore
+            .expect_stage_split()
+            .times(1)
+            .returning(move |index_id, _split_metadata| {
+                assert_eq!(index_id, "test");
                 Ok(())
-            },
-        );
+            });
 
         let metastore = Arc::new(mock_metastore);
-        let split_result = Split::create(
-            index_dir.path().display().to_string(),
-            params,
-            StorageUriResolver::default(),
-            metastore,
-            schema,
-        )
-        .await;
+        let split_result =
+            Split::create(params, StorageUriResolver::default(), metastore, schema).await;
         assert_eq!(split_result.is_ok(), true);
 
         let mut split = split_result?;
