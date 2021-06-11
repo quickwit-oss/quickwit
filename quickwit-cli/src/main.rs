@@ -25,6 +25,7 @@ use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use once_cell::sync::Lazy;
 use quickwit_core::DocumentSource;
+use quickwit_doc_mapping::IndexSettings;
 use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
 };
@@ -257,6 +258,9 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         index_id: index_id.to_string(),
         index_uri: args.index_uri.to_string(),
         doc_mapper: args.doc_mapper,
+        settings: IndexSettings {
+            timestamp_field_name: args.timestamp_field,
+        },
     };
     create_index(metastore_uri, index_metadata).await?;
     Ok(())

@@ -28,6 +28,7 @@ use std::ops::Range;
 
 use async_trait::async_trait;
 use quickwit_doc_mapping::DocMapper;
+use quickwit_doc_mapping::IndexSettings;
 use serde::{Deserialize, Serialize};
 
 use crate::MetastoreResult;
@@ -42,6 +43,8 @@ pub struct IndexMetadata {
     pub index_uri: String,
     /// The doc mapper used for this index
     pub doc_mapper: Box<dyn DocMapper>,
+    /// The settings of this index
+    pub settings: IndexSettings,
 }
 
 /// A split metadata carries all meta data about a split.

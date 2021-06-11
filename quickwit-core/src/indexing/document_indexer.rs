@@ -20,6 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use anyhow::Context;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 use std::sync::Arc;
@@ -43,6 +44,17 @@ pub async fn index_documents(
     let index_metadata = metastore.index_metadata(&params.index_id).await?;
     let schema = index_metadata.doc_mapper.schema();
 
+    let timestamp_field_name_opt = index_metadata.settings.timestamp_field_name.clone();
+    let timestamp_field_opt = if let Some(timestamp_field_name) = timestamp_field_name_opt {
+        let timestamp_field_entry = schema.get_field(&timestamp_field_name).context(format!(
+            "The timestamp field `{}` doesn't exist on this schema",
+            timestamp_field_name
+        ))?;
+        Some(timestamp_field_entry)
+    } else {
+        None
+    };
+
     let mut current_split = Split::create(
         &params,
         storage_resolver.clone(),
@@ -52,7 +64,11 @@ pub async fn index_documents(
     .await?;
     while let Some(raw_json_doc) = document_source.next_document().await? {
         let doc_size = raw_json_doc.as_bytes().len();
-        let parse_result = index_metadata.doc_mapper.doc_from_json(&raw_json_doc);
+        //TODO: should we create another method to validate?
+        // DocMapper::doc_from_json could a default impl?
+        let parse_result = index_metadata
+            .doc_mapper
+            .doc_from_json(&raw_json_doc, &index_metadata.settings);
 
         let doc = match parse_result {
             Ok(doc) => {
@@ -72,7 +88,7 @@ pub async fn index_documents(
             }
         };
 
-        current_split.add_document(doc)?;
+        current_split.add_document(doc, timestamp_field_opt)?;
         if current_split.has_enough_docs() {
             let split = std::mem::replace(
                 &mut current_split,
@@ -102,6 +118,7 @@ mod tests {
     use crate::indexing::split::Split;
     use crate::indexing::{IndexDataParams, IndexingStatistics};
     use quickwit_doc_mapping::AllFlattenDocMapper;
+    use quickwit_doc_mapping::IndexSettings;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_storage::StorageUriResolver;
     use std::sync::Arc;
@@ -131,6 +148,7 @@ mod tests {
                     index_id: index_id.to_string(),
                     index_uri: index_uri.to_string(),
                     doc_mapper: Box::new(AllFlattenDocMapper::new()),
+                    settings: IndexSettings::default(),
                 })
             });
         let metastore = Arc::new(mock_metastore);

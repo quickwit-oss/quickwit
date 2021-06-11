@@ -21,6 +21,7 @@
 use std::sync::Arc;
 
 use quickwit_doc_mapping::DocMapper;
+use quickwit_doc_mapping::IndexSettings;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver};
 use quickwit_storage::StorageUriResolver;
 use tempfile::tempdir;
@@ -49,6 +50,7 @@ impl TestSandbox {
             index_id: index_id.to_string(),
             index_uri: format!("{}/{}", metastore_uri, index_id),
             doc_mapper,
+            settings: IndexSettings::default(),
         };
         let storage_uri_resolver = StorageUriResolver::default();
         let metastore = MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone())

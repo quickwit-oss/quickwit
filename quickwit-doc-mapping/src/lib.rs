@@ -32,5 +32,5 @@ mod wikipedia_mapper;
 
 pub use self::all_flatten_mapper::AllFlattenDocMapper;
 pub use self::default_mapper::{DefaultDocMapper, DocMapperConfig};
-pub use self::mapper::DocMapper;
+pub use self::mapper::{DocMapper, IndexSettings};
 pub use self::wikipedia_mapper::WikipediaMapper;

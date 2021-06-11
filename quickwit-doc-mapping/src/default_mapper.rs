@@ -20,7 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::{mapper::SearchRequest, DocMapper};
+use crate::{mapper::SearchRequest, DocMapper, IndexSettings};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use std::collections::HashMap;
@@ -125,7 +125,11 @@ fn get_json_paths_and_values(
 
 #[typetag::serde(name = "default")]
 impl DocMapper for DefaultDocMapper {
-    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
+    fn doc_from_json(
+        &self,
+        doc_json: &str,
+        _index_settings: &IndexSettings,
+    ) -> Result<Document, DocParsingError> {
         let mut document = Document::default();
         if self.config.store_source {
             let source = self
@@ -182,6 +186,8 @@ impl DocMapperConfig {
 
 #[cfg(test)]
 mod tests {
+    use crate::IndexSettings;
+
     use super::{get_json_paths_and_values, DefaultDocMapper, DocMapper, DocMapperConfig};
     use serde_json::{self, Value as JsonValue};
     use std::collections::HashMap;
@@ -325,7 +331,7 @@ mod tests {
         let config = serde_json::from_str::<DocMapperConfig>(JSON_MAPPING_VALUE)?;
         let schema = config.schema();
         let doc_mapper = DefaultDocMapper::new(config);
-        let document = doc_mapper.doc_from_json(JSON_DOC_VALUE)?;
+        let document = doc_mapper.doc_from_json(JSON_DOC_VALUE, &IndexSettings::default())?;
         // 6 fields with 1 value + one field with two values
         assert_eq!(document.len(), 8);
         let expected_json_paths_and_values: HashMap<String, JsonValue> =

@@ -21,6 +21,7 @@
 */
 
 use std::fmt;
+use std::ops::Range;
 use std::path::Path;
 
 use crate::indexing::manifest::Manifest;
@@ -32,6 +33,7 @@ use quickwit_storage::{PutPayload, Storage, StorageUriResolver};
 use std::sync::Arc;
 use std::time::Instant;
 use std::{path::PathBuf, usize};
+use tantivy::schema::Field;
 use tantivy::Directory;
 use tantivy::SegmentId;
 use tantivy::SegmentMeta;
@@ -131,13 +133,35 @@ impl Split {
     }
 
     /// Add document to the index split.
-    pub fn add_document(&mut self, doc: Document) -> anyhow::Result<()> {
-        //TODO: handle time range when docMapper is available
+    pub fn add_document(
+        &mut self,
+        doc: Document,
+        timestamp_field_opt: Option<Field>,
+    ) -> anyhow::Result<()> {
+        let mut current_time_range = self.metadata.time_range.clone().unwrap_or(Range {
+            start: u64::MAX,
+            end: u64::MIN,
+        }); //u64::MAX..u64::MIN
+        if let Some(timestamp_field) = timestamp_field_opt {
+            if let Some(timestamp) = doc
+                .get_first(timestamp_field)
+                .and_then(|field_value| field_value.u64_value())
+            {
+                if timestamp < current_time_range.start {
+                    current_time_range.start = timestamp;
+                }
+                if timestamp > current_time_range.end {
+                    current_time_range.end = timestamp;
+                }
+            }
+        }
+
         self.index_writer
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing index writer."))?
             .add_document(doc);
         self.metadata.num_records += 1;
+        self.metadata.time_range = Some(current_time_range);
         Ok(())
     }
 
@@ -338,6 +362,7 @@ pub async fn remove_split_files_from_storage(
 mod tests {
     use super::*;
     use quickwit_doc_mapping::AllFlattenDocMapper;
+    use quickwit_doc_mapping::IndexSettings;
     use quickwit_metastore::IndexMetadata;
     use quickwit_metastore::MockMetastore;
     use tokio::task;
@@ -362,6 +387,7 @@ mod tests {
                     index_id: index_id.to_string(),
                     index_uri: index_uri.to_string(),
                     doc_mapper: Box::new(AllFlattenDocMapper::new()),
+                    settings: IndexSettings::default(),
                 })
             });
         mock_metastore
@@ -379,14 +405,14 @@ mod tests {
 
         let mut split = split_result?;
         for _ in 0..20 {
-            split.add_document(Document::default())?;
+            split.add_document(Document::default(), None)?;
         }
         assert_eq!(split.metadata.num_records, 20);
         assert_eq!(split.num_parsing_errors, 0);
         assert_eq!(split.has_enough_docs(), false);
 
         for _ in 0..90 {
-            split.add_document(Document::default())?;
+            split.add_document(Document::default(), None)?;
         }
         assert_eq!(split.metadata.num_records, 110);
         assert_eq!(split.has_enough_docs(), true);

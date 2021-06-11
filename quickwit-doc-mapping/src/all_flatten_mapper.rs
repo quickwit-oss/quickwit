@@ -20,7 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::{mapper::SearchRequest, DocMapper};
+use crate::{mapper::SearchRequest, DocMapper, IndexSettings};
 use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
@@ -66,7 +66,11 @@ impl AllFlattenDocMapper {
 
 #[typetag::serde(name = "all_flatten")]
 impl DocMapper for AllFlattenDocMapper {
-    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
+    fn doc_from_json(
+        &self,
+        doc_json: &str,
+        _index_settings: &IndexSettings,
+    ) -> Result<Document, DocParsingError> {
         let source = self
             .schema
             .get_field("_source")

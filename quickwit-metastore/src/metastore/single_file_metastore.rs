@@ -399,6 +399,7 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
+    use crate::metastore::IndexSettings;
     use crate::IndexMetadata;
     use crate::{Metastore, MetastoreErrorKind, SingleFileMetastore, SplitMetadata, SplitState};
     use quickwit_doc_mapping::AllFlattenDocMapper;
@@ -419,6 +420,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                settings: IndexSettings::default(),
             };
 
             // Create index
@@ -446,6 +448,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
                 doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                settings: IndexSettings::default(),
             };
 
             // Create index
@@ -484,6 +487,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
                 doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                settings: IndexSettings::default(),
             };
 
             // Create index
@@ -536,6 +540,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
                 doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                settings: IndexSettings::default(),
             };
 
             // Create index
@@ -584,6 +589,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                settings: IndexSettings::default(),
             };
 
             // Create index
@@ -725,6 +731,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                settings: IndexSettings::default(),
             };
 
             // Create index
@@ -865,6 +872,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                settings: IndexSettings::default(),
             };
 
             // create index
@@ -1387,6 +1395,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                settings: IndexSettings::default(),
             };
 
             // Create index
@@ -1490,6 +1499,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                settings: IndexSettings::default(),
             };
 
             // Create index
@@ -1606,6 +1616,7 @@ mod tests {
             index_id: index_id.to_string(),
             index_uri: "ram://my-indexes/my-index".to_string(),
             doc_mapper: Box::new(AllFlattenDocMapper::default()),
+            settings: IndexSettings::default(),
         };
 
         // create index

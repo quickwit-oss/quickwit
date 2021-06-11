@@ -24,6 +24,7 @@ use dyn_clone::clone_trait_object;
 use dyn_clone::DynClone;
 use std::fmt::Debug;
 
+use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
     schema::{DocParsingError, Schema},
@@ -42,7 +43,11 @@ use tantivy::{
 #[typetag::serde(tag = "type")]
 pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the document built from a json string.
-    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError>;
+    fn doc_from_json(
+        &self,
+        doc_json: &str,
+        index_settings: &IndexSettings,
+    ) -> Result<Document, DocParsingError>;
     /// Returns the schema.
     fn schema(&self) -> Schema;
     /// Returns the query.
@@ -53,6 +58,13 @@ clone_trait_object!(DocMapper);
 
 // TODO: this is a placeholder, to be removed when it will be implementend in the search-api crate
 pub struct SearchRequest {}
+
+/// An index settings hold customisation parameters data about an index.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct IndexSettings {
+    /// The timestamp field name.
+    pub timestamp_field_name: Option<String>,
+}
 
 #[cfg(test)]
 mod tests {
