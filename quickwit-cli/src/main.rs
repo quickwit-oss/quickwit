@@ -23,6 +23,7 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
+use once_cell::sync::Lazy;
 use quickwit_core::DocumentSource;
 use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
@@ -30,6 +31,7 @@ use quickwit_doc_mapping::{
 use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_storage::StorageUriResolver;
+use regex::Regex;
 use std::env;
 use std::io;
 use std::io::Stdout;
@@ -224,12 +226,17 @@ impl CliCommand {
 fn extract_metastore_uri_and_index_id_from_index_uri(
     index_uri: &str,
 ) -> anyhow::Result<(&str, &str)> {
+    static INDEX_ID_PATTERN: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9_\-]*$").unwrap());
     let parts: Vec<&str> = index_uri.rsplitn(2, '/').collect();
-    if parts.len() == 2 {
-        Ok((parts[1], parts[0]))
-    } else {
+    if parts.len() != 2 {
         anyhow::bail!("Failed to parse the uri into a metastore_uri and an index_id.");
     }
+    if !INDEX_ID_PATTERN.is_match(parts[0]) {
+        anyhow::bail!("Invalid index_id `{}`. Only alpha-numeric, `-` and `_` characters allowed. Cannot start with `-`, `_` or digit.", parts[0]);
+    }
+
+    Ok((parts[1], parts[0]))
 }
 
 async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
@@ -715,11 +722,27 @@ mod tests {
 
     #[test]
     fn test_extract_metastore_uri_and_index_id_from_index_uri() -> anyhow::Result<()> {
-        let index_uri = "file:///indexes/wikipedia";
+        let index_uri = "file:///indexes/wikipedia-xd_1";
         let (metastore_uri, index_id) =
             extract_metastore_uri_and_index_id_from_index_uri(index_uri)?;
         assert_eq!("file:///indexes", metastore_uri);
-        assert_eq!("wikipedia", index_id);
+        assert_eq!("wikipedia-xd_1", index_id);
+
+        let result =
+            extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/_wikipedia");
+        assert!(result.is_err());
+
+        let result =
+            extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/-wikipedia");
+        assert!(result.is_err());
+
+        let result =
+            extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/2-wiki-pedia");
+        assert!(result.is_err());
+
+        let result =
+            extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/01wikipedia");
+        assert!(result.is_err());
         Ok(())
     }
 }
