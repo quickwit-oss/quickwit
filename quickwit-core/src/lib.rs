@@ -31,8 +31,10 @@
 mod counter;
 mod index;
 mod indexing;
+mod test_utils;
 
-pub use self::index::{create_index, delete_index, search_index};
-pub use self::indexing::{
+pub use index::{create_index, delete_index, search_index};
+pub use indexing::{
     index_data, test_document_source, DocumentSource, IndexDataParams, IndexingStatistics,
 };
+pub use test_utils::TestSandbox;
