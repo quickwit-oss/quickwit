@@ -65,7 +65,7 @@ pub async fn index_documents(
     while let Some(raw_json_doc) = document_source.next_document().await? {
         let doc_size = raw_json_doc.as_bytes().len();
         //TODO: should we create another method to validate?
-        // DocMapper::doc_from_json could a default impl?
+        // DocMapper::doc_from_json could have a default impl?
         let parse_result = index_metadata
             .doc_mapper
             .doc_from_json(&raw_json_doc, &index_metadata.settings);
