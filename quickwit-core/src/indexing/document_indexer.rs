@@ -115,7 +115,7 @@ mod tests {
         let split_dir = tempfile::tempdir()?;
         let params = IndexDataParams {
             index_id: index_id.to_string(),
-            temp_dir: split_dir.into_path(),
+            temp_dir: Arc::new(split_dir),
             num_threads: 1,
             heap_size: 3000000,
             overwrite: false,

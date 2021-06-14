@@ -29,10 +29,10 @@ use thiserror::Error;
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MetastoreErrorKind {
     /// The target index already exists.
-    ExistingIndexUri,
+    IndexAlreadyExists,
 
     /// The target split already exists.
-    ExistingSplitId,
+    SplitAlreadyExists,
 
     /// Forbidden error.
     Forbidden,
@@ -57,7 +57,7 @@ pub enum MetastoreErrorKind {
 }
 
 impl MetastoreErrorKind {
-    /// Creates a MetastoreError.
+    /// Creates a [`MetastoreError`].
     pub fn with_error<E>(self, source: E) -> MetastoreError
     where
         anyhow::Error: From<E>,
@@ -89,7 +89,7 @@ pub struct MetastoreError {
 }
 
 impl MetastoreError {
-    /// Add some context to the wrapper error.
+    /// Adds some context to the wrapper error.
     pub fn add_context<C>(self, ctx: C) -> Self
     where
         C: Display + Send + Sync + 'static,
@@ -100,7 +100,7 @@ impl MetastoreError {
         }
     }
 
-    /// Returns the corresponding `MetastoreErrorKind` for this error.
+    /// Returns the corresponding [`MetastoreErrorKind`] for this error.
     pub fn kind(&self) -> MetastoreErrorKind {
         self.kind
     }
@@ -123,17 +123,17 @@ pub type MetastoreResult<T> = Result<T, MetastoreError>;
 pub enum MetastoreResolverError {
     /// The input is not a valid URI.
     /// A protocol is required for the URI.
-    #[error("Invalid format for URI: required: `{0}`")]
+    #[error("Invalid URI format: required: `{0}`")]
     InvalidUri(String),
 
     /// The protocol is not supported by this resolver.
-    #[error("Unsupported protocol")]
+    #[error("Unsupported protocol: `{0}`")]
     ProtocolUnsupported(String),
 
     /// The URI is valid, and is meant to be handled by this resolver,
     /// but the resolver failed to actually connect to the storage.
     /// e.g. Connection error, credential error, incompatible version,
-    /// internal error in third party etc.
+    /// internal error in third party, etc.
     #[error("Failed to open metastore: `{0}`")]
     FailedToOpenMetastore(MetastoreError),
 }

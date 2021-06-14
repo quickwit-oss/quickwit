@@ -36,7 +36,7 @@ use tantivy::Directory;
 use tantivy::SegmentId;
 use tantivy::SegmentMeta;
 use tantivy::{directory::MmapDirectory, merge_policy::NoMergePolicy, schema::Schema, Document};
-use tokio::fs;
+use tempfile::TempDir;
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -57,7 +57,7 @@ pub struct Split {
     /// The split metadata.
     pub metadata: SplitMetadata,
     /// The local directory hosting this split artifacts.
-    pub local_directory: PathBuf,
+    pub split_scratch_dir: Box<TempDir>,
     /// The tantivy index for this split.
     pub index: tantivy::Index,
     /// The configured index writer for this split.
@@ -76,7 +76,7 @@ impl fmt::Debug for Split {
             .debug_struct("Split")
             .field("id", &self.id)
             .field("metadata", &self.metadata)
-            .field("local_directory", &self.local_directory)
+            .field("local_directory", &self.split_scratch_dir.path())
             .field("index_uri", &self.index_uri)
             .field("num_parsing_errors", &self.num_parsing_errors)
             .finish()
@@ -105,9 +105,8 @@ impl Split {
         schema: Schema,
     ) -> anyhow::Result<Self> {
         let id = Uuid::new_v4();
-        let local_directory = params.temp_dir.join(format!("{}", id));
-        fs::create_dir(local_directory.as_path()).await?;
-        let index = tantivy::Index::create_in_dir(local_directory.as_path(), schema)?;
+        let split_scratch_dir = Box::new(tempfile::tempdir_in(params.temp_dir.path())?);
+        let index = tantivy::Index::create_in_dir(split_scratch_dir.path(), schema)?;
         let index_writer =
             index.writer_with_num_threads(params.num_threads, params.heap_size as usize)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
@@ -122,7 +121,7 @@ impl Split {
             index_id: params.index_id.clone(),
             split_uri,
             metadata,
-            local_directory,
+            split_scratch_dir,
             index,
             index_writer: Some(index_writer),
             num_parsing_errors: 0,
@@ -183,11 +182,11 @@ impl Split {
 
     /// Build the split hotcache file
     pub async fn build_hotcache(&mut self) -> anyhow::Result<()> {
-        let directory_path = self.local_directory.to_path_buf();
+        let split_scratch_dir = self.split_scratch_dir.path().to_path_buf();
         tokio::task::spawn_blocking(move || {
-            let hotcache_path = directory_path.join("hotcache");
+            let hotcache_path = split_scratch_dir.join("hotcache");
             let mut hotcache_file = std::fs::File::create(&hotcache_path)?;
-            let mmap_directory = MmapDirectory::open(directory_path)?;
+            let mmap_directory = MmapDirectory::open(split_scratch_dir)?;
             write_hotcache(mmap_directory, &mut hotcache_file)?;
             anyhow::Result::<()>::Ok(())
         })
@@ -234,10 +233,10 @@ async fn put_split_files_to_storage(
             split.index.directory().exists(filepath).unwrap_or(true) //< true might look like a very odd choice here.
                                                                      // It has the benefit of triggering an error when we will effectively try to upload the files.
         })
-        .map(|relative_filepath| split.local_directory.join(relative_filepath))
+        .map(|relative_filepath| split.split_scratch_dir.path().join(relative_filepath))
         .collect();
-    files_to_upload.push(split.local_directory.join("meta.json"));
-    files_to_upload.push(split.local_directory.join("hotcache"));
+    files_to_upload.push(split.split_scratch_dir.path().join("meta.json"));
+    files_to_upload.push(split.split_scratch_dir.path().join("hotcache"));
 
     let mut upload_res_futures = vec![];
 
@@ -345,11 +344,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_split() -> anyhow::Result<()> {
-        let split_dir = tempfile::tempdir()?;
         let index_uri = "ram://test-index/index";
         let params = &IndexDataParams {
             index_id: "test".to_string(),
-            temp_dir: split_dir.path().to_path_buf(),
+            temp_dir: Arc::new(tempfile::tempdir()?),
             num_threads: 1,
             heap_size: 3000000,
             overwrite: false,

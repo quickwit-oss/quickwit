@@ -51,10 +51,9 @@ subcommands:
                 long: input-path
                 value_name: INPUT PATH
             - temp-dir:
-                help: Creates intermediate files in this local directory
+                help: Creates intermediate files in this local directory. By default, the OS temp directory will be used.
                 long: temp-dir
                 value_name: TEMP DIR
-                default_value: /tmp
             - num-threads:
                 help: Number of threads allocated to the process
                 long: num-threads

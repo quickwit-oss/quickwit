@@ -22,13 +22,36 @@
 
 use dyn_clone::clone_trait_object;
 use dyn_clone::DynClone;
+use quickwit_proto::SearchRequest;
 use std::fmt::Debug;
+use tantivy::query::Query;
+use tantivy::schema::{DocParsingError, Schema};
+use tantivy::Document;
 
-use tantivy::{
-    query::Query,
-    schema::{DocParsingError, Schema},
-    Document,
-};
+/// Sorted order (either Ascending or Descending).
+/// To get a regular top-K results search, use `SortOrder::Desc`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SortOrder {
+    /// Descending. This is the default to get Top-K results.
+    Desc,
+    /// Ascending order.
+    Asc,
+}
+
+/// Defines the way documents should be sorted.
+/// In case of a tie, the documents are ordered according to descending `(split_id, segment_ord, doc_id)`.
+#[derive(Clone, Debug)]
+pub enum SortBy {
+    /// Sort by a specific field.
+    SortByFastField {
+        /// Field to sort by.
+        field_name: String,
+        /// Order to sort by. A usual top-K search implies a Descending order.
+        order: SortOrder,
+    },
+    /// Sort by DocId
+    DocId,
+}
 
 /// The `DocMapper` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
@@ -46,13 +69,14 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the schema.
     fn schema(&self) -> Schema;
     /// Returns the query.
-    fn query(&self, _request: SearchRequest) -> Box<dyn Query>;
+    fn query(&self, _request: &SearchRequest) -> anyhow::Result<Box<dyn Query>>;
+    /// Returns the default sort
+    fn default_sort_by(&self) -> SortBy {
+        SortBy::DocId
+    }
 }
 
 clone_trait_object!(DocMapper);
-
-// TODO: this is a placeholder, to be removed when it will be implementend in the search-api crate
-pub struct SearchRequest {}
 
 #[cfg(test)]
 mod tests {

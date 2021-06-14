@@ -73,16 +73,6 @@ impl FileHandle for StorageDirectoryFileHandle {
             .map_err(Into::<io::Error>::into)?;
         Ok(OwnedBytes::new(object_bytes))
     }
-
-    fn get_physical_address(&self, range: Range<usize>) -> Option<String> {
-        Some(format!(
-            "{}/{}:{}-{}",
-            self.storage_directory.uri(),
-            self.path.to_string_lossy(),
-            range.start,
-            range.end
-        ))
-    }
 }
 
 /// Directory backed a quickwit `Storage` abstraction.

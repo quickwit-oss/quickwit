@@ -23,18 +23,23 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
+use once_cell::sync::Lazy;
 use quickwit_core::DocumentSource;
 use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
 };
 use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::MetastoreUriResolver;
+use quickwit_proto::SearchRequest;
+use quickwit_search::single_node_search;
 use quickwit_storage::StorageUriResolver;
+use regex::Regex;
 use std::env;
 use std::io;
 use std::io::Stdout;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tempfile::TempDir;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
@@ -61,7 +66,7 @@ struct CreateIndexArgs {
 struct IndexDataArgs {
     index_uri: String,
     input_path: Option<PathBuf>,
-    temp_dir: PathBuf,
+    temp_dir: Option<PathBuf>,
     num_threads: usize,
     heap_size: u64,
     overwrite: bool,
@@ -145,11 +150,8 @@ impl CliCommand {
             .value_of("index-uri")
             .context("index-uri is required")?
             .to_string();
-        let input_path = matches.value_of("input-path").map(PathBuf::from);
-        let temp_dir_str = matches
-            .value_of("temp-dir")
-            .context("temp-dir has a default value")?;
-        let temp_dir = PathBuf::from(temp_dir_str);
+        let input_path: Option<PathBuf> = matches.value_of("input-path").map(PathBuf::from);
+        let temp_dir: Option<PathBuf> = matches.value_of("temp-dir").map(PathBuf::from);
         let num_threads = value_t!(matches, "num-threads", usize)?; // 'num-threads' has a default value
         let heap_size_str = matches
             .value_of("heap-size")
@@ -226,12 +228,17 @@ impl CliCommand {
 fn extract_metastore_uri_and_index_id_from_index_uri(
     index_uri: &str,
 ) -> anyhow::Result<(&str, &str)> {
+    static INDEX_ID_PATTERN: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9_\-]*$").unwrap());
     let parts: Vec<&str> = index_uri.rsplitn(2, '/').collect();
-    if parts.len() == 2 {
-        Ok((parts[1], parts[0]))
-    } else {
+    if parts.len() != 2 {
         anyhow::bail!("Failed to parse the uri into a metastore_uri and an index_id.");
     }
+    if !INDEX_ID_PATTERN.is_match(parts[0]) {
+        anyhow::bail!("Invalid index_id `{}`. Only alpha-numeric, `-` and `_` characters allowed. Cannot start with `-`, `_` or digit.", parts[0]);
+    }
+
+    Ok((parts[1], parts[0]))
 }
 
 async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
@@ -257,11 +264,20 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn create_index_scratch_dir(path_tempdir_opt: Option<&PathBuf>) -> anyhow::Result<Arc<TempDir>> {
+    let scratch_dir = if let Some(path_tempdir) = path_tempdir_opt {
+        tempfile::tempdir_in(&path_tempdir)?
+    } else {
+        tempfile::tempdir()?
+    };
+    Ok(Arc::new(scratch_dir))
+}
+
 async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     debug!(
         index_uri = %args.index_uri,
         input_uri = ?args.input_path,
-        temp_dir = %args.temp_dir.display(),
+        temp_dir = ?args.temp_dir,
         num_threads = args.num_threads,
         heap_size = args.heap_size,
         overwrite = args.overwrite,
@@ -272,9 +288,10 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let document_source = create_document_source_from_args(input_path).await?;
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+    let temp_dir = create_index_scratch_dir(args.temp_dir.as_ref())?;
     let params = IndexDataParams {
         index_id: index_id.to_string(),
-        temp_dir: args.temp_dir,
+        temp_dir,
         num_threads: args.num_threads,
         heap_size: args.heap_size,
         overwrite: args.overwrite,
@@ -303,7 +320,6 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let index_future = async move {
         index_data(
             metastore,
-            index_id,
             params,
             document_source,
             storage_uri_resolver,
@@ -347,6 +363,24 @@ async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
         end_timestamp = ?args.end_timestamp,
         "search-index"
     );
+    let (metastore_uri, index_id) =
+        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+    let storage_uri_resolver = StorageUriResolver::default();
+    let metastore_uri_resolver =
+        MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone());
+    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
+    let search_request = SearchRequest {
+        index_id: index_id.to_string(),
+        query: args.query.clone(),
+        start_timestamp: args.start_timestamp,
+        end_timestamp: args.end_timestamp,
+        max_hits: args.max_hits as u64,
+        start_offset: args.start_offset as u64,
+    };
+    let search_result =
+        single_node_search(&search_request, &*metastore, storage_uri_resolver).await?;
+    let search_result_json = serde_json::to_string_pretty(&search_result)?;
+    println!("{}", search_result_json);
     Ok(())
 }
 
@@ -361,17 +395,22 @@ async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
     let affected_files = delete_index(metastore_uri, index_id, args.dry_run).await?;
     if args.dry_run {
+        if affected_files.is_empty() {
+            println!("Only the index will be deleted since it does not contains any data file.");
+            return Ok(());
+        }
+
         println!(
-            "The following files will be removed from the index at `{}`",
+            "The following files will be removed along with the index at `{}`",
             args.index_uri
         );
         for file in affected_files {
             println!(" - {}", file.display());
         }
-    } else {
-        println!("Index successfully deleted at `{}`", args.index_uri);
+        return Ok(());
     }
 
+    println!("Index successfully deleted at `{}`", args.index_uri);
     Ok(())
 }
 
@@ -570,11 +609,11 @@ mod tests {
             Ok(CliCommand::Index(IndexDataArgs {
                 index_uri,
                 input_path: None,
-                temp_dir,
+                temp_dir: None,
                 num_threads: 2,
                 heap_size: 2_000_000_000,
                 overwrite: false,
-            })) if &index_uri == "file:///indexes/wikipedia" && temp_dir == PathBuf::from("/tmp")
+            })) if &index_uri == "file:///indexes/wikipedia"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -603,7 +642,7 @@ mod tests {
                 num_threads: 4,
                 heap_size: 4_294_967_296,
                 overwrite: true,
-            })) if &index_uri == "file:///indexes/wikipedia" && input_path == Path::new("/data/wikipedia.json") && temp_dir == PathBuf::from("./tmp")
+            })) if &index_uri == "file:///indexes/wikipedia" && input_path == Path::new("/data/wikipedia.json") && temp_dir == Some(PathBuf::from("./tmp"))
         ));
 
         Ok(())
@@ -707,11 +746,27 @@ mod tests {
 
     #[test]
     fn test_extract_metastore_uri_and_index_id_from_index_uri() -> anyhow::Result<()> {
-        let index_uri = "file:///indexes/wikipedia";
+        let index_uri = "file:///indexes/wikipedia-xd_1";
         let (metastore_uri, index_id) =
             extract_metastore_uri_and_index_id_from_index_uri(index_uri)?;
         assert_eq!("file:///indexes", metastore_uri);
-        assert_eq!("wikipedia", index_id);
+        assert_eq!("wikipedia-xd_1", index_id);
+
+        let result =
+            extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/_wikipedia");
+        assert!(result.is_err());
+
+        let result =
+            extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/-wikipedia");
+        assert!(result.is_err());
+
+        let result =
+            extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/2-wiki-pedia");
+        assert!(result.is_err());
+
+        let result =
+            extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/01wikipedia");
+        assert!(result.is_err());
         Ok(())
     }
 }

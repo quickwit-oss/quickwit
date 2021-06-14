@@ -1,0 +1,133 @@
+// Quickwit
+//  Copyright (C) 2021 Quickwit Inc.
+//
+//  Quickwit is offered under the AGPL v3.0 and as commercial software.
+//  For commercial licensing, contact us at hello@quickwit.io.
+//
+//  AGPL:
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Affero General Public License as
+//  published by the Free Software Foundation, either version 3 of the
+//  License, or (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU Affero General Public License for more details.
+//
+//  You should have received a copy of the GNU Affero General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+syntax = "proto3";
+
+package quickwit;
+
+service SearchService {
+  // Root search API.
+  // This RPC identifies the set of splits on which the query should run on,
+  // and dispatch the several calls to `LeafSearch`.
+  //
+  // It is also in charge of merging back the results.
+  rpc RootSearch(SearchRequest) returns (SearchResult);
+
+  // Perform a search on a given set of splits.
+  rpc LeafSearch(LeafSearchRequest) returns (LeafSearchResult);
+
+  // Retrieves full document given their URI.
+  rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResult);
+}
+
+// -- Search -------------------
+
+message SearchRequest {
+  // Index ID
+  string index_id = 1;
+
+  // Query
+  string query = 2;
+
+  // Time filter
+  optional int64 start_timestamp = 3;
+  optional int64 end_timestamp = 4;
+
+  // Maximum number of hits to return.
+  uint64 max_hits = 5;
+
+  // First hit to return. Together with max_hits, this parameter
+  // can be used for pagination.
+  //
+  // E.g.
+  // The results with rank [start_offset..start_offset + max_hits) are returned.
+  uint64 start_offset = 6;
+}
+
+message SearchResult {
+  // Number of hits matching the query.
+  uint64 total_num_hits = 1;
+  // Matched hits
+  repeated Hit hits = 2;
+  // Elapsed time to perform the request. This time is measured
+  // server-side and expressed in microseconds.
+  uint64 elapsed_time_micros = 3;
+}
+
+message LeafSearchRequest {
+  // Search request. This is a perfect copy of the original search request,
+  // that was sent to root apart from the start_offset & max_hits params.
+  SearchRequest search_request = 1;
+
+  // Index split to apply the query on.
+  // If relative uris, this uris are resolved from the index_uri defined in the
+  // search_request.
+  repeated string split_uris = 3;
+}
+
+message Hit {
+  // The actual content of the hit/
+  string json = 1;
+  // The partial hit (ie: the sorting field + the document address)
+  PartialHit partial_hit = 2;
+}
+
+// A partial hit, is a hit for which we have not fetch the content yet.
+// Instead, it holds a record_uri which is enough information to
+// go and fetch the actual document data, by performing a `get_doc(...)`
+// request.
+message PartialHit {
+  // Sorting field value. (e.g. timestamp)
+  //
+  // Quickwit only computes top-K of this sorting field.
+  // If the user requested for a bottom-K of a given fast field, then quickwit simply
+  // emits an decreasing mapping of this fast field.
+  //
+  // In case of a tie, quickwit uses the increasing order of
+  // - the split,
+  // - the segment_ord,
+  // - the doc id.
+  uint64 sorting_field_value = 1;
+  string split = 2;
+
+  // (segment_ord, doc) form a tantivy DocAddress, which is sufficient to identify a document
+  // within a split
+  uint32 segment_ord = 3;
+
+  // The DocId identifies a unique document at the scale of a tantivy segment.
+  uint32 doc_id = 4;
+}
+
+message LeafSearchResult {
+  // Total number of documents matched by the query.
+  uint64 total_num_hits = 1;
+  // List of the best top-K candidates for the given leaf query.
+  repeated PartialHit partial_hits = 2;
+}
+
+message FetchDocsRequest {
+  // Request fetching the content of a given list of partial_hits.
+  repeated PartialHit partial_hits = 1;
+}
+
+message FetchDocsResult {
+  // List of complete hits.
+  repeated Hit hits = 1;
+}

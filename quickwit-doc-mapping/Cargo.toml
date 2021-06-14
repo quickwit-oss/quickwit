@@ -7,9 +7,23 @@ license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwi
 
 [dependencies]
 anyhow = "1"
-tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="d90fb7d", default-features=false, features = ["mmap", "lz4-compression"] }
+tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="6d3e9087c", default-features=false, features = ["mmap", "lz4-compression"] }
 serde_json = "1.0"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 typetag = "0.1"
 dyn-clone = "1.0.4"
+
+[dependencies.quickwit-proto]
+path = '../quickwit-proto'
+
+[dependencies.mockall]
+version = "0.9"
+optional = true
+
+[dev-dependencies]
+mockall = '0.9'
+
+[features]
+testsuite = ["mockall"]
+

@@ -20,7 +20,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::{mapper::SearchRequest, DocMapper};
+use crate::DocMapper;
+use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
@@ -76,7 +77,7 @@ impl DocMapper for AllFlattenDocMapper {
         Ok(document)
     }
 
-    fn query(&self, _request: SearchRequest) -> Box<dyn Query> {
+    fn query(&self, _request: &SearchRequest) -> anyhow::Result<Box<dyn Query>> {
         todo!()
     }
 

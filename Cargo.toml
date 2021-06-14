@@ -6,5 +6,7 @@ members = [
   "quickwit-doc-mapping",
   "quickwit-directories",
   "quickwit-metastore",
+  "quickwit-proto",
+  "quickwit-search",
   "quickwit-storage",
 ]
