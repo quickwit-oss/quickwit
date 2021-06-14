@@ -63,7 +63,7 @@ pub struct SplitMetadata {
     pub size_in_bytes: usize,
 
     /// If a timestamp field is available, the min / max timestamp in the split.
-    pub time_range: Option<Range<u64>>,
+    pub time_range: Option<Range<i64>>,
 
     /// Number of merges this segment has been subjected to during its lifetime.
     pub generation: usize,
@@ -182,7 +182,7 @@ pub trait Metastore: Send + Sync + 'static {
         &self,
         index_id: &str,
         split_state: SplitState,
-        time_range: Option<Range<u64>>,
+        time_range: Option<Range<i64>>,
     ) -> MetastoreResult<Vec<SplitMetadata>>;
 
     /// Lists the splits without filtering.

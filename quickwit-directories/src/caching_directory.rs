@@ -185,10 +185,6 @@ impl FileHandle for CachingFileHandle {
         Ok(owned_bytes)
     }
 
-    fn get_physical_address(&self, range: Range<usize>) -> Option<String> {
-        self.underlying_filehandle.get_physical_address(range)
-    }
-
     async fn read_bytes_async(&self, byte_range: Range<usize>) -> AsyncIoResult<OwnedBytes> {
         let cache_key = SliceAddress {
             path: self.path.clone(),

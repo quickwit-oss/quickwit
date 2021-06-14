@@ -73,6 +73,12 @@ impl Storage for PrefixStorage {
 }
 
 /// Creates a [`PrefixStorage`] using an underlying storage and a prefix.
-pub fn add_prefix_to_storage(storage: Arc<dyn Storage>, prefix: PathBuf) -> Arc<dyn Storage> {
-    Arc::new(PrefixStorage { storage, prefix })
+pub fn add_prefix_to_storage<P: Into<PathBuf>>(
+    storage: Arc<dyn Storage>,
+    prefix: P,
+) -> Arc<dyn Storage> {
+    Arc::new(PrefixStorage {
+        storage,
+        prefix: prefix.into(),
+    })
 }

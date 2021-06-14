@@ -367,10 +367,6 @@ impl FileHandle for FileSliceWithCache {
         }
         self.underlying.read_bytes_slice_async(byte_range).await
     }
-
-    fn get_physical_address(&self, range: Range<usize>) -> Option<String> {
-        self.underlying.get_physical_address(range)
-    }
 }
 
 impl fmt::Debug for FileSliceWithCache {

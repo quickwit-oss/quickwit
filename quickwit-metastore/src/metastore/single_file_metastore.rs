@@ -44,7 +44,7 @@ fn meta_path(index_id: &str) -> PathBuf {
 }
 
 /// Takes 2 semi-open intervals and returns true iff their intersection is empty
-fn is_disjoint(left: &Range<u64>, right: &Range<u64>) -> bool {
+fn is_disjoint(left: &Range<i64>, right: &Range<i64>) -> bool {
     left.end <= right.start || right.end <= left.start
 }
 
@@ -267,10 +267,10 @@ impl Metastore for SingleFileMetastore {
         &self,
         index_id: &str,
         state: SplitState,
-        time_range: Option<Range<u64>>,
+        time_range_opt: Option<Range<i64>>,
     ) -> MetastoreResult<Vec<SplitMetadata>> {
         let time_range_filter = |split_metadata: &SplitMetadata| match (
-            time_range.as_ref(),
+            time_range_opt.as_ref(),
             split_metadata.time_range.as_ref(),
         ) {
             (Some(filter_time_range), Some(split_time_range)) => {
@@ -935,8 +935,8 @@ mod tests {
         {
             // list
             let time_range_opt = Some(Range {
-                start: 0u64,
-                end: 99u64,
+                start: 0i64,
+                end: 99i64,
             });
             let splits = metastore
                 .list_splits(index_id, SplitState::Staged, time_range_opt)

@@ -48,10 +48,8 @@ pub async fn create_index(
 /// Searches the index with `index_id` and returns the documents matching the query query.
 /// The offset of the first hit returned and the number of hits returned can be set with the `start-offset`
 /// and max-hits options.
+///
 /// By default, the search fields  are those specified at index creation unless restricted to `target-fields`.
-///
-/// TODO: interface does not currently match the docs.
-///
 pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
     let metastore = MetastoreUriResolver::default()
         .resolve(&metastore_uri)
@@ -173,28 +171,4 @@ async fn list_index_files(
     }
 
     Ok(files)
-}
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn test_create_index() -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[test]
-    fn test_index_data() -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[test]
-    fn test_search_index() -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    #[test]
-    fn test_delete_index() -> anyhow::Result<()> {
-        Ok(())
-    }
 }
