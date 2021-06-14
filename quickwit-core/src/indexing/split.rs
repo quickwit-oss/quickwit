@@ -21,6 +21,7 @@
 */
 
 use std::fmt;
+use std::ops::Range;
 use std::path::Path;
 
 use crate::indexing::manifest::Manifest;
@@ -137,14 +138,28 @@ impl Split {
 
     /// Add document to the index split.
     pub fn add_document(&mut self, doc: Document) -> anyhow::Result<()> {
-        let mut computed_time_range = None;
+        let computed_time_range = self.compute_time_range(&doc);
+        self.index_writer
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Missing index writer."))?
+            .add_document(doc);
+        self.metadata.num_records += 1;
+        self.metadata.time_range = computed_time_range;
+        Ok(())
+    }
+
+    /// Compute the split new time range based on incomming document.
+    fn compute_time_range(&self, doc: &Document) -> Option<Range<i64>> {
         if let Some(timestamp_field) = self.timestamp_field {
             let mut split_time_range = self
                 .metadata
                 .time_range
                 .as_ref()
-                .and_then(|range| Some(range.start..range.end))
-                .unwrap_or((i64::MAX)..(i64::MIN));
+                .map(|range| range.start..range.end)
+                .unwrap_or(Range {
+                    start: i64::MAX,
+                    end: i64::MIN,
+                });
 
             //TODO: discuss finding a better way to extract the timestamp_field value from
             // the document
@@ -159,16 +174,9 @@ impl Split {
                     split_time_range.end = timestamp;
                 }
             }
-            computed_time_range = Some(split_time_range);
+            return Some(split_time_range);
         }
-
-        self.index_writer
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Missing index writer."))?
-            .add_document(doc);
-        self.metadata.num_records += 1;
-        self.metadata.time_range = computed_time_range;
-        Ok(())
+        None
     }
 
     /// Checks to see if the split has enough documents.
