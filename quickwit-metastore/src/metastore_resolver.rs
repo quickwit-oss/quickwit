@@ -82,7 +82,7 @@ impl MetastoreUriResolver {
         // path like `file://` which will certainly not work.
         let protocol = uri.split("://").next().ok_or_else(|| {
             MetastoreResolverError::InvalidUri(format!(
-                "Protocol not found in metastore uri: {}",
+                "Protocol not found in metastore URI: {}",
                 uri
             ))
         })?;

@@ -1,0 +1,47 @@
+[package]
+name = 'quickwit-search'
+version = '0.1.0'
+authors = ['Paul Masurel <paul@quickwit.io>']
+edition = '2018'
+
+[dependencies]
+anyhow = '1'
+futures = '0.3'
+tonic = '0.4.3'
+tokio-stream = '0.1.6'
+itertools = '0.10'
+base64 = '0.13'
+
+[dependencies.tantivy]
+git = 'https://github.com/quickwit-inc/tantivy'
+rev = '6d3e9087c'
+
+[dependencies.quickwit-core]
+path = '../quickwit-core'
+
+[dependencies.quickwit-doc-mapping]
+path = '../quickwit-doc-mapping'
+
+[dependencies.tokio]
+version = '1'
+features = ['full']
+
+[dependencies.tokio-util]
+version = '0.6'
+features = ['full']
+
+[dependencies.quickwit-directories]
+path = '../quickwit-directories'
+
+[dependencies.quickwit-proto]
+path = '../quickwit-proto'
+
+[dependencies.quickwit-metastore]
+path = '../quickwit-metastore'
+
+[dependencies.quickwit-storage]
+path = '../quickwit-storage'
+
+[dev-dependencies]
+serde_json = "1"
+assert-json-diff = "2"

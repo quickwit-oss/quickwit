@@ -175,8 +175,7 @@ impl StorageFactory for RamStorageFactory {
                 .with_error(anyhow::anyhow!("Invalid prefix path: {}", uri))
         })?;
 
-        let prefix_path = PathBuf::from(prefix);
-        Ok(add_prefix_to_storage(self.ram_storage.clone(), prefix_path))
+        Ok(add_prefix_to_storage(self.ram_storage.clone(), prefix))
     }
 }
 

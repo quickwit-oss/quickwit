@@ -59,7 +59,7 @@ pub struct Split {
     /// The split metadata.
     pub metadata: SplitMetadata,
     /// The local directory hosting this split artifacts.
-    pub split_scratch_dir: Arc<TempDir>,
+    pub split_scratch_dir: Box<TempDir>,
     /// The tantivy index for this split.
     pub index: tantivy::Index,
     /// The configured index writer for this split.
@@ -110,7 +110,7 @@ impl Split {
         timestamp_field: Option<Field>,
     ) -> anyhow::Result<Self> {
         let id = Uuid::new_v4();
-        let split_scratch_dir = Arc::new(tempfile::tempdir_in(params.temp_dir.path())?);
+        let split_scratch_dir = Box::new(tempfile::tempdir_in(params.temp_dir.path())?);
         let index = tantivy::Index::create_in_dir(split_scratch_dir.path(), schema)?;
         let index_writer =
             index.writer_with_num_threads(params.num_threads, params.heap_size as usize)?;
@@ -209,11 +209,11 @@ impl Split {
 
     /// Build the split hotcache file
     pub async fn build_hotcache(&mut self) -> anyhow::Result<()> {
-        let split_scratch_dir = self.split_scratch_dir.clone();
+        let split_scratch_dir = self.split_scratch_dir.path().to_path_buf();
         tokio::task::spawn_blocking(move || {
-            let hotcache_path = split_scratch_dir.path().join("hotcache");
+            let hotcache_path = split_scratch_dir.join("hotcache");
             let mut hotcache_file = std::fs::File::create(&hotcache_path)?;
-            let mmap_directory = MmapDirectory::open(split_scratch_dir.path())?;
+            let mmap_directory = MmapDirectory::open(split_scratch_dir)?;
             write_hotcache(mmap_directory, &mut hotcache_file)?;
             anyhow::Result::<()>::Ok(())
         })
