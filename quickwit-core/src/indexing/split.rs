@@ -21,7 +21,6 @@
 */
 
 use std::fmt;
-use std::ops::Range;
 use std::path::Path;
 
 use crate::indexing::manifest::Manifest;
@@ -140,11 +139,15 @@ impl Split {
     pub fn add_document(&mut self, doc: Document) -> anyhow::Result<()> {
         let mut computed_time_range = None;
         if let Some(timestamp_field) = self.timestamp_field {
-            let mut split_time_range = self.metadata.time_range.clone().unwrap_or(Range {
-                start: i64::MAX,
-                end: i64::MIN,
-            });
+            let mut split_time_range = self
+                .metadata
+                .time_range
+                .as_ref()
+                .and_then(|range| Some(range.start..range.end))
+                .unwrap_or((i64::MAX)..(i64::MIN));
 
+            //TODO: discuss finding a better way to extract the timestamp_field value from
+            // the document
             if let Some(timestamp) = doc
                 .get_first(timestamp_field)
                 .and_then(|field_value| field_value.i64_value())
@@ -501,7 +504,7 @@ mod tests {
         }
 
         assert_eq!(split.metadata.num_records, 5);
-        assert_eq!(split.metadata.time_range, Some(Range { start: 2, end: 6 }));
+        assert_eq!(split.metadata.time_range, Some(2..6));
         Ok(())
     }
 }
