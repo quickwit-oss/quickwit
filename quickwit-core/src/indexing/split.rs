@@ -141,13 +141,13 @@ impl Split {
         let mut computed_time_range = None;
         if let Some(timestamp_field) = self.timestamp_field {
             let mut split_time_range = self.metadata.time_range.clone().unwrap_or(Range {
-                start: u64::MAX,
-                end: u64::MIN,
+                start: i64::MAX,
+                end: i64::MIN,
             });
 
             if let Some(timestamp) = doc
                 .get_first(timestamp_field)
-                .and_then(|field_value| field_value.u64_value())
+                .and_then(|field_value| field_value.i64_value())
             {
                 if timestamp < split_time_range.start {
                     split_time_range.start = timestamp;
@@ -461,7 +461,7 @@ mod tests {
 
         let mut schema_builder = Schema::builder();
         schema_builder.add_text_field("name", STRING);
-        let timestamp = schema_builder.add_u64_field("timestamp", FAST);
+        let timestamp = schema_builder.add_i64_field("timestamp", FAST);
         let schema = schema_builder.build();
 
         let mut mock_metastore = MockMetastore::default();

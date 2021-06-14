@@ -70,12 +70,12 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the schema.
     fn schema(&self) -> Schema;
     /// Returns the query.
-    fn query(&self, _request: SearchRequest) -> Box<dyn Query>;
+    fn query(&self, _request: &SearchRequest) -> anyhow::Result<Box<dyn Query>>;
     /// Returns the default sort
     fn default_sort_by(&self) -> SortBy {
         SortBy::DocId
     }
-  
+
     /// Returns the timestamp field name
     fn timestamp_field_name(&self) -> Option<String> {
         None
@@ -98,7 +98,6 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
         };
         Ok(timestamp_field_opt)
     }
-   
 }
 
 clone_trait_object!(DocMapper);
