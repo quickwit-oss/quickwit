@@ -20,7 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::{mapper::SearchRequest, DocMapper, IndexSettings};
+use crate::{mapper::SearchRequest, DocMapper};
 use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
@@ -69,11 +69,7 @@ impl Default for WikipediaMapper {
 
 #[typetag::serde(name = "wikipedia")]
 impl DocMapper for WikipediaMapper {
-    fn doc_from_json(
-        &self,
-        doc_json: &str,
-        _index_settings: &IndexSettings,
-    ) -> Result<Document, DocParsingError> {
+    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         self.schema.parse_document(doc_json)
     }
 

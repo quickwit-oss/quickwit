@@ -25,7 +25,6 @@ use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use once_cell::sync::Lazy;
 use quickwit_core::DocumentSource;
-use quickwit_doc_mapping::IndexSettings;
 use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
 };
@@ -58,7 +57,6 @@ use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, Ind
 struct CreateIndexArgs {
     index_uri: String,
     doc_mapper: Box<dyn DocMapper>,
-    timestamp_field: Option<String>,
     overwrite: bool,
 }
 
@@ -120,7 +118,7 @@ impl CliCommand {
         let _doc_mapper_config_path = matches
             .value_of("doc-mapper-config-path")
             .map(PathBuf::from);
-        let timestamp_field = matches
+        let timestamp_field_name = matches
             .value_of("timestamp-field")
             .map(|field| field.to_string());
         let overwrite = matches.is_present("overwrite");
@@ -132,14 +130,16 @@ impl CliCommand {
             _ =>
             // TODO return an error if the type is unknown
             {
-                Box::new(DefaultDocMapper::new(DocMapperConfig::default())) as Box<dyn DocMapper>
+                Box::new(DefaultDocMapper::new(DocMapperConfig {
+                    timestamp_field_name,
+                    ..Default::default()
+                })) as Box<dyn DocMapper>
             }
         };
 
         Ok(CliCommand::New(CreateIndexArgs {
             index_uri,
             doc_mapper,
-            timestamp_field,
             overwrite,
         }))
     }
@@ -244,7 +244,6 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri = %args.index_uri,
         doc_mapper = ?args.doc_mapper,
-        timestamp_field = ?args.timestamp_field,
         overwrite = args.overwrite,
         "create-index"
     );
@@ -258,9 +257,6 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         index_id: index_id.to_string(),
         index_uri: args.index_uri.to_string(),
         doc_mapper: args.doc_mapper,
-        settings: IndexSettings {
-            timestamp_field_name: args.timestamp_field,
-        },
     };
     create_index(metastore_uri, index_metadata).await?;
     Ok(())
@@ -547,7 +543,6 @@ mod tests {
             Ok(CliCommand::New(CreateIndexArgs {
                 index_uri,
                 doc_mapper: Box{..},
-                timestamp_field: None,
                 overwrite: false
             })) if &index_uri == "file:///indexes/wikipedia"
         ));
@@ -556,9 +551,9 @@ mod tests {
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
-            "file:///indexes/wikipedia",
-            "--doc-mapper-type",
-            "all_flatten",
+            "file:///indexes/wikipedia-using-default-mapper",
+            "--doc-mapper-config-path",
+            "./config.json",
             "--timestamp-field",
             "ts",
             "--overwrite",
@@ -568,10 +563,9 @@ mod tests {
             command,
             Ok(CliCommand::New(CreateIndexArgs {
                 index_uri,
-                doc_mapper: Box{..},
-                timestamp_field: Some(field_name),
+                doc_mapper,
                 overwrite: true
-            })) if &index_uri == "file:///indexes/wikipedia" && field_name == "ts"
+            })) if &index_uri == "file:///indexes/wikipedia-using-default-mapper" && doc_mapper.timestamp_field_name() == Some("ts".to_string())
         ));
 
         Ok(())

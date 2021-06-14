@@ -20,7 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::{mapper::SearchRequest, DocMapper, IndexSettings};
+use crate::{mapper::SearchRequest, DocMapper};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use std::collections::HashMap;
@@ -73,12 +73,12 @@ impl DefaultDocMapper {
         let mut values_by_json_path = HashMap::new();
         let mut json_path: Vec<String> = vec![];
         get_json_paths_and_values(&json_obj, &mut json_path, &mut values_by_json_path);
+        let schema = self.schema();
         for (path, values) in values_by_json_path.iter() {
-            let field = self
-                .schema
+            let field = schema
                 .get_field(path)
                 .ok_or_else(|| DocParsingError::NoSuchFieldInSchema(path.clone()))?;
-            let field_entry = self.schema.get_field_entry(field);
+            let field_entry = schema.get_field_entry(field);
             let field_type = field_entry.field_type();
             for value in values.iter() {
                 let value = field_type
@@ -125,11 +125,7 @@ fn get_json_paths_and_values(
 
 #[typetag::serde(name = "default")]
 impl DocMapper for DefaultDocMapper {
-    fn doc_from_json(
-        &self,
-        doc_json: &str,
-        _index_settings: &IndexSettings,
-    ) -> Result<Document, DocParsingError> {
+    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let mut document = Document::default();
         if self.config.store_source {
             let source = self
@@ -157,6 +153,10 @@ impl DocMapper for DefaultDocMapper {
     fn schema(&self) -> Schema {
         self.config.schema()
     }
+
+    fn timestamp_field_name(&self) -> Option<String> {
+        self.config.timestamp_field_name.clone()
+    }
 }
 
 /// A struct that represents the configuration for [`DefaultDocMapper`]
@@ -168,6 +168,8 @@ pub struct DocMapperConfig {
     pub ignore_unknown_fields: bool,
     /// The list of field entry.
     pub properties: Vec<FieldEntry>,
+    /// The timestamp field name
+    pub timestamp_field_name: Option<String>,
 }
 
 impl DocMapperConfig {
@@ -186,8 +188,6 @@ impl DocMapperConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::IndexSettings;
-
     use super::{get_json_paths_and_values, DefaultDocMapper, DocMapper, DocMapperConfig};
     use serde_json::{self, Value as JsonValue};
     use std::collections::HashMap;
@@ -331,7 +331,7 @@ mod tests {
         let config = serde_json::from_str::<DocMapperConfig>(JSON_MAPPING_VALUE)?;
         let schema = config.schema();
         let doc_mapper = DefaultDocMapper::new(config);
-        let document = doc_mapper.doc_from_json(JSON_DOC_VALUE, &IndexSettings::default())?;
+        let document = doc_mapper.doc_from_json(JSON_DOC_VALUE)?;
         // 6 fields with 1 value + one field with two values
         assert_eq!(document.len(), 8);
         let expected_json_paths_and_values: HashMap<String, JsonValue> =

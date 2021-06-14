@@ -20,14 +20,13 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use anyhow::Context;
 use dyn_clone::clone_trait_object;
 use dyn_clone::DynClone;
 use std::fmt::Debug;
-
-use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
-    schema::{DocParsingError, Schema},
+    schema::{DocParsingError, Field, Schema},
     Document,
 };
 
@@ -43,28 +42,40 @@ use tantivy::{
 #[typetag::serde(tag = "type")]
 pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the document built from a json string.
-    fn doc_from_json(
-        &self,
-        doc_json: &str,
-        index_settings: &IndexSettings,
-    ) -> Result<Document, DocParsingError>;
+    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError>;
     /// Returns the schema.
     fn schema(&self) -> Schema;
     /// Returns the query.
     fn query(&self, _request: SearchRequest) -> Box<dyn Query>;
+
+    /// Returns the timestamp field name
+    fn timestamp_field_name(&self) -> Option<String> {
+        None
+    }
+
+    /// Returns the timestamp field
+    fn timestamp_field(&self) -> anyhow::Result<Option<Field>> {
+        let timestamp_field_name_opt = self.timestamp_field_name();
+        let timestamp_field_opt = if let Some(timestamp_field_name) = timestamp_field_name_opt {
+            let timestamp_field_entry =
+                self.schema()
+                    .get_field(&timestamp_field_name)
+                    .context(format!(
+                        "The timestamp field `{}` doesn't exist on this schema",
+                        timestamp_field_name
+                    ))?;
+            Some(timestamp_field_entry)
+        } else {
+            None
+        };
+        Ok(timestamp_field_opt)
+    }
 }
 
 clone_trait_object!(DocMapper);
 
 // TODO: this is a placeholder, to be removed when it will be implementend in the search-api crate
 pub struct SearchRequest {}
-
-/// An index settings hold customisation parameters data about an index.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct IndexSettings {
-    /// The timestamp field name.
-    pub timestamp_field_name: Option<String>,
-}
 
 #[cfg(test)]
 mod tests {
@@ -84,7 +95,8 @@ mod tests {
             "config": {
                 "store_source": true,
                 "ignore_unknown_fields": false,
-                "properties": []
+                "properties": [],
+                "timestamp_field_name": "timestamp"
             }
         }"#;
 
@@ -104,6 +116,7 @@ mod tests {
             store_source: true,
             ignore_unknown_fields: false,
             properties: vec![],
+            timestamp_field_name: Some("timestamp".to_string()),
         });
         assert_eq!(
             format!("{:?}", deserialized_default_mapper),
