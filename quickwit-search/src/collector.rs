@@ -31,6 +31,7 @@ use tantivy::collector::Collector;
 use tantivy::collector::SegmentCollector;
 use tantivy::fastfield::DynamicFastFieldReader;
 use tantivy::fastfield::FastFieldReader;
+use tantivy::schema::Field;
 use tantivy::DocId;
 use tantivy::Score;
 use tantivy::SegmentOrdinal;
@@ -212,6 +213,9 @@ pub struct QuickwitCollector {
     pub start_offset: usize,
     pub max_hits: usize,
     pub sort_by: SortBy,
+    pub timestamp_field: Option<Field>,
+    pub start_timestamp: Option<i64>,
+    pub end_timestamp: Option<i64>,
 }
 
 impl QuickwitCollector {
@@ -313,6 +317,10 @@ pub fn make_collector(
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by: doc_mapper.default_sort_by(),
+        //handle error when PR#122 is merged
+        timestamp_field: doc_mapper.timestamp_field(),
+        start_timestamp: search_request.start_timestamp,
+        end_timestamp: search_request.end_timestamp,
     }
 }
 

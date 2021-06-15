@@ -101,7 +101,7 @@ async fn list_relevant_splits(
 
 /// Performs a search on the current node.
 ///
-/// See alse `[distributed_search]`.
+/// See also `[distributed_search]`.
 pub async fn single_node_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,

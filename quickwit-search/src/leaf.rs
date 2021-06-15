@@ -27,8 +27,11 @@ use quickwit_metastore::SplitMetadata;
 use quickwit_proto::LeafSearchResult;
 use quickwit_storage::Storage;
 use std::collections::BTreeMap;
+use std::ops::Bound;
+use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::Arc;
+use tantivy::collector::FilterCollector;
 use tantivy::{
     collector::Collector, directory::OwnedBytes, query::Query, Index, ReloadPolicy, Searcher, Term,
 };
@@ -102,6 +105,19 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
     Ok(())
 }
 
+fn make_time_filter_predicate(
+    start_timestamp_opt: Option<i64>,
+    end_timestamp_opt: Option<i64>,
+) -> impl Fn(i64) -> bool + 'static + Clone {
+    let lower_bound = start_timestamp_opt
+        .map(|start_timestamp| Bound::Included(start_timestamp))
+        .unwrap_or(Bound::Unbounded);
+    let upper_bound = end_timestamp_opt
+        .map(|end_timestamp| Bound::Excluded(end_timestamp))
+        .unwrap_or(Bound::Unbounded);
+    move |timestamp: i64| (lower_bound, upper_bound).contains(&timestamp)
+}
+
 /// Apply a leaf search on a single split.
 async fn leaf_search_single_split(
     query: &dyn Query,
@@ -116,7 +132,17 @@ async fn leaf_search_single_split(
         .try_into()?;
     let searcher = reader.searcher();
     warmup(&*searcher, query, &quickwit_collector).await?;
-    let leaf_search_result = searcher.search(query, &quickwit_collector)?;
+    let leaf_search_result = if let Some(timestamp_field) = quickwit_collector.timestamp_field {
+        let time_filter_predicate = make_time_filter_predicate(
+            quickwit_collector.start_timestamp,
+            quickwit_collector.end_timestamp,
+        );
+        let wrapped_collector =
+            FilterCollector::new(timestamp_field, time_filter_predicate, quickwit_collector);
+        searcher.search(query, &wrapped_collector)?
+    } else {
+        searcher.search(query, &quickwit_collector)?
+    };
     Ok(leaf_search_result)
 }
 
