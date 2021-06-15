@@ -301,7 +301,6 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     if args.input_path.is_none() && is_stdin_atty {
         let eof_shortcut = match env::consts::OS {
             "windows" => "CTRL+Z",
-            "macos" => "CMD+D",
             _ => "CTRL+D",
         };
         println!("Please enter your new line delimited json documents one line at a time.\nEnd your input using {}.", eof_shortcut);
@@ -396,17 +395,22 @@ async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
     let affected_files = delete_index(metastore_uri, index_id, args.dry_run).await?;
     if args.dry_run {
+        if affected_files.is_empty() {
+            println!("Only the index will be deleted since it does not contains any data file.");
+            return Ok(());
+        }
+
         println!(
-            "The following files will be removed from the index at `{}`",
+            "The following files will be removed along with the index at `{}`",
             args.index_uri
         );
         for file in affected_files {
             println!(" - {}", file.display());
         }
-    } else {
-        println!("Index successfully deleted at `{}`", args.index_uri);
+        return Ok(());
     }
 
+    println!("Index successfully deleted at `{}`", args.index_uri);
     Ok(())
 }
 
