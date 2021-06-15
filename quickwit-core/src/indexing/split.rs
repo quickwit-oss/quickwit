@@ -116,8 +116,13 @@ impl Split {
             index.writer_with_num_threads(params.num_threads, params.heap_size as usize)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
         let index_uri = metastore.index_metadata(&params.index_id).await?.index_uri;
-        let metadata = SplitMetadata::new(id.to_string());
-
+        let mut metadata = SplitMetadata::new(id.to_string());
+        if timestamp_field.is_some() {
+            metadata.time_range = Some(Range {
+                start: i64::MAX,
+                end: i64::MIN,
+            });
+        }
         let split_uri = format!("{}/{}", index_uri, id);
         let storage = storage_resolver.resolve(&split_uri)?;
         Ok(Self {
@@ -138,27 +143,20 @@ impl Split {
 
     /// Add document to the index split.
     pub fn add_document(&mut self, doc: Document) -> anyhow::Result<()> {
+        self.update_metadata(&doc)?;
         self.index_writer
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing index writer."))?
-            .add_document(doc.clone());
-        self.update_metadata(doc);
+            .add_document(doc);
         Ok(())
     }
 
     /// Update the split metadata (num_records, time_range) based on incomming document.
-    fn update_metadata(&mut self, doc: Document) {
-        let computed_time_range = if let Some(timestamp_field) = self.timestamp_field {
-            let mut split_time_range = self
-                .metadata
-                .time_range
-                .as_ref()
-                .map(|range| range.start..range.end)
-                .unwrap_or(Range {
-                    start: i64::MAX,
-                    end: i64::MIN,
-                });
-
+    fn update_metadata(&mut self, doc: &Document) -> anyhow::Result<()> {
+        if let Some(timestamp_field) = self.timestamp_field {
+            let mut split_time_range = self.metadata.time_range.as_mut().ok_or_else(|| {
+                anyhow::anyhow!("Split time range must be set if timestamp field is present.")
+            })?;
             if let Some(timestamp) = doc
                 .get_first(timestamp_field)
                 .and_then(|field_value| field_value.i64_value())
@@ -170,13 +168,9 @@ impl Split {
                     split_time_range.end = timestamp;
                 }
             }
-            Some(split_time_range)
-        } else {
-            None
         };
-
         self.metadata.num_records += 1;
-        self.metadata.time_range = computed_time_range;
+        Ok(())
     }
 
     /// Checks to see if the split has enough documents.
