@@ -138,19 +138,17 @@ impl Split {
 
     /// Add document to the index split.
     pub fn add_document(&mut self, doc: Document) -> anyhow::Result<()> {
-        let computed_time_range = self.compute_time_range(&doc);
         self.index_writer
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing index writer."))?
-            .add_document(doc);
-        self.metadata.num_records += 1;
-        self.metadata.time_range = computed_time_range;
+            .add_document(doc.clone());
+        self.update_metadata(doc);
         Ok(())
     }
 
-    /// Compute the split new time range based on incomming document.
-    fn compute_time_range(&self, doc: &Document) -> Option<Range<i64>> {
-        if let Some(timestamp_field) = self.timestamp_field {
+    /// Update the split metadata (num_records, time_range) based on incomming document.
+    fn update_metadata(&mut self, doc: Document) {
+        let computed_time_range = if let Some(timestamp_field) = self.timestamp_field {
             let mut split_time_range = self
                 .metadata
                 .time_range
@@ -161,8 +159,6 @@ impl Split {
                     end: i64::MIN,
                 });
 
-            //TODO: discuss finding a better way to extract the timestamp_field value from
-            // the document
             if let Some(timestamp) = doc
                 .get_first(timestamp_field)
                 .and_then(|field_value| field_value.i64_value())
@@ -174,9 +170,13 @@ impl Split {
                     split_time_range.end = timestamp;
                 }
             }
-            return Some(split_time_range);
-        }
-        None
+            Some(split_time_range)
+        } else {
+            None
+        };
+
+        self.metadata.num_records += 1;
+        self.metadata.time_range = computed_time_range;
     }
 
     /// Checks to see if the split has enough documents.
