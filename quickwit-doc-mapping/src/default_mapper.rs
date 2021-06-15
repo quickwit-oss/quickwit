@@ -74,12 +74,12 @@ impl DefaultDocMapper {
         let mut values_by_json_path = HashMap::new();
         let mut json_path: Vec<String> = vec![];
         get_json_paths_and_values(&json_obj, &mut json_path, &mut values_by_json_path);
+        let schema = self.schema();
         for (path, values) in values_by_json_path.iter() {
-            let field = self
-                .schema
+            let field = schema
                 .get_field(path)
                 .ok_or_else(|| DocParsingError::NoSuchFieldInSchema(path.clone()))?;
-            let field_entry = self.schema.get_field_entry(field);
+            let field_entry = schema.get_field_entry(field);
             let field_type = field_entry.field_type();
             for value in values.iter() {
                 let value = field_type
@@ -154,6 +154,10 @@ impl DocMapper for DefaultDocMapper {
     fn schema(&self) -> Schema {
         self.config.schema()
     }
+
+    fn timestamp_field_name(&self) -> Option<String> {
+        self.config.timestamp_field_name.clone()
+    }
 }
 
 /// A struct that represents the configuration for [`DefaultDocMapper`]
@@ -165,6 +169,8 @@ pub struct DocMapperConfig {
     pub ignore_unknown_fields: bool,
     /// The list of field entry.
     pub properties: Vec<FieldEntry>,
+    /// The timestamp field name
+    pub timestamp_field_name: Option<String>,
 }
 
 impl DocMapperConfig {

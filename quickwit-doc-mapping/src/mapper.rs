@@ -20,12 +20,13 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use anyhow::Context;
 use dyn_clone::clone_trait_object;
 use dyn_clone::DynClone;
 use quickwit_proto::SearchRequest;
 use std::fmt::Debug;
 use tantivy::query::Query;
-use tantivy::schema::{DocParsingError, Schema};
+use tantivy::schema::{DocParsingError, Field, Schema};
 use tantivy::Document;
 
 /// Sorted order (either Ascending or Descending).
@@ -74,6 +75,29 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     fn default_sort_by(&self) -> SortBy {
         SortBy::DocId
     }
+
+    /// Returns the timestamp field name
+    fn timestamp_field_name(&self) -> Option<String> {
+        None
+    }
+
+    /// Returns the timestamp field
+    fn timestamp_field(&self) -> anyhow::Result<Option<Field>> {
+        let timestamp_field_name_opt = self.timestamp_field_name();
+        let timestamp_field_opt = if let Some(timestamp_field_name) = timestamp_field_name_opt {
+            let timestamp_field_entry =
+                self.schema()
+                    .get_field(&timestamp_field_name)
+                    .context(format!(
+                        "The timestamp field `{}` doesn't exist on this schema",
+                        timestamp_field_name
+                    ))?;
+            Some(timestamp_field_entry)
+        } else {
+            None
+        };
+        Ok(timestamp_field_opt)
+    }
 }
 
 clone_trait_object!(DocMapper);
@@ -96,7 +120,8 @@ mod tests {
             "config": {
                 "store_source": true,
                 "ignore_unknown_fields": false,
-                "properties": []
+                "properties": [],
+                "timestamp_field_name": "timestamp"
             }
         }"#;
 
@@ -116,6 +141,7 @@ mod tests {
             store_source: true,
             ignore_unknown_fields: false,
             properties: vec![],
+            timestamp_field_name: Some("timestamp".to_string()),
         });
         assert_eq!(
             format!("{:?}", deserialized_default_mapper),

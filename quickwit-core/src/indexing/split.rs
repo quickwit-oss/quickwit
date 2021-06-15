@@ -21,6 +21,7 @@
 */
 
 use std::fmt;
+use std::ops::Range;
 use std::path::Path;
 
 use crate::indexing::manifest::Manifest;
@@ -32,6 +33,7 @@ use quickwit_storage::{PutPayload, Storage, StorageUriResolver};
 use std::sync::Arc;
 use std::time::Instant;
 use std::{path::PathBuf, usize};
+use tantivy::schema::Field;
 use tantivy::Directory;
 use tantivy::SegmentId;
 use tantivy::SegmentMeta;
@@ -68,6 +70,8 @@ pub struct Split {
     pub storage: Arc<dyn Storage>,
     /// The metastore instance.
     pub metastore: Arc<dyn Metastore>,
+    /// The timestamp field
+    pub timestamp_field: Option<Field>,
 }
 
 impl fmt::Debug for Split {
@@ -103,6 +107,7 @@ impl Split {
         storage_resolver: StorageUriResolver,
         metastore: Arc<dyn Metastore>,
         schema: Schema,
+        timestamp_field: Option<Field>,
     ) -> anyhow::Result<Self> {
         let id = Uuid::new_v4();
         let split_scratch_dir = Box::new(tempfile::tempdir_in(params.temp_dir.path())?);
@@ -111,8 +116,16 @@ impl Split {
             index.writer_with_num_threads(params.num_threads, params.heap_size as usize)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
         let index_uri = metastore.index_metadata(&params.index_id).await?.index_uri;
-        let metadata = SplitMetadata::new(id.to_string());
-
+        let mut metadata = SplitMetadata::new(id.to_string());
+        // Letadata range is initialized with i64 MAX and MIN.
+        // Note that this range will be saved if none of documents in this split have a timestamp
+        // which is obviously a strange situation.
+        if timestamp_field.is_some() {
+            metadata.time_range = Some(Range {
+                start: i64::MAX,
+                end: i64::MIN,
+            });
+        }
         let split_uri = format!("{}/{}", index_uri, id);
         let storage = storage_resolver.resolve(&split_uri)?;
         Ok(Self {
@@ -127,16 +140,38 @@ impl Split {
             num_parsing_errors: 0,
             storage,
             metastore,
+            timestamp_field,
         })
     }
 
     /// Add document to the index split.
     pub fn add_document(&mut self, doc: Document) -> anyhow::Result<()> {
-        //TODO: handle time range when docMapper is available
+        self.update_metadata(&doc)?;
         self.index_writer
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing index writer."))?
             .add_document(doc);
+        Ok(())
+    }
+
+    /// Update the split metadata (num_records, time_range) based on incomming document.
+    fn update_metadata(&mut self, doc: &Document) -> anyhow::Result<()> {
+        if let Some(timestamp_field) = self.timestamp_field {
+            let mut split_time_range = self.metadata.time_range.as_mut().ok_or_else(|| {
+                anyhow::anyhow!("Split time range must be set if timestamp field is present.")
+            })?;
+            if let Some(timestamp) = doc
+                .get_first(timestamp_field)
+                .and_then(|field_value| field_value.i64_value())
+            {
+                if timestamp < split_time_range.start {
+                    split_time_range.start = timestamp;
+                }
+                if timestamp > split_time_range.end {
+                    split_time_range.end = timestamp;
+                }
+            }
+        };
         self.metadata.num_records += 1;
         Ok(())
     }
@@ -340,6 +375,10 @@ mod tests {
     use quickwit_doc_mapping::AllFlattenDocMapper;
     use quickwit_metastore::IndexMetadata;
     use quickwit_metastore::MockMetastore;
+    use tantivy::{
+        schema::{Schema, FAST, STRING},
+        Document,
+    };
     use tokio::task;
 
     #[tokio::test]
@@ -373,8 +412,14 @@ mod tests {
             });
 
         let metastore = Arc::new(mock_metastore);
-        let split_result =
-            Split::create(params, StorageUriResolver::default(), metastore, schema).await;
+        let split_result = Split::create(
+            params,
+            StorageUriResolver::default(),
+            metastore,
+            schema,
+            None,
+        )
+        .await;
         assert_eq!(split_result.is_ok(), true);
 
         let mut split = split_result?;
@@ -382,6 +427,7 @@ mod tests {
             split.add_document(Document::default())?;
         }
         assert_eq!(split.metadata.num_records, 20);
+        assert_eq!(split.metadata.time_range, None);
         assert_eq!(split.num_parsing_errors, 0);
         assert_eq!(split.has_enough_docs(), false);
 
@@ -389,6 +435,7 @@ mod tests {
             split.add_document(Document::default())?;
         }
         assert_eq!(split.metadata.num_records, 110);
+        assert_eq!(split.metadata.time_range, None);
         assert_eq!(split.has_enough_docs(), true);
 
         let commit_result = split.commit().await;
@@ -406,6 +453,63 @@ mod tests {
         })
         .await??;
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_split_time_range() -> anyhow::Result<()> {
+        let index_uri = "ram://test-index/index";
+        let params = &IndexDataParams {
+            index_id: "test".to_string(),
+            temp_dir: Arc::new(tempfile::tempdir()?),
+            num_threads: 1,
+            heap_size: 3000000,
+            overwrite: false,
+        };
+
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_text_field("name", STRING);
+        let timestamp = schema_builder.add_i64_field("timestamp", FAST);
+        let schema = schema_builder.build();
+
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_index_metadata()
+            .times(1)
+            .returning(move |index_id| {
+                Ok(IndexMetadata {
+                    index_id: index_id.to_string(),
+                    index_uri: index_uri.to_string(),
+                    doc_mapper: Box::new(AllFlattenDocMapper::new()),
+                })
+            });
+
+        let metastore = Arc::new(mock_metastore);
+        let split_result = Split::create(
+            params,
+            StorageUriResolver::default(),
+            metastore,
+            schema.clone(),
+            Some(timestamp),
+        )
+        .await;
+        assert_eq!(split_result.is_ok(), true);
+
+        let mut split = split_result?;
+        let docs = vec![
+            r#"{"timestamp": 2, "name": "INFO"}"#,
+            r#"{"timestamp": 6, "name": "WARNING"}"#,
+            r#"{"name": "UNKNOWN"}"#,
+            r#"{"timestamp": 4, "name": "WARNING"}"#,
+            r#"{"timestamp": 3, "name": "DEBUG"}"#,
+        ];
+
+        for doc in docs {
+            split.add_document(schema.parse_document(doc)?)?;
+        }
+
+        assert_eq!(split.metadata.num_records, 5);
+        assert_eq!(split.metadata.time_range, Some(2..6));
         Ok(())
     }
 }
