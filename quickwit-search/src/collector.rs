@@ -37,6 +37,7 @@ use tantivy::Score;
 use tantivy::SegmentOrdinal;
 use tantivy::SegmentReader;
 
+use crate::filters::TimestampFilter;
 use crate::partial_hit_sorting_key;
 
 /// The `SortingFieldComputer` can be seen as the specialization of `SortBy` applied to a specific `SegmentReader`.
@@ -142,6 +143,7 @@ pub struct QuickwitSegmentCollector {
     hits: BinaryHeap<PartialHitHeapItem>,
     max_hits: usize,
     segment_ord: u32,
+    timestamp_filter_opt: Option<TimestampFilter>,
 }
 
 impl QuickwitSegmentCollector {
@@ -177,6 +179,14 @@ impl SegmentCollector for QuickwitSegmentCollector {
     type Fruit = LeafSearchResult;
 
     fn collect(&mut self, doc_id: DocId, _score: Score) {
+        if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
+            if timestamp_filter.is_within_range(doc_id) {
+                self.total_num_hits += 1;
+                self.collect_top_k(doc_id);
+            }
+            return;
+        }
+
         self.total_num_hits += 1;
         self.collect_top_k(doc_id);
     }
@@ -213,9 +223,9 @@ pub struct QuickwitCollector {
     pub start_offset: usize,
     pub max_hits: usize,
     pub sort_by: SortBy,
-    pub timestamp_field: Option<Field>,
-    pub start_timestamp: Option<i64>,
-    pub end_timestamp: Option<i64>,
+    pub timestamp_field_opt: Option<Field>,
+    pub start_timestamp_opt: Option<i64>,
+    pub end_timestamp_opt: Option<i64>,
 }
 
 impl QuickwitCollector {
@@ -239,6 +249,19 @@ impl Collector for QuickwitCollector {
         // Regardless of the start_offset, we need to collect top-K
         // starting from 0 for every leaves.
         let leaf_max_hits = self.max_hits + self.start_offset;
+
+        let timestamp_filter_opt = if let Some(timestamp_field) = self.timestamp_field_opt {
+            let timestamp_filter = TimestampFilter::new(
+                timestamp_field,
+                self.start_timestamp_opt,
+                self.end_timestamp_opt,
+                segment_reader,
+            )?;
+            Some(timestamp_filter)
+        } else {
+            None
+        };
+
         Ok(QuickwitSegmentCollector {
             total_num_hits: 0u64,
             split_id: self.split_id.clone(),
@@ -246,6 +269,7 @@ impl Collector for QuickwitCollector {
             hits: BinaryHeap::with_capacity(leaf_max_hits),
             segment_ord,
             max_hits: leaf_max_hits,
+            timestamp_filter_opt,
         })
     }
 
@@ -311,17 +335,17 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
 pub fn make_collector(
     doc_mapper: &dyn DocMapper,
     search_request: &SearchRequest,
-) -> QuickwitCollector {
-    QuickwitCollector {
+) -> anyhow::Result<QuickwitCollector> {
+    let timestamp_field_opt = doc_mapper.timestamp_field()?;
+    Ok(QuickwitCollector {
         split_id: String::new(),
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by: doc_mapper.default_sort_by(),
-        //handle error when PR#122 is merged
-        timestamp_field: doc_mapper.timestamp_field(),
-        start_timestamp: search_request.start_timestamp,
-        end_timestamp: search_request.end_timestamp,
-    }
+        timestamp_field_opt,
+        start_timestamp_opt: search_request.start_timestamp,
+        end_timestamp_opt: search_request.end_timestamp,
+    })
 }
 
 #[cfg(test)]
