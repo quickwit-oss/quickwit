@@ -336,13 +336,12 @@ pub fn make_collector(
     doc_mapper: &dyn DocMapper,
     search_request: &SearchRequest,
 ) -> anyhow::Result<QuickwitCollector> {
-    let timestamp_field_opt = doc_mapper.timestamp_field()?;
     Ok(QuickwitCollector {
         split_id: String::new(),
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by: doc_mapper.default_sort_by(),
-        timestamp_field_opt,
+        timestamp_field_opt: doc_mapper.timestamp_field(),
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,
     })
