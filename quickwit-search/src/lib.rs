@@ -66,11 +66,18 @@ fn partial_hit_sorting_key(partial_hit: &PartialHit) -> (Reverse<u64>, GlobalDoc
 }
 
 fn extract_time_range(search_request: &SearchRequest) -> Option<Range<i64>> {
-    // TODO handle semi-open intervals and have this function return a (Bound, Bound) instead
     match (search_request.start_timestamp, search_request.end_timestamp) {
         (Some(start_timestamp), Some(end_timestamp)) => Some(Range {
             start: start_timestamp,
             end: end_timestamp,
+        }),
+        (_, Some(end_timestamp)) => Some(Range {
+            start: i64::MIN,
+            end: end_timestamp,
+        }),
+        (Some(start_timestamp), _) => Some(Range {
+            start: start_timestamp,
+            end: i64::MAX,
         }),
         _ => None,
     }
@@ -81,7 +88,6 @@ async fn list_relevant_splits(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
 ) -> MetastoreResult<Vec<SplitMetadata>> {
-    // TODO handle unbounded [start_time, ∞) intervals. This will require a change in the metastore API
     let time_range_opt = extract_time_range(search_request);
     let split_metas = metastore
         .list_splits(

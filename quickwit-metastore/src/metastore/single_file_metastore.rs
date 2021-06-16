@@ -955,6 +955,48 @@ mod tests {
 
         {
             // list
+            let time_range_opt = Some(Range {
+                start: 200,
+                end: i64::MAX,
+            });
+            let splits = metastore
+                .list_splits(index_id, SplitState::Staged, time_range_opt)
+                .await
+                .unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|split_metadata| split_metadata.split_id)
+                .collect();
+            assert_eq!(split_ids.contains("one"), false);
+            assert_eq!(split_ids.contains("two"), false);
+            assert_eq!(split_ids.contains("three"), true);
+            assert_eq!(split_ids.contains("four"), true);
+            assert_eq!(split_ids.contains("five"), true);
+        }
+
+        {
+            // list
+            let time_range_opt = Some(Range {
+                start: i64::MIN,
+                end: 200,
+            });
+            let splits = metastore
+                .list_splits(index_id, SplitState::Staged, time_range_opt)
+                .await
+                .unwrap();
+            let split_ids: HashSet<String> = splits
+                .into_iter()
+                .map(|split_metadata| split_metadata.split_id)
+                .collect();
+            assert_eq!(split_ids.contains("one"), true);
+            assert_eq!(split_ids.contains("two"), true);
+            assert_eq!(split_ids.contains("three"), false);
+            assert_eq!(split_ids.contains("four"), false);
+            assert_eq!(split_ids.contains("five"), true);
+        }
+
+        {
+            // list
             let range = Some(Range { start: 0, end: 100 });
             let splits = metastore
                 .list_splits(index_id, SplitState::Staged, range)
