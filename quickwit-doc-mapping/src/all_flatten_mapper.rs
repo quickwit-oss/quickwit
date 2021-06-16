@@ -44,24 +44,22 @@ impl std::fmt::Debug for AllFlattenDocMapper {
 
 impl Default for AllFlattenDocMapper {
     fn default() -> Self {
-        AllFlattenDocMapper {
-            schema: SchemaBuilder::new().build(),
-        }
+        AllFlattenDocMapper::new()
     }
 }
 
 impl AllFlattenDocMapper {
     /// Creates new instance of all flatten mapper
     pub fn new() -> Self {
-        let mut schema_builder = SchemaBuilder::new();
-        schema_builder.add_text_field("_source", STORED);
         AllFlattenDocMapper {
-            schema: schema_builder.build(),
+            schema: AllFlattenDocMapper::default_schema(),
         }
     }
 
     fn default_schema() -> Schema {
-        SchemaBuilder::new().build()
+        let mut schema_builder = SchemaBuilder::new();
+        schema_builder.add_text_field("_source", STORED);
+        schema_builder.build()
     }
 }
 
