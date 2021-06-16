@@ -20,11 +20,11 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::DocMapper;
+use crate::{DocMapper, DocParsingError};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use tantivy::query::{Query, QueryParser};
-use tantivy::schema::{DocParsingError, Schema, TextFieldIndexing, TextOptions};
+use tantivy::schema::{Schema, TextFieldIndexing, TextOptions};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::Document;
 
@@ -73,7 +73,9 @@ impl Default for WikipediaMapper {
 #[typetag::serde(name = "wikipedia")]
 impl DocMapper for WikipediaMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
-        self.schema.parse_document(doc_json)
+        self.schema
+            .parse_document(doc_json)
+            .map_err(DocParsingError::from)
     }
 
     fn query(&self, request: &SearchRequest) -> anyhow::Result<Box<dyn Query>> {

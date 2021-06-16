@@ -20,12 +20,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::DocMapper;
+use crate::{DocMapper, DocParsingError};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
-    schema::{DocParsingError, Schema, SchemaBuilder, STORED},
+    schema::{Schema, SchemaBuilder, STORED},
     Document,
 };
 

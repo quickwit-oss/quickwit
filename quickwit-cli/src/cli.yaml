@@ -22,22 +22,9 @@ subcommands:
                 value_name: DOC MAPPER CONFIG
                 required_if:
                 - [doc-mapper-type, default]
-            - timestamp-field:
-                help: Creates a time-series index with the specified timestamp field
-                long: timestamp-field
-                value_name: FIELD NAME
-            - no-timestamp-field:
-                help: Creates a non-time-series index
-                long: no-timestamp-field
             - overwrite:
                 help: Overwrites pre-existing index
                 long: overwrite
-        groups:
-            - index-type:
-                required: true
-                args:
-                    - timestamp-field
-                    - no-timestamp-field
     - index:
         about: Indexes a dataset
         args:

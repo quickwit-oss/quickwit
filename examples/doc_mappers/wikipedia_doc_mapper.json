@@ -1,0 +1,18 @@
+{
+    "store_source": true,
+    "default_search_fields": ["body", "title"],
+    "field_mappings": [
+        {
+            "name": "body",
+            "type": "text"
+        },
+        {
+            "name": "title",
+            "type": "text"
+        },
+        {
+            "name": "url",
+            "type": "text"
+        }
+    ]
+}
