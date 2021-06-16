@@ -128,16 +128,17 @@ impl CliCommand {
         let doc_mapper: Box<dyn DocMapper> = match doc_mapper_type.trim().to_lowercase().as_str() {
             "all_flatten" => Box::new(AllFlattenDocMapper::new()) as Box<dyn DocMapper>,
             "wikipedia" => Box::new(WikipediaMapper::new()) as Box<dyn DocMapper>,
-            _ =>
+            "default" =>
             // TODO return an error if the type is unknown
             {
                 let path = doc_mapper_config_path
-                    .context("Either set a doc mapper type or a json doc mapper file")?;
+                    .context("doc-mapper-config-path is required for the default doc mapper type.")?;
                 let json_file = std::fs::File::open(path)?;
                 let reader = std::io::BufReader::new(json_file);
                 let builder: DefaultDocMapperBuilder = serde_json::from_reader(reader)?;
                 Box::new(builder.build()?) as Box<dyn DocMapper>
             }
+            doc_mapper_type => anyhow::bail!("doc-mapper-type `{}` not supported. Please choose between all_flatten, wikipedia or default/empty type.", doc_mapper_type)
         };
 
         Ok(CliCommand::New(CreateIndexArgs {
