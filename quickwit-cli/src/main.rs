@@ -26,7 +26,7 @@ use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use once_cell::sync::Lazy;
 use quickwit_core::DocumentSource;
 use quickwit_doc_mapping::{
-    AllFlattenDocMapper, DefaultDocMapper, DocMapper, DocMapperConfig, WikipediaMapper,
+    AllFlattenDocMapper, DefaultDocMapperBuilder, DocMapper, WikipediaMapper,
 };
 use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::MetastoreUriResolver;
@@ -56,12 +56,14 @@ use tokio::time::timeout;
 
 use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, IndexingStatistics};
 
+#[derive(Debug)]
 struct CreateIndexArgs {
     index_uri: String,
     doc_mapper: Box<dyn DocMapper>,
     overwrite: bool,
 }
 
+#[derive(Debug)]
 struct IndexDataArgs {
     index_uri: String,
     input_path: Option<PathBuf>,
@@ -71,6 +73,7 @@ struct IndexDataArgs {
     overwrite: bool,
 }
 
+#[derive(Debug)]
 struct SearchIndexArgs {
     index_uri: String,
     query: String,
@@ -81,11 +84,13 @@ struct SearchIndexArgs {
     end_timestamp: Option<i64>,
 }
 
+#[derive(Debug)]
 struct DeleteIndexArgs {
     index_uri: String,
     dry_run: bool,
 }
 
+#[derive(Debug)]
 enum CliCommand {
     New(CreateIndexArgs),
     Index(IndexDataArgs),
@@ -112,30 +117,26 @@ impl CliCommand {
             .value_of("index-uri")
             .context("'index-uri' is a required arg")?
             .to_string();
-        // TODO: both doc_mapper_type and doc_mapper_config_path could
-        // be collapsed into one cli argument when we clarify the specs.
         let doc_mapper_type = matches
             .value_of("doc-mapper-type")
             .context("doc-mapper-type has a default value")?;
-        let _doc_mapper_config_path = matches
+        let doc_mapper_config_path = matches
             .value_of("doc-mapper-config-path")
             .map(PathBuf::from);
-        let timestamp_field_name = matches
-            .value_of("timestamp-field")
-            .map(|field| field.to_string());
         let overwrite = matches.is_present("overwrite");
 
-        // TODO: find better way to build doc mapper when we clarify the specs.
         let doc_mapper: Box<dyn DocMapper> = match doc_mapper_type.trim().to_lowercase().as_str() {
             "all_flatten" => Box::new(AllFlattenDocMapper::new()) as Box<dyn DocMapper>,
             "wikipedia" => Box::new(WikipediaMapper::new()) as Box<dyn DocMapper>,
             _ =>
             // TODO return an error if the type is unknown
             {
-                Box::new(DefaultDocMapper::new(DocMapperConfig {
-                    timestamp_field_name,
-                    ..Default::default()
-                })) as Box<dyn DocMapper>
+                let path = doc_mapper_config_path
+                    .context("Either set a doc mapper type or a json doc mapper file")?;
+                let json_file = std::fs::File::open(path)?;
+                let reader = std::io::BufReader::new(json_file);
+                let builder: DefaultDocMapperBuilder = serde_json::from_reader(reader)?;
+                Box::new(builder.build()?) as Box<dyn DocMapper>
             }
         };
 
@@ -332,7 +333,7 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
 
     let (_, num_published_splits) = try_join!(index_future, reporting_future)?;
     if num_published_splits > 0 {
-        println!("You can now query your index with `quickwit search --index-path {} --query \"barack obama\"`" , args.index_uri);
+        println!("You can now query your index with `quickwit search --index-uri {} --query \"barack obama\"`" , args.index_uri);
     }
 
     Ok(())
@@ -538,32 +539,43 @@ mod tests {
         DeleteIndexArgs, IndexDataArgs, SearchIndexArgs,
     };
     use clap::{load_yaml, App, AppSettings};
+    use std::io::Write;
     use std::path::{Path, PathBuf};
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_parse_new_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches_result = app.get_matches_from_safe(vec![
-            "new",
-            "--index-uri",
-            "file:///indexes/wikipedia",
-            "--no-timestamp-field",
-        ]);
+        let matches_result =
+            app.get_matches_from_safe(vec!["new", "--index-uri", "file:///indexes/wikipedia"]);
         assert!(matches!(matches_result, Err(_)));
-
+        let mut mapper_file = NamedTempFile::new()?;
+        let mapper_str = r#"{
+            "store_source": true,
+            "default_search_fields": ["timestamp"],
+            "timestamp_field": "timestamp",
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "i64"
+                }
+            ]
+        }"#;
+        mapper_file.write_all(mapper_str.as_bytes())?;
+        let path = mapper_file.into_temp_path();
+        let path_str = path.to_string_lossy().to_string();
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
             "file:///indexes/wikipedia",
             "--doc-mapper-config-path",
-            "./config.json",
-            "--no-timestamp-field",
+            &path_str,
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
-            command,
+                command,
             Ok(CliCommand::New(CreateIndexArgs {
                 index_uri,
                 doc_mapper: Box{..},
@@ -575,11 +587,9 @@ mod tests {
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
-            "file:///indexes/wikipedia-using-default-mapper",
-            "--doc-mapper-config-path",
-            "./config.json",
-            "--timestamp-field",
-            "ts",
+            "file:///indexes/wikipedia",
+            "--doc-mapper-type",
+            "wikipedia",
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
@@ -587,9 +597,9 @@ mod tests {
             command,
             Ok(CliCommand::New(CreateIndexArgs {
                 index_uri,
-                doc_mapper,
+                doc_mapper: Box{..},
                 overwrite: true
-            })) if &index_uri == "file:///indexes/wikipedia-using-default-mapper" && doc_mapper.timestamp_field_name() == Some("ts".to_string())
+            })) if &index_uri == "file:///indexes/wikipedia"
         ));
 
         Ok(())

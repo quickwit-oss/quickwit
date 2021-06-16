@@ -42,7 +42,7 @@ pub async fn index_documents(
 ) -> anyhow::Result<()> {
     let index_metadata = metastore.index_metadata(&params.index_id).await?;
     let schema = index_metadata.doc_mapper.schema();
-    let timestamp_field = index_metadata.doc_mapper.timestamp_field()?;
+    let timestamp_field = index_metadata.doc_mapper.timestamp_field();
 
     let mut current_split = Split::create(
         &params,

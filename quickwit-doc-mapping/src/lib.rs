@@ -26,12 +26,12 @@
 //! a document indexable by tantivy engine, aka tantivy::Document.
 
 mod all_flatten_mapper;
-mod default_mapper;
+mod default_doc_mapper;
 mod mapper;
 mod wikipedia_mapper;
 
 pub use self::all_flatten_mapper::AllFlattenDocMapper;
-pub use self::default_mapper::{DefaultDocMapper, DocMapperConfig};
+pub use self::default_doc_mapper::{DefaultDocMapper, DefaultDocMapperBuilder, DocParsingError};
 pub use self::mapper::DocMapper;
 pub use self::mapper::{SortBy, SortOrder};
 pub use self::wikipedia_mapper::WikipediaMapper;
