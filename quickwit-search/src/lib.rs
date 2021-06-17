@@ -114,7 +114,7 @@ pub async fn single_node_search(
     let split_metas = list_relevant_splits(search_request, metastore).await?;
     let doc_mapper = index_metadata.doc_mapper;
     let query = doc_mapper.query(search_request)?;
-    let collector = make_collector(doc_mapper.as_ref(), search_request)?;
+    let collector = make_collector(doc_mapper.as_ref(), search_request);
     let leaf_search_result =
         leaf_search(query.as_ref(), collector, &split_metas[..], storage.clone())
             .await

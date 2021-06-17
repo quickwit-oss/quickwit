@@ -173,17 +173,20 @@ impl QuickwitSegmentCollector {
             });
         }
     }
+
+    fn accept_document(&self, doc_id: DocId) -> bool {
+        if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
+            return timestamp_filter.is_within_range(doc_id);
+        }
+        true
+    }
 }
 
 impl SegmentCollector for QuickwitSegmentCollector {
     type Fruit = LeafSearchResult;
 
     fn collect(&mut self, doc_id: DocId, _score: Score) {
-        if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
-            if timestamp_filter.is_within_range(doc_id) {
-                self.total_num_hits += 1;
-                self.collect_top_k(doc_id);
-            }
+        if !self.accept_document(doc_id) {
             return;
         }
 
@@ -335,8 +338,8 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
 pub fn make_collector(
     doc_mapper: &dyn DocMapper,
     search_request: &SearchRequest,
-) -> anyhow::Result<QuickwitCollector> {
-    Ok(QuickwitCollector {
+) -> QuickwitCollector {
+    QuickwitCollector {
         split_id: String::new(),
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
@@ -344,7 +347,7 @@ pub fn make_collector(
         timestamp_field_opt: doc_mapper.timestamp_field(),
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,
-    })
+    }
 }
 
 #[cfg(test)]
