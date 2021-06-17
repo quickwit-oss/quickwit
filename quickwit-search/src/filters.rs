@@ -33,8 +33,7 @@ pub struct TimestampFilter {
     /// The time range respresented as (lower_bound, upper_bound).
     time_range: (Bound<i64>, Bound<i64>),
     /// The timestamp fast field reader.
-    // TODO should be i64 when (https://github.com/tantivy-search/tantivy/issues/1084) is resolved.
-    timestamp_field_reader: DynamicFastFieldReader<u64>,
+    timestamp_field_reader: DynamicFastFieldReader<i64>,
 }
 
 impl TimestampFilter {
@@ -63,7 +62,7 @@ impl TimestampFilter {
             )));
         }
 
-        let timestamp_field_reader = segment_reader.fast_fields().u64(field)?;
+        let timestamp_field_reader = segment_reader.fast_fields().i64(field)?;
         let lower_bound = start_timestamp_opt
             .map(Bound::Included)
             .unwrap_or(Bound::Unbounded);
@@ -79,7 +78,7 @@ impl TimestampFilter {
     }
 
     pub fn is_within_range(&self, doc_id: DocId) -> bool {
-        let timestamp_value = self.timestamp_field_reader.get(doc_id) as i64;
+        let timestamp_value = self.timestamp_field_reader.get(doc_id);
         self.time_range.contains(&timestamp_value)
     }
 }
