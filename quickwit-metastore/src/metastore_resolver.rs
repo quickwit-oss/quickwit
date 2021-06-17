@@ -26,7 +26,7 @@ use quickwit_storage::StorageUriResolver;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::MetastoreErrorKind;
+use crate::MetastoreError;
 use crate::SingleFileMetastore;
 use crate::{Metastore, MetastoreResolverError};
 
@@ -103,9 +103,11 @@ impl MetastoreUriResolver {
                     MetastoreResolverError::ProtocolUnsupported(err_msg)
                 }
                 StorageResolverError::FailedToOpenStorage(err) => {
-                    MetastoreResolverError::FailedToOpenMetastore(
-                        MetastoreErrorKind::InternalError.with_error(err),
-                    )
+                    MetastoreResolverError::FailedToOpenMetastore(MetastoreError::InternalError {
+                        message: "Failed to open storage hosting the single file metastore."
+                            .to_string(),
+                        cause: anyhow::anyhow!(err),
+                    })
                 }
             })?;
         let single_file_metastore = Arc::new(SingleFileMetastore::new(storage));

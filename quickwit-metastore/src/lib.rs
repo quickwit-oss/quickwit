@@ -20,6 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #![warn(missing_docs)]
+#![allow(clippy::bool_assert_comparison)]
 
 /*! `quickwit-metastore` is the abstraction used in quickwit to interface itself to different metastore:
 - single file metastore
@@ -29,7 +30,7 @@ mod error;
 mod metastore;
 mod metastore_resolver;
 
-pub use error::{MetastoreError, MetastoreErrorKind, MetastoreResolverError, MetastoreResult};
+pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
 pub use metastore::single_file_metastore::SingleFileMetastore;
 pub use metastore::{IndexMetadata, MetadataSet, Metastore, SplitMetadata, SplitState};
 pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};

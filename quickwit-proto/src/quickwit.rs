@@ -32,7 +32,7 @@ pub struct SearchRequest {
 pub struct SearchResult {
     /// Number of hits matching the query.
     #[prost(uint64, tag = "1")]
-    pub total_num_hits: u64,
+    pub num_hits: u64,
     /// Matched hits
     #[prost(message, repeated, tag = "2")]
     pub hits: ::prost::alloc::vec::Vec<Hit>,
@@ -102,7 +102,7 @@ pub struct PartialHit {
 pub struct LeafSearchResult {
     /// Total number of documents matched by the query.
     #[prost(uint64, tag = "1")]
-    pub total_num_hits: u64,
+    pub num_hits: u64,
     /// List of the best top-K candidates for the given leaf query.
     #[prost(message, repeated, tag = "2")]
     pub partial_hits: ::prost::alloc::vec::Vec<PartialHit>,
@@ -175,7 +175,13 @@ pub mod search_service_client {
             let path = http::uri::PathAndQuery::from_static("/quickwit.SearchService/RootSearch");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = " Perform a search on a given set of splits."]
+        #[doc = " Perform a leaf search on a given set of splits."]
+        #[doc = ""]
+        #[doc = " It is like a regular search except that:"]
+        #[doc = " - the node should perform the search locally instead of dispatching"]
+        #[doc = " it to other nodes."]
+        #[doc = " - it should be applied on the given subset of splits"]
+        #[doc = " - Hit content is not fetched, and we instead return so called `PartialHit`."]
         pub async fn leaf_search(
             &mut self,
             request: impl tonic::IntoRequest<super::LeafSearchRequest>,
@@ -190,7 +196,8 @@ pub mod search_service_client {
             let path = http::uri::PathAndQuery::from_static("/quickwit.SearchService/LeafSearch");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        #[doc = " Retrieves full document given their URI."]
+        #[doc = "/ Fetches the documents contents from the document store."]
+        #[doc = "/ This methods takes `PartialHit`s and returns `Hit`s."]
         pub async fn fetch_docs(
             &mut self,
             request: impl tonic::IntoRequest<super::FetchDocsRequest>,
@@ -235,12 +242,19 @@ pub mod search_service_server {
             &self,
             request: tonic::Request<super::SearchRequest>,
         ) -> Result<tonic::Response<super::SearchResult>, tonic::Status>;
-        #[doc = " Perform a search on a given set of splits."]
+        #[doc = " Perform a leaf search on a given set of splits."]
+        #[doc = ""]
+        #[doc = " It is like a regular search except that:"]
+        #[doc = " - the node should perform the search locally instead of dispatching"]
+        #[doc = " it to other nodes."]
+        #[doc = " - it should be applied on the given subset of splits"]
+        #[doc = " - Hit content is not fetched, and we instead return so called `PartialHit`."]
         async fn leaf_search(
             &self,
             request: tonic::Request<super::LeafSearchRequest>,
         ) -> Result<tonic::Response<super::LeafSearchResult>, tonic::Status>;
-        #[doc = " Retrieves full document given their URI."]
+        #[doc = "/ Fetches the documents contents from the document store."]
+        #[doc = "/ This methods takes `PartialHit`s and returns `Hit`s."]
         async fn fetch_docs(
             &self,
             request: tonic::Request<super::FetchDocsRequest>,

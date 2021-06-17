@@ -20,99 +20,69 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::fmt::Display;
 use std::io;
-
 use thiserror::Error;
 
 /// Metastore error kinds.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum MetastoreErrorKind {
-    /// The target index already exists.
-    IndexAlreadyExists,
-
-    /// The target split already exists.
-    SplitAlreadyExists,
+#[derive(Debug, Error)]
+pub enum MetastoreError {
+    /// The target index already exists (Returned when creating a new index).
+    #[error("Index already exists `{index_id}`")]
+    IndexAlreadyExists {
+        /// The `index_id` of the index that failed to be created because another index
+        /// with the same id already exists.
+        index_id: String,
+    },
 
     /// Forbidden error.
-    Forbidden,
+    #[error("Access forbidden")]
+    Forbidden {
+        /// Error Message
+        message: String,
+    },
 
     /// The target index does not exist.
-    IndexDoesNotExist,
+    #[error("Index `{index_id}` does not exists.")]
+    IndexDoesNotExist {
+        /// Index Id that was request (but is missing).
+        index_id: String,
+    },
 
     /// Any generic internal error.
-    InternalError,
+    /// The message can be helpful to users, but the detail of the error
+    /// are judged uncoverable and not useful for error handling.
+    #[error("Another error occured. `{message}`. Cause: `{cause}`.")]
+    InternalError {
+        /// Error Message
+        message: String,
+        /// Root cause
+        cause: anyhow::Error,
+    },
 
     /// Invalid manifest.
-    InvalidManifest,
+    #[error("Failed to deserialize metadata set. Cause: `{cause}`")]
+    InvalidManifest {
+        /// Serde error
+        cause: serde_json::Error,
+    },
 
     /// Io error.
-    Io,
+    #[error("IOError `{0}`")]
+    Io(io::Error),
 
     /// The target split does not exist.
-    SplitDoesNotExist,
+    #[error("Split does not exists `{split_id}`")]
+    SplitDoesNotExist {
+        /// missing split id.
+        split_id: String,
+    },
 
     /// The target split is not staged.
-    SplitIsNotStaged,
-}
-
-impl MetastoreErrorKind {
-    /// Creates a [`MetastoreError`].
-    pub fn with_error<E>(self, source: E) -> MetastoreError
-    where
-        anyhow::Error: From<E>,
-    {
-        MetastoreError {
-            kind: self,
-            source: From::from(source),
-        }
-    }
-}
-
-impl From<MetastoreError> for io::Error {
-    fn from(metastore_err: MetastoreError) -> Self {
-        let io_error_kind = match metastore_err.kind() {
-            MetastoreErrorKind::SplitDoesNotExist => io::ErrorKind::NotFound,
-            _ => io::ErrorKind::Other,
-        };
-        io::Error::new(io_error_kind, metastore_err.source)
-    }
-}
-
-/// Generic Metastore error.
-#[derive(Error, Debug)]
-#[error("MetastoreError(kind={kind:?}, source={source})")]
-pub struct MetastoreError {
-    kind: MetastoreErrorKind,
-    #[source]
-    source: anyhow::Error,
-}
-
-impl MetastoreError {
-    /// Adds some context to the wrapper error.
-    pub fn add_context<C>(self, ctx: C) -> Self
-    where
-        C: Display + Send + Sync + 'static,
-    {
-        MetastoreError {
-            kind: self.kind,
-            source: self.source.context(ctx),
-        }
-    }
-
-    /// Returns the corresponding [`MetastoreErrorKind`] for this error.
-    pub fn kind(&self) -> MetastoreErrorKind {
-        self.kind
-    }
-}
-
-impl From<io::Error> for MetastoreError {
-    fn from(err: io::Error) -> MetastoreError {
-        MetastoreError {
-            kind: MetastoreErrorKind::Io,
-            source: anyhow::Error::from(err),
-        }
-    }
+    #[error("Split is not staged `{split_id}`")]
+    SplitIsNotStaged {
+        /// Split that should have been staged.
+        split_id: String,
+    },
 }
 
 /// Generic Result type for metastore operations.

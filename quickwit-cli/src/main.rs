@@ -23,7 +23,7 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
-use once_cell::sync::Lazy;
+use quickwit_common::extract_metastore_uri_and_index_id_from_index_uri;
 use quickwit_core::DocumentSource;
 use quickwit_doc_mapping::{
     AllFlattenDocMapper, DefaultDocMapperBuilder, DocMapper, WikipediaMapper,
@@ -32,12 +32,16 @@ use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_proto::SearchRequest;
 use quickwit_search::single_node_search;
+use quickwit_serve::serve_cli;
+use quickwit_serve::ServeArgs;
 use quickwit_storage::StorageUriResolver;
-use regex::Regex;
 use std::env;
 use std::io;
 use std::io::Stdout;
+use std::net::IpAddr;
+use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::fs::File;
@@ -95,6 +99,7 @@ enum CliCommand {
     New(CreateIndexArgs),
     Index(IndexDataArgs),
     Search(SearchIndexArgs),
+    Serve(ServeArgs),
     Delete(DeleteIndexArgs),
 }
 impl CliCommand {
@@ -107,6 +112,7 @@ impl CliCommand {
             "new" => Self::parse_new_args(submatches),
             "index" => Self::parse_index_args(submatches),
             "search" => Self::parse_search_args(submatches),
+            "serve" => Self::parse_serve_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
             _ => bail!("Subcommand '{}' is not implemented", subcommand),
         }
@@ -207,6 +213,37 @@ impl CliCommand {
         }))
     }
 
+    fn parse_serve_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let index_uris = matches
+            .values_of("index-uri")
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|index_uri| index_uri.to_string())
+                    .collect()
+            })
+            .context("At least one 'index-uri' is required.")?;
+        let peers: Vec<SocketAddr> = matches
+            .values_of("peer_seeds")
+            .map(|values| {
+                values
+                    .map(|peer_socket_addr_str| SocketAddr::from_str(peer_socket_addr_str))
+                    .collect::<Result<Vec<SocketAddr>, _>>()
+            })
+            .unwrap_or_else(|| Ok(Vec::new()))?;
+        let host_str = matches
+            .value_of("host")
+            .context("'host' has a default  value")?
+            .to_string();
+        let rest_port = value_t!(matches, "port", u16)?;
+        let rest_ip_addr = IpAddr::from_str(&host_str)?;
+        let rest_socket_addr = SocketAddr::new(rest_ip_addr, rest_port);
+        Ok(CliCommand::Serve(ServeArgs {
+            index_uris,
+            rest_socket_addr,
+            peers,
+        }))
+    }
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_uri = matches
             .value_of("index-uri")
@@ -215,33 +252,6 @@ impl CliCommand {
         let dry_run = matches.is_present("dry-run");
         Ok(CliCommand::Delete(DeleteIndexArgs { index_uri, dry_run }))
     }
-}
-
-/// For the moment, the only metastore available is the
-/// a one file per index store, located on the same storage as the
-/// index.
-/// For a simpler UX, we let the user define an `index_url` instead
-/// of a metastore and an index_id.
-/// This function takes such a index_url and breaks it into
-/// s3://my_bucket/some_path_containing_my_indices / my_index
-/// \--------------------------------------------/ \------/
-///        metastore_uri                           index_id
-///
-/// TODO force the presence of a protocol and a specific format using a regex?
-fn extract_metastore_uri_and_index_id_from_index_uri(
-    index_uri: &str,
-) -> anyhow::Result<(&str, &str)> {
-    static INDEX_ID_PATTERN: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9_\-]*$").unwrap());
-    let parts: Vec<&str> = index_uri.rsplitn(2, '/').collect();
-    if parts.len() != 2 {
-        anyhow::bail!("Failed to parse the uri into a metastore_uri and an index_id.");
-    }
-    if !INDEX_ID_PATTERN.is_match(parts[0]) {
-        anyhow::bail!("Invalid index_id `{}`. Only alpha-numeric, `-` and `_` characters allowed. Cannot start with `-`, `_` or digit.", parts[0]);
-    }
-
-    Ok((parts[1], parts[0]))
 }
 
 async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
@@ -525,6 +535,7 @@ async fn main() {
         CliCommand::New(args) => create_index_cli(args).await,
         CliCommand::Index(args) => index_data_cli(args).await,
         CliCommand::Search(args) => search_index_cli(args).await,
+        CliCommand::Serve(args) => serve_cli(args).await,
         CliCommand::Delete(args) => delete_index_cli(args).await,
     };
     if let Err(err) = command_res {

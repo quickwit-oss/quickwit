@@ -21,17 +21,20 @@
 */
 
 #![warn(missing_docs)]
+#![allow(clippy::bool_assert_comparison)]
 
 //! Doc mapping defines the way to convert a json like documents to
 //! a document indexable by tantivy engine, aka tantivy::Document.
 
 mod all_flatten_mapper;
 mod default_doc_mapper;
+mod error;
 mod mapper;
 mod wikipedia_mapper;
 
-pub use self::all_flatten_mapper::AllFlattenDocMapper;
-pub use self::default_doc_mapper::{DefaultDocMapper, DefaultDocMapperBuilder, DocParsingError};
-pub use self::mapper::DocMapper;
-pub use self::mapper::{SortBy, SortOrder};
-pub use self::wikipedia_mapper::WikipediaMapper;
+pub use error::QueryParserError;
+
+pub use all_flatten_mapper::AllFlattenDocMapper;
+pub use default_doc_mapper::{DefaultDocMapper, DefaultDocMapperBuilder, DocParsingError};
+pub use mapper::{DocMapper, SortBy, SortOrder};
+pub use wikipedia_mapper::WikipediaMapper;

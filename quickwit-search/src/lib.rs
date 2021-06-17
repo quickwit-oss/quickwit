@@ -30,15 +30,20 @@ use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadata};
 use quickwit_proto::SearchRequest;
 use quickwit_proto::{PartialHit, SearchResult};
 use quickwit_storage::StorageUriResolver;
+mod error;
 mod fetch_docs;
 mod leaf;
 use tantivy::DocAddress;
 mod collector;
 mod filters;
+mod service;
 
 use crate::collector::make_collector;
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
+
+pub use self::error::SearchError;
+pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
 /// GlobalDocAddress serves as a hit address.
 #[derive(Clone, Copy, Eq, Debug, PartialEq, Hash, Ord, PartialOrd)]
@@ -107,7 +112,7 @@ pub async fn single_node_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
     storage_resolver: StorageUriResolver,
-) -> anyhow::Result<SearchResult> {
+) -> Result<SearchResult, SearchError> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
@@ -124,7 +129,7 @@ pub async fn single_node_search(
         .with_context(|| "fetch_request")?;
     let elapsed = start_instant.elapsed();
     Ok(SearchResult {
-        total_num_hits: leaf_search_result.total_num_hits,
+        num_hits: leaf_search_result.num_hits,
         hits: fetch_docs_result.hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
     })
@@ -171,7 +176,7 @@ mod tests {
             test_sandbox.storage_uri_resolver(),
         )
         .await?;
-        assert_eq!(single_node_result.total_num_hits, 1);
+        assert_eq!(single_node_result.num_hits, 1);
         assert_eq!(single_node_result.hits.len(), 1);
         let hit_json: serde_json::Value = serde_json::from_str(&single_node_result.hits[0].json)?;
         let expected_json: serde_json::Value = json!({"title": ["snoopy"], "body": ["Snoopy is an anthropomorphic beagle[5] in the comic strip..."], "url": ["http://snoopy"]});
@@ -226,7 +231,7 @@ mod tests {
             test_sandbox.storage_uri_resolver(),
         )
         .await?;
-        assert_eq!(single_node_result.total_num_hits, 20);
+        assert_eq!(single_node_result.num_hits, 20);
         assert_eq!(single_node_result.hits.len(), 6);
         assert!(&single_node_result.hits[0].json.contains("Snoopy"));
         assert!(&single_node_result.hits[1].json.contains("breed"));

@@ -11,6 +11,9 @@ tonic = '0.4.3'
 tokio-stream = '0.1.6'
 itertools = '0.10'
 base64 = '0.13'
+async-trait = "0.1"
+thiserror = "1"
+mockall = "0.9"
 
 [dependencies.tantivy]
 git = 'https://github.com/quickwit-inc/tantivy'

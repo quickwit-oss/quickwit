@@ -20,7 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::{DocMapper, DocParsingError};
+use crate::{DocMapper, DocParsingError, QueryParserError};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use tantivy::query::{Query, QueryParser};
@@ -78,7 +78,7 @@ impl DocMapper for WikipediaMapper {
             .map_err(DocParsingError::from)
     }
 
-    fn query(&self, request: &SearchRequest) -> anyhow::Result<Box<dyn Query>> {
+    fn query(&self, request: &SearchRequest) -> Result<Box<dyn Query>, QueryParserError> {
         let schema = self.schema();
         let default_fields = vec![
             schema.get_field("body").unwrap(),

@@ -24,7 +24,7 @@ use super::default_as_true;
 use super::{
     field_mapping_entry::DocParsingError, resolve_field_name, FieldMappingEntry, FieldMappingType,
 };
-use crate::DocMapper;
+use crate::{DocMapper, QueryParserError};
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
@@ -241,7 +241,7 @@ impl DocMapper for DefaultDocMapper {
         Ok(document)
     }
 
-    fn query(&self, _request: &SearchRequest) -> anyhow::Result<Box<dyn Query>> {
+    fn query(&self, _request: &SearchRequest) -> Result<Box<dyn Query>, QueryParserError> {
         todo!()
     }
 
