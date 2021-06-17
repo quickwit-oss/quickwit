@@ -137,7 +137,7 @@ impl Eq for PartialHitHeapItem {}
 
 /// Quickwit collector working at the scale of the segment.
 pub struct QuickwitSegmentCollector {
-    total_num_hits: u64,
+    num_hits: u64,
     split_id: String,
     sort_by: SortingFieldComputer,
     hits: BinaryHeap<PartialHitHeapItem>,
@@ -190,7 +190,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
             return;
         }
 
-        self.total_num_hits += 1;
+        self.num_hits += 1;
         self.collect_top_k(doc_id);
     }
 
@@ -210,7 +210,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
             })
             .collect();
         LeafSearchResult {
-            total_num_hits: self.total_num_hits,
+            num_hits: self.num_hits,
             partial_hits,
         }
     }
@@ -266,7 +266,7 @@ impl Collector for QuickwitCollector {
         };
 
         Ok(QuickwitSegmentCollector {
-            total_num_hits: 0u64,
+            num_hits: 0u64,
             split_id: self.split_id.clone(),
             sort_by,
             hits: BinaryHeap::with_capacity(leaf_max_hits),
@@ -299,23 +299,23 @@ impl Collector for QuickwitCollector {
 }
 
 /// Merges a set of Leaf Results.
-fn merge_leaf_results(leaf_results: Vec<LeafSearchResult>, num_hits: usize) -> LeafSearchResult {
+fn merge_leaf_results(leaf_results: Vec<LeafSearchResult>, max_hits: usize) -> LeafSearchResult {
     // Optimization: No merging needed if there is only one result.
     if leaf_results.len() == 1 {
         return leaf_results.into_iter().next().unwrap_or_default(); //< default is actually never called
     }
-    let total_num_hits = leaf_results
+    let num_hits: u64 = leaf_results
         .iter()
-        .map(|leaf_result| leaf_result.total_num_hits)
+        .map(|leaf_result| leaf_result.num_hits)
         .sum();
     let all_partial_hits: Vec<PartialHit> = leaf_results
         .into_iter()
         .flat_map(|leaf_result| leaf_result.partial_hits)
         .collect();
     // TODO optimize
-    let top_k_partial_hits = top_k_partial_hits(all_partial_hits, num_hits);
+    let top_k_partial_hits = top_k_partial_hits(all_partial_hits, max_hits);
     LeafSearchResult {
-        total_num_hits,
+        num_hits,
         partial_hits: top_k_partial_hits,
     }
 }

@@ -30,10 +30,17 @@ service SearchService {
   // It is also in charge of merging back the results.
   rpc RootSearch(SearchRequest) returns (SearchResult);
 
-  // Perform a search on a given set of splits.
+  // Perform a leaf search on a given set of splits.
+  //
+  // It is like a regular search except that:
+  // - the node should perform the search locally instead of dispatching
+  // it to other nodes.
+  // - it should be applied on the given subset of splits
+  // - Hit content is not fetched, and we instead return so called `PartialHit`.
   rpc LeafSearch(LeafSearchRequest) returns (LeafSearchResult);
 
-  // Retrieves full document given their URI.
+  /// Fetches the documents contents from the document store.
+  /// This methods takes `PartialHit`s and returns `Hit`s.
   rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResult);
 }
 
@@ -63,7 +70,7 @@ message SearchRequest {
 
 message SearchResult {
   // Number of hits matching the query.
-  uint64 total_num_hits = 1;
+  uint64 num_hits = 1;
   // Matched hits
   repeated Hit hits = 2;
   // Elapsed time to perform the request. This time is measured
@@ -117,7 +124,7 @@ message PartialHit {
 
 message LeafSearchResult {
   // Total number of documents matched by the query.
-  uint64 total_num_hits = 1;
+  uint64 num_hits = 1;
   // List of the best top-K candidates for the given leaf query.
   repeated PartialHit partial_hits = 2;
 }

@@ -8,5 +8,6 @@ members = [
   "quickwit-metastore",
   "quickwit-proto",
   "quickwit-search",
+  "quickwit-serve",
   "quickwit-storage",
 ]

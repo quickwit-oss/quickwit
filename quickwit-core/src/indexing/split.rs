@@ -412,40 +412,33 @@ mod tests {
             });
 
         let metastore = Arc::new(mock_metastore);
-        let split_result = Split::create(
+        let mut split = Split::create(
             params,
             StorageUriResolver::default(),
             metastore,
             schema,
             None,
         )
-        .await;
-        assert_eq!(split_result.is_ok(), true);
+        .await?;
 
-        let mut split = split_result?;
         for _ in 0..20 {
             split.add_document(Document::default())?;
         }
         assert_eq!(split.metadata.num_records, 20);
         assert_eq!(split.metadata.time_range, None);
         assert_eq!(split.num_parsing_errors, 0);
-        assert_eq!(split.has_enough_docs(), false);
+        assert!(!split.has_enough_docs());
 
         for _ in 0..90 {
             split.add_document(Document::default())?;
         }
         assert_eq!(split.metadata.num_records, 110);
         assert_eq!(split.metadata.time_range, None);
-        assert_eq!(split.has_enough_docs(), true);
+        assert!(split.has_enough_docs());
 
-        let commit_result = split.commit().await;
-        assert_eq!(commit_result.is_ok(), true);
-
-        let merge_result = split.merge_all_segments().await;
-        assert_eq!(merge_result.is_ok(), true);
-
-        let hotcache_result = split.build_hotcache().await;
-        assert_eq!(hotcache_result.is_ok(), true);
+        split.commit().await?;
+        split.merge_all_segments().await?;
+        split.build_hotcache().await?;
 
         task::spawn(async move {
             split.stage().await?;
@@ -493,7 +486,7 @@ mod tests {
             Some(timestamp),
         )
         .await;
-        assert_eq!(split_result.is_ok(), true);
+        assert!(split_result.is_ok());
 
         let mut split = split_result?;
         let docs = vec![

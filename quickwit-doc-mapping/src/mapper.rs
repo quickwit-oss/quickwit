@@ -29,6 +29,8 @@ use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 use tantivy::Document;
 
+use crate::QueryParserError;
+
 /// Sorted order (either Ascending or Descending).
 /// To get a regular top-K results search, use `SortOrder::Desc`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -70,8 +72,8 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the schema.
     fn schema(&self) -> Schema;
     /// Returns the query.
-    fn query(&self, _request: &SearchRequest) -> anyhow::Result<Box<dyn Query>>;
-    /// Returns the default sort.
+    fn query(&self, request: &SearchRequest) -> Result<Box<dyn Query>, QueryParserError>;
+    /// Returns the default sort
     fn default_sort_by(&self) -> SortBy {
         SortBy::DocId
     }

@@ -1,0 +1,36 @@
+[package]
+name = 'quickwit-serve'
+version = '0.1.0'
+authors = ['Quickwit <hello@quickwit.io>']
+edition = '2018'
+
+[dependencies]
+anyhow = '1'
+warp = '0.3'
+tracing = '0.1'
+tracing-subscriber = '0.2'
+quickwit-proto = {path="../quickwit-proto"}
+serde_json = "1"
+quickwit-storage = {path="../quickwit-storage"}
+quickwit-common = {path="../quickwit-common"}
+quickwit-metastore = {path="../quickwit-metastore"}
+thiserror = "1"
+tonic = "0.4"
+async-trait = "0.1"
+termcolor = "1"
+
+[dev-dependencies]
+mockall = "0.9"
+assert-json-diff = "2.0.1"
+tokio = { version = "1", features = ["full"] }
+
+[dependencies.quickwit-search]
+path = '../quickwit-search'
+
+[dependencies.serde]
+version = '1.0'
+features = ['derive']
+
+[dependencies.serde_qs]
+version = '0.8'
+features = ['warp']
