@@ -14,7 +14,7 @@ base64 = '0.13'
 
 [dependencies.tantivy]
 git = 'https://github.com/quickwit-inc/tantivy'
-rev = '6d3e9087c'
+rev = '8a4df0586'
 
 [dependencies.quickwit-core]
 path = '../quickwit-core'
