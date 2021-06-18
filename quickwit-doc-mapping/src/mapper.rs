@@ -48,7 +48,7 @@ pub enum SortBy {
     /// Sort by a specific field.
     SortByFastField {
         /// Field to sort by.
-        field_name: String,
+        field: Field,
         /// Order to sort by. A usual top-K search implies a Descending order.
         order: SortOrder,
     },

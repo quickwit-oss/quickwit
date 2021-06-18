@@ -79,16 +79,12 @@ fn resolve_sort_by(
     segment_reader: &SegmentReader,
 ) -> tantivy::Result<SortingFieldComputer> {
     match sort_by {
-        SortBy::SortByFastField { field_name, order } => {
-            if let Some(field) = segment_reader.schema().get_field(&field_name) {
-                let fast_field_reader = segment_reader.fast_fields().u64_lenient(field)?;
-                Ok(SortingFieldComputer::SortByFastField {
-                    fast_field_reader,
-                    order: *order,
-                })
-            } else {
-                Ok(SortingFieldComputer::SortByDocId)
-            }
+        SortBy::SortByFastField { field, order } => {
+            let fast_field_reader = segment_reader.fast_fields().u64_lenient(*field)?;
+            Ok(SortingFieldComputer::SortByFastField {
+                fast_field_reader,
+                order: *order,
+            })
         }
         SortBy::DocId => Ok(SortingFieldComputer::SortByDocId),
     }
@@ -244,8 +240,9 @@ impl QuickwitCollector {
             fast_fields.push(*timestamp_field);
         }
 
-        //TODO: add sort fast field if `self.sort_by`  is of variant `SortBy::SortByFastField`.
-        //      This needs the doc_mapper but let's clarify the api first.
+        if let SortBy::SortByFastField { field, .. } = self.sort_by {
+            fast_fields.push(field);
+        }
 
         //TODO: find a way to add remaining fastfields from user search request.
 
