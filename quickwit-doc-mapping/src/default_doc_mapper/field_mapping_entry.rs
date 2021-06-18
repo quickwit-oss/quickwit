@@ -617,7 +617,7 @@ mod tests {
         assert_eq!(mapping_entry.name, "my_field_name");
         match mapping_entry.mapping_type {
             FieldMappingType::Text(options, _) => {
-                assert_eq!(options.is_stored(), true);
+                assert!(options.is_stored());
                 let indexing_options = options
                     .get_indexing_options()
                     .expect("should have indexing option");
@@ -722,9 +722,9 @@ mod tests {
 
         match result.mapping_type {
             FieldMappingType::I64(options, cardinality) => {
-                assert_eq!(options.is_indexed(), true); // default
-                assert_eq!(options.is_fast(), false); // default
-                assert_eq!(options.is_stored(), true); // default
+                assert!(options.is_indexed()); // default
+                assert!(!options.is_fast()); // default
+                assert!(options.is_stored()); // default
                 assert_eq!(cardinality, Cardinality::MultiValues);
             }
             _ => bail!("Wrong type"),

@@ -68,15 +68,23 @@ async fn warmup(
     quickwit_collector: &QuickwitCollector,
 ) -> anyhow::Result<()> {
     warm_up_terms(searcher, query).await?;
-    warm_up_fastfield(searcher, quickwit_collector).await?;
+    warm_up_fastfields(searcher, quickwit_collector).await?;
     Ok(())
 }
 
-async fn warm_up_fastfield(
-    _searcher: &Searcher,
-    _quickwit_collector: &QuickwitCollector,
+async fn warm_up_fastfields(
+    searcher: &Searcher,
+    quickwit_collector: &QuickwitCollector,
 ) -> anyhow::Result<()> {
-    // TODO implement me
+    let mut warm_up_futures = Vec::new();
+    for field in quickwit_collector.fast_fields() {
+        for segment_reader in searcher.segment_readers() {
+            let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
+            warm_up_futures.push(async move { fast_field_slice.read_bytes_async().await });
+        }
+    }
+    try_join_all(warm_up_futures).await?;
+
     Ok(())
 }
 

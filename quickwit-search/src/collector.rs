@@ -237,6 +237,20 @@ impl QuickwitCollector {
         self_clone.split_id = split_id;
         self_clone
     }
+
+    pub fn fast_fields(&self) -> Vec<Field> {
+        let mut fast_fields = vec![];
+        if let Some(ref timestamp_field) = self.timestamp_field_opt {
+            fast_fields.push(*timestamp_field);
+        }
+
+        //TODO: add sort fast field if `self.sort_by`  is of variant `SortBy::SortByFastField`.
+        //      This needs the doc_mapper but let's clarify the api first.
+
+        //TODO: find a way to add remaining fastfields from user search request.
+
+        fast_fields
+    }
 }
 
 impl Collector for QuickwitCollector {
