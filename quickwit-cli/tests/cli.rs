@@ -28,6 +28,7 @@ use crate::helpers::{create_test_env, make_command};
 use anyhow::Result;
 use helpers::TestEnv;
 use predicates::prelude::*;
+use quickwit_storage::{localstack_region, S3CompatibleObjectStorage, Storage};
 use std::path::Path;
 
 fn create_wikipedia_index(test_env: &TestEnv) {
@@ -93,7 +94,7 @@ fn test_cmd_help() -> anyhow::Result<()> {
 
 #[test]
 fn test_cmd_new() -> Result<()> {
-    let test_env = create_test_env()?;
+    let test_env = create_test_env(false)?;
     create_wikipedia_index(&test_env);
 
     // Attempt to create with ill-formed new command.
@@ -107,7 +108,7 @@ fn test_cmd_new() -> Result<()> {
 
 #[test]
 fn test_cmd_new_on_existing_index() -> Result<()> {
-    let test_env = create_test_env()?;
+    let test_env = create_test_env(false)?;
     create_wikipedia_index(&test_env);
 
     make_command(
@@ -126,7 +127,7 @@ fn test_cmd_new_on_existing_index() -> Result<()> {
 
 #[test]
 fn test_cmd_index() -> Result<()> {
-    let test_env = create_test_env()?;
+    let test_env = create_test_env(false)?;
     create_logs_index(&test_env);
 
     // Indexing data on non-existing index.
@@ -173,7 +174,7 @@ fn test_cmd_index() -> Result<()> {
 
 #[test]
 fn test_cmd_delete() -> Result<()> {
-    let test_env = create_test_env()?;
+    let test_env = create_test_env(false)?;
     create_wikipedia_index(&test_env);
 
     // Delete empty index.
@@ -196,6 +197,47 @@ fn test_cmd_delete() -> Result<()> {
         .stdout(predicate::str::contains("/.manifest"));
 
     delete_index(&test_env);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_all_with_s3_localstack() -> Result<()> {
+    let test_env = create_test_env(true)?;
+    let object_storage = S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.uri)?;
+
+    make_command(
+        format!(
+            "new --index-uri {} --doc-mapper-type wikipedia",
+            test_env.uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success();
+    let metadata_file_exist = object_storage.exists(Path::new("quickwit.json")).await?;
+    assert_eq!(metadata_file_exist, true);
+
+    // Index some data.
+    index_data(&test_env.uri, test_env.wiki_data_path.as_path());
+
+    // Delete index with dry-run.
+    make_command(format!("delete --index-uri {} --dry-run", test_env.uri).as_str())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "The following files will be removed",
+        ))
+        .stdout(predicate::str::contains("/hotcache"))
+        .stdout(predicate::str::contains("/.manifest"));
+
+    // Delete index.
+    make_command(format!("delete --index-uri {} ", test_env.uri).as_str())
+        .assert()
+        .success();
+    let metadata_file_exist = object_storage.exists(Path::new("quickwit.json")).await?;
+    assert_eq!(metadata_file_exist, false);
 
     Ok(())
 }

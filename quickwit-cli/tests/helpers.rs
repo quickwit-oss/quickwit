@@ -95,10 +95,14 @@ pub struct TestEnv {
 }
 
 /// Creates all necessary artifacts in a test environement.
-pub fn create_test_env() -> anyhow::Result<TestEnv> {
+pub fn create_test_env(is_s3: bool) -> anyhow::Result<TestEnv> {
     let dir = tempdir()?;
-    let path = PathBuf::from(format!("{}/indices/data", dir.path().display()));
-    let uri = format!("file://{}", path.display());
+    let mut path = PathBuf::from(format!("{}/indices/data", dir.path().display()));
+    let mut uri = format!("file://{}", path.display());
+    if is_s3 {
+        path = PathBuf::from("quickwit-integration-tests/indices/data");
+        uri = format!("s3+localstack://{}", path.display());
+    }
     let config_path = dir.path().join("config.json");
     create_file(&config_path, DEFAULT_DOC_MAPPER);
     let log_data_path = dir.path().join("logs.json");
