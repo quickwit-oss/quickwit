@@ -76,15 +76,25 @@ async fn warm_up_fastfields(
     searcher: &Searcher,
     quickwit_collector: &QuickwitCollector,
 ) -> anyhow::Result<()> {
+    let mut fast_fields = Vec::new();
+    for fast_field_name in quickwit_collector.fast_field_names.iter() {
+        let fast_field = searcher
+            .schema()
+            .get_field(fast_field_name)
+            .with_context(|| {
+                format!("Couldn't get field named `{}` from schema.", fast_field_name)
+            })?;
+        fast_fields.push(fast_field);
+    }
+
     let mut warm_up_futures = Vec::new();
-    for field in quickwit_collector.fast_fields() {
+    for field in fast_fields {
         for segment_reader in searcher.segment_readers() {
             let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
             warm_up_futures.push(async move { fast_field_slice.read_bytes_async().await });
         }
     }
     try_join_all(warm_up_futures).await?;
-
     Ok(())
 }
 
