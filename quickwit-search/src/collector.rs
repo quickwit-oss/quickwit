@@ -338,16 +338,14 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
 /// Extracts all fast field names.
 fn extract_fast_field_names(doc_mapper: &dyn DocMapper) -> Vec<String> {
     let mut fast_fields = vec![];
-    let timestamp_field_name_opt = doc_mapper.timestamp_field_name();
-    if let Some(timestamp_field) = timestamp_field_name_opt.as_ref() {
-        fast_fields.push(timestamp_field.clone());
+    if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
+        fast_fields.push(timestamp_field);
     }
 
     if let SortBy::SortByFastField { field_name, .. } = doc_mapper.default_sort_by() {
-        if Some(&field_name) == timestamp_field_name_opt.as_ref() {
-            return fast_fields;
+        if !fast_fields.contains(&field_name) {
+            fast_fields.push(field_name);
         }
-        fast_fields.push(field_name);
     }
 
     fast_fields
