@@ -82,7 +82,10 @@ async fn warm_up_fastfields(
             .schema()
             .get_field(fast_field_name)
             .with_context(|| {
-                format!("Couldn't get field named `{}` from schema.", fast_field_name)
+                format!(
+                    "Couldn't get field named `{}` from schema.",
+                    fast_field_name
+                )
             })?;
         fast_fields.push(fast_field);
     }
