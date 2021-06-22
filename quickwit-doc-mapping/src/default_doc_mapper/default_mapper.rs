@@ -81,13 +81,17 @@ impl DefaultDocMapperBuilder {
             default_search_fields.insert(field_name.clone(), field);
         }
         // Resolve timestamp field
-        let mut timestamp_field = None;
+        let mut timestamp_field_opt = None;
         if let Some(timestamp_field_name) = self.timestamp_field {
-            timestamp_field = Some(
-                resolve_field_name(&schema, &timestamp_field_name).with_context(|| {
-                    format!("Unknown timestamp field: `{}`", timestamp_field_name)
-                })?,
-            );
+            let timestamp_field = resolve_field_name(&schema, &timestamp_field_name)
+                .with_context(|| format!("Unknown timestamp field: `{}`", timestamp_field_name))?;
+
+            let timestamp_field_entry = schema.get_field_entry(timestamp_field);
+            if !timestamp_field_entry.is_fast() {
+                bail!("Field {:?} is not a fast field.", timestamp_field_name)
+            }
+
+            timestamp_field_opt = Some(timestamp_field);
         }
 
         // Build the root mapping entry, it has an empty name so that we don't prefix all
@@ -97,7 +101,7 @@ impl DefaultDocMapperBuilder {
             schema,
             store_source: self.store_source,
             default_search_fields,
-            timestamp_field,
+            timestamp_field: timestamp_field_opt,
             field_mappings,
         })
     }
@@ -253,7 +257,8 @@ impl DocMapper for DefaultDocMapper {
 #[cfg(test)]
 mod tests {
     use crate::{
-        default_doc_mapper::default_mapper::SOURCE_FIELD_NAME, DocMapper, DocParsingError,
+        default_doc_mapper::default_mapper::SOURCE_FIELD_NAME, DefaultDocMapperBuilder, DocMapper,
+        DocParsingError,
     };
 
     use super::DefaultDocMapper;
@@ -290,7 +295,8 @@ mod tests {
             "field_mappings": [
                 {
                     "name": "timestamp",
-                    "type": "i64"
+                    "type": "i64",
+                    "fast": true
                 },
                 {
                     "name": "body",
@@ -426,6 +432,26 @@ mod tests {
                 "text type only support json string value".to_owned()
             )
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_docmapper_with_non_fast_timestamp_field() -> anyhow::Result<()> {
+        let mapper_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "timestamp_field": "timestamp",
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "text"
+                }
+            ]
+        }"#;
+
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(mapper_config)?;
+        let expected_msg = "Field \"timestamp\" is not a fast field.".to_string();
+        assert!(matches!(builder.build(), Err(error) if format!("{}", error) == expected_msg));
         Ok(())
     }
 }
