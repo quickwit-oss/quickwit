@@ -1,0 +1,23 @@
+[package]
+name = "quickwit-cluster"
+version = "0.1.0"
+authors = ['Quickwit, Inc. <hello@quickwit.io>']
+edition = "2018"
+license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+
+[dependencies]
+anyhow = "1.0"
+artillery-core = { git = "https://github.com/bastion-rs/artillery.git", rev = "789524b"}
+async-trait = "0.1"
+http = "0.2"
+tokio = { version = "1.7", features = [ "full" ] }
+tokio-stream = { version = "0.1.6", features = [ "sync" ] }
+tonic = "0.4"
+tracing = "0.1"
+tracing-subscriber = "0.2"
+uuid = "0.8"
+
+quickwit-proto = { version = "0.1.0", path = "../quickwit-proto"}
+
+[dev-dependencies]
+tempdir = "0.3"
