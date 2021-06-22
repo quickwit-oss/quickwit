@@ -226,6 +226,7 @@ pub struct QuickwitCollector {
     pub start_offset: usize,
     pub max_hits: usize,
     pub sort_by: SortBy,
+    pub fast_field_names: Vec<String>,
     pub timestamp_field_opt: Option<Field>,
     pub start_timestamp_opt: Option<i64>,
     pub end_timestamp_opt: Option<i64>,
@@ -334,6 +335,22 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
     partial_hits
 }
 
+/// Extracts all fast field names.
+fn extract_fast_field_names(doc_mapper: &dyn DocMapper) -> Vec<String> {
+    let mut fast_fields = vec![];
+    if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
+        fast_fields.push(timestamp_field);
+    }
+
+    if let SortBy::SortByFastField { field_name, .. } = doc_mapper.default_sort_by() {
+        if !fast_fields.contains(&field_name) {
+            fast_fields.push(field_name);
+        }
+    }
+
+    fast_fields
+}
+
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
 pub fn make_collector(
     doc_mapper: &dyn DocMapper,
@@ -344,6 +361,7 @@ pub fn make_collector(
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by: doc_mapper.default_sort_by(),
+        fast_field_names: extract_fast_field_names(doc_mapper),
         timestamp_field_opt: doc_mapper.timestamp_field(),
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,

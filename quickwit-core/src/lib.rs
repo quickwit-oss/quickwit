@@ -20,6 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #![warn(missing_docs)]
+#![allow(clippy::bool_assert_comparison)]
 
 /*! `quickwit-core` provides all the core functions used in quickwit cli:
 - `create_index` for creating a new index
