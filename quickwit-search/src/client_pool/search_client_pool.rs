@@ -30,15 +30,16 @@ use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tracing::*;
 
+use quickwit_cluster::cluster::Cluster;
+use quickwit_cluster::utils::get_grpc_addr;
+use quickwit_cluster::utils::rendezvous_hasher::{sort_by_rendez_vous_hash, Node};
 use quickwit_proto::search_service_client::SearchServiceClient;
 
 use crate::client::create_search_service_client;
 use crate::client_pool::{ClientPool, Job};
-use crate::cluster::Cluster;
-use crate::utils::get_grpc_addr;
-use crate::utils::rendezvous_hasher::{sort_by_rendez_vous_hash, Node};
 
 /// Search client pool implementation.
+#[derive(Clone)]
 pub struct SearchClientPool {
     /// Search clients.
     /// A hash map with gRPC's SocketAddr as the key and SearchServiceClient as the value.
@@ -50,6 +51,7 @@ impl SearchClientPool {
     /// Create a search client pool given a cluster.
     /// When a client pool is created, the thread that monitors cluster members
     /// will be started at the same time.
+    #[allow(dead_code)]
     pub async fn new(cluster: Arc<Cluster>) -> anyhow::Result<Self> {
         let clients = HashMap::new();
 

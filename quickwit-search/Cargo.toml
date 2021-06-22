@@ -6,14 +6,16 @@ edition = '2018'
 
 [dependencies]
 anyhow = '1'
+async-trait = "0.1"
+base64 = '0.13'
 futures = '0.3'
+http = "0.2"
+mockall = "0.9"
+itertools = '0.10'
+thiserror = "1"
 tonic = '0.4.3'
 tokio-stream = '0.1.6'
-itertools = '0.10'
-base64 = '0.13'
-async-trait = "0.1"
-thiserror = "1"
-mockall = "0.9"
+tracing = "0.1"
 
 [dependencies.tantivy]
 git = 'https://github.com/quickwit-inc/tantivy'
@@ -21,6 +23,9 @@ rev = '8a4df0586'
 
 [dependencies.quickwit-core]
 path = '../quickwit-core'
+
+[dependencies.quickwit-cluster]
+path = '../quickwit-cluster'
 
 [dependencies.quickwit-doc-mapping]
 path = '../quickwit-doc-mapping'
