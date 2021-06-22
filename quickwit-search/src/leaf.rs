@@ -83,10 +83,15 @@ async fn warm_up_fastfields(
             .get_field(fast_field_name)
             .with_context(|| {
                 format!(
-                    "Couldn't get field named `{}` from schema.",
+                    "Couldn't get field named {:?} from schema.",
                     fast_field_name
                 )
             })?;
+
+        let field_entry = searcher.schema().get_field_entry(fast_field);
+        if !field_entry.is_fast() {
+            anyhow::bail!("Field {:?} is not a fast field.", fast_field_name);
+        }
         fast_fields.push(fast_field);
     }
 

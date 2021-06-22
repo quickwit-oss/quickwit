@@ -44,12 +44,6 @@ impl TimestampFilter {
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<Self> {
         let field_entry = segment_reader.schema().get_field_entry(field);
-        if !field_entry.is_fast() {
-            return Err(TantivyError::SchemaError(format!(
-                "Field {:?} is not a fast field.",
-                field_entry.name()
-            )));
-        }
 
         let expected_type = Type::I64;
         let field_schema_type = field_entry.field_type().value_type();
