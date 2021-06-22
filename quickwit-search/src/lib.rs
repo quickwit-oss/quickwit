@@ -38,6 +38,7 @@ mod client;
 mod client_pool;
 mod collector;
 mod filters;
+mod rendezvous_hasher;
 mod service;
 
 use crate::collector::make_collector;

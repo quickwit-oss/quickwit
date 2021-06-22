@@ -118,13 +118,13 @@ impl Cluster {
             error!("Failed to add itself as the initial member of the cluster.");
         }
 
-        // Prepare to start a thread that will monitor cluster events.
-        let thread_inner = cluster.artillery_cluster.clone();
-        let thread_listen_addr = cluster.listen_addr;
+        // Prepare to start a task that will monitor cluster events.
+        let task_inner = cluster.artillery_cluster.clone();
+        let task_listen_addr = cluster.listen_addr;
 
         // Start to monitor the cluster events.
         tokio::task::spawn_blocking(move || {
-            for (artillery_members, artillery_member_event) in thread_inner.events.iter() {
+            for (artillery_members, artillery_member_event) in task_inner.events.iter() {
                 log_artillery_event(artillery_member_event);
                 let updated_memberlist: Vec<Member> = artillery_members
                     .into_iter()
@@ -132,11 +132,12 @@ impl Cluster {
                         ArtilleryMemberState::Alive | ArtilleryMemberState::Suspect => true,
                         ArtilleryMemberState::Down | ArtilleryMemberState::Left => false,
                     })
-                    .map(|member| convert_member(member, thread_listen_addr))
+                    .map(|member| convert_member(member, task_listen_addr))
                     .collect();
                 debug!(updated_memberlist=?updated_memberlist);
                 if members_sender.send(updated_memberlist).is_err() {
                     // Somehow the cluster has been dropped.
+                    warn!("Failed to send a member list.");
                     break;
                 }
             }
