@@ -19,8 +19,8 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -98,7 +98,7 @@ impl SearchClientPool {
                 // Add clients to the client pool.
                 for member in members {
                     let grpc_addr = get_grpc_addr(member.listen_addr);
-                    if !clients.contains_key(&grpc_addr) {
+                    if let Entry::Vacant(_e) = clients.entry(grpc_addr) {
                         match create_search_service_client(grpc_addr).await {
                             Ok(client) => {
                                 debug!(grpc_addr=?grpc_addr, "Add a new client that is connecting to the node that has been joined the cluster.");
