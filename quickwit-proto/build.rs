@@ -1,4 +1,4 @@
-// Quickwit
+//  Quickwit
 //  Copyright (C) 2021 Quickwit Inc.
 //
 //  Quickwit is offered under the AGPL v3.0 and as commercial software.
@@ -19,7 +19,9 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("cargo:rerun-if-changed=proto/cluster.proto");
     println!("cargo:rerun-if-changed=proto/search_api.proto");
+
     let mut prost_config = prost_build::Config::default();
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
     tonic_build::configure()
@@ -27,6 +29,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute(".", "#[serde(rename_all = \"camelCase\")]")
         .format(true)
         .out_dir("src/")
-        .compile_with_config(prost_config, &["./proto/search_api.proto"], &["./proto"])?;
+        .compile_with_config(
+            prost_config,
+            &["./proto/cluster.proto", "./proto/search_api.proto"],
+            &["./proto"],
+        )?;
     Ok(())
 }

@@ -18,11 +18,27 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-mod cluster;
-mod quickwit;
+pub mod search_client_pool;
 
-#[macro_use]
-extern crate serde;
+use std::net::SocketAddr;
 
-pub use cluster::*;
-pub use quickwit::*;
+use anyhow::Result;
+use async_trait::async_trait;
+
+/// Job.
+/// The unit in which distributed search is performed.
+#[derive(Debug, Hash, Clone, PartialEq, Eq)]
+pub struct Job {
+    /// Split ID.
+    pub split: String,
+
+    /// The cost of the job. This is used to sort jobs.
+    pub cost: u32,
+}
+
+#[async_trait]
+pub trait ClientPool: Send + Sync + 'static {
+    /// Assign the given job to the clients.
+    /// Returns a list of pair (SocketAddr, Vec<Job>)
+    async fn assign_jobs(&self, jobs: Vec<Job>) -> Result<Vec<(SocketAddr, Vec<Job>)>>;
+}
