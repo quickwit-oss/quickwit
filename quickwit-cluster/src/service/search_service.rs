@@ -36,6 +36,7 @@ use crate::cluster::Cluster;
 #[allow(dead_code)]
 pub struct SearchServiceImpl {
     /// Search client pool.
+    /// It manages the clients that connect to the available nodes in the cluster.
     client_pool: SearchClientPool,
 }
 

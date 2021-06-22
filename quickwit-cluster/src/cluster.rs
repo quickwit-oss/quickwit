@@ -149,7 +149,7 @@ impl Cluster {
         WatchStream::new(self.members.clone())
     }
 
-    pub async fn members(&self) -> Vec<Member> {
+    pub fn members(&self) -> Vec<Member> {
         self.members.borrow().clone()
     }
 

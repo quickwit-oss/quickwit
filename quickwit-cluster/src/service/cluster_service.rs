@@ -62,7 +62,6 @@ impl ClusterService for ClusterServiceImpl {
         let members = self
             .cluster
             .members()
-            .await
             .into_iter()
             .map(PMember::from)
             .collect();
