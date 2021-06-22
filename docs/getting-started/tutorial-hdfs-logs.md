@@ -1,6 +1,6 @@
 ---
-title: Quickstart
-sidebar_position: 1
+title: Tutorial - Index a logging dataset
+sidebar_position: 4
 ---
 
 Before running quickwit search instances on your servers, you will need to create indexes, add documents or even delete some data and finally launch the server. To ease these actions, we provide a [CLI](../quickwit-cli/README.md) and that's 
@@ -62,17 +62,10 @@ quickwit-cli serve --index-uri file://./my-indexes/wikipedia
 ```
 
 
-## Clean
+## Next steps
 
-```
-quickwit-cli delete --index-uri file://./my-indexes/wikipedia
-```
-
-
-
-## Next tutorials
-
-- [Tutorial Distributed Search on AWS S3](tutorial-distributed-search-aws-s3.md)
-- [Tutorial with a dataset on logs](tutorial-hdfs-logs.md)
+- [Search on AWS S3]()
+- Index the full wikipedia index
+- 
 
 

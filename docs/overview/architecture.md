@@ -1,7 +1,25 @@
 ---
 title: Architecture
-sidebar_position: 1
+sidebar_position: 3
 ---
 
-This page will help you on how to create blog posts in Docusaurus.
+## A stateless distributed search on distant storage
+
+TODO: put the architecture image here
+
+## Shared disk architecture
+
+## Stateless search instance
+- every node can handle any requests
+- root and leaf nodes
+- retry policy
+
+## Caching
+-  
+- rendez-vous hashing with workload optimization
+
+## Cluster discovery
+- SWIM protocol
+
+
 
