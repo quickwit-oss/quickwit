@@ -20,9 +20,7 @@
 
 pub mod rendezvous_hasher;
 
-use std::net::{SocketAddr, ToSocketAddrs};
-
-use anyhow;
+use std::net::SocketAddr;
 
 const GRPC_PORT_INC: u16 = 1;
 
@@ -30,15 +28,4 @@ const GRPC_PORT_INC: u16 = 1;
 /// Add 1 to the base port to get the gRPC port.
 pub fn get_grpc_addr(listen_addr: SocketAddr) -> SocketAddr {
     SocketAddr::new(listen_addr.ip(), listen_addr.port() + GRPC_PORT_INC)
-}
-
-pub fn to_socket_addr(addr_str: &str) -> anyhow::Result<SocketAddr> {
-    if let Some(addr) = addr_str.to_socket_addrs()?.next() {
-        Ok(addr)
-    } else {
-        Err(anyhow::anyhow!(
-            "Cannot convert {} to SocketAddr.",
-            addr_str
-        ))
-    }
 }

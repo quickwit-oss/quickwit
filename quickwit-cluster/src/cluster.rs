@@ -208,13 +208,12 @@ fn log_artillery_event(artillery_member_event: ArtilleryMemberEvent) {
 #[cfg(test)]
 mod tests {
     use std::io;
-    use std::net::TcpListener;
+    use std::net::{SocketAddr, TcpListener};
 
     use artillery_core::epidemic::prelude::{ArtilleryMember, ArtilleryMemberState};
     use tempdir::TempDir;
 
     use crate::cluster::{convert_member, read_host_key, Member};
-    use crate::utils::to_socket_addr;
 
     #[tokio::test]
     async fn test_cluster_read_host_key() {
@@ -242,8 +241,8 @@ mod tests {
         println!("host_key={:?}", host_key);
 
         let tmp_port = available_port().unwrap();
-        let addr_string = format!("localhost:{}", tmp_port);
-        let remote_host = to_socket_addr(addr_string.as_str()).unwrap();
+        let addr_string = format!("127.0.0.1:{}", tmp_port);
+        let remote_host: SocketAddr = addr_string.as_str().parse().unwrap();
         println!("remote_host={:?}", remote_host);
 
         {
@@ -283,7 +282,7 @@ mod tests {
     }
 
     fn available_port() -> io::Result<u16> {
-        match TcpListener::bind("localhost:0") {
+        match TcpListener::bind("127.0.0.1:0") {
             Ok(listener) => Ok(listener.local_addr().unwrap().port()),
             Err(e) => Err(e),
         }
