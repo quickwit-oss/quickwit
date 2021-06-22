@@ -28,6 +28,7 @@ use quickwit_proto::search_service_client::SearchServiceClient;
 
 /// Create a SearchServiceClient with SocketAddr as an argument.
 /// It will try to reconnect to the node automatically.
+#[allow(dead_code)]
 pub async fn create_search_service_client(
     grpc_addr: SocketAddr,
 ) -> anyhow::Result<SearchServiceClient<Channel>> {

@@ -34,6 +34,8 @@ mod error;
 mod fetch_docs;
 mod leaf;
 use tantivy::DocAddress;
+mod client;
+mod client_pool;
 mod collector;
 mod filters;
 mod service;
