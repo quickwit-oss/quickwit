@@ -98,7 +98,7 @@ impl SearchClientPool {
                 // Add clients to the client pool.
                 for member in members {
                     let grpc_addr = get_grpc_addr(member.listen_addr);
-                    if let Entry::Vacant(_e) = clients.entry(grpc_addr) {
+                    if let Entry::Vacant(_entry) = clients.entry(grpc_addr) {
                         match create_search_service_client(grpc_addr).await {
                             Ok(client) => {
                                 debug!(grpc_addr=?grpc_addr, "Add a new client that is connecting to the node that has been joined the cluster.");
