@@ -35,8 +35,8 @@ use quickwit_proto::search_service_client::SearchServiceClient;
 use crate::client::create_search_service_client;
 use crate::client_pool::{ClientPool, Job};
 use crate::cluster::Cluster;
+use crate::utils::get_grpc_addr;
 use crate::utils::rendezvous_hasher::{sort_by_rendez_vous_hash, Node};
-use crate::utils::{get_grpc_addr, to_socket_addr};
 
 /// Search client pool implementation.
 pub struct SearchClientPool {
@@ -147,7 +147,7 @@ impl ClientPool for SearchClientPool {
             // update node load for next round
             nodes[chosen_node_index].load += job.cost as u64;
 
-            let grpc_addr = to_socket_addr(&nodes[chosen_node_index].id)?;
+            let grpc_addr: SocketAddr = nodes[chosen_node_index].id.parse()?;
             splits_groups
                 .entry(grpc_addr)
                 .or_insert_with(Vec::new)
