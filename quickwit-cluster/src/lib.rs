@@ -20,4 +20,3 @@
 
 pub mod cluster;
 pub mod service;
-pub mod utils;
