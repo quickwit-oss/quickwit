@@ -114,13 +114,13 @@ impl Cluster {
             is_self: true,
         };
         let initial_members: Vec<Member> = vec![member];
-        if let Err(_) = members_sender.send(initial_members) {
+        if members_sender.send(initial_members).is_err() {
             error!("Failed to add itself as the initial member of the cluster.");
         }
 
         // Prepare to start a thread that will monitor cluster events.
         let thread_inner = cluster.artillery_cluster.clone();
-        let thread_listen_addr = cluster.listen_addr.clone();
+        let thread_listen_addr = cluster.listen_addr;
 
         // Start to monitor the cluster events.
         tokio::task::spawn_blocking(move || {
@@ -135,7 +135,7 @@ impl Cluster {
                     .map(|member| convert_member(member, thread_listen_addr))
                     .collect();
                 debug!(updated_memberlist=?updated_memberlist);
-                if let Err(_) = members_sender.send(updated_memberlist) {
+                if members_sender.send(updated_memberlist).is_err() {
                     // Somehow the cluster has been dropped.
                     break;
                 }
@@ -254,7 +254,7 @@ mod tests {
             println!("member={:?}", member);
 
             let expected = Member {
-                host_key: host_key,
+                host_key,
                 listen_addr: remote_host,
                 is_self: false,
             };
@@ -270,7 +270,7 @@ mod tests {
             println!("member={:?}", member);
 
             let expected = Member {
-                host_key: host_key,
+                host_key,
                 listen_addr: remote_host,
                 is_self: true,
             };
