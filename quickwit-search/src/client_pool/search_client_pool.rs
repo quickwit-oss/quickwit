@@ -128,7 +128,7 @@ impl ClientPool for SearchClientPool {
         let clients = self.clients.read().await;
         let mut nodes: Vec<Node> = clients
             .iter()
-            .map(|(grpc_addr, _client)| Node::new(&grpc_addr.to_string(), 0))
+            .map(|(grpc_addr, _client)| Node::new(*grpc_addr, 0))
             .collect();
 
         // Sort job
@@ -156,9 +156,9 @@ impl ClientPool for SearchClientPool {
             // update node load for next round
             nodes[chosen_node_index].load += job.cost as u64;
 
-            let grpc_addr: SocketAddr = nodes[chosen_node_index].id.parse()?;
+            let chosen_leaf_grpc_addr: SocketAddr = nodes[chosen_node_index].peer_grpc_addr;
             splits_groups
-                .entry(grpc_addr)
+                .entry(chosen_leaf_grpc_addr)
                 .or_insert_with(Vec::new)
                 .push(job);
         }
