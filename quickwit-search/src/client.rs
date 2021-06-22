@@ -18,11 +18,30 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-mod cluster;
-mod quickwit;
+use std::net::SocketAddr;
 
-#[macro_use]
-extern crate serde;
+use http::Uri;
+use tonic::transport::Channel;
+use tonic::transport::Endpoint;
 
-pub use cluster::*;
-pub use quickwit::*;
+use quickwit_proto::search_service_client::SearchServiceClient;
+
+/// Create a SearchServiceClient with SocketAddr as an argument.
+/// It will try to reconnect to the node automatically.
+#[allow(dead_code)]
+pub async fn create_search_service_client(
+    grpc_addr: SocketAddr,
+) -> anyhow::Result<SearchServiceClient<Channel>> {
+    let uri = Uri::builder()
+        .scheme("http")
+        .authority(grpc_addr.to_string().as_str())
+        .path_and_query("/")
+        .build()?;
+
+    // Create a channel with connect_lazy to automatically reconnect to the node.
+    let channel = Endpoint::from(uri).connect_lazy()?;
+
+    let client = SearchServiceClient::new(channel);
+
+    Ok(client)
+}

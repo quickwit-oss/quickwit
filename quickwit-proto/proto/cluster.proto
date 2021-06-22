@@ -18,11 +18,41 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-mod cluster;
-mod quickwit;
+syntax = "proto3";
 
-#[macro_use]
-extern crate serde;
+package cluster;
 
-pub use cluster::*;
-pub use quickwit::*;
+service ClusterService {
+  /// Retrieves members in the cluster.
+  rpc Members(MembersRequest) returns (MembersResult);
+
+  /// Removes itself from the cluster.
+  /// Removed node will be isolated from the cluster.
+  rpc Leave(LeaveRequest) returns (LeaveResult);
+}
+
+/// The member information.
+message Member {
+  /// Member ID.　A string of the UUID.
+  string id = 1;
+
+  /// Cluster listen address. string of IP and port number.
+  /// E.g. 127.0.0.1:5000
+  string listen_address = 2;
+
+  /// If true, it means self.
+  bool is_self = 3;
+}
+
+message MembersRequest {
+}
+
+message MembersResult {
+  repeated Member members = 1;
+}
+
+message LeaveRequest {
+}
+
+message LeaveResult {
+}

@@ -2,6 +2,7 @@
 
 members = [
   "quickwit-cli",
+  "quickwit-cluster",
   "quickwit-core",
   "quickwit-doc-mapping",
   "quickwit-directories",
