@@ -1,3 +1,7 @@
+---
+title: Quickwit CLI
+---
+
 # Quickwit CLI
 
 Quickwit CLI is a tool that makes it easy to index and search structured or unstructured data from the command line. It consumes datasets consisting of newline-delimited JSON objects with arbitrary keys and produces indexes that can be stored locally or remotely on an object storage such as Amazon S3 and queried with subsecond latency.
