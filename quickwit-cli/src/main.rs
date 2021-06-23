@@ -564,13 +564,15 @@ mod tests {
         assert!(matches!(matches_result, Err(_)));
         let mut mapper_file = NamedTempFile::new()?;
         let mapper_str = r#"{
+            "type": "default",
             "store_source": true,
             "default_search_fields": ["timestamp"],
             "timestamp_field": "timestamp",
             "field_mappings": [
                 {
                     "name": "timestamp",
-                    "type": "i64"
+                    "type": "i64",
+                    "fast": true
                 }
             ]
         }"#;
