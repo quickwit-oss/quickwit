@@ -1,4 +1,3 @@
-use quickwit_search::SearchError;
 /*
  * Copyright (C) 2021 Quickwit Inc.
  *
@@ -19,10 +18,13 @@ use quickwit_search::SearchError;
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 use serde::ser::SerializeMap;
 use thiserror::Error;
 use warp::http;
 use warp::hyper::StatusCode;
+
+use quickwit_search::SearchError;
 
 #[derive(Debug, Error)]
 pub enum ApiError {

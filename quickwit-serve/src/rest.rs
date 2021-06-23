@@ -18,21 +18,30 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use grpc::SearchResult;
-use quickwit_proto as grpc;
-use quickwit_search::SearchService;
 use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use tracing::*;
 use warp::hyper::StatusCode;
-use warp::reply;
-use warp::Filter;
-use warp::Rejection;
-use warp::Reply;
+use warp::{reply, Filter, Rejection, Reply};
+
+use quickwit_search::{SearchService, SearchServiceImpl};
 
 use crate::ApiError;
+
+/// Start REST service given a HTTP address and a search service.
+pub async fn start_rest_service(
+    rest_addr: SocketAddr,
+    search_service: Arc<SearchServiceImpl>,
+) -> anyhow::Result<()> {
+    info!(rest_addr=?rest_addr, "Start REST service.");
+    let rest_routes = search_handler(search_service);
+    warp::serve(rest_routes).run(rest_addr).await;
+    Ok(())
+}
 
 fn default_max_hits() -> u64 {
     20
@@ -72,8 +81,8 @@ struct SearchResultJson {
     num_microsecs: u64,
 }
 
-impl From<SearchResult> for SearchResultJson {
-    fn from(search_result: SearchResult) -> Self {
+impl From<quickwit_proto::SearchResult> for SearchResultJson {
+    fn from(search_result: quickwit_proto::SearchResult) -> Self {
         let hits: Vec<serde_json::Value> = search_result
             .hits
             .into_iter()
@@ -98,7 +107,7 @@ async fn search_endpoint<TSearchService: SearchService>(
     search_request: SearchRequestQueryString,
     search_service: &TSearchService,
 ) -> Result<SearchResultJson, ApiError> {
-    let search_request = grpc::SearchRequest {
+    let search_request = quickwit_proto::SearchRequest {
         index_id,
         query: search_request.query,
         start_timestamp: search_request.start_timestamp,
@@ -250,7 +259,7 @@ mod tests {
     async fn test_rest_search_api_route_serialize_with_results() -> anyhow::Result<()> {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_root_search().returning(|_| {
-            Ok(SearchResult {
+            Ok(quickwit_proto::SearchResult {
                 hits: Vec::new(),
                 num_hits: 10,
                 elapsed_time_micros: 16,
@@ -278,7 +287,7 @@ mod tests {
         mock_search_service
             .expect_root_search()
             .with(predicate::function(
-                |search_request: &grpc::SearchRequest| {
+                |search_request: &quickwit_proto::SearchRequest| {
                     search_request.start_offset == 5 && search_request.max_hits == 30
                 },
             ))

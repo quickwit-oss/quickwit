@@ -155,9 +155,9 @@ impl Cluster {
     }
 
     /// Specify the address of a running node and join the cluster to which the node belongs.
-    pub fn join(&self, seed_addr: SocketAddr) {
-        info!(seed_addr=?seed_addr, "Join the cluster.");
-        self.artillery_cluster.add_seed_node(seed_addr);
+    pub fn add_peer_node(&self, peer_addr: SocketAddr) {
+        info!(peer_addr=?peer_addr, "Add peer node.");
+        self.artillery_cluster.add_seed_node(peer_addr);
     }
 
     /// Leave the cluster it is joining in.

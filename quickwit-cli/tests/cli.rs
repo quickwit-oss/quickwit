@@ -311,7 +311,7 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     // serve & api-search
     let mut server_process = spawn_command(
         format!(
-            "serve --index-uri {} --host 127.0.0.1 --port 8182",
+            "serve --index-uris {} --host 127.0.0.1 --port 8182",
             test_env.index_uri
         )
         .as_str(),
@@ -393,7 +393,7 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     // serve & api-search
     let mut server_process = spawn_command(
         format!(
-            "serve --index-uri {} --host 127.0.0.1 --port 8182",
+            "serve --index-uris {} --host 127.0.0.1 --port 8182",
             test_env.index_uri
         )
         .as_str(),
