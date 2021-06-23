@@ -20,12 +20,13 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::net::SocketAddr;
 
 /// Node is a utility struct used to represent a rendez-vous hashing node.
 /// It's used to track the load and the computed hash for a given key
 #[derive(Debug, Clone)]
 pub struct Node {
-    pub id: String,
+    pub peer_grpc_addr: SocketAddr,
     // The load of this node
     pub load: u64,
     // The combined hash value of a key and the node's id
@@ -34,9 +35,9 @@ pub struct Node {
 
 impl Node {
     /// Create a new instance of [`Node`]
-    pub fn new(id: &str, load: u64) -> Self {
+    pub fn new(peer_grpc_addr: SocketAddr, load: u64) -> Self {
         Self {
-            id: id.to_string(),
+            peer_grpc_addr,
             load,
             hash_key: 0,
         }
@@ -46,7 +47,7 @@ impl Node {
     pub fn compute_hash_with_key(&mut self, key: &str) {
         let mut state = DefaultHasher::new();
         key.hash(&mut state);
-        self.id.hash(&mut state);
+        self.peer_grpc_addr.hash(&mut state);
         self.hash_key = state.finish();
     }
 }
@@ -62,39 +63,51 @@ pub fn sort_by_rendez_vous_hash(nodes: &mut [Node], key: &str) {
 
 #[cfg(test)]
 mod tests {
+    use std::net::IpAddr;
+    use std::net::Ipv4Addr;
+
     use super::*;
 
-    fn check_nodes_order(nodes: Vec<Node>, expected_nodes: Vec<&str>) {
+    fn check_nodes_order(nodes: Vec<Node>, expected_nodes: Vec<SocketAddr>) {
         assert_eq!(
             nodes
                 .iter()
-                .map(|node| node.id.as_str())
+                .map(|node| node.peer_grpc_addr)
                 .collect::<Vec<_>>(),
             expected_nodes
         );
     }
 
+    fn test_socket_addr(last_byte: u8) -> SocketAddr {
+        let ip_addr = Ipv4Addr::new(127, 0, 0, last_byte);
+        SocketAddr::new(IpAddr::V4(ip_addr), 10000)
+    }
+
     #[test]
     fn test_utils_sort_by_rendez_vous_hash() {
+        let socket1 = test_socket_addr(1);
+        let socket2 = test_socket_addr(2);
+        let socket3 = test_socket_addr(3);
+        let socket4 = test_socket_addr(4);
         let mut node_set1 = vec![
-            Node::new("foo", 0),
-            Node::new("bar", 0),
-            Node::new("qux", 0),
-            Node::new("waz", 0),
+            Node::new(socket1, 0),
+            Node::new(socket2, 0),
+            Node::new(socket3, 0),
+            Node::new(socket4, 0),
         ];
         sort_by_rendez_vous_hash(&mut node_set1, "key");
-        check_nodes_order(node_set1, vec!["waz", "qux", "bar", "foo"]);
+        check_nodes_order(node_set1, vec![socket2, socket3, socket1, socket4]);
 
         let mut node_set2 = vec![
-            Node::new("bar", 0),
-            Node::new("qux", 0),
-            Node::new("waz", 0),
+            Node::new(socket1, 0),
+            Node::new(socket2, 0),
+            Node::new(socket4, 0),
         ];
         sort_by_rendez_vous_hash(&mut node_set2, "key");
-        check_nodes_order(node_set2, vec!["waz", "qux", "bar"]);
+        check_nodes_order(node_set2, vec![socket2, socket1, socket4]);
 
-        let mut node_set3 = vec![Node::new("bar", 0), Node::new("waz", 0)];
+        let mut node_set3 = vec![Node::new(socket1, 0), Node::new(socket4, 0)];
         sort_by_rendez_vous_hash(&mut node_set3, "key");
-        check_nodes_order(node_set3, vec!["waz", "bar"]);
+        check_nodes_order(node_set3, vec![socket1, socket4]);
     }
 }
