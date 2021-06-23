@@ -33,6 +33,7 @@ use std::{
     collections::{HashMap, HashSet},
     convert::TryFrom,
 };
+use tantivy::schema::Cardinality;
 use tantivy::{
     query::Query,
     schema::{Field, FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, STORED},
@@ -88,7 +89,14 @@ impl DefaultDocMapperBuilder {
 
             let timestamp_field_entry = schema.get_field_entry(timestamp_field);
             if !timestamp_field_entry.is_fast() {
-                bail!("Field {:?} is not a fast field.", timestamp_field_name)
+                bail!("Timestamp field must be a fast field, please add fast property to your field `{}`.", timestamp_field_name)
+            }
+            if let FieldType::I64(options) = timestamp_field_entry.field_type() {
+                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
+                    bail!("Timestamp field cannot be an array, please change your field `{}` from an array to a single value.", timestamp_field_name)
+                }
+            } else {
+                bail!("Timestamp field must be of type i64, please change your field type `{}` to i64.", timestamp_field_name)
             }
 
             timestamp_field_opt = Some(timestamp_field);
@@ -450,8 +458,29 @@ mod tests {
         }"#;
 
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(mapper_config)?;
-        let expected_msg = "Field \"timestamp\" is not a fast field.".to_string();
-        assert!(matches!(builder.build(), Err(error) if format!("{}", error) == expected_msg));
+        let expected_msg = "Timestamp field must be a fast field, please add fast property to your field `timestamp`.".to_string();
+        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_docmapper_with_multivalued_timestamp_field() -> anyhow::Result<()> {
+        let mapper_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "timestamp_field": "timestamp",
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "array<i64>",
+                    "fast": true
+                }
+            ]
+        }"#;
+
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(mapper_config)?;
+        let expected_msg = "Timestamp field cannot be an array, please change your field `timestamp` from an array to a single value.".to_string();
+        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
     }
 }
