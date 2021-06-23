@@ -531,7 +531,7 @@ impl FieldMappingEntryForSerialization {
         // If fast is true, always set cardinality to multivalues to make
         // simple cardinality changes.
         if self.fast {
-            options = options.set_fast(Cardinality::MultiValues);
+            options = options.set_fast(self.cardinality());
         }
         if self.indexed.unwrap_or(true) {
             options = options.set_indexed();
@@ -726,6 +726,30 @@ mod tests {
                 assert_eq!(options.is_fast(), false); // default
                 assert_eq!(options.is_stored(), true); // default
                 assert_eq!(cardinality, Cardinality::MultiValues);
+            }
+            _ => bail!("Wrong type"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_singlevalued_i64_field() -> anyhow::Result<()> {
+        let result = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "i64"
+            }
+            "#,
+        )?;
+
+        match result.mapping_type {
+            FieldMappingType::I64(options, cardinality) => {
+                assert_eq!(options.is_indexed(), true); // default
+                assert_eq!(options.is_fast(), false); // default
+                assert_eq!(options.is_stored(), true); // default
+                assert_eq!(cardinality, Cardinality::SingleValue);
             }
             _ => bail!("Wrong type"),
         }
