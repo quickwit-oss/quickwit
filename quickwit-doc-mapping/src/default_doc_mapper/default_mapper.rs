@@ -257,7 +257,7 @@ impl DocMapper for DefaultDocMapper {
         //TODO: This is just a placeholder implementation
         // allowing us to test few things up front.
         let schema = self.schema();
-        let default_fields = vec![schema.get_field("body").unwrap()];
+        let default_fields: Vec<Field> = self.default_search_fields.values().cloned().collect();
         let query_parser = tantivy::query::QueryParser::new(
             schema,
             default_fields,

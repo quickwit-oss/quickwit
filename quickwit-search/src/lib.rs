@@ -20,6 +20,7 @@
 
 //! This projects implements quickwit's search API.
 #![warn(missing_docs)]
+#![allow(clippy::bool_assert_comparison)]
 
 use std::cmp::Reverse;
 use std::ops::Range;
