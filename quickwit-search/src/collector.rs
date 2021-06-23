@@ -255,13 +255,12 @@ impl Collector for QuickwitCollector {
         let leaf_max_hits = self.max_hits + self.start_offset;
 
         let timestamp_filter_opt = if let Some(timestamp_field) = self.timestamp_field_opt {
-            let timestamp_filter = TimestampFilter::new(
+            TimestampFilter::new(
                 timestamp_field,
                 self.start_timestamp_opt,
                 self.end_timestamp_opt,
                 segment_reader,
-            )?;
-            Some(timestamp_filter)
+            )?
         } else {
             None
         };

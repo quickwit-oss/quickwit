@@ -253,12 +253,26 @@ impl DocMapper for DefaultDocMapper {
         Ok(document)
     }
 
-    fn query(&self, _request: &SearchRequest) -> Result<Box<dyn Query>, QueryParserError> {
-        todo!()
+    fn query(&self, request: &SearchRequest) -> Result<Box<dyn Query>, QueryParserError> {
+        //TODO: This is just a placeholder implementation
+        // allowing us to test few things up front.
+        let schema = self.schema();
+        let default_fields = vec![schema.get_field("body").unwrap()];
+        let query_parser = tantivy::query::QueryParser::new(
+            schema,
+            default_fields,
+            tantivy::tokenizer::TokenizerManager::default(),
+        );
+        let query = query_parser.parse_query(&request.query)?;
+        Ok(query)
     }
 
     fn schema(&self) -> Schema {
         self.schema.clone()
+    }
+
+    fn timestamp_field(&self) -> Option<Field> {
+        self.timestamp_field
     }
 }
 

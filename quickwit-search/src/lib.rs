@@ -150,7 +150,7 @@ pub async fn single_node_search(
 mod tests {
     use assert_json_diff::assert_json_include;
     use quickwit_core::TestSandbox;
-    use quickwit_doc_mapping::WikipediaMapper;
+    use quickwit_doc_mapping::{DefaultDocMapperBuilder, WikipediaMapper};
 
     use super::*;
     use serde_json::json;
@@ -243,6 +243,77 @@ mod tests {
         })));
         assert!(single_node_result.elapsed_time_micros > 10);
         assert!(single_node_result.elapsed_time_micros < 1_000_000);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_single_node_filtering() -> anyhow::Result<()> {
+        let mapper_config = r#"{
+            "type": "default",
+            "default_search_fields": ["body"],
+            "timestamp_field": "ts",
+            "field_mappings": [
+                { 
+                    "name": "body",
+                    "type": "text" 
+                },
+                {
+                    "name": "ts",
+                    "type": "i64",
+                    "fast": true
+                }
+            ]
+        }"#;
+        let doc_mapper = serde_json::from_str::<DefaultDocMapperBuilder>(mapper_config)?.build()?;
+        let index_name = "single-node-simple";
+        let test_sandbox = TestSandbox::create("single-node-simple", Box::new(doc_mapper)).await?;
+
+        let mut docs = vec![];
+        for i in 0..30 {
+            let body = format!("info @ t:{}", i + 1);
+            docs.push(json!({"body": body, "ts": i+1}));
+        }
+        test_sandbox.add_documents(docs).await?;
+
+        let search_request = SearchRequest {
+            index_id: index_name.to_string(),
+            query: "info".to_string(),
+            start_timestamp: Some(10),
+            end_timestamp: Some(20),
+            max_hits: 15,
+            start_offset: 0,
+        };
+        let single_node_result = single_node_search(
+            &search_request,
+            &*test_sandbox.metastore(),
+            test_sandbox.storage_uri_resolver(),
+        )
+        .await?;
+        assert_eq!(single_node_result.num_hits, 10);
+        assert_eq!(single_node_result.hits.len(), 10);
+        assert!(&single_node_result.hits[0].json.contains("t:19"));
+        assert!(&single_node_result.hits[9].json.contains("t:10"));
+
+        // filter on time range [i64::MIN 20[ should only hit first 19 docs because of filtering
+        let search_request = SearchRequest {
+            index_id: index_name.to_string(),
+            query: "info".to_string(),
+            start_timestamp: None,
+            end_timestamp: Some(20),
+            max_hits: 25,
+            start_offset: 0,
+        };
+        let single_node_result = single_node_search(
+            &search_request,
+            &*test_sandbox.metastore(),
+            test_sandbox.storage_uri_resolver(),
+        )
+        .await?;
+        assert_eq!(single_node_result.num_hits, 19);
+        assert_eq!(single_node_result.hits.len(), 19);
+        assert!(&single_node_result.hits[0].json.contains("t:19"));
+        assert!(&single_node_result.hits[18].json.contains("t:1"));
+
         Ok(())
     }
 }
