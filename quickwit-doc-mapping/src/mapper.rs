@@ -20,7 +20,6 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::default_doc_mapper::resolve_field_name;
 use crate::DocParsingError;
 use dyn_clone::clone_trait_object;
 use dyn_clone::DynClone;
@@ -81,7 +80,7 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the timestamp field.
     fn timestamp_field(&self) -> Option<Field> {
         self.timestamp_field_name()
-            .and_then(|field_name| resolve_field_name(&self.schema(), &field_name))
+            .and_then(|field_name| self.schema().get_field(&field_name))
     }
     /// Returns the timestamp field name.
     fn timestamp_field_name(&self) -> Option<String> {
