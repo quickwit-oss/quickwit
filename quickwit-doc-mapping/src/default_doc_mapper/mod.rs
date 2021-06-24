@@ -51,7 +51,7 @@ pub fn is_valid_field_mapping_name(field_mapping_name: &str) -> bool {
 const TANTIVY_DOT_SYMBOL: &str = "__dot__";
 
 /// Given a field name which can contains some dots, return the schema field
-fn resolve_field_name(schema: &Schema, field_name: &str) -> Option<Field> {
+pub fn resolve_field_name(schema: &Schema, field_name: &str) -> Option<Field> {
     let rw_field_name = field_name.replace(".", TANTIVY_DOT_SYMBOL);
     schema.get_field(&rw_field_name)
 }
