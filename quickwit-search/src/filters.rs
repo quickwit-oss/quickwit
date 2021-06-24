@@ -42,7 +42,7 @@ impl TimestampFilter {
         start_timestamp_opt: Option<i64>,
         end_timestamp_opt: Option<i64>,
         segment_reader: &SegmentReader,
-    ) -> tantivy::Result<Self> {
+    ) -> tantivy::Result<Option<Self>> {
         let field_entry = segment_reader.schema().get_field_entry(field);
 
         let expected_type = Type::I64;
@@ -57,6 +57,18 @@ impl TimestampFilter {
         }
 
         let timestamp_field_reader = segment_reader.fast_fields().i64(field)?;
+        let segment_range = (
+            timestamp_field_reader.min_value(),
+            timestamp_field_reader.max_value(),
+        );
+        let timestamp_range = (
+            start_timestamp_opt.unwrap_or(i64::MIN),
+            end_timestamp_opt.unwrap_or(i64::MAX),
+        );
+        if is_segment_always_within_timestamp_range(segment_range, timestamp_range) {
+            return Ok(None);
+        }
+
         let lower_bound = start_timestamp_opt
             .map(Bound::Included)
             .unwrap_or(Bound::Unbounded);
@@ -64,15 +76,60 @@ impl TimestampFilter {
             .map(Bound::Excluded)
             .unwrap_or(Bound::Unbounded);
 
-        Ok(TimestampFilter {
+        Ok(Some(TimestampFilter {
             field,
             time_range: (lower_bound, upper_bound),
             timestamp_field_reader,
-        })
+        }))
     }
 
     pub fn is_within_range(&self, doc_id: DocId) -> bool {
         let timestamp_value = self.timestamp_field_reader.get(doc_id);
         self.time_range.contains(&timestamp_value)
+    }
+}
+
+/// Determine if all docs of a segment always satisfy the requested timestamp range.
+///
+/// Note:
+/// - segment_range: is an inclusive range on both ends `[min, max]`.
+/// - timestamp_range: is a half open range `[min, max[`.
+fn is_segment_always_within_timestamp_range(
+    segment_range: (i64, i64),
+    timestamp_range: (i64, i64),
+) -> bool {
+    segment_range.0 >= timestamp_range.0 && segment_range.1 < timestamp_range.1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_segment_always_within_timestamp_range;
+
+    #[test]
+    fn test_is_segment_always_within_timestamp_range() {
+        assert_eq!(
+            is_segment_always_within_timestamp_range((20, 30), (i64::MIN, i64::MAX)),
+            true
+        );
+
+        assert_eq!(
+            is_segment_always_within_timestamp_range((20, 30), (20, 35)),
+            true
+        );
+
+        assert_eq!(
+            is_segment_always_within_timestamp_range((20, 30), (20, 25)),
+            false
+        );
+
+        assert_eq!(
+            is_segment_always_within_timestamp_range((20, 30), (20, 30)),
+            false
+        );
+
+        assert_eq!(
+            is_segment_always_within_timestamp_range((i64::MIN, i64::MAX), (i64::MIN, i64::MAX)),
+            false
+        );
     }
 }
