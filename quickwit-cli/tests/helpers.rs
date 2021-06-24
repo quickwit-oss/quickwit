@@ -43,7 +43,8 @@ const DEFAULT_DOC_MAPPER: &str = r#"{
         },
         {
             "name": "ts",
-            "type": "i64"
+            "type": "i64",
+            "fast": true
         }
     ]
 }"#;

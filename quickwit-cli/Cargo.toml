@@ -30,3 +30,6 @@ tempfile = "3"
 [dev-dependencies]
 assert_cmd = "1"
 predicates = "1"
+
+[features]
+ci-test = []

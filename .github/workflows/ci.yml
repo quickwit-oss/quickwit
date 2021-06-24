@@ -65,4 +65,4 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: dummy-access-key
           AWS_SECRET_ACCESS_KEY: dummy-secret-key
-        run: cargo test --all && cargo test -- --ignored
+        run: cargo test --all-features

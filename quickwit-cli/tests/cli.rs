@@ -202,7 +202,7 @@ fn test_cmd_delete() -> Result<()> {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_all_with_s3_localstack() -> Result<()> {
     let test_env = create_test_env(true)?;
     let object_storage = S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.uri)?;
