@@ -6,14 +6,26 @@ sidebar_position: 1
 Quickwit is still a young search engine but it already offers several features, here are the main ones:
 
 
-- Full text search and configurable: phrase query, BM25
-- Natural query language: ""
+- Full text search with phrase query and configurable tokenizers
+- Natural query language: `(michael AND jackson) OR "king of pop")`
 - Native support for time-series datasets
+- Local and remote (S3-like storage) indexes
 - Distributed search with stateless instances
 - Fast search on object storage or any storage which provides bytes range queries
-- Fast startup time (<...), indexing and search
-- Mapping to enable you to convert a json into an document that will be indexed 
-- Support for data types Text, i64, f64, date and comoposite types with object and array.
+- Fast startup time (< ??? ms), indexing and search
+- Mapping feature to define your schema and easily convert a json into an document to index 
+- Support for data types Text, i64, f64, date and composite types like object and array.
 
 
-You can have a look at [tantivy features](https://github.com/tantivy-search/tantivy/) too to dig into the indexing engine.
+You can have a look at [tantivy features](https://github.com/tantivy-search/tantivy/) to to dig into the indexing engine.
+
+
+
+## Current limitations
+- no support for file formats other than JSON
+- no support for object storages not compatible with Amazon S3
+- no faceted search
+- no deletions (append mode only)
+
+
+Influence our roadmap by voting in our [GitHub issues](https://github.com/quickwit-inc/quickwit/issues) for the features that you need the most!

@@ -25,54 +25,95 @@ You can also install the CLI via [other means](installation.md).
 
 ## Create your first index
 
-Before adding documents to Quickwit, you need to create an index along with a `mapper` which will define how a document and fields it contains, are stored and indexed.
+Before adding documents to Quickwit, you need to create an index along with a `doc mapper` which will define how a document and fields it contains, are stored and indexed.
 
-Let's create an index with a mapper for wikipedia pages on you local machine. The mapper defines three text fields: `title`, `body` and `url`. 
+Let's create an index with a mapper for wikipedia articles on you local machine.
 
 ```
 # First download the wikipedia mapper from quickwit repository
 curl https://path-to-wikipedia-mapper
+```
+
+The doc mapper defines three text fields: `title`, `body` and `url` and set two default search fields `body` and `title`, it means that a text search will by default search into these two fields. See the [doc mapper documentation](../reference/doc-mapper.md). 
+
+```
+{
+    "default_search_fields": ["body", "title"],
+    "field_mappings": [
+        {
+            "name": "body",
+            "type": "text"
+        },
+        {
+            "name": "title",
+            "type": "text"
+        },
+        {
+            "name": "url",
+            "type": "text"
+        }
+    ]
+}
+```
+
+Now create your index:
+
+```
 quickwit-cli new file://./my-indexes/wikipedia --doc-mapper-config-path ./wikipedia_doc_mapper.json
 ```
 
-Check that an empty directory `my-indexes/wikipedia` is created, Quickwit will write all files related to the index here.
+Check that an empty directory `my-indexes/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](link to add).
 You're now ready to fill the index.
 
 ## Let's add some documents
 
-`quickwit-cli` can currently index [ndjson](http://ndjson.org/) datasets.
-Let's download [a bunch of wikipedia articles]() and index it.
+Currently `quickwit-cli` can only index [ndjson](http://ndjson.org/) datasets.
+Let's download [a bunch of wikipedia articles]() in ndjon format and index it.
 
 ```
 # Download the first 1000 wikipedia articles in ndjson format.
-curl https://path-to-wikipedia-ndjson
+curl https://path-to-wikipedia-ndjson/wikipedia.json
 quickwit-cli index --index-uri file://./my-indexes/wikipedia --input-path wikipedia.json
 ```
 
-Wait a few seconds and you're ready to search these documents.
-
-
-## Start server and search
-
-You can search directly with the `search` command of the CLI but for this tutorial, we will start directly a server.
+Wait a few seconds and check it worked by using `search` command:
 
 ```
-# You need to indcate the index-uri to start the server
+quickwit-cli search --index-uri file://./my-indexes/wikipedia --query "barak obama"
+```
+
+It should return xx hits. Now you're ready to serve.
+
+
+## Start server
+
+The command `serve` start an http server which provides a [REST API](). You can start several instances and provide peer socket
+address, instances use the [SWIM protocol] to communicate and form a cluster.
+
+```
 quickwit-cli serve --index-uri file://./my-indexes/wikipedia
+```
+
+Check it's working with a simple GET request:
+```
+curl http://127.0.0.1:8080/api/v1/wikipedia/search?query=barack+obama
 ```
 
 
 ## Clean
 
+Let's do some cleanup by deleting the index:
+
 ```
 quickwit-cli delete --index-uri file://./my-indexes/wikipedia
 ```
 
+Congrats! You can level up with some nice tutorials to discover all Quickwit features. 
 
 
 ## Next tutorials
 
-- [Tutorial Distributed Search on AWS S3](tutorial-distributed-search-aws-s3.md)
-- [Tutorial with a dataset on logs](tutorial-hdfs-logs.md)
+- [Distributed Search on AWS S3](tutorial-distributed-search-aws-s3.md)
+- [Search on a logs dataset and make use of timestamp pruning](tutorial-hdfs-logs.md)
 
 
