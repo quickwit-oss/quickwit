@@ -8,7 +8,7 @@ Quickwit is still a young search engine but it already offers several features, 
 
 - Full text search with phrase query and configurable tokenizers
 - Natural query language: `(michael AND jackson) OR "king of pop")`
-- Native support for time-series datasets
+- Native support for time partitionning 
 - Local and remote (S3-like storage) indexes
 - Distributed search with stateless instances
 - Fast search on object storage or any storage which provides bytes range queries

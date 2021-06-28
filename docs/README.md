@@ -4,9 +4,9 @@
 - [Quickwit CLI](quickwit-cli.md)
 - Getting started >
   - [Quickstart](getting-started/quickstart.md)
-  - [Install](getting-started/installation.md)
-  - [Tutorial - Search on a logs dataset and make use of timestamp pruning](getting-started/tutorial-hdfs-logs.md)
-  - [Setup a distributed search on AWS S3](getting-started/tutorial-hdfs-logs-distributed-search-aws-s3.md)
+  - [Installation](getting-started/installation.md)
+  - [Tutorial - Search on logs with timestamp pruning](getting-started/tutorial-hdfs-logs.md)
+  - [Tutorial - Setup a distributed search on AWS S3](getting-started/tutorial-hdfs-logs-distributed-search-aws-s3.md)
 - Overview >
   - [Features](overview/features.md)
   - [Architecture](overview/architecture.md)

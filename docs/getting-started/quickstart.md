@@ -3,7 +3,7 @@ title: Quickstart
 sidebar_position: 1
 ---
 
-Before running quickwit search instances on your servers, you will need to create indexes, add documents or even delete some data and finally launch the server. To ease these actions, we provide a [CLI](../quickwit-cli/README.md) and that's 
+Before running quickwit search instances on your servers, you will need to create indexes, add documents or even delete some data and finally launch the server. To ease these actions, we provide a [CLI](../quickwit-cli.md) and that's 
 all you need to quick start.
 
 
@@ -25,16 +25,18 @@ You can also install the CLI via [other means](installation.md).
 
 ## Create your first index
 
-Before adding documents to Quickwit, you need to create an index along with a `doc mapper` which will define how a document and fields it contains, are stored and indexed.
+Before adding documents to Quickwit, you need to create an index along with a `doc mapper` which defines how a document and fields it contains, are stored and indexed.
 
 Let's create an index with a mapper for wikipedia articles on you local machine.
 
 ```
 # First download the wikipedia mapper from quickwit repository
-curl https://path-to-wikipedia-mapper
+curl https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/doc_mappers/wikipedia_doc_mapper.json
 ```
 
-The doc mapper defines three text fields: `title`, `body` and `url` and set two default search fields `body` and `title`, it means that a text search will by default search into these two fields. See the [doc mapper documentation](../reference/doc-mapper.md). 
+The doc mapper defines three text fields: `title`, `body` and `url` and set two default search fields `body` and `title`, it means that a text search will by default search into these two fields. Please note that by default text field are indexed and tokenized. See the [doc mapper documentation](../reference/doc-mapper.md). 
+
+And here is the complete doc mapper config:
 
 ```
 {
@@ -56,19 +58,19 @@ The doc mapper defines three text fields: `title`, `body` and `url` and set two 
 }
 ```
 
-Now create your index:
+Now we can create the index:
 
 ```
-quickwit-cli new file://./my-indexes/wikipedia --doc-mapper-config-path ./wikipedia_doc_mapper.json
+quickwit-cli new file:///your-path-to-your-index/wikipedia --doc-mapper-config-path ./wikipedia_doc_mapper.json
 ```
 
-Check that an empty directory `my-indexes/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](link to add).
+Check that an empty directory `/your-path-to-your-index/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../overview/architecture.md#index-metadata).
 You're now ready to fill the index.
 
 ## Let's add some documents
 
-Currently `quickwit-cli` can only index [ndjson](http://ndjson.org/) datasets.
-Let's download [a bunch of wikipedia articles]() in ndjon format and index it.
+Currently `quickwit-cli` can index [ndjson](http://ndjson.org/) datasets.
+Let's download [a bunch of wikipedia articles]() in ndjson format and index it.
 
 ```
 # Download the first 1000 wikipedia articles in ndjson format.
@@ -76,7 +78,7 @@ curl https://path-to-wikipedia-ndjson/wikipedia.json
 quickwit-cli index --index-uri file://./my-indexes/wikipedia --input-path wikipedia.json
 ```
 
-Wait a few seconds and check it worked by using `search` command:
+Wait a few seconds and check if it worked by using `search` command:
 
 ```
 quickwit-cli search --index-uri file://./my-indexes/wikipedia --query "barak obama"
@@ -113,7 +115,7 @@ Congrats! You can level up with some nice tutorials to discover all Quickwit fea
 
 ## Next tutorials
 
-- [Distributed Search on AWS S3](tutorial-distributed-search-aws-s3.md)
+- [Setup a distributed search on AWS S3](tutorial-distributed-search-aws-s3.md)
 - [Search on a logs dataset and make use of timestamp pruning](tutorial-hdfs-logs.md)
 
 
