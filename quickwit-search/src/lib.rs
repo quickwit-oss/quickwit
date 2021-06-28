@@ -250,7 +250,6 @@ mod tests {
     #[tokio::test]
     async fn test_single_node_filtering() -> anyhow::Result<()> {
         let mapper_config = r#"{
-            "type": "default",
             "default_search_fields": ["body"],
             "timestamp_field": "ts",
             "field_mappings": [

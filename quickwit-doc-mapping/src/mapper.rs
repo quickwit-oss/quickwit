@@ -79,12 +79,12 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     }
     /// Returns the timestamp field.
     fn timestamp_field(&self) -> Option<Field> {
-        None
+        self.timestamp_field_name()
+            .and_then(|field_name| self.schema().get_field(&field_name))
     }
     /// Returns the timestamp field name.
     fn timestamp_field_name(&self) -> Option<String> {
-        self.timestamp_field()
-            .map(|field| self.schema().get_field_name(field).to_string())
+        None
     }
 }
 
