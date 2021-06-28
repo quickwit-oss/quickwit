@@ -24,6 +24,7 @@ use super::default_as_true;
 use super::{
     field_mapping_entry::DocParsingError, resolve_field_name, FieldMappingEntry, FieldMappingType,
 };
+use crate::query_builder::build_query;
 use crate::{DocMapper, QueryParserError};
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
@@ -251,22 +252,7 @@ impl DocMapper for DefaultDocMapper {
     }
 
     fn query(&self, request: &SearchRequest) -> Result<Box<dyn Query>, QueryParserError> {
-        //TODO: This is just a placeholder implementation
-        // allowing us to test few things up front.
-        let schema = self.schema();
-        let default_fields = self
-            .default_search_field_names
-            .iter()
-            .map(|field_name| schema.get_field(field_name))
-            .collect::<Option<Vec<_>>>()
-            .unwrap_or_default();
-        let query_parser = tantivy::query::QueryParser::new(
-            schema,
-            default_fields,
-            tantivy::tokenizer::TokenizerManager::default(),
-        );
-        let query = query_parser.parse_query(&request.query)?;
-        Ok(query)
+        build_query(self.schema(), request, &self.default_search_field_names)
     }
 
     fn schema(&self) -> Schema {
