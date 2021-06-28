@@ -34,7 +34,7 @@ Let's create an index with a mapper for wikipedia articles on you local machine.
 curl https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/doc_mappers/wikipedia_doc_mapper.json
 ```
 
-The doc mapper defines three text fields: `title`, `body` and `url` and set two default search fields `body` and `title`, it means that a text search will by default search into these two fields. Please note that by default text field are indexed and tokenized. See the [doc mapper documentation](../reference/doc-mapper.md). 
+The doc mapper defines three text fields: `title`, `body` and `url` and set two default search fields `body` and `title`, it means that a text search will by default search into these two fields. Please note that by default text field are indexed and tokenized. See the [doc mapper documentation](../reference/doc-mapper.md).
 
 And here is the complete doc mapper config:
 
@@ -70,35 +70,34 @@ You're now ready to fill the index.
 ## Let's add some documents
 
 Currently `quickwit-cli` can index [ndjson](http://ndjson.org/) datasets.
-Let's download [a bunch of wikipedia articles]() in ndjson format and index it.
+Let's download [a bunch (10 000) of wikipedia articles](http://fulmicoton.com/tantivy-files/wiki-articles-1000.json) in ndjson format and index it.
 
 ```
 # Download the first 1000 wikipedia articles in ndjson format.
-curl https://path-to-wikipedia-ndjson/wikipedia.json
-quickwit-cli index --index-uri file://./my-indexes/wikipedia --input-path wikipedia.json
+curl http://fulmicoton.com/tantivy-files/wiki-articles-1000.json
+quickwit-cli index --index-uri file:///your-path-to-your-index/wikipedia --input-path wiki-articles-1000.json
 ```
 
 Wait a few seconds and check if it worked by using `search` command:
 
 ```
-quickwit-cli search --index-uri file://./my-indexes/wikipedia --query "barak obama"
+quickwit-cli search --index-uri file:///your-path-to-your-index/wikipedia --query "barak AND obama"
 ```
 
-It should return xx hits. Now you're ready to serve.
+It should return 10 hits. Now you're ready to serve.
 
 
 ## Start server
 
-The command `serve` start an http server which provides a [REST API](). You can start several instances and provide peer socket
-address, instances use the [SWIM protocol] to communicate and form a cluster.
+The command `serve` starts an http server which provides a [REST API](../reference/search-api.md). You can start several instances and provide peer socket addresses to form a cluster on which search workload will be distributed.
 
 ```
-quickwit-cli serve --index-uri file://./my-indexes/wikipedia
+quickwit-cli serve --index-uri file:///your-path-to-your-index/wikipedia
 ```
 
 Check it's working with a simple GET request:
 ```
-curl http://127.0.0.1:8080/api/v1/wikipedia/search?query=barack+obama
+curl http://0.0.0.0:8080/api/v1/wikipedia/search?query=barack+AND+obama
 ```
 
 
@@ -107,7 +106,7 @@ curl http://127.0.0.1:8080/api/v1/wikipedia/search?query=barack+obama
 Let's do some cleanup by deleting the index:
 
 ```
-quickwit-cli delete --index-uri file://./my-indexes/wikipedia
+quickwit-cli delete --index-uri file:///your-path-to-your-index/wikipedia
 ```
 
 Congrats! You can level up with some nice tutorials to discover all Quickwit features. 
@@ -116,6 +115,6 @@ Congrats! You can level up with some nice tutorials to discover all Quickwit fea
 ## Next tutorials
 
 - [Setup a distributed search on AWS S3](tutorial-distributed-search-aws-s3.md)
-- [Search on a logs dataset and make use of timestamp pruning](tutorial-hdfs-logs.md)
+- [Search on logs with timestamp pruning](tutorial-hdfs-logs.md)
 
 
