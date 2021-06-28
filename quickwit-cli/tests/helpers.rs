@@ -21,9 +21,8 @@
 */
 
 use assert_cmd::Command;
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::Path;
+use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 use tempfile::tempdir;
 use tempfile::TempDir;
@@ -62,20 +61,6 @@ const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimray", "url": "http
 {"body": "biz", "title": "modern", "url": "https://wiki.com?id=13"}
 "#;
 
-/// Creates a file with a content
-pub fn create_file(path: &Path, data: &str) {
-    let mut file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(path)
-        .unwrap();
-
-    file.write_all(data.as_bytes()).unwrap();
-    file.flush().unwrap();
-    file.sync_all().unwrap();
-}
-
 /// Creates a quickwit-cli command with provided list of arguments.
 pub fn make_command(argument: &str) -> Command {
     let mut cmd = Command::cargo_bin("quickwit-cli").unwrap();
@@ -87,36 +72,53 @@ pub fn make_command(argument: &str) -> Command {
 
 /// A struct to hold few info about the test environement.
 pub struct TestEnv {
-    pub dir: TempDir,
-    pub path: PathBuf,
-    pub uri: String,
-    pub config_path: PathBuf,
-    pub log_data_path: PathBuf,
-    pub wiki_data_path: PathBuf,
+    /// The temporary directory of the test.
+    pub local_directory: TempDir,
+    /// Path of the temporary directory of the test.
+    pub local_directory_path: PathBuf,
+    /// The index uri.
+    pub index_uri: String,
+    /// Resource files needed for the test.
+    pub resource_files: HashMap<&'static str, PathBuf>,
+}
+
+pub enum TestStorageType {
+    S3ViaLocalStaorage(PathBuf),
+    LocalFileSystem,
 }
 
 /// Creates all necessary artifacts in a test environement.
-pub fn create_test_env(is_s3: bool) -> anyhow::Result<TestEnv> {
-    let dir = tempdir()?;
-    let mut path = PathBuf::from(format!("{}/indices/data", dir.path().display()));
-    let mut uri = format!("file://{}", path.display());
-    if is_s3 {
-        path = PathBuf::from("quickwit-integration-tests/indices/data");
-        uri = format!("s3+localstack://{}", path.display());
-    }
-    let config_path = dir.path().join("config.json");
-    create_file(&config_path, DEFAULT_DOC_MAPPER);
-    let log_data_path = dir.path().join("logs.json");
-    create_file(&log_data_path, LOGS_JSON_DOCS);
-    let wiki_data_path = dir.path().join("wikis.json");
-    create_file(&wiki_data_path, WIKI_JSON_DOCS);
+pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
+    let local_directory = tempdir()?;
+    let (local_directory_path, index_uri) = match storage_type {
+        TestStorageType::LocalFileSystem => {
+            let local_path =
+                PathBuf::from(format!("{}/indices/data", local_directory.path().display()));
+            let uri = format!("file://{}", local_path.display());
+            (local_path, uri)
+        }
+        TestStorageType::S3ViaLocalStaorage(s3_path) => {
+            let uri = format!("s3+localstack://{}", s3_path.display());
+            (s3_path, uri)
+        }
+    };
+
+    let config_path = local_directory.path().join("config.json");
+    fs::write(&config_path, DEFAULT_DOC_MAPPER)?;
+    let log_docs_path = local_directory.path().join("logs.json");
+    fs::write(&log_docs_path, LOGS_JSON_DOCS)?;
+    let wikipedia_docs_path = local_directory.path().join("wikis.json");
+    fs::write(&wikipedia_docs_path, WIKI_JSON_DOCS)?;
+
+    let mut resource_files = HashMap::new();
+    resource_files.insert("config", config_path);
+    resource_files.insert("logs", log_docs_path);
+    resource_files.insert("wiki", wikipedia_docs_path);
 
     Ok(TestEnv {
-        dir,
-        path,
-        uri,
-        config_path,
-        log_data_path,
-        wiki_data_path,
+        local_directory,
+        local_directory_path,
+        index_uri,
+        resource_files,
     })
 }

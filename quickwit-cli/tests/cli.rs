@@ -26,36 +26,36 @@ mod helpers;
 
 use crate::helpers::{create_test_env, make_command};
 use anyhow::Result;
-use helpers::TestEnv;
+use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_storage::{localstack_region, S3CompatibleObjectStorage, Storage};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn create_wikipedia_index(test_env: &TestEnv) {
     make_command(
         format!(
             "new --index-uri {} --doc-mapper-type wikipedia",
-            test_env.uri
+            test_env.index_uri
         )
         .as_str(),
     )
     .assert()
     .success();
-    assert!(test_env.path.join("quickwit.json").exists());
+    assert!(test_env.local_directory_path.join("quickwit.json").exists());
 }
 
 fn create_logs_index(test_env: &TestEnv) {
     make_command(
         format!(
             "new --index-uri {} --doc-mapper-config-path {}",
-            test_env.uri,
-            test_env.config_path.display()
+            test_env.index_uri,
+            test_env.resource_files["config"].display()
         )
         .as_str(),
     )
     .assert()
     .success();
-    assert!(test_env.path.join("quickwit.json").exists());
+    assert!(test_env.local_directory_path.join("quickwit.json").exists());
 }
 
 fn index_data(uri: &str, input_path: &Path) {
@@ -76,13 +76,6 @@ fn index_data(uri: &str, input_path: &Path) {
     ));
 }
 
-fn delete_index(test_env: &TestEnv) {
-    make_command(format!("delete --index-uri {} ", test_env.uri).as_str())
-        .assert()
-        .success();
-    assert_eq!(test_env.path.exists(), false);
-}
-
 #[test]
 fn test_cmd_help() -> anyhow::Result<()> {
     let mut cmd = make_command("--help");
@@ -94,7 +87,7 @@ fn test_cmd_help() -> anyhow::Result<()> {
 
 #[test]
 fn test_cmd_new() -> Result<()> {
-    let test_env = create_test_env(false)?;
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
     create_wikipedia_index(&test_env);
 
     // Attempt to create with ill-formed new command.
@@ -108,13 +101,13 @@ fn test_cmd_new() -> Result<()> {
 
 #[test]
 fn test_cmd_new_on_existing_index() -> Result<()> {
-    let test_env = create_test_env(false)?;
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
     create_wikipedia_index(&test_env);
 
     make_command(
         format!(
             "new --index-uri {} --doc-mapper-type wikipedia",
-            test_env.uri
+            test_env.index_uri
         )
         .as_str(),
     )
@@ -126,16 +119,13 @@ fn test_cmd_new_on_existing_index() -> Result<()> {
 }
 
 #[test]
-fn test_cmd_index() -> Result<()> {
-    let test_env = create_test_env(false)?;
-    create_logs_index(&test_env);
-
-    // Indexing data on non-existing index.
+fn test_cmd_index_on_non_existing_index() -> Result<()> {
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
     make_command(
         format!(
             "index --index-uri {}/non-existing-index --input-path {}",
-            test_env.uri,
-            test_env.log_data_path.display(),
+            test_env.index_uri,
+            test_env.resource_files["logs"].display(),
         )
         .as_str(),
     )
@@ -143,12 +133,21 @@ fn test_cmd_index() -> Result<()> {
     .failure()
     .stderr(predicate::str::contains("does not exist"));
 
-    // Index on non-existing data file.
+    Ok(())
+}
+
+#[test]
+fn test_cmd_index_on_non_existing_file() -> Result<()> {
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
     make_command(
         format!(
             "index --index-uri {} --input-path {}",
-            test_env.uri,
-            test_env.dir.path().join("non-existing-data.json").display(),
+            test_env.index_uri,
+            test_env
+                .local_directory_path
+                .join("non-existing-data.json")
+                .display(),
         )
         .as_str(),
     )
@@ -156,11 +155,23 @@ fn test_cmd_index() -> Result<()> {
     .failure()
     .stderr(predicate::str::contains("No such file or directory"));
 
-    index_data(&test_env.uri, test_env.log_data_path.as_path());
+    Ok(())
+}
 
-    // Indexing data with piped input.
-    make_command(format!("index --index-uri {} ", test_env.uri).as_str())
-        .pipe_stdin(test_env.log_data_path)?
+#[test]
+fn test_cmd_index() -> Result<()> {
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
+
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["logs"].as_path(),
+    );
+
+    // using piped input.
+    let log_path = test_env.resource_files["logs"].clone();
+    make_command(format!("index --index-uri {} ", test_env.index_uri).as_str())
+        .pipe_stdin(log_path)?
         .assert()
         .success()
         .stdout(predicate::str::contains("Indexed"))
@@ -173,21 +184,29 @@ fn test_cmd_index() -> Result<()> {
 }
 
 #[test]
-fn test_cmd_delete() -> Result<()> {
-    let test_env = create_test_env(false)?;
+fn test_cmd_serve() -> Result<()> {
+    //TODO: implement serve and search on it.
+    Ok(())
+}
+
+#[test]
+fn test_cmd_delete_index_dry_run() -> Result<()> {
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
     create_wikipedia_index(&test_env);
 
-    // Delete empty index.
-    make_command(format!("delete --index-uri {} --dry-run", test_env.uri).as_str())
+    // Empty index.
+    make_command(format!("delete --index-uri {} --dry-run", test_env.index_uri).as_str())
         .assert()
         .success()
         .stdout(predicate::str::contains("Only the index will be deleted"));
 
-    // Index some data.
-    index_data(&test_env.uri, test_env.wiki_data_path.as_path());
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["wiki"].as_path(),
+    );
 
-    // Delete index with dry-run.
-    make_command(format!("delete --index-uri {} --dry-run", test_env.uri).as_str())
+    // Non-empty index
+    make_command(format!("delete --index-uri {} --dry-run", test_env.index_uri).as_str())
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -196,7 +215,59 @@ fn test_cmd_delete() -> Result<()> {
         .stdout(predicate::str::contains("/hotcache"))
         .stdout(predicate::str::contains("/.manifest"));
 
-    delete_index(&test_env);
+    Ok(())
+}
+
+#[test]
+fn test_cmd_delete() -> Result<()> {
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
+    create_wikipedia_index(&test_env);
+
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["wiki"].as_path(),
+    );
+
+    make_command(format!("delete --index-uri {} ", test_env.index_uri).as_str())
+        .assert()
+        .success();
+    assert_eq!(test_env.local_directory_path.exists(), false);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[cfg_attr(not(feature = "ci-test"), ignore)]
+async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
+    let s3_path = PathBuf::from("quickwit-integration-tests/indices/data2");
+    let test_env = create_test_env(TestStorageType::S3ViaLocalStaorage(s3_path))?;
+    make_command(
+        format!(
+            "new --index-uri {} --doc-mapper-type wikipedia",
+            test_env.index_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success();
+
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["wiki"].as_path(),
+    );
+
+    make_command(format!("delete --index-uri {} --dry-run", test_env.index_uri).as_str())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "The following files will be removed",
+        ))
+        .stdout(predicate::str::contains("/hotcache"))
+        .stdout(predicate::str::contains("/.manifest"));
+
+    make_command(format!("delete --index-uri {} ", test_env.index_uri).as_str())
+        .assert()
+        .success();
 
     Ok(())
 }
@@ -204,36 +275,33 @@ fn test_cmd_delete() -> Result<()> {
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_all_with_s3_localstack() -> Result<()> {
-    let test_env = create_test_env(true)?;
-    let object_storage = S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.uri)?;
+    let s3_path = PathBuf::from("quickwit-integration-tests/indices/data1");
+    let test_env = create_test_env(TestStorageType::S3ViaLocalStaorage(s3_path))?;
+    let object_storage =
+        S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.index_uri)?;
 
+    println!("EVAN");
     make_command(
         format!(
             "new --index-uri {} --doc-mapper-type wikipedia",
-            test_env.uri
+            test_env.index_uri
         )
         .as_str(),
     )
     .assert()
     .success();
+
     let metadata_file_exist = object_storage.exists(Path::new("quickwit.json")).await?;
     assert_eq!(metadata_file_exist, true);
 
-    // Index some data.
-    index_data(&test_env.uri, test_env.wiki_data_path.as_path());
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["wiki"].as_path(),
+    );
 
-    // Delete index with dry-run.
-    make_command(format!("delete --index-uri {} --dry-run", test_env.uri).as_str())
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "The following files will be removed",
-        ))
-        .stdout(predicate::str::contains("/hotcache"))
-        .stdout(predicate::str::contains("/.manifest"));
+    //TODO: add serve  & search
 
-    // Delete index.
-    make_command(format!("delete --index-uri {} ", test_env.uri).as_str())
+    make_command(format!("delete --index-uri {} ", test_env.index_uri).as_str())
         .assert()
         .success();
     let metadata_file_exist = object_storage.exists(Path::new("quickwit.json")).await?;
