@@ -23,7 +23,8 @@ cargo install quickwit-cli
 
 ## Use the docker image
 
-TODO
+TODO or remove this option?
+
 
 `quickwit-cli` is also available as a Docker image.
 
