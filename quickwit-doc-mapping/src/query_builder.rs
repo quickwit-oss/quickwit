@@ -20,14 +20,13 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use anyhow::Context;
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser};
 use tantivy::schema::{Field, Schema};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf};
 
-use crate::QueryParserError;
+use crate::{DocParsingError, QueryParserError};
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
@@ -43,10 +42,7 @@ pub(crate) fn build_query(
     }
 
     let default_fields = resolve_fields(&schema, default_field_names)?;
-    //TODO: discuss, is it ok to use default TokenizerManager
-    // or should we use index.tokenizer?
     let query_parser = QueryParser::new(schema, default_fields, TokenizerManager::default());
-
     let query = query_parser.parse_query(&request.query)?;
     Ok(query)
 }
@@ -71,7 +67,7 @@ fn resolve_fields(schema: &Schema, field_names: &[String]) -> anyhow::Result<Vec
     for field_name in field_names {
         let field = schema
             .get_field(&field_name)
-            .with_context(|| format!("Couldn't get field named {:?} from schema.", field_name))?;
+            .ok_or_else(|| DocParsingError::NoSuchFieldInSchema(field_name.clone()))?;
         fields.push(field);
     }
     Ok(fields)
@@ -95,7 +91,7 @@ mod test {
         schema_builder.build()
     }
 
-    fn make_test_build_query(query_str: &str, expected: TestExpectation) -> anyhow::Result<()> {
+    fn check_build_query(query_str: &str, expected: TestExpectation) -> anyhow::Result<()> {
         let request = SearchRequest {
             index_id: "test_index".to_string(),
             query: query_str.to_string(),
@@ -110,12 +106,10 @@ mod test {
         let query_result = build_query(make_schema(), &request, &default_field_names);
         match expected {
             TestExpectation::Err(sub_str) => {
-                println!("{:?}", query_result);
                 assert_eq!(format!("{:?}", query_result).contains(sub_str), true);
             }
             TestExpectation::Ok(sub_str) => {
                 let query = query_result?;
-
                 assert_eq!(format!("{:?}", query).contains(sub_str), true);
             }
         }
@@ -125,20 +119,23 @@ mod test {
 
     #[test]
     fn test_build_query() -> anyhow::Result<()> {
-        make_test_build_query(
+        check_build_query(
+            "foo:bar",
+            TestExpectation::Err("Field does not exists: '\"foo\"'"),
+        )?;
+        check_build_query(
             "title:[a TO b]",
             TestExpectation::Err("Range queries are not currently allowed."),
         )?;
-        make_test_build_query(
+        check_build_query(
             "title:{a TO b} desc:foo",
             TestExpectation::Err("Range queries are not currently allowed."),
         )?;
-        make_test_build_query(
+        check_build_query(
             "title:>foo",
             TestExpectation::Err("Range queries are not currently allowed."),
         )?;
-
-        make_test_build_query("title:foo desc:bar", TestExpectation::Ok("TermQuery"))?;
+        check_build_query("title:foo desc:bar", TestExpectation::Ok("TermQuery"))?;
 
         Ok(())
     }
