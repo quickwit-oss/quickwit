@@ -132,8 +132,8 @@ pub fn parse_split_uri(split_uri: &str) -> Option<(String, PathBuf)> {
     static SPLIT_URI_PTN: OnceCell<Regex> = OnceCell::new();
     SPLIT_URI_PTN
         .get_or_init(|| {
-            // s3://bucket/path/to/split
-            Regex::new(r"s3://(?P<bucket>[^/]+)/(?P<path>.*)").unwrap()
+            // s3://bucket/path/to/split or s3+localstack://bucket/path/to/split
+            Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)/(?P<path>.*)").unwrap()
         })
         .captures(split_uri)
         .and_then(|cap| match (cap.name("bucket"), cap.name("path")) {

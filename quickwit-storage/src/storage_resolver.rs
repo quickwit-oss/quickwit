@@ -71,7 +71,14 @@ impl Default for StorageUriResolver {
         StorageUriResolver::builder()
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory::default())
-            .register(S3CompatibleObjectStorageFactory::new(Region::default()))
+            .register(S3CompatibleObjectStorageFactory::new(
+                Region::default(),
+                "s3",
+            ))
+            .register(S3CompatibleObjectStorageFactory::new(
+                localstack_region(),
+                "s3+localstack",
+            ))
             .build()
     }
 }
@@ -95,6 +102,14 @@ impl StorageUriResolver {
             .resolve(uri)
             .map_err(StorageResolverError::FailedToOpenStorage)?;
         Ok(storage)
+    }
+}
+
+/// Returns a localstack region (used for testing).
+pub fn localstack_region() -> Region {
+    Region::Custom {
+        name: "localstack".to_string(),
+        endpoint: "http://localhost:4566".to_string(),
     }
 }
 

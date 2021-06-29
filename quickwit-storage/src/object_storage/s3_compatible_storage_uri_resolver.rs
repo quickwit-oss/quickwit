@@ -29,16 +29,13 @@ use crate::{S3CompatibleObjectStorage, StorageFactory};
 /// S3 Object storage Uri Resolver
 pub struct S3CompatibleObjectStorageFactory {
     region: Region,
-    protocol: String,
+    protocol: &'static str,
 }
 
 impl S3CompatibleObjectStorageFactory {
     /// S3 Region
-    pub fn new(region: Region) -> Self {
-        S3CompatibleObjectStorageFactory {
-            region,
-            protocol: "s3".to_string(),
-        }
+    pub fn new(region: Region, protocol: &'static str) -> Self {
+        S3CompatibleObjectStorageFactory { region, protocol }
     }
 }
 
