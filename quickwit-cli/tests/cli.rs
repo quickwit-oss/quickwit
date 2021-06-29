@@ -240,7 +240,7 @@ fn test_cmd_delete() -> Result<()> {
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
     let s3_path = PathBuf::from("quickwit-integration-tests/indices/data2");
-    let test_env = create_test_env(TestStorageType::S3ViaLocalStaorage(s3_path))?;
+    let test_env = create_test_env(TestStorageType::S3ViaLocalStorage(s3_path))?;
     make_command(
         format!(
             "new --index-uri {} --doc-mapper-type wikipedia",
@@ -276,11 +276,10 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_all_with_s3_localstack() -> Result<()> {
     let s3_path = PathBuf::from("quickwit-integration-tests/indices/data1");
-    let test_env = create_test_env(TestStorageType::S3ViaLocalStaorage(s3_path))?;
+    let test_env = create_test_env(TestStorageType::S3ViaLocalStorage(s3_path))?;
     let object_storage =
         S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.index_uri)?;
 
-    println!("EVAN");
     make_command(
         format!(
             "new --index-uri {} --doc-mapper-type wikipedia",

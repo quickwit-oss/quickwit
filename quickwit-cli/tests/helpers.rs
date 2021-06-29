@@ -83,7 +83,7 @@ pub struct TestEnv {
 }
 
 pub enum TestStorageType {
-    S3ViaLocalStaorage(PathBuf),
+    S3ViaLocalStorage(PathBuf),
     LocalFileSystem,
 }
 
@@ -97,7 +97,7 @@ pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv>
             let uri = format!("file://{}", local_path.display());
             (local_path, uri)
         }
-        TestStorageType::S3ViaLocalStaorage(s3_path) => {
+        TestStorageType::S3ViaLocalStorage(s3_path) => {
             let uri = format!("s3+localstack://{}", s3_path.display());
             (s3_path, uri)
         }
