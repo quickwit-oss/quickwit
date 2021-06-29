@@ -20,7 +20,6 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::default_doc_mapper::is_valid_field_mapping_name;
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
@@ -32,8 +31,10 @@ use tantivy::schema::{
 };
 use thiserror::Error;
 
+use crate::mapper::{is_valid_field_mapping_name, TANTIVY_DOT_SYMBOL};
+
+use super::default_as_true;
 use super::FieldMappingType;
-use super::{default_as_true, TANTIVY_DOT_SYMBOL};
 
 /// A `FieldMappingEntry` defines how a field is indexed, stored
 /// and how it is mapped from a json document to the related index fields.

@@ -23,7 +23,9 @@
 use crate::DocParsingError;
 use dyn_clone::clone_trait_object;
 use dyn_clone::DynClone;
+use once_cell::sync::Lazy;
 use quickwit_proto::SearchRequest;
+use regex::Regex;
 use std::fmt::Debug;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
@@ -89,6 +91,24 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
 }
 
 clone_trait_object!(DocMapper);
+
+/// Regular expression representing the restriction on a valid field name.
+pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[a-zA-Z_][a-zA-Z0-9_\.\-]*$"#;
+
+/// Validator for a potential `field_mapping_name`.
+/// Returns true if the name can be use for a field mapping name.
+///
+/// A field mapping name must start by a letter `[a-zA-Z]`.
+/// The other characters can be any alphanumic character `[a-ZA-Z0-9]` or `_` or `.`.
+/// Finally keyword `__dot__` is forbidden.
+pub fn is_valid_field_mapping_name(field_mapping_name: &str) -> bool {
+    static FIELD_MAPPING_NAME_PTN: Lazy<Regex> =
+        Lazy::new(|| Regex::new(FIELD_MAPPING_NAME_PATTERN).unwrap());
+    FIELD_MAPPING_NAME_PTN.is_match(field_mapping_name) && !field_mapping_name.contains("__dot__")
+}
+
+/// String used to replace a `.` in a field name so that the field is a valid tantivy field name.
+pub const TANTIVY_DOT_SYMBOL: &str = "__dot__";
 
 #[cfg(test)]
 mod tests {
