@@ -16,6 +16,7 @@ quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
 quickwit-doc-mapping = { version = "0.1.0", path = "../quickwit-doc-mapping" }
 quickwit-search = { version = "0.1", path = "../quickwit-search" }
 quickwit-serve = { version = "0.1", path = "../quickwit-serve" }
+quickwit-telemetry = { version = "0.1", path = "../quickwit-telemetry" }
 quickwit-proto = { version = "0.1", path = "../quickwit-proto" }
 tracing = '0.1'
 tracing-subscriber = "0.2"

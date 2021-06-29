@@ -30,6 +30,7 @@ pub use args::ServeArgs;
 use quickwit_metastore::{Metastore, MetastoreUriResolver};
 use quickwit_search::SearchServiceImpl;
 use quickwit_storage::StorageUriResolver;
+use quickwit_telemetry::payload::{ServeEvent, TelemetryEvent};
 use tracing::debug;
 mod error;
 mod rest;
@@ -106,6 +107,10 @@ fn display_help_message(
 
 pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
     debug!(args=?args, "serve-cli");
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Serve(ServeEvent {
+        has_seed: !args.peers.is_empty(),
+    }))
+    .await;
     let storage_resolver = StorageUriResolver::default();
     let metastore_resolver = MetastoreUriResolver::with_storage_resolver(storage_resolver.clone());
     let metastore_router =
