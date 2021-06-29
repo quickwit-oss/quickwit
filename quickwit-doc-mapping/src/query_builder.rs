@@ -23,6 +23,10 @@
 use std::collections::HashMap;
 
 use anyhow::bail;
+use combine::parser::char::{char, letter, space, spaces};
+use combine::parser::repeat::skip_until;
+use combine::parser::Parser;
+use combine::{many, one_of, optional, satisfy};
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
 use tantivy::schema::{Field, Schema};
@@ -31,8 +35,6 @@ use tantivy_query_grammar::{UserInputAst, UserInputLeaf};
 
 use crate::mapper::{is_valid_field_mapping_name, TANTIVY_DOT_SYMBOL};
 use crate::QueryParserError;
-use once_cell::sync::Lazy;
-use regex::Regex;
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
@@ -75,24 +77,17 @@ pub(crate) fn build_query(
     Ok(query)
 }
 
-/// Finds field names form the user query and transforms those
+/// Finds field names form a query string and transforms those
 /// that contain [`TANTIVY_DOT_SYMBOL`] into tantivy compatible field names.
 ///
-/// It transforms the user query by replacing the `.` symbol with [`TANTIVY_DOT_SYMBOL`]
+/// It transforms the query string by replacing the `.` symbol with [`TANTIVY_DOT_SYMBOL`]
 /// while returning a map of the repaced field names in order to display more accurate error messages.
 ///
-pub(crate) fn normalize_query_string(
-    query_string: &str,
-) -> anyhow::Result<(String, HashMap<String, String>)> {
-    static POTENTIAL_FIELD_NAME_PATTERN: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"(?P<field_name>[a-zA-Z0-9_\.\-]+):").unwrap());
+fn normalize_query_string(query_string: &str) -> anyhow::Result<(String, HashMap<String, String>)> {
+    let field_names = extract_potential_field_names(String::from(query_string));
     let mut result_query_string = String::from(query_string);
     let mut field_names_mapping = HashMap::new();
-    let captures = POTENTIAL_FIELD_NAME_PATTERN.captures_iter(query_string);
-    for capture in captures {
-        let field_name = capture
-            .name("field_name")
-            .map_or("".to_string(), |match_val| match_val.as_str().to_string());
+    for field_name in field_names {
         if !is_valid_field_mapping_name(&field_name) {
             bail!("Invalid field name: `{}`.", field_name);
         }
@@ -103,6 +98,32 @@ pub(crate) fn normalize_query_string(
     }
 
     Ok((result_query_string, field_names_mapping))
+}
+
+/// Extract field names from a query string without any validation.
+fn extract_potential_field_names(query_string: String) -> Vec<String> {
+    let mut input = query_string.as_str();
+    let mut fields = vec![];
+    while let Ok((Some(field_name), remaining)) = field().parse(input) {
+        fields.push(field_name);
+        input = remaining;
+    }
+    fields
+}
+
+fn field<'a>() -> impl Parser<&'a str, Output = Option<String>> {
+    optional(
+        (
+            (letter().or(one_of("_.".chars()))),
+            many(satisfy(|c: char| {
+                c.is_alphanumeric() || c == '_' || c == '-' || c == '.'
+            })),
+        )
+            .skip(char(':'))
+            .skip(optional(skip_until(space())))
+            .map(|(s1, s2): (char, String)| format!("{}{}", s1, s2))
+            .skip(spaces()),
+    )
 }
 
 fn has_range_clause(user_input_ast: UserInputAst) -> bool {
@@ -210,11 +231,6 @@ mod test {
         )?;
 
         check_build_query(
-            "server.type:hpc server.mem:4GB",
-            TestExpectation::Err("Field does not exists: '\"server.type\"'"),
-        )?;
-
-        check_build_query(
             ".server.name:foo _source:4GB",
             TestExpectation::Err("Invalid field name: `.server.name`."),
         )?;
@@ -225,7 +241,12 @@ mod test {
         )?;
 
         check_build_query(
-            "server.name:foo server.mem:4GB",
+            "server.name:\".bar:\" server.mem:4GB",
+            TestExpectation::Ok("TermQuery"),
+        )?;
+
+        check_build_query(
+            "server.name:\"for.bar:b\" server.mem:4GB",
             TestExpectation::Ok("TermQuery"),
         )?;
 
@@ -252,13 +273,14 @@ mod test {
             format!("Invalid field name: `.aws{}server`.", TANTIVY_DOT_SYMBOL)
         );
 
-        let (query_string, field_names_mapping) =
-            normalize_query_string("server.name:foo server.mem:3GB title:+foo _source:>foo")
-                .unwrap();
+        let (query_string, field_names_mapping) = normalize_query_string(
+            "server.name:\".foo.bar:\" server.mem:3GB title:+foo _source:>foo",
+        )
+        .unwrap();
         assert_eq!(
             query_string,
             format!(
-                "server{0}name:foo server{0}mem:3GB title:+foo _source:>foo",
+                "server{0}name:\".foo.bar:\" server{0}mem:3GB title:+foo _source:>foo",
                 TANTIVY_DOT_SYMBOL
             )
         );

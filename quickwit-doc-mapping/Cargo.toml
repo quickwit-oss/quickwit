@@ -16,6 +16,7 @@ typetag = "0.1"
 dyn-clone = "1.0.4"
 once_cell = "1.4"
 tantivy-query-grammar = "0.15"
+combine = "4.6"
 
 [dependencies.quickwit-proto]
 path = '../quickwit-proto'
