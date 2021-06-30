@@ -25,18 +25,13 @@
 
 use std::path::Path;
 
-use quickwit_storage::{MultiPartPolicy, PutPayload, S3CompatibleObjectStorage, Storage};
+use quickwit_storage::{
+    localstack_region, MultiPartPolicy, PutPayload, S3CompatibleObjectStorage, Storage,
+};
 use rusoto_core::Region;
 
-fn localstack_region() -> Region {
-    Region::Custom {
-        name: "localstack".to_string(),
-        endpoint: "http://localhost:4566".to_string(),
-    }
-}
-
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_upload_single_part_file() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
     let object_storage =
@@ -51,7 +46,7 @@ async fn test_upload_single_part_file() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
     let mut object_storage =
@@ -75,7 +70,7 @@ async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
 
 #[cfg(feature = "testsuite")]
 #[tokio::test]
-#[ignore]
+#[cfg_attr(not(feature = "ci-test"), ignore)]
 // Weirdly this does not work for localstack. The error messages seem off.
 async fn test_suite_on_s3_storage() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();

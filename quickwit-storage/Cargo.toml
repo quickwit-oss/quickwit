@@ -51,3 +51,4 @@ mockall = '0.9'
 
 [features]
 testsuite = ["mockall", "tempfile"]
+ci-test = []
