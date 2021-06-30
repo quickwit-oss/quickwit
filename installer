@@ -69,7 +69,7 @@ install_from_archive() {
 
     local _binary_arch=""
     case "$_arch" in
-        x86_64-apple-darwin)
+        x86_64-apple-darwin | aarch64-apple-darwin)
             _binary_arch=$_arch
             ;;
         x86_64-*linux*-gnu)
