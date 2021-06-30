@@ -7,7 +7,7 @@
 # It just does platform detection, fetches the lastest appropriate release version from github
 # and execute the appropriate commands to download the binary.
 #
-# Heavily inspired by the Vector & Melisearch installations scripts
+# Heavily inspired by the Vector & Meilisearch installation scripts
 
 set -u
 
