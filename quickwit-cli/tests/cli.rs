@@ -24,12 +24,17 @@
 
 mod helpers;
 
-use crate::helpers::{create_test_env, make_command};
+use crate::helpers::{create_test_env, make_command, spawn_command};
 use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_storage::{localstack_region, S3CompatibleObjectStorage, Storage};
-use std::path::{Path, PathBuf};
+use serde_json::{Number, Value};
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+};
+use tokio::time::{sleep, Duration};
 
 fn create_wikipedia_index(test_env: &TestEnv) {
     make_command(
@@ -153,7 +158,7 @@ fn test_cmd_index_on_non_existing_file() -> Result<()> {
     )
     .assert()
     .failure()
-    .stderr(predicate::str::contains("No such file or directory"));
+    .stderr(predicate::str::contains("Command failed"));
 
     Ok(())
 }
@@ -298,7 +303,50 @@ async fn test_all_with_s3_localstack() -> Result<()> {
         test_env.resource_files["wiki"].as_path(),
     );
 
-    //TODO: add serve  & search
+    // cli search
+    make_command(
+        format!(
+            "search --index-uri {} --query title:modern",
+            test_env.index_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::function(|output: &[u8]| {
+        let result: Value = serde_json::from_slice(output).unwrap();
+        result["numHits"] == Value::Number(Number::from(1i64))
+    }));
+
+    // serve & api-search
+    let mut server_process = spawn_command(
+        format!(
+            "serve --index-uri {} --host 127.0.0.1 --port 8182",
+            test_env.index_uri
+        )
+        .as_str(),
+    )
+    .unwrap();
+    sleep(Duration::from_secs(2)).await;
+    let mut data = vec![0; 128];
+    server_process
+        .stdout
+        .as_mut()
+        .expect("Failed to get server process output")
+        .read_exact(&mut data)
+        .expect("Cannot read output");
+    let process_output_str = String::from_utf8(data).unwrap();
+    let query_response =
+        reqwest::get("http://127.0.0.1:8182/api/v1/data1/search?query=title:modern")
+            .await?
+            .text()
+            .await?;
+    server_process.kill().unwrap();
+
+    assert!(process_output_str.contains("http://127.0.0.1:8182"));
+    let result: Value =
+        serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
+    assert_eq!(result["numHits"], Value::Number(Number::from(1i64)));
 
     make_command(format!("delete --index-uri {} ", test_env.index_uri).as_str())
         .assert()
