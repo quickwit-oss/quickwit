@@ -22,7 +22,7 @@
 
 use std::collections::HashMap;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -40,7 +40,7 @@ const META_FILENAME: &str = "quickwit.json";
 
 /// Creates a path to the metadata file from the given index ID.
 fn meta_path(index_id: &str) -> PathBuf {
-    Path::new(index_id).join(Path::new(META_FILENAME))
+    PathBuf::from(format!("{}/{}", index_id, META_FILENAME))
 }
 
 /// Takes 2 semi-open intervals and returns true iff their intersection is empty

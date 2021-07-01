@@ -202,8 +202,7 @@ impl S3CompatibleObjectStorage {
     }
 
     fn key(&self, relative_path: &Path) -> String {
-        let key_path = self.prefix.join(relative_path);
-        key_path.to_string_lossy().to_string()
+        format!("{}/{}", self.prefix.display(), relative_path.display())
     }
 
     async fn put_single_part_single_try(
