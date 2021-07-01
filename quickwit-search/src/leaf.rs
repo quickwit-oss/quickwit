@@ -35,7 +35,6 @@ use tantivy::{
 use tokio::task::spawn_blocking;
 
 const HOTCACHE_FILENAME: &str = "hotcache";
-const CACHE_CAPACITY_IN_BYTES: usize = 1_000_000_000;
 
 /// Opens a `tantivy::Index` for the given split.
 ///
@@ -47,8 +46,7 @@ pub(crate) async fn open_index(split_storage: Arc<dyn Storage>) -> anyhow::Resul
         .with_context(|| format!("Failed to fetch hotcache from {}", split_storage.uri()))?;
     let hotcached_owned_bytes = OwnedBytes::new(hotcache_bytes);
     let directory = StorageDirectory::new(split_storage);
-    let caching_directory =
-        CachingDirectory::new_with_capacity_in_bytes(Arc::new(directory), CACHE_CAPACITY_IN_BYTES);
+    let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
     let hot_directory = HotDirectory::open(caching_directory, hotcached_owned_bytes)?;
     let index = Index::open(hot_directory)?;
     Ok(index)
