@@ -23,6 +23,7 @@
 use super::error::RusotoErrorWrapper;
 use anyhow::Context;
 use async_trait::async_trait;
+use bytes::Bytes;
 use futures::stream;
 use futures::StreamExt;
 use once_cell::sync::OnceCell;
@@ -529,9 +530,10 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(())
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Vec<u8>> {
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
         self.get_to_vec(path, Some(range.clone()))
             .await
+            .map(Bytes::from)
             .map_err(|err| {
                 err.add_context(format!(
                     "Failed to fetch slice {:?} for object: {}",
@@ -541,9 +543,10 @@ impl Storage for S3CompatibleObjectStorage {
             })
     }
 
-    async fn get_all(&self, path: &Path) -> StorageResult<Vec<u8>> {
+    async fn get_all(&self, path: &Path) -> StorageResult<Bytes> {
         self.get_to_vec(path, None)
             .await
+            .map(Bytes::from)
             .map_err(|err| err.add_context(format!("Failed to fetch object: {}", self.uri(path))))
     }
 

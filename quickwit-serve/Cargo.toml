@@ -15,10 +15,12 @@ quickwit-storage = {path="../quickwit-storage"}
 quickwit-common = {path="../quickwit-common"}
 quickwit-metastore = {path="../quickwit-metastore"}
 quickwit-telemetry = {path="../quickwit-telemetry"}
+quickwit-directories = {path="../quickwit-directories"}
 thiserror = "1"
 tonic = "0.4"
 async-trait = "0.1"
 termcolor = "1"
+bytes = "1"
 
 [dev-dependencies]
 mockall = "0.10"

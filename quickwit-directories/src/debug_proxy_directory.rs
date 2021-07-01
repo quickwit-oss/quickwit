@@ -22,6 +22,7 @@
 
 use crate::StorageDirectory;
 use async_trait::async_trait;
+use bytes::Bytes;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -231,18 +232,18 @@ impl<D: Directory> Directory for DebugProxyDirectory<D> {
 
 impl DebugProxyDirectory<StorageDirectory> {
     /// Fetches a slice of byte from a file asynchronously.
-    pub async fn get_slice(&self, path: &Path, range: Range<usize>) -> io::Result<Vec<u8>> {
+    pub async fn get_slice(&self, path: &Path, range: Range<usize>) -> io::Result<Bytes> {
         let read_operation_builder = ReadOperationBuilder::new(path);
-        let payload: Vec<u8> = self.underlying.get_slice(path, range).await?;
+        let payload = self.underlying.get_slice(path, range).await?;
         let read_operation = read_operation_builder.terminate(payload.len());
         self.register_async(read_operation).await;
         Ok(payload)
     }
 
     /// Fetches an entire file asynchronously.
-    pub async fn get_all(&self, path: &Path) -> io::Result<Vec<u8>> {
+    pub async fn get_all(&self, path: &Path) -> io::Result<Bytes> {
         let read_operation_builder = ReadOperationBuilder::new(path);
-        let payload: Vec<u8> = self.underlying.get_all(path).await?;
+        let payload = self.underlying.get_all(path).await?;
         let read_operation = read_operation_builder.terminate(payload.len());
         self.register_async(read_operation).await;
         Ok(payload)

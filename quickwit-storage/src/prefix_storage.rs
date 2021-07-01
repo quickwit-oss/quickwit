@@ -21,6 +21,7 @@
 */
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use std::{
     ops::Range,
     path::{Path, PathBuf},
@@ -48,11 +49,11 @@ impl Storage for PrefixStorage {
             .await
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> crate::StorageResult<Vec<u8>> {
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> crate::StorageResult<Bytes> {
         self.storage.get_slice(&self.prefix.join(path), range).await
     }
 
-    async fn get_all(&self, path: &Path) -> crate::StorageResult<Vec<u8>> {
+    async fn get_all(&self, path: &Path) -> crate::StorageResult<Bytes> {
         self.storage.get_all(&self.prefix.join(path)).await
     }
 

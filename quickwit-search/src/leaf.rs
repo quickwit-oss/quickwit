@@ -22,19 +22,15 @@ use crate::collector::QuickwitCollector;
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::Itertools;
-use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
+use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory, HOTCACHE_FILENAME};
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::LeafSearchResult;
 use quickwit_storage::Storage;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
-use tantivy::{
-    collector::Collector, directory::OwnedBytes, query::Query, Index, ReloadPolicy, Searcher, Term,
-};
+use tantivy::{collector::Collector, query::Query, Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
-
-const HOTCACHE_FILENAME: &str = "hotcache";
 
 /// Opens a `tantivy::Index` for the given split.
 ///
@@ -44,10 +40,9 @@ pub(crate) async fn open_index(split_storage: Arc<dyn Storage>) -> anyhow::Resul
         .get_all(Path::new(HOTCACHE_FILENAME))
         .await
         .with_context(|| format!("Failed to fetch hotcache from {}", split_storage.uri()))?;
-    let hotcached_owned_bytes = OwnedBytes::new(hotcache_bytes);
     let directory = StorageDirectory::new(split_storage);
     let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
-    let hot_directory = HotDirectory::open(caching_directory, hotcached_owned_bytes)?;
+    let hot_directory = HotDirectory::open(caching_directory, hotcache_bytes)?;
     let index = Index::open(hot_directory)?;
     Ok(index)
 }

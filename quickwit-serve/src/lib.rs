@@ -23,13 +23,21 @@ mod grpc_adapter;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::ops::Range;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context;
 pub use args::ServeArgs;
+use async_trait::async_trait;
+use bytes::Bytes;
+use quickwit_directories::HOTCACHE_FILENAME;
 use quickwit_metastore::{Metastore, MetastoreUriResolver};
 use quickwit_search::SearchServiceImpl;
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::{
+    localstack_region, Cache, LocalFileStorageFactory, S3CompatibleObjectStorageFactory,
+    SliceCache, StorageUriResolver, StorageWithCacheFactory,
+};
 use quickwit_telemetry::payload::{ServeEvent, TelemetryEvent};
 use tracing::debug;
 mod error;
@@ -37,6 +45,12 @@ mod rest;
 use std::io::Write;
 use termcolor::WriteColor;
 use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream};
+
+const FULL_SLICE: Range<usize> = 0..usize::MAX;
+
+/// Hotcache cache capacity is hardcoded to 500 MB.
+/// Once the capacity is reached, a LRU strategy is used.
+const HOTCACHE_CACHE_CAPACITY: usize = 500_000_000;
 
 pub use crate::error::ApiError;
 
@@ -105,13 +119,130 @@ fn display_help_message(
     Ok(())
 }
 
+/// The Quickwit cache logic is very simple for the moment.
+///
+/// It stores hotcache files using an LRU cache.
+///
+/// HACK! We use `0..usize::MAX` to signify the "entire file".
+/// TODO fixme
+struct SimpleCache {
+    slice_cache: SliceCache,
+}
+
+impl SimpleCache {
+    fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
+        SimpleCache {
+            slice_cache: SliceCache::with_capacity_in_bytes(capacity_in_bytes),
+        }
+    }
+}
+
+#[async_trait]
+impl Cache for SimpleCache {
+    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<Bytes> {
+        if let Some(bytes) = self.get_all(path).await {
+            return Some(bytes.slice(byte_range.clone()));
+        }
+        if let Some(bytes) = self.slice_cache.get(path, byte_range) {
+            return Some(bytes);
+        }
+        None
+    }
+
+    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: Bytes) {
+        self.slice_cache.put(path, byte_range, bytes);
+    }
+
+    async fn get_all(&self, path: &Path) -> Option<Bytes> {
+        self.slice_cache.get(path, FULL_SLICE.clone())
+    }
+
+    async fn put_all(&self, path: PathBuf, bytes: Bytes) {
+        self.slice_cache.put(path, FULL_SLICE.clone(), bytes);
+    }
+}
+
+pub struct QuickwitCache {
+    router: Vec<(&'static str, Arc<dyn Cache>)>,
+}
+
+impl Default for QuickwitCache {
+    fn default() -> Self {
+        QuickwitCache {
+            router: vec![(
+                HOTCACHE_FILENAME,
+                Arc::new(SimpleCache::with_capacity_in_bytes(HOTCACHE_CACHE_CAPACITY)),
+            )],
+        }
+    }
+}
+
+impl QuickwitCache {
+    fn get_relevant_cache(&self, path: &Path) -> Option<&dyn Cache> {
+        for (suffix, cache) in &self.router {
+            if path.ends_with(suffix) {
+                return Some(cache.as_ref());
+            }
+        }
+        None
+    }
+}
+
+#[async_trait]
+impl Cache for QuickwitCache {
+    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<Bytes> {
+        if let Some(cache) = self.get_relevant_cache(path) {
+            return cache.get(path, byte_range).await;
+        }
+        None
+    }
+
+    async fn get_all(&self, path: &Path) -> Option<Bytes> {
+        if let Some(cache) = self.get_relevant_cache(path) {
+            return cache.get_all(path).await;
+        }
+        None
+    }
+
+    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: Bytes) {
+        if let Some(cache) = self.get_relevant_cache(&path) {
+            cache.put(path, byte_range, bytes).await;
+        }
+    }
+
+    async fn put_all(&self, path: PathBuf, bytes: Bytes) {
+        if let Some(cache) = self.get_relevant_cache(&path) {
+            cache.put(path, FULL_SLICE, bytes).await;
+        }
+    }
+}
+
+/// Builds a storage uri resolver that handles
+/// - s3:// uris. This storage comes with a cache that stores hotcache files.
+/// - s3+localstack://
+/// - file:// uris.
+fn storage_uri_resolver() -> StorageUriResolver {
+    let s3_storage = StorageWithCacheFactory::new(
+        Arc::new(S3CompatibleObjectStorageFactory::default()),
+        Arc::new(QuickwitCache::default()),
+    );
+    StorageUriResolver::builder()
+        .register(LocalFileStorageFactory::default())
+        .register(s3_storage)
+        .register(S3CompatibleObjectStorageFactory::new(
+            localstack_region(),
+            "s3+localstack",
+        ))
+        .build()
+}
+
 pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
     debug!(args=?args, "serve-cli");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Serve(ServeEvent {
         has_seed: !args.peers.is_empty(),
     }))
     .await;
-    let storage_resolver = StorageUriResolver::default();
+    let storage_resolver = storage_uri_resolver();
     let metastore_resolver = MetastoreUriResolver::with_storage_resolver(storage_resolver.clone());
     let metastore_router =
         create_index_to_metastore_router(&metastore_resolver, &args.index_uris).await?;
