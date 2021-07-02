@@ -35,6 +35,7 @@ use quickwit_search::single_node_search;
 use quickwit_serve::serve_cli;
 use quickwit_serve::ServeArgs;
 use quickwit_storage::StorageUriResolver;
+use quickwit_telemetry::payload::TelemetryEvent;
 use std::env;
 use std::io;
 use std::io::Stdout;
@@ -261,6 +262,7 @@ async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         overwrite = args.overwrite,
         "create-index"
     );
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
     if args.overwrite {
@@ -295,6 +297,7 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         overwrite = args.overwrite,
         "indexing"
     );
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::IndexStart).await;
 
     let input_path = args.input_path.clone();
     let document_source = create_document_source_from_args(input_path).await?;
@@ -346,7 +349,6 @@ async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     if num_published_splits > 0 {
         println!("You can now query your index with `quickwit search --index-uri {} --query \"barack obama\"`" , args.index_uri);
     }
-
     Ok(())
 }
 
@@ -402,6 +404,7 @@ async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         dry_run = args.dry_run,
         "delete-index"
     );
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
 
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
@@ -517,6 +520,7 @@ fn display_statistics(
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
+    let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
 
     let yaml = load_yaml!("cli.yaml");
     let app = App::from(yaml)
@@ -538,10 +542,19 @@ async fn main() {
         CliCommand::Serve(args) => serve_cli(args).await,
         CliCommand::Delete(args) => delete_index_cli(args).await,
     };
-    if let Err(err) = command_res {
+
+    let return_code: i32 = if let Err(err) = command_res {
         eprintln!("Command failed: {:?}", err);
-        std::process::exit(1);
-    }
+        1
+    } else {
+        0
+    };
+
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::EndCommand { return_code }).await;
+
+    telemetry_handle.terminate_telemetry().await;
+
+    std::process::exit(return_code);
 }
 
 #[cfg(test)]
