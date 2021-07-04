@@ -25,9 +25,9 @@ use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use std::convert::TryFrom;
-use tantivy::schema::BytesOptions;
+use tantivy::schema::{BytesOptions, FieldType};
 use tantivy::schema::{
-    Cardinality, DocParsingError as TantivyDocParser, FieldEntry, IndexRecordOption, IntOptions,
+    Cardinality, DocParsingError as TantivyDocParser, IndexRecordOption, IntOptions,
     TextFieldIndexing, TextOptions, Value,
 };
 use thiserror::Error;
@@ -65,35 +65,23 @@ impl FieldMappingEntry {
     /// Return field entries that must be added to the schema.
     // TODO: can be more efficient to pass a collector in argument (a schema builder)
     // on which we add entry fields.
-    pub fn field_entries(&self) -> anyhow::Result<Vec<(FieldPath, FieldEntry)>> {
+    pub fn field_entries(&self) -> anyhow::Result<Vec<(FieldPath, FieldType)>> {
         let field_path = FieldPath::new(&self.name);
-        let field_name = field_path.tantivy_field_name();
         let results = match &self.mapping_type {
-            // TODO: would be nicer to build only a field type here but currently
-            // there's no field entry constructor from a field type
             FieldMappingType::Text(options, _) => {
-                vec![(
-                    field_path,
-                    FieldEntry::new_text(field_name, options.clone()),
-                )]
+                vec![(field_path, FieldType::Str(options.clone()))]
             }
             FieldMappingType::I64(options, _) => {
-                vec![(field_path, FieldEntry::new_i64(field_name, options.clone()))]
+                vec![(field_path, FieldType::I64(options.clone()))]
             }
             FieldMappingType::F64(options, _) => {
-                vec![(field_path, FieldEntry::new_f64(field_name, options.clone()))]
+                vec![(field_path, FieldType::F64(options.clone()))]
             }
             FieldMappingType::Date(options, _) => {
-                vec![(
-                    field_path,
-                    FieldEntry::new_date(field_name, options.clone()),
-                )]
+                vec![(field_path, FieldType::Date(options.clone()))]
             }
             FieldMappingType::Bytes(options, _) => {
-                vec![(
-                    field_path,
-                    FieldEntry::new_bytes(field_name, options.clone()),
-                )]
+                vec![(field_path, FieldType::Bytes(options.clone()))]
             }
             FieldMappingType::Object(field_mappings) => field_mappings
                 .iter()
