@@ -112,15 +112,12 @@ impl DefaultDocMapperBuilder {
     /// Warning: tantivy does not support `.` character but quickwit does, so we must
     /// convert a field name to a tantivy compatible field name
     /// when building a `FieldEntry`.
+    // TODO: remove call to tantivy_field_name when field name rules will be relaxed in tantivy.
     fn build_schema(&self) -> anyhow::Result<Schema> {
         let mut builder = SchemaBuilder::new();
         let mut unique_field_names: HashSet<String> = HashSet::new();
         for field_mapping in self.field_mappings.iter() {
-            for (field_path, field_entry) in field_mapping.field_entries()? {
-                // TODO: we have to create a new field entry and it's awful.
-                // Ideally, we want to get field types instead of field entries
-                // and then create a field entry with the right field name
-                // but currently it's not possible to build a field entry from a field type.
+            for (field_path, field_type) in field_mapping.field_entries()? {
                 let tantivy_field_name = field_path.tantivy_field_name();
                 if unique_field_names.contains(&tantivy_field_name) {
                     bail!(
@@ -129,29 +126,7 @@ impl DefaultDocMapperBuilder {
                     );
                 }
                 unique_field_names.insert(tantivy_field_name.clone());
-                let entry_with_fixed_field_name = match field_entry.field_type() {
-                    FieldType::Str(options) => {
-                        FieldEntry::new_text(tantivy_field_name, options.clone())
-                    }
-                    FieldType::I64(options) => {
-                        FieldEntry::new_i64(tantivy_field_name, options.clone())
-                    }
-                    FieldType::F64(options) => {
-                        FieldEntry::new_f64(tantivy_field_name, options.clone())
-                    }
-                    FieldType::Date(options) => {
-                        FieldEntry::new_date(tantivy_field_name, options.clone())
-                    }
-                    FieldType::Bytes(options) => {
-                        FieldEntry::new_bytes(tantivy_field_name, options.clone())
-                    }
-                    // Should never get there.
-                    field_type => bail!(
-                        "Cannot build schema with unimplemented type: `{:?}`",
-                        field_type
-                    ),
-                };
-                builder.add_field(entry_with_fixed_field_name);
+                builder.add_field(FieldEntry::new(tantivy_field_name, field_type));
             }
         }
         if self.store_source {
