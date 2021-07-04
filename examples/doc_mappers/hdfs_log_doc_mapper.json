@@ -1,0 +1,39 @@
+{
+    "store_source": true,
+    "default_search_fields": ["body", "severity_text"],
+    "timestamp_field": "timestamp",
+    "field_mappings": [
+        {
+            "name": "timestamp",
+            "type": "i64"
+        },
+        {
+            "name": "severity_text",
+            "type": "text"
+        },
+        {
+            "name": "body",
+            "type": "text"
+        },
+        {
+            "name": "resource",
+            "type": "object",
+            "field_mappings": [
+                {
+                    "name": "service",
+                    "type": "text"
+                }
+            ]
+        },
+        {
+            "name": "attributes",
+            "type": "object",
+            "field_mappings": [
+                {
+                    "name": "class",
+                    "type": "text"
+                }
+            ]
+        }
+    ]
+}
