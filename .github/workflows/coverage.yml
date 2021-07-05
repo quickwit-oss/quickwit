@@ -16,6 +16,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
+          components: rustfmt, clippy
       - name: Create bucket in localstack
         run: docker-compose -f localstack.yaml exec -T localstack awslocal s3 mb s3://quickwit-integration-tests
       - name: Install nightly
