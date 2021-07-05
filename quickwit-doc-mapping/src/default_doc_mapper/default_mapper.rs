@@ -21,9 +21,7 @@
 */
 
 use super::default_as_true;
-use super::{
-    field_mapping_entry::DocParsingError, resolve_field_name, FieldMappingEntry, FieldMappingType,
-};
+use super::{field_mapping_entry::DocParsingError, FieldMappingEntry, FieldMappingType};
 use crate::query_builder::build_query;
 use crate::{DocMapper, QueryParserError};
 use anyhow::{bail, Context};
@@ -75,13 +73,15 @@ impl DefaultDocMapperBuilder {
             if default_search_field_names.contains(field_name) {
                 bail!("Duplicated default search field: `{}`", field_name)
             }
-            resolve_field_name(&schema, &field_name)
+            schema
+                .get_field(&field_name)
                 .with_context(|| format!("Unknown default search field: `{}`", field_name))?;
             default_search_field_names.push(field_name.clone());
         }
         // Resolve timestamp field
         if let Some(ref timestamp_field_name) = self.timestamp_field {
-            let timestamp_field = resolve_field_name(&schema, timestamp_field_name)
+            let timestamp_field = schema
+                .get_field(&timestamp_field_name)
                 .with_context(|| format!("Unknown timestamp field: `{}`", timestamp_field_name))?;
 
             let timestamp_field_entry = schema.get_field_entry(timestamp_field);
@@ -113,21 +113,20 @@ impl DefaultDocMapperBuilder {
     /// Warning: tantivy does not support `.` character but quickwit does, so we must
     /// convert a field name to a tantivy compatible field name
     /// when building a `FieldEntry`.
-    // TODO: remove call to tantivy_field_name when field name rules will be relaxed in tantivy.
     fn build_schema(&self) -> anyhow::Result<Schema> {
         let mut builder = SchemaBuilder::new();
         let mut unique_field_names: HashSet<String> = HashSet::new();
         for field_mapping in self.field_mappings.iter() {
             for (field_path, field_type) in field_mapping.field_entries()? {
-                let tantivy_field_name = field_path.tantivy_field_name();
-                if unique_field_names.contains(&tantivy_field_name) {
+                let field_name = field_path.field_name();
+                if unique_field_names.contains(&field_name) {
                     bail!(
                         "Field name must be unique, found duplicates for `{}`",
                         field_path.field_name()
                     );
                 }
-                unique_field_names.insert(tantivy_field_name.clone());
-                builder.add_field(FieldEntry::new(tantivy_field_name, field_type));
+                unique_field_names.insert(field_name.clone());
+                builder.add_field(FieldEntry::new(field_name, field_type));
             }
         }
         if self.store_source {
@@ -217,10 +216,8 @@ impl DocMapper for DefaultDocMapper {
         for (field_path, field_value) in parsing_result {
             let field = self
                 .schema
-                .get_field(&field_path.tantivy_field_name())
-                .ok_or_else(|| {
-                    DocParsingError::NoSuchFieldInSchema(field_path.tantivy_field_name())
-                })?;
+                .get_field(&field_path.field_name())
+                .ok_or_else(|| DocParsingError::NoSuchFieldInSchema(field_path.field_name()))?;
             document.add(FieldValue::new(field, field_value))
         }
         Ok(document)
@@ -272,10 +269,10 @@ mod tests {
             "response_time": [2.3],
             "response_payload": [[97,98,99]],
             "body_other_tokenizer": ["20200415T072306-0700 INFO This is a great log"],
-            "attributes__dot__server": ["ABC"],
-            "attributes__dot__server__dot__payload": [[97], [98]],
-            "attributes__dot__tags": [22, 23],
-            "attributes__dot__server__dot__status": ["200", "201"]
+            "attributes.server": ["ABC"],
+            "attributes.server.payload": [[97], [98]],
+            "attributes.tags": [22, 23],
+            "attributes.server.status": ["200", "201"]
         }"#;
 
     const JSON_MAPPING_VALUE: &str = r#"

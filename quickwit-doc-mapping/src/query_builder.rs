@@ -20,20 +20,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::collections::HashMap;
-
-use anyhow::bail;
-use combine::parser::char::{char, letter, space, spaces};
-use combine::parser::repeat::skip_until;
-use combine::parser::Parser;
-use combine::{many, one_of, optional, satisfy};
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
 use tantivy::schema::{Field, Schema};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf};
 
-use crate::mapper::{is_valid_field_mapping_name, TANTIVY_DOT_SYMBOL};
 use crate::QueryParserError;
 
 /// Build a `Query` with field resolution & forbidding range clauses.
@@ -42,13 +34,7 @@ pub(crate) fn build_query(
     request: &SearchRequest,
     default_field_names: &[String],
 ) -> Result<Box<dyn Query>, QueryParserError> {
-    let (query_string, field_names_mapping) = normalize_query_string(&request.query)?;
-    let get_field_name_from_mapping = move |field_name: String| {
-        let field_name = field_names_mapping.get(&field_name).unwrap_or(&field_name);
-        (*field_name).clone()
-    };
-
-    let user_input_ast = tantivy_query_grammar::parse_query(&query_string)
+    let user_input_ast = tantivy_query_grammar::parse_query(&request.query)
         .map_err(|_| TantivyQueryParserError::SyntaxError)?;
 
     if has_range_clause(user_input_ast) {
@@ -57,73 +43,8 @@ pub(crate) fn build_query(
 
     let default_fields = resolve_fields(&schema, default_field_names)?;
     let query_parser = QueryParser::new(schema, default_fields, TokenizerManager::default());
-    let query = query_parser
-        .parse_query(&query_string)
-        .map_err(|error| match error {
-            TantivyQueryParserError::FieldDoesNotExist(field_name) => {
-                TantivyQueryParserError::FieldDoesNotExist(get_field_name_from_mapping(field_name))
-            }
-            TantivyQueryParserError::FieldNotIndexed(field_name) => {
-                TantivyQueryParserError::FieldNotIndexed(get_field_name_from_mapping(field_name))
-            }
-            TantivyQueryParserError::FieldDoesNotHavePositionsIndexed(field_name) => {
-                TantivyQueryParserError::FieldDoesNotHavePositionsIndexed(
-                    get_field_name_from_mapping(field_name),
-                )
-            }
-            _ => error,
-        })?;
-
+    let query = query_parser.parse_query(&request.query)?;
     Ok(query)
-}
-
-/// Finds field names form a query string and transforms those
-/// that contain [`TANTIVY_DOT_SYMBOL`] into tantivy compatible field names.
-///
-/// It transforms the query string by replacing the `.` symbol with [`TANTIVY_DOT_SYMBOL`]
-/// while returning a map of the repaced field names in order to display more accurate error messages.
-///
-fn normalize_query_string(query_string: &str) -> anyhow::Result<(String, HashMap<String, String>)> {
-    let field_names = extract_potential_field_names(String::from(query_string));
-    let mut result_query_string = String::from(query_string);
-    let mut field_names_mapping = HashMap::new();
-    for field_name in field_names {
-        if !is_valid_field_mapping_name(&field_name) {
-            bail!("Invalid field name: `{}`.", field_name);
-        }
-
-        let compatible_field_name = field_name.replace(".", TANTIVY_DOT_SYMBOL);
-        result_query_string = result_query_string.replace(&field_name, &compatible_field_name);
-        field_names_mapping.insert(compatible_field_name, field_name);
-    }
-
-    Ok((result_query_string, field_names_mapping))
-}
-
-/// Extract field names from a query string without any validation.
-fn extract_potential_field_names(query_string: String) -> Vec<String> {
-    let mut input = query_string.as_str();
-    let mut fields = vec![];
-    while let Ok((Some(field_name), remaining)) = field().parse(input) {
-        fields.push(field_name);
-        input = remaining;
-    }
-    fields
-}
-
-fn field<'a>() -> impl Parser<&'a str, Output = Option<String>> {
-    optional(
-        (
-            (letter().or(one_of("_.".chars()))),
-            many(satisfy(|c: char| {
-                c.is_alphanumeric() || c == '_' || c == '-' || c == '.'
-            })),
-        )
-            .skip(char(':'))
-            .skip(optional(skip_until(space())))
-            .map(|(s1, s2): (char, String)| format!("{}{}", s1, s2))
-            .skip(spaces()),
-    )
 }
 
 fn has_range_clause(user_input_ast: UserInputAst) -> bool {
@@ -154,9 +75,7 @@ fn resolve_fields(schema: &Schema, field_names: &[String]) -> anyhow::Result<Vec
 
 #[cfg(test)]
 mod test {
-    use crate::mapper::TANTIVY_DOT_SYMBOL;
-
-    use super::{build_query, normalize_query_string};
+    use super::build_query;
 
     use quickwit_proto::SearchRequest;
     use tantivy::schema::{Schema, TEXT};
@@ -170,8 +89,8 @@ mod test {
         let mut schema_builder = Schema::builder();
         schema_builder.add_text_field("title", TEXT);
         schema_builder.add_text_field("desc", TEXT);
-        schema_builder.add_text_field("server__dot__name", TEXT);
-        schema_builder.add_text_field("server__dot__mem", TEXT);
+        schema_builder.add_text_field("server.name", TEXT);
+        schema_builder.add_text_field("server.mem", TEXT);
         schema_builder.add_text_field("_source", TEXT);
         schema_builder.build()
     }
@@ -191,6 +110,7 @@ mod test {
         let query_result = build_query(make_schema(), &request, &default_field_names);
         match expected {
             TestExpectation::Err(sub_str) => {
+                println!("EVAN {:?} {}", query_result, sub_str);
                 assert_eq!(format!("{:?}", query_result).contains(sub_str), true);
             }
             TestExpectation::Ok(sub_str) => {
@@ -231,16 +151,6 @@ mod test {
         )?;
 
         check_build_query(
-            ".server.name:foo _source:4GB",
-            TestExpectation::Err("Invalid field name: `.server.name`."),
-        )?;
-
-        check_build_query(
-            "server__dot__name:foo _source:4GB",
-            TestExpectation::Err("Invalid field name: `server__dot__name`."),
-        )?;
-
-        check_build_query(
             "server.name:\".bar:\" server.mem:4GB",
             TestExpectation::Ok("TermQuery"),
         )?;
@@ -251,53 +161,5 @@ mod test {
         )?;
 
         Ok(())
-    }
-
-    #[test]
-    fn test_normalize_query_string() {
-        let result = normalize_query_string(".aws.server:foo mem:>3gb");
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Invalid field name: `.aws.server`."
-        );
-
-        let result = normalize_query_string("test.server:foo .mem:>3gb");
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Invalid field name: `.mem`."
-        );
-
-        let result = normalize_query_string(".aws__dot__server:foo mem:>3gb");
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            format!("Invalid field name: `.aws{}server`.", TANTIVY_DOT_SYMBOL)
-        );
-
-        let (query_string, field_names_mapping) = normalize_query_string(
-            "server.name:\".foo.bar:\" server.mem:3GB title:+foo _source:>foo",
-        )
-        .unwrap();
-        assert_eq!(
-            query_string,
-            format!(
-                "server{0}name:\".foo.bar:\" server{0}mem:3GB title:+foo _source:>foo",
-                TANTIVY_DOT_SYMBOL
-            )
-        );
-        assert_eq!(field_names_mapping.len(), 4);
-        assert_eq!(
-            field_names_mapping
-                .get(format!("server{}name", TANTIVY_DOT_SYMBOL).as_str())
-                .unwrap(),
-            "server.name"
-        );
-        assert_eq!(
-            field_names_mapping
-                .get(format!("server{}mem", TANTIVY_DOT_SYMBOL).as_str())
-                .unwrap(),
-            "server.mem"
-        );
-        assert_eq!(field_names_mapping.get("title").unwrap(), "title");
-        assert_eq!(field_names_mapping.get("_source").unwrap(), "_source");
     }
 }

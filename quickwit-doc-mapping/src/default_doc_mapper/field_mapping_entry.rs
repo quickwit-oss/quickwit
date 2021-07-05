@@ -32,7 +32,7 @@ use tantivy::schema::{
 };
 use thiserror::Error;
 
-use crate::mapper::{is_valid_field_mapping_name, TANTIVY_DOT_SYMBOL};
+use crate::default_doc_mapper::is_valid_field_mapping_name;
 
 use super::default_as_true;
 use super::FieldMappingType;
@@ -429,12 +429,6 @@ impl<'a> FieldPath<'a> {
             self.components.insert(0, parent);
         }
         self
-    }
-
-    // Returns a tantivy compatible field name.
-    pub fn tantivy_field_name(&self) -> String {
-        // Some components can contains dots.
-        self.field_name().replace(".", TANTIVY_DOT_SYMBOL)
     }
 
     // Returns field name built by joining its components with a `.` separator.

@@ -24,18 +24,25 @@ mod default_mapper;
 mod field_mapping_entry;
 mod field_mapping_type;
 
-use tantivy::schema::{Field, Schema};
-
-use crate::mapper::TANTIVY_DOT_SYMBOL;
+use once_cell::sync::Lazy;
+use regex::Regex;
 
 pub use self::default_mapper::{DefaultDocMapper, DefaultDocMapperBuilder};
 pub use self::field_mapping_entry::{DocParsingError, FieldMappingEntry};
 pub use self::field_mapping_type::FieldMappingType;
 
-/// Given a field name which can contains some dots, return the schema field
-fn resolve_field_name(schema: &Schema, field_name: &str) -> Option<Field> {
-    let rw_field_name = field_name.replace(".", TANTIVY_DOT_SYMBOL);
-    schema.get_field(&rw_field_name)
+/// Regular expression representing the restriction on a valid field name.
+pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[_a-zA-Z][_\.\-a-zA-Z0-9]*$"#;
+
+/// Validator for a potential `field_mapping_name`.
+/// Returns true if the name can be use for a field mapping name.
+///
+/// A field mapping name must start by a letter `[a-zA-Z]`.
+/// The other characters can be any alphanumic character `[a-ZA-Z0-9]` or `_` or `.`.
+pub fn is_valid_field_mapping_name(field_mapping_name: &str) -> bool {
+    static FIELD_MAPPING_NAME_PTN: Lazy<Regex> =
+        Lazy::new(|| Regex::new(FIELD_MAPPING_NAME_PATTERN).unwrap());
+    FIELD_MAPPING_NAME_PTN.is_match(field_mapping_name)
 }
 
 /// Function used with serde to initialize boolean value at true if there is no value in json.
