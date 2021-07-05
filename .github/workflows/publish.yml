@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - '*'
-
+      
 jobs:
   publish:
     name: Publish for ${{ matrix.os }}
@@ -85,12 +85,90 @@ jobs:
           command: build
           args: --release --target x86_64-unknown-linux-musl
       - name: Rename artifact
-        run: mv target/x86_64-unknown-linux-musl/release/quickwit-cli quickwit-cli-aarch64-unknown-linux-musl
+        run: mv target/x86_64-unknown-linux-musl/release/quickwit-cli quickwit-cli-x86_64-unknown-linux-musl
+      - name: Upload artifact
+        uses: quickwit-inc/upload-to-github-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          file: quickwit-cli-x86_64-unknown-linux-musl
+          overwrite: true
+          tag_name: latest-draft-release
+
+  aarch64-linux-musl:
+    name: publish aarch64-linux-musl
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-unknown-linux-musl
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --release --target aarch64-unknown-linux-musl
+      - name: Rename artifact
+        run: mv target/aarch64-unknown-linux-musl/release/quickwit-cli quickwit-cli-aarch64-unknown-linux-musl
       - name: Upload artifact
         uses: quickwit-inc/upload-to-github-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           file: quickwit-cli-aarch64-unknown-linux-musl
+          overwrite: true
+          tag_name: latest-draft-release
+
+  armv7-linux-gnueabihf:
+    name: publish armv7-linux-gnueabihf
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: armv7-unknown-linux-gnueabihf
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --release --target armv7-unknown-linux-gnueabihf
+      - name: Rename artifact
+        run: mv target/armv7-unknown-linux-gnueabihf/release/quickwit-cli quickwit-cli-armv7-unknown-linux-gnueabihf
+      - name: Upload artifact
+        uses: quickwit-inc/upload-to-github-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          file: quickwit-cli-armv7-unknown-linux-gnueabihf
+          overwrite: true
+          tag_name: latest-draft-release
+
+  armv7-linux-musleabihf:
+    name: publish armv7-linux-musleabihf
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: armv7-unknown-linux-musleabihf
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --release --target armv7-unknown-linux-musleabihf
+      - name: Rename artifact
+        run: mv target/armv7-unknown-linux-musleabihf/release/quickwit-cli quickwit-cli-armv7-unknown-linux-musleabihf
+      - name: Upload artifact
+        uses: quickwit-inc/upload-to-github-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          file: quickwit-cli-armv7-unknown-linux-musleabihf
           overwrite: true
           tag_name: latest-draft-release
