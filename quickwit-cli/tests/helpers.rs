@@ -20,12 +20,18 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
 use std::collections::HashMap;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
+use std::process::Child;
+use std::process::Stdio;
 use tempfile::tempdir;
 use tempfile::TempDir;
+
+const PACKAGE_BIN_NAME: &str = "quickwit-cli";
 
 const DEFAULT_DOC_MAPPER: &str = r#"{
     "store_source": true,
@@ -54,7 +60,7 @@ const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 2}
 {"event": "buz", "level": "debug", "ts": 12}
 {"event": "biz", "level": "info", "ts": 13}"#;
 
-const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimray", "url": "https://wiki.com?id=10"}
+const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "https://wiki.com?id=10"}
 {"body": "bar", "title": "shimray", "url": "https://wiki.com?id=12"}
 {"body": "baz", "title": "preshow", "url": "https://wiki.com?id=11"}
 {"body": "buz", "title": "frederick", "url": "https://wiki.com?id=48"}
@@ -62,12 +68,19 @@ const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimray", "url": "http
 "#;
 
 /// Creates a quickwit-cli command with provided list of arguments.
-pub fn make_command(argument: &str) -> Command {
-    let mut cmd = Command::cargo_bin("quickwit-cli").unwrap();
-    for arg in argument.split_whitespace() {
-        cmd.arg(arg);
-    }
+pub fn make_command(arguments: &str) -> Command {
+    let mut cmd = Command::cargo_bin(PACKAGE_BIN_NAME).unwrap();
+    cmd.args(arguments.split_whitespace());
     cmd
+}
+
+/// Creates a quickwit-cli command running as a child process.
+pub fn spawn_command(arguments: &str) -> io::Result<Child> {
+    std::process::Command::new(cargo_bin(PACKAGE_BIN_NAME))
+        .args(arguments.split_whitespace())
+        .stdout(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
 }
 
 /// A struct to hold few info about the test environement.
