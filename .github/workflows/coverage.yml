@@ -13,10 +13,18 @@ jobs:
       image:                    xd009642/tarpaulin:develop-nightly
       options:                  --security-opt seccomp=unconfined
     steps:
-      - name:                   Checkout repository
-        uses:                   actions/checkout@v2
-
-      - name:                   Generate code coverage
+      - uses: actions/checkout@v2
+      - name: Setup localstack
+        run: docker-compose -f localstack.yaml up -d
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Create bucket in localstack
+        run: docker-compose -f localstack.yaml exec -T localstack awslocal s3 mb s3://quickwit-integration-tests
+      - name: Generate code coverage
+        env:
+          AWS_ACCESS_KEY_ID: dummy-access-key
+          AWS_SECRET_ACCESS_KEY: dummy-secret-key
         run: |
           cargo +nightly tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
       - name:                   Upload to codecov.io
