@@ -189,12 +189,6 @@ fn test_cmd_index() -> Result<()> {
 }
 
 #[test]
-fn test_cmd_serve() -> Result<()> {
-    //TODO: implement serve and search on it.
-    Ok(())
-}
-
-#[test]
 fn test_cmd_delete_index_dry_run() -> Result<()> {
     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
     create_wikipedia_index(&test_env);
