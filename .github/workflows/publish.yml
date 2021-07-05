@@ -1,0 +1,96 @@
+name: PUBLISH
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  publish:
+    name: Publish for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - build: linux
+            os: ubuntu-latest
+            artifact_name: quickwit-cli
+            asset_name: quickwit-cli-x86_64-unknown-linux-gnu
+          - build: macos
+            os: macos-latest
+            artifact_name: quickwit-cli
+            asset_name: quickwit-cli-x86_64-apple-darwin         
+          - build: windows
+            os: windows-latest
+            artifact_name: quickwit-cli.exe
+            asset_name: quickwit-cli-x86_64-pc-windows.exe
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: Build binary
+        run: cargo build --release
+      - name: Rename artifact
+        run: mv target/release/${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+      - name: Upload artifact
+        uses: quickwit-inc/upload-to-github-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          file: ${{ matrix.asset_name }}
+          overwrite: true
+          tag_name: latest-draft-release
+
+  aarch64-linux-gnu:
+    name: publish aarch64-linux-gnu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-unknown-linux-gnu
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build 
+          args: --release --target aarch64-unknown-linux-gnu
+      - name: Rename artifact
+        run: mv target/aarch64-unknown-linux-gnu/release/quickwit-cli quickwit-cli-aarch64-unknown-linux-gnu
+      - name: Upload artifact
+        uses: quickwit-inc/upload-to-github-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          file: quickwit-cli-aarch64-unknown-linux-gnu
+          overwrite: true
+          tag_name: latest-draft-release
+
+  x86_64-linux-musl:
+    name: publish x86_64-linux-musl
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-unknown-linux-musl
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --release --target x86_64-unknown-linux-musl
+      - name: Rename artifact
+        run: mv target/x86_64-unknown-linux-musl/release/quickwit-cli quickwit-cli-aarch64-unknown-linux-musl
+      - name: Upload artifact
+        uses: quickwit-inc/upload-to-github-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          file: quickwit-cli-aarch64-unknown-linux-musl
+          overwrite: true
+          tag_name: latest-draft-release
