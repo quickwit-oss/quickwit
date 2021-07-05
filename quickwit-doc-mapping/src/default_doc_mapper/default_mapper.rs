@@ -113,15 +113,12 @@ impl DefaultDocMapperBuilder {
     /// Warning: tantivy does not support `.` character but quickwit does, so we must
     /// convert a field name to a tantivy compatible field name
     /// when building a `FieldEntry`.
+    // TODO: remove call to tantivy_field_name when field name rules will be relaxed in tantivy.
     fn build_schema(&self) -> anyhow::Result<Schema> {
         let mut builder = SchemaBuilder::new();
         let mut unique_field_names: HashSet<String> = HashSet::new();
         for field_mapping in self.field_mappings.iter() {
-            for (field_path, field_entry) in field_mapping.field_entries()? {
-                // TODO: we have to create a new field entry and it's awful.
-                // Ideally, we want to get field types instead of field entries
-                // and then create a field entry with the right field name
-                // but currently it's not possible to build a field entry from a field type.
+            for (field_path, field_type) in field_mapping.field_entries()? {
                 let tantivy_field_name = field_path.tantivy_field_name();
                 if unique_field_names.contains(&tantivy_field_name) {
                     bail!(
@@ -130,29 +127,7 @@ impl DefaultDocMapperBuilder {
                     );
                 }
                 unique_field_names.insert(tantivy_field_name.clone());
-                let entry_with_fixed_field_name = match field_entry.field_type() {
-                    FieldType::Str(options) => {
-                        FieldEntry::new_text(tantivy_field_name, options.clone())
-                    }
-                    FieldType::I64(options) => {
-                        FieldEntry::new_i64(tantivy_field_name, options.clone())
-                    }
-                    FieldType::F64(options) => {
-                        FieldEntry::new_f64(tantivy_field_name, options.clone())
-                    }
-                    FieldType::Date(options) => {
-                        FieldEntry::new_date(tantivy_field_name, options.clone())
-                    }
-                    FieldType::Bytes(options) => {
-                        FieldEntry::new_bytes(tantivy_field_name, options.clone())
-                    }
-                    // Should never get there.
-                    field_type => bail!(
-                        "Cannot build schema with unimplemented type: `{:?}`",
-                        field_type
-                    ),
-                };
-                builder.add_field(entry_with_fixed_field_name);
+                builder.add_field(FieldEntry::new(tantivy_field_name, field_type));
             }
         }
         if self.store_source {
@@ -279,18 +254,26 @@ mod tests {
         {
             "timestamp": 1586960586000,
             "body": "20200415T072306-0700 INFO This is a great log",
+            "response_date": "2021-12-19T16:39:57Z",
+            "response_time": 2.3,
+            "response_payload": "YWJj",
             "attributes": {
                 "server": "ABC",
                 "tags": [22, 23],
-                "server.status": ["200", "201"]
+                "server.status": ["200", "201"],
+                "server.payload": ["YQ==", "Yg=="]
             }
         }"#;
 
     const EXPECTED_JSON_PATHS_AND_VALUES: &str = r#"{
             "timestamp": [1586960586000],
             "body": ["20200415T072306-0700 INFO This is a great log"],
+            "response_date": ["2021-12-19T16:39:57+00:00"],
+            "response_time": [2.3],
+            "response_payload": [[97,98,99]],
             "body_other_tokenizer": ["20200415T072306-0700 INFO This is a great log"],
             "attributes__dot__server": ["ABC"],
+            "attributes__dot__server__dot__payload": [[97], [98]],
             "attributes__dot__tags": [22, 23],
             "attributes__dot__server__dot__status": ["200", "201"]
         }"#;
@@ -314,6 +297,21 @@ mod tests {
                     "stored": true
                 },
                 {
+                    "name": "response_date",
+                    "type": "date",
+                    "fast": true
+                },
+                {
+                    "name": "response_time",
+                    "type": "f64",
+                    "fast": true
+                },
+                {
+                    "name": "response_payload",
+                    "type": "bytes",
+                    "fast": true
+                },
+                {
                     "name": "attributes",
                     "type": "object",
                     "field_mappings": [
@@ -328,6 +326,10 @@ mod tests {
                         {
                             "name": "server.status",
                             "type": "array<text>"
+                        },
+                        {
+                            "name": "server.payload",
+                            "type": "array<bytes>"
                         }
                     ]
                 }
@@ -345,7 +347,7 @@ mod tests {
             ["attributes.server", "attributes.server.status", "body"]
         );
         let field_mappings = mapper.field_mappings.field_mappings().unwrap_or_default();
-        assert_eq!(field_mappings.len(), 3);
+        assert_eq!(field_mappings.len(), 6);
         Ok(())
     }
 
@@ -372,9 +374,9 @@ mod tests {
         let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
         let document = doc_mapper.doc_from_json(JSON_DOC_VALUE)?;
         let schema = doc_mapper.schema();
-        // 3 property entry + 1 field "_source" + two fields values for "tags" field
-        // + 2 values for "server.status" field
-        assert_eq!(document.len(), 8);
+        // 6 property entry + 1 field "_source" + two fields values for "tags" field
+        // + 2 values inf "server.status" field + 2 values in "server.payload" field
+        assert_eq!(document.len(), 13);
         let expected_json_paths_and_values: HashMap<String, JsonValue> =
             serde_json::from_str(EXPECTED_JSON_PATHS_AND_VALUES).unwrap();
         document.field_values().iter().for_each(|field_value| {
@@ -382,7 +384,7 @@ mod tests {
             if field_name == SOURCE_FIELD_NAME {
                 assert_eq!(field_value.value().text().unwrap(), JSON_DOC_VALUE, "");
             } else {
-                let value = serde_json::to_string_pretty(field_value.value()).unwrap();
+                let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
                     .get(field_name)
                     .unwrap()
@@ -442,7 +444,7 @@ mod tests {
             error,
             DocParsingError::ValueError(
                 "body".to_owned(),
-                "text type only support json string value".to_owned()
+                "expected json string, got '1'.".to_owned()
             )
         );
         Ok(())

@@ -30,6 +30,7 @@ use std::sync::{Arc, Mutex};
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{FileHandle, OwnedBytes, WatchHandle, WritePtr};
 use tantivy::{AsyncIoResult, Directory, HasLen};
+use tracing::error;
 use tracing::warn;
 
 #[derive(Hash, Debug, Clone, PartialEq, Eq)]
@@ -41,18 +42,18 @@ struct SliceAddress {
 struct NeedMutSliceCache {
     lru_cache: LruCache<SliceAddress, OwnedBytes>,
     num_bytes: usize,
-    capacity_in_bytes: usize,
+    capacity_in_bytes_opt: Option<usize>,
 }
 
 impl NeedMutSliceCache {
-    fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
+    fn with_capacity_in_bytes(capacity_in_bytes: Option<usize>) -> Self {
         NeedMutSliceCache {
             // The limit will be decided by the amount of memory in the cache,
             // not the number of items in the cache.
             // Enforcing this limit is done in the `NeedMutCache` impl.
             lru_cache: LruCache::unbounded(),
             num_bytes: 0,
-            capacity_in_bytes,
+            capacity_in_bytes_opt: capacity_in_bytes,
         }
     }
 
@@ -60,14 +61,22 @@ impl NeedMutSliceCache {
         self.lru_cache.get(cache_key).cloned()
     }
 
+    fn greater_than_capacity(&self, len: usize) -> bool {
+        if let Some(capacity_in_bytes) = self.capacity_in_bytes_opt {
+            len > capacity_in_bytes
+        } else {
+            false
+        }
+    }
+
     /// Attempt to put the given amount of data in the cache.
     /// This may fail silently if the owned_bytes slice is larger than the cache
     /// capacity.
     fn put(&mut self, slice_addr: SliceAddress, owned_bytes: OwnedBytes) {
-        if owned_bytes.len() > self.capacity_in_bytes {
+        if self.greater_than_capacity(owned_bytes.len()) {
             // The value does not fit in the cache. We simply don't store it.
             warn!(
-                capacity_in_bytes = self.capacity_in_bytes,
+                capacity_in_bytes = ?self.capacity_in_bytes_opt,
                 len = owned_bytes.len(),
                 "Downloaded a byte slice larger than the cache capacity."
             );
@@ -76,10 +85,11 @@ impl NeedMutSliceCache {
         if let Some(previous_data) = self.lru_cache.pop(&slice_addr) {
             self.num_bytes -= previous_data.len();
         }
-        while self.num_bytes + owned_bytes.len() >= self.capacity_in_bytes {
+        while self.greater_than_capacity(self.num_bytes + owned_bytes.len()) {
             if let Some((_, bytes)) = self.lru_cache.pop_lru() {
                 self.num_bytes -= bytes.len();
             } else {
+                error!("Logical error. Even after removing all of the items in the cache the capacity is insufficient. This case is guarded against and should never happen.");
                 return;
             }
         }
@@ -96,8 +106,9 @@ pub(crate) struct SliceCache {
 impl SliceCache {
     /// Creates an slice cache with the given capacity.
     ///
-    /// The SliceCache is guaranteed to not store more than `capcity_in_bytes`.
-    pub fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
+    /// The SliceCache is guaranteed to not store more than `capacity_in_bytes`.
+    /// If None, SliceCache acts as if the capacity is unlimited.
+    pub fn with_capacity_in_bytes(capacity_in_bytes: Option<usize>) -> Self {
         SliceCache {
             inner: Mutex::new(NeedMutSliceCache::with_capacity_in_bytes(capacity_in_bytes)),
         }
@@ -138,11 +149,23 @@ impl CachingDirectory {
     /// In that case, the read payload will not be saved in the cache.
     pub fn new_with_capacity_in_bytes(
         underlying: Arc<dyn Directory>,
-        capacity_in_bytes: usize,
+        capacity_in_bytes: Option<usize>,
     ) -> CachingDirectory {
         CachingDirectory {
             underlying,
             cache: Arc::new(SliceCache::with_capacity_in_bytes(capacity_in_bytes)),
+        }
+    }
+
+    /// Creates a new  CachingDirectory.
+    ///
+    /// Warming: The resulting CacheDirectory will cache all information without ever
+    /// removing any item from the cache.
+    /// Prefer using `.new_with_capacity_in_bytes(...)` in most case.
+    pub fn new_with_unlimited_capacity(underlying: Arc<dyn Directory>) -> CachingDirectory {
+        CachingDirectory {
+            underlying,
+            cache: Arc::new(SliceCache::with_capacity_in_bytes(None)),
         }
     }
 }
@@ -268,7 +291,7 @@ mod tests {
 
     #[test]
     fn test_cache() {
-        let cache = SliceCache::with_capacity_in_bytes(10_000);
+        let cache = SliceCache::with_capacity_in_bytes(Some(10_000));
         let slice_address = SliceAddress {
             path: PathBuf::from("hello.seg"),
             byte_range: 1..3,
@@ -284,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_cache_different_slice() {
-        let cache = SliceCache::with_capacity_in_bytes(10_000);
+        let cache = SliceCache::with_capacity_in_bytes(Some(10_000));
         let mut slice_address = SliceAddress {
             path: PathBuf::from("hello.seg"),
             byte_range: 1..3,
@@ -302,8 +325,10 @@ mod tests {
         let test_path = Path::new("test");
         ram_directory.atomic_write(test_path, &b"test"[..])?;
         let debug_proxy_directory = Arc::new(DebugProxyDirectory::wrap(ram_directory));
-        let caching_directory =
-            CachingDirectory::new_with_capacity_in_bytes(debug_proxy_directory.clone(), 10_000);
+        let caching_directory = CachingDirectory::new_with_capacity_in_bytes(
+            debug_proxy_directory.clone(),
+            Some(10_000),
+        );
         caching_directory.atomic_read(test_path)?;
         caching_directory.atomic_read(test_path)?;
         let records: Vec<crate::ReadOperation> =
@@ -312,5 +337,68 @@ mod tests {
         Ok(())
     }
 
-    // TODO test eviction
+    #[test]
+    fn test_cache_edge_condition() {
+        let cache = SliceCache::with_capacity_in_bytes(Some(5));
+        let slice_of_nbytes = |num_bytes: usize| SliceAddress {
+            path: PathBuf::from(format!("file{}", num_bytes)),
+            byte_range: 0..num_bytes,
+        };
+        let three_bytes = slice_of_nbytes(3);
+        let two_bytes = slice_of_nbytes(2);
+        let five_bytes = slice_of_nbytes(5);
+        let six_bytes = slice_of_nbytes(6);
+
+        {
+            let data = OwnedBytes::new(&b"abc"[..]);
+            cache.put(three_bytes.clone(), data);
+            assert_eq!(cache.get(&three_bytes).unwrap().as_slice(), &b"abc"[..]);
+        }
+        {
+            let data = OwnedBytes::new(&b"de"[..]);
+            cache.put(two_bytes.clone(), data);
+            // our first entry should still be here.
+            assert_eq!(cache.get(&three_bytes).unwrap().as_slice(), &b"abc"[..]);
+            assert_eq!(cache.get(&two_bytes).unwrap().as_slice(), &b"de"[..]);
+        }
+        {
+            let data = OwnedBytes::new(&b"fghij"[..]);
+            cache.put(five_bytes.clone(), data);
+            assert_eq!(cache.get(&five_bytes).unwrap().as_slice(), &b"fghij"[..]);
+            // our two first entries should have be removed from the cache
+            assert!(cache.get(&two_bytes).is_none());
+            assert!(cache.get(&three_bytes).is_none());
+        }
+        {
+            let data = OwnedBytes::new(&b"klmnop"[..]);
+            cache.put(six_bytes.clone(), data);
+            // The entry put should have been dismissed as it is too large for the cache
+            assert!(cache.get(&six_bytes).is_none());
+            // The previous entry should however be remaining.
+            assert_eq!(cache.get(&five_bytes).unwrap().as_slice(), &b"fghij"[..]);
+        }
+    }
+
+    #[test]
+    fn test_cache_edge_unlimited_capacity() {
+        let cache = SliceCache::with_capacity_in_bytes(None);
+        let slice_of_nbytes = |num_bytes: usize| SliceAddress {
+            path: PathBuf::from(format!("file{}", num_bytes)),
+            byte_range: 0..num_bytes,
+        };
+        let three_bytes = slice_of_nbytes(3);
+        let two_bytes = slice_of_nbytes(2);
+
+        {
+            let data = OwnedBytes::new(&b"abc"[..]);
+            cache.put(three_bytes.clone(), data);
+            assert_eq!(cache.get(&three_bytes).unwrap().as_slice(), &b"abc"[..]);
+        }
+        {
+            let data = OwnedBytes::new(&b"de"[..]);
+            cache.put(two_bytes.clone(), data);
+            assert_eq!(cache.get(&three_bytes).unwrap().as_slice(), &b"abc"[..]);
+            assert_eq!(cache.get(&two_bytes).unwrap().as_slice(), &b"de"[..]);
+        }
+    }
 }

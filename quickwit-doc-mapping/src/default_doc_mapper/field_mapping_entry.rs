@@ -21,12 +21,13 @@
 */
 
 use anyhow::bail;
+use chrono::{FixedOffset, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use std::convert::TryFrom;
-use tantivy::schema::BytesOptions;
+use tantivy::schema::{BytesOptions, FieldType};
 use tantivy::schema::{
-    Cardinality, DocParsingError as TantivyDocParser, FieldEntry, IndexRecordOption, IntOptions,
+    Cardinality, DocParsingError as TantivyDocParser, IndexRecordOption, IntOptions,
     TextFieldIndexing, TextOptions, Value,
 };
 use thiserror::Error;
@@ -66,35 +67,23 @@ impl FieldMappingEntry {
     /// Return field entries that must be added to the schema.
     // TODO: can be more efficient to pass a collector in argument (a schema builder)
     // on which we add entry fields.
-    pub fn field_entries(&self) -> anyhow::Result<Vec<(FieldPath, FieldEntry)>> {
+    pub fn field_entries(&self) -> anyhow::Result<Vec<(FieldPath, FieldType)>> {
         let field_path = FieldPath::new(&self.name);
-        let field_name = field_path.tantivy_field_name();
         let results = match &self.mapping_type {
-            // TODO: would be nicer to build only a field type here but currently
-            // there's no field entry constructor from a field type
             FieldMappingType::Text(options, _) => {
-                vec![(
-                    field_path,
-                    FieldEntry::new_text(field_name, options.clone()),
-                )]
+                vec![(field_path, FieldType::Str(options.clone()))]
             }
             FieldMappingType::I64(options, _) => {
-                vec![(field_path, FieldEntry::new_i64(field_name, options.clone()))]
+                vec![(field_path, FieldType::I64(options.clone()))]
             }
             FieldMappingType::F64(options, _) => {
-                vec![(field_path, FieldEntry::new_f64(field_name, options.clone()))]
+                vec![(field_path, FieldType::F64(options.clone()))]
             }
             FieldMappingType::Date(options, _) => {
-                vec![(
-                    field_path,
-                    FieldEntry::new_date(field_name, options.clone()),
-                )]
+                vec![(field_path, FieldType::Date(options.clone()))]
             }
             FieldMappingType::Bytes(options, _) => {
-                vec![(
-                    field_path,
-                    FieldEntry::new_bytes(field_name, options.clone()),
-                )]
+                vec![(field_path, FieldType::Bytes(options.clone()))]
             }
             FieldMappingType::Object(field_mappings) => field_mappings
                 .iter()
@@ -145,7 +134,7 @@ impl FieldMappingEntry {
         }
     }
 
-    pub fn parse_text(
+    fn parse_text(
         &self,
         json_value: &JsonValue,
         options: &TextOptions,
@@ -170,17 +159,20 @@ impl FieldMappingEntry {
                     Value::Str(value_as_str.to_owned()),
                 )]
             }
+            JsonValue::Null => {
+                vec![]
+            }
             _ => {
                 return Err(DocParsingError::ValueError(
                     self.name.clone(),
-                    "text type only support json string value".to_owned(),
+                    format!("expected json string, got '{}'.", json_value),
                 ));
             }
         };
         Ok(parsed_values)
     }
 
-    pub fn parse_i64(
+    fn parse_i64(
         &self,
         json_value: &JsonValue,
         options: &IntOptions,
@@ -208,48 +200,172 @@ impl FieldMappingEntry {
                 } else {
                     return Err(DocParsingError::ValueError(
                         self.name.clone(),
-                        "cannot convert json number to i64".to_owned(),
+                        format!("expected i64, got '{}'.", value_as_number),
                     ));
                 }
+            }
+            JsonValue::Null => {
+                vec![]
             }
             _ => {
                 return Err(DocParsingError::ValueError(
                     self.name.clone(),
-                    "i64 type only support json number".to_owned(),
+                    format!(
+                        "expected json number or array of json numbers, got '{}'.",
+                        json_value
+                    ),
                 ))
             }
         };
         Ok(parsed_values)
     }
 
-    pub fn parse_f64(
+    fn parse_f64(
         &self,
-        _json_value: &JsonValue,
-        _options: &IntOptions,
-        _cardinality: &Cardinality,
+        json_value: &JsonValue,
+        options: &IntOptions,
+        cardinality: &Cardinality,
     ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
-        todo!()
+        let parsed_values = match json_value {
+            JsonValue::Array(array) => {
+                if cardinality != &Cardinality::MultiValues {
+                    return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
+                }
+                array
+                    .iter()
+                    .map(|element| self.parse_f64(&element, options, cardinality))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect()
+            }
+            JsonValue::Number(value_as_number) => {
+                if let Some(value_as_f64) = value_as_number.as_f64() {
+                    vec![(
+                        FieldPath::new(&self.name),
+                        Value::F64(value_as_f64.to_owned()),
+                    )]
+                } else {
+                    return Err(DocParsingError::ValueError(
+                        self.name.clone(),
+                        format!(
+                            "expected f64, got inconvertible json number '{}'.",
+                            value_as_number
+                        ),
+                    ));
+                }
+            }
+            JsonValue::Null => {
+                vec![]
+            }
+            _ => {
+                return Err(DocParsingError::ValueError(
+                    self.name.clone(),
+                    format!(
+                        "expected json number or array of json numbers, got '{}'.",
+                        json_value
+                    ),
+                ))
+            }
+        };
+        Ok(parsed_values)
     }
 
-    pub fn parse_date(
+    fn parse_date(
         &self,
-        _json_value: &JsonValue,
-        _options: &IntOptions,
-        _cardinality: &Cardinality,
+        json_value: &JsonValue,
+        options: &IntOptions,
+        cardinality: &Cardinality,
     ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
-        todo!()
+        let parsed_values = match json_value {
+            JsonValue::Array(array) => {
+                if cardinality != &Cardinality::MultiValues {
+                    return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
+                }
+                array
+                    .iter()
+                    .map(|element| self.parse_date(&element, options, cardinality))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect()
+            }
+            JsonValue::String(value_as_str) => {
+                let dt_with_fixed_tz: chrono::DateTime<FixedOffset> =
+                    chrono::DateTime::parse_from_rfc3339(value_as_str).map_err(|err| {
+                        DocParsingError::ValueError(
+                            self.name.clone(),
+                            format!(
+                                "expected date in rfc3339 format, got '{}'. {:?}",
+                                value_as_str, err
+                            ),
+                        )
+                    })?;
+                vec![(
+                    FieldPath::new(&self.name),
+                    Value::Date(dt_with_fixed_tz.with_timezone(&Utc)),
+                )]
+            }
+            JsonValue::Null => {
+                vec![]
+            }
+            _ => {
+                return Err(DocParsingError::ValueError(
+                    self.name.clone(),
+                    format!(
+                        "expected date as a string in rfc3339 format, got '{}'.",
+                        json_value
+                    ),
+                ))
+            }
+        };
+        Ok(parsed_values)
     }
 
-    pub fn parse_bytes(
+    fn parse_bytes(
         &self,
-        _json_value: &JsonValue,
-        _options: &BytesOptions,
-        _cardinality: &Cardinality,
+        json_value: &JsonValue,
+        options: &BytesOptions,
+        cardinality: &Cardinality,
     ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
-        todo!()
+        let parsed_values = match json_value {
+            JsonValue::Array(array) => {
+                if cardinality != &Cardinality::MultiValues {
+                    return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
+                }
+                array
+                    .iter()
+                    .map(|element| self.parse_bytes(&element, options, cardinality))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect()
+            }
+            JsonValue::String(value_as_str) => {
+                let value = base64::decode(value_as_str)
+                    .map(Value::Bytes)
+                    .map_err(|_| {
+                        DocParsingError::ValueError(
+                            self.name.clone(),
+                            format!("expected base64 string, got '{}'", value_as_str),
+                        )
+                    })?;
+                vec![(FieldPath::new(&self.name), value)]
+            }
+            JsonValue::Null => {
+                vec![]
+            }
+            _ => {
+                return Err(DocParsingError::ValueError(
+                    self.name.clone(),
+                    format!("expected json string for bytes field, got '{}'", json_value),
+                ))
+            }
+        };
+        Ok(parsed_values)
     }
 
-    pub fn parse_object<'a>(
+    fn parse_object<'a>(
         &'a self,
         json_value: &JsonValue,
         entries: &'a [FieldMappingEntry],
@@ -257,7 +373,7 @@ impl FieldMappingEntry {
         let parsed_values = match json_value {
             JsonValue::Array(_) => {
                 // TODO: we can support it but we need to do some extra validation on
-                // the field mappings and they must be all multivalued.
+                // the field mappings as they must be all multivalued.
                 return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
             }
             JsonValue::Object(object) => {
@@ -267,7 +383,7 @@ impl FieldMappingEntry {
                         if let Some(child) = object.get(&entry.name) {
                             entry.parse(child)
                         } else {
-                            // TODO: define if we need to raise an error or not.
+                            // Ignore missing keys
                             Ok(vec![])
                         }
                     })
@@ -277,10 +393,13 @@ impl FieldMappingEntry {
                     .map(|(path, entry)| (path.with_parent(&self.name), entry))
                     .collect()
             }
+            JsonValue::Null => {
+                vec![]
+            }
             _ => {
                 return Err(DocParsingError::ValueError(
                     self.name.clone(),
-                    "object type only support json object".to_owned(),
+                    format!("expected an json object, got '{}'.", json_value),
                 ))
             }
         };
@@ -556,7 +675,7 @@ pub enum DocParsingError {
     #[error("The provided string is not valid JSON")]
     NotJson(String),
     /// One of the value could not be parsed.
-    #[error("The field '{0:?}' could not be parsed: {1:?}")]
+    #[error("The field '{0}' could not be parsed: {1}")]
     ValueError(String, String),
     /// The json-document contains a field that is not declared in the schema.
     #[error("The document contains a field that is not declared in the schema: {0:?}")]
@@ -582,10 +701,12 @@ impl From<TantivyDocParser> for DocParsingError {
 
 #[cfg(test)]
 mod tests {
+    use crate::{default_doc_mapper::FieldMappingType, DocParsingError};
     use anyhow::bail;
-    use tantivy::schema::Cardinality;
-
-    use crate::default_doc_mapper::FieldMappingType;
+    use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+    use matches::matches;
+    use serde_json::json;
+    use tantivy::schema::{Cardinality, Value};
 
     use super::FieldMappingEntry;
 
@@ -770,6 +891,295 @@ mod tests {
         )?;
         let entry_str = serde_json::to_string(&entry)?;
         assert_eq!(entry_str, "{\"name\":\"my_field_name\",\"type\":\"i64\",\"stored\":true,\"fast\":false,\"indexed\":true}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_i64() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "i64"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!(10))?;
+        assert_eq!(parsed_value.len(), 1);
+        assert_eq!(parsed_value[0].0.field_name(), "my_field_name".to_owned());
+        assert_eq!(parsed_value[0].1, Value::I64(10));
+
+        let parsed_value = entry.parse(&json!(null));
+        assert!(parsed_value.unwrap().is_empty());
+
+        // Failed parsing
+        let parsed_error = entry.parse(&json!(1.2));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!([1, 2]));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::MultiValuesNotSupported(_))
+        ));
+        let parsed_error = entry.parse(&json!(9223372036854775808_u64));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!("12"));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!("{}"));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_mutivalued_i64() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "array<i64>"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!([10, 20]))?;
+        assert_eq!(parsed_value.len(), 2);
+        assert_eq!(parsed_value[0].1, Value::I64(10));
+        assert_eq!(parsed_value[1].1, Value::I64(20));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_f64() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "f64"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!(10.2))?;
+        assert_eq!(parsed_value[0].0.field_name(), "my_field_name");
+        assert_eq!(parsed_value[0].1, Value::F64(10.2));
+
+        let parsed_value = entry.parse(&json!(10))?;
+        assert_eq!(parsed_value[0].1, Value::F64(10.0));
+
+        let parsed_value = entry.parse(&json!(null));
+        assert!(parsed_value.unwrap().is_empty());
+
+        // Failed parsing
+        let parsed_error = entry.parse(&json!("123"));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!([1, 2]));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::MultiValuesNotSupported(_))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_mutivalued_f64() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "array<f64>"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!([10, 20.5]))?;
+        assert_eq!(parsed_value.len(), 2);
+        assert_eq!(parsed_value[0].1, Value::F64(10.0));
+        assert_eq!(parsed_value[1].1, Value::F64(20.5));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_text() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "text"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!("bacon and eggs"))?;
+        assert_eq!(parsed_value[0].0.field_name(), "my_field_name");
+        assert_eq!(parsed_value[0].1, Value::Str("bacon and eggs".to_owned()));
+
+        let parsed_value = entry.parse(&json!(null));
+        assert!(parsed_value.unwrap().is_empty());
+
+        // Failed parsing
+        let parsed_error = entry.parse(&json!(123));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!(["1"]));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::MultiValuesNotSupported(_))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_mutivalued_text() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "array<text>"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!(["one", "two"]))?;
+        assert_eq!(parsed_value.len(), 2);
+        assert_eq!(parsed_value[0].1, Value::Str("one".to_owned()));
+        assert_eq!(parsed_value[1].1, Value::Str("two".to_owned()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_date() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "date"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!("2021-12-19T16:39:57-01:00"))?;
+        let datetime = NaiveDateTime::new(
+            NaiveDate::from_ymd(2021, 12, 19),
+            NaiveTime::from_hms(17, 39, 57),
+        );
+        let datetime_utc = Utc.from_utc_datetime(&datetime);
+        assert_eq!(parsed_value.len(), 1);
+        assert_eq!(parsed_value[0].1, Value::Date(datetime_utc));
+
+        let parsed_value = entry.parse(&json!(null));
+        assert!(parsed_value.unwrap().is_empty());
+
+        // Failed parsing
+        let parsed_error = entry.parse(&json!(123));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!(["2021-12-19T16:39:57-08:00"]));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::MultiValuesNotSupported(_))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_mutivalued_date() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "array<date>"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!([
+            "2021-12-19T16:39:57-01:00",
+            "2021-12-20T16:39:57-01:00"
+        ]))?;
+        assert_eq!(parsed_value.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_bytes() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "bytes"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!("dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw=="))?;
+        assert_eq!(parsed_value.len(), 1);
+        assert_eq!(
+            parsed_value[0].1,
+            Value::Bytes("this is a base64 encoded string".as_bytes().to_vec())
+        );
+
+        let parsed_value = entry.parse(&json!(null));
+        assert!(parsed_value.unwrap().is_empty());
+
+        // Failed parsing
+        let parsed_error = entry.parse(&json!("not base64 encoded string"));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!(["dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw=="]));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::MultiValuesNotSupported(_))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_mutivalued_bytes() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "array<bytes>"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!([
+            "dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw==",
+            "dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw=="
+        ]))?;
+        assert_eq!(parsed_value.len(), 2);
         Ok(())
     }
 }

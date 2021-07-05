@@ -1,0 +1,36 @@
+name:                           coverage
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+jobs:
+  test:
+    name:                       coverage
+    runs-on:                    ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup localstack
+        run: docker-compose -f localstack.yaml up -d
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustfmt, clippy
+      - name: Create bucket in localstack
+        run: docker-compose -f localstack.yaml exec -T localstack awslocal s3 mb s3://quickwit-integration-tests
+      - name: Install nightly
+        run: rustup toolchain install nightly
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+      - name: Generate code coverage
+        env:
+          AWS_ACCESS_KEY_ID: dummy-access-key
+          AWS_SECRET_ACCESS_KEY: dummy-secret-key
+        run: |
+          cargo +nightly tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
+      - name:                   Upload to codecov.io
+        uses:                   codecov/codecov-action@v1
+        with:
+          # token:                ${{secrets.CODECOV_TOKEN}} # not required for public repos
+          fail_ci_if_error:     true
