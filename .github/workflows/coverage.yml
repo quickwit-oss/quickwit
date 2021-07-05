@@ -19,7 +19,7 @@ jobs:
       - name: Create bucket in localstack
         run: docker-compose -f localstack.yaml exec -T localstack awslocal s3 mb s3://quickwit-integration-tests
       - name: Install tarpaulin
-        run: cargo install tarpaulin
+        run: cargo install cargo-tarpaulin
       - name: Generate code coverage
         env:
           AWS_ACCESS_KEY_ID: dummy-access-key
