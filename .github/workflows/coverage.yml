@@ -15,7 +15,7 @@ jobs:
         run: docker-compose -f localstack.yaml up -d
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: nightly
       - name: Create bucket in localstack
         run: docker-compose -f localstack.yaml exec -T localstack awslocal s3 mb s3://quickwit-integration-tests
       - name: Install tarpaulin
