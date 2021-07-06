@@ -30,6 +30,7 @@ mod all_flatten_mapper;
 mod default_doc_mapper;
 mod error;
 mod mapper;
+mod query_builder;
 mod wikipedia_mapper;
 
 pub use error::QueryParserError;
