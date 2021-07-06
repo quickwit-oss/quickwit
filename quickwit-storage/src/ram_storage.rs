@@ -23,6 +23,7 @@
 use crate::add_prefix_to_storage;
 use crate::{PutPayload, Storage, StorageErrorKind, StorageFactory, StorageResult};
 use async_trait::async_trait;
+use bytes::Bytes;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -37,7 +38,7 @@ use tokio::sync::RwLock;
 /// This implementation is mostly useful in unit tests.
 #[derive(Default, Clone)]
 pub struct RamStorage {
-    files: Arc<RwLock<HashMap<PathBuf, Arc<[u8]>>>>,
+    files: Arc<RwLock<HashMap<PathBuf, Bytes>>>,
 }
 
 impl fmt::Debug for RamStorage {
@@ -52,21 +53,19 @@ impl RamStorage {
         RamStorageBuilder::default()
     }
 
-    async fn put_data(&self, path: &Path, payload: Arc<[u8]>) {
+    async fn put_data(&self, path: &Path, payload: Bytes) {
         self.files.write().await.insert(path.to_path_buf(), payload);
     }
 
-    async fn get_data(&self, path: &Path) -> Option<Arc<[u8]>> {
+    async fn get_data(&self, path: &Path) -> Option<Bytes> {
         self.files.read().await.get(path).cloned()
     }
 }
 
-async fn read_all(put: &PutPayload) -> io::Result<Arc<[u8]>> {
+async fn read_all(put: &PutPayload) -> io::Result<Bytes> {
     match put {
         PutPayload::InMemory(data) => Ok(data.clone()),
-        PutPayload::LocalFile(filepath) => tokio::fs::read(filepath)
-            .await
-            .map(|buf| buf.into_boxed_slice().into()),
+        PutPayload::LocalFile(filepath) => tokio::fs::read(filepath).await.map(Bytes::from),
     }
 }
 
@@ -89,12 +88,12 @@ impl Storage for RamStorage {
         Ok(())
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Vec<u8>> {
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
             StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
         })?;
-        Ok(payload_bytes[range.start as usize..range.end as usize].to_vec())
+        Ok(payload_bytes.slice(range.start as usize..range.end as usize))
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
@@ -102,12 +101,12 @@ impl Storage for RamStorage {
         Ok(())
     }
 
-    async fn get_all(&self, path: &Path) -> StorageResult<Vec<u8>> {
+    async fn get_all(&self, path: &Path) -> StorageResult<Bytes> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
             StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
         })?;
-        Ok(payload_bytes.to_vec())
+        Ok(payload_bytes)
     }
 
     async fn exists(&self, path: &Path) -> StorageResult<bool> {
@@ -122,16 +121,14 @@ impl Storage for RamStorage {
 /// Builder to create a prepopulated [`RamStorage`]. This is mostly useful for tests.
 #[derive(Default)]
 pub struct RamStorageBuilder {
-    files: HashMap<PathBuf, Arc<[u8]>>,
+    files: HashMap<PathBuf, Bytes>,
 }
 
 impl RamStorageBuilder {
     /// Adds a new file into the [`RamStorageBuilder`].
     pub fn put(mut self, path: &str, payload: &[u8]) -> Self {
-        self.files.insert(
-            PathBuf::from(path),
-            payload.to_vec().into_boxed_slice().into(),
-        );
+        self.files
+            .insert(PathBuf::from(path), Bytes::from(payload.to_vec()));
         self
     }
 
@@ -214,11 +211,11 @@ mod tests {
             .build();
         assert_eq!(
             &storage.get_all(Path::new("path1")).await?,
-            b"path1_payloadb"
+            &b"path1_payloadb"[..]
         );
         assert_eq!(
             &storage.get_all(Path::new("path2")).await?,
-            b"path2_payload"
+            &b"path2_payload"[..]
         );
         Ok(())
     }

@@ -22,6 +22,7 @@
 
 use crate::{PutPayload, Storage, StorageErrorKind, StorageFactory, StorageResult};
 use async_trait::async_trait;
+use bytes::Bytes;
 use futures::future::{BoxFuture, FutureExt};
 use std::fmt;
 use std::io::{ErrorKind, SeekFrom};
@@ -102,13 +103,13 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Vec<u8>> {
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
         let full_path = self.root.join(path);
         let mut file = fs::File::open(full_path).await?;
         file.seek(SeekFrom::Start(range.start as u64)).await?;
         let mut content_bytes = vec![0u8; range.len()];
         file.read_exact(&mut content_bytes).await?;
-        Ok(content_bytes)
+        Ok(Bytes::from(content_bytes))
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
@@ -125,10 +126,10 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
-    async fn get_all(&self, path: &Path) -> StorageResult<Vec<u8>> {
+    async fn get_all(&self, path: &Path) -> StorageResult<Bytes> {
         let full_path = self.root.join(path);
         let content_bytes = fs::read(full_path).await?;
-        Ok(content_bytes)
+        Ok(Bytes::from(content_bytes))
     }
 
     fn uri(&self) -> String {

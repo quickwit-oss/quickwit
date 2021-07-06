@@ -37,5 +37,5 @@ mod storage_directory;
 
 pub use self::caching_directory::CachingDirectory;
 pub use self::debug_proxy_directory::{DebugProxyDirectory, ReadOperation};
-pub use self::hot_directory::{write_hotcache, HotDirectory};
+pub use self::hot_directory::{write_hotcache, HotDirectory, HOTCACHE_FILENAME};
 pub use self::storage_directory::StorageDirectory;
