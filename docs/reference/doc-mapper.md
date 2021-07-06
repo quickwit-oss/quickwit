@@ -24,7 +24,8 @@ The `doc mapper` is defined by a json file given to Quickwit CLI at the creation
     "field_mappings": [
         {
             "name": "timestamp",
-            "type": "i64"
+            "type": "i64",
+            "fast": true
         },
         {
             "name": "severity_text",
