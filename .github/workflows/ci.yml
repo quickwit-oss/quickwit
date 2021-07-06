@@ -37,11 +37,16 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-      - run: cargo clippy --all --tests
+          components: clippy, rustfmt # fmt required when generating proto
+      - uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all --tests
       - uses: actions-rs/install@v0.1
         name: install cargo deny
         with:
           crate: cargo-deny
+          use-tool-cache: true
       - uses: actions-rs/cargo@v1
         name: cargo deny
         with:
@@ -56,6 +61,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+          components: rustfmt # fmt required when generating proto
       - run: cargo fmt --all -- --check
 
   test:
@@ -68,6 +74,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+          components: rustfmt
       - name: Create bucket in localstack
         run: docker-compose -f localstack.yaml exec -T localstack awslocal s3 mb s3://quickwit-integration-tests
       - name: Run all tests.

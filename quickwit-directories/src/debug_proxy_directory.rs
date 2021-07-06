@@ -52,7 +52,7 @@ impl OperationBuffer {
         ops.into_iter()
     }
 
-    async fn push(&self, read_operation: ReadOperation) {
+    fn push(&self, read_operation: ReadOperation) {
         let mut guard = self.0.lock().expect("Mutex poisoned");
         guard.push(read_operation);
     }
@@ -159,7 +159,7 @@ impl<D: Directory> DebugProxyDirectory<D> {
 
     /// Adds a new operation in an async fashion.
     async fn register_async(&self, read_op: ReadOperation) {
-        let _ = self.operations.push(read_op).await;
+        let _ = self.operations.push(read_op);
     }
 }
 
