@@ -31,6 +31,9 @@ pub use self::default_mapper::{DefaultDocMapper, DefaultDocMapperBuilder};
 pub use self::field_mapping_entry::{DocParsingError, FieldMappingEntry};
 pub use self::field_mapping_type::FieldMappingType;
 
+/// Field name reserved for storing the source document.
+pub static SOURCE_FIELD_NAME: &str = "_source";
+
 /// Regular expression representing the restriction on a valid field name.
 pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[_a-zA-Z][_\.\-a-zA-Z0-9]*$"#;
 
@@ -38,7 +41,7 @@ pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[_a-zA-Z][_\.\-a-zA-Z0-9]*$"#;
 /// Returns true if the name can be use for a field mapping name.
 ///
 /// A field mapping name must start by a letter `[a-zA-Z]`.
-/// The other characters can be any alphanumic character `[a-ZA-Z0-9]` or `_` or `.`.
+/// The other characters can be any alphanumic character `[a-ZA-Z0-9]` or `_`, `.`, `-`.
 pub fn is_valid_field_mapping_name(field_mapping_name: &str) -> bool {
     static FIELD_MAPPING_NAME_PTN: Lazy<Regex> =
         Lazy::new(|| Regex::new(FIELD_MAPPING_NAME_PATTERN).unwrap());

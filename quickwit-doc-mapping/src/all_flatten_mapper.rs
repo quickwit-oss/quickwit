@@ -20,7 +20,10 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::{query_builder::build_query, DocMapper, DocParsingError, QueryParserError};
+use crate::{
+    default_doc_mapper::SOURCE_FIELD_NAME, query_builder::build_query, DocMapper, DocParsingError,
+    QueryParserError,
+};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use tantivy::{
@@ -58,7 +61,7 @@ impl AllFlattenDocMapper {
 
     fn default_schema() -> Schema {
         let mut schema_builder = SchemaBuilder::new();
-        schema_builder.add_text_field("_source", STORED);
+        schema_builder.add_text_field(SOURCE_FIELD_NAME, STORED);
         schema_builder.build()
     }
 }
@@ -68,15 +71,15 @@ impl DocMapper for AllFlattenDocMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let source = self
             .schema
-            .get_field("_source")
-            .ok_or_else(|| DocParsingError::NoSuchFieldInSchema("_source".to_string()))?;
+            .get_field(SOURCE_FIELD_NAME)
+            .ok_or_else(|| DocParsingError::NoSuchFieldInSchema(SOURCE_FIELD_NAME.to_string()))?;
         let mut document = self.schema.parse_document(doc_json)?;
         document.add_text(source, doc_json);
         Ok(document)
     }
 
     fn query(&self, request: &SearchRequest) -> Result<Box<dyn Query>, QueryParserError> {
-        let default_search_field_names = vec!["_source".to_string()];
+        let default_search_field_names = vec![SOURCE_FIELD_NAME.to_string()];
         build_query(self.schema(), request, &default_search_field_names)
     }
 

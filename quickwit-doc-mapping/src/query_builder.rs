@@ -110,7 +110,6 @@ mod test {
         let query_result = build_query(make_schema(), &request, &default_field_names);
         match expected {
             TestExpectation::Err(sub_str) => {
-                println!("EVAN {:?} {}", query_result, sub_str);
                 assert_eq!(format!("{:?}", query_result).contains(sub_str), true);
             }
             TestExpectation::Ok(sub_str) => {

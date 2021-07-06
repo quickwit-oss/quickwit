@@ -20,7 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use super::default_as_true;
+use super::{default_as_true, SOURCE_FIELD_NAME};
 use super::{field_mapping_entry::DocParsingError, FieldMappingEntry, FieldMappingType};
 use crate::query_builder::build_query;
 use crate::{DocMapper, QueryParserError};
@@ -35,8 +35,6 @@ use tantivy::{
     schema::{FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, STORED},
     Document,
 };
-
-static SOURCE_FIELD_NAME: &str = "_source";
 
 /// DefaultDocMapperBuilder is here
 /// to create a valid DefaultDocMapper.
@@ -110,9 +108,6 @@ impl DefaultDocMapperBuilder {
     }
 
     /// Build the schema from the field mappings and store_source parameter.
-    /// Warning: tantivy does not support `.` character but quickwit does, so we must
-    /// convert a field name to a tantivy compatible field name
-    /// when building a `FieldEntry`.
     fn build_schema(&self) -> anyhow::Result<Schema> {
         let mut builder = SchemaBuilder::new();
         let mut unique_field_names: HashSet<String> = HashSet::new();
@@ -125,7 +120,7 @@ impl DefaultDocMapperBuilder {
                 if unique_field_names.contains(&field_name) {
                     bail!(
                         "Field name must be unique, found duplicates for `{}`",
-                        field_path.field_name()
+                        field_name
                     );
                 }
                 unique_field_names.insert(field_name.clone());
