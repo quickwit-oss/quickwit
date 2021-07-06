@@ -47,10 +47,16 @@ impl fmt::Debug for LocalFileStorage {
 
 impl LocalFileStorage {
     /// Creates a file storage instance given a uri
+    /// Both scheme `file:///{path}` and `file://{path}` are accepted.
+    /// If uri starts with `file://`, a `/` is automatically added to ensure
+    /// `path` starts from root. 
     pub fn from_uri(uri: &str) -> StorageResult<LocalFileStorage> {
-        let root_path = uri.split("://").nth(1).ok_or_else(|| {
+        let mut root_path = uri.split("://").nth(1).ok_or_else(|| {
             StorageErrorKind::DoesNotExist.with_error(anyhow::anyhow!("Invalid root path: {}", uri))
-        })?;
+        })?.to_string();
+        if !root_path.starts_with('/') {
+            root_path.insert(0, '/');
+        }
         let pathbuf = PathBuf::from(root_path);
         if pathbuf.into_iter().any(|segment| segment.to_string_lossy() == "..") {
             return Err(StorageErrorKind::Io.with_error(anyhow::anyhow!("Invalid uri, `..` is forbidden: {}", uri)));
@@ -208,6 +214,13 @@ mod tests {
     #[test]
     fn test_storage_should_not_fail_if_dots_inside_directory_name() {
         LocalFileStorage::from_uri("file:///tmp/abc../").unwrap();
+    }
+
+    #[test]
+    fn test_storage_should_automatically_start_from_root() -> anyhow::Result<()> {
+        let storage = LocalFileStorage::from_uri("file://tmp/abc../")?;
+        assert_eq!(storage.uri(), "file:///tmp/abc../");
+        Ok(())
     }
 
     #[test]
