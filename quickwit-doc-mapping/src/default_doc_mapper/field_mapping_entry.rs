@@ -20,7 +20,6 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use crate::default_doc_mapper::is_valid_field_mapping_name;
 use anyhow::bail;
 use chrono::{FixedOffset, Utc};
 use serde::{Deserialize, Serialize};
@@ -33,8 +32,10 @@ use tantivy::schema::{
 };
 use thiserror::Error;
 
+use crate::default_doc_mapper::is_valid_field_mapping_name;
+
+use super::default_as_true;
 use super::FieldMappingType;
-use super::{default_as_true, TANTIVY_DOT_SYMBOL};
 
 /// A `FieldMappingEntry` defines how a field is indexed, stored
 /// and how it is mapped from a json document to the related index fields.
@@ -428,12 +429,6 @@ impl<'a> FieldPath<'a> {
             self.components.insert(0, parent);
         }
         self
-    }
-
-    // Returns a tantivy compatible field name.
-    pub fn tantivy_field_name(&self) -> String {
-        // Some components can contains dots.
-        self.field_name().replace(".", TANTIVY_DOT_SYMBOL)
     }
 
     // Returns field name built by joining its components with a `.` separator.

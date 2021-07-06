@@ -20,10 +20,11 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use crate::query_builder::build_query;
 use crate::{DocMapper, DocParsingError, QueryParserError};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
-use tantivy::query::{Query, QueryParser};
+use tantivy::query::Query;
 use tantivy::schema::{Schema, TextFieldIndexing, TextOptions};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::Document;
@@ -79,15 +80,8 @@ impl DocMapper for WikipediaMapper {
     }
 
     fn query(&self, request: &SearchRequest) -> Result<Box<dyn Query>, QueryParserError> {
-        let schema = self.schema();
-        let default_fields = vec![
-            schema.get_field("body").unwrap(),
-            schema.get_field("title").unwrap(),
-        ];
-        // TODO include query_parser in WikipediaMapper.
-        let query_parser = QueryParser::new(schema, default_fields, self.tokenizer_manager.clone());
-        let query = query_parser.parse_query(&request.query)?;
-        Ok(query)
+        let default_search_field_names = vec!["body".to_string(), "title".to_string()];
+        build_query(self.schema(), request, &default_search_field_names)
     }
 
     fn schema(&self) -> Schema {

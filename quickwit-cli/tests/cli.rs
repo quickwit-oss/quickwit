@@ -28,8 +28,10 @@ use crate::helpers::{create_test_env, make_command, spawn_command};
 use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
+use quickwit_cli::{create_index_cli, CreateIndexArgs};
 use quickwit_storage::{localstack_region, S3CompatibleObjectStorage, Storage};
 use serde_json::{Number, Value};
+use serial_test::serial;
 use std::{
     io::Read,
     path::{Path, PathBuf},
@@ -271,10 +273,14 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
     Ok(())
 }
 
+/// testing the api via cli commands
 #[tokio::test]
+#[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_all_with_s3_localstack() -> Result<()> {
-    let s3_path = PathBuf::from("quickwit-integration-tests/indices/data1");
+async fn test_all_with_s3_localstack_cli() -> Result<()> {
+    let data_endpoint = "data1";
+    let s3_path =
+        PathBuf::from(&("quickwit-integration-tests/indices/".to_string() + data_endpoint));
     let test_env = create_test_env(TestStorageType::S3ViaLocalStorage(s3_path))?;
     let object_storage =
         S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.index_uri)?;
@@ -330,11 +336,92 @@ async fn test_all_with_s3_localstack() -> Result<()> {
         .read_exact(&mut data)
         .expect("Cannot read output");
     let process_output_str = String::from_utf8(data).unwrap();
-    let query_response =
-        reqwest::get("http://127.0.0.1:8182/api/v1/data1/search?query=title:modern")
-            .await?
-            .text()
-            .await?;
+    let query_response = reqwest::get(format!(
+        "http://127.0.0.1:8182/api/v1/{}/search?query=title:modern",
+        data_endpoint
+    ))
+    .await?
+    .text()
+    .await?;
+    server_process.kill().unwrap();
+
+    assert!(process_output_str.contains("http://127.0.0.1:8182"));
+    let result: Value =
+        serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
+    assert_eq!(result["numHits"], Value::Number(Number::from(1i64)));
+
+    make_command(format!("delete --index-uri {} ", test_env.index_uri).as_str())
+        .assert()
+        .success();
+    let metadata_file_exist = object_storage.exists(Path::new("quickwit.json")).await?;
+    assert_eq!(metadata_file_exist, false);
+
+    Ok(())
+}
+
+/// testing the api via structs of the lib (if available)
+#[tokio::test]
+#[serial]
+#[cfg_attr(not(feature = "ci-test"), ignore)]
+async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
+    let data_endpoint = "data11";
+    let s3_path =
+        PathBuf::from(&("quickwit-integration-tests/indices/".to_string() + data_endpoint));
+    let test_env = create_test_env(TestStorageType::S3ViaLocalStorage(s3_path))?;
+    let object_storage =
+        S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.index_uri)?;
+
+    let args = CreateIndexArgs::new(test_env.index_uri.to_string(), "wikipedia", None, false)?;
+    create_index_cli(args).await?;
+
+    let metadata_file_exist = object_storage.exists(Path::new("quickwit.json")).await?;
+    assert_eq!(metadata_file_exist, true);
+
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["wiki"].as_path(),
+    );
+
+    // cli search
+    make_command(
+        format!(
+            "search --index-uri {} --query title:modern",
+            test_env.index_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::function(|output: &[u8]| {
+        let result: Value = serde_json::from_slice(output).unwrap();
+        result["numHits"] == Value::Number(Number::from(1i64))
+    }));
+
+    // serve & api-search
+    let mut server_process = spawn_command(
+        format!(
+            "serve --index-uri {} --host 127.0.0.1 --port 8182",
+            test_env.index_uri
+        )
+        .as_str(),
+    )
+    .unwrap();
+    sleep(Duration::from_secs(2)).await;
+    let mut data = vec![0; 128];
+    server_process
+        .stdout
+        .as_mut()
+        .expect("Failed to get server process output")
+        .read_exact(&mut data)
+        .expect("Cannot read output");
+    let process_output_str = String::from_utf8(data).unwrap();
+    let query_response = reqwest::get(format!(
+        "http://127.0.0.1:8182/api/v1/{}/search?query=title:modern",
+        data_endpoint
+    ))
+    .await?
+    .text()
+    .await?;
     server_process.kill().unwrap();
 
     assert!(process_output_str.contains("http://127.0.0.1:8182"));
