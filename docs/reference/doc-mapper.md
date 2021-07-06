@@ -190,6 +190,11 @@ Quickwit supports nested object as long as it does not contains arrays of object
 }
 ```
 
+## Field name validation rules
+Currently Quickwit only accepts field name that matches the following rules:
+- do not start with character `-`
+- matches regex `[_a-zA-Z][_\.\-a-zA-Z0-9]*$`
+
 
 ## Behaviour with fields not defined in the mapper
 Fields in your json document that are not defined in the `doc mapper` will be ignored.
