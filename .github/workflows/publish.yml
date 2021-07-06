@@ -19,11 +19,12 @@ jobs:
           - build: macos
             os: macos-latest
             artifact_name: quickwit-cli
-            asset_name: quickwit-cli-x86_64-apple-darwin         
-          - build: windows
-            os: windows-latest
-            artifact_name: quickwit-cli.exe
-            asset_name: quickwit-cli-x86_64-pc-windows.exe
+            asset_name: quickwit-cli-x86_64-apple-darwin
+          # TODO: uncomment this when windows is fully supported.         
+          # - build: windows
+          #   os: windows-latest
+          #   artifact_name: quickwit-cli.exe
+          #   asset_name: quickwit-cli-x86_64-pc-windows.exe
 
     steps:
       - uses: actions/checkout@v2
