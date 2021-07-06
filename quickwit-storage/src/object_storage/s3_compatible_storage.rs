@@ -137,15 +137,16 @@ pub fn parse_uri(uri: &str) -> Option<(String, PathBuf)> {
             Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)/(?P<path>.+)").unwrap()
         })
         .captures(uri)
-        .and_then(|cap| match cap.name("bucket") {
-            Some(bucket_match) => Some((
-                bucket_match.as_str().to_string(),
-                cap.name("path").map_or_else(
-                    || PathBuf::from(""),
-                    |path_match| PathBuf::from(path_match.as_str()),
-                ),
-            )),
-            _ => None,
+        .and_then(|cap| {
+            cap.name("bucket").map(|bucket_match| {
+                (
+                    bucket_match.as_str().to_string(),
+                    cap.name("path").map_or_else(
+                        || PathBuf::from(""),
+                        |path_match| PathBuf::from(path_match.as_str()),
+                    ),
+                )
+            })
         })
 }
 
