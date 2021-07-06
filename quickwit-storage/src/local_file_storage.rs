@@ -49,17 +49,26 @@ impl LocalFileStorage {
     /// Creates a file storage instance given a uri
     /// Both scheme `file:///{path}` and `file://{path}` are accepted.
     /// If uri starts with `file://`, a `/` is automatically added to ensure
-    /// `path` starts from root. 
+    /// `path` starts from root.
     pub fn from_uri(uri: &str) -> StorageResult<LocalFileStorage> {
-        let mut root_path = uri.split("://").nth(1).ok_or_else(|| {
-            StorageErrorKind::DoesNotExist.with_error(anyhow::anyhow!("Invalid root path: {}", uri))
-        })?.to_string();
+        let mut root_path = uri
+            .split("://")
+            .nth(1)
+            .ok_or_else(|| {
+                StorageErrorKind::DoesNotExist
+                    .with_error(anyhow::anyhow!("Invalid root path: {}", uri))
+            })?
+            .to_string();
         if !root_path.starts_with('/') {
             root_path.insert(0, '/');
         }
         let pathbuf = PathBuf::from(root_path);
-        if pathbuf.into_iter().any(|segment| segment.to_string_lossy() == "..") {
-            return Err(StorageErrorKind::Io.with_error(anyhow::anyhow!("Invalid uri, `..` is forbidden: {}", uri)));
+        if pathbuf
+            .iter()
+            .any(|segment| segment.to_string_lossy() == "..")
+        {
+            return Err(StorageErrorKind::Io
+                .with_error(anyhow::anyhow!("Invalid uri, `..` is forbidden: {}", uri)));
         }
         Ok(Self { root: pathbuf })
     }
@@ -206,7 +215,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "StorageError { kind: Io, source: Invalid uri, `..` is forbidden: file:///tmp/../not_ok }")] 
+    #[should_panic(
+        expected = "StorageError { kind: Io, source: Invalid uri, `..` is forbidden: file:///tmp/../not_ok }"
+    )]
     fn test_storage_fail_if_uri_is_not_safe() {
         LocalFileStorage::from_uri("file:///tmp/../not_ok").unwrap();
     }
