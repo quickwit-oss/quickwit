@@ -38,19 +38,6 @@ use std::{
 };
 use tokio::time::{sleep, Duration};
 
-fn create_wikipedia_index(test_env: &TestEnv) {
-    make_command(
-        format!(
-            "new --index-uri {} --doc-mapper-type wikipedia",
-            test_env.index_uri
-        )
-        .as_str(),
-    )
-    .assert()
-    .success();
-    assert!(test_env.local_directory_path.join("quickwit.json").exists());
-}
-
 fn create_logs_index(test_env: &TestEnv) {
     make_command(
         format!(
@@ -95,7 +82,7 @@ fn test_cmd_help() -> anyhow::Result<()> {
 #[test]
 fn test_cmd_new() -> Result<()> {
     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
-    create_wikipedia_index(&test_env);
+    create_logs_index(&test_env);
 
     // Attempt to create with ill-formed new command.
     make_command("new")
@@ -109,12 +96,13 @@ fn test_cmd_new() -> Result<()> {
 #[test]
 fn test_cmd_new_on_existing_index() -> Result<()> {
     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
-    create_wikipedia_index(&test_env);
+    create_logs_index(&test_env);
 
     make_command(
         format!(
-            "new --index-uri {} --doc-mapper-type wikipedia",
-            test_env.index_uri
+            "new --index-uri {} --doc-mapper-config-path {}",
+            test_env.index_uri,
+            test_env.resource_files["config"].display()
         )
         .as_str(),
     )
@@ -193,7 +181,7 @@ fn test_cmd_index() -> Result<()> {
 #[test]
 fn test_cmd_delete_index_dry_run() -> Result<()> {
     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
-    create_wikipedia_index(&test_env);
+    create_logs_index(&test_env);
 
     // Empty index.
     make_command(format!("delete --index-uri {} --dry-run", test_env.index_uri).as_str())
@@ -203,7 +191,7 @@ fn test_cmd_delete_index_dry_run() -> Result<()> {
 
     index_data(
         &test_env.index_uri,
-        test_env.resource_files["wiki"].as_path(),
+        test_env.resource_files["logs"].as_path(),
     );
 
     // Non-empty index
@@ -222,11 +210,11 @@ fn test_cmd_delete_index_dry_run() -> Result<()> {
 #[test]
 fn test_cmd_delete() -> Result<()> {
     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
-    create_wikipedia_index(&test_env);
+    create_logs_index(&test_env);
 
     index_data(
         &test_env.index_uri,
-        test_env.resource_files["wiki"].as_path(),
+        test_env.resource_files["logs"].as_path(),
     );
 
     make_command(format!("delete --index-uri {} ", test_env.index_uri).as_str())
@@ -244,8 +232,9 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
     let test_env = create_test_env(TestStorageType::S3ViaLocalStorage(s3_path))?;
     make_command(
         format!(
-            "new --index-uri {} --doc-mapper-type wikipedia",
-            test_env.index_uri
+            "new --index-uri {} --doc-mapper-config-path {}",
+            test_env.index_uri,
+            test_env.resource_files["config"].display()
         )
         .as_str(),
     )
@@ -254,7 +243,7 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
 
     index_data(
         &test_env.index_uri,
-        test_env.resource_files["wiki"].as_path(),
+        test_env.resource_files["logs"].as_path(),
     );
 
     make_command(format!("delete --index-uri {} --dry-run", test_env.index_uri).as_str())
@@ -287,8 +276,9 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
 
     make_command(
         format!(
-            "new --index-uri {} --doc-mapper-type wikipedia",
-            test_env.index_uri
+            "new --index-uri {} --doc-mapper-config-path {}",
+            test_env.index_uri,
+            test_env.resource_files["config"].display()
         )
         .as_str(),
     )
@@ -300,13 +290,13 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
 
     index_data(
         &test_env.index_uri,
-        test_env.resource_files["wiki"].as_path(),
+        test_env.resource_files["logs"].as_path(),
     );
 
     // cli search
     make_command(
         format!(
-            "search --index-uri {} --query title:modern",
+            "search --index-uri {} --query level:info",
             test_env.index_uri
         )
         .as_str(),
@@ -315,7 +305,7 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     .success()
     .stdout(predicate::function(|output: &[u8]| {
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(1i64))
+        result["numHits"] == Value::Number(Number::from(2i64))
     }));
 
     // serve & api-search
@@ -337,7 +327,7 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
         .expect("Cannot read output");
     let process_output_str = String::from_utf8(data).unwrap();
     let query_response = reqwest::get(format!(
-        "http://127.0.0.1:8182/api/v1/{}/search?query=title:modern",
+        "http://127.0.0.1:8182/api/v1/{}/search?query=level:info",
         data_endpoint
     ))
     .await?
@@ -348,7 +338,7 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     assert!(process_output_str.contains("http://127.0.0.1:8182"));
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
-    assert_eq!(result["numHits"], Value::Number(Number::from(1i64)));
+    assert_eq!(result["numHits"], Value::Number(Number::from(2i64)));
 
     make_command(format!("delete --index-uri {} ", test_env.index_uri).as_str())
         .assert()
@@ -370,8 +360,11 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     let test_env = create_test_env(TestStorageType::S3ViaLocalStorage(s3_path))?;
     let object_storage =
         S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.index_uri)?;
-
-    let args = CreateIndexArgs::new(test_env.index_uri.to_string(), "wikipedia", None, false)?;
+    let args = CreateIndexArgs::new(
+        test_env.index_uri.to_string(),
+        test_env.resource_files["config"].to_path_buf(),
+        false,
+    )?;
     create_index_cli(args).await?;
 
     let metadata_file_exist = object_storage.exists(Path::new("quickwit.json")).await?;
@@ -379,13 +372,13 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
 
     index_data(
         &test_env.index_uri,
-        test_env.resource_files["wiki"].as_path(),
+        test_env.resource_files["logs"].as_path(),
     );
 
     // cli search
     make_command(
         format!(
-            "search --index-uri {} --query title:modern",
+            "search --index-uri {} --query level:info",
             test_env.index_uri
         )
         .as_str(),
@@ -394,7 +387,7 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     .success()
     .stdout(predicate::function(|output: &[u8]| {
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(1i64))
+        result["numHits"] == Value::Number(Number::from(2i64))
     }));
 
     // serve & api-search
@@ -416,7 +409,7 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
         .expect("Cannot read output");
     let process_output_str = String::from_utf8(data).unwrap();
     let query_response = reqwest::get(format!(
-        "http://127.0.0.1:8182/api/v1/{}/search?query=title:modern",
+        "http://127.0.0.1:8182/api/v1/{}/search?query=level:info",
         data_endpoint
     ))
     .await?
@@ -427,7 +420,7 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     assert!(process_output_str.contains("http://127.0.0.1:8182"));
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
-    assert_eq!(result["numHits"], Value::Number(Number::from(1i64)));
+    assert_eq!(result["numHits"], Value::Number(Number::from(2i64)));
 
     make_command(format!("delete --index-uri {} ", test_env.index_uri).as_str())
         .assert()
