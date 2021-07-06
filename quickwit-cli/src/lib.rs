@@ -20,13 +20,10 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use anyhow::Context;
 use quickwit_common::extract_metastore_uri_and_index_id_from_index_uri;
 use quickwit_core::DocumentSource;
-use quickwit_doc_mapping::AllFlattenDocMapper;
 use quickwit_doc_mapping::DefaultDocMapperBuilder;
 use quickwit_doc_mapping::DocMapper;
-use quickwit_doc_mapping::WikipediaMapper;
 use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_proto::SearchRequest;
@@ -72,25 +69,13 @@ impl PartialEq for CreateIndexArgs {
 impl CreateIndexArgs {
     pub fn new(
         index_uri: String,
-        doc_mapper_type: &str,
-        doc_mapper_config_path: Option<PathBuf>,
+        doc_mapper_config_path: PathBuf,
         overwrite: bool,
     ) -> anyhow::Result<Self> {
-        let doc_mapper: Box<dyn DocMapper> = match doc_mapper_type.trim().to_lowercase().as_str() {
-            "all_flatten" => Box::new(AllFlattenDocMapper::new()) as Box<dyn DocMapper>,
-            "wikipedia" => Box::new(WikipediaMapper::new()) as Box<dyn DocMapper>,
-            "default" =>
-            // TODO return an error if the type is unknown
-            {
-                let path = doc_mapper_config_path
-                    .context("doc-mapper-config-path is required for the default doc mapper type.")?;
-                let json_file = std::fs::File::open(path)?;
-                let reader = std::io::BufReader::new(json_file);
-                let builder: DefaultDocMapperBuilder = serde_json::from_reader(reader)?;
-                Box::new(builder.build()?) as Box<dyn DocMapper>
-            }
-            doc_mapper_type => anyhow::bail!("doc-mapper-type `{}` not supported. Please choose between all_flatten, wikipedia or default/empty type.", doc_mapper_type)
-        };
+        let json_file = std::fs::File::open(doc_mapper_config_path)?;
+        let reader = std::io::BufReader::new(json_file);
+        let builder: DefaultDocMapperBuilder = serde_json::from_reader(reader)?;
+        let doc_mapper = Box::new(builder.build()?) as Box<dyn DocMapper>;
 
         Ok(Self {
             index_uri,
