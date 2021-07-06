@@ -100,7 +100,7 @@ impl S3CompatibleObjectStorage {
 
     /// Creates an object storage given a region and an uri.
     pub fn from_uri(region: Region, uri: &str) -> crate::StorageResult<S3CompatibleObjectStorage> {
-        let (bucket, path) = parse_split_uri(uri).ok_or_else(|| {
+        let (bucket, path) = parse_uri(uri).ok_or_else(|| {
             crate::StorageErrorKind::Io.with_error(anyhow::anyhow!("Invalid uri: {}", uri))
         })?;
         let s3_compatible_storage = S3CompatibleObjectStorage::new(region, &bucket)
@@ -129,18 +129,21 @@ impl S3CompatibleObjectStorage {
     }
 }
 
-pub fn parse_split_uri(split_uri: &str) -> Option<(String, PathBuf)> {
-    static SPLIT_URI_PTN: OnceCell<Regex> = OnceCell::new();
-    SPLIT_URI_PTN
+pub fn parse_uri(uri: &str) -> Option<(String, PathBuf)> {
+    static URI_PTN: OnceCell<Regex> = OnceCell::new();
+    URI_PTN
         .get_or_init(|| {
-            // s3://bucket/path/to/split or s3+localstack://bucket/path/to/split
-            Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)/(?P<path>.*)").unwrap()
+            // s3://bucket/path/to/object or s3+localstack://bucket/path/to/object
+            Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)/(?P<path>.+)").unwrap()
         })
-        .captures(split_uri)
-        .and_then(|cap| match (cap.name("bucket"), cap.name("path")) {
-            (Some(bucket_match), Some(path_match)) => Some((
+        .captures(uri)
+        .and_then(|cap| match cap.name("bucket") {
+            Some(bucket_match) => Some((
                 bucket_match.as_str().to_string(),
-                PathBuf::from(path_match.as_str()),
+                cap.name("path").map_or_else(
+                    || PathBuf::from(""),
+                    |path_match| PathBuf::from(path_match.as_str()),
+                ),
             )),
             _ => None,
         })
@@ -605,13 +608,24 @@ mod tests {
         assert_eq!(split_range_into_chunks(0, 1), vec![]);
     }
 
-    use super::parse_split_uri;
+    use super::parse_uri;
 
     #[test]
-    fn test_parse_split_uri() {
+    fn test_parse_uri() {
         assert_eq!(
-            parse_split_uri("s3://bucket/path/to/object"),
+            parse_uri("s3://bucket/path/to/object"),
             Some(("bucket".to_string(), PathBuf::from("path/to/object")))
         );
+        assert_eq!(
+            parse_uri("s3://bucket/path"),
+            Some(("bucket".to_string(), PathBuf::from("path")))
+        );
+        assert_eq!(
+            parse_uri("s3+localstack://bucket/path/to/object"),
+            Some(("bucket".to_string(), PathBuf::from("path/to/object")))
+        );
+        assert_eq!(parse_uri("s3://bucket/"), None);
+        assert_eq!(parse_uri("s3://bucket"), None);
+        assert_eq!(parse_uri("mem://bucket/path/to"), None);
     }
 }
