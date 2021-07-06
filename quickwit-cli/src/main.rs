@@ -61,17 +61,14 @@ impl CliCommand {
             .value_of("index-uri")
             .context("'index-uri' is a required arg")?
             .to_string();
-        let doc_mapper_type = matches
-            .value_of("doc-mapper-type")
-            .context("doc-mapper-type has a default value")?;
         let doc_mapper_config_path = matches
             .value_of("doc-mapper-config-path")
-            .map(PathBuf::from);
+            .map(PathBuf::from)
+            .context("'doc-mapper-config-path' is a required arg")?;
         let overwrite = matches.is_present("overwrite");
 
         Ok(CliCommand::New(CreateIndexArgs::new(
             index_uri,
-            doc_mapper_type,
             doc_mapper_config_path,
             overwrite,
         )?))
@@ -262,8 +259,7 @@ mod tests {
         let expected_cmd = CliCommand::New(
             CreateIndexArgs::new(
                 "file:///indexes/wikipedia".to_string(),
-                "wikipedia",
-                None,
+                path.to_path_buf(),
                 false,
             )
             .unwrap(),
@@ -275,16 +271,15 @@ mod tests {
             "new",
             "--index-uri",
             "file:///indexes/wikipedia",
-            "--doc-mapper-type",
-            "wikipedia",
+            "--doc-mapper-config-path",
+            &path_str,
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         let expected_cmd = CliCommand::New(
             CreateIndexArgs::new(
                 "file:///indexes/wikipedia".to_string(),
-                "wikipedia",
-                None,
+                path.to_path_buf(),
                 true,
             )
             .unwrap(),
