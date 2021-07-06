@@ -32,7 +32,6 @@ use regex::Regex;
 /// \--------------------------------------------/ \------/
 ///        metastore_uri                           index_id
 ///
-/// TODO force the presence of a protocol and a specific format using a regex?
 pub fn extract_metastore_uri_and_index_id_from_index_uri(
     index_uri: &str,
 ) -> anyhow::Result<(&str, &str)> {
