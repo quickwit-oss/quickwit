@@ -46,18 +46,16 @@ impl fmt::Debug for LocalFileStorage {
 }
 
 impl LocalFileStorage {
-    /// Creates a file storage instance given a root path.
-    pub fn new(root: PathBuf) -> Self {
-        Self { root }
-    }
-
     /// Creates a file storage instance given a uri
     pub fn from_uri(uri: &str) -> StorageResult<LocalFileStorage> {
         let root_path = uri.split("://").nth(1).ok_or_else(|| {
             StorageErrorKind::DoesNotExist.with_error(anyhow::anyhow!("Invalid root path: {}", uri))
         })?;
-
-        Ok(LocalFileStorage::new(PathBuf::from(root_path)))
+        let pathbuf = PathBuf::from(root_path);
+        if pathbuf.into_iter().any(|segment| segment.to_string_lossy() == "..") {
+            return Err(StorageErrorKind::Io.with_error(anyhow::anyhow!("Invalid uri, `..` is forbidden: {}", uri)));
+        }
+        Ok(Self { root: pathbuf })
     }
 }
 
@@ -195,10 +193,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_storage() -> anyhow::Result<()> {
-        let path_root = tempdir()?;
-        let mut file_storage = LocalFileStorage::new(path_root.into_path());
+        let path_root = format!("file://{}", tempdir()?.path().to_string_lossy());
+        let mut file_storage = LocalFileStorage::from_uri(&path_root)?;
         storage_test_suite(&mut file_storage).await?;
         Ok(())
+    }
+
+    #[test]
+    #[should_panic(expected = "StorageError { kind: Io, source: Invalid uri, `..` is forbidden: file:///tmp/../not_ok }")] 
+    fn test_storage_fail_if_uri_is_not_safe() {
+        LocalFileStorage::from_uri("file:///tmp/../not_ok").unwrap();
+    }
+
+    #[test]
+    fn test_storage_should_not_fail_if_dots_inside_directory_name() {
+        LocalFileStorage::from_uri("file:///tmp/abc../").unwrap();
     }
 
     #[test]
