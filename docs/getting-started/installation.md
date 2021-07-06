@@ -9,7 +9,7 @@ sidebar_position: 2
 Download the latest release of Quickwit CLI with cURL.
 
 ```
-curl -L https://install.quickwit-cli.io | sh
+curl -L https://install-cli.quickwit.io | sh
 quickwit-cli --version
 ```
 
