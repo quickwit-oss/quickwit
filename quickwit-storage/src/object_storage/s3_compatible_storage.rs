@@ -134,7 +134,7 @@ pub fn parse_uri(uri: &str) -> Option<(String, PathBuf)> {
     URI_PTN
         .get_or_init(|| {
             // s3://bucket/path/to/object or s3+localstack://bucket/path/to/object
-            Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)/(?P<path>.+)").unwrap()
+            Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<path>.+))?").unwrap()
         })
         .captures(uri)
         .and_then(|cap| {
@@ -625,8 +625,14 @@ mod tests {
             parse_uri("s3+localstack://bucket/path/to/object"),
             Some(("bucket".to_string(), PathBuf::from("path/to/object")))
         );
-        assert_eq!(parse_uri("s3://bucket/"), None);
-        assert_eq!(parse_uri("s3://bucket"), None);
+        assert_eq!(
+            parse_uri("s3://bucket/"),
+            Some(("bucket".to_string(), PathBuf::from("")))
+        );
+        assert_eq!(
+            parse_uri("s3://bucket"),
+            Some(("bucket".to_string(), PathBuf::from("")))
+        );
         assert_eq!(parse_uri("mem://bucket/path/to"), None);
     }
 }
