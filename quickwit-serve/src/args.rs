@@ -20,7 +20,7 @@
  */
 use std::net::SocketAddr;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ServeArgs {
     pub index_uris: Vec<String>,
     pub rest_socket_addr: SocketAddr,
