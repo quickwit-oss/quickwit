@@ -4,9 +4,9 @@ on:
     branches:
       - main
     paths:
-      - 'Cargo.lock'
-      - 'Cargo.toml'
-      - 'quickwit-*/**'
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "quickwit-*/**"
 
 name: CI
 
@@ -31,13 +31,22 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Check license header
-        uses: apache/skywalking-eyes@main
+        uses: apache/skywalking-eyes@758c8a3e4e9d15eded5cf08de2cb54b3aebe4faf
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
       - run: cargo clippy --all --tests
+      - uses: actions-rs/install@v0.1
+        name: install cargo deny
+        with:
+          crate: cargo-deny
+      - uses: actions-rs/cargo@v1
+        name: cargo deny
+        with:
+          command: deny
+          args: check License
 
   fmt:
     name: Check format
