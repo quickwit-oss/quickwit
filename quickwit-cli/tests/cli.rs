@@ -273,6 +273,7 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
     Ok(())
 }
 
+/// testing the api via cli commands
 #[tokio::test]
 #[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
@@ -358,10 +359,11 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     Ok(())
 }
 
+/// testing the api via structs of the lib (if available)
 #[tokio::test]
 #[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_all_with_s3_localstack_api() -> Result<()> {
+async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     let data_endpoint = "data11";
     let s3_path =
         PathBuf::from(&("quickwit-integration-tests/indices/".to_string() + data_endpoint));

@@ -32,7 +32,7 @@ use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum CliCommand {
     New(CreateIndexArgs),
     Index(IndexDataArgs),
@@ -259,14 +259,16 @@ mod tests {
             &path_str,
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
-        assert!(matches!(
-                command,
-            Ok(CliCommand::New(CreateIndexArgs {
-                index_uri,
-                doc_mapper: Box{..},
-                overwrite: false
-            })) if &index_uri == "file:///indexes/wikipedia"
-        ));
+        let expected_cmd = CliCommand::New(
+            CreateIndexArgs::new(
+                "file:///indexes/wikipedia".to_string(),
+                "wikipedia",
+                None,
+                false,
+            )
+            .unwrap(),
+        );
+        assert_eq!(command.unwrap(), expected_cmd);
 
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
@@ -278,14 +280,16 @@ mod tests {
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
-        assert!(matches!(
-            command,
-            Ok(CliCommand::New(CreateIndexArgs {
-                index_uri,
-                doc_mapper: Box{..},
-                overwrite: true
-            })) if &index_uri == "file:///indexes/wikipedia"
-        ));
+        let expected_cmd = CliCommand::New(
+            CreateIndexArgs::new(
+                "file:///indexes/wikipedia".to_string(),
+                "wikipedia",
+                None,
+                true,
+            )
+            .unwrap(),
+        );
+        assert_eq!(command.unwrap(), expected_cmd);
 
         Ok(())
     }

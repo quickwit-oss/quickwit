@@ -57,9 +57,16 @@ use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, Ind
 
 #[derive(Debug)]
 pub struct CreateIndexArgs {
-    pub index_uri: String,
-    pub doc_mapper: Box<dyn DocMapper>,
-    pub overwrite: bool,
+    index_uri: String,
+    doc_mapper: Box<dyn DocMapper>,
+    overwrite: bool,
+}
+impl PartialEq for CreateIndexArgs {
+    // doc_mapper is opaque and not compared currently, need to change the trait to enable
+    // docmapper comparison
+    fn eq(&self, other: &Self) -> bool {
+        self.index_uri == other.index_uri && self.overwrite == other.overwrite
+    }
 }
 
 impl CreateIndexArgs {
@@ -93,7 +100,7 @@ impl CreateIndexArgs {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct IndexDataArgs {
     pub index_uri: String,
     pub input_path: Option<PathBuf>,
@@ -103,7 +110,7 @@ pub struct IndexDataArgs {
     pub overwrite: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct SearchIndexArgs {
     pub index_uri: String,
     pub query: String,
@@ -114,7 +121,7 @@ pub struct SearchIndexArgs {
     pub end_timestamp: Option<i64>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DeleteIndexArgs {
     pub index_uri: String,
     pub dry_run: bool,
