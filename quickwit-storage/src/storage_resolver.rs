@@ -71,10 +71,7 @@ impl Default for StorageUriResolver {
         StorageUriResolver::builder()
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory::default())
-            .register(S3CompatibleObjectStorageFactory::new(
-                Region::default(),
-                "s3",
-            ))
+            .register(S3CompatibleObjectStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::new(
                 localstack_region(),
                 "s3+localstack",
@@ -140,7 +137,7 @@ mod tests {
             .build();
         let resolved = storage_resolver.resolve("second://")?;
         let data = resolved.get_all(Path::new("hello")).await?;
-        assert_eq!(data, b"hello_content_second");
+        assert_eq!(&data[..], b"hello_content_second");
         Ok(())
     }
 
@@ -166,7 +163,7 @@ mod tests {
             .build();
         let resolved = storage_resolver.resolve("protocol://mystorage")?;
         let data = resolved.get_all(Path::new("hello")).await?;
-        assert_eq!(data, b"hello_content_second");
+        assert_eq!(&data[..], b"hello_content_second");
         Ok(())
     }
 

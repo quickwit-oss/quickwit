@@ -119,6 +119,9 @@ impl DefaultDocMapperBuilder {
         for field_mapping in self.field_mappings.iter() {
             for (field_path, field_type) in field_mapping.field_entries()? {
                 let field_name = field_path.field_name();
+                if field_name == SOURCE_FIELD_NAME {
+                    bail!("`_source` is a reserved name, change your field name.");
+                }
                 if unique_field_names.contains(&field_name) {
                     bail!(
                         "Field name must be unique, found duplicates for `{}`",
@@ -484,6 +487,25 @@ mod tests {
 
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(mapper_config)?;
         let expected_msg = "Timestamp field cannot be an array, please change your field `timestamp` from an array to a single value.".to_string();
+        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_with_field_name_equal_to_source() -> anyhow::Result<()> {
+        let mapper_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "field_mappings": [
+                {
+                    "name": "_source",
+                    "type": "i64"
+                }
+            ]
+        }"#;
+
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(mapper_config)?;
+        let expected_msg = "`_source` is a reserved name, change your field name.".to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
     }

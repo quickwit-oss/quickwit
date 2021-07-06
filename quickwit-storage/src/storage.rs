@@ -21,10 +21,10 @@
 */
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use crate::StorageResult;
 
@@ -34,7 +34,7 @@ pub enum PutPayload {
     /// Put data from the local file.
     LocalFile(PathBuf),
     /// Put data from a local buffer
-    InMemory(Arc<[u8]>),
+    InMemory(Bytes),
 }
 
 impl PutPayload {
@@ -56,15 +56,21 @@ impl From<PathBuf> for PutPayload {
     }
 }
 
-impl From<Vec<u8>> for PutPayload {
-    fn from(payload_buffer: Vec<u8>) -> Self {
-        PutPayload::InMemory(payload_buffer.into_boxed_slice().into())
+impl From<Bytes> for PutPayload {
+    fn from(bytes: Bytes) -> Self {
+        PutPayload::InMemory(bytes)
     }
 }
 
-impl<'a> From<&'a [u8]> for PutPayload {
-    fn from(payload_bytes: &[u8]) -> Self {
-        From::from(payload_bytes.to_vec())
+impl From<Vec<u8>> for PutPayload {
+    fn from(bytes: Vec<u8>) -> Self {
+        PutPayload::InMemory(Bytes::from(bytes))
+    }
+}
+
+impl From<&'static [u8]> for PutPayload {
+    fn from(payload_bytes: &'static [u8]) -> Self {
+        From::from(Bytes::from_static(payload_bytes))
     }
 }
 
@@ -78,7 +84,7 @@ impl<'a> From<&'a [u8]> for PutPayload {
 /// The implementation should treat directory separators as exactly the same way
 /// object storage treat them. This means when directory separators a present
 /// in the storage operation path, the storage implementation should create and remove transparently
-/// these intermediate directories.  
+/// these intermediate directories.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Storage: Send + Sync + 'static {
@@ -90,11 +96,11 @@ pub trait Storage: Send + Sync + 'static {
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()>;
 
     /// Downloads a slice of a file from the storage, and returns an in memory buffer
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Vec<u8>>;
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes>;
 
     /// Downloads the entire content of a "small" file, returns an in memory buffer.
     /// For large files prefer `copy_to_file`.
-    async fn get_all(&self, path: &Path) -> StorageResult<Vec<u8>>;
+    async fn get_all(&self, path: &Path) -> StorageResult<Bytes>;
 
     /// Deletes a file.
     async fn delete(&self, path: &Path) -> StorageResult<()>;

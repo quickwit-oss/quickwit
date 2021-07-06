@@ -113,7 +113,7 @@ impl SingleFileMetastore {
                 },
             })?;
 
-        let metadata_set = serde_json::from_slice::<MetadataSet>(content.as_slice())
+        let metadata_set = serde_json::from_slice::<MetadataSet>(&content[..])
             .map_err(|serde_err| MetastoreError::InvalidManifest { cause: serde_err })?;
 
         // Finally, update the cache accordingly
@@ -126,7 +126,7 @@ impl SingleFileMetastore {
     /// Serializes the metadata set and stores the data on the storage.
     async fn put_index(&self, metadata_set: MetadataSet) -> MetastoreResult<()> {
         // Serialize metadata set.
-        let content = serde_json::to_vec(&metadata_set).map_err(|serde_err| {
+        let content: Vec<u8> = serde_json::to_vec(&metadata_set).map_err(|serde_err| {
             MetastoreError::InternalError {
                 message: "Failed to serialize Metadata set".to_string(),
                 cause: anyhow::anyhow!(serde_err),
