@@ -444,6 +444,7 @@ impl<'a> FieldPath<'a> {
 // Main drawback: we have a bunch of mixed parameters in it but
 // seems to be reasonable.
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FieldMappingEntryForSerialization {
     name: String,
     #[serde(rename = "type")]
@@ -506,6 +507,8 @@ impl From<FieldMappingEntry> for FieldMappingEntryForSerialization {
                 if let Some(indexing_options) = text_options.get_indexing_options() {
                     tokenizer = Some(indexing_options.tokenizer().to_owned());
                     record = Some(indexing_options.index_option());
+                } else {
+                    indexed = Some(false);
                 }
             }
             FieldMappingType::I64(options, _)
@@ -565,14 +568,19 @@ impl FieldMappingEntryForSerialization {
                 self.name
             )
         }
-        let mut indexing_options = TextFieldIndexing::default();
-        if let Some(index_option) = self.record {
-            indexing_options = indexing_options.set_index_option(index_option);
+        let mut options = TextOptions::default();
+        if self.indexed.unwrap_or(true) {
+            let mut indexing_options = TextFieldIndexing::default();
+            if let Some(index_option) = self.record {
+                indexing_options = indexing_options.set_index_option(index_option);
+            }
+            if let Some(tokenizer) = &self.tokenizer {
+                indexing_options = indexing_options.set_tokenizer(tokenizer);
+            }
+            options = options.set_indexing_options(indexing_options);
+        } else if self.record.is_some() || self.tokenizer.is_some() {
+            bail!("Error when parsing `{}`: `record` and `tokenizer` parameters are allowed only if indexed is true.", self.name)
         }
-        if let Some(tokenizer) = &self.tokenizer {
-            indexing_options = indexing_options.set_tokenizer(tokenizer);
-        }
-        let mut options = TextOptions::default().set_indexing_options(indexing_options);
         if self.stored {
             options = options.set_stored();
         }
@@ -741,6 +749,44 @@ mod tests {
             }
             _ => panic!("wrong property type"),
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_error_on_text_with_invalid_options() -> anyhow::Result<()> {
+        let result = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "text",
+                "indexed": false,
+                "tokenizer": "default",
+                "record": "position"
+            }
+            "#,
+        );
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert_eq!(error.to_string(), "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are allowed only if indexed is true.");
+        Ok(())
+    }
+
+    #[test]
+    fn test_error_on_unknown_fields() -> anyhow::Result<()> {
+        let result = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "text",
+                "indexing": false,
+                "tokenizer": "default",
+                "record": "position"
+            }
+            "#,
+        );
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("unknown field `indexing`"));
         Ok(())
     }
 
