@@ -5,6 +5,10 @@ authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2018"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 
+[[bin]]
+name = "quickwit"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1"
 byte-unit = "4"
