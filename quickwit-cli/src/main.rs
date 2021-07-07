@@ -24,18 +24,15 @@ use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use quickwit_cli::*;
-use quickwit_doc_mapping::{
-    AllFlattenDocMapper, DefaultDocMapperBuilder, DocMapper, WikipediaMapper,
-};
+use quickwit_common::to_socket_addr;
 use quickwit_serve::serve_cli;
 use quickwit_serve::ServeArgs;
 use quickwit_telemetry::payload::TelemetryEvent;
 use std::env;
-use std::net::IpAddr;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::path::PathBuf;
-use std::str::FromStr;
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum CliCommand {
     New(CreateIndexArgs),
     Index(IndexDataArgs),
@@ -64,35 +61,17 @@ impl CliCommand {
             .value_of("index-uri")
             .context("'index-uri' is a required arg")?
             .to_string();
-        let doc_mapper_type = matches
-            .value_of("doc-mapper-type")
-            .context("doc-mapper-type has a default value")?;
         let doc_mapper_config_path = matches
             .value_of("doc-mapper-config-path")
-            .map(PathBuf::from);
+            .map(PathBuf::from)
+            .context("'doc-mapper-config-path' is a required arg")?;
         let overwrite = matches.is_present("overwrite");
 
-        let doc_mapper: Box<dyn DocMapper> = match doc_mapper_type.trim().to_lowercase().as_str() {
-            "all_flatten" => Box::new(AllFlattenDocMapper::new()) as Box<dyn DocMapper>,
-            "wikipedia" => Box::new(WikipediaMapper::new()) as Box<dyn DocMapper>,
-            "default" =>
-            // TODO return an error if the type is unknown
-            {
-                let path = doc_mapper_config_path
-                    .context("doc-mapper-config-path is required for the default doc mapper type.")?;
-                let json_file = std::fs::File::open(path)?;
-                let reader = std::io::BufReader::new(json_file);
-                let builder: DefaultDocMapperBuilder = serde_json::from_reader(reader)?;
-                Box::new(builder.build()?) as Box<dyn DocMapper>
-            }
-            doc_mapper_type => anyhow::bail!("doc-mapper-type `{}` not supported. Please choose between all_flatten, wikipedia or default/empty type.", doc_mapper_type)
-        };
-
-        Ok(CliCommand::New(CreateIndexArgs {
+        Ok(CliCommand::New(CreateIndexArgs::new(
             index_uri,
-            doc_mapper,
+            doc_mapper_config_path,
             overwrite,
-        }))
+        )?))
     }
 
     fn parse_index_args(matches: &ArgMatches) -> anyhow::Result<Self> {
@@ -156,33 +135,41 @@ impl CliCommand {
 
     fn parse_serve_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_uris = matches
-            .values_of("index-uri")
+            .values_of("index-uris")
             .map(|values| {
                 values
                     .into_iter()
                     .map(|index_uri| index_uri.to_string())
                     .collect()
             })
-            .context("At least one 'index-uri' is required.")?;
-        let peers: Vec<SocketAddr> = matches
-            .values_of("peer_seeds")
-            .map(|values| {
-                values
-                    .map(|peer_socket_addr_str| SocketAddr::from_str(peer_socket_addr_str))
-                    .collect::<Result<Vec<SocketAddr>, _>>()
-            })
-            .unwrap_or_else(|| Ok(Vec::new()))?;
-        let host_str = matches
+            .context("At least one 'index-uris' is required.")?;
+        let host = matches
             .value_of("host")
             .context("'host' has a default  value")?
             .to_string();
-        let rest_port = value_t!(matches, "port", u16)?;
-        let rest_ip_addr = IpAddr::from_str(&host_str)?;
-        let rest_socket_addr = SocketAddr::new(rest_ip_addr, rest_port);
+        let port = value_t!(matches, "port", u16)?;
+        let rest_addr = format!("{}:{}", host, port);
+        let rest_socket_addr = to_socket_addr(&rest_addr)?;
+        let host_key_path = Path::new(
+            matches
+                .value_of("host-key-path")
+                .context("'host-key-path' is a required arg")?,
+        )
+        .to_path_buf();
+        let mut peer_socket_addrs: Vec<SocketAddr> = Vec::new();
+        if matches.is_present("peer-seeds") {
+            if let Some(values) = matches.values_of("peer-seeds") {
+                for value in values {
+                    peer_socket_addrs.push(to_socket_addr(value)?);
+                }
+            }
+        }
+
         Ok(CliCommand::Serve(ServeArgs {
             index_uris,
             rest_socket_addr,
-            peers,
+            host_key_path,
+            peer_socket_addrs,
         }))
     }
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
@@ -240,6 +227,8 @@ async fn main() {
 mod tests {
     use crate::{CliCommand, CreateIndexArgs, DeleteIndexArgs, IndexDataArgs, SearchIndexArgs};
     use clap::{load_yaml, App, AppSettings};
+    use quickwit_common::to_socket_addr;
+    use quickwit_serve::ServeArgs;
     use std::io::Write;
     use std::path::{Path, PathBuf};
     use tempfile::NamedTempFile;
@@ -277,33 +266,35 @@ mod tests {
             &path_str,
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
-        assert!(matches!(
-                command,
-            Ok(CliCommand::New(CreateIndexArgs {
-                index_uri,
-                doc_mapper: Box{..},
-                overwrite: false
-            })) if &index_uri == "file:///indexes/wikipedia"
-        ));
+        let expected_cmd = CliCommand::New(
+            CreateIndexArgs::new(
+                "file:///indexes/wikipedia".to_string(),
+                path.to_path_buf(),
+                false,
+            )
+            .unwrap(),
+        );
+        assert_eq!(command.unwrap(), expected_cmd);
 
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
             "file:///indexes/wikipedia",
-            "--doc-mapper-type",
-            "wikipedia",
+            "--doc-mapper-config-path",
+            &path_str,
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
-        assert!(matches!(
-            command,
-            Ok(CliCommand::New(CreateIndexArgs {
-                index_uri,
-                doc_mapper: Box{..},
-                overwrite: true
-            })) if &index_uri == "file:///indexes/wikipedia"
-        ));
+        let expected_cmd = CliCommand::New(
+            CreateIndexArgs::new(
+                "file:///indexes/wikipedia".to_string(),
+                path.to_path_buf(),
+                true,
+            )
+            .unwrap(),
+        );
+        assert_eq!(command.unwrap(), expected_cmd);
 
         Ok(())
     }
@@ -452,6 +443,34 @@ mod tests {
                 dry_run: true
             })) if &index_uri == "file:///indexes/wikipedia"
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_serve_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "serve",
+            "--index-uris",
+            "file:///indexes/wikipedia",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9090",
+            "--host-key-path",
+            "/etc/quickwit-host-key",
+            "--peer-seeds",
+            "192.168.1.13:9090",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Serve(ServeArgs {
+                index_uris, rest_socket_addr, host_key_path, peer_socket_addrs
+            })) if index_uris == vec!["file:///indexes/wikipedia".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap()]
+        ));
+
         Ok(())
     }
 }

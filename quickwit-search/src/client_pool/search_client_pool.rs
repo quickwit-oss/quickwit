@@ -1,22 +1,23 @@
-//  Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
-//
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
-//
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
-//
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
-//
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+/*
+ * Copyright (C) 2021 Quickwit Inc.
+ *
+ * Quickwit is offered under the AGPL v3.0 and as commercial software.
+ * For commercial licensing, contact us at hello@quickwit.io.
+ *
+ * AGPL:
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
@@ -36,14 +37,7 @@ use quickwit_proto::search_service_client::SearchServiceClient;
 use crate::client::create_search_service_client;
 use crate::client_pool::{ClientPool, Job};
 use crate::rendezvous_hasher::{sort_by_rendez_vous_hash, Node};
-
-const GRPC_PORT_INC: u16 = 1;
-
-/// Compute the gRPC port from the base port.
-/// Add 1 to the base port to get the gRPC port.
-pub fn get_grpc_addr(listen_addr: SocketAddr) -> SocketAddr {
-    SocketAddr::new(listen_addr.ip(), listen_addr.port() + GRPC_PORT_INC)
-}
+use crate::swim_addr_to_grpc_addr;
 
 /// Search client pool implementation.
 #[derive(Clone)]
@@ -58,7 +52,6 @@ impl SearchClientPool {
     /// Create a search client pool given a cluster.
     /// When a client pool is created, the thread that monitors cluster members
     /// will be started at the same time.
-    #[allow(dead_code)]
     pub async fn new(cluster: Arc<Cluster>) -> anyhow::Result<Self> {
         let clients = HashMap::new();
 
@@ -79,7 +72,7 @@ impl SearchClientPool {
                 // Create a list of addresses to be removed.
                 let members_addresses: HashSet<SocketAddr> = members
                     .iter()
-                    .map(|member| get_grpc_addr(member.listen_addr))
+                    .map(|member| swim_addr_to_grpc_addr(member.listen_addr))
                     .collect();
                 let addrs_to_remove: Vec<SocketAddr> = clients
                     .keys()
@@ -97,7 +90,7 @@ impl SearchClientPool {
 
                 // Add clients to the client pool.
                 for member in members {
-                    let grpc_addr = get_grpc_addr(member.listen_addr);
+                    let grpc_addr = swim_addr_to_grpc_addr(member.listen_addr);
                     if let Entry::Vacant(_entry) = clients.entry(grpc_addr) {
                         match create_search_service_client(grpc_addr).await {
                             Ok(client) => {

@@ -132,6 +132,9 @@ message LeafSearchResult {
 message FetchDocsRequest {
   // Request fetching the content of a given list of partial_hits.
   repeated PartialHit partial_hits = 1;
+
+  // Index ID
+  string index_id = 2;
 }
 
 message FetchDocsResult {

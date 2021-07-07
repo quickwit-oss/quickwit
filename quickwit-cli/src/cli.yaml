@@ -11,17 +11,11 @@ subcommands:
                 long: index-uri
                 value_name: INDEX URI
                 required: true
-            - doc-mapper-type:
-                help: Type of the document mapper
-                long: doc-mapper-type
-                value_name: DOC MAPPER
-                default_value: default
             - doc-mapper-config-path:
                 help: Path of the document mapper configuration
                 long: doc-mapper-config-path
                 value_name: DOC MAPPER CONFIG
-                required_if:
-                - [doc-mapper-type, default]
+                required: true
             - overwrite:
                 help: Overwrites pre-existing index
                 long: overwrite
@@ -90,31 +84,6 @@ subcommands:
                 help: Filters out documents after that timestamp (time-series indexes only)
                 long: end-timestamp
                 value_name: TIMESTAMP
-    - serve:
-        about: Serve a REST API to search an index
-        args:
-            - index-uri:
-                help: Location of the metastore-uri
-                long: index-uri
-                value_name: INDEX URI
-                multiple: true
-                required: true
-            - host:
-                help: Hostname the rest server should bind to.
-                long: host
-                default_value: '0.0.0.0'
-                value_name: HOSTNAME
-            - port:
-                help: Port the REST API server should bind to.
-                long: port
-                default_value: '8080'
-                value_name: PORT
-            - peer_seeds:
-                help: List of peer socket address (e.g. 192.1.1.3:12001) to connect to form a cluster.
-                multiple: true
-                long: peer_seeds
-                value_name: PEER
-
     - delete:
         about: Deletes an index
         args:
@@ -126,3 +95,34 @@ subcommands:
             - dry-run:
                 help: Executes the command in dry run mode and displays the list of files to delete
                 long: dry-run
+    - serve:
+        about: Serve a REST API to search an index
+        args:
+            - index-uris:
+                help: Location of the target indices. (To specify more than one, separate with a comma.)
+                long: index-uris
+                value_name: INDEX URIS
+                multiple: true
+                use_delimiter: true
+                required: true
+            - host:
+                help: Hostname the rest server should bind to.
+                long: host
+                default_value: '0.0.0.0'
+                value_name: HOSTNAME
+            - port:
+                help: Port the REST API server should bind to.
+                long: port
+                default_value: '8080'
+                value_name: PORT
+            - host-key-path:
+                help: Path to the host key file where the data that makes a host unique in the cluster is stored.
+                long: host-key-path
+                default_value: '/tmp/quickwit-host-key'
+                value_name: HOST KEY
+            - peer-seeds:
+                help: Peer address the REST API server (e.g. 192.1.1.3:8080) to connect to form a cluster. (To specify more than one, separate with a comma.)
+                long: peer-seeds
+                value_name: PEER SEEDS
+                multiple: true
+                use_delimiter: true

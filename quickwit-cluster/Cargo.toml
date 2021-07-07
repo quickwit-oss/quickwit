@@ -17,4 +17,4 @@ uuid = "0.8"
 quickwit-proto = { version = "0.1.0", path = "../quickwit-proto"}
 
 [dev-dependencies]
-tempdir = "0.3"
+tempfile = "3.2.0"

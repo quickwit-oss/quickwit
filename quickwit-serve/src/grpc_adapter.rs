@@ -22,21 +22,16 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_proto::search_service_server as grpc;
-use quickwit_proto::FetchDocsRequest;
-use quickwit_proto::FetchDocsResult;
-use quickwit_proto::LeafSearchRequest;
-use quickwit_proto::LeafSearchResult;
-use quickwit_proto::SearchRequest;
-use quickwit_proto::SearchResult;
-use quickwit_search::SearchError;
-use quickwit_search::SearchService;
 
+use quickwit_proto::search_service_server as grpc;
+use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
+
+/// gRPC adapter that wraped SearchService.
 #[derive(Clone)]
 pub struct GrpcAdapter(Arc<dyn SearchService>);
 
-impl From<Arc<dyn SearchService>> for GrpcAdapter {
-    fn from(search_service_arc: Arc<dyn SearchService>) -> Self {
+impl From<Arc<SearchServiceImpl>> for GrpcAdapter {
+    fn from(search_service_arc: Arc<SearchServiceImpl>) -> Self {
         GrpcAdapter(search_service_arc)
     }
 }
@@ -45,8 +40,8 @@ impl From<Arc<dyn SearchService>> for GrpcAdapter {
 impl grpc::SearchService for GrpcAdapter {
     async fn root_search(
         &self,
-        request: tonic::Request<SearchRequest>,
-    ) -> Result<tonic::Response<SearchResult>, tonic::Status> {
+        request: tonic::Request<quickwit_proto::SearchRequest>,
+    ) -> Result<tonic::Response<quickwit_proto::SearchResult>, tonic::Status> {
         let search_request = request.into_inner();
         let search_result = self
             .0
@@ -58,19 +53,32 @@ impl grpc::SearchService for GrpcAdapter {
 
     async fn leaf_search(
         &self,
-        _request: tonic::Request<LeafSearchRequest>,
-    ) -> Result<tonic::Response<LeafSearchResult>, tonic::Status> {
-        todo!()
+        request: tonic::Request<quickwit_proto::LeafSearchRequest>,
+    ) -> Result<tonic::Response<quickwit_proto::LeafSearchResult>, tonic::Status> {
+        let leaf_search_request = request.into_inner();
+        let leaf_search_result = self
+            .0
+            .leaf_search(leaf_search_request)
+            .await
+            .map_err(convert_error_to_tonic_status)?;
+        Ok(tonic::Response::new(leaf_search_result))
     }
 
     async fn fetch_docs(
         &self,
-        _request: tonic::Request<FetchDocsRequest>,
-    ) -> Result<tonic::Response<FetchDocsResult>, tonic::Status> {
-        todo!()
+        request: tonic::Request<quickwit_proto::FetchDocsRequest>,
+    ) -> Result<tonic::Response<quickwit_proto::FetchDocsResult>, tonic::Status> {
+        let fetch_docs_request = request.into_inner();
+        let fetch_docs_result = self
+            .0
+            .fetch_docs(fetch_docs_request)
+            .await
+            .map_err(convert_error_to_tonic_status)?;
+        Ok(tonic::Response::new(fetch_docs_result))
     }
 }
 
+/// Convert quickwit search error to tonic status.
 fn convert_error_to_tonic_status(search_error: SearchError) -> tonic::Status {
     match search_error {
         SearchError::IndexDoesNotExist { index_id } => tonic::Status::new(

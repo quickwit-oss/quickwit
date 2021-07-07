@@ -3,6 +3,7 @@ name = 'quickwit-proto'
 version = '0.1.0'
 authors = ['Quickwit, inc <hello@quickwit.io>']
 edition = '2018'
+license = 'AGPL-3.0-or-later'  # For a commercial, license, contact hello@quickwit.io
 
 [dependencies]
 tonic = '0.4.3'
