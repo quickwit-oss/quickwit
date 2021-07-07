@@ -69,12 +69,12 @@ You're now ready to fill the index.
 
 ## Let's add some documents
 
-Currently `quickwit-cli` can index [ndjson](http://ndjson.org/) datasets.
-Let's download [a bunch (10 000) of wikipedia articles](http://fulmicoton.com/tantivy-files/wiki-articles-1000.json) in ndjson format and index it.
+Currently `quickwit-cli` can index new line delimited json [ndjson](http://ndjson.org/) datasets.
+Let's download [a bunch (10 000) of wikipedia articles](http://fulmicoton.com/tantivy-files/wiki-articles-1000.json) in [ndjson](http://ndjson.org/) format and index it.
 
 ```
 # Download the first 1000 wikipedia articles in ndjson format.
-curl http://fulmicoton.com/tantivy-files/wiki-articles-1000.json
+curl -o wiki-articles-1000.json http://fulmicoton.com/tantivy-files/wiki-articles-1000.json
 quickwit-cli index --index-uri file:///your-path-to-your-index/wikipedia --input-path wiki-articles-1000.json
 ```
 
