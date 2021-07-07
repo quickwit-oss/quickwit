@@ -16,12 +16,7 @@ jobs:
       - uses: actions/cache@v2
         with:
           path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ~/.cargo/.crates.toml # cache for binary tarpaulin install
-            ~/.cargo/.crates2.json # cache for binary tarpaulin install
+            ~/.cargo
             target/
           key: ${{ runner.os }}-cargoo-${{ hashFiles('Cargo.lock') }}
       - uses: actions-rs/toolchain@v1
