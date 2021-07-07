@@ -31,7 +31,7 @@ use std::process::Stdio;
 use tempfile::tempdir;
 use tempfile::TempDir;
 
-const PACKAGE_BIN_NAME: &str = "quickwit-cli";
+const PACKAGE_BIN_NAME: &str = "quickwit";
 
 const DEFAULT_DOC_MAPPER: &str = r#"{
     "store_source": true,
