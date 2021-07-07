@@ -64,6 +64,9 @@ Now we can create the index:
 quickwit-cli new --index-uri file:///your-path-to-your-index/wikipedia --doc-mapper-config-path ./wikipedia_doc_mapper.json
 ```
 
+
+The following commands assume bash, which will replace pwd with the current directory. If you use another shell you need to adjust the replacement (remove $ in fish shell) or replace the uri with an absolute path.
+
 E.g. to create it in the current directory with bash, you can use
 ```
 quickwit-cli new --index-uri file://$(pwd)/wikipedia --doc-mapper-config-path ./wikipedia_doc_mapper.json
@@ -80,13 +83,13 @@ Let's download [a bunch (10 000) of wikipedia articles](http://fulmicoton.com/ta
 ```
 # Download the first 1000 wikipedia articles in ndjson format.
 curl -o -L wiki-articles-1000.json http://fulmicoton.com/tantivy-files/wiki-articles-1000.json
-quickwit-cli index --index-uri file:///your-path-to-your-index/wikipedia --input-path wiki-articles-1000.json
+quickwit-cli index --index-uri file:///$(pwd)/wikipedia --input-path wiki-articles-1000.json
 ```
 
 Wait a few seconds and check if it worked by using `search` command:
 
 ```
-quickwit-cli search --index-uri file:///your-path-to-your-index/wikipedia --query "barack AND obama"
+quickwit-cli search --index-uri file:///$(pwd)/wikipedia --query "barack AND obama"
 ```
 
 It should return 10 hits. Now you're ready to serve.
@@ -97,7 +100,7 @@ It should return 10 hits. Now you're ready to serve.
 The command `serve` starts an http server which provides a [REST API](../reference/search-api.md). You can start several instances and provide peer socket addresses to form a cluster on which search workload will be distributed.
 
 ```
-quickwit-cli serve --index-uris file:///your-path-to-your-index/wikipedia
+quickwit-cli serve --index-uris file:///$(pwd)/wikipedia
 ```
 
 Check it's working with a simple GET request in the browser:
@@ -111,10 +114,20 @@ http://0.0.0.0:8080/api/v1/wikipedia/search?query=barack+AND+obama
 Let's do some cleanup by deleting the index:
 
 ```
-quickwit-cli delete --index-uri file:///your-path-to-your-index/wikipedia
+quickwit-cli delete --index-uri file:///$(pwd)/wikipedia
 ```
 
 Congrats! You can level up with some nice tutorials to discover all Quickwit features. 
+
+## TLDR
+
+```
+curl -o wikipedia_doc_mapper.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/doc_mappers/wikipedia_doc_mapper.json
+quickwit-cli new --index-uri file://$(pwd)/wikipedia --doc-mapper-config-path ./wikipedia_doc_mapper.json
+curl -o -L wiki-articles-1000.json http://fulmicoton.com/tantivy-files/wiki-articles-1000.json
+quickwit-cli index --index-uri file:///$(pwd)/wikipedia --input-path wiki-articles-1000.json
+quickwit-cli search --index-uri file:///$(pwd)/wikipedia --query "barack AND obama"
+```
 
 
 ## Next tutorials
