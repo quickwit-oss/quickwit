@@ -61,7 +61,12 @@ And here is the complete doc mapper config:
 Now we can create the index:
 
 ```
-quickwit-cli new file:///your-path-to-your-index/wikipedia --doc-mapper-config-path ./wikipedia_doc_mapper.json
+quickwit-cli new --index-uri file:///your-path-to-your-index/wikipedia --doc-mapper-config-path ./wikipedia_doc_mapper.json
+```
+
+E.g. to create it in the current directory with bash, you can use
+```
+quickwit-cli new --index-uri file://$(pwd)/wikipedia --doc-mapper-config-path ./wikipedia_doc_mapper.json
 ```
 
 Check that an empty directory `/your-path-to-your-index/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../overview/architecture.md#index-metadata).
