@@ -86,7 +86,7 @@ quickwit-cli index --index-uri file:///your-path-to-your-index/wikipedia --input
 Wait a few seconds and check if it worked by using `search` command:
 
 ```
-quickwit-cli search --index-uri file:///your-path-to-your-index/wikipedia --query "barak AND obama"
+quickwit-cli search --index-uri file:///your-path-to-your-index/wikipedia --query "barak obama"
 ```
 
 It should return 10 hits. Now you're ready to serve.
@@ -102,7 +102,7 @@ quickwit-cli serve --index-uri file:///your-path-to-your-index/wikipedia
 
 Check it's working with a simple GET request:
 ```
-curl http://0.0.0.0:8080/api/v1/wikipedia/search?query=barack+AND+obama
+curl http://0.0.0.0:8080/api/v1/wikipedia/search?query=barack+obama
 ```
 
 
