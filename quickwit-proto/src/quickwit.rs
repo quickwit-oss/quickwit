@@ -114,6 +114,9 @@ pub struct FetchDocsRequest {
     /// Request fetching the content of a given list of partial_hits.
     #[prost(message, repeated, tag = "1")]
     pub partial_hits: ::prost::alloc::vec::Vec<PartialHit>,
+    /// Index ID
+    #[prost(string, tag = "2")]
+    pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

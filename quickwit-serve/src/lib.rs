@@ -18,41 +18,50 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 mod args;
+mod error;
+mod grpc;
 mod grpc_adapter;
+mod rest;
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::net::SocketAddr;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context;
-pub use args::ServeArgs;
 use async_trait::async_trait;
 use bytes::Bytes;
+use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+use tracing::debug;
+
+use quickwit_cluster::cluster::{read_host_key, Cluster};
+use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_directories::HOTCACHE_FILENAME;
 use quickwit_metastore::{Metastore, MetastoreUriResolver};
-use quickwit_search::SearchServiceImpl;
+use quickwit_search::{
+    http_addr_to_grpc_addr, http_addr_to_swim_addr, SearchClientPool, SearchServiceImpl,
+};
 use quickwit_storage::{
     localstack_region, Cache, LocalFileStorageFactory, S3CompatibleObjectStorageFactory,
     SliceCache, StorageUriResolver, StorageWithCacheFactory,
 };
 use quickwit_telemetry::payload::{ServeEvent, TelemetryEvent};
-use tracing::debug;
-mod error;
-mod rest;
-use std::io::Write;
-use termcolor::WriteColor;
-use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream};
+
+pub use crate::args::ServeArgs;
+pub use crate::error::ApiError;
+use crate::grpc::start_grpc_service;
+use crate::grpc_adapter::GrpcAdapter;
+use crate::rest::start_rest_service;
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
 
 /// Hotcache cache capacity is hardcoded to 500 MB.
 /// Once the capacity is reached, a LRU strategy is used.
 const HOTCACHE_CACHE_CAPACITY: usize = 500_000_000;
-
-pub use crate::error::ApiError;
 
 async fn get_from_cache_or_create_metastore(
     metastore_cache: &mut HashMap<String, Arc<dyn Metastore>>,
@@ -111,7 +120,7 @@ fn display_help_message(
     stdout.set_color(&ColorSpec::new().set_fg(Some(Color::Blue)))?;
     writeln!(
         &mut stdout,
-        "curl http://{}/api/v1/{}/search?query=my+query",
+        "curl 'http://{}/api/v1/{}/search?query=my+query'",
         rest_socket_addr, example_index_name
     )?;
     stdout.set_color(&ColorSpec::new())?;
@@ -236,10 +245,11 @@ fn storage_uri_resolver() -> StorageUriResolver {
         .build()
 }
 
+/// Start Quickwit search node.
 pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
     debug!(args=?args, "serve-cli");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Serve(ServeEvent {
-        has_seed: !args.peers.is_empty(),
+        has_seed: !args.peer_socket_addrs.is_empty(),
     }))
     .await;
     let storage_resolver = storage_uri_resolver();
@@ -251,9 +261,36 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
         .next()
         .with_context(|| "No index available.")?
         .to_string();
-    let search_service_impl = SearchServiceImpl::new(metastore_router, storage_resolver);
-    let rest_routes = rest::search_handler(Arc::new(search_service_impl));
+
+    let host_key = read_host_key(args.host_key_path.as_path())?;
+    let swim_addr = http_addr_to_swim_addr(args.rest_socket_addr);
+    let cluster = Arc::new(Cluster::new(host_key, swim_addr)?);
+    for peer_socket_addr in args.peer_socket_addrs {
+        // If the peer address is specified,
+        // it joins the cluster in which that node participates.
+        let peer_swim_addr = http_addr_to_swim_addr(peer_socket_addr);
+        cluster.add_peer_node(peer_swim_addr);
+    }
+
+    let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
+
+    let search_service = Arc::new(SearchServiceImpl::new(
+        metastore_router,
+        storage_resolver,
+        client_pool,
+    ));
+
+    let cluster_service_impl = ClusterServiceImpl::new(cluster.clone());
+
+    let grpc_socket_addr = http_addr_to_grpc_addr(args.rest_socket_addr);
+    let grpc_search_service = GrpcAdapter::from(search_service.clone());
+    let grpc_server =
+        start_grpc_service(grpc_socket_addr, grpc_search_service, cluster_service_impl);
+
+    let rest_server = start_rest_service(args.rest_socket_addr, search_service);
     display_help_message(args.rest_socket_addr, &example_index_name)?;
-    warp::serve(rest_routes).run(args.rest_socket_addr).await;
+
+    tokio::try_join!(rest_server, grpc_server)?;
+
     Ok(())
 }

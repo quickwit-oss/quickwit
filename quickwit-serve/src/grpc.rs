@@ -21,27 +21,27 @@
 
 use std::net::SocketAddr;
 
-use http::Uri;
-use tonic::transport::Channel;
-use tonic::transport::Endpoint;
+use tonic::transport::Server;
+use tracing::*;
 
-use quickwit_proto::search_service_client::SearchServiceClient;
+use quickwit_proto::cluster_service_server::ClusterServiceServer;
+use quickwit_proto::search_service_server::SearchServiceServer;
 
-/// Create a SearchServiceClient with SocketAddr as an argument.
-/// It will try to reconnect to the node automatically.
-pub async fn create_search_service_client(
+use crate::ClusterServiceImpl;
+use crate::GrpcAdapter;
+
+/// Start gRPC service given a gRPC address and a search service and cluster service.
+pub async fn start_grpc_service(
     grpc_addr: SocketAddr,
-) -> anyhow::Result<SearchServiceClient<Channel>> {
-    let uri = Uri::builder()
-        .scheme("http")
-        .authority(grpc_addr.to_string().as_str())
-        .path_and_query("/")
-        .build()?;
+    search_service: GrpcAdapter,
+    cluster_service: ClusterServiceImpl,
+) -> anyhow::Result<()> {
+    info!(grpc_addr=?grpc_addr, "Start gRPC service.");
+    Server::builder()
+        .add_service(ClusterServiceServer::new(cluster_service))
+        .add_service(SearchServiceServer::new(search_service))
+        .serve(grpc_addr)
+        .await?;
 
-    // Create a channel with connect_lazy to automatically reconnect to the node.
-    let channel = Endpoint::from(uri).connect_lazy()?;
-
-    let client = SearchServiceClient::new(channel);
-
-    Ok(client)
+    Ok(())
 }

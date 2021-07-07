@@ -23,11 +23,15 @@ tonic = "0.4"
 async-trait = "0.1"
 termcolor = "1"
 bytes = "1"
+tokio = { version = "1.7", features = [ "full" ] }
 
 [dev-dependencies]
 mockall = "0.10"
 assert-json-diff = "2.0.1"
 tokio = { version = "1", features = ["full"] }
+
+[dependencies.quickwit-cluster]
+path = '../quickwit-cluster'
 
 [dependencies.quickwit-search]
 path = '../quickwit-search'

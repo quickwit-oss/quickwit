@@ -19,6 +19,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use std::net::{SocketAddr, ToSocketAddrs};
+
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -55,4 +57,16 @@ pub fn extract_metastore_uri_and_index_id_from_index_uri(
     }
 
     Ok((parts[1], parts[0]))
+}
+
+/// Resolve DNS entry and convert them to SocketAddr.
+pub fn to_socket_addr(addr_str: &str) -> anyhow::Result<SocketAddr> {
+    if let Some(addr) = addr_str.to_socket_addrs()?.next() {
+        Ok(addr)
+    } else {
+        Err(anyhow::anyhow!(
+            "Unable to resolve the socket address. {}",
+            addr_str
+        ))
+    }
 }
