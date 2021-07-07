@@ -34,6 +34,12 @@ jobs:
         uses: apache/skywalking-eyes@758c8a3e4e9d15eded5cf08de2cb54b3aebe4faf
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo
+            target/
+          key: ${{ runner.os }}-cargoo-${{ hashFiles('Cargo.lock') }}
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable

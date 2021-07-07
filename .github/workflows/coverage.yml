@@ -3,8 +3,6 @@ name: coverage
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 jobs:
   test:
     name: coverage
@@ -13,12 +11,6 @@ jobs:
       - uses: actions/checkout@v2
       - name: Setup localstack
         run: docker-compose -f localstack.yaml up -d
-      - uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo
-            target/
-          key: ${{ runner.os }}-cargoo-${{ hashFiles('Cargo.lock') }}
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
