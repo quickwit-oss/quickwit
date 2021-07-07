@@ -32,12 +32,20 @@ use regex::Regex;
 /// \--------------------------------------------/ \------/
 ///        metastore_uri                           index_id
 ///
-/// TODO force the presence of a protocol and a specific format using a regex?
 pub fn extract_metastore_uri_and_index_id_from_index_uri(
     index_uri: &str,
 ) -> anyhow::Result<(&str, &str)> {
+    static INDEX_URI_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^.+://.+/.+$").unwrap());
     static INDEX_ID_PATTERN: Lazy<Regex> =
         Lazy::new(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9_\-]*$").unwrap());
+
+    if !INDEX_URI_PATTERN.is_match(index_uri) {
+        anyhow::bail!(
+            "Invalid index uri `{}`. Expected format is: `protocol://bucket/path-to-target`.",
+            index_uri
+        );
+    }
+
     let parts: Vec<&str> = index_uri.rsplitn(2, '/').collect();
     if parts.len() != 2 {
         anyhow::bail!("Failed to parse the uri into a metastore_uri and an index_id.");

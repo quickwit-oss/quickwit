@@ -24,9 +24,6 @@ use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use quickwit_cli::*;
-use quickwit_doc_mapping::{
-    AllFlattenDocMapper, DefaultDocMapperBuilder, DocMapper, WikipediaMapper,
-};
 use quickwit_serve::serve_cli;
 use quickwit_serve::ServeArgs;
 use quickwit_telemetry::payload::TelemetryEvent;
@@ -35,7 +32,7 @@ use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum CliCommand {
     New(CreateIndexArgs),
     Index(IndexDataArgs),
@@ -64,35 +61,17 @@ impl CliCommand {
             .value_of("index-uri")
             .context("'index-uri' is a required arg")?
             .to_string();
-        let doc_mapper_type = matches
-            .value_of("doc-mapper-type")
-            .context("doc-mapper-type has a default value")?;
         let doc_mapper_config_path = matches
             .value_of("doc-mapper-config-path")
-            .map(PathBuf::from);
+            .map(PathBuf::from)
+            .context("'doc-mapper-config-path' is a required arg")?;
         let overwrite = matches.is_present("overwrite");
 
-        let doc_mapper: Box<dyn DocMapper> = match doc_mapper_type.trim().to_lowercase().as_str() {
-            "all_flatten" => Box::new(AllFlattenDocMapper::new()) as Box<dyn DocMapper>,
-            "wikipedia" => Box::new(WikipediaMapper::new()) as Box<dyn DocMapper>,
-            "default" =>
-            // TODO return an error if the type is unknown
-            {
-                let path = doc_mapper_config_path
-                    .context("doc-mapper-config-path is required for the default doc mapper type.")?;
-                let json_file = std::fs::File::open(path)?;
-                let reader = std::io::BufReader::new(json_file);
-                let builder: DefaultDocMapperBuilder = serde_json::from_reader(reader)?;
-                Box::new(builder.build()?) as Box<dyn DocMapper>
-            }
-            doc_mapper_type => anyhow::bail!("doc-mapper-type `{}` not supported. Please choose between all_flatten, wikipedia or default/empty type.", doc_mapper_type)
-        };
-
-        Ok(CliCommand::New(CreateIndexArgs {
+        Ok(CliCommand::New(CreateIndexArgs::new(
             index_uri,
-            doc_mapper,
+            doc_mapper_config_path,
             overwrite,
-        }))
+        )?))
     }
 
     fn parse_index_args(matches: &ArgMatches) -> anyhow::Result<Self> {
@@ -277,33 +256,35 @@ mod tests {
             &path_str,
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
-        assert!(matches!(
-                command,
-            Ok(CliCommand::New(CreateIndexArgs {
-                index_uri,
-                doc_mapper: Box{..},
-                overwrite: false
-            })) if &index_uri == "file:///indexes/wikipedia"
-        ));
+        let expected_cmd = CliCommand::New(
+            CreateIndexArgs::new(
+                "file:///indexes/wikipedia".to_string(),
+                path.to_path_buf(),
+                false,
+            )
+            .unwrap(),
+        );
+        assert_eq!(command.unwrap(), expected_cmd);
 
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
             "file:///indexes/wikipedia",
-            "--doc-mapper-type",
-            "wikipedia",
+            "--doc-mapper-config-path",
+            &path_str,
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
-        assert!(matches!(
-            command,
-            Ok(CliCommand::New(CreateIndexArgs {
-                index_uri,
-                doc_mapper: Box{..},
-                overwrite: true
-            })) if &index_uri == "file:///indexes/wikipedia"
-        ));
+        let expected_cmd = CliCommand::New(
+            CreateIndexArgs::new(
+                "file:///indexes/wikipedia".to_string(),
+                path.to_path_buf(),
+                true,
+            )
+            .unwrap(),
+        );
+        assert_eq!(command.unwrap(), expected_cmd);
 
         Ok(())
     }
