@@ -311,8 +311,8 @@ mod tests {
     use super::*;
 
     #[ignore]
-    #[test]
-    fn test_enabling_and_disabling_telemetry() {
+    #[tokio::test]
+    async fn test_enabling_and_disabling_telemetry() {
         // We group the two in a single test to ensure it happens on the same thread.
         env::set_var(super::DISABLE_TELEMETRY_ENV_KEY, "");
         assert_eq!(TelemetrySender::default().inner.is_disabled(), true);

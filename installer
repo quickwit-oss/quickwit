@@ -14,7 +14,7 @@ set -u
 # If PACKAGE_ROOT is unset or empty, default it.
 PACKAGE_ROOT="${PACKAGE_ROOT:-"https://github.com/quickwit-inc/quickwit/releases/download"}"
 PACKAGE_RELEASE_API="${PACKAGE_RELEASE_API:-"https://api.github.com/repos/quickwit-inc/quickwit/releases"}"
-PACKAGE_NAME="quickwit-cli"
+PACKAGE_NAME="quickwit"
 _divider="--------------------------------------------------------------------------------"
 _prompt=">>>"
 _indent="   "
@@ -36,11 +36,11 @@ EOF
 
 usage() {
     cat 1>&2 <<EOF
-quickwit-cli-install
-The installer for Quickwit-CLI (http://quickwit.io/)
+quickwit-install
+The installer for Quickwit (http://quickwit.io/)
 
 USAGE:
-    quickwit-cli-install [FLAGS] [OPTIONS]
+    quickwit-install [FLAGS] [OPTIONS]
 
 FLAGS:
     -h, --help              Prints help information
@@ -95,7 +95,7 @@ install_from_archive() {
     esac
 
     local _version="$(get_latest_version)"
-    local _file="quickwit-cli-${_binary_arch}"
+    local _file="quickwit-${_binary_arch}"
     local _url="${PACKAGE_ROOT}/${_version}/${_file}"
 
     printf "%s Downloading Quickwit CLI via %s" "$_prompt" "$_url"
@@ -109,7 +109,7 @@ install_from_archive() {
     printf "%s Install succeeded!\n" "$_prompt"
     printf "%s To start using Quickwit CLI:\n" "$_prompt"
     printf "\n"
-    printf "%s ./quickwit-cli --version \n" "$_indent"
+    printf "%s ./quickwit --version \n" "$_indent"
     printf "\n"
     printf "%s More information at http://quickwit.io/docs/\n" "$_prompt"
 
