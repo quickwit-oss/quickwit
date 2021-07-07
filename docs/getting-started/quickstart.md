@@ -100,7 +100,7 @@ The command `serve` starts an http server which provides a [REST API](../referen
 quickwit-cli serve --index-uris file:///your-path-to-your-index/wikipedia
 ```
 
-Check it's working with a simple GET request:
+Check it's working with a simple GET request in the browser:
 ```
 http://0.0.0.0:8080/api/v1/wikipedia/search?query=barack+AND+obama
 ```
