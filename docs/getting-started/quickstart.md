@@ -31,7 +31,7 @@ Let's create an index with a mapper for wikipedia articles on you local machine.
 
 ```
 # First download the wikipedia mapper from quickwit repository
-curl https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/doc_mappers/wikipedia_doc_mapper.json
+curl -o wikipedia_doc_mapper.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/doc_mappers/wikipedia_doc_mapper.json
 ```
 
 The doc mapper defines three text fields: `title`, `body` and `url` and set two default search fields `body` and `title`, it means that a text search will by default search into these two fields. Please note that by default text field are indexed and tokenized. See the [doc mapper documentation](../reference/doc-mapper.md).
