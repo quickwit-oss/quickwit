@@ -1,5 +1,5 @@
 {
-    "store_source": true,
+    "store_source": false,
     "default_search_fields": ["body", "severity_text"],
     "timestamp_field": "timestamp",
     "field_mappings": [
