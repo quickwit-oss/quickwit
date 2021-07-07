@@ -57,6 +57,7 @@ install_from_archive() {
     need_cmd cp
     need_cmd mv
     need_cmd rm
+    need_cmd tar
     need_cmd chmod
     need_cmd grep
     need_cmd head
@@ -95,14 +96,21 @@ install_from_archive() {
     esac
 
     local _version="$(get_latest_version)"
-    local _file="quickwit-${_binary_arch}"
+    local _archive_content_file="quickwit-${_version}-${_binary_arch}"
+    local _file="${_archive_content_file}.tar.gz"
+    local _archive_content_file_="quickwit-${_version}-${_binary_arch}"
     local _url="${PACKAGE_ROOT}/${_version}/${_file}"
 
     printf "%s Downloading Quickwit CLI via %s" "$_prompt" "$_url"
     ensure downloader "$_url" "$_file"
     printf "\n"
 
-    mv "$_file" "${PACKAGE_NAME}"
+    printf "%s Unpacking archive ..." "$_prompt"
+    ensure tar -xzf "$_file"
+    ensure rm "$_file" 
+    printf "\n"
+
+    mv "$_archive_content_file" "${PACKAGE_NAME}"
     chmod 744 "${PACKAGE_NAME}"
    
     printf "\n"
