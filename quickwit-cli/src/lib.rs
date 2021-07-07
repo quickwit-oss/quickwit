@@ -27,7 +27,9 @@ use quickwit_doc_mapping::DocMapper;
 use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_proto::SearchRequest;
+use quickwit_proto::SearchResult;
 use quickwit_search::single_node_search;
+use quickwit_search::SearchResultJson;
 use quickwit_storage::StorageUriResolver;
 use quickwit_telemetry::payload::TelemetryEvent;
 use std::env;
@@ -248,9 +250,12 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
         max_hits: args.max_hits as u64,
         start_offset: args.start_offset as u64,
     };
-    let search_result =
+    let search_result: SearchResult =
         single_node_search(&search_request, &*metastore, storage_uri_resolver).await?;
-    let search_result_json = serde_json::to_string_pretty(&search_result)?;
+
+    let search_result_json = SearchResultJson::from(search_result);
+
+    let search_result_json = serde_json::to_string_pretty(&search_result_json)?;
     println!("{}", search_result_json);
     Ok(())
 }
@@ -290,7 +295,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
 /// every once in awhile.
 pub async fn start_statistics_reporting(
     statistics: Arc<IndexingStatistics>,
-    task_completed_receiver: watch::Receiver<bool>,
+    mut task_completed_receiver: watch::Receiver<bool>,
     input_path_opt: Option<PathBuf>,
 ) -> anyhow::Result<usize> {
     task::spawn(async move {
@@ -299,13 +304,12 @@ pub async fn start_statistics_reporting(
         loop {
             // Try to receive with a timeout of 1 second.
             // 1 second is also the frequency at which we update statistic in the console
-            let mut receiver = task_completed_receiver.clone();
-            let is_done = timeout(Duration::from_secs(1), receiver.changed())
+            let is_done = timeout(Duration::from_secs(1), task_completed_receiver.changed())
                 .await
                 .is_ok();
 
             // Let's not display live statistics to allow screen to scroll.
-            if input_path_opt.is_some() && statistics.num_docs.get() > 0 {
+            if statistics.num_docs.get() > 0 {
                 display_statistics(&mut stdout_handle, start_time, statistics.clone())?;
             }
 

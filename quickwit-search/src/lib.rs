@@ -32,6 +32,7 @@ mod filters;
 mod leaf;
 mod rendezvous_hasher;
 mod root;
+mod search_result_json;
 mod service;
 
 use std::cmp::Reverse;
@@ -54,6 +55,7 @@ pub use crate::error::SearchError;
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
 use crate::root::root_search;
+pub use crate::search_result_json::SearchResultJson;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
 /// Compute the SWIM port from the HTTP port.
@@ -269,9 +271,9 @@ mod tests {
             "default_search_fields": ["body"],
             "timestamp_field": "ts",
             "field_mappings": [
-                { 
+                {
                     "name": "body",
-                    "type": "text" 
+                    "type": "text"
                 },
                 {
                     "name": "ts",
