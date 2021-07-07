@@ -97,7 +97,7 @@ It should return 10 hits. Now you're ready to serve.
 The command `serve` starts an http server which provides a [REST API](../reference/search-api.md). You can start several instances and provide peer socket addresses to form a cluster on which search workload will be distributed.
 
 ```
-quickwit-cli serve --index-uri file:///your-path-to-your-index/wikipedia
+quickwit-cli serve --index-uris file:///your-path-to-your-index/wikipedia
 ```
 
 Check it's working with a simple GET request:
