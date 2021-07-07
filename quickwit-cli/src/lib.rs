@@ -27,7 +27,9 @@ use quickwit_doc_mapping::DocMapper;
 use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_proto::SearchRequest;
+use quickwit_proto::SearchResult;
 use quickwit_search::single_node_search;
+use quickwit_search::SearchResultJson;
 use quickwit_storage::StorageUriResolver;
 use quickwit_telemetry::payload::TelemetryEvent;
 use std::env;
@@ -248,9 +250,12 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
         max_hits: args.max_hits as u64,
         start_offset: args.start_offset as u64,
     };
-    let search_result =
+    let search_result: SearchResult =
         single_node_search(&search_request, &*metastore, storage_uri_resolver).await?;
-    let search_result_json = serde_json::to_string_pretty(&search_result)?;
+
+    let search_result_json = SearchResultJson::from(search_result);
+
+    let search_result_json = serde_json::to_string_pretty(&search_result_json)?;
     println!("{}", search_result_json);
     Ok(())
 }

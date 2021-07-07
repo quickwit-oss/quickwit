@@ -23,12 +23,12 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tracing::*;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
-use quickwit_search::{SearchService, SearchServiceImpl};
+use quickwit_search::{SearchResultJson, SearchService, SearchServiceImpl};
 
 use crate::ApiError;
 
@@ -69,37 +69,6 @@ pub struct SearchRequestQueryString {
     // The results with rank [start_offset..start_offset + max_hits) are returned
     #[serde(default)] // Default to 0. (We are 0-indexed)
     pub start_offset: u64,
-}
-
-/// SearchResultsJson represents the result returned by the rest search API
-/// and is meant to be serialized into Json.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SearchResultJson {
-    num_hits: u64,
-    hits: Vec<serde_json::Value>,
-    num_microsecs: u64,
-}
-
-impl From<quickwit_proto::SearchResult> for SearchResultJson {
-    fn from(search_result: quickwit_proto::SearchResult) -> Self {
-        let hits: Vec<serde_json::Value> = search_result
-            .hits
-            .into_iter()
-            .map(|hit| match serde_json::from_str(&hit.json) {
-                Ok(hit_json) => hit_json,
-                Err(invalid_json) => {
-                    error!(err=?invalid_json, "Invalid json in hit");
-                    serde_json::json!({})
-                }
-            })
-            .collect();
-        SearchResultJson {
-            num_hits: search_result.num_hits,
-            hits,
-            num_microsecs: search_result.elapsed_time_micros,
-        }
-    }
 }
 
 async fn search_endpoint<TSearchService: SearchService>(
