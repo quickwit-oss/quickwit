@@ -204,7 +204,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::tests::storage_test_suite;
+    use crate::{tests::storage_test_suite, StorageError};
 
     #[tokio::test]
     async fn test_storage() -> anyhow::Result<()> {
@@ -215,11 +215,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(
-        expected = "StorageError { kind: Io, source: Invalid uri, `..` is forbidden: file:///tmp/../not_ok }"
-    )]
     fn test_storage_fail_if_uri_is_not_safe() {
-        LocalFileStorage::from_uri("file:///tmp/../not_ok").unwrap();
+        let storage = LocalFileStorage::from_uri("file:///tmp/../not_ok");
+        assert!(storage.is_err());
+        assert!(matches!(storage.unwrap_err(), StorageError { .. }));
     }
 
     #[test]
