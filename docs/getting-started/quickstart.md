@@ -79,7 +79,7 @@ Let's download [a bunch (10 000) of wikipedia articles](http://fulmicoton.com/ta
 
 ```
 # Download the first 1000 wikipedia articles in ndjson format.
-curl -o wiki-articles-1000.json http://fulmicoton.com/tantivy-files/wiki-articles-1000.json
+curl -o -L wiki-articles-1000.json http://fulmicoton.com/tantivy-files/wiki-articles-1000.json
 quickwit-cli index --index-uri file:///your-path-to-your-index/wikipedia --input-path wiki-articles-1000.json
 ```
 
