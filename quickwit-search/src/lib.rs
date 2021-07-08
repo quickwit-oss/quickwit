@@ -169,7 +169,7 @@ pub async fn single_node_search(
 mod tests {
     use assert_json_diff::assert_json_include;
     use quickwit_core::TestSandbox;
-    use quickwit_doc_mapping::{DefaultIndexConfigBuilder, WikipediaIndexConfig};
+    use quickwit_index_config::{DefaultIndexConfigBuilder, WikipediaIndexConfig};
 
     use super::*;
     use serde_json::json;

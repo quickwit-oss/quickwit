@@ -22,8 +22,8 @@
 
 use quickwit_common::extract_metastore_uri_and_index_id_from_index_uri;
 use quickwit_core::DocumentSource;
-use quickwit_doc_mapping::DefaultIndexConfigBuilder;
-use quickwit_doc_mapping::IndexConfig;
+use quickwit_index_config::DefaultIndexConfigBuilder;
+use quickwit_index_config::IndexConfig;
 use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_proto::SearchRequest;

@@ -27,7 +27,7 @@ use std::fmt::Debug;
 use std::ops::Range;
 
 use async_trait::async_trait;
-use quickwit_doc_mapping::IndexConfig;
+use quickwit_index_config::IndexConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::MetastoreResult;

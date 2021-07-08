@@ -17,7 +17,7 @@ quickwit-core = { version = "0.1.0", path = "../quickwit-core" }
 quickwit-common = { version = "0.1.0", path = "../quickwit-common" }
 quickwit-metastore = { version = "0.1.0", path = "../quickwit-metastore" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
-quickwit-doc-mapping = { version = "0.1.0", path = "../quickwit-doc-mapping" }
+quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
 quickwit-search = { version = "0.1", path = "../quickwit-search" }
 quickwit-serve = { version = "0.1", path = "../quickwit-serve" }
 quickwit-telemetry = { version = "0.1", path = "../quickwit-telemetry" }

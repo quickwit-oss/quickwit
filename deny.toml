@@ -115,7 +115,7 @@ exceptions = [
 {name = "quickwit-cluster",allow=["AGPL-3.0"], version = "*"},
 {name = "quickwit-core",allow=["AGPL-3.0"], version = "*"},
 {name = "quickwit-directories",allow=["AGPL-3.0"], version = "*"},
-{name = "quickwit-doc-mapping",allow=["AGPL-3.0"], version = "*"},
+{name = "quickwit-index-config",allow=["AGPL-3.0"], version = "*"},
 {name = "quickwit-metastore",allow=["AGPL-3.0"], version = "*"},
 {name = "quickwit-proto",allow=["AGPL-3.0"], version = "*"},
 {name = "quickwit-search",allow=["AGPL-3.0"], version = "*"},

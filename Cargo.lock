@@ -2655,7 +2655,7 @@ dependencies = [
  "predicates 2.0.0",
  "quickwit-common",
  "quickwit-core",
- "quickwit-doc-mapping",
+ "quickwit-index-config",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-search",
@@ -2706,7 +2706,7 @@ dependencies = [
  "futures-util",
  "mockall 0.9.1",
  "quickwit-directories",
- "quickwit-doc-mapping",
+ "quickwit-index-config",
  "quickwit-metastore",
  "quickwit-storage",
  "rand 0.8.4",
@@ -2750,7 +2750,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickwit-doc-mapping"
+name = "quickwit-index-config"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -2777,7 +2777,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "mockall 0.9.1",
- "quickwit-doc-mapping",
+ "quickwit-index-config",
  "quickwit-storage",
  "serde",
  "serde_json",
@@ -2813,7 +2813,7 @@ dependencies = [
  "quickwit-cluster",
  "quickwit-core",
  "quickwit-directories",
- "quickwit-doc-mapping",
+ "quickwit-index-config",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-storage",
