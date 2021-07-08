@@ -31,23 +31,23 @@ use tantivy::Document;
 
 /// A document mapper tailored for the wikipedia corpus.
 #[derive(Clone, Serialize, Deserialize)]
-pub struct WikipediaMapper {
-    #[serde(skip_serializing, default = "WikipediaMapper::default_schema")]
+pub struct WikipediaIndexConfig {
+    #[serde(skip_serializing, default = "WikipediaIndexConfig::default_schema")]
     schema: Schema,
     #[serde(skip_deserializing, skip_serializing, default)]
     tokenizer_manager: TokenizerManager,
 }
 
-impl std::fmt::Debug for WikipediaMapper {
+impl std::fmt::Debug for WikipediaIndexConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "WikipediaMapper")
+        write!(f, "WikipediaIndexConfig")
     }
 }
 
-impl WikipediaMapper {
+impl WikipediaIndexConfig {
     /// Create a new instance of wikipedia document mapper.
     pub fn new() -> Self {
-        WikipediaMapper {
+        WikipediaIndexConfig {
             schema: Self::default_schema(),
             tokenizer_manager: Default::default(),
         }
@@ -65,14 +65,14 @@ impl WikipediaMapper {
     }
 }
 
-impl Default for WikipediaMapper {
+impl Default for WikipediaIndexConfig {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[typetag::serde(name = "wikipedia")]
-impl IndexConfig for WikipediaMapper {
+impl IndexConfig for WikipediaIndexConfig {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         self.schema
             .parse_document(doc_json)
