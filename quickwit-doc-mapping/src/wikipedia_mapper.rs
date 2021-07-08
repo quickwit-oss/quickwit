@@ -21,7 +21,7 @@
 */
 
 use crate::query_builder::build_query;
-use crate::{DocMapper, DocParsingError, QueryParserError};
+use crate::{DocParsingError, IndexConfig, QueryParserError};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use tantivy::query::Query;
@@ -72,7 +72,7 @@ impl Default for WikipediaMapper {
 }
 
 #[typetag::serde(name = "wikipedia")]
-impl DocMapper for WikipediaMapper {
+impl IndexConfig for WikipediaMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         self.schema
             .parse_document(doc_json)

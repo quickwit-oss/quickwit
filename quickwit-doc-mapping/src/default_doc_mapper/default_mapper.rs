@@ -23,7 +23,7 @@
 use super::{default_as_true, SOURCE_FIELD_NAME};
 use super::{field_mapping_entry::DocParsingError, FieldMappingEntry, FieldMappingType};
 use crate::query_builder::build_query;
-use crate::{DocMapper, QueryParserError};
+use crate::{IndexConfig, QueryParserError};
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
@@ -193,7 +193,7 @@ impl std::fmt::Debug for DefaultDocMapper {
 }
 
 #[typetag::serde(name = "default")]
-impl DocMapper for DefaultDocMapper {
+impl IndexConfig for DefaultDocMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let mut document = Document::default();
         if self.store_source {
@@ -237,8 +237,8 @@ impl DocMapper for DefaultDocMapper {
 #[cfg(test)]
 mod tests {
     use crate::{
-        default_doc_mapper::default_mapper::SOURCE_FIELD_NAME, DefaultDocMapperBuilder, DocMapper,
-        DocParsingError,
+        default_doc_mapper::default_mapper::SOURCE_FIELD_NAME, DefaultDocMapperBuilder,
+        DocParsingError, IndexConfig,
     };
 
     use super::DefaultDocMapper;

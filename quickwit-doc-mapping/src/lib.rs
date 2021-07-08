@@ -37,5 +37,5 @@ pub use error::QueryParserError;
 
 pub use all_flatten_mapper::AllFlattenDocMapper;
 pub use default_doc_mapper::{DefaultDocMapper, DefaultDocMapperBuilder, DocParsingError};
-pub use mapper::{DocMapper, SortBy, SortOrder};
+pub use mapper::{IndexConfig, SortBy, SortOrder};
 pub use wikipedia_mapper::WikipediaMapper;

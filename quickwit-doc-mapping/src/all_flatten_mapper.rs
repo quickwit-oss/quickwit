@@ -21,8 +21,8 @@
 */
 
 use crate::{
-    default_doc_mapper::SOURCE_FIELD_NAME, query_builder::build_query, DocMapper, DocParsingError,
-    QueryParserError,
+    default_doc_mapper::SOURCE_FIELD_NAME, query_builder::build_query, DocParsingError,
+    IndexConfig, QueryParserError,
 };
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
@@ -67,7 +67,7 @@ impl AllFlattenDocMapper {
 }
 
 #[typetag::serde(name = "all_flatten")]
-impl DocMapper for AllFlattenDocMapper {
+impl IndexConfig for AllFlattenDocMapper {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let source = self
             .schema

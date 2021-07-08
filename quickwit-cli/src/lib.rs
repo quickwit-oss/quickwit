@@ -23,7 +23,7 @@
 use quickwit_common::extract_metastore_uri_and_index_id_from_index_uri;
 use quickwit_core::DocumentSource;
 use quickwit_doc_mapping::DefaultDocMapperBuilder;
-use quickwit_doc_mapping::DocMapper;
+use quickwit_doc_mapping::IndexConfig;
 use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_proto::SearchRequest;
@@ -57,7 +57,7 @@ use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, Ind
 #[derive(Debug)]
 pub struct CreateIndexArgs {
     index_uri: String,
-    doc_mapper: Box<dyn DocMapper>,
+    doc_mapper: Box<dyn IndexConfig>,
     overwrite: bool,
 }
 impl PartialEq for CreateIndexArgs {
@@ -77,7 +77,7 @@ impl CreateIndexArgs {
         let json_file = std::fs::File::open(doc_mapper_config_path)?;
         let reader = std::io::BufReader::new(json_file);
         let builder: DefaultDocMapperBuilder = serde_json::from_reader(reader)?;
-        let doc_mapper = Box::new(builder.build()?) as Box<dyn DocMapper>;
+        let doc_mapper = Box::new(builder.build()?) as Box<dyn IndexConfig>;
 
         Ok(Self {
             index_uri,
