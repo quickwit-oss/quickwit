@@ -1,5 +1,9 @@
 name: PUBLISH
 
+env:
+  CONTAINER_TOOL: docker
+  RUSTFLAGS: "-D warnings"
+
 on:
   push:
     tags:
@@ -11,12 +15,11 @@ jobs:
   publish:
     name: Publish for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    container: quay.io/pypa/manylinux2014_x86_64
     strategy:
       matrix:
         include:
           - build: linux
-            os: ubuntu-18.04
+            os: ubuntu-20.04
             artifact_name: quickwit
             asset_name: x86_64-unknown-linux-gnu
           # - build: macos
@@ -40,8 +43,13 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-      - name: Build binary
-        run: cargo build --release
+          target: ${{ env.ASSET_FULL_NAME }}
+          override: true
+      - uses: actions-rs/cargo@v1
+         with:
+           use-cross: true
+           command: build
+           args: --release --target ${{ env.ASSET_FULL_NAME }}
       - name: Rename artifact
         run: mv target/release/${{ matrix.artifact_name }} ${{ env.ASSET_FULL_NAME }}
       - name: Compress artifact
