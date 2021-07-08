@@ -147,9 +147,9 @@ pub async fn single_node_search(
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
     let split_metas = list_relevant_splits(search_request, metastore).await?;
-    let doc_mapper = index_metadata.index_config;
-    let query = doc_mapper.query(search_request)?;
-    let collector = make_collector(doc_mapper.as_ref(), search_request);
+    let index_config = index_metadata.index_config;
+    let query = index_config.query(search_request)?;
+    let collector = make_collector(index_config.as_ref(), search_request);
     let leaf_search_result =
         leaf_search(query.as_ref(), collector, &split_metas[..], storage.clone())
             .await
@@ -282,10 +282,11 @@ mod tests {
                 }
             ]
         }"#;
-        let doc_mapper =
+        let index_config =
             serde_json::from_str::<DefaultIndexConfigBuilder>(mapper_config)?.build()?;
         let index_name = "single-node-simple";
-        let test_sandbox = TestSandbox::create("single-node-simple", Box::new(doc_mapper)).await?;
+        let test_sandbox =
+            TestSandbox::create("single-node-simple", Box::new(index_config)).await?;
 
         let mut docs = vec![];
         for i in 0..30 {
