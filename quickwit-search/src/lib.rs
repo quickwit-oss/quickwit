@@ -192,6 +192,7 @@ mod tests {
         let search_request = SearchRequest {
             index_id: index_name.to_string(),
             query: "anthropomorphic".to_string(),
+            search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 2,
@@ -248,6 +249,7 @@ mod tests {
         let search_request = SearchRequest {
             index_id: index_name.to_string(),
             query: "beagle".to_string(),
+            search_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 6,
@@ -304,6 +306,7 @@ mod tests {
         let search_request = SearchRequest {
             index_id: index_name.to_string(),
             query: "info".to_string(),
+            search_fields: vec![],
             start_timestamp: Some(10),
             end_timestamp: Some(20),
             max_hits: 15,
@@ -324,6 +327,7 @@ mod tests {
         let search_request = SearchRequest {
             index_id: index_name.to_string(),
             query: "info".to_string(),
+            search_fields: vec![],
             start_timestamp: None,
             end_timestamp: Some(20),
             max_hits: 25,

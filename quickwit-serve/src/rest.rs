@@ -55,6 +55,8 @@ fn default_max_hits() -> u64 {
 pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
+    // Fields to search on
+    pub search_fields: Option<Vec<String>>,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
     pub start_timestamp: Option<i64>,
     /// If set, restrict search to documents with a `timestamp < end_timestamp``.
@@ -79,6 +81,7 @@ async fn search_endpoint<TSearchService: SearchService>(
     let search_request = quickwit_proto::SearchRequest {
         index_id,
         query: search_request.query,
+        search_fields: search_request.search_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,
         max_hits: search_request.max_hits,
@@ -178,6 +181,7 @@ mod tests {
             &req,
             &super::SearchRequestQueryString {
                 query: "*".to_string(),
+                search_fields: None,
                 start_timestamp: None,
                 end_timestamp: Some(1450720000),
                 max_hits: 10,
@@ -190,7 +194,7 @@ mod tests {
     async fn test_rest_search_api_route_simple_default_num_hits_default_offset() {
         let rest_search_api_filter = search_filter();
         let (index, req) = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&endTimestamp=1450720000")
+            .path("/api/v1/quickwit-demo-index/search?query=*&endTimestamp=1450720000&searchFields[0]=title&searchFields[1]=body")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -199,6 +203,7 @@ mod tests {
             &req,
             &super::SearchRequestQueryString {
                 query: "*".to_string(),
+                search_fields: Some(vec!["title".to_string(), "body".to_string()]),
                 start_timestamp: None,
                 end_timestamp: Some(1450720000),
                 max_hits: 20,
@@ -218,7 +223,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument(\"failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`\")"
+            "error": "InvalidArgument(\"failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchFields`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`\")"
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
