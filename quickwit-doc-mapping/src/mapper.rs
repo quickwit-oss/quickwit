@@ -92,7 +92,7 @@ clone_trait_object!(IndexConfig);
 
 #[cfg(test)]
 mod tests {
-    use crate::{DefaultDocMapperBuilder, IndexConfig};
+    use crate::{DefaultIndexConfigBuilder, IndexConfig};
 
     const JSON_ALL_FLATTEN_DOC_MAPPER: &str = r#"
         {
@@ -117,7 +117,7 @@ mod tests {
 
         let deserialized_default_mapper =
             serde_json::from_str::<Box<dyn IndexConfig>>(JSON_DEFAULT_DOC_MAPPER)?;
-        let expected_default_mapper = DefaultDocMapperBuilder::new().build()?;
+        let expected_default_mapper = DefaultIndexConfigBuilder::new().build()?;
         assert_eq!(
             format!("{:?}", deserialized_default_mapper),
             format!("{:?}", expected_default_mapper),
