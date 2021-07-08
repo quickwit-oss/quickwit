@@ -18,67 +18,74 @@ jobs:
   ci-passes:
     name: CI passes
     runs-on: ubuntu-latest
+    container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
     needs:
-      - clippy
-      - fmt
+      - license-check
+      - lint
       - test
     steps:
       - run: exit 0
 
-  clippy:
-    name: Lint
+  license-check:
+    name: License-check
     runs-on: ubuntu-latest
+    container: public.ecr.aws/l6o9a3f9/apache-skywalking-eyes:latest
+    steps:
+        - uses: actions/checkout@v2
+        - run: /bin/license-eye -v debug
+
+  lint:
+    name: Lint (fmt, dependency check, clippy)
+    runs-on: ubuntu-latest
+    container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
     steps:
       - uses: actions/checkout@v2
-      - name: Check license header
-        uses: apache/skywalking-eyes@758c8a3e4e9d15eded5cf08de2cb54b3aebe4faf
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy, rustfmt # fmt required when generating proto
+      - name: rustfmt
+        run: cargo fmt --all -- --check
       - uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all --tests
-      - uses: actions-rs/install@v0.1
-        name: install cargo deny
-        with:
-          crate: cargo-deny
-          use-tool-cache: true
+          args: --workspace --tests
       - uses: actions-rs/cargo@v1
         name: cargo deny
         with:
           command: deny
-          args: check License
-
-  fmt:
-    name: Check format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt # fmt required when generating proto
-      - run: cargo fmt --all -- --check
-
+          args: check Licenses # check that all of deps have an ok license.
   test:
-    name: Run tests
+    name: Run unit tests (no [ignored])
     runs-on: ubuntu-latest
+    container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
     steps:
       - uses: actions/checkout@v2
-      - name: Setup localstack
-        run: docker-compose -f localstack.yaml up -d
-      - uses: actions-rs/toolchain@v1
+      - uses: actions-rs/cargo@v1
+        name: cargo test
         with:
-          toolchain: stable
-          components: rustfmt
-      - name: Create bucket in localstack
-        run: docker-compose -f localstack.yaml exec -T localstack awslocal s3 mb s3://quickwit-integration-tests
-      - name: Run all tests.
-        env:
-          AWS_ACCESS_KEY_ID: dummy-access-key
-          AWS_SECRET_ACCESS_KEY: dummy-secret-key
-        run: cargo test --all-features
+          command: test
+
+  # test:
+  #   name: Run tests
+  #   runs-on: ubuntu-latest
+  #   container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
+  #   services:
+  #     localstack:
+  #       image: localstack/localstack:latest
+  #       ports:
+  #         - "4566:4566"
+  #       env:
+  #         SERVICES: s3
+  #         HOSTNAME_EXTERNAL: localstack
+  #   env:
+  #     AWS_ACCESS_KEY_ID   : "placeholder"
+  #     AWS_SECRET_ACCESS_KEY: "placeholder"
+  #     AWS_DEFAULT_REGION  : "localhost"
+  #   container:
+  #       image: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #     - name: Create bucket in localstack
+  #       run: /usr/local/bin/aws --endpoint-url=http://localstack:4566 s3 mb s3://quickwit-integration-tests
+  #     - name: Run all tests.
+  #       env:
+  #         AWS_ACCESS_KEY_ID: dummy-access-key
+  #         AWS_SECRET_ACCESS_KEY: dummy-secret-key
+  #       run: cargo test --all-features
