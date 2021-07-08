@@ -20,8 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
     needs:
-      - clippy
-      - fmt
+      # - clippy
+      # - fmt
       - test
     steps:
       - run: exit 0
@@ -61,16 +61,32 @@ jobs:
   test:
     name: Run tests
     runs-on: ubuntu-latest
+    services:
+      localstack:
+        image: localstack/localstack:latest
+        ports:
+          - "4566:4566"
+        env:
+          SERVICES: s3
+    env:
+      AWS_ACCESS_KEY_ID   : "foo"
+      AWS_SECRET_ACCESS_KEY: "bar"
+      AWS_DEFAULT_REGION  : "eu-west-1"
+    container:
+        image: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
+        options: --privileged
     steps:
       - uses: actions/checkout@v2
-      - name: Setup localstack
-        run: docker-compose -f localstack.yaml up -d
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt
+      # - name: Setup localstack
+      #   run: docker-compose -f localstack.yaml up -d
+      # - uses: actions-rs/toolchain@v1
+      #   with:
+      #     toolchain: stable
+      #     components: rustfmt
+      # - name: Create bucket in localstack
+      # run: docker -f localstack.yaml exec -T localstack awslocal s3 mb s3://quickwit-integration-tests
       - name: Create bucket in localstack
-        run: docker-compose -f localstack.yaml exec -T localstack awslocal s3 mb s3://quickwit-integration-tests
+        run: awslocal s3 mb s3://quickwit-integration-tests
       - name: Run all tests.
         env:
           AWS_ACCESS_KEY_ID: dummy-access-key
