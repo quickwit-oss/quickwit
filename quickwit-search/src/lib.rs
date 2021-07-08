@@ -147,7 +147,7 @@ pub async fn single_node_search(
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
     let split_metas = list_relevant_splits(search_request, metastore).await?;
-    let doc_mapper = index_metadata.doc_mapper;
+    let doc_mapper = index_metadata.index_config;
     let query = doc_mapper.query(search_request)?;
     let collector = make_collector(doc_mapper.as_ref(), search_request);
     let leaf_search_result =
@@ -169,7 +169,7 @@ pub async fn single_node_search(
 mod tests {
     use assert_json_diff::assert_json_include;
     use quickwit_core::TestSandbox;
-    use quickwit_doc_mapping::{DefaultDocMapperBuilder, WikipediaMapper};
+    use quickwit_doc_mapping::{DefaultIndexConfigBuilder, WikipediaMapper};
 
     use super::*;
     use serde_json::json;
@@ -282,7 +282,8 @@ mod tests {
                 }
             ]
         }"#;
-        let doc_mapper = serde_json::from_str::<DefaultDocMapperBuilder>(mapper_config)?.build()?;
+        let doc_mapper =
+            serde_json::from_str::<DefaultIndexConfigBuilder>(mapper_config)?.build()?;
         let index_name = "single-node-simple";
         let test_sandbox = TestSandbox::create("single-node-simple", Box::new(doc_mapper)).await?;
 

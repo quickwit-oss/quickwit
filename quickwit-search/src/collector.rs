@@ -21,7 +21,7 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-use quickwit_doc_mapping::DocMapper;
+use quickwit_doc_mapping::IndexConfig;
 use quickwit_doc_mapping::SortBy;
 use quickwit_doc_mapping::SortOrder;
 use quickwit_proto::LeafSearchResult;
@@ -335,7 +335,7 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
 }
 
 /// Extracts all fast field names.
-fn extract_fast_field_names(doc_mapper: &dyn DocMapper) -> Vec<String> {
+fn extract_fast_field_names(doc_mapper: &dyn IndexConfig) -> Vec<String> {
     let mut fast_fields = vec![];
     if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
         fast_fields.push(timestamp_field);
@@ -352,7 +352,7 @@ fn extract_fast_field_names(doc_mapper: &dyn DocMapper) -> Vec<String> {
 
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
 pub fn make_collector(
-    doc_mapper: &dyn DocMapper,
+    doc_mapper: &dyn IndexConfig,
     search_request: &SearchRequest,
 ) -> QuickwitCollector {
     QuickwitCollector {

@@ -20,7 +20,7 @@
  */
 use std::sync::Arc;
 
-use quickwit_doc_mapping::DocMapper;
+use quickwit_doc_mapping::IndexConfig;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver};
 use quickwit_storage::StorageUriResolver;
 use tempfile::tempdir;
@@ -43,12 +43,12 @@ pub struct TestSandbox {
 
 impl TestSandbox {
     /// Creates a new test environment.
-    pub async fn create(index_id: &str, doc_mapper: Box<dyn DocMapper>) -> anyhow::Result<Self> {
+    pub async fn create(index_id: &str, doc_mapper: Box<dyn IndexConfig>) -> anyhow::Result<Self> {
         let metastore_uri = "ram://quickwit-test-indices";
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
             index_uri: format!("{}/{}", metastore_uri, index_id),
-            doc_mapper,
+            index_config: doc_mapper,
         };
         let storage_uri_resolver = StorageUriResolver::default();
         let metastore = MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone())

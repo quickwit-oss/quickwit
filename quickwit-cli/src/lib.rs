@@ -22,8 +22,8 @@
 
 use quickwit_common::extract_metastore_uri_and_index_id_from_index_uri;
 use quickwit_core::DocumentSource;
-use quickwit_doc_mapping::DefaultDocMapperBuilder;
-use quickwit_doc_mapping::DocMapper;
+use quickwit_doc_mapping::DefaultIndexConfigBuilder;
+use quickwit_doc_mapping::IndexConfig;
 use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_proto::SearchRequest;
@@ -57,12 +57,12 @@ use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, Ind
 #[derive(Debug)]
 pub struct CreateIndexArgs {
     index_uri: String,
-    doc_mapper: Box<dyn DocMapper>,
+    index_config: Box<dyn IndexConfig>,
     overwrite: bool,
 }
 impl PartialEq for CreateIndexArgs {
-    // doc_mapper is opaque and not compared currently, need to change the trait to enable
-    // docmapper comparison
+    // index_config is opaque and not compared currently, need to change the trait to enable
+    // IndexConfig comparison
     fn eq(&self, other: &Self) -> bool {
         self.index_uri == other.index_uri && self.overwrite == other.overwrite
     }
@@ -76,12 +76,12 @@ impl CreateIndexArgs {
     ) -> anyhow::Result<Self> {
         let json_file = std::fs::File::open(doc_mapper_config_path)?;
         let reader = std::io::BufReader::new(json_file);
-        let builder: DefaultDocMapperBuilder = serde_json::from_reader(reader)?;
-        let doc_mapper = Box::new(builder.build()?) as Box<dyn DocMapper>;
+        let builder: DefaultIndexConfigBuilder = serde_json::from_reader(reader)?;
+        let doc_mapper = Box::new(builder.build()?) as Box<dyn IndexConfig>;
 
         Ok(Self {
             index_uri,
-            doc_mapper,
+            index_config: doc_mapper,
             overwrite,
         })
     }
@@ -117,7 +117,7 @@ pub struct DeleteIndexArgs {
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri = %args.index_uri,
-        doc_mapper = ?args.doc_mapper,
+        doc_mapper = ?args.index_config,
         overwrite = args.overwrite,
         "create-index"
     );
@@ -131,7 +131,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: args.index_uri.to_string(),
-        doc_mapper: args.doc_mapper,
+        index_config: args.index_config,
     };
     create_index(metastore_uri, index_metadata).await?;
     Ok(())

@@ -23,7 +23,7 @@
 use super::{default_as_true, SOURCE_FIELD_NAME};
 use super::{field_mapping_entry::DocParsingError, FieldMappingEntry, FieldMappingType};
 use crate::query_builder::build_query;
-use crate::{DocMapper, QueryParserError};
+use crate::{IndexConfig, QueryParserError};
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
@@ -36,10 +36,10 @@ use tantivy::{
     Document,
 };
 
-/// DefaultDocMapperBuilder is here
-/// to create a valid DefaultDocMapper.
+/// DefaultIndexConfigBuilder is here
+/// to create a valid IndexConfig.
 #[derive(Default, Serialize, Deserialize, Clone)]
-pub struct DefaultDocMapperBuilder {
+pub struct DefaultIndexConfigBuilder {
     #[serde(default = "default_as_true")]
     store_source: bool,
     default_search_fields: Vec<String>,
@@ -47,7 +47,7 @@ pub struct DefaultDocMapperBuilder {
     field_mappings: Vec<FieldMappingEntry>,
 }
 
-impl DefaultDocMapperBuilder {
+impl DefaultIndexConfigBuilder {
     /// Create a new `DefaultDocMapperBuilder`.
     // TODO: either remove it or complete implementation
     // with methods to make possible to add / remove
@@ -63,7 +63,7 @@ impl DefaultDocMapperBuilder {
 
     /// Build a valid `DefaultDocMapper`.
     /// This will consume your `DefaultDocMapperBuilder`.
-    pub fn build(self) -> anyhow::Result<DefaultDocMapper> {
+    pub fn build(self) -> anyhow::Result<DefaultIndexConfig> {
         let schema = self.build_schema()?;
         // Resolve default search fields
         let mut default_search_field_names = Vec::new();
@@ -98,7 +98,7 @@ impl DefaultDocMapperBuilder {
         // Build the root mapping entry, it has an empty name so that we don't prefix all
         // field name with it.
         let field_mappings = FieldMappingEntry::root(FieldMappingType::Object(self.field_mappings));
-        Ok(DefaultDocMapper {
+        Ok(DefaultIndexConfig {
             schema,
             store_source: self.store_source,
             default_search_field_names,
@@ -134,16 +134,16 @@ impl DefaultDocMapperBuilder {
     }
 }
 
-impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
+impl TryFrom<DefaultIndexConfigBuilder> for DefaultIndexConfig {
     type Error = anyhow::Error;
 
-    fn try_from(value: DefaultDocMapperBuilder) -> Result<DefaultDocMapper, Self::Error> {
+    fn try_from(value: DefaultIndexConfigBuilder) -> Result<DefaultIndexConfig, Self::Error> {
         value.build()
     }
 }
 
-impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
-    fn from(value: DefaultDocMapper) -> Self {
+impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
+    fn from(value: DefaultIndexConfig) -> Self {
         Self {
             store_source: value.store_source,
             timestamp_field: value.timestamp_field_name(),
@@ -156,14 +156,17 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
     }
 }
 
-/// Default [`DocMapper`] implementation
+/// Default [`IndexConfig`] implementation
 /// which defines a set of rules to map json fields
 /// to tantivy index fields.
 ///
 /// The mains rules are defined by the field mappings.
 #[derive(Serialize, Deserialize, Clone)]
-#[serde(try_from = "DefaultDocMapperBuilder", into = "DefaultDocMapperBuilder")]
-pub struct DefaultDocMapper {
+#[serde(
+    try_from = "DefaultIndexConfigBuilder",
+    into = "DefaultIndexConfigBuilder"
+)]
+pub struct DefaultIndexConfig {
     /// Store the json source in a text field _source.
     store_source: bool,
     /// Default list of field names used for search.
@@ -177,7 +180,7 @@ pub struct DefaultDocMapper {
     schema: Schema,
 }
 
-impl std::fmt::Debug for DefaultDocMapper {
+impl std::fmt::Debug for DefaultIndexConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter
             .debug_struct("DefaultDocMapper")
@@ -193,7 +196,7 @@ impl std::fmt::Debug for DefaultDocMapper {
 }
 
 #[typetag::serde(name = "default")]
-impl DocMapper for DefaultDocMapper {
+impl IndexConfig for DefaultIndexConfig {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let mut document = Document::default();
         if self.store_source {
@@ -237,11 +240,11 @@ impl DocMapper for DefaultDocMapper {
 #[cfg(test)]
 mod tests {
     use crate::{
-        default_doc_mapper::default_mapper::SOURCE_FIELD_NAME, DefaultDocMapperBuilder, DocMapper,
-        DocParsingError,
+        default_doc_mapper::default_mapper::SOURCE_FIELD_NAME, DefaultIndexConfigBuilder,
+        DocParsingError, IndexConfig,
     };
 
-    use super::DefaultDocMapper;
+    use super::DefaultIndexConfig;
     use serde_json::{self, Value as JsonValue};
     use std::collections::HashMap;
 
@@ -333,7 +336,7 @@ mod tests {
 
     #[test]
     fn test_json_deserialize() -> anyhow::Result<()> {
-        let mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
+        let mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
         assert!(mapper.store_source);
         let mut default_search_field_names: Vec<String> = mapper.default_search_field_names;
         default_search_field_names.sort();
@@ -348,10 +351,10 @@ mod tests {
 
     #[test]
     fn test_json_serialize() -> anyhow::Result<()> {
-        let mut mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
+        let mut mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
         let json_mapper = serde_json::to_string_pretty(&mapper)?;
         let mut mapper_after_serialization =
-            serde_json::from_str::<DefaultDocMapper>(&json_mapper)?;
+            serde_json::from_str::<DefaultIndexConfig>(&json_mapper)?;
         assert_eq!(mapper.store_source, mapper_after_serialization.store_source);
 
         mapper.default_search_field_names.sort();
@@ -366,7 +369,7 @@ mod tests {
 
     #[test]
     fn test_parsing_document() -> anyhow::Result<()> {
-        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
+        let doc_mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
         let document = doc_mapper.doc_from_json(JSON_DOC_VALUE)?;
         let schema = doc_mapper.schema();
         // 6 property entry + 1 field "_source" + two fields values for "tags" field
@@ -396,7 +399,7 @@ mod tests {
 
     #[test]
     fn test_accept_parsing_document_with_unknown_fields_and_missing_fields() -> anyhow::Result<()> {
-        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
+        let doc_mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
         doc_mapper.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -408,7 +411,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_cardinality() -> anyhow::Result<()> {
-        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
+        let doc_mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
         let result = doc_mapper.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -426,7 +429,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_value() -> anyhow::Result<()> {
-        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
+        let doc_mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
         let result = doc_mapper.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -459,7 +462,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(mapper_config)?;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(mapper_config)?;
         let expected_msg = "Timestamp field must be a fast field, please add fast property to your field `timestamp`.".to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
@@ -480,7 +483,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(mapper_config)?;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(mapper_config)?;
         let expected_msg = "Timestamp field cannot be an array, please change your field `timestamp` from an array to a single value.".to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
@@ -499,7 +502,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(mapper_config)?;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(mapper_config)?;
         let expected_msg = "`_source` is a reserved name, change your field name.".to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())

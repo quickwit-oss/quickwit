@@ -21,8 +21,8 @@
 */
 
 use crate::{
-    default_doc_mapper::SOURCE_FIELD_NAME, query_builder::build_query, DocMapper, DocParsingError,
-    QueryParserError,
+    default_doc_mapper::SOURCE_FIELD_NAME, query_builder::build_query, DocParsingError,
+    IndexConfig, QueryParserError,
 };
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
@@ -34,28 +34,28 @@ use tantivy::{
 
 /// A mapper that flatten the document to have all fields at top level.
 #[derive(Clone, Serialize, Deserialize)]
-pub struct AllFlattenDocMapper {
-    #[serde(skip_serializing, default = "AllFlattenDocMapper::default_schema")]
+pub struct AllFlattenIndexConfig {
+    #[serde(skip_serializing, default = "AllFlattenIndexConfig::default_schema")]
     schema: Schema,
 }
 
-impl std::fmt::Debug for AllFlattenDocMapper {
+impl std::fmt::Debug for AllFlattenIndexConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(formatter, "AllFlattenDocMapper")
+        write!(formatter, "AllFlattenIndexConfig")
     }
 }
 
-impl Default for AllFlattenDocMapper {
+impl Default for AllFlattenIndexConfig {
     fn default() -> Self {
-        AllFlattenDocMapper::new()
+        AllFlattenIndexConfig::new()
     }
 }
 
-impl AllFlattenDocMapper {
+impl AllFlattenIndexConfig {
     /// Creates new instance of all flatten mapper
     pub fn new() -> Self {
-        AllFlattenDocMapper {
-            schema: AllFlattenDocMapper::default_schema(),
+        AllFlattenIndexConfig {
+            schema: AllFlattenIndexConfig::default_schema(),
         }
     }
 
@@ -67,7 +67,7 @@ impl AllFlattenDocMapper {
 }
 
 #[typetag::serde(name = "all_flatten")]
-impl DocMapper for AllFlattenDocMapper {
+impl IndexConfig for AllFlattenIndexConfig {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let source = self
             .schema

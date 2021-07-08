@@ -56,17 +56,17 @@ pub enum SortBy {
     DocId,
 }
 
-/// The `DocMapper` trait defines the way of defining how a (json) document,
+/// The `IndexConfig` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
 ///
-/// The `DocMapper` trait is in charge of implementing :
+/// The `IndexConfig` trait is in charge of implementing :
 ///
 /// - a way to build a tantivy::Document from a json payload
 /// - a way to build a tantivy::Query from a SearchRequest
 /// - a way to build a tantivy:Schema
 ///
 #[typetag::serde(tag = "type")]
-pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
+pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     /// Returns the document built from a json string.
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError>;
     /// Returns the schema.
@@ -88,11 +88,11 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     }
 }
 
-clone_trait_object!(DocMapper);
+clone_trait_object!(IndexConfig);
 
 #[cfg(test)]
 mod tests {
-    use crate::{DefaultDocMapperBuilder, DocMapper};
+    use crate::{DefaultIndexConfigBuilder, IndexConfig};
 
     const JSON_ALL_FLATTEN_DOC_MAPPER: &str = r#"
         {
@@ -109,15 +109,15 @@ mod tests {
     #[test]
     fn test_deserialize_doc_mapper() -> anyhow::Result<()> {
         let all_flatten_mapper =
-            serde_json::from_str::<Box<dyn DocMapper>>(JSON_ALL_FLATTEN_DOC_MAPPER)?;
+            serde_json::from_str::<Box<dyn IndexConfig>>(JSON_ALL_FLATTEN_DOC_MAPPER)?;
         assert_eq!(
             format!("{:?}", all_flatten_mapper),
-            "AllFlattenDocMapper".to_string()
+            "AllFlattenIndexConfig".to_string()
         );
 
         let deserialized_default_mapper =
-            serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
-        let expected_default_mapper = DefaultDocMapperBuilder::new().build()?;
+            serde_json::from_str::<Box<dyn IndexConfig>>(JSON_DEFAULT_DOC_MAPPER)?;
+        let expected_default_mapper = DefaultIndexConfigBuilder::new().build()?;
         assert_eq!(
             format!("{:?}", deserialized_default_mapper),
             format!("{:?}", expected_default_mapper),
