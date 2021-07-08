@@ -76,13 +76,13 @@ You're now ready to fill the index.
 
 ## Let's add some documents
 
-Currently `quickwit-cli` can index new line delimited json [ndjson](http://ndjson.org/) datasets.
+Currently Quickwit can index new line delimited json [ndjson](http://ndjson.org/) datasets.
 Let's download [a bunch of wikipedia articles (10 000)](https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json) in [ndjson](http://ndjson.org/) format and index it.
 
 ```
 # Download the first 10000 wikipedia articles in ndjson format.
 curl -o -L wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
-quickwit-cli index --index-uri file:///$(pwd)/wikipedia --input-path wiki-articles-10000.json
+quickwit index --index-uri file:///$(pwd)/wikipedia --input-path wiki-articles-10000.json
 ```
 
 Wait a few seconds and check if it worked by using `search` command:
@@ -122,11 +122,11 @@ Congrats! You can level up with some nice tutorials to discover all Quickwit fea
 
 ```
 curl -o wikipedia_index_config.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/wikipedia_index_config.json
-quickwit-cli new --index-uri file:///$(pwd)/wikipedia --index-config-path ./wikipedia_index_config.json
+quickwit new --index-uri file:///$(pwd)/wikipedia --index-config-path ./wikipedia_index_config.json
 curl -o -L wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
-quickwit-cli index --index-uri file:///$(pwd)/wikipedia --input-path wiki-articles-10000.json
-quickwit-cli search --index-uri file:///$(pwd)/wikipedia --query "barack AND obama"
-quickwit-cli delete --index-uri file:///$(pwd)/wikipedia"
+quickwit index --index-uri file:///$(pwd)/wikipedia --input-path wiki-articles-10000.json
+quickwit search --index-uri file:///$(pwd)/wikipedia --query "barack AND obama"
+quickwit delete --index-uri file:///$(pwd)/wikipedia
 ```
 
 
