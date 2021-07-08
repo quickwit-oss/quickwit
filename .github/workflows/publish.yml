@@ -43,13 +43,13 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          target: ${{ env.ASSET_FULL_NAME }}
+          target: x86_64-unknown-linux-gnu
           override: true
       - uses: actions-rs/cargo@v1
         with:
           use-cross: true
           command: build
-          args: --release --target ${{ env.ASSET_FULL_NAME }}
+          args: --release --target x86_64-unknown-linux-gnu
       - name: Rename artifact
         run: mv target/release/${{ matrix.artifact_name }} ${{ env.ASSET_FULL_NAME }}
       - name: Compress artifact
