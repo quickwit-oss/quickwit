@@ -29,7 +29,7 @@ use tantivy::schema::{Schema, TextFieldIndexing, TextOptions};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::Document;
 
-/// A document mapper tailored for the wikipedia corpus.
+/// A document config tailored for the wikipedia corpus.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct WikipediaIndexConfig {
     #[serde(skip_serializing, default = "WikipediaIndexConfig::default_schema")]
@@ -45,7 +45,7 @@ impl std::fmt::Debug for WikipediaIndexConfig {
 }
 
 impl WikipediaIndexConfig {
-    /// Create a new instance of wikipedia document mapper.
+    /// Create a new instance of wikipedia document config.
     pub fn new() -> Self {
         WikipediaIndexConfig {
             schema: Self::default_schema(),
