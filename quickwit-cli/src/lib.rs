@@ -117,7 +117,7 @@ pub struct DeleteIndexArgs {
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri = %args.index_uri,
-        doc_mapper = ?args.doc_mapper,
+        doc_mapper = ?args.index_config,
         overwrite = args.overwrite,
         "create-index"
     );
