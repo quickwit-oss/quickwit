@@ -23,7 +23,7 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use tracing::*;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
@@ -56,6 +56,9 @@ pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
     // Fields to search on
+    #[serde(default)]
+    #[serde(rename(deserialize = "searchField"))]
+    #[serde(deserialize_with = "from_simple_list")]
     pub search_fields: Option<Vec<String>>,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
     pub start_timestamp: Option<i64>,
@@ -143,6 +146,20 @@ async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
     }
 }
 
+fn from_simple_list<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let str_sequence = String::deserialize(deserializer)?;
+    Ok(Some(
+        str_sequence
+            .trim_matches(',')
+            .split(',')
+            .map(|item| item.to_owned())
+            .collect(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,7 +211,7 @@ mod tests {
     async fn test_rest_search_api_route_simple_default_num_hits_default_offset() {
         let rest_search_api_filter = search_filter();
         let (index, req) = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&endTimestamp=1450720000&searchFields[0]=title&searchFields[1]=body")
+            .path("/api/v1/quickwit-demo-index/search?query=*&endTimestamp=1450720000&searchField=title,body")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -223,7 +240,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument(\"failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchFields`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`\")"
+            "error": "InvalidArgument(\"failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`\")"
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
