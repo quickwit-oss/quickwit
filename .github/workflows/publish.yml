@@ -11,12 +11,12 @@ jobs:
   publish:
     name: Publish for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    container: debian:squeeze
+    container: debian:wheezy
     strategy:
       matrix:
         include:
           - build: linux
-            os: ubuntu-20.04
+            os: ubuntu-18.04
             artifact_name: quickwit
             asset_name: x86_64-unknown-linux-gnu
           # - build: macos
@@ -31,6 +31,8 @@ jobs:
           #   asset_name: x86_64-pc-windows.exe
 
     steps:
+      - name: Show GLIBC
+        run: ldd --version
       - uses: actions/checkout@v2
       - uses: ./.github/actions/artifact-name
         with: 
