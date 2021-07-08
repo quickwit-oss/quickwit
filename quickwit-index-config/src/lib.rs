@@ -28,15 +28,15 @@
 //! engine, aka tantivy::Document.
 
 mod all_flatten_config;
+mod config;
 mod default_index_config;
 mod error;
-mod config;
 mod query_builder;
-mod wikipedia_mapper;
+mod wikipedia_config;
 
 pub use error::QueryParserError;
 
 pub use all_flatten_config::AllFlattenIndexConfig;
-pub use default_index_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
 pub use config::{IndexConfig, SortBy, SortOrder};
-pub use wikipedia_mapper::WikipediaIndexConfig;
+pub use default_index_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
+pub use wikipedia_config::WikipediaIndexConfig;
