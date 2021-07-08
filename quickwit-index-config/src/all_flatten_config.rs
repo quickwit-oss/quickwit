@@ -21,7 +21,7 @@
 */
 
 use crate::{
-    default_doc_mapper::SOURCE_FIELD_NAME, query_builder::build_query, DocParsingError,
+    default_index_config::SOURCE_FIELD_NAME, query_builder::build_query, DocParsingError,
     IndexConfig, QueryParserError,
 };
 use quickwit_proto::SearchRequest;
