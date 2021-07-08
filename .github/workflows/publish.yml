@@ -51,7 +51,7 @@ jobs:
           command: build
           args: --release --target x86_64-unknown-linux-gnu
       - name: Rename artifact
-        run: mv target/release/x86_64-unknown-linux-gnu ${{ env.ASSET_FULL_NAME }}
+        run: mv target/x86_64-unknown-linux-gnu/release/quickwit ${{ env.ASSET_FULL_NAME }}
       - name: Compress artifact
         run: tar -czvf ${{ env.ASSET_FULL_NAME }}.tar.gz ${{ env.ASSET_FULL_NAME }}
       - name: Upload artifact
