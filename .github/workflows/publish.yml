@@ -11,7 +11,7 @@ jobs:
   publish:
     name: Publish for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    container: debian:stretch
+    container: rust:stretch
     strategy:
       matrix:
         include:
