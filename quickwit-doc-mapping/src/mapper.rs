@@ -112,7 +112,7 @@ mod tests {
             serde_json::from_str::<Box<dyn IndexConfig>>(JSON_ALL_FLATTEN_DOC_MAPPER)?;
         assert_eq!(
             format!("{:?}", all_flatten_mapper),
-            "AllFlattenDocMapper".to_string()
+            "AllFlattenIndexConfig".to_string()
         );
 
         let deserialized_default_mapper =

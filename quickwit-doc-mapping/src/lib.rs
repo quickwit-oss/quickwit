@@ -35,7 +35,7 @@ mod wikipedia_mapper;
 
 pub use error::QueryParserError;
 
-pub use all_flatten_mapper::AllFlattenDocMapper;
+pub use all_flatten_mapper::AllFlattenIndexConfig;
 pub use default_doc_mapper::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
 pub use mapper::{IndexConfig, SortBy, SortOrder};
 pub use wikipedia_mapper::WikipediaMapper;

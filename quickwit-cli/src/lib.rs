@@ -57,12 +57,12 @@ use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, Ind
 #[derive(Debug)]
 pub struct CreateIndexArgs {
     index_uri: String,
-    doc_mapper: Box<dyn IndexConfig>,
+    index_config: Box<dyn IndexConfig>,
     overwrite: bool,
 }
 impl PartialEq for CreateIndexArgs {
-    // doc_mapper is opaque and not compared currently, need to change the trait to enable
-    // docmapper comparison
+    // index_config is opaque and not compared currently, need to change the trait to enable
+    // IndexConfig comparison
     fn eq(&self, other: &Self) -> bool {
         self.index_uri == other.index_uri && self.overwrite == other.overwrite
     }
@@ -81,7 +81,7 @@ impl CreateIndexArgs {
 
         Ok(Self {
             index_uri,
-            doc_mapper,
+            index_config: doc_mapper,
             overwrite,
         })
     }
@@ -131,7 +131,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: args.index_uri.to_string(),
-        index_config: args.doc_mapper,
+        index_config: args.index_config,
     };
     create_index(metastore_uri, index_metadata).await?;
     Ok(())
