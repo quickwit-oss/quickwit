@@ -27,7 +27,7 @@
 //! to convert a json like documents to a document indexable by tantivy
 //! engine, aka tantivy::Document.
 
-mod all_flatten_mapper;
+mod all_flatten_config;
 mod default_index_config;
 mod error;
 mod mapper;
@@ -36,7 +36,7 @@ mod wikipedia_mapper;
 
 pub use error::QueryParserError;
 
-pub use all_flatten_mapper::AllFlattenIndexConfig;
+pub use all_flatten_config::AllFlattenIndexConfig;
 pub use default_index_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
 pub use mapper::{IndexConfig, SortBy, SortOrder};
 pub use wikipedia_mapper::WikipediaIndexConfig;
