@@ -41,7 +41,7 @@ pub struct IndexMetadata {
     /// split files.
     pub index_uri: String,
     /// The doc mapper used for this index.
-    pub doc_mapper: Box<dyn IndexConfig>,
+    pub index_config: Box<dyn IndexConfig>,
 }
 
 /// A split metadata carries all meta data about a split.

@@ -408,7 +408,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -435,7 +435,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -471,7 +471,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -494,7 +494,7 @@ mod tests {
             );
 
             assert_eq!(
-                format!("{:?}", created_index.index.doc_mapper),
+                format!("{:?}", created_index.index.index_config),
                 "AllFlattenDocMapper".to_string()
             );
 
@@ -521,7 +521,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -570,7 +570,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -713,7 +713,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -859,7 +859,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenDocMapper::default()),
             };
 
             // create index
@@ -1423,7 +1423,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -1528,7 +1528,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenDocMapper::default()),
             };
 
             // Create index
@@ -1644,7 +1644,7 @@ mod tests {
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
             index_uri: "ram://my-indexes/my-index".to_string(),
-            doc_mapper: Box::new(AllFlattenDocMapper::default()),
+            index_config: Box::new(AllFlattenDocMapper::default()),
         };
 
         // create index

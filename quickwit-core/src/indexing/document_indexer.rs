@@ -41,8 +41,8 @@ pub async fn index_documents(
     statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
     let index_metadata = metastore.index_metadata(&params.index_id).await?;
-    let schema = index_metadata.doc_mapper.schema();
-    let timestamp_field = index_metadata.doc_mapper.timestamp_field();
+    let schema = index_metadata.index_config.schema();
+    let timestamp_field = index_metadata.index_config.timestamp_field();
 
     let mut current_split = Split::create(
         &params,
@@ -54,7 +54,7 @@ pub async fn index_documents(
     .await?;
     while let Some(raw_json_doc) = document_source.next_document().await? {
         let doc_size = raw_json_doc.as_bytes().len();
-        let parse_result = index_metadata.doc_mapper.doc_from_json(&raw_json_doc);
+        let parse_result = index_metadata.index_config.doc_from_json(&raw_json_doc);
         // TODO: split metadata is updating here and in the `split.update_metadata` method
         // which is a little bit confusing.
         let doc = match parse_result {
@@ -131,7 +131,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: index_id.to_string(),
                     index_uri: index_uri.to_string(),
-                    doc_mapper: Box::new(AllFlattenDocMapper::new()),
+                    index_config: Box::new(AllFlattenDocMapper::new()),
                 })
             });
         let metastore = Arc::new(mock_metastore);

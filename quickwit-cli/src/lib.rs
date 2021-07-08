@@ -131,7 +131,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: args.index_uri.to_string(),
-        doc_mapper: args.doc_mapper,
+        index_config: args.doc_mapper,
     };
     create_index(metastore_uri, index_metadata).await?;
     Ok(())

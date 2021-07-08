@@ -117,7 +117,7 @@ pub async fn root_search(
     let leaf_search_responses = futures::future::try_join_all(leaf_search_handles).await?;
 
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let doc_mapper = index_metadata.doc_mapper;
+    let doc_mapper = index_metadata.index_config;
     let collector = make_collector(doc_mapper.as_ref(), search_request);
 
     // Find the sum of the number of hits and merge multiple partial hits into a single partial hits.

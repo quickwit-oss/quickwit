@@ -131,7 +131,7 @@ impl SearchService for SearchServiceImpl {
         let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let split_metas = list_relevant_splits(&search_request, metastore.as_ref()).await?;
-        let doc_mapper = index_metadata.doc_mapper;
+        let doc_mapper = index_metadata.index_config;
         let query = doc_mapper.query(&search_request)?;
         let collector = make_collector(doc_mapper.as_ref(), &search_request);
 

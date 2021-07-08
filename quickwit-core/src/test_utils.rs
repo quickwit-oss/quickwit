@@ -48,7 +48,7 @@ impl TestSandbox {
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
             index_uri: format!("{}/{}", metastore_uri, index_id),
-            doc_mapper,
+            index_config: doc_mapper,
         };
         let storage_uri_resolver = StorageUriResolver::default();
         let metastore = MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone())
