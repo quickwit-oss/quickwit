@@ -123,7 +123,7 @@ Congrats! You can level up with some nice tutorials to discover all Quickwit fea
 ```
 curl -o wikipedia_index_config.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/wikipedia_index_config.json
 quickwit new --index-uri file:///$(pwd)/wikipedia --index-config-path ./wikipedia_index_config.json
-curl -o -L wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
+curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 quickwit index --index-uri file:///$(pwd)/wikipedia --input-path wiki-articles-10000.json
 quickwit search --index-uri file:///$(pwd)/wikipedia --query "barack AND obama"
 quickwit delete --index-uri file:///$(pwd)/wikipedia
