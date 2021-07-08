@@ -28,7 +28,7 @@
 //! engine, aka tantivy::Document.
 
 mod all_flatten_mapper;
-mod default_doc_mapper;
+mod default_index_config;
 mod error;
 mod mapper;
 mod query_builder;
@@ -37,6 +37,6 @@ mod wikipedia_mapper;
 pub use error::QueryParserError;
 
 pub use all_flatten_mapper::AllFlattenIndexConfig;
-pub use default_doc_mapper::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
+pub use default_index_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
 pub use mapper::{IndexConfig, SortBy, SortOrder};
 pub use wikipedia_mapper::WikipediaIndexConfig;
