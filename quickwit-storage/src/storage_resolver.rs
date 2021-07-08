@@ -106,7 +106,7 @@ impl StorageUriResolver {
 pub fn localstack_region() -> Region {
     Region::Custom {
         name: "localstack".to_string(),
-        endpoint: "http://localhost:4566".to_string(),
+        endpoint: "http://localstack:4566".to_string(),
     }
 }
 
