@@ -20,14 +20,14 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-mod default_mapper;
+mod default_config;
 mod field_mapping_entry;
 mod field_mapping_type;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-pub use self::default_mapper::{DefaultIndexConfig, DefaultIndexConfigBuilder};
+pub use self::default_config::{DefaultIndexConfig, DefaultIndexConfigBuilder};
 pub use self::field_mapping_entry::{DocParsingError, FieldMappingEntry};
 pub use self::field_mapping_type::FieldMappingType;
 

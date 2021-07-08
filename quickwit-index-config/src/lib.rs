@@ -30,7 +30,7 @@
 mod all_flatten_config;
 mod default_index_config;
 mod error;
-mod mapper;
+mod config;
 mod query_builder;
 mod wikipedia_mapper;
 
@@ -38,5 +38,5 @@ pub use error::QueryParserError;
 
 pub use all_flatten_config::AllFlattenIndexConfig;
 pub use default_index_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
-pub use mapper::{IndexConfig, SortBy, SortOrder};
+pub use config::{IndexConfig, SortBy, SortOrder};
 pub use wikipedia_mapper::WikipediaIndexConfig;
