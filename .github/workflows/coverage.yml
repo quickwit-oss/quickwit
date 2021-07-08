@@ -7,21 +7,23 @@ jobs:
   test:
     name: coverage
     runs-on: ubuntu-latest
+    container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
+    services:
+      localstack:
+        image: localstack/localstack:latest
+        ports:
+          - "4566:4566"
+        env:
+          SERVICES: s3
+          HOSTNAME_EXTERNAL: localstack
+    env:
+      AWS_ACCESS_KEY_ID   : "placeholder"
+      AWS_SECRET_ACCESS_KEY: "placeholder"
+      AWS_DEFAULT_REGION  : "localhost"
     steps:
       - uses: actions/checkout@v2
-      - name: Setup localstack
-        run: docker-compose -f localstack.yaml up -d
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          components: rustfmt # fmt used by the protobuf code generation
-      - name: Create bucket in localstack
-        run: docker-compose -f localstack.yaml exec -T localstack awslocal s3 mb s3://quickwit-integration-tests
-      - uses: actions-rs/install@v0.1
-        name: install cargo tarpaulin
-        with:
-          crate: cargo-tarpaulin
-          use-tool-cache: true
+      - name: Wait for localstack
+        run: sleep 30s
       - name: Generate code coverage
         env:
           AWS_ACCESS_KEY_ID: dummy-access-key
