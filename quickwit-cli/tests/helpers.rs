@@ -33,7 +33,7 @@ use tempfile::TempDir;
 
 const PACKAGE_BIN_NAME: &str = "quickwit";
 
-const DEFAULT_DOC_MAPPER: &str = r#"{
+const DEFAULT_INDEX_CONFIG: &str = r#"{
     "store_source": true,
     "default_search_fields": ["event"],
     "timestamp_field": "ts",
@@ -117,7 +117,7 @@ pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv>
     };
 
     let config_path = local_directory.path().join("config.json");
-    fs::write(&config_path, DEFAULT_DOC_MAPPER)?;
+    fs::write(&config_path, DEFAULT_INDEX_CONFIG)?;
     let log_docs_path = local_directory.path().join("logs.json");
     fs::write(&log_docs_path, LOGS_JSON_DOCS)?;
     let wikipedia_docs_path = local_directory.path().join("wikis.json");

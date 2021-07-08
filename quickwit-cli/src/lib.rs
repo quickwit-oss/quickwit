@@ -71,10 +71,10 @@ impl PartialEq for CreateIndexArgs {
 impl CreateIndexArgs {
     pub fn new(
         index_uri: String,
-        doc_mapper_config_path: PathBuf,
+        index_config_path: PathBuf,
         overwrite: bool,
     ) -> anyhow::Result<Self> {
-        let json_file = std::fs::File::open(doc_mapper_config_path)?;
+        let json_file = std::fs::File::open(index_config_path)?;
         let reader = std::io::BufReader::new(json_file);
         let builder: DefaultIndexConfigBuilder = serde_json::from_reader(reader)?;
         let index_config = Box::new(builder.build()?) as Box<dyn IndexConfig>;

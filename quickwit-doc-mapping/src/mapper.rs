@@ -94,12 +94,12 @@ clone_trait_object!(IndexConfig);
 mod tests {
     use crate::{DefaultIndexConfigBuilder, IndexConfig};
 
-    const JSON_ALL_FLATTEN_DOC_MAPPER: &str = r#"
+    const JSON_ALL_FLATTEN_INDEX_CONFIG: &str = r#"
         {
             "type": "all_flatten"
         }"#;
 
-    const JSON_DEFAULT_DOC_MAPPER: &str = r#"
+    const JSON_DEFAULT_INDEX_CONFIG: &str = r#"
         {
             "type": "default",
             "default_search_fields": [],
@@ -107,16 +107,16 @@ mod tests {
         }"#;
 
     #[test]
-    fn test_deserialize_doc_mapper() -> anyhow::Result<()> {
+    fn test_deserialize_index_config() -> anyhow::Result<()> {
         let all_flatten_mapper =
-            serde_json::from_str::<Box<dyn IndexConfig>>(JSON_ALL_FLATTEN_DOC_MAPPER)?;
+            serde_json::from_str::<Box<dyn IndexConfig>>(JSON_ALL_FLATTEN_INDEX_CONFIG)?;
         assert_eq!(
             format!("{:?}", all_flatten_mapper),
             "AllFlattenIndexConfig".to_string()
         );
 
         let deserialized_default_mapper =
-            serde_json::from_str::<Box<dyn IndexConfig>>(JSON_DEFAULT_DOC_MAPPER)?;
+            serde_json::from_str::<Box<dyn IndexConfig>>(JSON_DEFAULT_INDEX_CONFIG)?;
         let expected_default_mapper = DefaultIndexConfigBuilder::new().build()?;
         assert_eq!(
             format!("{:?}", deserialized_default_mapper),

@@ -11,9 +11,9 @@ subcommands:
                 long: index-uri
                 value_name: INDEX URI
                 required: true
-            - doc-mapper-config-path:
+            - index-config-path:
                 help: Path of the document mapper configuration
-                long: doc-mapper-config-path
+                long: index-config-path
                 value_name: DOC MAPPER CONFIG
                 required: true
             - overwrite:
