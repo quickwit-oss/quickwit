@@ -41,7 +41,7 @@ pub struct AllFlattenIndexConfig {
 
 impl std::fmt::Debug for AllFlattenIndexConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(formatter, "AllFlattenDocMapper")
+        write!(formatter, "AllFlattenIndexConfig")
     }
 }
 

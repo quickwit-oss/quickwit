@@ -495,7 +495,7 @@ mod tests {
 
             assert_eq!(
                 format!("{:?}", created_index.index.index_config),
-                "AllFlattenDocMapper".to_string()
+                "AllFlattenIndexConfig".to_string()
             );
 
             // Open a non-existent index.
