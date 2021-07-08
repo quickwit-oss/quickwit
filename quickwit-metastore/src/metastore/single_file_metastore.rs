@@ -391,7 +391,7 @@ mod tests {
 
     use crate::{IndexMetadata, MetastoreError};
     use crate::{Metastore, SingleFileMetastore, SplitMetadata, SplitState};
-    use quickwit_doc_mapping::AllFlattenIndexConfig;
+    use quickwit_index_config::AllFlattenIndexConfig;
     use quickwit_storage::{MockStorage, StorageErrorKind};
 
     #[tokio::test]

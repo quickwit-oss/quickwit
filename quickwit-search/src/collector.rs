@@ -21,9 +21,9 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-use quickwit_doc_mapping::IndexConfig;
-use quickwit_doc_mapping::SortBy;
-use quickwit_doc_mapping::SortOrder;
+use quickwit_index_config::IndexConfig;
+use quickwit_index_config::SortBy;
+use quickwit_index_config::SortOrder;
 use quickwit_proto::LeafSearchResult;
 use quickwit_proto::PartialHit;
 use quickwit_proto::SearchRequest;

@@ -20,7 +20,7 @@
  */
 use std::sync::Arc;
 
-use quickwit_doc_mapping::IndexConfig;
+use quickwit_index_config::IndexConfig;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver};
 use quickwit_storage::StorageUriResolver;
 use tempfile::tempdir;
@@ -112,7 +112,7 @@ impl TestSandbox {
 #[cfg(test)]
 mod tests {
     use super::TestSandbox;
-    use quickwit_doc_mapping::WikipediaIndexConfig;
+    use quickwit_index_config::WikipediaIndexConfig;
 
     #[tokio::test]
     async fn test_test_sandbox() -> anyhow::Result<()> {
