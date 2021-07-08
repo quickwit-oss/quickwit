@@ -63,7 +63,7 @@ impl DefaultDocMapperBuilder {
 
     /// Build a valid `DefaultDocMapper`.
     /// This will consume your `DefaultDocMapperBuilder`.
-    pub fn build(self) -> anyhow::Result<DefaultDocMapper> {
+    pub fn build(self) -> anyhow::Result<DefaultIndexConfig> {
         let schema = self.build_schema()?;
         // Resolve default search fields
         let mut default_search_field_names = Vec::new();
@@ -98,7 +98,7 @@ impl DefaultDocMapperBuilder {
         // Build the root mapping entry, it has an empty name so that we don't prefix all
         // field name with it.
         let field_mappings = FieldMappingEntry::root(FieldMappingType::Object(self.field_mappings));
-        Ok(DefaultDocMapper {
+        Ok(DefaultIndexConfig {
             schema,
             store_source: self.store_source,
             default_search_field_names,
@@ -134,16 +134,16 @@ impl DefaultDocMapperBuilder {
     }
 }
 
-impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
+impl TryFrom<DefaultDocMapperBuilder> for DefaultIndexConfig {
     type Error = anyhow::Error;
 
-    fn try_from(value: DefaultDocMapperBuilder) -> Result<DefaultDocMapper, Self::Error> {
+    fn try_from(value: DefaultDocMapperBuilder) -> Result<DefaultIndexConfig, Self::Error> {
         value.build()
     }
 }
 
-impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
-    fn from(value: DefaultDocMapper) -> Self {
+impl From<DefaultIndexConfig> for DefaultDocMapperBuilder {
+    fn from(value: DefaultIndexConfig) -> Self {
         Self {
             store_source: value.store_source,
             timestamp_field: value.timestamp_field_name(),
@@ -163,7 +163,7 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
 /// The mains rules are defined by the field mappings.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(try_from = "DefaultDocMapperBuilder", into = "DefaultDocMapperBuilder")]
-pub struct DefaultDocMapper {
+pub struct DefaultIndexConfig {
     /// Store the json source in a text field _source.
     store_source: bool,
     /// Default list of field names used for search.
@@ -177,7 +177,7 @@ pub struct DefaultDocMapper {
     schema: Schema,
 }
 
-impl std::fmt::Debug for DefaultDocMapper {
+impl std::fmt::Debug for DefaultIndexConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter
             .debug_struct("DefaultDocMapper")
@@ -193,7 +193,7 @@ impl std::fmt::Debug for DefaultDocMapper {
 }
 
 #[typetag::serde(name = "default")]
-impl IndexConfig for DefaultDocMapper {
+impl IndexConfig for DefaultIndexConfig {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
         let mut document = Document::default();
         if self.store_source {
@@ -241,7 +241,7 @@ mod tests {
         DocParsingError, IndexConfig,
     };
 
-    use super::DefaultDocMapper;
+    use super::DefaultIndexConfig;
     use serde_json::{self, Value as JsonValue};
     use std::collections::HashMap;
 
@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn test_json_deserialize() -> anyhow::Result<()> {
-        let mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
+        let mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
         assert!(mapper.store_source);
         let mut default_search_field_names: Vec<String> = mapper.default_search_field_names;
         default_search_field_names.sort();
@@ -348,10 +348,10 @@ mod tests {
 
     #[test]
     fn test_json_serialize() -> anyhow::Result<()> {
-        let mut mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
+        let mut mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
         let json_mapper = serde_json::to_string_pretty(&mapper)?;
         let mut mapper_after_serialization =
-            serde_json::from_str::<DefaultDocMapper>(&json_mapper)?;
+            serde_json::from_str::<DefaultIndexConfig>(&json_mapper)?;
         assert_eq!(mapper.store_source, mapper_after_serialization.store_source);
 
         mapper.default_search_field_names.sort();
@@ -366,7 +366,7 @@ mod tests {
 
     #[test]
     fn test_parsing_document() -> anyhow::Result<()> {
-        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
+        let doc_mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
         let document = doc_mapper.doc_from_json(JSON_DOC_VALUE)?;
         let schema = doc_mapper.schema();
         // 6 property entry + 1 field "_source" + two fields values for "tags" field
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn test_accept_parsing_document_with_unknown_fields_and_missing_fields() -> anyhow::Result<()> {
-        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
+        let doc_mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
         doc_mapper.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_cardinality() -> anyhow::Result<()> {
-        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
+        let doc_mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
         let result = doc_mapper.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_value() -> anyhow::Result<()> {
-        let doc_mapper = serde_json::from_str::<DefaultDocMapper>(JSON_MAPPING_VALUE)?;
+        let doc_mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
         let result = doc_mapper.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,

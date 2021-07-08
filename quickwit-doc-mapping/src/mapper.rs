@@ -56,10 +56,10 @@ pub enum SortBy {
     DocId,
 }
 
-/// The `DocMapper` trait defines the way of defining how a (json) document,
+/// The `IndexConfig` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
 ///
-/// The `DocMapper` trait is in charge of implementing :
+/// The `IndexConfig` trait is in charge of implementing :
 ///
 /// - a way to build a tantivy::Document from a json payload
 /// - a way to build a tantivy::Query from a SearchRequest
