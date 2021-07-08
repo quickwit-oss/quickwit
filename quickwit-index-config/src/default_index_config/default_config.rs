@@ -240,7 +240,7 @@ impl IndexConfig for DefaultIndexConfig {
 #[cfg(test)]
 mod tests {
     use crate::{
-        default_index_config::default_mapper::SOURCE_FIELD_NAME, DefaultIndexConfigBuilder,
+        default_index_config::default_config::SOURCE_FIELD_NAME, DefaultIndexConfigBuilder,
         DocParsingError, IndexConfig,
     };
 
