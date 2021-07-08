@@ -20,7 +20,7 @@ Quickwit CLI relies on 3 pillars:
 
 ## The index
 
-A quickwit index is the entity that stores documents and makes possible to query and collect information (statistics for example) about them efficiently.
+A quickwit index is the entity that stores documents and makes it possible to query and collect information (statistics for example) about them efficiently.
 The index organizes documents into collection of smaller independent index called splits, each split is defined by its UUID and behind the scenes is equivalent to a customized [tantivy index](https://github.com/tantivy-search/tantivy/blob/main/ARCHITECTURE.md#index-and-segments) plus some metadata such as min/max timestamp to enable efficient time pruning at query time.
 Last but not least, you have total control on how fields are stored and indexed thanks to the `Doc Mapper`.
 
@@ -43,11 +43,11 @@ Quickwit gathers index metadata (such as split metadata) into a metastore to mak
 
 For a given query on a given index, a search node will ask the metastore the splits metadata, the doc mapper and then use it to do the query planning and finally execute the plan.
 
-Currently, the metastore is a simple json file stored on your local machine or on a AWS S3 bucket. But we plan to add backends such as Postgresql and other popular databases.
+Currently, the metastore is a simple json file stored on your local machine or on an AWS S3 bucket. But we plan to add backends such as Postgresql and other popular databases.
 
 ## Search cluster
 
-A quickwit cluster distributes queries and search workload while keeping nodes stateless. The s 
+A quickwit cluster distributes queries and search workload while keeping nodes stateless.
 The ability to open an index in less than 70ms makes it possible to remain totally stateless (=a node knows nothing about the index). Moreover Adding or removing nodes is subsecond and requires no data moves. 
 
 The cluster makes also use of [rendezvous hashing](https://en.wikipedia.org/wiki/Rendezvous_hashing) to cache relevants pieces of data such as the `hotcache`, `terms dictionnary` and `fast fields` accross nodes. The main advantage of Rendezvous hashing for our use case is that small changes in the set of available nodes only affects a small fraction of keys (=split id).
@@ -59,7 +59,7 @@ This design provides high availability thanks to stateless instance and little c
 
 Any search node can handle a query. When receiving one, the node acts as a root node for this particular query and process it in 3 steps:
 - do the query planning which corresponds to finding the relevant splits for the query
-- distribute the split workload on itself or other nodes called the leaf nodes
+- distribute the split workload on itself and/or other nodes called the leaf nodes
 - return aggregated results. 
 
 

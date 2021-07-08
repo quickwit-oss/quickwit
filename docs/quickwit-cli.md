@@ -5,7 +5,7 @@ sidebar_position: 2
 
 Quickwit CLI is a single binary that makes it easy to index and search structured or unstructured data from the command line. It consumes datasets consisting of newline-delimited JSON objects with arbitrary keys and produces indexes that can be stored locally or remotely on an object storage such as Amazon S3 and queried with subsecond latency.
 
-This pages documents all the available commands, related options and environment variables.
+These pages documents all the available commands, related options and environment variables.
 
 
 ### Warning
@@ -48,12 +48,10 @@ quickwit new
 `--doc-mapper-config-path` (string) Defines the doc mapper config path.<br />
 `--overwrite` (boolean) Overwrites existing index.
 
-The `timestamp-field` and `no-timestamp-field` options are mutually exclusive.
-
 *Examples*
 
 *Creating a new index on local file system*<br />
-`quickwit new --index-uri ~/quickwit-indexes/catalog --doc-mapper-config-path ~/quickwit-mapper/doc_mapper.json`
+`quickwit new --index-uri file:///quickwit-indexes/catalog --doc-mapper-config-path ~/quickwit-mapper/doc_mapper.json`
 
 *Creating a new index on Amazon S3*<br />
 `quickwit new --index-uri s3://quickwit-indexes/catalog --doc-mapper-config-path ~/quickwit-mapper/doc_mapper.json`
@@ -65,7 +63,7 @@ The `timestamp-field` and `no-timestamp-field` options are mutually exclusive.
 
 *Description*
 
-Indexes a dataset consisting of newline-delimited JSON objects located at `input-path` or read from *stdin*. The data is appended to the target index specified by `index-uri` unless `overwrite` is passed. `input-path` can be a file or a directory. In the latter case, the directory is traversed recursively. Local and remote datasets are supported. By default, the process uses 4 threads and 1 GiB of memory per thread. The `num-threads` and `heap-size` options customize those settings.
+Indexes a dataset consisting of newline-delimited JSON objects located at `input-path` or read from *stdin*. The data is appended to the target index specified by `index-uri` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin. Currently, only local datasets are supported. By default, the process uses 4 threads and 1 GiB of memory per thread. The `num-threads` and `heap-size` options customize those settings.
 
 *Synopsis*
 
@@ -107,7 +105,7 @@ quickwit index
 
 *Description*
 
-Searches the index stored at `index-uri` and returns the documents matching the query `query`. The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options.
+Searches the index stored at `index-uri` and returns the documents matching the query specified with `query`. The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options.
 
 TODO: complete this description when API is stabilized (target fields, start/end datetime, datetime format)
 
@@ -155,7 +153,7 @@ quickwit search
 
 *Description*
 
-Starts a rest server at address `host`:`port` and makes searchable indexes located at `index-uri` and returns the documents matching the query `query`. Optionally connects to peers listed at `peer-seeds` using SWIM membership protocol to allow search workload distribution.
+Starts a rest server at address `host`:`port` and makes searchable indexes located at `index-uri` and returns the documents matching the query specified with `query`. Optionally connects to peers listed at `peer-seeds` using SWIM membership protocol to allow search workload distribution.
 
 *Synopsis*
 
@@ -197,7 +195,7 @@ quickwit delete
 *Options*
 
 `--index-uri` (string) Location of the target index.
-`--dry-run` (boolean) Executes the command in dry run mode and displays the list of deleted files
+`--dry-run` (boolean) Executes the command in dry run mode and displays the list of files subject to be deleted.
 
 *Examples*
 

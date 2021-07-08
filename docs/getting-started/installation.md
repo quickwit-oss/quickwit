@@ -4,13 +4,13 @@ sidebar_position: 2
 ---
 
 
-## Download and install `quickwit-cli`
+## Download and install `quickwit`
 
 Download the latest release of Quickwit CLI with cURL.
 
 ```
 curl -L https://install-cli.quickwit.io | sh
-quickwit-cli --version
+quickwit --version
 ```
 
 ## Build with cargo
