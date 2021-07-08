@@ -11,11 +11,12 @@ jobs:
   publish:
     name: Publish for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    container: debian:squeeze
     strategy:
       matrix:
         include:
           - build: linux
-            os: ubuntu-18.04
+            os: ubuntu-20.04
             artifact_name: quickwit
             asset_name: x86_64-unknown-linux-gnu
           # - build: macos
