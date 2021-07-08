@@ -71,17 +71,17 @@ impl PartialEq for CreateIndexArgs {
 impl CreateIndexArgs {
     pub fn new(
         index_uri: String,
-        doc_mapper_config_path: PathBuf,
+        index_config_path: PathBuf,
         overwrite: bool,
     ) -> anyhow::Result<Self> {
-        let json_file = std::fs::File::open(doc_mapper_config_path)?;
+        let json_file = std::fs::File::open(index_config_path)?;
         let reader = std::io::BufReader::new(json_file);
         let builder: DefaultIndexConfigBuilder = serde_json::from_reader(reader)?;
-        let doc_mapper = Box::new(builder.build()?) as Box<dyn IndexConfig>;
+        let index_config = Box::new(builder.build()?) as Box<dyn IndexConfig>;
 
         Ok(Self {
             index_uri,
-            index_config: doc_mapper,
+            index_config,
             overwrite,
         })
     }
@@ -117,7 +117,7 @@ pub struct DeleteIndexArgs {
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri = %args.index_uri,
-        doc_mapper = ?args.index_config,
+        index_config = ?args.index_config,
         overwrite = args.overwrite,
         "create-index"
     );

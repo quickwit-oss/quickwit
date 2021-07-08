@@ -43,12 +43,15 @@ pub struct TestSandbox {
 
 impl TestSandbox {
     /// Creates a new test environment.
-    pub async fn create(index_id: &str, doc_mapper: Box<dyn IndexConfig>) -> anyhow::Result<Self> {
+    pub async fn create(
+        index_id: &str,
+        index_config: Box<dyn IndexConfig>,
+    ) -> anyhow::Result<Self> {
         let metastore_uri = "ram://quickwit-test-indices";
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
             index_uri: format!("{}/{}", metastore_uri, index_id),
-            index_config: doc_mapper,
+            index_config,
         };
         let storage_uri_resolver = StorageUriResolver::default();
         let metastore = MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone())
@@ -113,8 +116,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_test_sandbox() -> anyhow::Result<()> {
-        let doc_mapper = Box::new(WikipediaMapper::new());
-        let test_index_builder = TestSandbox::create("test_index", doc_mapper).await?;
+        let index_config = Box::new(WikipediaMapper::new());
+        let test_index_builder = TestSandbox::create("test_index", index_config).await?;
         let statistics = test_index_builder.add_documents(vec![
             serde_json::json!({"title": "Hurricane Fay", "body": "...", "url": "http://hurricane-fay"}),
             serde_json::json!({"title": "Ganimede", "body": "...", "url": "http://ganimede"}),

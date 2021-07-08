@@ -48,7 +48,7 @@ pub struct DefaultIndexConfigBuilder {
 }
 
 impl DefaultIndexConfigBuilder {
-    /// Create a new `DefaultDocMapperBuilder`.
+    /// Create a new `DefaultIndexConfigBuilder`.
     // TODO: either remove it or complete implementation
     // with methods to make possible to add / remove
     // default search fields and field mappings.
@@ -61,8 +61,8 @@ impl DefaultIndexConfigBuilder {
         }
     }
 
-    /// Build a valid `DefaultDocMapper`.
-    /// This will consume your `DefaultDocMapperBuilder`.
+    /// Build a valid `DefaultIndexConfig`.
+    /// This will consume your `DefaultIndexConfigBuilder`.
     pub fn build(self) -> anyhow::Result<DefaultIndexConfig> {
         let schema = self.build_schema()?;
         // Resolve default search fields
@@ -183,7 +183,7 @@ pub struct DefaultIndexConfig {
 impl std::fmt::Debug for DefaultIndexConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter
-            .debug_struct("DefaultDocMapper")
+            .debug_struct("DefaultIndexConfig")
             .field("store_source", &self.store_source)
             .field(
                 "default_search_field_names",
@@ -369,9 +369,9 @@ mod tests {
 
     #[test]
     fn test_parsing_document() -> anyhow::Result<()> {
-        let doc_mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
-        let document = doc_mapper.doc_from_json(JSON_DOC_VALUE)?;
-        let schema = doc_mapper.schema();
+        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
+        let document = index_config.doc_from_json(JSON_DOC_VALUE)?;
+        let schema = index_config.schema();
         // 6 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
         assert_eq!(document.len(), 13);
@@ -399,8 +399,8 @@ mod tests {
 
     #[test]
     fn test_accept_parsing_document_with_unknown_fields_and_missing_fields() -> anyhow::Result<()> {
-        let doc_mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
-        doc_mapper.doc_from_json(
+        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
+        index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
                 "unknown_field": "20200415T072306-0700 INFO This is a great log"
@@ -411,8 +411,8 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_cardinality() -> anyhow::Result<()> {
-        let doc_mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
-        let result = doc_mapper.doc_from_json(
+        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
+        let result = index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
                 "body": ["text 1", "text 2"]
@@ -429,8 +429,8 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_value() -> anyhow::Result<()> {
-        let doc_mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
-        let result = doc_mapper.doc_from_json(
+        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
+        let result = index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
                 "body": 1

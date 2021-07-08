@@ -41,7 +41,7 @@ use tokio::time::{sleep, Duration};
 fn create_logs_index(test_env: &TestEnv) {
     make_command(
         format!(
-            "new --index-uri {} --doc-mapper-config-path {}",
+            "new --index-uri {} --index-config-path {}",
             test_env.index_uri,
             test_env.resource_files["config"].display()
         )
@@ -100,7 +100,7 @@ fn test_cmd_new_on_existing_index() -> Result<()> {
 
     make_command(
         format!(
-            "new --index-uri {} --doc-mapper-config-path {}",
+            "new --index-uri {} --index-config-path {}",
             test_env.index_uri,
             test_env.resource_files["config"].display()
         )
@@ -232,7 +232,7 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
     let test_env = create_test_env(TestStorageType::S3ViaLocalStorage(s3_path))?;
     make_command(
         format!(
-            "new --index-uri {} --doc-mapper-config-path {}",
+            "new --index-uri {} --index-config-path {}",
             test_env.index_uri,
             test_env.resource_files["config"].display()
         )
@@ -276,7 +276,7 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
 
     make_command(
         format!(
-            "new --index-uri {} --doc-mapper-config-path {}",
+            "new --index-uri {} --index-config-path {}",
             test_env.index_uri,
             test_env.resource_files["config"].display()
         )
