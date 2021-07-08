@@ -40,6 +40,12 @@ jobs:
     container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
     steps:
       - uses: actions/checkout@v2
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo
+            target/
+          key: ${{ runner.os }}-cargolint-${{ hashFiles('Cargo.lock') }}
       - name: rustfmt
         run: cargo fmt --all -- --check
       - uses: actions-rs/clippy-check@v1
@@ -56,6 +62,12 @@ jobs:
     runs-on: ubuntu-latest
     container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
     steps:
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo
+            target/
+          key: ${{ runner.os }}-cargotest-${{ hashFiles('Cargo.lock') }}
       - uses: actions/checkout@v2
       - uses: actions-rs/cargo@v1
         name: cargo test
