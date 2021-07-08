@@ -108,19 +108,19 @@ mod tests {
 
     #[test]
     fn test_deserialize_index_config() -> anyhow::Result<()> {
-        let all_flatten_mapper =
+        let all_flatten_config =
             serde_json::from_str::<Box<dyn IndexConfig>>(JSON_ALL_FLATTEN_INDEX_CONFIG)?;
         assert_eq!(
-            format!("{:?}", all_flatten_mapper),
+            format!("{:?}", all_flatten_config),
             "AllFlattenIndexConfig".to_string()
         );
 
-        let deserialized_default_mapper =
+        let deserialized_default_config =
             serde_json::from_str::<Box<dyn IndexConfig>>(JSON_DEFAULT_INDEX_CONFIG)?;
-        let expected_default_mapper = DefaultIndexConfigBuilder::new().build()?;
+        let expected_default_config = DefaultIndexConfigBuilder::new().build()?;
         assert_eq!(
-            format!("{:?}", deserialized_default_mapper),
-            format!("{:?}", expected_default_mapper),
+            format!("{:?}", deserialized_default_config),
+            format!("{:?}", expected_default_config),
         );
         Ok(())
     }

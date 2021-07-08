@@ -169,7 +169,7 @@ pub async fn single_node_search(
 mod tests {
     use assert_json_diff::assert_json_include;
     use quickwit_core::TestSandbox;
-    use quickwit_doc_mapping::{DefaultIndexConfigBuilder, WikipediaMapper};
+    use quickwit_doc_mapping::{DefaultIndexConfigBuilder, WikipediaIndexConfig};
 
     use super::*;
     use serde_json::json;
@@ -178,7 +178,8 @@ mod tests {
     async fn test_single_node_simple() -> anyhow::Result<()> {
         let index_name = "single-node-simple";
         let test_sandbox =
-            TestSandbox::create("single-node-simple", Box::new(WikipediaMapper::new())).await?;
+            TestSandbox::create("single-node-simple", Box::new(WikipediaIndexConfig::new()))
+                .await?;
         let docs = vec![
             json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
             json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle"}),
@@ -232,7 +233,8 @@ mod tests {
     async fn test_single_node_several_splits() -> anyhow::Result<()> {
         let index_name = "single-node-simple";
         let test_sandbox =
-            TestSandbox::create("single-node-simple", Box::new(WikipediaMapper::new())).await?;
+            TestSandbox::create("single-node-simple", Box::new(WikipediaIndexConfig::new()))
+                .await?;
         for _ in 0..10 {
             test_sandbox.add_documents(vec![
             json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
@@ -267,7 +269,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_node_filtering() -> anyhow::Result<()> {
-        let mapper_config = r#"{
+        let index_config = r#"{
             "default_search_fields": ["body"],
             "timestamp_field": "ts",
             "field_mappings": [
@@ -283,7 +285,7 @@ mod tests {
             ]
         }"#;
         let index_config =
-            serde_json::from_str::<DefaultIndexConfigBuilder>(mapper_config)?.build()?;
+            serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
         let index_name = "single-node-simple";
         let test_sandbox =
             TestSandbox::create("single-node-simple", Box::new(index_config)).await?;

@@ -112,11 +112,11 @@ impl TestSandbox {
 #[cfg(test)]
 mod tests {
     use super::TestSandbox;
-    use quickwit_doc_mapping::WikipediaMapper;
+    use quickwit_doc_mapping::WikipediaIndexConfig;
 
     #[tokio::test]
     async fn test_test_sandbox() -> anyhow::Result<()> {
-        let index_config = Box::new(WikipediaMapper::new());
+        let index_config = Box::new(WikipediaIndexConfig::new());
         let test_index_builder = TestSandbox::create("test_index", index_config).await?;
         let statistics = test_index_builder.add_documents(vec![
             serde_json::json!({"title": "Hurricane Fay", "body": "...", "url": "http://hurricane-fay"}),
