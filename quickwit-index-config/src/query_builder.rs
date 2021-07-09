@@ -41,8 +41,13 @@ pub(crate) fn build_query(
         return Err(anyhow::anyhow!("Range queries are not currently allowed.").into());
     }
 
-    let default_fields = resolve_fields(&schema, default_field_names)?;
-    let query_parser = QueryParser::new(schema, default_fields, TokenizerManager::default());
+    let search_fields = if request.search_fields.is_empty() {
+        resolve_fields(&schema, default_field_names)?
+    } else {
+        resolve_fields(&schema, &request.search_fields)?
+    };
+
+    let query_parser = QueryParser::new(schema, search_fields, TokenizerManager::default());
     let query = query_parser.parse_query(&request.query)?;
     Ok(query)
 }
@@ -95,10 +100,15 @@ mod test {
         schema_builder.build()
     }
 
-    fn check_build_query(query_str: &str, expected: TestExpectation) -> anyhow::Result<()> {
+    fn check_build_query(
+        query_str: &str,
+        search_fields: Vec<String>,
+        expected: TestExpectation,
+    ) -> anyhow::Result<()> {
         let request = SearchRequest {
             index_id: "test_index".to_string(),
             query: query_str.to_string(),
+            search_fields,
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 20,
@@ -125,37 +135,51 @@ mod test {
     fn test_build_query() -> anyhow::Result<()> {
         check_build_query(
             "foo:bar",
+            vec![],
             TestExpectation::Err("Field does not exists: '\"foo\"'"),
         )?;
         check_build_query(
             "title:[a TO b]",
+            vec![],
             TestExpectation::Err("Range queries are not currently allowed."),
         )?;
         check_build_query(
             "title:{a TO b} desc:foo",
+            vec![],
             TestExpectation::Err("Range queries are not currently allowed."),
         )?;
         check_build_query(
             "title:>foo",
+            vec![],
             TestExpectation::Err("Range queries are not currently allowed."),
         )?;
         check_build_query(
             "title:foo desc:bar _source:baz",
+            vec![],
             TestExpectation::Ok("TermQuery"),
         )?;
 
         check_build_query(
             "server.type:hpc server.mem:4GB",
+            vec![],
             TestExpectation::Err("Field does not exists: '\"server.type\"'"),
         )?;
 
         check_build_query(
+            "title:foo desc:bar",
+            vec!["url".to_string()],
+            TestExpectation::Err("Field does not exists: '\"url\"'"),
+        )?;
+
+        check_build_query(
             "server.name:\".bar:\" server.mem:4GB",
+            vec!["server.name".to_string()],
             TestExpectation::Ok("TermQuery"),
         )?;
 
         check_build_query(
             "server.name:\"for.bar:b\" server.mem:4GB",
+            vec![],
             TestExpectation::Ok("TermQuery"),
         )?;
 

@@ -23,7 +23,7 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use tracing::*;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
@@ -82,7 +82,10 @@ impl Format {
                 self.resp_body(err)
             } //< yeah it is lame it is not formatted, but it should never happen really.
         }
-        .unwrap_or("Error: Failed to serialize response.".to_string());
+        .unwrap_or_else(|_| {
+            tracing::error!("Error: the response serialization failed.");
+            "Error: Failed to serialize response.".to_string()
+        });
         let reply_with_header = reply::with_header(body_json, CONTENT_TYPE, "application/json");
         reply::with_status(reply_with_header, status_code)
     }
@@ -95,6 +98,11 @@ impl Format {
 pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
+    // Fields to search on
+    #[serde(default)]
+    #[serde(rename(deserialize = "searchField"))]
+    #[serde(deserialize_with = "from_simple_list")]
+    pub search_fields: Option<Vec<String>>,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
     pub start_timestamp: Option<i64>,
     /// If set, restrict search to documents with a `timestamp < end_timestamp``.
@@ -122,6 +130,7 @@ async fn search_endpoint<TSearchService: SearchService>(
     let search_request = quickwit_proto::SearchRequest {
         index_id,
         query: search_request.query,
+        search_fields: search_request.search_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,
         max_hits: search_request.max_hits,
@@ -178,6 +187,20 @@ async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
     }
 }
 
+fn from_simple_list<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let str_sequence = String::deserialize(deserializer)?;
+    Ok(Some(
+        str_sequence
+            .trim_matches(',')
+            .split(',')
+            .map(|item| item.to_owned())
+            .collect(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,6 +239,7 @@ mod tests {
             &req,
             &super::SearchRequestQueryString {
                 query: "*".to_string(),
+                search_fields: None,
                 start_timestamp: None,
                 end_timestamp: Some(1450720000),
                 max_hits: 10,
@@ -229,7 +253,7 @@ mod tests {
     async fn test_rest_search_api_route_simple_default_num_hits_default_offset() {
         let rest_search_api_filter = search_filter();
         let (index, req) = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&endTimestamp=1450720000")
+            .path("/api/v1/quickwit-demo-index/search?query=*&endTimestamp=1450720000&searchField=title,body")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -238,6 +262,7 @@ mod tests {
             &req,
             &super::SearchRequestQueryString {
                 query: "*".to_string(),
+                search_fields: Some(vec!["title".to_string(), "body".to_string()]),
                 start_timestamp: None,
                 end_timestamp: Some(1450720000),
                 max_hits: 20,
@@ -265,6 +290,7 @@ mod tests {
                 max_hits: 20,
                 start_offset: 0,
                 format: Format::Json,
+                search_fields: None
             }
         );
     }
@@ -280,7 +306,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument(\"failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`\")"
+            "error": "InvalidArgument(\"failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`\")"
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())

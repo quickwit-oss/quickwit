@@ -10,20 +10,23 @@ pub struct SearchRequest {
     /// Query
     #[prost(string, tag = "2")]
     pub query: ::prost::alloc::string::String,
+    /// Fields to search on
+    #[prost(string, repeated, tag = "3")]
+    pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Time filter
-    #[prost(int64, optional, tag = "3")]
-    pub start_timestamp: ::core::option::Option<i64>,
     #[prost(int64, optional, tag = "4")]
+    pub start_timestamp: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "5")]
     pub end_timestamp: ::core::option::Option<i64>,
     /// Maximum number of hits to return.
-    #[prost(uint64, tag = "5")]
+    #[prost(uint64, tag = "6")]
     pub max_hits: u64,
     /// First hit to return. Together with max_hits, this parameter
     /// can be used for pagination.
     ///
     /// E.g.
     /// The results with rank [start_offset..start_offset + max_hits) are returned.
-    #[prost(uint64, tag = "6")]
+    #[prost(uint64, tag = "7")]
     pub start_offset: u64,
 }
 #[derive(Serialize)]
