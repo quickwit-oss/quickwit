@@ -3,12 +3,12 @@ title: Quickstart
 sidebar_position: 1
 ---
 
-Before running quickwit search instances on your servers, you will need to create indexes, add documents or even delete some data and finally launch the server. To ease these actions, you just need to download `Quickwit` binary, for full commands documentation, see the [Quickwit CLI page](../quickwit-cli.md).
+Before running quickwit search instances on your servers, you will need to create indexes, add documents or even delete some data and finally launch the server. In this quickstart guide, we will install Quickwit and pass these steps until starting your search. All commands used in this guide are documented here [Quickwit CLI docs](../quickwit-cli.md).
 
 
 ## Install Quickwit
 
-Let's download and install the Quiwkit.
+Let's download and install Quickwit.
 
 ```
 curl -L https://install.quickwit.io | sh
@@ -22,18 +22,19 @@ quickwit --version
 
 You can also install it via [other means](installation.md).
 
+
 ## Create your first index
 
-Before adding documents to Quickwit, you need to create an index along with the `index config` which notably defines how a document and fields it contains, are stored and indexed.
+Before adding documents to Quickwit, you need to create an index configured with a json `config file`. This config file notably let you define how a document and fields it contains, are stored and indexed. See the [index config documentation](../reference/doc-mapper.md).
 
-Let's create an index with configured for wikipedia articles on you local machine.
+Let's create an index configured a wikipedia data source.
 
 ```
-# First download the wikipedia config from quickwit repository
+# First download the wikipedia config from quickwit repository.
 curl -o wikipedia_index_config.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/wikipedia_index_config.json
 ```
 
-The index config defines three text fields: `title`, `body` and `url` and set two default search fields `body` and `title`. Thes fields will be used for search if you do not specify fields in your query. Please note that by default, text fields are indexed and tokenized. See the [index config documentation](../reference/doc-mapper.md).
+The index config defines three text fields: `title`, `body` and `url` and set two default search fields `body` and `title`. These fields will be used for search if you do not specify fields in your query. Please note that by default, text fields are indexed and tokenized
 
 And here is the complete config:
 
@@ -64,13 +65,13 @@ Now we can create the index with the command:
 quickwit new --index-uri file:///your-path-to-your-index/wikipedia --index-config-path ./wikipedia_index_config.json
 ```
 
-or the following one if you can use `pwd` to create it in your current directory:
+To simplify command line, we now assume that the index is created in the current directory and use `pwd` variable to specify the index uri:
 
 ```
 quickwit new --index-uri file:///$(pwd)/wikipedia --index-config-path ./wikipedia_index_config.json
 ```
 
-Check that an empty directory `/your-path-to-your-index/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../overview/architecture.md#index-metadata).
+Check that an empty directory `/$(pwd)/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../overview/architecture.md#index-metadata).
 You're now ready to fill the index.
 
 
@@ -80,8 +81,8 @@ Currently Quickwit can index new line delimited json [ndjson](http://ndjson.org/
 Let's download [a bunch of wikipedia articles (10 000)](https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json) in [ndjson](http://ndjson.org/) format and index it.
 
 ```
-# Download the first 10000 wikipedia articles in ndjson format.
-curl -o -L wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
+# Download the first 10_000 wikipedia articles.
+curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 quickwit index --index-uri file:///$(pwd)/wikipedia --input-path wiki-articles-10000.json
 ```
 
@@ -96,10 +97,10 @@ It should return 10 hits. Now you're ready to serve.
 
 ## Start server
 
-The command `serve` starts an http server which provides a [REST API](../reference/search-api.md). You can also start several instances and provide peer socket addresses to form a cluster on which search workload will be distributed.
+The command `serve` starts an http server which provides a [REST API](../reference/search-api.md).
 
 ```
-quickwit serve --index-uris file:///$(pwd)/wikipedia
+quickwit serve --index-uri file:///$(pwd)/wikipedia
 ```
 
 Check it's working with a simple GET request in the browser or via cURL:
@@ -116,7 +117,7 @@ Let's do some cleanup by deleting the index:
 quickwit delete --index-uri file:///$(pwd)/wikipedia
 ```
 
-Congrats! You can level up with some nice tutorials to discover all Quickwit features. 
+Congrats! You can level up with the following tutorials to discover all Quickwit features. 
 
 ## TLDR
 
