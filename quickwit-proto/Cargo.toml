@@ -16,4 +16,4 @@ features = ['derive']
 
 [build-dependencies]
 tonic-build = '0.4.1'
-prost-build = '*'
+prost-build = '0.7.0'
