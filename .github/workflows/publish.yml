@@ -5,7 +5,7 @@ on:
     tags:
       - '*'
     branches:
-      - '*'
+      - 'check-binary'
 jobs:
   # publish:
   #   name: Publish for ${{ matrix.os }}
