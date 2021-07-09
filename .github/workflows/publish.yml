@@ -4,51 +4,52 @@ on:
   push:
     tags:
       - '*'
-
+    branches:
+      - '*'
 jobs:
-  publish:
-    name: Publish for ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - build: linux
-            os: ubuntu-latest
-            artifact_name: quickwit
-            asset_name: x86_64-unknown-linux-gnu
-          - build: macos
-            os: macos-latest
-            artifact_name: quickwit
-            asset_name: x86_64-apple-darwin
-          # TODO: uncomment this when windows is fully supported.
-          #   Also windows artifact doesn't need to be archived     
-          # - build: windows
-          #   os: windows-latest
-          #   artifact_name: quickwit.exe
-          #   asset_name: x86_64-pc-windows.exe
+  # publish:
+  #   name: Publish for ${{ matrix.os }}
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     matrix:
+  #       include:
+  #         - build: linux
+  #           os: ubuntu-latest
+  #           artifact_name: quickwit
+  #           asset_name: x86_64-unknown-linux-gnu
+  #         - build: macos
+  #           os: macos-latest
+  #           artifact_name: quickwit
+  #           asset_name: x86_64-apple-darwin
+  #         # TODO: uncomment this when windows is fully supported.
+  #         #   Also windows artifact doesn't need to be archived     
+  #         # - build: windows
+  #         #   os: windows-latest
+  #         #   artifact_name: quickwit.exe
+  #         #   asset_name: x86_64-pc-windows.exe
 
-    steps:
-      - uses: actions/checkout@v2
-      - uses: ./.github/actions/artifact-name
-        with: 
-          suffix: ${{ matrix.asset_name }}
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-      - name: Build binary
-        run: cargo build --release
-      - name: Rename artifact
-        run: mv target/release/${{ matrix.artifact_name }} ${{ env.ASSET_FULL_NAME }}
-      - name: Compress artifact
-        run: tar -czvf ${{ env.ASSET_FULL_NAME }}.tar.gz ${{ env.ASSET_FULL_NAME }}
-      - name: Upload artifact
-        uses: quickwit-inc/upload-to-github-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          file: ${{ env.ASSET_FULL_NAME }}.tar.gz
-          overwrite: true
-          tag_name: ${{ env.ASSET_VERSION }}
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #     - uses: ./.github/actions/artifact-name
+  #       with: 
+  #         suffix: ${{ matrix.asset_name }}
+  #     - uses: actions-rs/toolchain@v1
+  #       with:
+  #         toolchain: stable
+  #     - name: Build binary
+  #       run: cargo build --release
+  #     - name: Rename artifact
+  #       run: mv target/release/${{ matrix.artifact_name }} ${{ env.ASSET_FULL_NAME }}
+  #     - name: Compress artifact
+  #       run: tar -czvf ${{ env.ASSET_FULL_NAME }}.tar.gz ${{ env.ASSET_FULL_NAME }}
+  #     - name: Upload artifact
+  #       uses: quickwit-inc/upload-to-github-release@v1
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       with:
+  #         file: ${{ env.ASSET_FULL_NAME }}.tar.gz
+  #         overwrite: true
+  #         tag_name: ${{ env.ASSET_VERSION }}
 
   aarch64-linux-gnu:
     name: publish aarch64-linux-gnu
@@ -194,6 +195,37 @@ jobs:
           args: --release --target armv7-unknown-linux-musleabihf
       - name: Rename artifact
         run: mv target/armv7-unknown-linux-musleabihf/release/quickwit ${{ env.ASSET_FULL_NAME }}
+      - name: Compress artifact
+        run: tar -czvf ${{ env.ASSET_FULL_NAME }}.tar.gz ${{ env.ASSET_FULL_NAME }}
+      - name: Upload artifact
+        uses: quickwit-inc/upload-to-github-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          file: ${{ env.ASSET_FULL_NAME }}.tar.gz
+          overwrite: true
+          tag_name: ${{ env.ASSET_VERSION }}
+
+  x86_64-unknown-linux-gnu:
+    name: publish x86_64-unknown-linux-gnu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/artifact-name
+        with: 
+          suffix: x86_64-unknown-linux-gnu
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-unknown-linux-gnu
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --release --target x86_64-unknown-linux-gnu
+      - name: Rename artifact
+        run: mv target/x86_64-unknown-linux-gnu/release/quickwit ${{ env.ASSET_FULL_NAME }}
       - name: Compress artifact
         run: tar -czvf ${{ env.ASSET_FULL_NAME }}.tar.gz ${{ env.ASSET_FULL_NAME }}
       - name: Upload artifact

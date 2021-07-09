@@ -4,7 +4,9 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+    # - run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+    #   shell: bash
+    - run: echo "ASSET_VERSION=v0.1.0" >> $GITHUB_ENV
       shell: bash
     - run: echo "ASSET_FULL_NAME=quickwit-${{ env.ASSET_VERSION }}-${{ inputs.suffix }}" >> $GITHUB_ENV
       shell: bash
