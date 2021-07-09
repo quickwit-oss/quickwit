@@ -8,5 +8,5 @@ Quickwit is a distributed search engine built from the ground up to achieve high
 
 Quickwit is written in Rust and built on top of the powerful [tantivy] library and is meant to work on big datasets.
 
-[Look at the feature list](overview/features.md)
-[Get started](getting-started/quickstart.md)
+- [Look at the feature list](overview/features.md)
+- [Get started](getting-started/quickstart.md)

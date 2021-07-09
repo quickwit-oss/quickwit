@@ -3,14 +3,19 @@ title: Installation
 sidebar_position: 2
 ---
 
+Quickwit compiles to a single binary, we provide different methods to install it.
+We notably provide musl builds to provide static binaries with no dependencies. 
+You can checkout all available artefacts in on [github]https://github.com/quickwit-inc/quickwit/releases).
 
-## Download and install `quickwit`
 
-Download the latest release of Quickwit CLI with cURL.
+
+## Install script
+
+Quickwit's script detect the architecture and then download the right binary for it.
 
 ```
-curl -L https://install-cli.quickwit.io | sh
-quickwit --version
+curl -L https://install.quickwit.io | sh
+./quickwit --version
 ```
 
 ## Build with cargo
