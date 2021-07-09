@@ -21,7 +21,7 @@
 */
 
 use crate::{
-    default_doc_mapper::SOURCE_FIELD_NAME, query_builder::build_query, DocParsingError,
+    default_index_config::SOURCE_FIELD_NAME, query_builder::build_query, DocParsingError,
     IndexConfig, QueryParserError,
 };
 use quickwit_proto::SearchRequest;
@@ -32,7 +32,7 @@ use tantivy::{
     Document,
 };
 
-/// A mapper that flatten the document to have all fields at top level.
+/// A config that flatten the document to have all fields at top level.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AllFlattenIndexConfig {
     #[serde(skip_serializing, default = "AllFlattenIndexConfig::default_schema")]
@@ -52,7 +52,7 @@ impl Default for AllFlattenIndexConfig {
 }
 
 impl AllFlattenIndexConfig {
-    /// Creates new instance of all flatten mapper
+    /// Creates new instance of all flatten config
     pub fn new() -> Self {
         AllFlattenIndexConfig {
             schema: AllFlattenIndexConfig::default_schema(),

@@ -373,7 +373,7 @@ pub async fn remove_split_files_from_storage(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quickwit_doc_mapping::AllFlattenIndexConfig;
+    use quickwit_index_config::AllFlattenIndexConfig;
     use quickwit_metastore::IndexMetadata;
     use quickwit_metastore::MockMetastore;
     use tantivy::{

@@ -240,8 +240,8 @@ mod tests {
         let matches_result =
             app.get_matches_from_safe(vec!["new", "--index-uri", "file:///indexes/wikipedia"]);
         assert!(matches!(matches_result, Err(_)));
-        let mut mapper_file = NamedTempFile::new()?;
-        let mapper_str = r#"{
+        let mut index_config_file = NamedTempFile::new()?;
+        let index_config_str = r#"{
             "type": "default",
             "store_source": true,
             "default_search_fields": ["timestamp"],
@@ -254,8 +254,8 @@ mod tests {
                 }
             ]
         }"#;
-        mapper_file.write_all(mapper_str.as_bytes())?;
-        let path = mapper_file.into_temp_path();
+        index_config_file.write_all(index_config_str.as_bytes())?;
+        let path = index_config_file.into_temp_path();
         let path_str = path.to_string_lossy().to_string();
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![

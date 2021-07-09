@@ -23,7 +23,6 @@ use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory, HOTCACHE_FILENAME};
-use quickwit_metastore::SplitMetadata;
 use quickwit_proto::LeafSearchResult;
 use quickwit_storage::Storage;
 use std::collections::BTreeMap;
@@ -147,15 +146,15 @@ async fn leaf_search_single_split(
 pub async fn leaf_search(
     query: &dyn Query,
     collector: QuickwitCollector,
-    split_metas: &[SplitMetadata],
+    split_ids: &[String],
     storage: Arc<dyn Storage>,
 ) -> anyhow::Result<LeafSearchResult> {
-    let leaf_search_single_split_futures: Vec<_> = split_metas
+    let leaf_search_single_split_futures: Vec<_> = split_ids
         .iter()
-        .map(|split_meta| {
+        .map(|split_id| {
             let split_storage: Arc<dyn Storage> =
-                quickwit_storage::add_prefix_to_storage(storage.clone(), &split_meta.split_id);
-            let collector_for_split = collector.for_split(split_meta.split_id.clone());
+                quickwit_storage::add_prefix_to_storage(storage.clone(), split_id);
+            let collector_for_split = collector.for_split(split_id.clone());
             async move { leaf_search_single_split(query, collector_for_split, split_storage).await }
         })
         .collect();

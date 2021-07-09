@@ -32,7 +32,7 @@ use tantivy::schema::{
 };
 use thiserror::Error;
 
-use crate::default_doc_mapper::is_valid_field_mapping_name;
+use crate::default_index_config::is_valid_field_mapping_name;
 
 use super::default_as_true;
 use super::FieldMappingType;
@@ -703,7 +703,7 @@ impl From<TantivyDocParser> for DocParsingError {
 
 #[cfg(test)]
 mod tests {
-    use crate::{default_doc_mapper::FieldMappingType, DocParsingError};
+    use crate::{default_index_config::FieldMappingType, DocParsingError};
     use anyhow::bail;
     use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
     use matches::matches;

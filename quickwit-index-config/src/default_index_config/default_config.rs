@@ -240,7 +240,7 @@ impl IndexConfig for DefaultIndexConfig {
 #[cfg(test)]
 mod tests {
     use crate::{
-        default_doc_mapper::default_mapper::SOURCE_FIELD_NAME, DefaultIndexConfigBuilder,
+        default_index_config::default_config::SOURCE_FIELD_NAME, DefaultIndexConfigBuilder,
         DocParsingError, IndexConfig,
     };
 
@@ -276,7 +276,7 @@ mod tests {
             "attributes.server.status": ["200", "201"]
         }"#;
 
-    const JSON_MAPPING_VALUE: &str = r#"
+    const JSON_CONFIG_VALUE: &str = r#"
         {
             "store_source": true,
             "default_search_fields": [
@@ -336,40 +336,40 @@ mod tests {
 
     #[test]
     fn test_json_deserialize() -> anyhow::Result<()> {
-        let mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
-        assert!(mapper.store_source);
-        let mut default_search_field_names: Vec<String> = mapper.default_search_field_names;
+        let config = serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE)?;
+        assert!(config.store_source);
+        let mut default_search_field_names: Vec<String> = config.default_search_field_names;
         default_search_field_names.sort();
         assert_eq!(
             default_search_field_names,
             ["attributes.server", "attributes.server.status", "body"]
         );
-        let field_mappings = mapper.field_mappings.field_mappings().unwrap_or_default();
+        let field_mappings = config.field_mappings.field_mappings().unwrap_or_default();
         assert_eq!(field_mappings.len(), 6);
         Ok(())
     }
 
     #[test]
     fn test_json_serialize() -> anyhow::Result<()> {
-        let mut mapper = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
-        let json_mapper = serde_json::to_string_pretty(&mapper)?;
-        let mut mapper_after_serialization =
-            serde_json::from_str::<DefaultIndexConfig>(&json_mapper)?;
-        assert_eq!(mapper.store_source, mapper_after_serialization.store_source);
+        let mut config = serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE)?;
+        let json_config = serde_json::to_string_pretty(&config)?;
+        let mut config_after_serialization =
+            serde_json::from_str::<DefaultIndexConfig>(&json_config)?;
+        assert_eq!(config.store_source, config_after_serialization.store_source);
 
-        mapper.default_search_field_names.sort();
-        mapper_after_serialization.default_search_field_names.sort();
+        config.default_search_field_names.sort();
+        config_after_serialization.default_search_field_names.sort();
         assert_eq!(
-            mapper.default_search_field_names,
-            mapper_after_serialization.default_search_field_names
+            config.default_search_field_names,
+            config_after_serialization.default_search_field_names
         );
-        assert_eq!(mapper.schema, mapper_after_serialization.schema);
+        assert_eq!(config.schema, config_after_serialization.schema);
         Ok(())
     }
 
     #[test]
     fn test_parsing_document() -> anyhow::Result<()> {
-        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
+        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE)?;
         let document = index_config.doc_from_json(JSON_DOC_VALUE)?;
         let schema = index_config.schema();
         // 6 property entry + 1 field "_source" + two fields values for "tags" field
@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn test_accept_parsing_document_with_unknown_fields_and_missing_fields() -> anyhow::Result<()> {
-        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
+        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE)?;
         index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_cardinality() -> anyhow::Result<()> {
-        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
+        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE)?;
         let result = index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -429,7 +429,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_value() -> anyhow::Result<()> {
-        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_MAPPING_VALUE)?;
+        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE)?;
         let result = index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -450,7 +450,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_build_docmapper_with_non_fast_timestamp_field() -> anyhow::Result<()> {
-        let mapper_config = r#"{
+        let index_config = r#"{
             "type": "default",
             "default_search_fields": [],
             "timestamp_field": "timestamp",
@@ -462,15 +462,15 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(mapper_config)?;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
         let expected_msg = "Timestamp field must be a fast field, please add fast property to your field `timestamp`.".to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
     }
 
     #[test]
-    fn test_fail_to_build_docmapper_with_multivalued_timestamp_field() -> anyhow::Result<()> {
-        let mapper_config = r#"{
+    fn test_fail_to_build_index_config_with_multivalued_timestamp_field() -> anyhow::Result<()> {
+        let index_config = r#"{
             "type": "default",
             "default_search_fields": [],
             "timestamp_field": "timestamp",
@@ -483,7 +483,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(mapper_config)?;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
         let expected_msg = "Timestamp field cannot be an array, please change your field `timestamp` from an array to a single value.".to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
@@ -491,7 +491,7 @@ mod tests {
 
     #[test]
     fn test_fail_with_field_name_equal_to_source() -> anyhow::Result<()> {
-        let mapper_config = r#"{
+        let index_config = r#"{
             "type": "default",
             "default_search_fields": [],
             "field_mappings": [
@@ -502,7 +502,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(mapper_config)?;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
         let expected_msg = "`_source` is a reserved name, change your field name.".to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())

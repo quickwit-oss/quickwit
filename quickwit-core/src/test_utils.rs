@@ -20,7 +20,7 @@
  */
 use std::sync::Arc;
 
-use quickwit_doc_mapping::IndexConfig;
+use quickwit_index_config::IndexConfig;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver};
 use quickwit_storage::StorageUriResolver;
 use tempfile::tempdir;
@@ -112,11 +112,11 @@ impl TestSandbox {
 #[cfg(test)]
 mod tests {
     use super::TestSandbox;
-    use quickwit_doc_mapping::WikipediaMapper;
+    use quickwit_index_config::WikipediaIndexConfig;
 
     #[tokio::test]
     async fn test_test_sandbox() -> anyhow::Result<()> {
-        let index_config = Box::new(WikipediaMapper::new());
+        let index_config = Box::new(WikipediaIndexConfig::new());
         let test_index_builder = TestSandbox::create("test_index", index_config).await?;
         let statistics = test_index_builder.add_documents(vec![
             serde_json::json!({"title": "Hurricane Fay", "body": "...", "url": "http://hurricane-fay"}),

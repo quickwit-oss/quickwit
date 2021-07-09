@@ -78,6 +78,7 @@ pub async fn root_search(
         .collect();
 
     let assigned_leaf_search_jobs = client_pool.assign_jobs(leaf_search_jobs).await?;
+    debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
 
     let clients = client_pool.clients.read().await;
 
@@ -100,9 +101,10 @@ pub async fn root_search(
 
         let leaf_search_request = LeafSearchRequest {
             search_request: Some(search_request_with_offset_0.clone()),
-            split_uris: jobs.iter().map(|job| job.split.clone()).collect(),
+            split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
         };
 
+        debug!(addr=?addr, leaf_search_request=?leaf_search_request, "Leaf node search.");
         let handle = tokio::spawn(async move {
             match search_client.leaf_search(leaf_search_request).await {
                 Ok(resp) => Ok(resp.into_inner()),
@@ -124,19 +126,23 @@ pub async fn root_search(
     let mut leaf_search_results = Vec::new();
     for leaf_search_response in leaf_search_responses {
         match leaf_search_response {
-            Ok(leaf_search_result) => leaf_search_results.push(leaf_search_result),
+            Ok(leaf_search_result) => {
+                debug!(leaf_search_result=?leaf_search_result, "Leaf search result.");
+                leaf_search_results.push(leaf_search_result)
+            }
             Err(err) => error!(err=?err),
         }
     }
     let leaf_search_result = spawn_blocking(move || collector.merge_fruits(leaf_search_results))
         .await
         .with_context(|| "Failed to merge leaf search results.")??;
+    debug!(leaf_search_result=?leaf_search_result, "Merged leaf search result.");
 
     // Create a hash map of PartialHit with split as a key.
     let mut partial_hits_map: HashMap<String, Vec<PartialHit>> = HashMap::new();
     for partial_hit in leaf_search_result.partial_hits.iter() {
         partial_hits_map
-            .entry(partial_hit.split.clone())
+            .entry(partial_hit.split_id.clone())
             .or_insert_with(Vec::new)
             .push(partial_hit.clone());
     }

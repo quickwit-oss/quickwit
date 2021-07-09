@@ -102,7 +102,7 @@ mod tests {
     use crate::indexing::document_source::test_document_source;
     use crate::indexing::split::Split;
     use crate::indexing::{IndexDataParams, IndexingStatistics};
-    use quickwit_doc_mapping::AllFlattenIndexConfig;
+    use quickwit_index_config::AllFlattenIndexConfig;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_storage::StorageUriResolver;
     use std::sync::Arc;

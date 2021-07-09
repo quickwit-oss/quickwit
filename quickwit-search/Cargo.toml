@@ -30,8 +30,8 @@ path = '../quickwit-core'
 [dependencies.quickwit-cluster]
 path = '../quickwit-cluster'
 
-[dependencies.quickwit-doc-mapping]
-path = '../quickwit-doc-mapping'
+[dependencies.quickwit-index-config]
+path = '../quickwit-index-config'
 
 [dependencies.tokio]
 version = '1'
