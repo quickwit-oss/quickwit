@@ -26,33 +26,33 @@ This page documents all the available commands, related options and environment 
 
 *Description*
 
-Creates an index at `index-uri` with a doc mapper configured by a json file located at `doc-mapper-config-path`. The command fails if an index already exists at `index-uri` unless `overwrite` is passed. When `overwrite` is enabled, the command deletes all the files stored at `index-uri` before creating a new index. The doc mapper defines how a document and fields it contains, are stored and indexed, see the [doc mapper documentation](reference/doc-mapper.md).
+Creates an index at `index-uri` configured by a json file located at `index-config-path`. The command fails if an index already exists at `index-uri` unless `overwrite` is passed. When `overwrite` is enabled, the command deletes all the files stored at `index-uri` before creating a new index. The index config defines how a document and fields it contains, are stored and indexed, see the [index config documentation](index-config.md).
 
 *Synopsis*
 
 ```bash
 quickwit new
     --index-uri <uri>
-    --doc-mapper-config-path <path>
+    --index-config-path <path>
     [--overwrite]
 ```
 
 *Options*
 
 `--index-uri` (string) Defines the index location.<br />
-`--doc-mapper-config-path` (string) Defines the doc mapper config path.<br />
+`--index-config-path` (string) Defines the index config path.<br />
 `--overwrite` (boolean) Overwrites existing index.
 
 *Examples*
 
 *Creating a new index on local file system*<br />
-`quickwit new --index-uri file:///quickwit-indexes/catalog --doc-mapper-config-path ~/quickwit-mapper/doc_mapper.json`
+`quickwit new --index-uri file:///quickwit-indexes/catalog --index-config-path ~/quickwit-conf/index_config.json`
 
 *Creating a new index on Amazon S3*<br />
-`quickwit new --index-uri s3://quickwit-indexes/catalog --doc-mapper-config-path ~/quickwit-mapper/doc_mapper.json`
+`quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json`
 
 *Replacing an existing index*<br />
-`quickwit new --index-uri s3://quickwit-indexes/catalog --doc-mapper-config-path ~/quickwit-mapper/doc_mapper.json --overwrite`
+`quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json --overwrite`
 
 ### Index
 

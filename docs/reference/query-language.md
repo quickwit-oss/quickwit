@@ -19,7 +19,7 @@ You can specify fields to search in the query:
 - `title:barack resource.body:barack` will search for `barack` in both fields
 - `title:"barack obama"` will search for the exact phrase 
 
-You can also omit field names to search into default search fields defined in the `doc mapper`:
+You can also omit field names to search into default search fields defined in the `index config`:
 - `barack OR obama` will search for `barack` or `obama` in the default search fields.
 
 ## Example of a search query on the REST API

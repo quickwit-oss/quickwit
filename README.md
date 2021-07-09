@@ -14,32 +14,36 @@ Quickwit is a distributed search engine built from the ground up to achieve high
 Quickwit is born from the idea that today's search engines are hard to manage and too costly on specific use cases like analytics in a multitenancy environment or low QPS use cases.
 
 
-How can this dream comes true? By searching data straight from object storage like AWS S3, achieving true decoupled compute and storage.is to manage and search engine search data straight from object storage like AWS S3, achieving true decoupled compute and storage and unlocking stateless distributed search instances.
+How can this dream comes true? By searching data straight from object storage like AWS S3, achieving true decoupled compute and storage. Not only is Quickwit more cost-efficient, but search clusters are also easier to operate. One can add or remove search instances in seconds. Multi-tenant search becomes trivial.
 
 
 # Documentation
-- [Introduction](introduction.md)
-- [Quickwit CLI](quickwit-cli.md)
+- [Introduction](docs/introduction.md)
 
 ## Getting started
-  - [Quickstart](getting-started/quickstart.md)
-  - [Installation](getting-started/installation.md)
+- [Quickstart](docs/getting-started/quickstart.md)
+- [Installation](docs/getting-started/installation.md)
 
 ## Overview
-  - [Features](overview/features.md)
-  - [Architecture](overview/architecture.md)
+- [Features](docs/overview/features.md)
+- [Architecture](docs/overview/architecture.md)
+
+## Administration
+- [Operating in the cloud](docs/administration/cloud-env.md)
 
 ## Tutorials
-  - [Search on logs with timestamp pruning](tutorials/tutorial-hdfs-logs.md)
-  - [Setup a distributed search on AWS S3](tutorials/tutorial-hdfs-logs-distributed-search-aws-s3.md)
+- [Search on logs with timestamp pruning](docs/tutorials/tutorial-hdfs-logs.md)
+- [Setup a distributed search on AWS S3](docs/tutorials/tutorial-hdfs-logs-distributed-search-aws-s3.md)
 
 ## Reference
-  - [Search API](reference/search-api.md)
-  - [Query language](reference/query-language.md)
-  - [Doc mapper](reference/doc-mapper.md)
+- [Quickwit CLI](docs/reference/cli.md)
+- [Index Config](docs/reference/index-config.md)
+- [Search API](docs/reference/search-api.md)
+- [Query language](docs/reference/query-language.md)
+- [Telemetry](docs/reference/telemetry.md)
 
-## Meta >
-  - [Explore further](meta/explore-further.md)
-  - [Release notes](meta/release-notes.md)
-  - [Code of conduct](CODE_OF_CONDUCT.md)
-  - [Contributing](CONTRIBUTING.md)
+## Meta
+- [Explore further](docs/meta/explore-further.md)
+- [Release notes](docs/meta/release-notes.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Contributing](CONTRIBUTING.md)
