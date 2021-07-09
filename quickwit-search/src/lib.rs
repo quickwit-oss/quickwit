@@ -86,7 +86,7 @@ pub(crate) struct GlobalDocAddress<'a> {
 impl<'a> GlobalDocAddress<'a> {
     fn from_partial_hit(partial_hit: &'a PartialHit) -> Self {
         Self {
-            split: &partial_hit.split,
+            split: &partial_hit.split_id,
             doc_addr: DocAddress {
                 segment_ord: partial_hit.segment_ord,
                 doc_id: partial_hit.doc_id,
@@ -147,11 +147,15 @@ pub async fn single_node_search(
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
     let split_metas = list_relevant_splits(search_request, metastore).await?;
+    let split_ids: Vec<String> = split_metas
+        .iter()
+        .map(|split_meta| split_meta.split_id.clone())
+        .collect();
     let index_config = index_metadata.index_config;
     let query = index_config.query(search_request)?;
     let collector = make_collector(index_config.as_ref(), search_request);
     let leaf_search_result =
-        leaf_search(query.as_ref(), collector, &split_metas[..], storage.clone())
+        leaf_search(query.as_ref(), collector, &split_ids[..], storage.clone())
             .await
             .with_context(|| "leaf_search")?;
     let fetch_docs_result = fetch_docs(leaf_search_result.partial_hits, storage)

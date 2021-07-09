@@ -83,10 +83,9 @@ message LeafSearchRequest {
   // that was sent to root apart from the start_offset & max_hits params.
   SearchRequest search_request = 1;
 
-  // Index split to apply the query on.
-  // If relative uris, this uris are resolved from the index_uri defined in the
-  // search_request.
-  repeated string split_uris = 3;
+  // Index split ids to apply the query on.
+  // This ids are resolved from the index_uri defined in the search_request.
+  repeated string split_ids = 3;
 }
 
 message Hit {
@@ -108,11 +107,11 @@ message PartialHit {
   // emits an decreasing mapping of this fast field.
   //
   // In case of a tie, quickwit uses the increasing order of
-  // - the split,
+  // - the split_id,
   // - the segment_ord,
   // - the doc id.
   uint64 sorting_field_value = 1;
-  string split = 2;
+  string split_id = 2;
 
   // (segment_ord, doc) form a tantivy DocAddress, which is sufficient to identify a document
   // within a split

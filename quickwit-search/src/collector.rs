@@ -206,7 +206,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
                 sorting_field_value: hit.sorting_field_value,
                 segment_ord,
                 doc_id: hit.doc_id,
-                split: split_id.clone(),
+                split_id: split_id.clone(),
             })
             .collect();
         LeafSearchResult {
@@ -392,7 +392,7 @@ mod tests {
     fn test_merge_partial_hits_no_tie() {
         let make_doc = |sorting_field_value: u64| PartialHit {
             sorting_field_value,
-            split: "split1".to_string(),
+            split_id: "split1".to_string(),
             segment_ord: 0u32,
             doc_id: 0u32,
         };
@@ -406,7 +406,7 @@ mod tests {
     fn test_merge_partial_hits_with_tie() {
         let make_hit_given_split_id = |split_id: u64| PartialHit {
             sorting_field_value: 0u64,
-            split: format!("split_{}", split_id),
+            split_id: format!("split_{}", split_id),
             segment_ord: 0u32,
             doc_id: 0u32,
         };

@@ -32,7 +32,6 @@ use quickwit_storage::StorageUriResolver;
 
 use crate::fetch_docs;
 use crate::leaf_search;
-use crate::list_relevant_splits;
 use crate::make_collector;
 use crate::root_search;
 use crate::SearchClientPool;
@@ -130,13 +129,13 @@ impl SearchService for SearchServiceImpl {
             })?;
         let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
-        let split_metas = list_relevant_splits(&search_request, metastore.as_ref()).await?;
+        let split_ids = leaf_search_request.split_ids;
         let index_config = index_metadata.index_config;
         let query = index_config.query(&search_request)?;
         let collector = make_collector(index_config.as_ref(), &search_request);
 
         let leaf_search_result =
-            leaf_search(query.as_ref(), collector, &split_metas[..], storage.clone()).await?;
+            leaf_search(query.as_ref(), collector, &split_ids[..], storage.clone()).await?;
 
         Ok(leaf_search_result)
     }
