@@ -15,7 +15,7 @@ export DISABLE_QUICKWIT_TELEMETRY=1
 
 ## Which data are collected?
 
-We collect the minimum amount of information to respect privacy. Here what we collect:
+We collect the minimum amount of information to respect privacy. Here are the data collected:
 - type of events among create, index, delete and serve events
 - client information:
   - session uuid: uuid generated on the fly
