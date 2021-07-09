@@ -14,7 +14,7 @@ Quickwit is still a young search engine but it already offers several features, 
 - Fast search on object storage or any storage which provides bytes range queries
 - Fast startup time, indexing and search
 - Mapping feature to define your schema and easily convert a json into a document to index 
-- Support data types text, i64, f64, date and composite types object and array.
+- Support data types text, i64, f64, date, bytes and composite types object and array.
 
 
 You can have a look at [tantivy features](https://github.com/tantivy-search/tantivy/) to dig into the indexing engine.

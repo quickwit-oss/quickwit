@@ -3,9 +3,9 @@ title: Index configuration
 position: 2
 ---
 
-The index config let you define 4 things:
-- the doc mapping, that is how a document, and the fields it contains, are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, date, i64, f64)
-- the timestamp field `timestamp_field` used for [sharding documents in splits](link). This is very useful when querying as Quickwit will be able to prune splits based on time range and make search way faster. The timestamp field must be a `i64`
+The index config let you define four things:
+- the doc mapping, that is how a document, and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, date, i64, f64)
+- the timestamp field `timestamp_field` used for [sharding documents in splits](link). This is very useful when querying as Quickwit will be able to prune splits based on time range and make search way faster. The timestamp field must be an `i64`
 - the default search fields `default_search_fields`: if no field name is specified in your query, these fields will be used for search
 - whether or not the original JSON document is stored or not in the index by setting `store_source` to true or false.
 
@@ -71,7 +71,7 @@ Example of a mapping for a text field:
 | ------------- | ------------- | ------------- |
 | **stored**    | Whether value is stored in the document store | `true` |
 | **tokenizer** | Name of the `Tokenizer`, choices between `raw`, `default` and `stem_en` | `default` |
-| **record**    | Describes the amount information indexed, choices between `basic`, `freq` and `position` | `basic` |
+| **record**    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 
 **Description of available tokenizers**
 | Tokenizer     | Description   |

@@ -20,7 +20,7 @@ This page documents all the available commands, related options and environment 
 
 ### Version
 
-`quickwit version` displays the version. Useful for reporting bugs.
+`quickwit --version` displays the version. Useful for reporting bugs.
 
 ### New
 
@@ -53,6 +53,8 @@ quickwit new
 
 *Replacing an existing index*<br />
 `quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json --overwrite`
+
+**Note:** When creating an index on a local file system, absolute path is enforce. This implies that index-uri like `file:///quickwit-indexes/catalog` pertenains you have the required permissions on `/quickwit-indexes/catalog`.
 
 ### Index
 

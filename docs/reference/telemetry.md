@@ -3,11 +3,11 @@ title: Telemetry
 position: 5
 ---
 
-Quickiwt Inc. collects anonymous data regarding general usage to help us driving our development. Privacy and transparency are at the heart of Quickwit values and we do collect the minimal useful data and don't use any third party tool for the collection. 
+Quickiwt Inc. collects anonymous data regarding general usage to help us drive our development. Privacy and transparency are at the heart of Quickwit values and we only collect the minimal useful data and don't use any third party tool for the collection. 
 
 ## Disabling data collection
 
-Data collection are opt-out. To disable them, just set the environment variable `DISABLE_QUICKWIT_TELEMETRY` to whatever vlue
+Data collection are opt-out. To disable them, just set the environment variable `DISABLE_QUICKWIT_TELEMETRY` to whatever value.
 ```
 export DISABLE_QUICKWIT_TELEMETRY=1
 ```
@@ -28,4 +28,4 @@ We collect the minimum amount of information to respect privacy. Here are the da
 
 ## No third party
 
-We did not want to add an untrusted third party tool in the collection so we decided to implement and host ourselves the collecting server telemetry.quickwit.io.
+We did not want to add any untrusted third party tool in the collection so we decided to implement and host our own metric collection service server telemetry.quickwit.io.
