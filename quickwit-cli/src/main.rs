@@ -32,6 +32,8 @@ use std::env;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::path::PathBuf;
+use tracing::Level;
+use tracing_subscriber::fmt::Subscriber;
 #[derive(Debug, PartialEq)]
 enum CliCommand {
     New(CreateIndexArgs),
@@ -41,6 +43,16 @@ enum CliCommand {
     Delete(DeleteIndexArgs),
 }
 impl CliCommand {
+    fn default_log_level(&self) -> Level {
+        match self {
+            CliCommand::New(_) => Level::WARN,
+            CliCommand::Index(_) => Level::WARN,
+            CliCommand::Search(_) => Level::WARN,
+            CliCommand::Serve(_) => Level::INFO,
+            CliCommand::Delete(_) => Level::WARN,
+        }
+    }
+
     fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches_opt) = matches.subcommand();
         let submatches =
@@ -66,7 +78,6 @@ impl CliCommand {
             .map(PathBuf::from)
             .context("'index-config-path' is a required arg")?;
         let overwrite = matches.is_present("overwrite");
-
         Ok(CliCommand::New(CreateIndexArgs::new(
             index_uri,
             index_config_path,
@@ -185,10 +196,20 @@ impl CliCommand {
     }
 }
 
+fn setup_logger(default_level: Level) {
+    if env::var("RUST_LOG").is_ok() {
+        tracing_subscriber::fmt::init();
+        return;
+    }
+    Subscriber::builder()
+        .with_env_filter(format!("quickwit={}", default_level))
+        .try_init()
+        .expect("Failed to set up logger.")
+}
+
 #[tracing::instrument]
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
 
     let yaml = load_yaml!("cli.yaml");
@@ -204,6 +225,9 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    setup_logger(command.default_log_level());
+
     let command_res = match command {
         CliCommand::New(args) => create_index_cli(args).await,
         CliCommand::Index(args) => index_data_cli(args).await,
