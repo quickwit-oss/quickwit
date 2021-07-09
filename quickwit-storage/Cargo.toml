@@ -6,6 +6,7 @@ edition = '2018'
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 
 [dependencies]
+quickwit-common = { version = "0.1.0", path = "../quickwit-common" }
 async-trait = '0.1'
 md5 = '0.7'
 anyhow = '1'

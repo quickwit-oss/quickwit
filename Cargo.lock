@@ -2870,6 +2870,7 @@ dependencies = [
  "md5",
  "mockall 0.9.1",
  "once_cell",
+ "quickwit-common",
  "rand 0.8.4",
  "regex",
  "rusoto_core",
