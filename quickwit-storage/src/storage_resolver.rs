@@ -21,7 +21,7 @@
 */
 use crate::{local_file_storage::LocalFileStorageFactory, ram_storage::RamStorageFactory};
 use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
-use quickwit_common::*;
+use quickwit_common::{get_quickwit_env, QuickwitEnv};
 use rusoto_core::Region;
 use std::collections::HashMap;
 use std::sync::Arc;
