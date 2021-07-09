@@ -1,5 +1,5 @@
-name: Quickwit CLI
-about: Index and search structured or unstructured data from the command line
+name: Quickwit
+about: Index and search structured or unstructured data
 author: Quickwit, Inc. <hello@quickwit.com>
 
 subcommands:
