@@ -90,7 +90,9 @@ install_from_archive() {
             _binary_arch="armv7-unknown-linux-musleabihf"
             ;;
         *)
-            err "unsupported arch: $_arch"
+            printf "%s A pre-built package is not available for your OS architecture: %s" "$_prompt" "$_arch"
+            printf "\n"
+            err "You can easily build it from source following the docs: https://quickwit.io/docs"
             ;;
     esac
 
