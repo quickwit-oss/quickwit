@@ -3,7 +3,7 @@ title: Quickstart
 sidebar_position: 1
 ---
 
-Before running quickwit search instances on your servers, you will need to create indexes, add documents or even delete some data and finally launch the server. In this quickstart guide, we will install Quickwit and pass these steps until starting your search. All commands used in this guide are documented here [Quickwit CLI docs](../quickwit-cli.md).
+Before running quickwit search instances on your servers, you will need to create indexes, add documents or even delete some data and finally launch the server. In this quickstart guide, we will install Quickwit and pass through these steps and lastly starting the server. All commands used in this guide are documented [here](../quickwit-cli.md).
 
 
 ## Install Quickwit

@@ -3,18 +3,13 @@ title: Index configuration
 position: 2
 ---
 
-## What is it?
-
-The main part when co is in charge of defining how a document, and the fields it contains, are stored and indexed for a given index.
-A document is a collection of named fields, each having its own data type (text, binary, date, i64, f64).
-
-Besides that, the doc mapper let you define 3 more information:
+The index config let you define 4 things:
+- the doc mapping, that is how a document, and the fields it contains, are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, date, i64, f64)
 - the timestamp field `timestamp_field` used for [sharding documents in splits](link). This is very useful when querying as Quickwit will be able to prune splits based on time range and make search way faster. The timestamp field must be a `i64`
 - the default search fields `default_search_fields`: if no field name is specified in your query, these fields will be used for search
 - whether or not the original JSON document is stored or not in the index by setting `store_source` to true or false.
 
-
-The `doc mapper` is defined by a json file given to Quickwit CLI at the creation of the index. Here is a example of a doc mapper for a logging dataset: 
+This config can be expressed as a json file given to the `new` Quickwit command. Here is a example of a doc mapper for a logging dataset: 
 
 ```
 {
@@ -53,7 +48,8 @@ The `doc mapper` is defined by a json file given to Quickwit CLI at the creation
 ## Field types
 
 Each field has a type which indicates the kind of data it contains such as integer on 64 bits or text.
-Quickwit supports the following raw types `text`, `i64`, `f64`, `date` and `bytes` and also supports composite types such as array and object.
+Quickwit supports the following raw types `text`, `i64`, `f64`, `date` and `bytes` and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to have a look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
+
 
 ### Raw types
 
