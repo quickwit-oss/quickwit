@@ -1,11 +1,11 @@
 ---
-title: Doc mapper
-position: 3
+title: Index configuration
+position: 2
 ---
 
 ## What is it?
 
-The `doc mapper` is in charge of defining how a document, and the fields it contains, are stored and indexed for a given index.
+The main part when co is in charge of defining how a document, and the fields it contains, are stored and indexed for a given index.
 A document is a collection of named fields, each having its own data type (text, binary, date, i64, f64).
 
 Besides that, the doc mapper let you define 3 more information:

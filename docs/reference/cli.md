@@ -1,16 +1,11 @@
 ---
-title: Quickwit CLI
-sidebar_position: 2
+title: CLI Reference
+sidebar_position: 1
 ---
 
-Quickwit CLI is a single binary that makes it easy to index and search structured or unstructured data from the command line. It consumes datasets consisting of newline-delimited JSON objects with arbitrary keys and produces indexes that can be stored locally or remotely on an object storage such as Amazon S3 and queried with subsecond latency.
+Quickwit is a single binary that makes it easy to index and search structured or unstructured data from the command line. It consumes datasets consisting of newline-delimited JSON objects with arbitrary keys and produces indexes that can be stored locally or remotely on an object storage such as Amazon S3 and queried with subsecond latency.
 
-These pages documents all the available commands, related options and environment variables.
-
-
-### Warning
-
-Cloud providers charge for data transfers in and out of their networks. In addition, querying an index from a remote machine adds some extra latency. For those reasons, we recommend that you test and use the Quickwit CLI from an instance located within your cloud provider's network.
+This page documents all the available commands, related options and environment variables.
 
 
 ## Commands
@@ -25,7 +20,7 @@ Cloud providers charge for data transfers in and out of their networks. In addit
 
 ### Version
 
-`quickwit version` displays the version of the CLI. Useful for reporting bugs.
+`quickwit version` displays the version. Useful for reporting bugs.
 
 ### New
 
