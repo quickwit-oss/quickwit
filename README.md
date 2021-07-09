@@ -13,5 +13,5 @@ Stay tuned.
 1. Install docker https://docs.docker.com/engine/install/
 2. Install localstack https://github.com/localstack/localstack#installing
 3. Install awslocal https://github.com/localstack/awscli-local
-4. Create s3 bucket used in tests `awslocal s3 mb s3://quickwit-integration-tests`
-5. `cargo test --all-features`
+4. Prepare s3 bucket used in tests, execute `./quickwit-cli/tests/prepare_tests.sh`
+5. `QUICKWIT_ENV=LOCAL cargo test --all-features`
