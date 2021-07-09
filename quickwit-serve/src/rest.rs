@@ -25,6 +25,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 use tracing::*;
+use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
@@ -47,6 +48,45 @@ fn default_max_hits() -> u64 {
     20
 }
 
+/// Output format for the search results.
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum Format {
+    Json,
+    PrettyJson,
+}
+
+impl Default for Format {
+    fn default() -> Self {
+        Format::PrettyJson
+    }
+}
+
+impl Format {
+    fn resp_body<T: serde::Serialize>(self, val: T) -> serde_json::Result<String> {
+        match self {
+            Format::Json => serde_json::to_string(&val),
+            Format::PrettyJson => serde_json::to_string_pretty(&val),
+        }
+    }
+
+    fn make_reply<T: serde::Serialize>(self, result: Result<T, ApiError>) -> impl Reply {
+        let status_code: StatusCode;
+        let body_json = match result {
+            Ok(success) => {
+                status_code = StatusCode::OK;
+                self.resp_body(success)
+            }
+            Err(err) => {
+                status_code = err.http_status_code();
+                self.resp_body(err)
+            } //< yeah it is lame it is not formatted, but it should never happen really.
+        }
+        .unwrap_or("Error: Failed to serialize response.".to_string());
+        let reply_with_header = reply::with_header(body_json, CONTENT_TYPE, "application/json");
+        reply::with_status(reply_with_header, status_code)
+    }
+}
 /// This struct represents the QueryString passed to
 /// the rest API.
 #[derive(Deserialize, Debug, PartialEq, Eq)]
@@ -62,13 +102,16 @@ pub struct SearchRequestQueryString {
     /// Maximum number of hits to return (by default 20).
     #[serde(default = "default_max_hits")]
     pub max_hits: u64,
-    // First hit to return. Together with num_hits, this parameter
-    // can be used for pagination.
-    //
-    // E.g.
-    // The results with rank [start_offset..start_offset + max_hits) are returned
+    /// First hit to return. Together with num_hits, this parameter
+    /// can be used for pagination.
+    ///
+    /// E.g.
+    /// The results with rank [start_offset..start_offset + max_hits) are returned
     #[serde(default)] // Default to 0. (We are 0-indexed)
     pub start_offset: u64,
+    /// The output format.
+    #[serde(default)]
+    pub format: Format,
 }
 
 async fn search_endpoint<TSearchService: SearchService>(
@@ -102,9 +145,9 @@ async fn search<TSearchService: SearchService>(
     search_service: Arc<TSearchService>,
 ) -> Result<impl warp::Reply, Infallible> {
     info!(index_id=%index_id,request=?request, "search");
-    Ok(make_reply(
-        search_endpoint(index_id, request, &*search_service).await,
-    ))
+    Ok(request
+        .format
+        .make_reply(search_endpoint(index_id, request, &*search_service).await))
 }
 
 /// Rest search handler.
@@ -119,24 +162,19 @@ pub fn search_handler<TSearchService: SearchService>(
         .recover(recover_fn)
 }
 
-fn make_reply<T: serde::Serialize>(result: Result<T, ApiError>) -> reply::WithStatus<reply::Json> {
-    match result {
-        Ok(success) => reply::with_status(reply::json(&success), StatusCode::OK),
-        Err(error) => reply::with_status(reply::json(&error), error.http_status_code()),
-    }
-}
-
 /// This function returns a formated error based on the given rejection reason.
 async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
     // TODO handle more errors.
     match rejection.find::<serde_qs::Error>() {
         Some(err) => {
             // The querystring was incorrect.
-            Ok(make_reply(Err::<(), ApiError>(ApiError::InvalidArgument(
-                err.to_string(),
-            ))))
+            Ok(
+                Format::PrettyJson.make_reply(Err::<(), ApiError>(ApiError::InvalidArgument(
+                    err.to_string(),
+                ))),
+            )
         }
-        None => Ok(make_reply(Err::<(), ApiError>(ApiError::NotFound))),
+        None => Ok(Format::PrettyJson.make_reply(Err::<(), ApiError>(ApiError::NotFound))),
     }
 }
 
@@ -159,7 +197,7 @@ mod tests {
         let expected_json: serde_json::Value = json!({
             "numHits": 55,
             "hits": [],
-            "numMicrosecs": 0
+            "numMicrosecs": 0,
         });
         assert_json_include!(actual: search_results_json, expected: expected_json);
         Ok(())
@@ -182,6 +220,7 @@ mod tests {
                 end_timestamp: Some(1450720000),
                 max_hits: 10,
                 start_offset: 22,
+                format: Format::default(),
             }
         );
     }
@@ -203,6 +242,29 @@ mod tests {
                 end_timestamp: Some(1450720000),
                 max_hits: 20,
                 start_offset: 0,
+                format: Format::default(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_route_simple_format() {
+        let rest_search_api_filter = search_filter();
+        let (index, req) = warp::test::request()
+            .path("/api/v1/quickwit-demo-index/search?query=*&format=json")
+            .filter(&rest_search_api_filter)
+            .await
+            .unwrap();
+        assert_eq!(&index, "quickwit-demo-index");
+        assert_eq!(
+            &req,
+            &super::SearchRequestQueryString {
+                query: "*".to_string(),
+                start_timestamp: None,
+                end_timestamp: None,
+                max_hits: 20,
+                start_offset: 0,
+                format: Format::Json,
             }
         );
     }
@@ -218,7 +280,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument(\"failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`\")"
+            "error": "InvalidArgument(\"failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`\")"
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
