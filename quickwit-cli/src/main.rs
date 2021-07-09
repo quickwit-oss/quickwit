@@ -150,12 +150,15 @@ impl CliCommand {
         let port = value_t!(matches, "port", u16)?;
         let rest_addr = format!("{}:{}", host, port);
         let rest_socket_addr = to_socket_addr(&rest_addr)?;
-        let host_key_path = Path::new(
-            matches
-                .value_of("host-key-path")
-                .context("'host-key-path' is a required arg")?,
-        )
-        .to_path_buf();
+
+        let host_key_path_prefix = matches
+            .value_of("host-key-path-prefix")
+            .context("'host-key-path-prefix' has a default  value")?
+            .to_string();
+
+        let host_key_path =
+            Path::new(format!("{}-{}-{}", host_key_path_prefix, host, port.to_string()).as_str())
+                .to_path_buf();
         let mut peer_socket_addrs: Vec<SocketAddr> = Vec::new();
         if matches.is_present("peer-seeds") {
             if let Some(values) = matches.values_of("peer-seeds") {
@@ -458,17 +461,18 @@ mod tests {
             "127.0.0.1",
             "--port",
             "9090",
-            "--host-key-path",
+            "--host-key-path-prefix",
             "/etc/quickwit-host-key",
             "--peer-seeds",
             "192.168.1.13:9090",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
+        println!("{:?}", command);
         assert!(matches!(
             command,
             Ok(CliCommand::Serve(ServeArgs {
                 index_uris, rest_socket_addr, host_key_path, peer_socket_addrs
-            })) if index_uris == vec!["file:///indexes/wikipedia".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap()]
+            })) if index_uris == vec!["file:///indexes/wikipedia".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap()]
         ));
 
         Ok(())

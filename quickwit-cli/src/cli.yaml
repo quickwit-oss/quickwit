@@ -1,5 +1,5 @@
-name: Quickwit CLI
-about: Index and search structured or unstructured data from the command line
+name: Quickwit
+about: Index and search structured or unstructured data
 author: Quickwit, Inc. <hello@quickwit.com>
 
 subcommands:
@@ -115,11 +115,11 @@ subcommands:
                 long: port
                 default_value: '8080'
                 value_name: PORT
-            - host-key-path:
-                help: Path to the host key file where the data that makes a host unique in the cluster is stored.
-                long: host-key-path
+            - host-key-path-prefix:
+                help: Path prefix to the host key file where the data that makes a host unique in the cluster is stored.
+                long: host-key-path-prefix
                 default_value: '/tmp/quickwit-host-key'
-                value_name: HOST KEY
+                value_name: HOST KEY PREFIX
             - peer-seeds:
                 help: Peer address the REST API server (e.g. 192.1.1.3:8080) to connect to form a cluster. (To specify more than one, separate with a comma.)
                 long: peer-seeds

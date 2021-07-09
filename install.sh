@@ -3,7 +3,7 @@
 # installer.sh
 #
 # This is just a little script that can be downloaded from the internet to
-# install Quickwit CLI. 
+# install Quickwit.
 # It just does platform detection, fetches the lastest appropriate release version from github
 # and execute the appropriate commands to download the binary.
 #
@@ -22,13 +22,12 @@ _indent="   "
 header() {
     cat 1>&2 <<EOF
 
-
-                                   QUICKWIT-CLI
-                                    Installer
+                                   Q U I C K W I T
+                                      Installer
 
 $_divider
-Website: http://quickwit.io/
-Docs: http://quickwit.io/docs/
+Website: https://quickwit.io/
+Docs: https://quickwit.io/docs/
 $_divider
 
 EOF
@@ -37,7 +36,7 @@ EOF
 usage() {
     cat 1>&2 <<EOF
 quickwit-install
-The installer for Quickwit (http://quickwit.io/)
+The installer for Quickwit (https://quickwit.io/)
 
 USAGE:
     quickwit-install [FLAGS] [OPTIONS]
@@ -103,7 +102,7 @@ install_from_archive() {
     local _archive_content_file_="quickwit-${_version}-${_binary_arch}"
     local _url="${PACKAGE_ROOT}/${_version}/${_file}"
 
-    printf "%s Downloading Quickwit CLI via %s" "$_prompt" "$_url"
+    printf "%s Downloading Quickwit via %s" "$_prompt" "$_url"
     ensure downloader "$_url" "$_file"
     printf "\n"
 
@@ -117,11 +116,11 @@ install_from_archive() {
    
     printf "\n"
     printf "%s Install succeeded!\n" "$_prompt"
-    printf "%s To start using Quickwit CLI:\n" "$_prompt"
+    printf "%s To start using Quickwit:\n" "$_prompt"
     printf "\n"
     printf "%s ./quickwit --version \n" "$_indent"
     printf "\n"
-    printf "%s More information at http://quickwit.io/docs/\n" "$_prompt"
+    printf "%s More information at https://quickwit.io/docs/\n" "$_prompt"
 
     local _retval=$?
 
