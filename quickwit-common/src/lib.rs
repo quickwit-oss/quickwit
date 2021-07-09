@@ -70,3 +70,25 @@ pub fn to_socket_addr(addr_str: &str) -> anyhow::Result<SocketAddr> {
         ))
     }
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum QuickwitEnv {
+    UNSET,
+    LOCAL,
+}
+
+impl Default for QuickwitEnv {
+    fn default() -> Self {
+        Self::UNSET
+    }
+}
+
+pub fn get_quickwit_env() -> QuickwitEnv {
+    match std::env::var("QUICKWIT_ENV") {
+        Ok(val) if val == "LOCAL" => QuickwitEnv::LOCAL,
+        Ok(val) => {
+            panic!("unkown value set for QUICKWIT_ENV {}", val)
+        }
+        Err(_) => QuickwitEnv::UNSET,
+    }
+}
