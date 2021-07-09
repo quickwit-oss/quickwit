@@ -53,19 +53,22 @@ message SearchRequest {
   // Query
   string query = 2;
 
+  // Fields to search on
+  repeated string  search_fields = 3;
+
   // Time filter
-  optional int64 start_timestamp = 3;
-  optional int64 end_timestamp = 4;
+  optional int64 start_timestamp = 4;
+  optional int64 end_timestamp = 5;
 
   // Maximum number of hits to return.
-  uint64 max_hits = 5;
+  uint64 max_hits = 6;
 
   // First hit to return. Together with max_hits, this parameter
   // can be used for pagination.
   //
   // E.g.
   // The results with rank [start_offset..start_offset + max_hits) are returned.
-  uint64 start_offset = 6;
+  uint64 start_offset = 7;
 }
 
 message SearchResult {
