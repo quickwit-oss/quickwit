@@ -19,12 +19,12 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+use crate::{local_file_storage::LocalFileStorageFactory, ram_storage::RamStorageFactory};
+use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
+use quickwit_common::*;
 use rusoto_core::Region;
 use std::collections::HashMap;
 use std::sync::Arc;
-
-use crate::{local_file_storage::LocalFileStorageFactory, ram_storage::RamStorageFactory};
-use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
 
 /// A storage factory builds a [`Storage`] object from an URI.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
@@ -71,10 +71,7 @@ impl Default for StorageUriResolver {
         StorageUriResolver::builder()
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory::default())
-            .register(S3CompatibleObjectStorageFactory::new(
-                Region::default(),
-                "s3",
-            ))
+            .register(S3CompatibleObjectStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::new(
                 localstack_region(),
                 "s3+localstack",
@@ -107,9 +104,14 @@ impl StorageUriResolver {
 
 /// Returns a localstack region (used for testing).
 pub fn localstack_region() -> Region {
+    let endpoint = if get_quickwit_env() == QuickwitEnv::LOCAL {
+        "http://localhost:4566".to_string()
+    } else {
+        "http://localstack:4566".to_string()
+    };
     Region::Custom {
         name: "localstack".to_string(),
-        endpoint: "http://localhost:4566".to_string(),
+        endpoint,
     }
 }
 
@@ -140,7 +142,7 @@ mod tests {
             .build();
         let resolved = storage_resolver.resolve("second://")?;
         let data = resolved.get_all(Path::new("hello")).await?;
-        assert_eq!(data, b"hello_content_second");
+        assert_eq!(&data[..], b"hello_content_second");
         Ok(())
     }
 
@@ -166,7 +168,7 @@ mod tests {
             .build();
         let resolved = storage_resolver.resolve("protocol://mystorage")?;
         let data = resolved.get_all(Path::new("hello")).await?;
-        assert_eq!(data, b"hello_content_second");
+        assert_eq!(&data[..], b"hello_content_second");
         Ok(())
     }
 

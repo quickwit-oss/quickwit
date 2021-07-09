@@ -23,79 +23,18 @@
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
-use quickwit_common::extract_metastore_uri_and_index_id_from_index_uri;
-use quickwit_core::DocumentSource;
-use quickwit_doc_mapping::{
-    AllFlattenDocMapper, DefaultDocMapperBuilder, DocMapper, WikipediaMapper,
-};
-use quickwit_metastore::IndexMetadata;
-use quickwit_metastore::MetastoreUriResolver;
-use quickwit_proto::SearchRequest;
-use quickwit_search::single_node_search;
+use quickwit_cli::*;
+use quickwit_common::to_socket_addr;
 use quickwit_serve::serve_cli;
 use quickwit_serve::ServeArgs;
-use quickwit_storage::StorageUriResolver;
 use quickwit_telemetry::payload::TelemetryEvent;
 use std::env;
-use std::io;
-use std::io::Stdout;
-use std::net::IpAddr;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::Arc;
-use tempfile::TempDir;
-use tokio::fs::File;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::BufReader;
-use tokio::try_join;
-use tracing::debug;
-
-use crossterm::terminal::{Clear, ClearType};
-use crossterm::{cursor, QueueableCommand};
-use std::io::{stdout, Write};
-use std::time::{Duration, Instant};
-use tokio::sync::watch;
-use tokio::task;
-use tokio::time::timeout;
-
-use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, IndexingStatistics};
-
-#[derive(Debug)]
-struct CreateIndexArgs {
-    index_uri: String,
-    doc_mapper: Box<dyn DocMapper>,
-    overwrite: bool,
-}
-
-#[derive(Debug)]
-struct IndexDataArgs {
-    index_uri: String,
-    input_path: Option<PathBuf>,
-    temp_dir: Option<PathBuf>,
-    num_threads: usize,
-    heap_size: u64,
-    overwrite: bool,
-}
-
-#[derive(Debug)]
-struct SearchIndexArgs {
-    index_uri: String,
-    query: String,
-    max_hits: usize,
-    start_offset: usize,
-    search_fields: Option<Vec<String>>,
-    start_timestamp: Option<i64>,
-    end_timestamp: Option<i64>,
-}
-
-#[derive(Debug)]
-struct DeleteIndexArgs {
-    index_uri: String,
-    dry_run: bool,
-}
-
-#[derive(Debug)]
+use tracing::Level;
+use tracing_subscriber::fmt::Subscriber;
+#[derive(Debug, PartialEq)]
 enum CliCommand {
     New(CreateIndexArgs),
     Index(IndexDataArgs),
@@ -104,6 +43,16 @@ enum CliCommand {
     Delete(DeleteIndexArgs),
 }
 impl CliCommand {
+    fn default_log_level(&self) -> Level {
+        match self {
+            CliCommand::New(_) => Level::WARN,
+            CliCommand::Index(_) => Level::WARN,
+            CliCommand::Search(_) => Level::WARN,
+            CliCommand::Serve(_) => Level::INFO,
+            CliCommand::Delete(_) => Level::WARN,
+        }
+    }
+
     fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches_opt) = matches.subcommand();
         let submatches =
@@ -124,35 +73,16 @@ impl CliCommand {
             .value_of("index-uri")
             .context("'index-uri' is a required arg")?
             .to_string();
-        let doc_mapper_type = matches
-            .value_of("doc-mapper-type")
-            .context("doc-mapper-type has a default value")?;
-        let doc_mapper_config_path = matches
-            .value_of("doc-mapper-config-path")
-            .map(PathBuf::from);
+        let index_config_path = matches
+            .value_of("index-config-path")
+            .map(PathBuf::from)
+            .context("'index-config-path' is a required arg")?;
         let overwrite = matches.is_present("overwrite");
-
-        let doc_mapper: Box<dyn DocMapper> = match doc_mapper_type.trim().to_lowercase().as_str() {
-            "all_flatten" => Box::new(AllFlattenDocMapper::new()) as Box<dyn DocMapper>,
-            "wikipedia" => Box::new(WikipediaMapper::new()) as Box<dyn DocMapper>,
-            "default" =>
-            // TODO return an error if the type is unknown
-            {
-                let path = doc_mapper_config_path
-                    .context("doc-mapper-config-path is required for the default doc mapper type.")?;
-                let json_file = std::fs::File::open(path)?;
-                let reader = std::io::BufReader::new(json_file);
-                let builder: DefaultDocMapperBuilder = serde_json::from_reader(reader)?;
-                Box::new(builder.build()?) as Box<dyn DocMapper>
-            }
-            doc_mapper_type => anyhow::bail!("doc-mapper-type `{}` not supported. Please choose between all_flatten, wikipedia or default/empty type.", doc_mapper_type)
-        };
-
-        Ok(CliCommand::New(CreateIndexArgs {
+        Ok(CliCommand::New(CreateIndexArgs::new(
             index_uri,
-            doc_mapper,
+            index_config_path,
             overwrite,
-        }))
+        )?))
     }
 
     fn parse_index_args(matches: &ArgMatches) -> anyhow::Result<Self> {
@@ -224,25 +154,36 @@ impl CliCommand {
                     .collect()
             })
             .context("At least one 'index-uri' is required.")?;
-        let peers: Vec<SocketAddr> = matches
-            .values_of("peer_seeds")
-            .map(|values| {
-                values
-                    .map(|peer_socket_addr_str| SocketAddr::from_str(peer_socket_addr_str))
-                    .collect::<Result<Vec<SocketAddr>, _>>()
-            })
-            .unwrap_or_else(|| Ok(Vec::new()))?;
-        let host_str = matches
+        let host = matches
             .value_of("host")
             .context("'host' has a default  value")?
             .to_string();
-        let rest_port = value_t!(matches, "port", u16)?;
-        let rest_ip_addr = IpAddr::from_str(&host_str)?;
-        let rest_socket_addr = SocketAddr::new(rest_ip_addr, rest_port);
+        let port = value_t!(matches, "port", u16)?;
+        let rest_addr = format!("{}:{}", host, port);
+        let rest_socket_addr = to_socket_addr(&rest_addr)?;
+
+        let host_key_path_prefix = matches
+            .value_of("host-key-path-prefix")
+            .context("'host-key-path-prefix' has a default  value")?
+            .to_string();
+
+        let host_key_path =
+            Path::new(format!("{}-{}-{}", host_key_path_prefix, host, port.to_string()).as_str())
+                .to_path_buf();
+        let mut peer_socket_addrs: Vec<SocketAddr> = Vec::new();
+        if matches.is_present("peer-seed") {
+            if let Some(values) = matches.values_of("peer-seed") {
+                for value in values {
+                    peer_socket_addrs.push(to_socket_addr(value)?);
+                }
+            }
+        }
+
         Ok(CliCommand::Serve(ServeArgs {
             index_uris,
             rest_socket_addr,
-            peers,
+            host_key_path,
+            peer_socket_addrs,
         }))
     }
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
@@ -255,271 +196,20 @@ impl CliCommand {
     }
 }
 
-async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri = %args.index_uri,
-        doc_mapper = ?args.doc_mapper,
-        overwrite = args.overwrite,
-        "create-index"
-    );
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    if args.overwrite {
-        delete_index(metastore_uri, index_id, false).await?;
+fn setup_logger(default_level: Level) {
+    if env::var("RUST_LOG").is_ok() {
+        tracing_subscriber::fmt::init();
+        return;
     }
-
-    let index_metadata = IndexMetadata {
-        index_id: index_id.to_string(),
-        index_uri: args.index_uri.to_string(),
-        doc_mapper: args.doc_mapper,
-    };
-    create_index(metastore_uri, index_metadata).await?;
-    Ok(())
-}
-
-fn create_index_scratch_dir(path_tempdir_opt: Option<&PathBuf>) -> anyhow::Result<Arc<TempDir>> {
-    let scratch_dir = if let Some(path_tempdir) = path_tempdir_opt {
-        tempfile::tempdir_in(&path_tempdir)?
-    } else {
-        tempfile::tempdir()?
-    };
-    Ok(Arc::new(scratch_dir))
-}
-
-async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri = %args.index_uri,
-        input_uri = ?args.input_path,
-        temp_dir = ?args.temp_dir,
-        num_threads = args.num_threads,
-        heap_size = args.heap_size,
-        overwrite = args.overwrite,
-        "indexing"
-    );
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::IndexStart).await;
-
-    let input_path = args.input_path.clone();
-    let document_source = create_document_source_from_args(input_path).await?;
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let temp_dir = create_index_scratch_dir(args.temp_dir.as_ref())?;
-    let params = IndexDataParams {
-        index_id: index_id.to_string(),
-        temp_dir,
-        num_threads: args.num_threads,
-        heap_size: args.heap_size,
-        overwrite: args.overwrite,
-    };
-
-    let is_stdin_atty = atty::is(atty::Stream::Stdin);
-    if args.input_path.is_none() && is_stdin_atty {
-        let eof_shortcut = match env::consts::OS {
-            "windows" => "CTRL+Z",
-            _ => "CTRL+D",
-        };
-        println!("Please enter your new line delimited json documents one line at a time.\nEnd your input using {}.", eof_shortcut);
-    }
-
-    let statistics = Arc::new(IndexingStatistics::default());
-    let (task_completed_sender, task_completed_receiver) = watch::channel::<bool>(false);
-    let reporting_future = start_statistics_reporting(
-        statistics.clone(),
-        task_completed_receiver,
-        args.input_path.clone(),
-    );
-    let storage_uri_resolver = StorageUriResolver::default();
-    let metastore_uri_resolver =
-        MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone());
-    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
-    let index_future = async move {
-        index_data(
-            metastore,
-            params,
-            document_source,
-            storage_uri_resolver,
-            statistics.clone(),
-        )
-        .await?;
-        task_completed_sender.send(true)?;
-        anyhow::Result::<()>::Ok(())
-    };
-
-    let (_, num_published_splits) = try_join!(index_future, reporting_future)?;
-    if num_published_splits > 0 {
-        println!("You can now query your index with `quickwit search --index-uri {} --query \"barack obama\"`" , args.index_uri);
-    }
-    Ok(())
-}
-
-async fn create_document_source_from_args(
-    input_path_opt: Option<PathBuf>,
-) -> io::Result<Box<dyn DocumentSource>> {
-    if let Some(input_path) = input_path_opt {
-        let file = File::open(input_path).await?;
-        let reader = BufReader::new(file);
-        Ok(Box::new(reader.lines()))
-    } else {
-        let stdin = tokio::io::stdin();
-        let reader = BufReader::new(stdin);
-        Ok(Box::new(reader.lines()))
-    }
-}
-
-async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri = %args.index_uri,
-        query = %args.query,
-        max_hits = args.max_hits,
-        start_offset = args.start_offset,
-        search_fields = ?args.search_fields,
-        start_timestamp = ?args.start_timestamp,
-        end_timestamp = ?args.end_timestamp,
-        "search-index"
-    );
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let storage_uri_resolver = StorageUriResolver::default();
-    let metastore_uri_resolver =
-        MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone());
-    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
-    let search_request = SearchRequest {
-        index_id: index_id.to_string(),
-        query: args.query.clone(),
-        start_timestamp: args.start_timestamp,
-        end_timestamp: args.end_timestamp,
-        max_hits: args.max_hits as u64,
-        start_offset: args.start_offset as u64,
-    };
-    let search_result =
-        single_node_search(&search_request, &*metastore, storage_uri_resolver).await?;
-    let search_result_json = serde_json::to_string_pretty(&search_result)?;
-    println!("{}", search_result_json);
-    Ok(())
-}
-
-async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri = %args.index_uri,
-        dry_run = args.dry_run,
-        "delete-index"
-    );
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
-
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let affected_files = delete_index(metastore_uri, index_id, args.dry_run).await?;
-    if args.dry_run {
-        if affected_files.is_empty() {
-            println!("Only the index will be deleted since it does not contains any data file.");
-            return Ok(());
-        }
-
-        println!(
-            "The following files will be removed along with the index at `{}`",
-            args.index_uri
-        );
-        for file in affected_files {
-            println!(" - {}", file.display());
-        }
-        return Ok(());
-    }
-
-    println!("Index successfully deleted at `{}`", args.index_uri);
-    Ok(())
-}
-
-/// Starts a tokio task that displays the indexing statistics
-/// every once in awhile.
-pub async fn start_statistics_reporting(
-    statistics: Arc<IndexingStatistics>,
-    task_completed_receiver: watch::Receiver<bool>,
-    input_path_opt: Option<PathBuf>,
-) -> anyhow::Result<usize> {
-    task::spawn(async move {
-        let mut stdout_handle = stdout();
-        let start_time = Instant::now();
-        loop {
-            // Try to receive with a timeout of 1 second.
-            // 1 second is also the frequency at which we update statistic in the console
-            let mut receiver = task_completed_receiver.clone();
-            let is_done = timeout(Duration::from_secs(1), receiver.changed())
-                .await
-                .is_ok();
-
-            // Let's not display live statistics to allow screen to scroll.
-            if input_path_opt.is_some() && statistics.num_docs.get() > 0 {
-                display_statistics(&mut stdout_handle, start_time, statistics.clone())?;
-            }
-
-            if is_done {
-                break;
-            }
-        }
-
-        // If we have received zero docs at this point,
-        // there is no point in displaying report.
-        if statistics.num_docs.get() == 0 {
-            return anyhow::Result::<usize>::Ok(0);
-        }
-
-        if input_path_opt.is_none() {
-            display_statistics(&mut stdout_handle, start_time, statistics.clone())?;
-        }
-        //display end of task report
-        println!();
-        let elapsed_secs = start_time.elapsed().as_secs();
-        if elapsed_secs >= 60 {
-            println!(
-                "Indexed {} documents in {:.2$}min",
-                statistics.num_docs.get(),
-                elapsed_secs.max(1) as f64 / 60f64,
-                2
-            );
-        } else {
-            println!(
-                "Indexed {} documents in {}s",
-                statistics.num_docs.get(),
-                elapsed_secs.max(1)
-            );
-        }
-
-        anyhow::Result::<usize>::Ok(statistics.num_published_splits.get())
-    })
-    .await?
-}
-
-fn display_statistics(
-    stdout_handle: &mut Stdout,
-    start_time: Instant,
-    statistics: Arc<IndexingStatistics>,
-) -> anyhow::Result<()> {
-    let elapsed_secs = start_time.elapsed().as_secs();
-    let throughput_mb_s =
-        statistics.total_bytes_processed.get() as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
-    let report_line = format!(
-        "Documents Read: {} Parse Errors: {}  Published Splits: {} Dataset Size: {}MB Throughput: {:.5$}MB/s",
-        statistics.num_docs.get(),
-        statistics.num_parse_errors.get(),
-        statistics.num_published_splits.get(),
-        statistics.total_bytes_processed.get() / 1_000_000,
-        throughput_mb_s,
-        2
-    );
-
-    stdout_handle.queue(cursor::SavePosition)?;
-    stdout_handle.queue(Clear(ClearType::CurrentLine))?;
-    stdout_handle.write_all(report_line.as_bytes())?;
-    stdout_handle.write_all("\nPlease hold on.".as_bytes())?;
-    stdout_handle.queue(cursor::RestorePosition)?;
-    stdout_handle.flush()?;
-    Ok(())
+    Subscriber::builder()
+        .with_env_filter(format!("quickwit={}", default_level))
+        .try_init()
+        .expect("Failed to set up logger.")
 }
 
 #[tracing::instrument]
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
 
     let yaml = load_yaml!("cli.yaml");
@@ -535,6 +225,9 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    setup_logger(command.default_log_level());
+
     let command_res = match command {
         CliCommand::New(args) => create_index_cli(args).await,
         CliCommand::Index(args) => index_data_cli(args).await,
@@ -559,11 +252,10 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        extract_metastore_uri_and_index_id_from_index_uri, CliCommand, CreateIndexArgs,
-        DeleteIndexArgs, IndexDataArgs, SearchIndexArgs,
-    };
+    use crate::{CliCommand, CreateIndexArgs, DeleteIndexArgs, IndexDataArgs, SearchIndexArgs};
     use clap::{load_yaml, App, AppSettings};
+    use quickwit_common::to_socket_addr;
+    use quickwit_serve::ServeArgs;
     use std::io::Write;
     use std::path::{Path, PathBuf};
     use tempfile::NamedTempFile;
@@ -575,8 +267,8 @@ mod tests {
         let matches_result =
             app.get_matches_from_safe(vec!["new", "--index-uri", "file:///indexes/wikipedia"]);
         assert!(matches!(matches_result, Err(_)));
-        let mut mapper_file = NamedTempFile::new()?;
-        let mapper_str = r#"{
+        let mut index_config_file = NamedTempFile::new()?;
+        let index_config_str = r#"{
             "type": "default",
             "store_source": true,
             "default_search_fields": ["timestamp"],
@@ -589,45 +281,47 @@ mod tests {
                 }
             ]
         }"#;
-        mapper_file.write_all(mapper_str.as_bytes())?;
-        let path = mapper_file.into_temp_path();
+        index_config_file.write_all(index_config_str.as_bytes())?;
+        let path = index_config_file.into_temp_path();
         let path_str = path.to_string_lossy().to_string();
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
             "file:///indexes/wikipedia",
-            "--doc-mapper-config-path",
+            "--index-config-path",
             &path_str,
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
-        assert!(matches!(
-                command,
-            Ok(CliCommand::New(CreateIndexArgs {
-                index_uri,
-                doc_mapper: Box{..},
-                overwrite: false
-            })) if &index_uri == "file:///indexes/wikipedia"
-        ));
+        let expected_cmd = CliCommand::New(
+            CreateIndexArgs::new(
+                "file:///indexes/wikipedia".to_string(),
+                path.to_path_buf(),
+                false,
+            )
+            .unwrap(),
+        );
+        assert_eq!(command.unwrap(), expected_cmd);
 
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
             "file:///indexes/wikipedia",
-            "--doc-mapper-type",
-            "wikipedia",
+            "--index-config-path",
+            &path_str,
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
-        assert!(matches!(
-            command,
-            Ok(CliCommand::New(CreateIndexArgs {
-                index_uri,
-                doc_mapper: Box{..},
-                overwrite: true
-            })) if &index_uri == "file:///indexes/wikipedia"
-        ));
+        let expected_cmd = CliCommand::New(
+            CreateIndexArgs::new(
+                "file:///indexes/wikipedia".to_string(),
+                path.to_path_buf(),
+                true,
+            )
+            .unwrap(),
+        );
+        assert_eq!(command.unwrap(), expected_cmd);
 
         Ok(())
     }
@@ -780,28 +474,80 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_metastore_uri_and_index_id_from_index_uri() -> anyhow::Result<()> {
-        let index_uri = "file:///indexes/wikipedia-xd_1";
-        let (metastore_uri, index_id) =
-            extract_metastore_uri_and_index_id_from_index_uri(index_uri)?;
-        assert_eq!("file:///indexes", metastore_uri);
-        assert_eq!("wikipedia-xd_1", index_id);
+    fn test_parse_serve_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "serve",
+            "--index-uri",
+            "file:///indexes/wikipedia",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9090",
+            "--host-key-path-prefix",
+            "/etc/quickwit-host-key",
+            "--peer-seed",
+            "192.168.1.13:9090",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Serve(ServeArgs {
+                index_uris, rest_socket_addr, host_key_path, peer_socket_addrs
+            })) if index_uris == vec!["file:///indexes/wikipedia".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap()]
+        ));
 
-        let result =
-            extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/_wikipedia");
-        assert!(result.is_err());
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "serve",
+            "--index-uri",
+            "file:///indexes/wikipedia",
+            "--index-uri",
+            "file:///indexes/hdfslogs",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9090",
+            "--host-key-path-prefix",
+            "/etc/quickwit-host-key",
+            "--peer-seed",
+            "192.168.1.13:9090",
+            "--peer-seed",
+            "192.168.1.14:9090",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Serve(ServeArgs {
+                index_uris, rest_socket_addr, host_key_path, peer_socket_addrs
+            })) if index_uris == vec!["file:///indexes/wikipedia".to_string(), "file:///indexes/hdfslogs".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap(), to_socket_addr("192.168.1.14:9090").unwrap()]
+        ));
 
-        let result =
-            extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/-wikipedia");
-        assert!(result.is_err());
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "serve",
+            "--index-uri",
+            "file:///indexes/wikipedia,file:///indexes/hdfslogs",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9090",
+            "--host-key-path-prefix",
+            "/etc/quickwit-host-key",
+            "--peer-seed",
+            "192.168.1.13:9090,192.168.1.14:9090",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Serve(ServeArgs {
+                index_uris, rest_socket_addr, host_key_path, peer_socket_addrs
+            })) if index_uris == vec!["file:///indexes/wikipedia".to_string(), "file:///indexes/hdfslogs".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap(), to_socket_addr("192.168.1.14:9090").unwrap()]
+        ));
 
-        let result =
-            extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/2-wiki-pedia");
-        assert!(result.is_err());
-
-        let result =
-            extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/01wikipedia");
-        assert!(result.is_err());
         Ok(())
     }
 }

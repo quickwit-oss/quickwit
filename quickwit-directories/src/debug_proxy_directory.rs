@@ -22,11 +22,12 @@
 
 use crate::StorageDirectory;
 use async_trait::async_trait;
+use bytes::Bytes;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::{fmt, io};
+use std::{fmt, io, mem};
 use tantivy::chrono::{DateTime, Utc};
 use tantivy::directory::error::{DeleteError, LockError, OpenReadError, OpenWriteError};
 use tantivy::directory::{
@@ -34,6 +35,28 @@ use tantivy::directory::{
 };
 use tantivy::Directory;
 use tantivy::HasLen;
+
+#[derive(Clone, Default)]
+struct OperationBuffer(Arc<Mutex<Vec<ReadOperation>>>);
+
+impl fmt::Debug for OperationBuffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "OperationBuffer")
+    }
+}
+
+impl OperationBuffer {
+    fn drain(&self) -> impl Iterator<Item = ReadOperation> + 'static {
+        let mut guard = self.0.lock().expect("Mutex poisoned");
+        let ops: Vec<ReadOperation> = mem::take(guard.as_mut());
+        ops.into_iter()
+    }
+
+    fn push(&self, read_operation: ReadOperation) {
+        let mut guard = self.0.lock().expect("Mutex poisoned");
+        guard.push(read_operation);
+    }
+}
 
 /// A ReadOperation records meta data about a read operation.
 /// It is recorded by the `DebugProxyDirectory`.
@@ -101,16 +124,14 @@ impl ReadOperationBuilder {
 #[derive(Debug)]
 pub struct DebugProxyDirectory<D: Directory> {
     underlying: Arc<D>,
-    operations_tx: flume::Sender<ReadOperation>,
-    operations_rx: flume::Receiver<ReadOperation>,
+    operations: OperationBuffer,
 }
 
 impl<D: Directory> Clone for DebugProxyDirectory<D> {
     fn clone(&self) -> Self {
         DebugProxyDirectory {
             underlying: self.underlying.clone(),
-            operations_tx: self.operations_tx.clone(),
-            operations_rx: self.operations_rx.clone(),
+            operations: self.operations.clone(),
         }
     }
 }
@@ -118,11 +139,9 @@ impl<D: Directory> Clone for DebugProxyDirectory<D> {
 impl<D: Directory> DebugProxyDirectory<D> {
     /// Wraps another directory to log all of its read operations.
     pub fn wrap(directory: D) -> Self {
-        let (operations_tx, operations_rx) = flume::unbounded();
         DebugProxyDirectory {
             underlying: Arc::new(directory),
-            operations_tx,
-            operations_rx,
+            operations: OperationBuffer::default(),
         }
     }
 
@@ -130,17 +149,17 @@ impl<D: Directory> DebugProxyDirectory<D> {
     ///
     /// Calling this "drains" the existing queue of operations.
     pub fn drain_read_operations(&self) -> impl Iterator<Item = ReadOperation> + '_ {
-        self.operations_rx.drain()
+        self.operations.drain()
     }
 
     /// Adds a new operation
     fn register(&self, read_op: ReadOperation) {
-        let _ = self.operations_tx.send(read_op);
+        let _ = self.operations.push(read_op);
     }
 
     /// Adds a new operation in an async fashion.
     async fn register_async(&self, read_op: ReadOperation) {
-        let _ = self.operations_tx.send_async(read_op).await;
+        let _ = self.operations.push(read_op);
     }
 }
 
@@ -231,18 +250,18 @@ impl<D: Directory> Directory for DebugProxyDirectory<D> {
 
 impl DebugProxyDirectory<StorageDirectory> {
     /// Fetches a slice of byte from a file asynchronously.
-    pub async fn get_slice(&self, path: &Path, range: Range<usize>) -> io::Result<Vec<u8>> {
+    pub async fn get_slice(&self, path: &Path, range: Range<usize>) -> io::Result<Bytes> {
         let read_operation_builder = ReadOperationBuilder::new(path);
-        let payload: Vec<u8> = self.underlying.get_slice(path, range).await?;
+        let payload = self.underlying.get_slice(path, range).await?;
         let read_operation = read_operation_builder.terminate(payload.len());
         self.register_async(read_operation).await;
         Ok(payload)
     }
 
     /// Fetches an entire file asynchronously.
-    pub async fn get_all(&self, path: &Path) -> io::Result<Vec<u8>> {
+    pub async fn get_all(&self, path: &Path) -> io::Result<Bytes> {
         let read_operation_builder = ReadOperationBuilder::new(path);
-        let payload: Vec<u8> = self.underlying.get_all(path).await?;
+        let payload = self.underlying.get_all(path).await?;
         let read_operation = read_operation_builder.terminate(payload.len());
         self.register_async(read_operation).await;
         Ok(payload)

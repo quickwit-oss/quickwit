@@ -10,20 +10,23 @@ pub struct SearchRequest {
     /// Query
     #[prost(string, tag = "2")]
     pub query: ::prost::alloc::string::String,
+    /// Fields to search on
+    #[prost(string, repeated, tag = "3")]
+    pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Time filter
-    #[prost(int64, optional, tag = "3")]
-    pub start_timestamp: ::core::option::Option<i64>,
     #[prost(int64, optional, tag = "4")]
+    pub start_timestamp: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "5")]
     pub end_timestamp: ::core::option::Option<i64>,
     /// Maximum number of hits to return.
-    #[prost(uint64, tag = "5")]
+    #[prost(uint64, tag = "6")]
     pub max_hits: u64,
     /// First hit to return. Together with max_hits, this parameter
     /// can be used for pagination.
     ///
     /// E.g.
     /// The results with rank [start_offset..start_offset + max_hits) are returned.
-    #[prost(uint64, tag = "6")]
+    #[prost(uint64, tag = "7")]
     pub start_offset: u64,
 }
 #[derive(Serialize)]
@@ -49,11 +52,10 @@ pub struct LeafSearchRequest {
     /// that was sent to root apart from the start_offset & max_hits params.
     #[prost(message, optional, tag = "1")]
     pub search_request: ::core::option::Option<SearchRequest>,
-    /// Index split to apply the query on.
-    /// If relative uris, this uris are resolved from the index_uri defined in the
-    /// search_request.
+    /// Index split ids to apply the query on.
+    /// This ids are resolved from the index_uri defined in the search_request.
     #[prost(string, repeated, tag = "3")]
-    pub split_uris: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,13 +83,13 @@ pub struct PartialHit {
     /// emits an decreasing mapping of this fast field.
     ///
     /// In case of a tie, quickwit uses the increasing order of
-    /// - the split,
+    /// - the split_id,
     /// - the segment_ord,
     /// - the doc id.
     #[prost(uint64, tag = "1")]
     pub sorting_field_value: u64,
     #[prost(string, tag = "2")]
-    pub split: ::prost::alloc::string::String,
+    pub split_id: ::prost::alloc::string::String,
     /// (segment_ord, doc) form a tantivy DocAddress, which is sufficient to identify a document
     /// within a split
     #[prost(uint32, tag = "3")]
@@ -114,6 +116,9 @@ pub struct FetchDocsRequest {
     /// Request fetching the content of a given list of partial_hits.
     #[prost(message, repeated, tag = "1")]
     pub partial_hits: ::prost::alloc::vec::Vec<PartialHit>,
+    /// Index ID
+    #[prost(string, tag = "2")]
+    pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

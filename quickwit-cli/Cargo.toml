@@ -5,6 +5,10 @@ authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2018"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 
+[[bin]]
+name = "quickwit"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1"
 byte-unit = "4"
@@ -13,7 +17,7 @@ quickwit-core = { version = "0.1.0", path = "../quickwit-core" }
 quickwit-common = { version = "0.1.0", path = "../quickwit-common" }
 quickwit-metastore = { version = "0.1.0", path = "../quickwit-metastore" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
-quickwit-doc-mapping = { version = "0.1.0", path = "../quickwit-doc-mapping" }
+quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
 quickwit-search = { version = "0.1", path = "../quickwit-search" }
 quickwit-serve = { version = "0.1", path = "../quickwit-serve" }
 quickwit-telemetry = { version = "0.1", path = "../quickwit-telemetry" }
@@ -30,8 +34,9 @@ tempfile = "3"
 
 [dev-dependencies]
 assert_cmd = "1"
-predicates = "1"
-reqwest = "0.11"
+predicates = "2"
+reqwest = { version = "0.11", default-features=false, features = ["json", "rustls-tls"] }
+serial_test = "0.5.1"
 
 [features]
 ci-test = []

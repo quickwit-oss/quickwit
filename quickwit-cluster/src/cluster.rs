@@ -155,9 +155,9 @@ impl Cluster {
     }
 
     /// Specify the address of a running node and join the cluster to which the node belongs.
-    pub fn join(&self, seed_addr: SocketAddr) {
-        info!(seed_addr=?seed_addr, "Join the cluster.");
-        self.artillery_cluster.add_seed_node(seed_addr);
+    pub fn add_peer_node(&self, peer_addr: SocketAddr) {
+        info!(peer_addr=?peer_addr, "Add peer node.");
+        self.artillery_cluster.add_seed_node(peer_addr);
     }
 
     /// Leave the cluster it is joining in.
@@ -212,13 +212,12 @@ mod tests {
     use std::net::{SocketAddr, TcpListener};
 
     use artillery_core::epidemic::prelude::{ArtilleryMember, ArtilleryMemberState};
-    use tempdir::TempDir;
 
     use crate::cluster::{convert_member, read_host_key, Member};
 
     #[tokio::test]
     async fn test_cluster_read_host_key() {
-        let tmp_dir = TempDir::new("quickwit-cluster").unwrap();
+        let tmp_dir = tempfile::tempdir().unwrap();
         let host_key_path = tmp_dir.path().join("host_key");
 
         // Since the directory does not exist, generate UUID on the specified host_key_path.
@@ -236,7 +235,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_convert_member() {
-        let tmp_dir = TempDir::new("quickwit-cluster").unwrap();
+        let tmp_dir = tempfile::tempdir().unwrap();
         let host_key_path = tmp_dir.path().join("host_key");
         let host_key = read_host_key(host_key_path.as_path()).unwrap();
         println!("host_key={:?}", host_key);

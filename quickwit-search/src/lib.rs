@@ -1,53 +1,80 @@
-//  Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
-//
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
-//
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
-//
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
-//
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+/*
+ * Copyright (C) 2021 Quickwit Inc.
+ *
+ * Quickwit is offered under the AGPL v3.0 and as commercial software.
+ * For commercial licensing, contact us at hello@quickwit.io.
+ *
+ * AGPL:
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 //! This projects implements quickwit's search API.
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
 
+mod client;
+mod client_pool;
+mod collector;
+mod error;
+mod fetch_docs;
+mod filters;
+mod leaf;
+mod rendezvous_hasher;
+mod root;
+mod search_result_json;
+mod service;
+
 use std::cmp::Reverse;
+use std::net::SocketAddr;
 use std::ops::Range;
 
 use anyhow::Context;
+use tantivy::DocAddress;
+
 use quickwit_metastore::SplitState;
 use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadata};
 use quickwit_proto::SearchRequest;
 use quickwit_proto::{PartialHit, SearchResult};
 use quickwit_storage::StorageUriResolver;
-mod error;
-mod fetch_docs;
-mod leaf;
-use tantivy::DocAddress;
-mod client;
-mod client_pool;
-mod collector;
-mod filters;
-mod rendezvous_hasher;
-mod service;
 
+pub use crate::client_pool::search_client_pool::SearchClientPool;
+pub use crate::client_pool::ClientPool;
 use crate::collector::make_collector;
+pub use crate::error::SearchError;
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
-
-pub use self::error::SearchError;
+use crate::root::root_search;
+pub use crate::search_result_json::SearchResultJson;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
+
+/// Compute the SWIM port from the HTTP port.
+/// Add 1 to the HTTP port to get the SWIM port.
+pub fn http_addr_to_swim_addr(http_addr: SocketAddr) -> SocketAddr {
+    SocketAddr::new(http_addr.ip(), http_addr.port() + 1)
+}
+
+/// Compute the gRPC port from the HTTP port.
+/// Add 2 to the HTTP port to get the gRPC port.
+pub fn http_addr_to_grpc_addr(http_addr: SocketAddr) -> SocketAddr {
+    SocketAddr::new(http_addr.ip(), http_addr.port() + 2)
+}
+
+/// Compute the gRPC port from the SWIM port.
+/// Add 1 to the SWIM port to get the gRPC port.
+pub fn swim_addr_to_grpc_addr(swim_addr: SocketAddr) -> SocketAddr {
+    SocketAddr::new(swim_addr.ip(), swim_addr.port() + 1)
+}
 
 /// GlobalDocAddress serves as a hit address.
 #[derive(Clone, Copy, Eq, Debug, PartialEq, Hash, Ord, PartialOrd)]
@@ -59,7 +86,7 @@ pub(crate) struct GlobalDocAddress<'a> {
 impl<'a> GlobalDocAddress<'a> {
     fn from_partial_hit(partial_hit: &'a PartialHit) -> Self {
         Self {
-            split: &partial_hit.split,
+            split: &partial_hit.split_id,
             doc_addr: DocAddress {
                 segment_ord: partial_hit.segment_ord,
                 doc_id: partial_hit.doc_id,
@@ -110,7 +137,6 @@ async fn list_relevant_splits(
 }
 
 /// Performs a search on the current node.
-///
 /// See also `[distributed_search]`.
 pub async fn single_node_search(
     search_request: &SearchRequest,
@@ -121,11 +147,15 @@ pub async fn single_node_search(
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
     let split_metas = list_relevant_splits(search_request, metastore).await?;
-    let doc_mapper = index_metadata.doc_mapper;
-    let query = doc_mapper.query(search_request)?;
-    let collector = make_collector(doc_mapper.as_ref(), search_request);
+    let split_ids: Vec<String> = split_metas
+        .iter()
+        .map(|split_meta| split_meta.split_id.clone())
+        .collect();
+    let index_config = index_metadata.index_config;
+    let query = index_config.query(search_request)?;
+    let collector = make_collector(index_config.as_ref(), search_request);
     let leaf_search_result =
-        leaf_search(query.as_ref(), collector, &split_metas[..], storage.clone())
+        leaf_search(query.as_ref(), collector, &split_ids[..], storage.clone())
             .await
             .with_context(|| "leaf_search")?;
     let fetch_docs_result = fetch_docs(leaf_search_result.partial_hits, storage)
@@ -139,19 +169,11 @@ pub async fn single_node_search(
     })
 }
 
-// pub async fn distributed_search(
-//     _search_request: &SearchRequest,
-//     _metastore: &dyn Metastore,
-//     _clients: &[SearchServiceClient<Channel>], //< TODO replace with client pool if we end up using the assign_clients logic in it
-// ) -> anyhow::Result<Vec<SplitMetadata>> {
-//     unim
-// }
-
 #[cfg(test)]
 mod tests {
     use assert_json_diff::assert_json_include;
     use quickwit_core::TestSandbox;
-    use quickwit_doc_mapping::{DefaultDocMapperBuilder, WikipediaMapper};
+    use quickwit_index_config::{DefaultIndexConfigBuilder, WikipediaIndexConfig};
 
     use super::*;
     use serde_json::json;
@@ -160,7 +182,8 @@ mod tests {
     async fn test_single_node_simple() -> anyhow::Result<()> {
         let index_name = "single-node-simple";
         let test_sandbox =
-            TestSandbox::create("single-node-simple", Box::new(WikipediaMapper::new())).await?;
+            TestSandbox::create("single-node-simple", Box::new(WikipediaIndexConfig::new()))
+                .await?;
         let docs = vec![
             json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
             json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle"}),
@@ -169,6 +192,7 @@ mod tests {
         let search_request = SearchRequest {
             index_id: index_name.to_string(),
             query: "anthropomorphic".to_string(),
+            search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 2,
@@ -214,7 +238,8 @@ mod tests {
     async fn test_single_node_several_splits() -> anyhow::Result<()> {
         let index_name = "single-node-simple";
         let test_sandbox =
-            TestSandbox::create("single-node-simple", Box::new(WikipediaMapper::new())).await?;
+            TestSandbox::create("single-node-simple", Box::new(WikipediaIndexConfig::new()))
+                .await?;
         for _ in 0..10 {
             test_sandbox.add_documents(vec![
             json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
@@ -224,6 +249,7 @@ mod tests {
         let search_request = SearchRequest {
             index_id: index_name.to_string(),
             query: "beagle".to_string(),
+            search_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 6,
@@ -249,13 +275,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_node_filtering() -> anyhow::Result<()> {
-        let mapper_config = r#"{
+        let index_config = r#"{
             "default_search_fields": ["body"],
             "timestamp_field": "ts",
             "field_mappings": [
-                { 
+                {
                     "name": "body",
-                    "type": "text" 
+                    "type": "text"
                 },
                 {
                     "name": "ts",
@@ -264,9 +290,11 @@ mod tests {
                 }
             ]
         }"#;
-        let doc_mapper = serde_json::from_str::<DefaultDocMapperBuilder>(mapper_config)?.build()?;
+        let index_config =
+            serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
         let index_name = "single-node-simple";
-        let test_sandbox = TestSandbox::create("single-node-simple", Box::new(doc_mapper)).await?;
+        let test_sandbox =
+            TestSandbox::create("single-node-simple", Box::new(index_config)).await?;
 
         let mut docs = vec![];
         for i in 0..30 {
@@ -278,6 +306,7 @@ mod tests {
         let search_request = SearchRequest {
             index_id: index_name.to_string(),
             query: "info".to_string(),
+            search_fields: vec![],
             start_timestamp: Some(10),
             end_timestamp: Some(20),
             max_hits: 15,
@@ -298,6 +327,7 @@ mod tests {
         let search_request = SearchRequest {
             index_id: index_name.to_string(),
             query: "info".to_string(),
+            search_fields: vec![],
             start_timestamp: None,
             end_timestamp: Some(20),
             max_hits: 25,

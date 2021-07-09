@@ -1,8 +1,9 @@
 [package]
 name = "quickwit-common"
 version = "0.1.0"
-authors = ["Paul Masurel <paul@quickwit.io>"]
+authors = ['Quickwit, inc <hello@quickwit.io>']
 edition = "2018"
+license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 
 [dependencies]
 anyhow = "1"

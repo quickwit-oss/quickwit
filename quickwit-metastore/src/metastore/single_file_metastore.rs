@@ -113,7 +113,7 @@ impl SingleFileMetastore {
                 },
             })?;
 
-        let metadata_set = serde_json::from_slice::<MetadataSet>(content.as_slice())
+        let metadata_set = serde_json::from_slice::<MetadataSet>(&content[..])
             .map_err(|serde_err| MetastoreError::InvalidManifest { cause: serde_err })?;
 
         // Finally, update the cache accordingly
@@ -126,7 +126,7 @@ impl SingleFileMetastore {
     /// Serializes the metadata set and stores the data on the storage.
     async fn put_index(&self, metadata_set: MetadataSet) -> MetastoreResult<()> {
         // Serialize metadata set.
-        let content = serde_json::to_vec(&metadata_set).map_err(|serde_err| {
+        let content: Vec<u8> = serde_json::to_vec(&metadata_set).map_err(|serde_err| {
             MetastoreError::InternalError {
                 message: "Failed to serialize Metadata set".to_string(),
                 cause: anyhow::anyhow!(serde_err),
@@ -391,7 +391,7 @@ mod tests {
 
     use crate::{IndexMetadata, MetastoreError};
     use crate::{Metastore, SingleFileMetastore, SplitMetadata, SplitState};
-    use quickwit_doc_mapping::AllFlattenDocMapper;
+    use quickwit_index_config::AllFlattenIndexConfig;
     use quickwit_storage::{MockStorage, StorageErrorKind};
 
     #[tokio::test]
@@ -408,7 +408,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -435,7 +435,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -471,7 +471,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -494,8 +494,8 @@ mod tests {
             );
 
             assert_eq!(
-                format!("{:?}", created_index.index.doc_mapper),
-                "AllFlattenDocMapper".to_string()
+                format!("{:?}", created_index.index.index_config),
+                "AllFlattenIndexConfig".to_string()
             );
 
             // Open a non-existent index.
@@ -521,7 +521,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes//my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -570,7 +570,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -713,7 +713,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -859,7 +859,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
             // create index
@@ -1423,7 +1423,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -1528,7 +1528,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                doc_mapper: Box::new(AllFlattenDocMapper::default()),
+                index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -1644,7 +1644,7 @@ mod tests {
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
             index_uri: "ram://my-indexes/my-index".to_string(),
-            doc_mapper: Box::new(AllFlattenDocMapper::default()),
+            index_config: Box::new(AllFlattenIndexConfig::default()),
         };
 
         // create index

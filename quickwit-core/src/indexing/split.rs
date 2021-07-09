@@ -27,6 +27,7 @@ use std::path::Path;
 use crate::indexing::manifest::Manifest;
 use anyhow::{self, Context};
 use quickwit_directories::write_hotcache;
+use quickwit_directories::HOTCACHE_FILENAME;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageUriResolver};
@@ -219,7 +220,7 @@ impl Split {
     pub async fn build_hotcache(&mut self) -> anyhow::Result<()> {
         let split_scratch_dir = self.split_scratch_dir.path().to_path_buf();
         tokio::task::spawn_blocking(move || {
-            let hotcache_path = split_scratch_dir.join("hotcache");
+            let hotcache_path = split_scratch_dir.join(HOTCACHE_FILENAME);
             let mut hotcache_file = std::fs::File::create(&hotcache_path)?;
             let mmap_directory = MmapDirectory::open(split_scratch_dir)?;
             write_hotcache(mmap_directory, &mut hotcache_file)?;
@@ -372,7 +373,7 @@ pub async fn remove_split_files_from_storage(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quickwit_doc_mapping::AllFlattenDocMapper;
+    use quickwit_index_config::AllFlattenIndexConfig;
     use quickwit_metastore::IndexMetadata;
     use quickwit_metastore::MockMetastore;
     use tantivy::{
@@ -400,7 +401,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: index_id.to_string(),
                     index_uri: index_uri.to_string(),
-                    doc_mapper: Box::new(AllFlattenDocMapper::new()),
+                    index_config: Box::new(AllFlattenIndexConfig::new()),
                 })
             });
         mock_metastore
@@ -473,7 +474,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: index_id.to_string(),
                     index_uri: index_uri.to_string(),
-                    doc_mapper: Box::new(AllFlattenDocMapper::new()),
+                    index_config: Box::new(AllFlattenIndexConfig::new()),
                 })
             });
 

@@ -21,6 +21,7 @@
 */
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -35,7 +36,11 @@ use tantivy::error::DataCorruption;
 use tantivy::{directory::FileHandle, directory::WatchHandle, HasLen};
 use tantivy::{AsyncIoResult, Directory, Index, IndexReader, ReloadPolicy};
 
+use crate::caching_directory::BytesWrapper;
 use crate::{CachingDirectory, DebugProxyDirectory};
+
+/// Filenames used for hotcache files.
+pub const HOTCACHE_FILENAME: &str = "hotcache";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct SliceCacheIndexEntry {
@@ -334,9 +339,10 @@ impl HotDirectory {
     /// Wraps an index, with a static cache serialized into `hot_cache_bytes`.
     pub fn open<D: Directory>(
         underlying: D,
-        hot_cache_bytes: OwnedBytes,
+        hot_cache_bytes: Bytes,
     ) -> tantivy::Result<HotDirectory> {
-        let static_cache = StaticDirectoryCache::open(hot_cache_bytes)?;
+        let static_cache =
+            StaticDirectoryCache::open(OwnedBytes::new(BytesWrapper(hot_cache_bytes)))?;
         Ok(HotDirectory {
             inner: Arc::new(InnerHotDirectory {
                 underlying: Box::new(underlying),

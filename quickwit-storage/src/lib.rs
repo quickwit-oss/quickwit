@@ -30,6 +30,7 @@ to different storage:
 etc.
 
 */
+mod cache;
 mod storage;
 pub use self::storage::{PutPayload, Storage};
 
@@ -48,6 +49,7 @@ pub use self::object_storage::{
 pub use self::prefix_storage::add_prefix_to_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::storage_resolver::{localstack_region, StorageFactory, StorageUriResolver};
+pub use crate::cache::{Cache, SliceCache, StorageWithCacheFactory};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 #[cfg(feature = "testsuite")]
@@ -82,7 +84,7 @@ pub(crate) mod tests {
         storage
             .put(
                 test_path,
-                PutPayload::from(b"abcdefghiklmnopqrstuvxyz".to_vec()),
+                PutPayload::from(&b"abcdefghiklmnopqrstuvxyz"[..]),
             )
             .await?;
         let payload = storage.get_slice(test_path, 3..6).await?;
@@ -93,7 +95,7 @@ pub(crate) mod tests {
     async fn test_write_get_all(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("write_and_read_all");
         storage
-            .put(test_path, PutPayload::from(b"abcdef".to_vec()))
+            .put(test_path, PutPayload::from(&b"abcdef"[..]))
             .await?;
         let payload = storage.get_all(test_path).await?;
         assert_eq!(&payload[..], &b"abcdef"[..]);

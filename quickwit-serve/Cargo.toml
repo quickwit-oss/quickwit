@@ -3,6 +3,8 @@ name = 'quickwit-serve'
 version = '0.1.0'
 authors = ['Quickwit <hello@quickwit.io>']
 edition = '2018'
+license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+
 
 [dependencies]
 anyhow = '1'
@@ -15,15 +17,21 @@ quickwit-storage = {path="../quickwit-storage"}
 quickwit-common = {path="../quickwit-common"}
 quickwit-metastore = {path="../quickwit-metastore"}
 quickwit-telemetry = {path="../quickwit-telemetry"}
+quickwit-directories = {path="../quickwit-directories"}
 thiserror = "1"
 tonic = "0.4"
 async-trait = "0.1"
 termcolor = "1"
+bytes = "1"
+tokio = { version = "1.7", features = [ "full" ] }
 
 [dev-dependencies]
 mockall = "0.10"
 assert-json-diff = "2.0.1"
 tokio = { version = "1", features = ["full"] }
+
+[dependencies.quickwit-cluster]
+path = '../quickwit-cluster'
 
 [dependencies.quickwit-search]
 path = '../quickwit-search'

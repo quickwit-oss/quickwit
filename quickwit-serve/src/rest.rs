@@ -18,26 +18,78 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use grpc::SearchResult;
-use quickwit_proto as grpc;
-use quickwit_search::SearchService;
-use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use serde::{Deserialize, Deserializer};
+use tracing::*;
+use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
-use warp::reply;
-use warp::Filter;
-use warp::Rejection;
-use warp::Reply;
+use warp::{reply, Filter, Rejection, Reply};
+
+use quickwit_search::{SearchResultJson, SearchService, SearchServiceImpl};
 
 use crate::ApiError;
+
+/// Start REST service given a HTTP address and a search service.
+pub async fn start_rest_service(
+    rest_addr: SocketAddr,
+    search_service: Arc<SearchServiceImpl>,
+) -> anyhow::Result<()> {
+    info!(rest_addr=?rest_addr, "Start REST service.");
+    let rest_routes = search_handler(search_service);
+    warp::serve(rest_routes).run(rest_addr).await;
+    Ok(())
+}
 
 fn default_max_hits() -> u64 {
     20
 }
 
+/// Output format for the search results.
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum Format {
+    Json,
+    PrettyJson,
+}
+
+impl Default for Format {
+    fn default() -> Self {
+        Format::PrettyJson
+    }
+}
+
+impl Format {
+    fn resp_body<T: serde::Serialize>(self, val: T) -> serde_json::Result<String> {
+        match self {
+            Format::Json => serde_json::to_string(&val),
+            Format::PrettyJson => serde_json::to_string_pretty(&val),
+        }
+    }
+
+    fn make_reply<T: serde::Serialize>(self, result: Result<T, ApiError>) -> impl Reply {
+        let status_code: StatusCode;
+        let body_json = match result {
+            Ok(success) => {
+                status_code = StatusCode::OK;
+                self.resp_body(success)
+            }
+            Err(err) => {
+                status_code = err.http_status_code();
+                self.resp_body(err)
+            } //< yeah it is lame it is not formatted, but it should never happen really.
+        }
+        .unwrap_or_else(|_| {
+            tracing::error!("Error: the response serialization failed.");
+            "Error: Failed to serialize response.".to_string()
+        });
+        let reply_with_header = reply::with_header(body_json, CONTENT_TYPE, "application/json");
+        reply::with_status(reply_with_header, status_code)
+    }
+}
 /// This struct represents the QueryString passed to
 /// the rest API.
 #[derive(Deserialize, Debug, PartialEq, Eq)]
@@ -46,6 +98,11 @@ fn default_max_hits() -> u64 {
 pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
+    // Fields to search on
+    #[serde(default)]
+    #[serde(rename(deserialize = "searchField"))]
+    #[serde(deserialize_with = "from_simple_list")]
+    pub search_fields: Option<Vec<String>>,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
     pub start_timestamp: Option<i64>,
     /// If set, restrict search to documents with a `timestamp < end_timestamp``.
@@ -53,44 +110,16 @@ pub struct SearchRequestQueryString {
     /// Maximum number of hits to return (by default 20).
     #[serde(default = "default_max_hits")]
     pub max_hits: u64,
-    // First hit to return. Together with num_hits, this parameter
-    // can be used for pagination.
-    //
-    // E.g.
-    // The results with rank [start_offset..start_offset + max_hits) are returned
+    /// First hit to return. Together with num_hits, this parameter
+    /// can be used for pagination.
+    ///
+    /// E.g.
+    /// The results with rank [start_offset..start_offset + max_hits) are returned
     #[serde(default)] // Default to 0. (We are 0-indexed)
     pub start_offset: u64,
-}
-
-/// SearchResultsJson represents the result returned by the rest search API
-/// and is meant to be serialized into Json.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SearchResultJson {
-    num_hits: u64,
-    hits: Vec<serde_json::Value>,
-    num_microsecs: u64,
-}
-
-impl From<SearchResult> for SearchResultJson {
-    fn from(search_result: SearchResult) -> Self {
-        let hits: Vec<serde_json::Value> = search_result
-            .hits
-            .into_iter()
-            .map(|hit| match serde_json::from_str(&hit.json) {
-                Ok(hit_json) => hit_json,
-                Err(invalid_json) => {
-                    error!(err=?invalid_json, "Invalid json in hit");
-                    serde_json::json!({})
-                }
-            })
-            .collect();
-        SearchResultJson {
-            num_hits: search_result.num_hits,
-            hits,
-            num_microsecs: search_result.elapsed_time_micros,
-        }
-    }
+    /// The output format.
+    #[serde(default)]
+    pub format: Format,
 }
 
 async fn search_endpoint<TSearchService: SearchService>(
@@ -98,9 +127,10 @@ async fn search_endpoint<TSearchService: SearchService>(
     search_request: SearchRequestQueryString,
     search_service: &TSearchService,
 ) -> Result<SearchResultJson, ApiError> {
-    let search_request = grpc::SearchRequest {
+    let search_request = quickwit_proto::SearchRequest {
         index_id,
         query: search_request.query,
+        search_fields: search_request.search_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,
         max_hits: search_request.max_hits,
@@ -124,9 +154,9 @@ async fn search<TSearchService: SearchService>(
     search_service: Arc<TSearchService>,
 ) -> Result<impl warp::Reply, Infallible> {
     info!(index_id=%index_id,request=?request, "search");
-    Ok(make_reply(
-        search_endpoint(index_id, request, &*search_service).await,
-    ))
+    Ok(request
+        .format
+        .make_reply(search_endpoint(index_id, request, &*search_service).await))
 }
 
 /// Rest search handler.
@@ -141,25 +171,34 @@ pub fn search_handler<TSearchService: SearchService>(
         .recover(recover_fn)
 }
 
-fn make_reply<T: serde::Serialize>(result: Result<T, ApiError>) -> reply::WithStatus<reply::Json> {
-    match result {
-        Ok(success) => reply::with_status(reply::json(&success), StatusCode::OK),
-        Err(error) => reply::with_status(reply::json(&error), error.http_status_code()),
-    }
-}
-
 /// This function returns a formated error based on the given rejection reason.
 async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
     // TODO handle more errors.
     match rejection.find::<serde_qs::Error>() {
         Some(err) => {
             // The querystring was incorrect.
-            Ok(make_reply(Err::<(), ApiError>(ApiError::InvalidArgument(
-                err.to_string(),
-            ))))
+            Ok(
+                Format::PrettyJson.make_reply(Err::<(), ApiError>(ApiError::InvalidArgument(
+                    err.to_string(),
+                ))),
+            )
         }
-        None => Ok(make_reply(Err::<(), ApiError>(ApiError::NotFound))),
+        None => Ok(Format::PrettyJson.make_reply(Err::<(), ApiError>(ApiError::NotFound))),
     }
+}
+
+fn from_simple_list<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let str_sequence = String::deserialize(deserializer)?;
+    Ok(Some(
+        str_sequence
+            .trim_matches(',')
+            .split(',')
+            .map(|item| item.to_owned())
+            .collect(),
+    ))
 }
 
 #[cfg(test)]
@@ -181,7 +220,7 @@ mod tests {
         let expected_json: serde_json::Value = json!({
             "numHits": 55,
             "hits": [],
-            "numMicrosecs": 0
+            "numMicrosecs": 0,
         });
         assert_json_include!(actual: search_results_json, expected: expected_json);
         Ok(())
@@ -200,10 +239,12 @@ mod tests {
             &req,
             &super::SearchRequestQueryString {
                 query: "*".to_string(),
+                search_fields: None,
                 start_timestamp: None,
                 end_timestamp: Some(1450720000),
                 max_hits: 10,
                 start_offset: 22,
+                format: Format::default(),
             }
         );
     }
@@ -212,7 +253,30 @@ mod tests {
     async fn test_rest_search_api_route_simple_default_num_hits_default_offset() {
         let rest_search_api_filter = search_filter();
         let (index, req) = warp::test::request()
-            .path("/api/v1/quickwit-demo-index/search?query=*&endTimestamp=1450720000")
+            .path("/api/v1/quickwit-demo-index/search?query=*&endTimestamp=1450720000&searchField=title,body")
+            .filter(&rest_search_api_filter)
+            .await
+            .unwrap();
+        assert_eq!(&index, "quickwit-demo-index");
+        assert_eq!(
+            &req,
+            &super::SearchRequestQueryString {
+                query: "*".to_string(),
+                search_fields: Some(vec!["title".to_string(), "body".to_string()]),
+                start_timestamp: None,
+                end_timestamp: Some(1450720000),
+                max_hits: 20,
+                start_offset: 0,
+                format: Format::default(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_route_simple_format() {
+        let rest_search_api_filter = search_filter();
+        let (index, req) = warp::test::request()
+            .path("/api/v1/quickwit-demo-index/search?query=*&format=json")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -222,9 +286,11 @@ mod tests {
             &super::SearchRequestQueryString {
                 query: "*".to_string(),
                 start_timestamp: None,
-                end_timestamp: Some(1450720000),
+                end_timestamp: None,
                 max_hits: 20,
                 start_offset: 0,
+                format: Format::Json,
+                search_fields: None
             }
         );
     }
@@ -240,7 +306,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument(\"failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`\")"
+            "error": "InvalidArgument(\"failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`\")"
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
@@ -250,7 +316,7 @@ mod tests {
     async fn test_rest_search_api_route_serialize_with_results() -> anyhow::Result<()> {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_root_search().returning(|_| {
-            Ok(SearchResult {
+            Ok(quickwit_proto::SearchResult {
                 hits: Vec::new(),
                 num_hits: 10,
                 elapsed_time_micros: 16,
@@ -278,7 +344,7 @@ mod tests {
         mock_search_service
             .expect_root_search()
             .with(predicate::function(
-                |search_request: &grpc::SearchRequest| {
+                |search_request: &quickwit_proto::SearchRequest| {
                     search_request.start_offset == 5 && search_request.max_hits == 30
                 },
             ))

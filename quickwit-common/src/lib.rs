@@ -19,6 +19,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use std::net::{SocketAddr, ToSocketAddrs};
+
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -32,12 +34,20 @@ use regex::Regex;
 /// \--------------------------------------------/ \------/
 ///        metastore_uri                           index_id
 ///
-/// TODO force the presence of a protocol and a specific format using a regex?
 pub fn extract_metastore_uri_and_index_id_from_index_uri(
     index_uri: &str,
 ) -> anyhow::Result<(&str, &str)> {
+    static INDEX_URI_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^.+://.+/.+$").unwrap());
     static INDEX_ID_PATTERN: Lazy<Regex> =
         Lazy::new(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9_\-]*$").unwrap());
+
+    if !INDEX_URI_PATTERN.is_match(index_uri) {
+        anyhow::bail!(
+            "Invalid index uri `{}`. Expected format is: `protocol://bucket/path-to-target`.",
+            index_uri
+        );
+    }
+
     let parts: Vec<&str> = index_uri.rsplitn(2, '/').collect();
     if parts.len() != 2 {
         anyhow::bail!("Failed to parse the uri into a metastore_uri and an index_id.");
@@ -47,4 +57,38 @@ pub fn extract_metastore_uri_and_index_id_from_index_uri(
     }
 
     Ok((parts[1], parts[0]))
+}
+
+/// Resolve DNS entry and convert them to SocketAddr.
+pub fn to_socket_addr(addr_str: &str) -> anyhow::Result<SocketAddr> {
+    if let Some(addr) = addr_str.to_socket_addrs()?.next() {
+        Ok(addr)
+    } else {
+        Err(anyhow::anyhow!(
+            "Unable to resolve the socket address. {}",
+            addr_str
+        ))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum QuickwitEnv {
+    UNSET,
+    LOCAL,
+}
+
+impl Default for QuickwitEnv {
+    fn default() -> Self {
+        Self::UNSET
+    }
+}
+
+pub fn get_quickwit_env() -> QuickwitEnv {
+    match std::env::var("QUICKWIT_ENV") {
+        Ok(val) if val == "LOCAL" => QuickwitEnv::LOCAL,
+        Ok(val) => {
+            panic!("unkown value set for QUICKWIT_ENV {}", val)
+        }
+        Err(_) => QuickwitEnv::UNSET,
+    }
 }

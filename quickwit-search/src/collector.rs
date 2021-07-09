@@ -21,9 +21,9 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-use quickwit_doc_mapping::DocMapper;
-use quickwit_doc_mapping::SortBy;
-use quickwit_doc_mapping::SortOrder;
+use quickwit_index_config::IndexConfig;
+use quickwit_index_config::SortBy;
+use quickwit_index_config::SortOrder;
 use quickwit_proto::LeafSearchResult;
 use quickwit_proto::PartialHit;
 use quickwit_proto::SearchRequest;
@@ -206,7 +206,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
                 sorting_field_value: hit.sorting_field_value,
                 segment_ord,
                 doc_id: hit.doc_id,
-                split: split_id.clone(),
+                split_id: split_id.clone(),
             })
             .collect();
         LeafSearchResult {
@@ -335,13 +335,13 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
 }
 
 /// Extracts all fast field names.
-fn extract_fast_field_names(doc_mapper: &dyn DocMapper) -> Vec<String> {
+fn extract_fast_field_names(index_config: &dyn IndexConfig) -> Vec<String> {
     let mut fast_fields = vec![];
-    if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
+    if let Some(timestamp_field) = index_config.timestamp_field_name() {
         fast_fields.push(timestamp_field);
     }
 
-    if let SortBy::SortByFastField { field_name, .. } = doc_mapper.default_sort_by() {
+    if let SortBy::SortByFastField { field_name, .. } = index_config.default_sort_by() {
         if !fast_fields.contains(&field_name) {
             fast_fields.push(field_name);
         }
@@ -352,16 +352,16 @@ fn extract_fast_field_names(doc_mapper: &dyn DocMapper) -> Vec<String> {
 
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
 pub fn make_collector(
-    doc_mapper: &dyn DocMapper,
+    index_config: &dyn IndexConfig,
     search_request: &SearchRequest,
 ) -> QuickwitCollector {
     QuickwitCollector {
         split_id: String::new(),
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
-        sort_by: doc_mapper.default_sort_by(),
-        fast_field_names: extract_fast_field_names(doc_mapper),
-        timestamp_field_opt: doc_mapper.timestamp_field(),
+        sort_by: index_config.default_sort_by(),
+        fast_field_names: extract_fast_field_names(index_config),
+        timestamp_field_opt: index_config.timestamp_field(),
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,
     }
@@ -392,7 +392,7 @@ mod tests {
     fn test_merge_partial_hits_no_tie() {
         let make_doc = |sorting_field_value: u64| PartialHit {
             sorting_field_value,
-            split: "split1".to_string(),
+            split_id: "split1".to_string(),
             segment_ord: 0u32,
             doc_id: 0u32,
         };
@@ -406,7 +406,7 @@ mod tests {
     fn test_merge_partial_hits_with_tie() {
         let make_hit_given_split_id = |split_id: u64| PartialHit {
             sorting_field_value: 0u64,
-            split: format!("split_{}", split_id),
+            split_id: format!("split_{}", split_id),
             segment_ord: 0u32,
             doc_id: 0u32,
         };

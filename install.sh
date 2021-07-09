@@ -3,7 +3,7 @@
 # installer.sh
 #
 # This is just a little script that can be downloaded from the internet to
-# install Quickwit CLI. 
+# install Quickwit.
 # It just does platform detection, fetches the lastest appropriate release version from github
 # and execute the appropriate commands to download the binary.
 #
@@ -14,7 +14,7 @@ set -u
 # If PACKAGE_ROOT is unset or empty, default it.
 PACKAGE_ROOT="${PACKAGE_ROOT:-"https://github.com/quickwit-inc/quickwit/releases/download"}"
 PACKAGE_RELEASE_API="${PACKAGE_RELEASE_API:-"https://api.github.com/repos/quickwit-inc/quickwit/releases"}"
-PACKAGE_NAME="quickwit-cli"
+PACKAGE_NAME="quickwit"
 _divider="--------------------------------------------------------------------------------"
 _prompt=">>>"
 _indent="   "
@@ -22,13 +22,12 @@ _indent="   "
 header() {
     cat 1>&2 <<EOF
 
-
-                                   QUICKWIT-CLI
-                                    Installer
+                                   Q U I C K W I T
+                                      Installer
 
 $_divider
-Website: http://quickwit.io/
-Docs: http://quickwit.io/docs/
+Website: https://quickwit.io/
+Docs: https://quickwit.io/docs/
 $_divider
 
 EOF
@@ -36,11 +35,11 @@ EOF
 
 usage() {
     cat 1>&2 <<EOF
-quickwit-cli-install
-The installer for Quickwit-CLI (http://quickwit.io/)
+quickwit-install
+The installer for Quickwit (https://quickwit.io/)
 
 USAGE:
-    quickwit-cli-install [FLAGS] [OPTIONS]
+    quickwit-install [FLAGS] [OPTIONS]
 
 FLAGS:
     -h, --help              Prints help information
@@ -57,6 +56,7 @@ install_from_archive() {
     need_cmd cp
     need_cmd mv
     need_cmd rm
+    need_cmd tar
     need_cmd chmod
     need_cmd grep
     need_cmd head
@@ -69,7 +69,9 @@ install_from_archive() {
 
     local _binary_arch=""
     case "$_arch" in
-        x86_64-apple-darwin | aarch64-apple-darwin)
+        # Add `| aarch64-apple-darwin` when M1 is fully supported.
+        # Note that M1 binary can still be built from source.
+        x86_64-apple-darwin)  
             _binary_arch=$_arch
             ;;
         x86_64-*linux*-gnu)
@@ -88,28 +90,37 @@ install_from_archive() {
             _binary_arch="armv7-unknown-linux-musleabihf"
             ;;
         *)
-            err "unsupported arch: $_arch"
+            printf "%s A pre-built package is not available for your OS architecture: %s" "$_prompt" "$_arch"
+            printf "\n"
+            err "You can easily build it from source following the docs: https://quickwit.io/docs"
             ;;
     esac
 
     local _version="$(get_latest_version)"
-    local _file="quickwit-cli-${_binary_arch}"
+    local _archive_content_file="quickwit-${_version}-${_binary_arch}"
+    local _file="${_archive_content_file}.tar.gz"
+    local _archive_content_file_="quickwit-${_version}-${_binary_arch}"
     local _url="${PACKAGE_ROOT}/${_version}/${_file}"
 
-    printf "%s Downloading Quickwit CLI via %s" "$_prompt" "$_url"
+    printf "%s Downloading Quickwit via %s" "$_prompt" "$_url"
     ensure downloader "$_url" "$_file"
     printf "\n"
 
-    mv "$_file" "${PACKAGE_NAME}"
+    printf "%s Unpacking archive ..." "$_prompt"
+    ensure tar -xzf "$_file"
+    ensure rm "$_file" 
+    printf "\n"
+
+    mv "$_archive_content_file" "${PACKAGE_NAME}"
     chmod 744 "${PACKAGE_NAME}"
    
     printf "\n"
     printf "%s Install succeeded!\n" "$_prompt"
-    printf "%s To start using Quickwit CLI:\n" "$_prompt"
+    printf "%s To start using Quickwit:\n" "$_prompt"
     printf "\n"
-    printf "%s ./quickwit-cli --version \n" "$_indent"
+    printf "%s ./quickwit --version \n" "$_indent"
     printf "\n"
-    printf "%s More information at http://quickwit.io/docs/\n" "$_prompt"
+    printf "%s More information at https://quickwit.io/docs/\n" "$_prompt"
 
     local _retval=$?
 
