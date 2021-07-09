@@ -135,14 +135,14 @@ impl CliCommand {
 
     fn parse_serve_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_uris = matches
-            .values_of("index-uris")
+            .values_of("index-uri")
             .map(|values| {
                 values
                     .into_iter()
                     .map(|index_uri| index_uri.to_string())
                     .collect()
             })
-            .context("At least one 'index-uris' is required.")?;
+            .context("At least one 'index-uri' is required.")?;
         let host = matches
             .value_of("host")
             .context("'host' has a default  value")?
@@ -160,8 +160,8 @@ impl CliCommand {
             Path::new(format!("{}-{}-{}", host_key_path_prefix, host, port.to_string()).as_str())
                 .to_path_buf();
         let mut peer_socket_addrs: Vec<SocketAddr> = Vec::new();
-        if matches.is_present("peer-seeds") {
-            if let Some(values) = matches.values_of("peer-seeds") {
+        if matches.is_present("peer-seed") {
+            if let Some(values) = matches.values_of("peer-seed") {
                 for value in values {
                     peer_socket_addrs.push(to_socket_addr(value)?);
                 }
@@ -455,7 +455,7 @@ mod tests {
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "serve",
-            "--index-uris",
+            "--index-uri",
             "file:///indexes/wikipedia",
             "--host",
             "127.0.0.1",
@@ -463,16 +463,65 @@ mod tests {
             "9090",
             "--host-key-path-prefix",
             "/etc/quickwit-host-key",
-            "--peer-seeds",
+            "--peer-seed",
             "192.168.1.13:9090",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
-        println!("{:?}", command);
         assert!(matches!(
             command,
             Ok(CliCommand::Serve(ServeArgs {
                 index_uris, rest_socket_addr, host_key_path, peer_socket_addrs
             })) if index_uris == vec!["file:///indexes/wikipedia".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap()]
+        ));
+
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "serve",
+            "--index-uri",
+            "file:///indexes/wikipedia",
+            "--index-uri",
+            "file:///indexes/hdfslogs",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9090",
+            "--host-key-path-prefix",
+            "/etc/quickwit-host-key",
+            "--peer-seed",
+            "192.168.1.13:9090",
+            "--peer-seed",
+            "192.168.1.14:9090",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Serve(ServeArgs {
+                index_uris, rest_socket_addr, host_key_path, peer_socket_addrs
+            })) if index_uris == vec!["file:///indexes/wikipedia".to_string(), "file:///indexes/hdfslogs".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap(), to_socket_addr("192.168.1.14:9090").unwrap()]
+        ));
+
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "serve",
+            "--index-uri",
+            "file:///indexes/wikipedia,file:///indexes/hdfslogs",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "9090",
+            "--host-key-path-prefix",
+            "/etc/quickwit-host-key",
+            "--peer-seed",
+            "192.168.1.13:9090,192.168.1.14:9090",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Serve(ServeArgs {
+                index_uris, rest_socket_addr, host_key_path, peer_socket_addrs
+            })) if index_uris == vec!["file:///indexes/wikipedia".to_string(), "file:///indexes/hdfslogs".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap(), to_socket_addr("192.168.1.14:9090").unwrap()]
         ));
 
         Ok(())
