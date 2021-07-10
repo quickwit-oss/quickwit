@@ -28,6 +28,8 @@ use crate::payload::TelemetryEvent;
 use crate::sender::{TelemetryLoopHandle, TelemetrySender};
 use once_cell::sync::OnceCell;
 
+pub use crate::sender::is_telemetry_enabled;
+
 pub fn start_telemetry_loop() -> TelemetryLoopHandle {
     get_telemetry_sender_singleton().start_loop()
 }
