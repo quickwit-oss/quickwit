@@ -35,7 +35,7 @@ use regex::Regex;
 ///        metastore_uri                           index_id
 ///
 pub fn extract_metastore_uri_and_index_id_from_index_uri(
-    index_uri: &str,
+    mut index_uri: &str,
 ) -> anyhow::Result<(&str, &str)> {
     static INDEX_URI_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^.+://.+/.+$").unwrap());
     static INDEX_ID_PATTERN: Lazy<Regex> =
@@ -48,6 +48,9 @@ pub fn extract_metastore_uri_and_index_id_from_index_uri(
         );
     }
 
+    if index_uri.ends_with('/') {
+        index_uri = &index_uri[..index_uri.len() - 1];
+    }
     let parts: Vec<&str> = index_uri.rsplitn(2, '/').collect();
     if parts.len() != 2 {
         anyhow::bail!("Failed to parse the uri into a metastore_uri and an index_id.");
