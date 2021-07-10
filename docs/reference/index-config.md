@@ -11,7 +11,7 @@ The index config let you define four things:
 
 This config can be expressed as a json file given to the `new` Quickwit command. Here is a example of a json config for a logging dataset:
 
-```
+```json title="hdfslogs_index_config.json"
 {
     "store_source": true,
     "default_search_fields": ["body", "severity_text"],
@@ -57,7 +57,7 @@ This field is a text field that will be analyzed and split into tokens before in
 This kind of field is tailored for full text search.
 
 Example of a mapping for a text field:
-```
+```json
 {
     "name": "body",
     "type": "text",
@@ -67,6 +67,7 @@ Example of a mapping for a text field:
 ```
 
 **Parameters for text field**
+
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | **stored**    | Whether value is stored in the document store | `true` |
@@ -74,6 +75,7 @@ Example of a mapping for a text field:
 | **record**    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 
 **Description of available tokenizers**
+
 | Tokenizer     | Description   |
 | ------------- | ------------- |
 | `raw`         | Does not process nor tokenize text  |
@@ -81,6 +83,7 @@ Example of a mapping for a text field:
 | `stem_en`     |  Like `default`, but also applies stemming on the resulting tokens  |
 
 **Description of record options**
+
 | Record option | Description   |
 | ------------- | ------------- |
 | `basic`       |  Records only the `DocId`s |
@@ -93,7 +96,7 @@ Quickwit handles two numeric types: `i64` and `f64`.
 Numeric values can be stored in a fast field (equivalent of `Lucene`'s `DocValues`) which is a column-oriented storage.
 
 Example of a mapping for a i64 field:
-```
+```json
 {
     "name": "timestamp",
     "type": "i64",
@@ -104,6 +107,7 @@ Example of a mapping for a i64 field:
 ```
 
 **Parameters for i64 and f64 field**
+
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | **stored**    | Whether value is stored in the document store | `true` |
@@ -115,7 +119,7 @@ Example of a mapping for a i64 field:
 The `date` type accepts one strict format `RFC 3339`. 
 
 Example of a mapping for a i64 field:
-```
+```json
 {
     "name": "start_date",
     "type": "date",
@@ -126,6 +130,7 @@ Example of a mapping for a i64 field:
 ```
 
 **Parameters for date field**
+
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | **stored**    | Whether value is stored in the document store | `true` |
@@ -137,7 +142,7 @@ Example of a mapping for a i64 field:
 The `bytes` type accepts a binary value as a `Base64` encoded string.
 
 Example of a mapping for a i64 field:
-```
+```json
 {
     "name": "binary",
     "type": "bytes",
@@ -148,6 +153,7 @@ Example of a mapping for a i64 field:
 ```
 
 **Parameters for bytes field**
+
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | **stored**    | Whether value is stored in the document store | `true` |
@@ -162,7 +168,7 @@ To declare an array type of `i64` in the `index config`, you just have to set th
 #### `object`
 Quickwit supports nested object as long as it does not contains arrays of object.
 
-```
+```json
 {
     "name": "resource",
     "type": "object",

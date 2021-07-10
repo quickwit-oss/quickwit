@@ -19,7 +19,7 @@ The body of responses is always a JSON object, and their content type is always 
 Parameters passed in the URL must be properly URL-encoded, using the UTF-8 encoding for non-ASCII characters.
 
 ```
-curl [..]/search?query=barack%20obama
+GET [..]/search?query=barack%20obama
 ```
 
 ## Error handling
@@ -28,7 +28,7 @@ Successful requests return a 2xx HTTP status code.
 
 Failed requests return a 4xx HTTP status code. The response body of failed requests holds a JSON object containing an `error_message` field that describes the error.
 
-```
+```json
 {
 	"error_message": "Failed to parse query"
 }

@@ -25,7 +25,7 @@ You can also install it via [other means](installation.md).
 
 ## Create your first index
 
-Before adding documents to Quickwit, you need to create an index configured with a json `config file`. This config file notably let you define how a document and fields it contains, are stored and indexed. See the [index config documentation](../reference/doc-mapper.md).
+Before adding documents to Quickwit, you need to create an index configured with a json `config file`. This config file notably let you define how a document and fields it contains, are stored and indexed. See the [index config documentation](../reference/index-config.md).
 
 Let's create an index configured a wikipedia data source.
 
@@ -75,6 +75,14 @@ Check that an empty directory `/$(pwd)/wikipedia` has been created, Quickwit wil
 You're now ready to fill the index.
 
 
+:::note
+
+Behind the scenes, Quicwkit will parse the index-uri and use the last segment to define the `index name`.
+This `index name` will be useful when using the search REST API.
+
+:::
+
+
 ## Let's add some documents
 
 Currently Quickwit can index new line delimited json [ndjson](http://ndjson.org/) datasets.
@@ -107,6 +115,13 @@ Check it's working with a simple GET request in the browser or via cURL:
 ```bash
 curl http://0.0.0.0:8080/api/v1/wikipedia/search?query=barack+AND+obama
 ```
+
+:::note
+
+The REST api use `index name` which is defined by the last segment of your `index uri`.
+
+:::
+
 
 
 ## Clean

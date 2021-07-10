@@ -3,8 +3,6 @@ title: Architecture
 sidebar_position: 2
 ---
 
-## What is Quickwit?
-
 Quickwit is a distributed search engine designed to be fast on high latency storage and easy to operate. This is notably achieved by separating compute & storage and revamping the read path of search indexes to drastically reduce random seeks.
 
 Quickwit provide a CLI to create / delete indexes, search and start a search cluster, it consumes ndjson documents and produces indexes that can be stored locally or remotely on an object storage such as Amazon S3 and queried with subsecond latency.
@@ -14,9 +12,14 @@ Quickwit CLI relies on 3 pillars:
 - the metastore: stores index metadata and make them available to all search nodes
 - the search cluster: provides high availibity search, workload distribution and efficient caching.
 
+[//]: # (Add space with '---' and align image for docusaurus)
+
+---
+<div style={{textAlign: 'center'}}>
 
 ![Quickwit Architecture](../assets/images/quickwit-architecture.svg)
 
+</div>
 
 ## The index
 
@@ -31,7 +34,7 @@ A document is a collection of fields, every field is stored with optimized data 
 [See the index config documentation](../reference/index-config.md).
 
 
-### The splits
+### Splits
 A split is a small piece of an index, an independant collection of documents with its own (tantivy) index files. Along with index files, Quickwit adds up a `hotcache` file which enables very fast index opening even on high latency storage.
 
 The quickwit index is aware of its splits by keeping metadata of splits, notably:

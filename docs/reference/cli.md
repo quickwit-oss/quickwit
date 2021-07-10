@@ -14,13 +14,30 @@ This page documents all the available commands, related options and environment 
 
 ### Help
 
-`quickwit help` displays the list of available commands.
+`quickwit` or `quickwit help` displays the list of available commands.
 
 `quickwit help <command name>` displays the documentation for the command and a usage example.
+
+### Telemetry
+Quickwit collects some [anonymous usage data](telemetry.md), you can disable it. When it's enabled you will see this
+output:
+```
+quickwit help
+Quickwit 0.1.0
+Quickwit, Inc. <hello@quickwit.com>
+Indexing your large dataset on object storage & making it searchable from the command line.
+Telemetry enabled
+[...]
+```
+
+The line `Telemetry enabled` disappears when you disable it.
+
 
 ### Version
 
 `quickwit --version` displays the version. Useful for reporting bugs.
+
+
 
 ### New
 
@@ -45,16 +62,29 @@ quickwit new
 
 *Examples*
 
-*Creating a new index on local file system*<br />
-`quickwit new --index-uri file:///quickwit-indexes/catalog --index-config-path ~/quickwit-conf/index_config.json`
+*Creating a new index on local file system*
 
-*Creating a new index on Amazon S3*<br />
-`quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json`
+```bash
+quickwit new --index-uri file:///quickwit-indexes/catalog --index-config-path ~/quickwit-conf/index_config.json
+```
 
-*Replacing an existing index*<br />
-`quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json --overwrite`
+Creating a new index on Amazon S3*
 
-**Note:** When creating an index on a local file system, absolute path is enforce. This implies that index-uri like `file:///quickwit-indexes/catalog` pertenains you have the required permissions on `/quickwit-indexes/catalog`.
+```bash
+quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json
+```
+
+*Replacing an existing index*
+
+```bash
+quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json --overwrite
+```
+
+:::note
+
+When creating an index on a local file system, absolute path is enforce. This implies that index-uri like `file:///quickwit-indexes/catalog` pertenains you have the required permissions on `/quickwit-indexes/catalog`.
+
+:::
 
 ### Index
 
@@ -85,18 +115,30 @@ quickwit index
 
 *Examples*
 
-*Indexing a local dataset*<br />
-`quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json`
+*Indexing a local dataset*
 
-*Indexing a dataset from stdin*<br />
-`cat nginx.json | quickwit index --index-uri s3://quickwit-indexes/nginx`<br />
-`quickwit index --index-uri s3://quickwit-indexes/nginx < nginx.json`
+```bash
+quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json
+```
 
-*Reindexing a dataset*<br />
-`quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json --overwrite`
+*Indexing a dataset from stdin*
 
-*Customizing the resources allocated to the program*<br />
-`quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json --num-threads 8 --heap-size 16GiB`
+```bash
+cat nginx.json | quickwit index --index-uri s3://quickwit-indexes/nginx
+quickwit index --index-uri s3://quickwit-indexes/nginx < nginx.json
+```
+
+*Reindexing a dataset*
+
+```bash
+quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json --overwrite
+```
+
+*Customizing the resources allocated to the program*
+
+```bash
+quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json --num-threads 8 --heap-size 16GiB
+```
 
 ### Search
 
@@ -131,20 +173,35 @@ quickwit search
 
 *Examples*
 
-*Searching a local index*<br />
-`quickwit search --index-uri file:///path-to-my-indexes/wikipedia --query "Barack Obama"`
+*Searching a local index*
 
-*Searching a remote index*<br />
-`quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama"`
+```bash
+quickwit search --index-uri file:///path-to-my-indexes/wikipedia --query "Barack Obama"
+```
 
-*Limiting the result set to 50 hits*<br />
-`quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --max-hits 50`
+*Searching a remote index*
 
-*Skipping the first 20 hits*<br />
-`quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --start-offset 20`
+```bash
+quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama"
+```
 
-*Looking for matches in the title and url fields only*<br />
-`quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --search-fields title,url`
+*Limiting the result set to 50 hits*
+
+```bash
+quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --max-hits 50
+```
+
+*Skipping the first 20 hits*
+
+```bash
+quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --start-offset 20
+```
+
+*Looking for matches in the title and url fields only*
+
+```bash
+quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --search-fields title,url
+```
 
 ### Serve
 
@@ -171,9 +228,11 @@ quickwit serve
 
 *Examples*
 
-*Start a local server and for a local index*<br />
-`quickwit serve --index-uri file:///path-to-my-indexes/wikipedia`
+*Start a local server and for a local index*
 
+```bash
+quickwit serve --index-uri file:///path-to-my-indexes/wikipedia
+```
 
 ### Delete
 
@@ -196,7 +255,12 @@ quickwit delete
 
 *Examples*
 
-*Deleting an index*<br /> `quickwit delete --index-uri s3://quickwit-indexes/catalog`
+*Deleting an index*
+```bash
+quickwit delete --index-uri s3://quickwit-indexes/catalog
+```
 
-*Executing in dry run mode*<br />
-`quickwit delete --index-uri s3://quickwit-indexes/catalog --dry-run`
+*Executing in dry run mode*
+```bash
+quickwit delete --index-uri s3://quickwit-indexes/catalog --dry-run
+```

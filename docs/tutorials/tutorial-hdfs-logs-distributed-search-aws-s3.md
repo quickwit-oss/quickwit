@@ -1,5 +1,5 @@
 ---
-title: Tutorial - Distributed search on AWS S3 with hdfs logs
+title: Distributed search on AWS S3
 sidebar_position: 1
 ---
 
@@ -20,22 +20,29 @@ Example of a log entry:
 }
 ```
 
+:::caution
+
+Before using Quickwit with an object storage, checkout our [advice](../administration/cloud-env.md) for deploying on AWS S3 to avoid some bad invoices at the end of the month.
+
+:::
+
+
 ## Prerequisite
 - [Install](installation.md) Quickwit on your instances
-- The [HDFS log dataset](https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.gz)
 - [Configure your environment](configure-aws-env.md) to let Quickwit access your S3 buckets.
 
 All the following steps can be execucted on any instance.
 
 ## Install
-```
+
+```bash
 curl -L https://install.quickwit.io | sh
 ```
 
 
 ## Create your index
 
-```
+```bash
 # First download the hdfs index from quickwit repository
 curl -o hdfslogs_index_config.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/hdfslogs_index_config.json
 quickwit new s3://path-to-your-bucket/hdfs_logs --index-config-path ./hdfslogs_index_config.json
@@ -44,7 +51,7 @@ quickwit new s3://path-to-your-bucket/hdfs_logs --index-config-path ./hdfslogs_i
 ## Index logs
 To index the dataset, we will download it with curl, decompress it and pipe it to Quickwit (could take between 5 and 10 minutes).
 
-```
+```bash
 curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.gz | gunzip | quickwit index --index-uri s3://your-bucket/hdfs-index
 ```
 

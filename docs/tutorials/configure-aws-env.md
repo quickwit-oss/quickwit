@@ -1,6 +1,5 @@
-
 ---
-title: Tutorial - Set up your environment search on AWS S3
+title: Set up your AWS S3 environment 
 sidebar_position: 3
 ---
 
@@ -15,12 +14,14 @@ You can also have them defined in a `~/.aws/credentials` and `~/.aws/config` fil
 
 # Common errors
 If you put the wrong credentials, you will see this error message with `Unauthorized` in your terminal:
-```
+
+```bash
 Command failed: Another error occured. `Metastore error`. Cause: `StorageError(kind=Unauthorized, source=Failed to fetch object: s3://quickwit-dev/my-hdfs/quickwit.json)`
 ```
 
 If you put the wrong region, you will see this one:
-```
+
+```bash
 Command failed: Another error occured. `Metastore error`. Cause: `StorageError(kind=InternalError, source=Failed to fetch object: s3://your-bucket/your-index/quickwit.json)`.
 ```
 

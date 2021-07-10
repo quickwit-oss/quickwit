@@ -1,5 +1,5 @@
 ---
-title: Tutorial - Index a logging dataset
+title: Index a logging dataset
 sidebar_position: 4
 ---
 
