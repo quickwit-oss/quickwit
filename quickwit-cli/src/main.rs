@@ -211,11 +211,13 @@ fn setup_logger(default_level: Level) {
 #[tokio::main]
 async fn main() {
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
+    let about_text = about_text();
 
     let yaml = load_yaml!("cli.yaml");
     let app = App::from(yaml)
         .setting(AppSettings::ArgRequiredElseHelp)
-        .version(env!("CARGO_PKG_VERSION"));
+        .version(env!("CARGO_PKG_VERSION"))
+        .about(about_text.as_str());
     let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
@@ -248,6 +250,15 @@ async fn main() {
     telemetry_handle.terminate_telemetry().await;
 
     std::process::exit(return_code);
+}
+
+/// Return the about text with telemetry info.
+fn about_text() -> String {
+    let mut about_text = String::from("Indexing your large dataset on object storage & making it searchable from the command line.\n");
+    if quickwit_telemetry::is_telemetry_enabled() {
+        about_text += "Telemetry Enabled";
+    }
+    about_text
 }
 
 #[cfg(test)]

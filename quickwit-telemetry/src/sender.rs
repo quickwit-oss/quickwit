@@ -280,10 +280,14 @@ impl TelemetrySender {
     }
 }
 
+/// Check to see if telemetry is enabled.
+pub fn is_telemetry_enabled() -> bool {
+    std::env::var_os(DISABLE_TELEMETRY_ENV_KEY).is_none()
+}
+
 fn create_http_client() -> Option<HttpClient> {
-    let telemetry_enabled = std::env::var_os(DISABLE_TELEMETRY_ENV_KEY).is_none();
     // TODO add telemetry URL.
-    let client_opt = if telemetry_enabled {
+    let client_opt = if is_telemetry_enabled() {
         HttpClient::try_new()
     } else {
         None
