@@ -16,7 +16,7 @@ You can also have these variables defined in a `~/.aws/credentials` and `~/.aws/
 
 
 ## Network
-Cluster membership and search workload distribution need UDP and TCP communication between instances. You need to authorize UDP and TCP on all ports between them to make it work.
+Cluster membership and search workload distribution need UDP and TCP communication between instances. You need to authorize UDP and TCP on relevant ports between them to make it work: by default, TCP port 8080 is used by the web server, TCP and UDP 8081 ports (8080 + 1) are used by the cluster membership protocol and TCP port 8082 (8080 + 2) is used for gRPC communication.
 
 
 ## Common errors

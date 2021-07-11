@@ -213,7 +213,19 @@ quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obam
 
 *Description*
 
-Starts a rest server at address `host`:`port` and makes searchable indexes located at `index-uri` and returns the documents matching the query specified with `query`. Optionally connects to peers listed at `peer-seeds` using SWIM membership protocol to allow search workload distribution.
+Starts a rest server at address `host`:`port` and makes searchable indexes located at `index-uri` and returns the documents matching the query specified with `query`. Optionally connects to peers listed at `peer-seed` using SWIM membership protocol to allow search workload distribution.
+
+:::note
+
+Behind the scenes, Quickwit need to open the following port for cluster formation and workload distribution:
+- TCP port (default is 8080) for REST API
+- TCP and UDP port + 1 (default is 8081) for cluster membership protocol
+- TCP port + 2 (default is 8082) for gRPC address for the distributed search
+
+In this case, if ports are already taken, the serve command will fail.
+
+:::
+
 
 *Synopsis*
 
@@ -230,7 +242,8 @@ quickwit serve
 `--index-uri` (string) List of location of target indexes.<br />
 `--host` (string) Hostname the rest server should bind to.<br />
 `--port` (string) Port the REST API server should bind to.<br />
-`--peer-seeds` (string) List of peer socket address (e.g. 192.1.1.3:12001) to connect to form a cluster..<br />
+`--peer-seeds` (string) List of peer socket address (e.g. 192.1.1.3:8080) to connect to form a cluster.<br />
+
 
 *Examples*
 
