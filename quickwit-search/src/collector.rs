@@ -104,7 +104,7 @@ struct PartialHitHeapItem {
 
 impl PartialOrd for PartialHitHeapItem {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(other.cmp(self))
+        Some(self.cmp(other))
     }
 }
 
@@ -152,14 +152,14 @@ impl QuickwitSegmentCollector {
     }
 
     fn collect_top_k(&mut self, doc_id: DocId) {
-        let sorting_field: u64 = self.sort_by.compute_sorting_field(doc_id);
+        let sorting_field_value: u64 = self.sort_by.compute_sorting_field(doc_id);
         if self.at_capacity() {
             if let Some(limit_sorting_field) = self.hits.peek().map(|head| head.sorting_field_value)
             {
                 // In case of a tie, we keep the document with a lower `DocId`.
-                if limit_sorting_field < sorting_field {
+                if limit_sorting_field < sorting_field_value {
                     if let Some(mut head) = self.hits.peek_mut() {
-                        head.sorting_field_value = sorting_field;
+                        head.sorting_field_value = sorting_field_value;
                         head.doc_id = doc_id;
                     }
                 }
@@ -168,7 +168,7 @@ impl QuickwitSegmentCollector {
             // we have not reached capacity yet, so we can just push the
             // element.
             self.hits.push(PartialHitHeapItem {
-                sorting_field_value: sorting_field,
+                sorting_field_value,
                 doc_id,
             });
         }
