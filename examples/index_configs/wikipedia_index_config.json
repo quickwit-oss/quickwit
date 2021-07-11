@@ -4,15 +4,20 @@
     "field_mappings": [
         {
             "name": "body",
-            "type": "text"
+            "type": "text",
+            "tokenizer": "en_stem",
+            "record": "position"
         },
         {
             "name": "title",
-            "type": "text"
+            "type": "text",
+            "tokenizer": "en_stem",
+            "record": "position"
         },
         {
             "name": "url",
-            "type": "text"
+            "type": "text",
+            "tokenizer": "raw"
         }
     ]
 }
