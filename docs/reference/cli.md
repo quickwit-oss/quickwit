@@ -7,6 +7,12 @@ Quickwit is a single binary that makes it easy to index and search structured or
 
 This page documents all the available commands, related options and environment variables.
 
+:::caution
+
+Before using Quickwit with an object storage, checkout our [advice](../administration/cloud-env.md) for deploying on AWS S3 to avoid some bad surprises at the end of the month.
+
+:::
+
 
 ## Commands
 
@@ -18,7 +24,7 @@ This page documents all the available commands, related options and environment 
 
 `quickwit help <command name>` displays the documentation for the command and a usage example.
 
-### Telemetry
+#### Note on telemetry
 Quickwit collects some [anonymous usage data](telemetry.md), you can disable it. When it's enabled you will see this
 output:
 ```

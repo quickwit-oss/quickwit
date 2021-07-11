@@ -3,16 +3,23 @@ title: Set up your AWS S3 environment
 sidebar_position: 3
 ---
 
-# Setup your environment
-To let Quickwit store your indexes on AWS S3, you need to define three environment variables:
+To let Quickwit access your AWS S3 buckets and form a cluster, you need two things: first setup your credentials 
+and region and then setup network rules so that instances can communicate between them.
+
+## Credentials and region
+To let Quickwit stores your indexes on AWS S3, you need to define three environment variables:
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
-- `AWS_REGION` or `AWS_DEFAULT_REGION`. If variables are malformed, it will fallback to us-east-1.
+- `AWS_REGION` or `AWS_DEFAULT_REGION`. If variables are malformed, it will fallback to us-east-1 region.
 
-You can also have them defined in a `~/.aws/credentials` and `~/.aws/config` files.
+You can also have these variables defined in a `~/.aws/credentials` and `~/.aws/config` files.
 
 
-# Common errors
+## Network
+Cluster membership and search workload distribution need UDP and TCP communication between instances. You need to authorize UDP and TCP on all ports between them to make it work.
+
+
+## Common errors
 If you put the wrong credentials, you will see this error message with `Unauthorized` in your terminal:
 
 ```bash
