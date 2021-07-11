@@ -23,7 +23,7 @@
 use super::{default_as_true, SOURCE_FIELD_NAME};
 use super::{field_mapping_entry::DocParsingError, FieldMappingEntry, FieldMappingType};
 use crate::query_builder::build_query;
-use crate::{IndexConfig, QueryParserError};
+use crate::{IndexConfig, QueryParserError, SortBy, SortOrder};
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
@@ -234,6 +234,17 @@ impl IndexConfig for DefaultIndexConfig {
 
     fn timestamp_field_name(&self) -> Option<String> {
         self.timestamp_field_name.clone()
+    }
+
+    fn default_sort_by(&self) -> crate::SortBy {
+        if let Some(timestamp_fieldname) = self.timestamp_field_name() {
+            SortBy::SortByFastField {
+                field_name: timestamp_fieldname,
+                order: SortOrder::Desc,
+            }
+        } else {
+            SortBy::DocId
+        }
     }
 }
 

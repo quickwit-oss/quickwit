@@ -29,6 +29,7 @@ use quickwit_proto::{
     SearchResult,
 };
 use quickwit_storage::StorageUriResolver;
+use tracing::info;
 
 use crate::fetch_docs;
 use crate::leaf_search;
@@ -120,6 +121,7 @@ impl SearchService for SearchServiceImpl {
         let search_request = leaf_search_request
             .search_request
             .ok_or_else(|| SearchError::InternalError(anyhow::anyhow!("No search request.")))?;
+        info!(index=?search_request.index_id, splits=?leaf_search_request.split_ids, "leaf_search");
         let metastore = self
             .metastore_router
             .get(&search_request.index_id)
