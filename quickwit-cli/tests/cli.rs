@@ -318,7 +318,7 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     )
     .unwrap();
     sleep(Duration::from_secs(2)).await;
-    let mut data = vec![0; 128];
+    let mut data = vec![0; 512];
     server_process
         .stdout
         .as_mut()
@@ -400,7 +400,7 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     )
     .unwrap();
     sleep(Duration::from_secs(2)).await;
-    let mut data = vec![0; 128];
+    let mut data = vec![0; 512];
     server_process
         .stdout
         .as_mut()
