@@ -21,7 +21,7 @@ Checkout all builds on [github](https://github.com/quickwit-inc/quickwit/release
 
 ## Install script
 
-Quickwit's script detect the architecture and then download the right binary for it.
+Quickwit's script detects the architecture and then downloads the correct binary for it.
 
 ```bash
 curl -L https://install.quickwit.io | sh

@@ -3,9 +3,9 @@ title: Open source search engines landscape
 sidebar_position: 3
 ---
 
-When starting Quickwit, we obviously looked at the available solutions in the open source world.
-We also looked at the more fundamental brick that is the backbone of a search engine, that is the
-algorithm that write and read efficient an inverted index or other related data structures to 
+When starting Quickwit, we looked at the available solutions in the open-source world.
+We also looked at the more fundamental brick that is the backbone of a search engine, the
+algorithm that writes and reads efficient an inverted index or other related data structures to 
 ensure high performance both at indexing and at searching.
 
 Let's start with this fundamental brick and call it a search engine resusable library. As of today, there
