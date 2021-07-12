@@ -35,6 +35,9 @@ jobs:
         run: cargo install cargo-tarpaulin
 
       - name: Generate code coverage
+        env:
+          AWS_ACCESS_KEY_ID: dummy-access-key
+          AWS_SECRET_ACCESS_KEY: dummy-secret-key
         run: |
           cargo +nightly tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
       - name: Upload to codecov.io
