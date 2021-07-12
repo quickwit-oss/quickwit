@@ -5,7 +5,7 @@ position: 2
 
 The index config let you define four things:
 - the doc mapping, that is how a document, and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, date, i64, f64)
-- the timestamp field `timestamp_field` used for [sharding documents in splits](link). This is very useful when querying as Quickwit will be able to prune splits based on time range and make search way faster. The timestamp field must be an `i64`
+- the timestamp field `timestamp_field` used for [sharding documents in splits](link). This is very useful when querying as Quickwit will be able to prune splits based on time range and make search way faster. The timestamp field must be an `i64`. When you define a timestamp field, note that documents will be ordered by default in descending order related to this field 
 - the default search fields `default_search_fields`: if no field name is specified in your query, these fields will be used for search
 - whether or not the original JSON document is stored or not in the index by setting `store_source` to true or false.
 
@@ -15,12 +15,12 @@ This config can be expressed as a json file given to the `new` Quickwit command.
 {
     "store_source": true,
     "default_search_fields": ["body", "severity_text"],
-    "timestamp_field": "timestamp",
+    "timestamp_field": "timestamp", // by default, Quickwit will sort documents on this field by a descending order.
     "field_mappings": [
         {
             "name": "timestamp",
-            "type": "i64",
-            "fast": true
+            "type": "i64", // i64 is mandatory for a timestamp field.
+            "fast": true // fast field must be true for a timestamp field.
         },
         {
             "name": "severity_text",
