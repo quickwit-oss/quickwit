@@ -3,14 +3,10 @@ title: Architecture
 sidebar_position: 2
 ---
 
-Quickwit is a distributed search engine designed to be fast on high latency storage and easy to operate. This is notably achieved by separating compute & storage and revamping the read path of search indexes to drastically reduce random seeks.
-
-Quickwit provide a CLI to create / delete indexes, search and start a search cluster, it consumes ndjson documents and produces indexes that can be stored locally or remotely on an object storage such as Amazon S3 and queried with subsecond latency.
-
-Quickwit CLI relies on 3 pillars:
-- the index: stores documents with datastructures making very efficient query execution even on high latency storage
-- the metastore: stores index metadata and make them available to all search nodes
-- the search cluster: provides high availibity search, workload distribution and efficient caching.
+Quickwit is built on 3 pillars:
+- the index: it stores documents with data structures making very efficient query execution even on high latency storage
+- the metastore: it stores index metadata and make them available to all search nodes
+- the search cluster: provides high availability search, workload distribution, and efficient caching.
 
 [//]: # (Add space with '---' and align image for docusaurus)
 
@@ -23,43 +19,57 @@ Quickwit CLI relies on 3 pillars:
 
 ## The index
 
-A quickwit index is the entity that stores documents and makes it possible to query and collect information (statistics for example) about them efficiently.
-The index organizes documents into collection of smaller independent index called splits, each split is defined by its UUID and behind the scenes is equivalent to a customized [tantivy index](https://github.com/tantivy-search/tantivy/blob/main/ARCHITECTURE.md#index-and-segments) plus some metadata such as min/max timestamp to enable efficient time pruning at query time.
-Last but not least, you have total control on how document fields are stored and indexed thanks to the `Index config`.
+A quickwit index is the entity that stores documents and makes it possible to query and collect information (statistics, for example) about them efficiently.
+The index organizes documents into a collection of smaller independent indexes called splits; each split is defined by its UUID and, behind the scenes, is equivalent to a customized [tantivy index](https://github.com/tantivy-search/tantivy/blob/main/ARCHITECTURE.md#index-and-segments) plus some metadata such as min/max timestamp to enable efficient time pruning at query time.
+
+Last but not least, you have total control over how document fields are stored and indexed thanks to the `Index config`.
 
 ### Index config
 
-A document is a collection of fields, every field is stored with optimized data structures: an inverted index but also n columnar storage called `fast field` (equivalent of doc values in Lucene) useful when you need to filter or collect some data like statistics on this field.
+A document is a collection of fields; every field is stored with optimized data structures: an inverted index but also a columnar storage called `fast field` (the equivalent of doc values in Lucene) useful when you need to filter or collect some data like statistics on this field.
 
-[See the index config documentation](../reference/index-config.md).
+You can define it with a `json file`, [see docs](../reference/index-config.md).
 
 
 ### Splits
-A split is a small piece of an index, an independant collection of documents with its own (tantivy) index files. Along with index files, Quickwit adds up a `hotcache` file which enables very fast index opening even on high latency storage.
 
-The quickwit index is aware of its splits by keeping metadata of splits, notably:
+A split is a small piece of an index, an independent collection of documents with its own (tantivy) index files. Along with index files, Quickwit adds up a `hotcache` file which enables high-speed index opening even on high latency storage.
+
+The quickwit index is aware of its own splits by keeping splits metadata, notably:
 - the split state which indicates if the split is ready for search
-- the min/max time range computed on the timestamp field if present. This is useful at query time for pruning splits on timestamp field.
+- the min/max time range computed on the timestamp field if present. 
+  
+This timestamp field can be very useful at query time because Quickwit will use it for **pruning splits** whose time ranges
+are out of the time range defined by the query.  
 
-These metadata needs to be accessible in the search cluster, this is made possible thanks to the `metastore`.
+Index metadata needs to be accessible by every instance of the cluster; this is made possible thanks to the `metastore`.
 
 
 ## The metastore
-Quickwit gathers index metadata (such as split metadata) into a metastore to make them available accross the cluster.
 
-For a given query on a given index, a search node will ask the metastore the index metadata which contains splits metadata and then use it to do the query planning and finally execute the plan.
+Quickwit gathers index metadata (such as split metadata) into a metastore to make them available across the cluster.
 
-Currently, the only implementation of the metastore is a json file based store which is written on your local machine or on an AWS S3 bucket. We plan to add soon other backends such as Postgresql and other popular databases.
+For a given query on a given index, a search node will ask the metastore the index metadata, which contains splits metadata, and then use it to do the query planning and finally execute the plan.
+
+Currently, the only implementation of the `metastore` is a json file based store: it writes a `quickwit.json` on your disk or
+on an AWS S3 bucket. We plan to add other backends such as Postgresql and other popular databases soon.
 
 
-## Search cluster
-Quickwit cluster distributes queries and search workload while keeping nodes stateless.
-The ability to open an index in less than 70ms makes it possible to remain totally stateless: a node knows nothing about the indexes. Moreover Adding or removing nodes is subsecond and requires no data moves.
+## The search cluster
 
-The cluster makes also use of [rendezvous hashing](https://en.wikipedia.org/wiki/Rendezvous_hashing) to cache relevants pieces of data such as the `hotcache` accross nodes. The main advantage of Rendezvous hashing for our use case is that small changes in the set of available nodes only affects a small fraction of keys (=split id).
+Quickwit cluster have the following characteritics:
+- it is made of stateless nodes: any node can answer to any query
+- a node can distribute search workload to other nodes
+- cluster formation is based on a gossip protocol  
+- load balancing is made with rendezvous hashing
 
-This design provides high availability thanks to stateless instance and little caching sensitiveness to adding and removing nodes.
+This design provides a high availability while keeping the architecture simple.
 
+### Stateless nodes
+
+Quickwit cluster distributes searches workload while keeping nodes stateless.
+
+The ability to open an index in less than 70ms makes it possible to remain totally stateless: a node knows nothing about the indexes. Adding or removing nodes is subsecond and requires no data moves.
 
 ### Workload distribution: root and leaf nodes
 
@@ -68,11 +78,12 @@ Any search node can handle a query. When receiving one, the node acts as a root 
 - distributes the split workload on itself and/or other nodes called the leaf nodes
 - returns aggregated results. 
 
-
 ### Cluster discovery
 
 Quickwit uses a gossip protocol to manage membership and broadcast messages to the cluster provided by [artillery project](https://github.com/bastion-rs/artillery/). The gossip protocol is based on "SWIM: Scalable Weakly-consistent Infection-style Process Group Membership Protocol", with a few minor adaptations.
 
 
+### Rendezvous hashing
 
-
+To distribute workload to leaf nodes, a root uses [Rendezvous hashing](https://en.wikipedia.org/wiki/Rendezvous_hashing) 
+to select the relevant nodes to query data by split. This unlocks caching capabilities. Another benefit from Rendezvous hashing is its stability when you add or remove nodes.
