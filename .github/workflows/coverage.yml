@@ -32,6 +32,8 @@ jobs:
         run: rustup toolchain install nightly
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
+      - name: install aws local
+        run: pip install awscli-local
       - name: Prepare s3
         run: ./quickwit-cli/tests/prepare_tests.sh 
       - name: Generate code coverage
