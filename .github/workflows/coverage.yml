@@ -16,7 +16,6 @@ jobs:
           - "4566:4566"
         env:
           SERVICES: s3
-          HOSTNAME_EXTERNAL: localstack
     env:
       AWS_ACCESS_KEY_ID   : "placeholder"
       AWS_SECRET_ACCESS_KEY: "placeholder"
@@ -39,7 +38,7 @@ jobs:
           AWS_ACCESS_KEY_ID: dummy-access-key
           AWS_SECRET_ACCESS_KEY: dummy-secret-key
         run: |
-          cargo +nightly tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
+          QUICKWIT_ENV=LOCAL cargo +nightly tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1
         with:
