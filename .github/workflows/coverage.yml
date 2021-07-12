@@ -3,11 +3,12 @@ name: coverage
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [ main ]
 jobs:
   test:
     name: coverage
     runs-on: ubuntu-latest
-    container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
     services:
       localstack:
         image: localstack/localstack:latest
@@ -24,10 +25,16 @@ jobs:
       - uses: actions/checkout@v2
       - name: Wait for localstack
         run: sleep 30s
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustfmt, clippy
+      - name: Install nightly
+        run: rustup toolchain install nightly
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+
       - name: Generate code coverage
-        env:
-          AWS_ACCESS_KEY_ID: dummy-access-key
-          AWS_SECRET_ACCESS_KEY: dummy-secret-key
         run: |
           cargo +nightly tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
       - name: Upload to codecov.io
