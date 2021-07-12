@@ -265,10 +265,15 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
     let host_key = read_host_key(args.host_key_path.as_path())?;
     let swim_addr = http_addr_to_swim_addr(args.rest_socket_addr);
     let cluster = Arc::new(Cluster::new(host_key, swim_addr)?);
-    for peer_socket_addr in args.peer_socket_addrs {
+    for peer_socket_addr in args
+        .peer_socket_addrs
+        .iter()
+        .filter(|peer_rest_addr| peer_rest_addr != &&args.rest_socket_addr)
+    {
         // If the peer address is specified,
         // it joins the cluster in which that node participates.
-        let peer_swim_addr = http_addr_to_swim_addr(peer_socket_addr);
+        let peer_swim_addr = http_addr_to_swim_addr(*peer_socket_addr);
+        debug!(peer_swim_addr=?peer_swim_addr, "Add peer node.");
         cluster.add_peer_node(peer_swim_addr);
     }
 
