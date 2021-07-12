@@ -62,7 +62,7 @@ curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.g
 
 :::note
 
-2GB of RAM are enough to index this dataset, an instance like `t2.small` with 2GB and 1 cpu indexed this dataset in 10 minutes.   
+4GB of RAM are enough to index this dataset, an instance like `t4g.medium` with 4GB and 2 vCPU indexed this dataset in 20 minutes.   
 
 This step can be also done on your local machine. The `index` command generates locally [splits](../overview/architecture.md) of 5 millions documents and will upload them on your bucket. Concretely, each split is represented by a directory in which split index files are saved, uploading a split is equivalent of uploading 9 files at `s3://path-to-your-bucket/hdfs_logs/{split_id}/`.
 
@@ -73,7 +73,6 @@ This step can be also done on your local machine. The `index` command generates 
 Run on each of your instance the following command:
 
 ```bash
-# First download the index config from quickwit repository
 quickwit serve --index-uri s3://path-to-your-bucket/hdfs_logs --peer-seed=ip1,ip2,ip3
 ```
 
@@ -85,7 +84,7 @@ INFO quickwit_cluster::cluster: Joined. host_key=019e4c0e-165a-430d-8ef6-7b7a035
 :::note
 
 You need to allow UDP trafic for cluster for formation and allow TCP for gRPC communication between instannces.
-In AWS, you can create a security group to group these inbound rules. 
+In AWS, you can create a security group to group these inbound rules. Checkout the [network section](configure-aws-env.md) of our aws set up guide.
 
 :::
 
@@ -104,7 +103,7 @@ You can now play with your cluster, just kill processes randomly, add/remove new
 
 ## Use time pruning
 
-Let's execute a simple query first that returns only `ERROR` entries:
+Let's execute a simple query that returns only `ERROR` entries on field `severity_text`:
 
 ```bash
 curl -v 'http://your-load-balancer/api/v1/hdfs_logs/search?query=severity_text:ERROR
@@ -141,7 +140,8 @@ which returns the json
 
 You can see that this query has only 364 hits and that the server responds in 0.5 second.
 
-Let's add time pruning on timestamp field:
+We can also add `startTimestamp` and `endTimestamp` to have a more accurate query and benefit from time pruning on timestamp field. Time pruning means that Quickwit will only query splits concerned by this time range. 
+This can have an important impact on speed.
 
 
 ```bash
@@ -150,3 +150,4 @@ curl -v 'http://your-load-balancer/api/v1/hdfs_logs/search?query=severity_text:E
 
 returns 6 hits in 0.36 seconds.
 
+Congratz! You finished this tutorial! To continue your Quickwit journey, checkout the [search REST API reference](../reference/search-api.md) or the [query language reference](../reference/query-language.md).
