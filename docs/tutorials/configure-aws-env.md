@@ -32,6 +32,6 @@ If you put the wrong region, you will see this one:
 Command failed: Another error occured. `Metastore error`. Cause: `StorageError(kind=InternalError, source=Failed to fetch object: s3://your-bucket/your-index/quickwit.json)`.
 ```
 
-
+**Note**: AWS will try different options to find the credentials, this resolution may take a few seconds before failing expecially when aws is not configured.
 
 
