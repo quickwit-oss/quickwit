@@ -3,7 +3,7 @@ title: Quickstart
 sidebar_position: 1
 ---
 
-Before running quickwit search instances on your servers, you will need to create indexes, add documents finally launch the server. In this quick start guide, we will install Quickwit and pass through these steps one by one. All Quickwit commands used in this guide are documented [in the CLI reference documentation](../reference/cli.md).
+Before running Quickwit search instances on your servers, you will need to create indexes, add documents finally launch the server. In this quick start guide, we will install Quickwit and pass through these steps one by one. All Quickwit commands used in this guide are documented [in the CLI reference documentation](../reference/cli.md).
 
 ## Install Quickwit
 
@@ -34,13 +34,13 @@ Let's create an index configured to receive Wikipedia articles.
 curl -o wikipedia_index_config.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/wikipedia_index_config.json
 ```
 
-The index config defines three text fields: `title`, `body` and `url`. It also sets two default search fields `body` and `title`. These fields will be used for search if you do not target a specific field in your query. Please note that by default, text fields are indexed and tokenized.
+The index config defines three text fields: `title`, `body` and `url`. It also sets two default search fields `body` and `title`. These fields will be used for search if you do not target a specific field in your query. Please note that by default, text fields are [indexed and tokenized](../reference/index-config.md).
 
 And here is the complete config:
 
 ```json title="wikipedia_index_config.json"
 {
-    "default_search_fields": ["body", "title"],
+    "default_search_fields": ["body", "title"], // If you do not specify fields in your query, those fields will be used. 
     "field_mappings": [
         {
             "name": "body",
@@ -53,7 +53,8 @@ And here is the complete config:
         {
             "name": "url",
             "type": "text",
-            "indexing": false
+            "indexed": false, // Field not indexed, you will not be able to search on this field.
+            "stored": false  // Field not stored. 
         }
     ]
 }
@@ -114,15 +115,24 @@ quickwit serve --index-uri file:///$(pwd)/wikipedia
 
 Check it's working with a simple GET request in the browser or via cURL:
 ```bash
-curl http://0.0.0.0:8080/api/v1/wikipedia/search?query=barack+AND+obama
+curl "http://0.0.0.0:8080/api/v1/wikipedia/search?query=barack+AND+obama"
 ```
+
+You can also specify the search field with `body:barack AND obbama`:
+```bash
+curl "http://0.0.0.0:8080/api/v1/wikipedia/search?query=body:barack+AND+obama"
+```
+
+Check out the server logs to see what's happening.
+
 
 :::note
 
 The REST API use `index name` which is defined by the last segment of your `index uri`.
 
-:::
+Don't forget to encode correctly the query params to avoid bad request (status 400).
 
+:::
 
 
 ## Clean
@@ -134,6 +144,7 @@ quickwit delete --index-uri file:///$(pwd)/wikipedia
 ```
 
 Congrats! You can level up with the following tutorials to discover all Quickwit features.
+
 
 ## TLDR
 
