@@ -32,7 +32,8 @@ jobs:
         run: rustup toolchain install nightly
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
-
+      - name: Prepare s3
+        run: ./quickwit-cli/tests/prepare_tests.sh 
       - name: Generate code coverage
         env:
           AWS_ACCESS_KEY_ID: dummy-access-key
