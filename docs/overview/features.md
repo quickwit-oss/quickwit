@@ -3,22 +3,17 @@ title: Features
 sidebar_position: 1
 ---
 
-Quickwit is still a young search engine but it already offers several features, here are the main ones:
+Here is Quickwit features list:
 
-
-- Simple CLI to index and search by setting up a distributed search cluster
-- Full text search with phrase query with simple tokenizers
-- Natural query language: `(michael AND jackson) OR "king of pop")`
-- Native support for time partitionning
+- Simple CLI to manage your index and setup a distributed search cluster
 - Local and remote (S3-like storage) indexes
-- Distributed search with stateless instances
-- Fast search on object storage or any storage which provides bytes range queries
-- Fast startup time, indexing and search
+- Stateless instances, add or remove instances without data moves
+- Subsecond search on object storage or any storage which provides bytes range queries
+- Full text search with phrase query
+- Native support for time partitionning
+- Natural query language: `(michael AND jackson) OR "king of pop")`
 - Mapping feature to define your schema and easily convert a json into a document to index 
 - Support data types text, i64, f64, date, bytes and composite types object and array.
-
-
-You can have a look at [tantivy features](https://github.com/tantivy-search/tantivy/) to dig into the indexing engine.
 
 
 ## Current limitations
