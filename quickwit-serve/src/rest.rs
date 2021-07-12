@@ -206,7 +206,7 @@ mod tests {
     use super::*;
     use assert_json_diff::assert_json_include;
     use mockall::predicate;
-    use quickwit_search::MockSearchService;
+    use quickwit_search::{MockSearchService, SearchError};
     use serde_json::json;
 
     #[test]
@@ -306,7 +306,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument(\"failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`\")"
+            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`."
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
@@ -357,6 +357,62 @@ mod tests {
                 .await
                 .status(),
             200
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_with_index_does_not_exist() -> anyhow::Result<()> {
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service.expect_root_search().returning(|_| {
+            Err(SearchError::IndexDoesNotExist {
+                index_id: "not-found-index".to_string(),
+            })
+        });
+        let rest_search_api_handler = super::search_handler(Arc::new(mock_search_service));
+        assert_eq!(
+            warp::test::request()
+                .path("/api/v1/index-does-not-exist/search?query=myfield:test")
+                .reply(&rest_search_api_handler)
+                .await
+                .status(),
+            404
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_with_wrong_fieldname() -> anyhow::Result<()> {
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service
+            .expect_root_search()
+            .returning(|_| Err(SearchError::InternalError("ty".to_string())));
+        let rest_search_api_handler = super::search_handler(Arc::new(mock_search_service));
+        assert_eq!(
+            warp::test::request()
+                .path("/api/v1/index-does-not-exist/search?query=myfield:test")
+                .reply(&rest_search_api_handler)
+                .await
+                .status(),
+            500
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_with_invalid_query() -> anyhow::Result<()> {
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service
+            .expect_root_search()
+            .returning(|_| Err(SearchError::InvalidQuery("invalid query".to_string())));
+        let rest_search_api_handler = super::search_handler(Arc::new(mock_search_service));
+        assert_eq!(
+            warp::test::request()
+                .path("/api/v1/my-index/search?query=myfield:test")
+                .reply(&rest_search_api_handler)
+                .await
+                .status(),
+            400
         );
         Ok(())
     }

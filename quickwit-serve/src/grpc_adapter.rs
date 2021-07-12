@@ -78,24 +78,19 @@ impl grpc::SearchService for GrpcAdapter {
     }
 }
 
+fn status_code_for_search_error(search_error: &SearchError) -> tonic::Code {
+    match search_error {
+        SearchError::IndexDoesNotExist { .. } => tonic::Code::NotFound,
+        SearchError::InternalError(_) => tonic::Code::Internal,
+        SearchError::StorageResolverError(_) => tonic::Code::Internal,
+        SearchError::InvalidQuery(_) => tonic::Code::InvalidArgument,
+    }
+}
+
 /// Convert quickwit search error to tonic status.
 fn convert_error_to_tonic_status(search_error: SearchError) -> tonic::Status {
-    match search_error {
-        SearchError::IndexDoesNotExist { index_id } => tonic::Status::new(
-            tonic::Code::NotFound,
-            format!("Index not found {}", index_id),
-        ),
-        SearchError::InternalError(error) => tonic::Status::new(
-            tonic::Code::Internal,
-            format!("Internal error: {:?}", error),
-        ),
-        SearchError::StorageResolverError(storage_resolver_error) => tonic::Status::new(
-            tonic::Code::Internal,
-            format!("Failed to resolve storage uri {:?}", storage_resolver_error),
-        ),
-        SearchError::InvalidQuery(query_error) => tonic::Status::new(
-            tonic::Code::InvalidArgument,
-            format!("Invalid query: {:?}", query_error),
-        ),
-    }
+    let error_json = serde_json::to_string_pretty(&search_error)
+        .unwrap_or_else(|_| "Failed to serialize error".to_string());
+    let code = status_code_for_search_error(&search_error);
+    tonic::Status::new(code, error_json)
 }

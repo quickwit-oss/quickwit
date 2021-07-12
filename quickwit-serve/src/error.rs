@@ -28,13 +28,13 @@ use quickwit_search::SearchError;
 
 #[derive(Debug, Error)]
 pub enum ApiError {
-    #[error("InvalidArgument(`{0}`)")]
+    #[error("InvalidArgument: {0}.")]
     InvalidArgument(String),
     // TODO rely on some an error serialization in the messsage
     // to rebuild a structured SearchError, (the tonic Code is pretty useless)
     // and build a meaningful ApiError instead of this
     // silly wrapping.
-    #[error("SearchError(`{0}`)")]
+    #[error("Search error. {0}.")]
     SearchError(#[from] SearchError),
     #[error("Route not found")]
     NotFound,
@@ -56,7 +56,7 @@ impl ApiError {
 
     pub fn message(&self) -> String {
         // TODO fixme
-        format!("{:?}", self)
+        format!("{}", self)
     }
 }
 
