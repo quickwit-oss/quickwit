@@ -1,3 +1,5 @@
+use std::convert::TryFrom;
+
 /*
  * Copyright (C) 2021 Quickwit Inc.
  *
@@ -44,6 +46,83 @@ impl From<MetastoreError> for SearchError {
                 SearchError::IndexDoesNotExist { index_id }
             }
             _ => SearchError::InternalError(From::from(metastore_error)),
+        }
+    }
+}
+
+impl From<&str> for SearchError {
+    /// Deserialize error message return by tonic into a SearchError.
+    // TODO: this looks like a hack with random strings put here to choose the right search error.
+    // These strings are actually defiend in function `convert_error_to_tonic_status`, we need
+    // to make all this consistent and not error prone.
+    fn from(message: &str) -> SearchError {
+        if message.starts_with("Index not found: ") {
+            message
+                .split_once("Index not found: ")
+                .map(|(_, index)| SearchError::IndexDoesNotExist {
+                    index_id: index.to_owned(),
+                })
+                .unwrap()
+        } else if message.starts_with("Internal error: ") {
+            message
+                .split_once("Internal error: ")
+                .map(|(_, error)| SearchError::InternalError(anyhow::anyhow!(error.to_owned())))
+                .unwrap()
+        } else if message.starts_with("Storage resolver error: ") {
+            message
+                .split_once("Storage resolver error: ")
+                .map(|(_, error)| StorageResolverError::try_from(error))
+                .unwrap()
+                .map(SearchError::StorageResolverError)
+                .unwrap_or_else(|_| SearchError::InternalError(anyhow::anyhow!(message.to_owned())))
+        } else if message.starts_with("Invalid query: ") {
+            message
+                .split_once("Invalid query: ")
+                .map(|(_, error)| {
+                    let message = error
+                        .split_once("QueryParserError(")
+                        .map(|(_, suffix)| suffix.strip_suffix(")"))
+                        .flatten()
+                        .unwrap_or(error);
+                    SearchError::InvalidQuery(QueryParserError::from(anyhow::anyhow!(
+                        message.to_owned()
+                    )))
+                })
+                .unwrap()
+        } else {
+            SearchError::InternalError(anyhow::anyhow!(message.to_owned()))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_invalid_query_message() {
+        let message = "Invalid query: QueryParserError(Field does not exists: '\"myfield\"')";
+        let error: SearchError = SearchError::from(message);
+        match error {
+            SearchError::InvalidQuery(error) => {
+                assert_eq!(
+                    error.to_string(),
+                    "QueryParserError(`Field does not exists: '\"myfield\"'`)"
+                );
+            }
+            _ => panic!("deserialize wrong search error type"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_index_not_found() {
+        let message = "Index not found: my index";
+        let error: SearchError = SearchError::from(message);
+        match error {
+            SearchError::IndexDoesNotExist { index_id } => {
+                assert_eq!(index_id, "my index");
+            }
+            _ => panic!("deserialize wrong search error type"),
         }
     }
 }

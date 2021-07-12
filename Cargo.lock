@@ -2840,6 +2840,7 @@ dependencies = [
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-directories",
+ "quickwit-index-config",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-search",

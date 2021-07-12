@@ -83,7 +83,7 @@ fn convert_error_to_tonic_status(search_error: SearchError) -> tonic::Status {
     match search_error {
         SearchError::IndexDoesNotExist { index_id } => tonic::Status::new(
             tonic::Code::NotFound,
-            format!("Index not found {}", index_id),
+            format!("Index not found: {}", index_id),
         ),
         SearchError::InternalError(error) => tonic::Status::new(
             tonic::Code::Internal,
@@ -91,7 +91,7 @@ fn convert_error_to_tonic_status(search_error: SearchError) -> tonic::Status {
         ),
         SearchError::StorageResolverError(storage_resolver_error) => tonic::Status::new(
             tonic::Code::Internal,
-            format!("Failed to resolve storage uri {:?}", storage_resolver_error),
+            format!("Storage resolver error: {:?}", storage_resolver_error),
         ),
         SearchError::InvalidQuery(query_error) => tonic::Status::new(
             tonic::Code::InvalidArgument,

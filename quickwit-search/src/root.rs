@@ -39,6 +39,7 @@ use crate::list_relevant_splits;
 use crate::make_collector;
 use crate::ClientPool;
 use crate::SearchClientPool;
+use crate::SearchError;
 
 // Measure the cost associated to searching in a given split metadata.
 fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
@@ -108,10 +109,7 @@ pub async fn root_search(
         let handle = tokio::spawn(async move {
             match search_client.leaf_search(leaf_search_request).await {
                 Ok(resp) => Ok(resp.into_inner()),
-                Err(err) => Err(anyhow::anyhow!(
-                    "Failed to search a leaf node due to {:?}",
-                    err
-                )),
+                Err(status) => Err(From::from(SearchError::from(status.message()))),
             }
         });
         leaf_search_handles.push(handle);
@@ -130,7 +128,10 @@ pub async fn root_search(
                 debug!(leaf_search_result=?leaf_search_result, "Leaf search result.");
                 leaf_search_results.push(leaf_search_result)
             }
-            Err(err) => error!(err=?err),
+            Err(err) => {
+                error!(err=?err);
+                return Err(err);
+            }
         }
     }
     let leaf_search_result = spawn_blocking(move || collector.merge_fruits(leaf_search_results))

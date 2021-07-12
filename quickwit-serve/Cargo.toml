@@ -18,6 +18,7 @@ quickwit-common = {path="../quickwit-common"}
 quickwit-metastore = {path="../quickwit-metastore"}
 quickwit-telemetry = {path="../quickwit-telemetry"}
 quickwit-directories = {path="../quickwit-directories"}
+quickwit-index-config = {path="../quickwit-index-config"}
 thiserror = "1"
 tonic = "0.4"
 async-trait = "0.1"

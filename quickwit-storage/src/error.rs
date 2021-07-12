@@ -20,7 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::{fmt, io};
+use std::{convert::TryFrom, fmt, io};
 use thiserror::Error;
 
 /// Storage error kind.
@@ -36,6 +36,21 @@ pub enum StorageErrorKind {
     InternalError,
     /// Io error.
     Io,
+}
+
+impl TryFrom<&str> for StorageErrorKind {
+    type Error = ();
+
+    fn try_from(input: &str) -> Result<StorageErrorKind, ()> {
+        match input {
+            "DoesNotExist" => Ok(StorageErrorKind::DoesNotExist),
+            "Unauthorized" => Ok(StorageErrorKind::Unauthorized),
+            "Service" => Ok(StorageErrorKind::Service),
+            "InternalError" => Ok(StorageErrorKind::InternalError),
+            "Io" => Ok(StorageErrorKind::Io),
+            _ => Err(()),
+        }
+    }
 }
 
 /// Generic Storage Resolver Error.
@@ -54,6 +69,32 @@ pub enum StorageResolverError {
     /// internal error in third party etc.
     #[error("Failed to open storage: `{0}`")]
     FailedToOpenStorage(crate::StorageError),
+}
+
+impl TryFrom<&str> for StorageResolverError {
+    type Error = ();
+    fn try_from(message: &str) -> Result<Self, ()> {
+        if message.starts_with("Invalid format for URI: required: `") {
+            Ok(message
+                .split_once("Invalid format for URI: required: `")
+                .map(|(_, suffix)| {
+                    StorageResolverError::InvalidUri(suffix.trim_end_matches('`').to_owned())
+                })
+                .unwrap())
+        } else if message.starts_with("Unsupported protocol") {
+            Ok(StorageResolverError::ProtocolUnsupported(
+                message.to_owned(),
+            ))
+        } else if message.starts_with("Failed to open storage: `") {
+            message
+                .split_once("Failed to open storage: `")
+                .map(|(_, suffix)| StorageError::try_from(suffix.trim_end_matches('`')))
+                .map(|error| error.map(StorageResolverError::FailedToOpenStorage))
+                .unwrap()
+        } else {
+            Err(())
+        }
+    }
 }
 
 impl StorageErrorKind {
@@ -84,7 +125,6 @@ impl From<StorageError> for io::Error {
 #[error("StorageError(kind={kind:?}, source={source})")]
 pub struct StorageError {
     kind: StorageErrorKind,
-    #[source]
     source: anyhow::Error,
 }
 
@@ -115,5 +155,54 @@ impl From<io::Error> for StorageError {
             io::ErrorKind::NotFound => StorageErrorKind::DoesNotExist.with_error(err),
             _ => StorageErrorKind::Io.with_error(err),
         }
+    }
+}
+
+impl TryFrom<&str> for StorageError {
+    type Error = ();
+    fn try_from(message: &str) -> Result<Self, ()> {
+        // TODO: we need to parse the message to get the right kind and source.
+        let (_, end) = message.split_once("source=").ok_or(())?;
+        Ok(StorageError {
+            kind: StorageErrorKind::InternalError,
+            source: anyhow::anyhow!(end.trim_end_matches(')').to_string()),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::convert::TryFrom;
+
+    use crate::{StorageError, StorageErrorKind, StorageResolverError};
+
+    #[test]
+    fn test_storage_kind_try_from() {
+        assert!(StorageErrorKind::try_from("Service").is_ok());
+        assert_eq!(
+            StorageErrorKind::Service,
+            StorageErrorKind::try_from("Service").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_storage_error_try_from() {
+        assert!(StorageError::try_from("StorageError(kind={kind:?}, source={source})").is_ok());
+    }
+
+    #[test]
+    fn test_storage_resolver_error_try_from() {
+        let message = "Invalid format for URI: required: `uri`";
+        assert!(StorageResolverError::try_from(message).is_ok());
+        assert_eq!(
+            StorageResolverError::try_from(message).unwrap().to_string(),
+            message
+        );
+        let message = "Failed to open storage: `StorageError(kind=InternalError, source=test)`";
+        assert!(StorageResolverError::try_from(message).is_ok());
+        assert_eq!(
+            StorageResolverError::try_from(message).unwrap().to_string(),
+            message
+        );
     }
 }

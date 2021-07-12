@@ -108,10 +108,12 @@ impl SearchService for SearchServiceImpl {
                 index_id: search_request.index_id.clone(),
             })?;
 
-        let search_result =
-            root_search(&search_request, metastore.as_ref(), &self.client_pool).await?;
-
-        Ok(search_result)
+        root_search(&search_request, metastore.as_ref(), &self.client_pool)
+            .await
+            .map_err(|error| match error.downcast::<SearchError>() {
+                Ok(error) => error,
+                Err(other) => SearchError::InternalError(other),
+            })
     }
 
     async fn leaf_search(
