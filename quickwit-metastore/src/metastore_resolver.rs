@@ -96,17 +96,17 @@ impl MetastoreUriResolver {
             .default_storage_resolver
             .resolve(&uri)
             .map_err(|err| match err {
-                StorageResolverError::InvalidUri(err_msg) => {
-                    MetastoreResolverError::InvalidUri(err_msg)
+                StorageResolverError::InvalidUri { message } => {
+                    MetastoreResolverError::InvalidUri(message)
                 }
-                StorageResolverError::ProtocolUnsupported(err_msg) => {
-                    MetastoreResolverError::ProtocolUnsupported(err_msg)
+                StorageResolverError::ProtocolUnsupported { protocol } => {
+                    MetastoreResolverError::ProtocolUnsupported(protocol)
                 }
-                StorageResolverError::FailedToOpenStorage(err) => {
+                StorageResolverError::FailedToOpenStorage { kind, message } => {
                     MetastoreResolverError::FailedToOpenMetastore(MetastoreError::InternalError {
                         message: "Failed to open storage hosting the single file metastore."
                             .to_string(),
-                        cause: anyhow::anyhow!(err),
+                        cause: anyhow::anyhow!("StorageError {:?}: {}.", kind, message),
                     })
                 }
             })?;
