@@ -249,18 +249,18 @@ get_gnu_musl_glibc() {
   local _ldd_version
   local _glibc_version
   _ldd_version=$(ldd --version)
-  if [[ $_ldd_version =~ "GNU" ]]; then
+  if ldd --version 2>&1 | grep -Eq 'GNU'; then
     _glibc_version=$(echo "$_ldd_version" | awk '/ldd/{print $NF}')
     if [ 1 -eq "$(echo "${_glibc_version} < 2.18" | bc)" ]; then
       echo "musl"
     else
       echo "gnu"
     fi
-elif [[ $_ldd_version =~ "musl" ]]; then
-  echo "musl"
-else
-  err "Unknown architecture from ldd: ${_ldd_version}"
-fi
+  elif ldd --version 2>&1 | grep -Eq "musl"; then
+    echo "musl"
+  else
+    err "Warning: Unable to detect architecture from ldd (using gnu-unknown)"
+  fi
 }
 
 get_bitness() {
