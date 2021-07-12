@@ -83,7 +83,7 @@ INFO quickwit_cluster::cluster: Joined. host_key=019e4c0e-165a-430d-8ef6-7b7a035
 
 :::note
 
-You need to allow UDP trafic for cluster for formation and allow TCP for gRPC communication between instannces.
+You need to allow UDP trafic for cluster formation and allow TCP for gRPC communication between instannces.
 In AWS, you can create a security group to group these inbound rules. Checkout the [network section](configure-aws-env.md) of our aws set up guide.
 
 :::
