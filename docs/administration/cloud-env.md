@@ -22,4 +22,4 @@ Indeed when indexing, Quickwit generates [splits](../overview/architecture.md#sp
 upload them. As they are composed of 9 files, this generates 9 PUT requests per split.
 When querying, Quickwit only needs to make 3 GET requests per split.
 
-Of course, these requests can add up quickly on specific use cases. Don't hesite to [join us](mailto:hello@quickwit.io) if this is the case :).
+Of course, these requests can add up quickly on specific use cases. Don't hesite to [contact us](mailto:hello@quickwit.io) if this is the case :).
