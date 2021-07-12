@@ -152,8 +152,6 @@ quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json -
 
 Searches the index stored at `index-uri` and returns the documents matching the query specified with `query`. The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options. Given the query doesn't explicitly contains fields, it's possible to restrict the search on specified fields using the `search-fields` option. Search can also be limited to a time range using the `start-timestamp` and `end-timestamp` options. These timestamp options can particularly be useful in boosting query performance when using a time series dataset and only need to query a particular window. 
 
-TODO: complete this description when API is stabilized (target fields, start/end datetime, datetime format)
-
 *Synopsis*
 
 ```bash
