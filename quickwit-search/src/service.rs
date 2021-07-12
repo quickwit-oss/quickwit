@@ -120,7 +120,7 @@ impl SearchService for SearchServiceImpl {
     ) -> Result<LeafSearchResult, SearchError> {
         let search_request = leaf_search_request
             .search_request
-            .ok_or_else(|| SearchError::InternalError(anyhow::anyhow!("No search request.")))?;
+            .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
         info!(index=?search_request.index_id, splits=?leaf_search_request.split_ids, "leaf_search");
         let metastore = self
             .metastore_router

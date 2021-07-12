@@ -2875,6 +2875,7 @@ dependencies = [
  "regex",
  "rusoto_core",
  "rusoto_s3",
+ "serde",
  "tempfile",
  "thiserror",
  "tokio",
