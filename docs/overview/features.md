@@ -6,9 +6,10 @@ sidebar_position: 1
 Quickwit is still a young search engine but it already offers several features, here are the main ones:
 
 
-- Full text search with phrase query and configurable tokenizers
+- Simple CLI to index and search by setting up a distributed search cluster
+- Full text search with phrase query with simple tokenizers
 - Natural query language: `(michael AND jackson) OR "king of pop")`
-- Native support for time partitionning 
+- Native support for time partitionning
 - Local and remote (S3-like storage) indexes
 - Distributed search with stateless instances
 - Fast search on object storage or any storage which provides bytes range queries
@@ -25,6 +26,7 @@ You can have a look at [tantivy features](https://github.com/tantivy-search/tant
 - no support for object storages not compatible with Amazon S3
 - no faceted search
 - no deletions (append mode only)
+- no distributed indexing
 
 
 Influence our roadmap by voting in our [GitHub issues](https://github.com/quickwit-inc/quickwit/issues) for the features that you need the most!
