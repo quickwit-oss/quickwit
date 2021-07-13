@@ -3,9 +3,9 @@ title: Index configuration
 position: 2
 ---
 
-The index config let you define four things:
+The index config letsk you define four things:
 - the doc mapping, that is how a document, and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, date, i64, f64)
-- the timestamp field `timestamp_field` used for [sharding documents in splits](../overview/architecture.md#splits). This is very useful when querying as Quickwit will be able to prune splits based on time range and make search way faster. The timestamp field must be an `i64`. When you define a timestamp field, note that documents will be ordered by default in descending order related to this field 
+- the timestamp field `timestamp_field` used for [sharding documents in splits](../overview/architecture.md#splits). This is very useful when querying as Quickwit will be able to prune splits based on time range and make search way faster. The timestamp field must be an `i64`. When you define a timestamp field, note that documents will be ordered by default in descending order related to this field
 - the default search fields `default_search_fields`: if no field name is specified in your query, these fields will be used for search
 - whether or not the original JSON document is stored or not in the index by setting `store_source` to true or false.
 
@@ -53,7 +53,7 @@ Quickwit supports the following raw types `text`, `i64`, `f64`, `date` and `byte
 ### Raw types
 #### `text` type
 
-This field is a text field that will be analyzed and split into tokens before indexing. 
+This field is a text field that will be analyzed and split into tokens before indexing.
 This kind of field is tailored for full text search.
 
 Example of a mapping for a text field:
@@ -92,7 +92,7 @@ Example of a mapping for a text field:
 
 
 #### Numeric types: `i64` and `f64` type
-Quickwit handles two numeric types: `i64` and `f64`. 
+Quickwit handles two numeric types: `i64` and `f64`.
 Numeric values can be stored in a fast field (equivalent of `Lucene`'s `DocValues`) which is a column-oriented storage.
 
 Example of a mapping for a i64 field:
@@ -116,7 +116,7 @@ Example of a mapping for a i64 field:
 
 
 #### `date` type
-The `date` type accepts one strict format `RFC 3339`. 
+The `date` type accepts one strict format `RFC 3339`.
 
 Example of a mapping for a i64 field:
 ```json
@@ -162,7 +162,7 @@ Example of a mapping for a i64 field:
 
 ### Composite types
 #### `array`
-Quickwit supports array for all raw types but not for `object` type. 
+Quickwit supports array for all raw types but not for `object` type.
 To declare an array type of `i64` in the `index config`, you just have to set the type to `array<i64>`.
 
 #### `object`

@@ -3,7 +3,7 @@ title: Telemetry
 position: 5
 ---
 
-Quickiwt Inc. collects anonymous data regarding general usage to help us drive our development. Privacy and transparency are at the heart of Quickwit values and we only collect the minimal useful data and don't use any third party tool for the collection. 
+Quickwit Inc. collects anonymous data regarding general usage to help us drive our development. Privacy and transparency are at the heart of Quickwit values and we only collect the minimal useful data and don't use any third party tool for the collection.
 
 ## Disabling data collection
 Data collection are opt-out. To disable them, just set the environment variable `DISABLE_QUICKWIT_TELEMETRY` to whatever value.
@@ -30,7 +30,7 @@ We collect the minimum amount of information to respect privacy. Here are the da
   - quickwit version
   - os (linux, macos, freebsd, android...)
   - architecture of the CPU
-  - md5 hash of host and username 
+  - md5 hash of host and username
   - a boolean to know if `KUBERNETES_SERVICE_HOST` is set.
 
 All data are sent to `telemetry.quickwit.io`.
