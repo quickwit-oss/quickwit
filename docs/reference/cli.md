@@ -3,9 +3,15 @@ title: CLI Reference
 sidebar_position: 1
 ---
 
-Quickwit is a single binary that makes it easy to index and search structured or unstructured data from the command line. It consumes datasets consisting of newline-delimited JSON objects with arbitrary keys and produces indexes that can be stored locally or remotely on an object storage such as Amazon S3 and queried with subsecond latency.
+Quickwit is a single binary that makes it easy to index and search structured or unstructured data from the command line. It consumes datasets consisting of newline-delimited JSON objects with arbitrary keys. It produces indexes that can be stored locally or remotely on an object storage such as Amazon S3 and queried with subsecond latency.
 
-This page documents all the available commands, related options and environment variables.
+This page documents all the available commands, related options, and environment variables.
+
+:::caution
+
+Before using Quickwit with an object storage, check out our [advice](../administration/cloud-env.md) for deploying on AWS S3 to avoid some nasty surprises at the end of the month.
+
+:::
 
 
 ## Commands
@@ -14,13 +20,30 @@ This page documents all the available commands, related options and environment 
 
 ### Help
 
-`quickwit help` displays the list of available commands.
+`quickwit` or `quickwit help` displays the list of available commands.
 
 `quickwit help <command name>` displays the documentation for the command and a usage example.
 
+#### Note on telemetry
+Quickwit collects some [anonymous usage data](telemetry.md), you can disable it. When it's enabled you will see this
+output:
+```
+quickwit help
+Quickwit 0.1.0
+Quickwit, Inc. <hello@quickwit.com>
+Indexing your large dataset on object storage & making it searchable from the command line.
+Telemetry enabled
+[...]
+```
+
+The line `Telemetry enabled` disappears when you disable it.
+
+
 ### Version
 
-`quickwit version` displays the version. Useful for reporting bugs.
+`quickwit --version` displays the version. It is useful for reporting bugs.
+
+
 
 ### New
 
@@ -45,14 +68,29 @@ quickwit new
 
 *Examples*
 
-*Creating a new index on local file system*<br />
-`quickwit new --index-uri file:///quickwit-indexes/catalog --index-config-path ~/quickwit-conf/index_config.json`
+*Creating a new index on local file system*
 
-*Creating a new index on Amazon S3*<br />
-`quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json`
+```bash
+quickwit new --index-uri file:///quickwit-indexes/catalog --index-config-path ~/quickwit-conf/index_config.json
+```
 
-*Replacing an existing index*<br />
-`quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json --overwrite`
+Creating a new index on Amazon S3*
+
+```bash
+quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json
+```
+
+*Replacing an existing index*
+
+```bash
+quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json --overwrite
+```
+
+:::note
+
+When creating an index on a local file system, absolute path is enforce. This implies that index-uri like `file:///quickwit-indexes/catalog` pertenains you have the required permissions on `/quickwit-indexes/catalog`.
+
+:::
 
 ### Index
 
@@ -83,26 +121,36 @@ quickwit index
 
 *Examples*
 
-*Indexing a local dataset*<br />
-`quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json`
+*Indexing a local dataset*
 
-*Indexing a dataset from stdin*<br />
-`cat nginx.json | quickwit index --index-uri s3://quickwit-indexes/nginx`<br />
-`quickwit index --index-uri s3://quickwit-indexes/nginx < nginx.json`
+```bash
+quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json
+```
 
-*Reindexing a dataset*<br />
-`quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json --overwrite`
+*Indexing a dataset from stdin*
 
-*Customizing the resources allocated to the program*<br />
-`quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json --num-threads 8 --heap-size 16GiB`
+```bash
+cat nginx.json | quickwit index --index-uri s3://quickwit-indexes/nginx
+quickwit index --index-uri s3://quickwit-indexes/nginx < nginx.json
+```
+
+*Reindexing a dataset*
+
+```bash
+quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json --overwrite
+```
+
+*Customizing the resources allocated to the program*
+
+```bash
+quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json --num-threads 8 --heap-size 16GiB
+```
 
 ### Search
 
 *Description*
 
-Searches the index stored at `index-uri` and returns the documents matching the query specified with `query`. The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options.
-
-TODO: complete this description when API is stabilized (target fields, start/end datetime, datetime format)
+Searches the index stored at `index-uri` and returns the documents matching the query specified with `query`. The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options. Given the query doesn't explicitly contains fields, it's possible to restrict the search on specified fields using the `search-fields` option. Search can also be limited to a time range using the `start-timestamp` and `end-timestamp` options. These timestamp options can particularly be useful in boosting query performance when using a time series dataset and only need to query a particular window.
 
 *Synopsis*
 
@@ -129,26 +177,53 @@ quickwit search
 
 *Examples*
 
-*Searching a local index*<br />
-`quickwit search --index-uri file:///path-to-my-indexes/wikipedia --query "Barack Obama"`
+*Searching a local index*
 
-*Searching a remote index*<br />
-`quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama"`
+```bash
+quickwit search --index-uri file:///path-to-my-indexes/wikipedia --query "Barack Obama"
+```
 
-*Limiting the result set to 50 hits*<br />
-`quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --max-hits 50`
+*Searching a remote index*
 
-*Skipping the first 20 hits*<br />
-`quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --start-offset 20`
+```bash
+quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama"
+```
 
-*Looking for matches in the title and url fields only*<br />
-`quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --search-fields title,url`
+*Limiting the result set to 50 hits*
+
+```bash
+quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --max-hits 50
+```
+
+*Skipping the first 20 hits*
+
+```bash
+quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --start-offset 20
+```
+
+*Looking for matches in the title and url fields only*
+
+```bash
+quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --search-fields title,url
+```
 
 ### Serve
 
 *Description*
 
-Starts a rest server at address `host`:`port` and makes searchable indexes located at `index-uri` and returns the documents matching the query specified with `query`. Optionally connects to peers listed at `peer-seeds` using SWIM membership protocol to allow search workload distribution.
+Starts a rest server at address `host`:`port` and makes searchable indexes located at `index-uri` and returns the documents matching the query specified with `query`. Optionally connects to peers listed at `peer-seed` using SWIM membership protocol to allow search workload distribution.
+
+:::note
+
+Behind the scenes, Quickwit need to open the following port for cluster formation and workload distribution:
+- TCP port (default is 8080) for REST API
+- TCP and UDP port + 1 (default is 8081) for cluster membership protocol
+- TCP port + 2 (default is 8082) for gRPC address for the distributed search
+
+In this case, if ports are already taken, the serve command will fail.
+
+:::
+
 
 *Synopsis*
 
@@ -165,13 +240,16 @@ quickwit serve
 `--index-uri` (string) List of location of target indexes.<br />
 `--host` (string) Hostname the rest server should bind to.<br />
 `--port` (string) Port the REST API server should bind to.<br />
-`--peer-seeds` (string) List of peer socket address (e.g. 192.1.1.3:12001) to connect to form a cluster..<br />
+`--peer-seeds` (string) List of peer socket address (e.g. 192.1.1.3:8080) to connect to form a cluster.<br />
+
 
 *Examples*
 
-*Start a local server and for a local index*<br />
-`quickwit serve --index-uri file:///path-to-my-indexes/wikipedia`
+*Start a local server and for a local index*
 
+```bash
+quickwit serve --index-uri file:///path-to-my-indexes/wikipedia
+```
 
 ### Delete
 
@@ -194,7 +272,12 @@ quickwit delete
 
 *Examples*
 
-*Deleting an index*<br /> `quickwit delete --index-uri s3://quickwit-indexes/catalog`
+*Deleting an index*
+```bash
+quickwit delete --index-uri s3://quickwit-indexes/catalog
+```
 
-*Executing in dry run mode*<br />
-`quickwit delete --index-uri s3://quickwit-indexes/catalog --dry-run`
+*Executing in dry run mode*
+```bash
+quickwit delete --index-uri s3://quickwit-indexes/catalog --dry-run
+```

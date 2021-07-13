@@ -19,7 +19,7 @@ The body of responses is always a JSON object, and their content type is always 
 Parameters passed in the URL must be properly URL-encoded, using the UTF-8 encoding for non-ASCII characters.
 
 ```
-curl [..]/search?query=barack%20obama
+GET [..]/search?query=barack%20obama
 ```
 
 ## Error handling
@@ -28,7 +28,7 @@ Successful requests return a 2xx HTTP status code.
 
 Failed requests return a 4xx HTTP status code. The response body of failed requests holds a JSON object containing an `error_message` field that describes the error.
 
-```
+```json
 {
 	"error_message": "Failed to parse query"
 }
@@ -56,10 +56,10 @@ Search for documents matching a query in the given index `<index name>`.
 | Variable                  | Type                 | Description                                                                                       | Default value                                                                                   |
 | ------------------------- | -------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | **query**                     | `String`               | Query text. See the [query language doc](query-language.md) (mandatory)                                          |                                                                                                |
-| **start_timestamp**                 | `i64`              | If set, restrict search to documents with a `timestamp >= start_timestamp`                                                            |                                                                                |
-| **end_timestamp**                 | `i64`              | If set, restrict search to documents with a `timestamp < end_timestamp``                                                            |                                                                                     |
-| **start_offset**                | `Integer`              | Number of documents to skip                                                                | `0`                                                                                             |
-| **max_hits**                 | `Integer`              | Maximum number of hits to return (by default 20)                                                            | `20`                                                                                            |
+| **startTimestamp**                 | `i64`              | If set, restrict search to documents with a `timestamp >= start_timestamp`                                                            |                                                                                |
+| **endTimestamp**                 | `i64`              | If set, restrict search to documents with a `timestamp < end_timestamp``                                                            |                                                                                     |
+| **startOffset**                | `Integer`              | Number of documents to skip                                                                | `0`                                                                                             |
+| **maxHits**                 | `Integer`              | Maximum number of hits to return (by default 20)                                                            | `20`                                                                                            |
 
 
 ### Response
@@ -67,5 +67,5 @@ Search for documents matching a query in the given index `<index name>`.
 | field                | Description                    |    type    |
 | -------------------- | ------------------------------ | :--------: |
 | **hits**             | Results of the query           | `[hit]` |
-| **num_hits**         | Total number of matches        |  `number`  |
-| **num_microsecs**    | Processing time of the query   |  `number`  |
+| **numHits**         | Total number of matches        |  `number`  |
+| **numMicrosecs**    | Processing time of the query   |  `number`  |
