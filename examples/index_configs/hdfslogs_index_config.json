@@ -10,11 +10,14 @@
         },
         {
             "name": "severity_text",
-            "type": "text"
+            "type": "text",
+            "tokenizer": "raw"
         },
         {
             "name": "body",
-            "type": "text"
+            "type": "text",
+            "tokenizer": "default",
+            "record": "position"
         },
         {
             "name": "resource",
@@ -22,7 +25,8 @@
             "field_mappings": [
                 {
                     "name": "service",
-                    "type": "text"
+                    "type": "text",
+                    "tokenizer": "raw"
                 }
             ]
         },
@@ -32,7 +36,8 @@
             "field_mappings": [
                 {
                     "name": "class",
-                    "type": "text"
+                    "type": "text",
+                    "tokenizer": "raw"
                 }
             ]
         }

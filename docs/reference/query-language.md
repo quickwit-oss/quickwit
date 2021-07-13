@@ -25,6 +25,6 @@ You can also omit field names to search into default search fields defined in th
 ## Example of a search query on the REST API
 
 ```
-GET /api/v1/indexes/<index name>/search?query=barack OR obama
+curl http://0.0.0.0:8080/api/v1/indexes/<index name>/search?query=barack OR obama
 ```
 
