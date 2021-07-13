@@ -5,11 +5,12 @@
   <a href="https://quickwit.io/docs/getting-started/quickstart">Quickwstart</a> |
   <a href="https://quickwit.io/docs/">Docs</a> |
   <a href="https://quickwit.io/blog">Tutorials</a> |
-  <a href="https://quickwit.io/blog">Documentation</a> |
+  <a href="https://gitter.im/quickwit-search/community">Chat</a> |
   <a href="https://quickwit.io/docs/getting-started/installation">Download</a>
 </h4>
 <p align="center">
 [![codecov](https://codecov.io/gh/quickwit-inc/quickwit/branch/main/graph/badge.svg?token=06SRGAV5SS)](https://codecov.io/gh/quickwit-inc/quickwit) [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md) [![License: AGPL V3](https://img.shields.io/badge/license-AGPL%20V3-blue)](LICENCE.md)
+[![Join the chat at https://gitter.im/quickwit-search/community](https://badges.gitter.im/quickwit-search/community.svg)](https://gitter.im/quickwit-search/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 </p>
 
 
