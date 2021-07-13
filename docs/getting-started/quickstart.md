@@ -160,7 +160,7 @@ quickwit delete --index-uri file:///$(pwd)/wikipedia
 
 ## Next tutorials
 
-- [Setup a distributed search on AWS S3](tutorial-distributed-search-aws-s3.md)
-- [Search on logs with timestamp pruning](tutorial-hdfs-logs.md)
+- [Search on logs with timestamp pruning](../tutorials/tutorial-hdfs-logs.md)
+- [Setup a distributed search on AWS S3](../tutorials/tutorial-hdfs-logs-distributed-search-aws-s3.md)
 
 
