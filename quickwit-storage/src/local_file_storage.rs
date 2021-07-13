@@ -23,15 +23,14 @@
 use crate::{PutPayload, Storage, StorageErrorKind, StorageFactory, StorageResult};
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures::future::{BoxFuture, FutureExt};
-use std::fmt;
 use std::io::{ErrorKind, SeekFrom};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{fmt, io};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tracing::warn;
+use tracing::{error, warn};
 
 /// File system compatible storage implementation.
 #[derive(Clone)]
@@ -76,9 +75,19 @@ impl LocalFileStorage {
 
 /// Delete empty directories starting from `{root}/{path}` directory and stopping at `{root}`
 /// directory. Note that the `{root}` directory is not deleted.
-fn delete_all_dirs(root: PathBuf, path: &Path) -> BoxFuture<'_, std::io::Result<()>> {
-    async move {
-        let full_path = root.join(path);
+///
+/// This function is guarding against traversal attacks.
+pub async fn delete_all_dirs(root_non_canonical: &Path, path: &Path) -> io::Result<()> {
+    let root = fs::canonicalize(root_non_canonical).await?;
+    for ancestor in path.ancestors() {
+        let full_path = fs::canonicalize(root.join(ancestor)).await?;
+        if !full_path.starts_with(&root) {
+            error!("Attempted to delete a directory outside of the root dir. Possibly a traversal attack?");
+            return Err(io::ErrorKind::InvalidInput)?;
+        }
+        if &full_path == &root {
+            return Ok(());
+        }
         let path_entries_result = full_path.read_dir();
         if let Err(err) = &path_entries_result {
             // Ignore `ErrorKind::NotFound` as this could be deleted by another concurent task.
@@ -100,12 +109,8 @@ fn delete_all_dirs(root: PathBuf, path: &Path) -> BoxFuture<'_, std::io::Result<
             }
             let _ = delete_result?;
         }
-        if let Some(parent) = path.parent() {
-            delete_all_dirs(root, parent).await?;
-        }
-        Ok(())
     }
-    .boxed()
+    Ok(())
 }
 
 #[async_trait]
@@ -148,7 +153,7 @@ impl Storage for LocalFileStorage {
         if parent.is_none() {
             return Ok(());
         }
-        let delete_result = delete_all_dirs(self.root.to_path_buf(), parent.unwrap()).await;
+        let delete_result = delete_all_dirs(&self.root, parent.unwrap()).await;
         if delete_result.is_err() {
             warn!(path =% path.display(), "failed to clean the path");
         }
@@ -276,7 +281,7 @@ mod tests {
 
         // check all empty directory
         assert_eq!(dir_path.exists(), true);
-        delete_all_dirs(path_root.clone(), dir_path.as_path()).await?;
+        delete_all_dirs(&path_root, dir_path.as_path()).await?;
         assert_eq!(dir_path.exists(), false);
         assert_eq!(dir_path.parent().unwrap().exists(), false);
 
@@ -286,7 +291,7 @@ mod tests {
         tokio::fs::File::create(intermediate_file.clone()).await?;
         assert_eq!(dir_path.exists(), true);
         assert_eq!(intermediate_file.exists(), true);
-        delete_all_dirs(path_root, dir_path.as_path()).await?;
+        delete_all_dirs(&path_root, dir_path.as_path()).await?;
         assert_eq!(dir_path.exists(), false);
         assert_eq!(dir_path.parent().unwrap().exists(), true);
         Ok(())
