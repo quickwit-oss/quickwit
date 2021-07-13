@@ -3,7 +3,7 @@ title: Architecture
 sidebar_position: 2
 ---
 
-Quickwit is built on three big components:
+Quickwit is built on three pillars:
 - the index: its a set of data structures tailored to be queried, even on high latency storage.
 - the metastore: it stores index metadata and makes them available to all search nodes.
 - the search cluster: provides high availability search, workload distribution, and efficient caching.
@@ -86,5 +86,4 @@ Quickwit uses a gossip protocol to manage membership and broadcast messages to t
 
 ### Rendezvous hashing
 
-To distribute workload to leaf nodes, the root node uses [Rendezvous hashing](https://en.wikipedia.org/wiki/Rendezvous_hashing)
-to select the most qualified node to work on a given split. This notion of node/split affinity unlocks efficient caching. In Quickwit 0.1, however, caching is limited to the hotcache files.
+The root node uses [Rendezvous hashing](https://en.wikipedia.org/wiki/Rendezvous_hashing) to distribute the workload among leaf nodes. Rendez-vous hashing makes it possible to define a node/split affinity function with excellent stability properties when a node joins or leaves the cluster. This trick unlocks efficient caching. In Quickwit 0.1, however, caching is limited to the hotcache files.
