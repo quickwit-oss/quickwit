@@ -29,38 +29,40 @@ Imagine hosting an arbitrary amount of indices on S3 for $25/TB.month and queryi
 
 Not only is Quickwit more cost-efficient, but search clusters are also easier to operate. One can add or remove search instances in seconds. You can also effortlessly index a massive amount of historical data using your favorite batch technology. Last but not least, Multi-tenant search is now cheap and painless.
 
-- [Look at the feature list](overview/features.md)
-- [Get started](getting-started/quickstart.md)
+
+- [Get started](https://quickwit.io/docs/getting-started/quickstart)
+- [Look at the feature set](https://quickwit.io/docs/overview/features)
 
 
 # Documentation
-- [Introduction](docs/introduction.md)
+- [Introduction](https://quickwit.io/docs/)
 
 ## Getting started
-- [Quickstart](docs/getting-started/quickstart.md)
-- [Installation](docs/getting-started/installation.md)
+- [Quickstart](https://quickwit.io/docs/getting-started/quickstart)
+- [Installation](https://quickwit.io/docs/getting-started/installation)
 
 ## Overview
-- [Features](docs/overview/features.md)
-- [Architecture](docs/overview/architecture.md)
-
-## Administration
-- [Operating in the cloud](docs/administration/cloud-env.md)
+- [Features](https://quickwit.io/docs/overview/features)
+- [Architecture](https://quickwit.io/docs/overview/architecture)
 
 ## Tutorials
-- [Search on logs with timestamp pruning](docs/tutorials/tutorial-hdfs-logs.md)
-- [Setup a distributed search on AWS S3](docs/tutorials/tutorial-hdfs-logs-distributed-search-aws-s3.md)
+- [Search on logs with timestamp pruning](https://quickwit.io/docs/tutorials/tutorial-hdfs-logs)
+- [Setup a distributed search on AWS S3](https://quickwit.io/docs/tutorials/tutorial-hdfs-logs-distributed-search-aws-s3)
+- [Set up your AWS S3 environment](https://quickwit.io/docs/tutorials/configure-aws-env)
+
+## Administration
+- [Operating in the cloud](https://quickwit.io/docs/administration/cloud-env)
 
 ## Reference
-- [Quickwit CLI](docs/reference/cli.md)
-- [Index Config](docs/reference/index-config.md)
-- [Search API](docs/reference/search-api.md)
-- [Query language](docs/reference/query-language.md)
-- [Telemetry](docs/reference/telemetry.md)
+- [Quickwit CLI](https://quickwit.io/docs/reference/cli)
+- [Index Config](https://quickwit.io/docs/reference/index-config)
+- [Search API](https://quickwit.io/docs/reference/search-api)
+- [Query language](https://quickwit.io/docs/reference/query-language)
+- [Telemetry](https://quickwit.io/docs/reference/telemetry)
 
 ## Meta
-- [Explore further](docs/meta/explore-further.md)
-- [Release notes](docs/meta/release-notes.md)
+- [Explore further](https://quickwit.io/docs/meta/explore-further)
+- [Release notes](https://quickwit.io/docs/meta/release-notes)
 - [Code of conduct](CODE_OF_CONDUCT.md)
 - [Contributing](CONTRIBUTING.md)
 
