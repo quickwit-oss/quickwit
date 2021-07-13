@@ -100,9 +100,17 @@ fn delete_all_dirs(root: PathBuf, path: &Path) -> BoxFuture<'_, std::io::Result<
             }
             let _ = delete_result?;
         }
-        if let Some(parent) = path.parent() {
-            delete_all_dirs(root, parent).await?;
+
+        match &path.parent() {
+            Some(path) => {
+                if path == &Path::new("") || path == &Path::new(".") {
+                    return Ok(());
+                }
+                delete_all_dirs(root, path).await?;
+            }
+            _ => return Ok(()),
         }
+
         Ok(())
     }
     .boxed()
@@ -286,9 +294,15 @@ mod tests {
         tokio::fs::File::create(intermediate_file.clone()).await?;
         assert_eq!(dir_path.exists(), true);
         assert_eq!(intermediate_file.exists(), true);
-        delete_all_dirs(path_root, dir_path.as_path()).await?;
+        delete_all_dirs(path_root.clone(), dir_path.as_path()).await?;
         assert_eq!(dir_path.exists(), false);
         assert_eq!(dir_path.parent().unwrap().exists(), true);
+
+        // make sure it does not go beyond the path
+        tokio::fs::create_dir_all(path_root.join("home/foo/bar")).await?;
+        delete_all_dirs(path_root.join("home/foo"), Path::new("bar")).await?;
+        assert_eq!(path_root.join("home/foo").exists(), true);
+
         Ok(())
     }
 }
