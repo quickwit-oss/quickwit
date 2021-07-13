@@ -1,3 +1,8 @@
+[![codecov](https://codecov.io/gh/quickwit-inc/quickwit/branch/main/graph/badge.svg?token=06SRGAV5SS)](https://codecov.io/gh/quickwit-inc/quickwit) [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md) [![License: AGPL V3](https://img.shields.io/badge/license-AGPL%20V3-blue)](LICENCE.md)
+[![Join the chat at https://gitter.im/quickwit-search/community](https://badges.gitter.im/quickwit-search/community.svg)](https://gitter.im/quickwit-search/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+<br/>
+<br/>
+<br/>
 <p align="center">
   <img src="docs/assets/images/logo_horizontal.svg" alt="Quickwit" height="100">
 </p>
@@ -8,19 +13,15 @@
   <a href="https://gitter.im/quickwit-search/community">Chat</a> |
   <a href="https://quickwit.io/docs/getting-started/installation">Download</a>
 </h4>
-<p align="center">
-[![codecov](https://codecov.io/gh/quickwit-inc/quickwit/branch/main/graph/badge.svg?token=06SRGAV5SS)](https://codecov.io/gh/quickwit-inc/quickwit) [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md) [![License: AGPL V3](https://img.shields.io/badge/license-AGPL%20V3-blue)](LICENCE.md)
-[![Join the chat at https://gitter.im/quickwit-search/community](https://badges.gitter.im/quickwit-search/community.svg)](https://gitter.im/quickwit-search/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-</p>
+<br/>
 
-
-Quickwit is a distributed search engine built from the ground up to offer cost-efficiency and high reliability. By mere mortals for mere mortals, Quickwit's architecture is as simple as possible[^1].
+Quickwit is a distributed search engine built from the ground up to offer cost-efficiency and high reliability. By mere mortals for mere mortals, Quickwit's architecture is as simple as possible <sup>[1](#footnote1)</sup>.
 
 Quickwit is written in Rust and built on top of the mighty [tantivy](https://github.com/tantivy-search/tantivy) library. We designed it to index big datasets.
 
 ## Why Quickwit?
 
-Quickwit is born from the idea that today's search engines are hard to manage and uneconomical when dealing with large datasets and a low QPS[^2] rate. Its benefits are most apparent in a multitenancy or a multi-index setting.
+Quickwit is born from the idea that today's search engines are hard to manage and uneconomical when dealing with large datasets and a low QPS<sup>[2](#footnote2)</sup> rate. Its benefits are most apparent in a multitenancy or a multi-index setting.
 
 Quickwit allows true decoupled compute and storage.
 We designed it to search straight from object storage like AWS S3 in a stateless manner.
@@ -69,5 +70,6 @@ Not only is Quickwit more cost-efficient, but search clusters are also easier to
 
 
 ---
-[^1] ... But not one bit simpler.
-[^2] QPS stands for Queries per second. It is a standard measure of the amount of search traffic.
+<a name="footnote1">1.</a>: ... But not one bit simpler.
+
+<a name="footnote2">2.</a>: QPS stands for Queries per second. It is a standard measure of the amount of search traffic.
