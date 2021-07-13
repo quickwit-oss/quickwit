@@ -79,11 +79,27 @@ impl LocalFileStorage {
 fn delete_all_dirs(root: PathBuf, path: &Path) -> BoxFuture<'_, std::io::Result<()>> {
     async move {
         let full_path = root.join(path);
-        let is_not_empty = full_path.read_dir()?.next().is_some();
+        let path_entries_result = full_path.read_dir();
+        if let Err(err) = &path_entries_result {
+            // Ignore `ErrorKind::NotFound` as this could be deleted by another concurent task.
+            if err.kind() == ErrorKind::NotFound {
+                return Ok(());
+            }
+        }
+
+        let is_not_empty = path_entries_result?.next().is_some();
         if is_not_empty {
             return Ok(());
         }
-        fs::remove_dir(full_path).await?;
+
+        let delete_result = fs::remove_dir(full_path).await;
+        if let Err(err) = &delete_result {
+            // Ignore `ErrorKind::NotFound` as this could be deleted by another concurent task.
+            if err.kind() == ErrorKind::NotFound {
+                return Ok(());
+            }
+            let _ = delete_result?;
+        }
         if let Some(parent) = path.parent() {
             delete_all_dirs(root, parent).await?;
         }
