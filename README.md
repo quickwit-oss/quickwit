@@ -15,6 +15,10 @@
 </h4>
 <br/>
 
+### We have just released the first version of Quickwit. Check out our [blog post](https://quickwit.io/blog/quickwit-first-release/) to grasp what we have been doing for the last six months.
+
+<br/>
+
 Quickwit is a distributed search engine built from the ground up to offer cost-efficiency and high reliability. By mere mortals for mere mortals, Quickwit's architecture is as simple as possible <sup>[1](#footnote1)</sup>.
 
 Quickwit is written in Rust and built on top of the mighty [tantivy](https://github.com/tantivy-search/tantivy) library. We designed it to index big datasets.
