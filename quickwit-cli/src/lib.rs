@@ -44,6 +44,7 @@ use std::io::{stdout, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::usize;
 use tempfile::TempDir;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
@@ -55,6 +56,9 @@ use tokio::try_join;
 use tracing::debug;
 
 use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, IndexingStatistics};
+
+/// Throughput window size in seconds.
+const THROUGHPUT_WINDOW_SIZE: u64 = 5;
 
 #[derive(Debug)]
 pub struct CreateIndexArgs {
@@ -306,6 +310,8 @@ pub async fn start_statistics_reporting(
         let mut stdout_handle = stdout();
         let start_time = Instant::now();
         let is_tty = atty::is(atty::Stream::Stdout);
+        let mut throughput_calculator =
+            ThroughputCalculator::new(start_time, THROUGHPUT_WINDOW_SIZE);
         loop {
             // Try to receive with a timeout of 1 second.
             // 1 second is also the frequency at which we update statistic in the console
@@ -315,7 +321,12 @@ pub async fn start_statistics_reporting(
 
             // Let's not display live statistics to allow screen to scroll.
             if statistics.num_docs.get() > 0 {
-                display_statistics(&mut stdout_handle, start_time, statistics.clone(), is_tty)?;
+                display_statistics(
+                    &mut stdout_handle,
+                    &mut throughput_calculator,
+                    statistics.clone(),
+                    is_tty,
+                )?;
             }
 
             if is_done {
@@ -330,7 +341,12 @@ pub async fn start_statistics_reporting(
         }
 
         if input_path_opt.is_none() {
-            display_statistics(&mut stdout_handle, start_time, statistics.clone(), is_tty)?;
+            display_statistics(
+                &mut stdout_handle,
+                &mut throughput_calculator,
+                statistics.clone(),
+                is_tty,
+            )?;
         }
         //display end of task report
         println!();
@@ -357,13 +373,11 @@ pub async fn start_statistics_reporting(
 
 fn display_statistics(
     stdout_handle: &mut Stdout,
-    start_time: Instant,
+    throughput_calculator: &mut ThroughputCalculator,
     statistics: Arc<IndexingStatistics>,
     is_tty: bool,
 ) -> anyhow::Result<()> {
-    let elapsed_secs = start_time.elapsed().as_secs();
-    let throughput_mb_s =
-        statistics.total_bytes_processed.get() as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
+    let throughput_mb_s = throughput_calculator.calculate(statistics.total_bytes_processed.get());
     if is_tty {
         stdout_handle.queue(PrintStyledContent("Num docs: ".blue()))?;
         stdout_handle.queue(Print(format!("{:>7}", statistics.num_docs.get())))?;
@@ -391,6 +405,50 @@ fn display_statistics(
     }
     stdout_handle.flush()?;
     Ok(())
+}
+
+/// ThroughputCalculator is used to calculate throughput on time interval.
+struct ThroughputCalculator {
+    /// clock for tracking the time
+    clock: Instant,
+    /// How long it takes before calculating the throughput.
+    window_size: u64,
+    /// Stores the previous value of processed bytes.
+    processed_bytes_from_last_window: usize,
+    /// Stores the caluclated throughput.
+    throughput: f64,
+}
+
+impl ThroughputCalculator {
+    /// Creates new instance.
+    pub fn new(clock: Instant, window_size: u64) -> Self {
+        Self {
+            clock,
+            window_size,
+            processed_bytes_from_last_window: 0,
+            throughput: 0f64,
+        }
+    }
+
+    /// Calculates the throughput.
+    pub fn calculate(&mut self, processed_bytes: usize) -> f64 {
+        let elapsed_secs = self.clock.elapsed().as_secs();
+
+        if elapsed_secs % self.window_size == 0
+            && self.processed_bytes_from_last_window != processed_bytes
+        {
+            let window_processed_bytes = processed_bytes - self.processed_bytes_from_last_window;
+            self.throughput =
+                window_processed_bytes as f64 / 1_000_000f64 / self.window_size as f64;
+            self.processed_bytes_from_last_window = processed_bytes;
+        }
+
+        if self.processed_bytes_from_last_window == 0 {
+            self.throughput = processed_bytes as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
+        }
+
+        self.throughput
+    }
 }
 
 #[test]
