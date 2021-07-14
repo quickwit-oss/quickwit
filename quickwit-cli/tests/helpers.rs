@@ -78,6 +78,10 @@ pub fn make_command(arguments: &str) -> Command {
 pub fn spawn_command(arguments: &str) -> io::Result<Child> {
     std::process::Command::new(cargo_bin(PACKAGE_BIN_NAME))
         .args(arguments.split_whitespace())
+        .env(
+            quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
+            "disable-for-tests",
+        )
         .stdout(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
