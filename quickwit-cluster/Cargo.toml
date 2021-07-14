@@ -11,7 +11,7 @@ documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 anyhow = "1.0"
-artillery-core = { git = "https://github.com/bastion-rs/artillery.git", rev = "789524b"}
+artillery-core = "0.1.2"
 tokio = { version = "1.7", features = [ "full" ] }
 tokio-stream = { version = "0.1.6", features = [ "sync" ] }
 tonic = "0.4"
