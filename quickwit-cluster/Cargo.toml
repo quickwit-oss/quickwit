@@ -9,7 +9,6 @@ repository = "https://github.com/quickwit-inc/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
-
 [dependencies]
 anyhow = "1.0"
 artillery-core = { git = "https://github.com/bastion-rs/artillery.git", rev = "789524b"}

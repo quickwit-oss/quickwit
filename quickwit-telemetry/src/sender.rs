@@ -42,8 +42,6 @@ const TELEMETRY_PUSH_COOLDOWN: Duration = Duration::from_secs(60);
 /// This duration is the amount of time we wait for at most to send that last telemetry request.
 const LAST_REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 
-const DISABLE_TELEMETRY_ENV_KEY: &str = "DISABLE_QUICKWIT_TELEMETRY";
-
 const MAX_NUM_EVENTS_IN_QUEUE: usize = 10;
 
 #[cfg(test)]
@@ -282,7 +280,7 @@ impl TelemetrySender {
 
 /// Check to see if telemetry is enabled.
 pub fn is_telemetry_enabled() -> bool {
-    std::env::var_os(DISABLE_TELEMETRY_ENV_KEY).is_none()
+    std::env::var_os(crate::DISABLE_TELEMETRY_ENV_KEY).is_none()
 }
 
 fn create_http_client() -> Option<HttpClient> {
@@ -318,9 +316,9 @@ mod tests {
     #[tokio::test]
     async fn test_enabling_and_disabling_telemetry() {
         // We group the two in a single test to ensure it happens on the same thread.
-        env::set_var(super::DISABLE_TELEMETRY_ENV_KEY, "");
+        env::set_var(crate::DISABLE_TELEMETRY_ENV_KEY, "");
         assert_eq!(TelemetrySender::default().inner.is_disabled(), true);
-        env::remove_var(super::DISABLE_TELEMETRY_ENV_KEY);
+        env::remove_var(crate::DISABLE_TELEMETRY_ENV_KEY);
         assert_eq!(TelemetrySender::default().inner.is_disabled(), false);
     }
 
