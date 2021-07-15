@@ -57,7 +57,7 @@ use tracing::debug;
 
 use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, IndexingStatistics};
 
-/// Throughput window size in seconds.
+/// Throughput calculation window size in seconds.
 const THROUGHPUT_WINDOW_SIZE: u64 = 5;
 
 #[derive(Debug)]
@@ -434,6 +434,8 @@ impl ThroughputCalculator {
     pub fn calculate(&mut self, processed_bytes: usize) -> f64 {
         let elapsed_secs = self.clock.elapsed().as_secs();
 
+        // Only recompute if we have reached the end of a window
+        // and the number of processed byte has changed.
         if elapsed_secs % self.window_size == 0
             && self.processed_bytes_from_last_window != processed_bytes
         {
@@ -443,6 +445,7 @@ impl ThroughputCalculator {
             self.processed_bytes_from_last_window = processed_bytes;
         }
 
+        // First window is calculated progressively.
         if self.processed_bytes_from_last_window == 0 {
             self.throughput = processed_bytes as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
         }
