@@ -35,13 +35,13 @@ Imagine hosting an arbitrary amount of indices on S3 for $25/TB.month and queryi
 Not only is Quickwit more cost-efficient, but search clusters are also easier to operate. One can add or remove search instances in seconds. You can also effortlessly index a massive amount of historical data using your favorite batch technology. Last but not least, Multi-tenant search is now cheap and painless.
 
 
+- [Get started](https://quickwit.io/docs/getting-started/quickstart)
+- [Look at the feature set](https://quickwit.io/docs/overview/features)
+
+
 <p align="center">
   <img src="docs/assets/images/quickstart_terminal_screenshot.png" alt="Quickstart">
 </p>
-
-
-- [Get started](https://quickwit.io/docs/getting-started/quickstart)
-- [Look at the feature set](https://quickwit.io/docs/overview/features)
 
 
 # Documentation
