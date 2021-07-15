@@ -202,3 +202,85 @@ pub async fn root_search(
         elapsed_time_micros: elapsed.as_micros() as u64,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::net::TcpListener;
+
+    use serde_json::{json, Value};
+
+    use quickwit_cluster::cluster::{read_host_key, Cluster};
+    use quickwit_common::to_socket_addr;
+    use quickwit_core::TestSandbox;
+    use quickwit_index_config::WikipediaIndexConfig;
+
+    use crate::http_addr_to_swim_addr;
+    use crate::MockSearchService;
+
+    #[tokio::test]
+    async fn test_root_search_single_node_single_split() -> anyhow::Result<()> {
+        let index_id = "wikipedia-idx";
+
+        let test_sandbox =
+            TestSandbox::create(index_id, Box::new(WikipediaIndexConfig::new())).await?;
+
+        let docs1: Vec<Value> = vec![
+            json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
+            json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle"}),
+        ];
+
+        test_sandbox.add_documents(docs1.clone()).await?;
+
+        let search_request = quickwit_proto::SearchRequest {
+            index_id: index_id.to_string(),
+            query: "snoopy".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+        };
+
+        let metastore = test_sandbox.metastore();
+
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let host_key_path = tmp_dir.path().join("host_key");
+        let host_key = read_host_key(&host_key_path)?;
+
+        let rest_addr_str = format!("0.0.0.0:{}", available_port()?);
+        let rest_addr = to_socket_addr(&rest_addr_str)?;
+        let swim_addr = http_addr_to_swim_addr(rest_addr);
+
+        let cluster = Arc::new(Cluster::new(host_key, swim_addr)?);
+
+        let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
+
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service.expect_leaf_search().returning(
+            |_leaf_tonic_req: quickwit_proto::LeafSearchRequest| {
+                Ok(quickwit_proto::LeafSearchResult {
+                    partial_hits: Vec::new(),
+                    num_hits: 0,
+                })
+            },
+        );
+
+        let search_result = root_search(&search_request, &*metastore, &client_pool).await?;
+        println!("search_result={:?}", search_result);
+
+        cluster.leave();
+
+        tmp_dir.close().unwrap();
+
+        Ok(())
+    }
+
+    fn available_port() -> anyhow::Result<u16> {
+        match TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => Ok(listener.local_addr().unwrap().port()),
+            Err(e) => anyhow::bail!(e),
+        }
+    }
+}
