@@ -4,6 +4,10 @@ version = '0.1.0'
 authors = ['Quickwit, Inc. <hello@quickwit.io>']
 edition = '2018'
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+description = "Quickwit's storage abstraction"
+repository = "https://github.com/quickwit-inc/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 quickwit-common = { version = "0.1.0", path = "../quickwit-common" }
@@ -19,6 +23,7 @@ regex = '1'
 thiserror = '1'
 rand = '0.8'
 lru = "0.6"
+serde = { version = "1.0", features = ["derive"] }
 
 [dependencies.rusoto_core]
 version = '0.46'

@@ -24,6 +24,7 @@ use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
 use quickwit_common::{get_quickwit_env, QuickwitEnv};
 use rusoto_core::Region;
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::Arc;
 
 /// A storage factory builds a [`Storage`] object from an URI.
@@ -88,16 +89,26 @@ impl StorageUriResolver {
 
     /// Resolves the given URI.
     pub fn resolve(&self, uri: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let protocol = uri.split("://").next().ok_or_else(|| {
-            StorageResolverError::InvalidUri(format!("Protocol not found in storage uri: {}", uri))
+        let protocol = uri
+            .split("://")
+            .next()
+            .ok_or_else(|| StorageResolverError::InvalidUri {
+                message: format!("Protocol not found in storage uri: {}", uri),
+            })?;
+        let resolver = self.per_protocol_resolver.get(protocol).ok_or_else(|| {
+            StorageResolverError::ProtocolUnsupported {
+                protocol: protocol.to_string(),
+            }
         })?;
-        let resolver = self
-            .per_protocol_resolver
-            .get(protocol)
-            .ok_or_else(|| StorageResolverError::ProtocolUnsupported(protocol.to_string()))?;
-        let storage = resolver
-            .resolve(uri)
-            .map_err(StorageResolverError::FailedToOpenStorage)?;
+        let storage = resolver.resolve(uri).map_err(|storage_error| {
+            StorageResolverError::FailedToOpenStorage {
+                kind: storage_error.kind(),
+                message: storage_error
+                    .source()
+                    .map(|err| format!("{}", err))
+                    .unwrap_or_else(String::new),
+            }
+        })?;
         Ok(storage)
     }
 }
@@ -177,7 +188,7 @@ mod tests {
         let storage_resolver = StorageUriResolver::default();
         assert!(matches!(
             storage_resolver.resolve("protocol://hello"),
-            Err(crate::StorageResolverError::ProtocolUnsupported(protocol)) if protocol == "protocol"
+            Err(crate::StorageResolverError::ProtocolUnsupported { protocol }) if protocol == "protocol"
         ));
     }
 }

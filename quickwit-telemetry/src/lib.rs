@@ -53,3 +53,6 @@ fn get_telemetry_sender_singleton() -> &'static TelemetrySender {
 pub async fn send_telemetry_event(event: TelemetryEvent) {
     get_telemetry_sender_singleton().send(event).await
 }
+
+/// This environment variable can be set to disable sending telemetry events.
+pub const DISABLE_TELEMETRY_ENV_KEY: &str = "DISABLE_QUICKWIT_TELEMETRY";

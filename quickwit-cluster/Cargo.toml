@@ -4,10 +4,14 @@ version = "0.1.0"
 authors = ['Quickwit, Inc. <hello@quickwit.io>']
 edition = "2018"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
+description = "Quickwit's cluster membership"
+repository = "https://github.com/quickwit-inc/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 anyhow = "1.0"
-artillery-core = { git = "https://github.com/bastion-rs/artillery.git", rev = "789524b"}
+artillery-core = "0.1.2"
 tokio = { version = "1.7", features = [ "full" ] }
 tokio-stream = { version = "0.1.6", features = [ "sync" ] }
 tonic = "0.4"

@@ -20,11 +20,13 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::{fmt, io};
+use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::io;
 use thiserror::Error;
 
 /// Storage error kind.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub enum StorageErrorKind {
     /// The target index does not exist.
     DoesNotExist,
@@ -39,21 +41,25 @@ pub enum StorageErrorKind {
 }
 
 /// Generic Storage Resolver Error.
-#[derive(Error, Debug)]
+#[allow(missing_docs)]
+#[derive(Error, Debug, Serialize, Deserialize)]
 pub enum StorageResolverError {
     /// The input is not a valid URI.
     /// A protocol is required for the URI.
-    #[error("Invalid format for URI: required: `{0}`")]
-    InvalidUri(String),
+    #[error("Invalid format for URI: required: `{message}`")]
+    InvalidUri { message: String },
     /// The protocol is not supported by this resolver.
-    #[error("Unsupported protocol")]
-    ProtocolUnsupported(String),
+    #[error("Unsupported protocol: `{protocol}`")]
+    ProtocolUnsupported { protocol: String },
     /// The URI is valid, and is meant to be handled by this resolver,
     /// but the resolver failed to actually connect to the storage.
     /// e.g. Connection error, credential error, incompatible version,
     /// internal error in third party etc.
-    #[error("Failed to open storage: `{0}`")]
-    FailedToOpenStorage(crate::StorageError),
+    #[error("Failed to open storage {kind:?}: {message}.")]
+    FailedToOpenStorage {
+        kind: crate::StorageErrorKind,
+        message: String,
+    },
 }
 
 impl StorageErrorKind {
@@ -82,8 +88,9 @@ impl From<StorageError> for io::Error {
 /// Generic StorageError.
 #[derive(Error, Debug)]
 #[error("StorageError(kind={kind:?}, source={source})")]
+#[allow(missing_docs)]
 pub struct StorageError {
-    kind: StorageErrorKind,
+    pub kind: StorageErrorKind,
     #[source]
     source: anyhow::Error,
 }

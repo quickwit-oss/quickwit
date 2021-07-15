@@ -254,7 +254,7 @@ async fn main() {
 
 /// Return the about text with telemetry info.
 fn about_text() -> String {
-    let mut about_text = String::from("Indexing your large dataset on object storage & making it searchable from the command line.\n");
+    let mut about_text = format!("Indexing your large dataset on object storage & making it searchable from the command line.\nCommit hash: {}\n", env!("GIT_COMMIT_HASH"));
     if quickwit_telemetry::is_telemetry_enabled() {
         about_text += "Telemetry Enabled";
     }

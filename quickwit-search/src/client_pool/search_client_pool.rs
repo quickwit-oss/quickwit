@@ -128,15 +128,29 @@ impl SearchClientPool {
 impl ClientPool for SearchClientPool {
     /// Assign the given job to the clients.
     /// Returns a list of pair (SocketAddr, Vec<Job>)
-    async fn assign_jobs(&self, mut jobs: Vec<Job>) -> anyhow::Result<Vec<(SocketAddr, Vec<Job>)>> {
+    async fn assign_jobs(
+        &self,
+        mut jobs: Vec<Job>,
+    ) -> anyhow::Result<Vec<(SearchServiceClient<Channel>, Vec<Job>)>> {
         let mut splits_groups: HashMap<SocketAddr, Vec<Job>> = HashMap::new();
 
         // Distribute using rendez-vous hashing
-        let clients = self.clients.read().await;
-        let mut nodes: Vec<Node> = clients
-            .iter()
-            .map(|(grpc_addr, _client)| Node::new(*grpc_addr, 0))
-            .collect();
+        let mut nodes: Vec<Node> = Vec::new();
+        let mut socket_to_client: HashMap<SocketAddr, SearchServiceClient<Channel>> =
+            Default::default();
+
+        {
+            // restricting the lock guard lifetime.
+
+            // TODO optimize the case where there are few jobs and many clients.
+            let clients = self.clients.read().await;
+
+            for (grpc_addr, client) in clients.iter() {
+                let node = Node::new(*grpc_addr, 0);
+                nodes.push(node);
+                socket_to_client.insert(*grpc_addr, client.clone());
+            }
+        }
 
         // Sort job
         jobs.sort_by(|left, right| {
@@ -170,9 +184,15 @@ impl ClientPool for SearchClientPool {
                 .push(job);
         }
 
-        Ok(splits_groups
-            .into_iter()
-            .collect::<Vec<(SocketAddr, Vec<Job>)>>())
+        let mut client_to_jobs = Vec::new();
+        for (socket_addr, jobs) in splits_groups {
+            if let Some(client) = socket_to_client.remove(&socket_addr) {
+                client_to_jobs.push((client, jobs));
+            } else {
+                error!("Missing client. This should never happen! Please report");
+            }
+        }
+        Ok(client_to_jobs)
     }
 }
 
