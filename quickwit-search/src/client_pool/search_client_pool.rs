@@ -198,6 +198,7 @@ impl ClientPool for SearchClientPool {
 
 #[cfg(test)]
 mod tests {
+    use crate::client_pool::search_client_pool::create_search_service_client;
     use std::net::{SocketAddr, TcpListener};
     use std::sync::Arc;
     use std::thread;
@@ -334,8 +335,8 @@ mod tests {
         let assigned_jobs = client_pool.assign_jobs(jobs).await?;
         println!("assigned_jobs={:?}", assigned_jobs);
 
-        let expected: Vec<(SocketAddr, Vec<Job>)> = vec![(
-            swim_addr_to_grpc_addr(swim_addr),
+        let expected = vec![(
+            create_search_service_client(swim_addr_to_grpc_addr(swim_addr)).await?,
             vec![
                 Job {
                     split: "split4".to_string(),
@@ -357,7 +358,8 @@ mod tests {
         )];
         println!("expected={:?}", expected);
 
-        assert_eq!(assigned_jobs, expected);
+        // compare jobs
+        assert_eq!(assigned_jobs.get(0).unwrap().1, expected.get(0).unwrap().1);
 
         cluster.leave();
 
