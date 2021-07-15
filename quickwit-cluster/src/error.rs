@@ -18,6 +18,32 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-pub mod cluster;
-pub mod error;
-pub mod service;
+use thiserror::Error;
+
+/// Cluster error kinds.
+#[derive(Debug, Error)]
+pub enum ClusterError {
+    /// The target index already exists (Returned when creating a new index).
+    #[error("Failed to create cluster. Cause `{cause}`")]
+    CreateClusterError {
+        /// Root cause.
+        cause: anyhow::Error,
+    },
+
+    /// Read host key error.
+    #[error("Failed to read host key. Cause: `{cause}`")]
+    ReadHostKeyError {
+        /// Root cause.
+        cause: anyhow::Error,
+    },
+
+    /// Write host key error.
+    #[error("Failed to write host key. Cause: `{cause}`")]
+    WriteHostKeyError {
+        /// Root cause.
+        cause: anyhow::Error,
+    },
+}
+
+/// Generic Result type for cluster operations.
+pub type ClusterResult<T> = Result<T, ClusterError>;

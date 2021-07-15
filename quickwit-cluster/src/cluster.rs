@@ -32,27 +32,43 @@ use tokio_stream::wrappers::WatchStream;
 use tracing::*;
 use uuid::Uuid;
 
+use crate::error::{ClusterError, ClusterResult};
+
 /// The ID that makes the cluster unique.
 const CLUSTER_ID: &str = "quickwit-cluster";
 
 /// Reads the key that makes a node unique from the given file.
 /// If the file does not exist, it generates an ID and writes it to the file
 /// so that it can be reused on reboot.
-pub fn read_host_key(host_key_path: &Path) -> anyhow::Result<Uuid> {
+pub fn read_host_key(host_key_path: &Path) -> ClusterResult<Uuid> {
     let host_key;
 
     if host_key_path.exists() {
-        let host_key_contents = fs::read(host_key_path)?;
-        host_key = Uuid::from_slice(host_key_contents.as_slice())?;
+        // let host_key_contents = fs::read(host_key_path)?;
+        let host_key_contents =
+            fs::read(host_key_path).map_err(|err| ClusterError::ReadHostKeyError {
+                cause: anyhow::anyhow!(err),
+            })?;
+        host_key = Uuid::from_slice(host_key_contents.as_slice()).map_err(|err| {
+            ClusterError::ReadHostKeyError {
+                cause: anyhow::anyhow!(err),
+            }
+        })?;
         info!(host_key=?host_key, host_key_path=?host_key_path, "Read existing host key.");
     } else {
         if let Some(dir) = host_key_path.parent() {
             if !dir.exists() {
-                fs::create_dir_all(dir)?;
+                fs::create_dir_all(dir).map_err(|err| ClusterError::WriteHostKeyError {
+                    cause: anyhow::anyhow!(err),
+                })?;
             }
         }
         host_key = Uuid::new_v4();
-        fs::write(host_key_path, host_key.as_bytes())?;
+        fs::write(host_key_path, host_key.as_bytes()).map_err(|err| {
+            ClusterError::WriteHostKeyError {
+                cause: anyhow::anyhow!(err),
+            }
+        })?;
         info!(host_key=?host_key, host_key_path=?host_key_path, "Create new host key.");
     }
 
@@ -88,7 +104,7 @@ impl Cluster {
     /// Create a cluster given a host key and a listen address.
     /// When a cluster is created, the thread that monitors cluster events
     /// will be started at the same time.
-    pub fn new(host_key: Uuid, listen_addr: SocketAddr) -> anyhow::Result<Self> {
+    pub fn new(host_key: Uuid, listen_addr: SocketAddr) -> ClusterResult<Self> {
         info!( host_key=?host_key, listen_addr=?listen_addr, "Create new cluster.");
         let config = ArtilleryClusterConfig {
             cluster_key: CLUSTER_ID.as_bytes().to_vec(),
@@ -96,7 +112,11 @@ impl Cluster {
             ..Default::default()
         };
         let (artillery_cluster, _) =
-            ArtilleryCluster::new_cluster(host_key, config).map_err(|err| anyhow::anyhow!(err))?;
+            ArtilleryCluster::new_cluster(host_key, config).map_err(|err| {
+                ClusterError::CreateClusterError {
+                    cause: anyhow::anyhow!(err),
+                }
+            })?;
 
         let (members_sender, members_receiver) = watch::channel(Vec::new());
 
