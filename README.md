@@ -36,7 +36,7 @@ Not only is Quickwit more cost-efficient, but search clusters are also easier to
 
 
 <p align="center">
-  <img src="docs/assets/images/quickstart_terminal_screenshot.png" alt="Quickstart">
+  <img src="docs/assets/images/quickstart_terminal_screenshot_white.png" alt="Quickstart">
 </p>
 
 
