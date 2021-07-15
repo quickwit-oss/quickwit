@@ -4,7 +4,10 @@ version = '0.1.0'
 authors = ['Quickwit <hello@quickwit.io>']
 edition = '2018'
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
-
+description = "Quickwit's search service"
+repository = "https://github.com/quickwit-inc/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 anyhow = '1'

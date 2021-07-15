@@ -23,7 +23,7 @@ use thiserror::Error;
 // TODO improve me and my error messages :)
 
 #[derive(Error, Debug)]
-#[error("QueryParserError(`{0}`)")]
+#[error("Invalid query syntax: `{0}`")]
 
 /// Failed to parse query.
 pub struct QueryParserError(#[from] anyhow::Error);

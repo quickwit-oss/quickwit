@@ -12,7 +12,9 @@
         },
         {
             "name": "url",
-            "type": "text"
+            "type": "text",
+            "indexed": false,
+            "stored": false
         }
     ]
 }

@@ -22,7 +22,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::Context;
+use tantivy::TantivyError;
 use tokio::task::JoinHandle;
 use tracing::*;
 
@@ -35,10 +35,12 @@ use tantivy::collector::Collector;
 use tokio::task::spawn_blocking;
 
 use crate::client_pool::Job;
+use crate::error::parse_grpc_error;
 use crate::list_relevant_splits;
 use crate::make_collector;
 use crate::ClientPool;
 use crate::SearchClientPool;
+use crate::SearchError;
 
 // Measure the cost associated to searching in a given split metadata.
 fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
@@ -52,7 +54,7 @@ pub async fn root_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
     client_pool: &Arc<SearchClientPool>,
-) -> anyhow::Result<SearchResult> {
+) -> Result<SearchResult, SearchError> {
     let start_instant = tokio::time::Instant::now();
 
     // Create a job for leaf node search and assign the splits that the node is responsible for based on the job.
@@ -80,44 +82,33 @@ pub async fn root_search(
     let assigned_leaf_search_jobs = client_pool.assign_jobs(leaf_search_jobs).await?;
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
 
-    let clients = client_pool.clients.read().await;
-
     // Create search request with start offset is 0 that used by leaf node search.
     let mut search_request_with_offset_0 = search_request.clone();
     search_request_with_offset_0.start_offset = 0;
     search_request_with_offset_0.max_hits += search_request.start_offset;
 
-    // Perform the query phese.
-    let mut leaf_search_handles: Vec<JoinHandle<anyhow::Result<LeafSearchResult>>> = Vec::new();
-    for (addr, jobs) in assigned_leaf_search_jobs.iter() {
-        let mut search_client = if let Some(client) = clients.get(&addr) {
-            client.clone()
-        } else {
-            anyhow::bail!(
-                "There is no search client for {} in the search client pool.",
-                addr
-            );
-        };
-
+    // Perform the query phase.
+    let mut leaf_search_handles: Vec<JoinHandle<Result<LeafSearchResult, tonic::Status>>> =
+        Vec::new();
+    for (search_client, jobs) in assigned_leaf_search_jobs.iter() {
         let leaf_search_request = LeafSearchRequest {
             search_request: Some(search_request_with_offset_0.clone()),
             split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
         };
 
-        debug!(addr=?addr, leaf_search_request=?leaf_search_request, "Leaf node search.");
+        // TODO wrap search clients with some info like their socketaddr to be able to log useful debug information
+        debug!(leaf_search_request=?leaf_search_request, "Leaf node search.");
+        let mut search_client_clone = search_client.clone();
         let handle = tokio::spawn(async move {
-            match search_client.leaf_search(leaf_search_request).await {
-                Ok(resp) => Ok(resp.into_inner()),
-                Err(err) => Err(anyhow::anyhow!(
-                    "Failed to search a leaf node due to {:?}",
-                    err
-                )),
-            }
+            search_client_clone
+                .leaf_search(leaf_search_request)
+                .await
+                .map(|resp| resp.into_inner())
         });
         leaf_search_handles.push(handle);
     }
-    let leaf_search_responses = futures::future::try_join_all(leaf_search_handles).await?;
-
+    let leaf_search_responses = futures::future::try_join_all(leaf_search_handles).await?; //< An error here means that the tokio task panicked... Not that the grpc erorred.
+                                                                                           //< The latter is handled later.
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let index_config = index_metadata.index_config;
     let collector = make_collector(index_config.as_ref(), search_request);
@@ -130,12 +121,19 @@ pub async fn root_search(
                 debug!(leaf_search_result=?leaf_search_result, "Leaf search result.");
                 leaf_search_results.push(leaf_search_result)
             }
-            Err(err) => error!(err=?err),
+            Err(grpc_error) => {
+                let leaf_search_error = parse_grpc_error(&grpc_error);
+                error!(error=?grpc_error, "Leaf request failed");
+                // TODO list failed leaf nodes and retry.
+                return Err(leaf_search_error);
+            }
         }
     }
     let leaf_search_result = spawn_blocking(move || collector.merge_fruits(leaf_search_results))
-        .await
-        .with_context(|| "Failed to merge leaf search results.")??;
+        .await?
+        .map_err(|merge_error: TantivyError| {
+            crate::SearchError::InternalError(format!("{}", merge_error))
+        })?;
     debug!(leaf_search_result=?leaf_search_result, "Merged leaf search result.");
 
     // Create a hash map of PartialHit with split as a key.
@@ -149,24 +147,17 @@ pub async fn root_search(
 
     // Perform the fetch docs phese.
     let mut fetch_docs_handles: Vec<JoinHandle<anyhow::Result<FetchDocsResult>>> = Vec::new();
-    for (addr, jobs) in assigned_leaf_search_jobs.iter() {
+    for (search_client, jobs) in assigned_leaf_search_jobs.iter() {
         for job in jobs {
-            let mut search_client = if let Some(client) = clients.get(&addr) {
-                client.clone()
-            } else {
-                anyhow::bail!(
-                    "There is no search client for {} in the search client pool.",
-                    addr
-                );
-            };
-
+            // TODO group fetch doc requests.
             if let Some(partial_hits) = partial_hits_map.get(&job.split) {
                 let fetch_docs_request = FetchDocsRequest {
                     partial_hits: partial_hits.clone(),
                     index_id: search_request.index_id.clone(),
                 };
+                let mut search_client_clone = search_client.clone();
                 let handle = tokio::spawn(async move {
-                    match search_client.fetch_docs(fetch_docs_request).await {
+                    match search_client_clone.fetch_docs(fetch_docs_request).await {
                         Ok(resp) => Ok(resp.into_inner()),
                         Err(err) => Err(anyhow::anyhow!("Failed to fetch docs due to {:?}", err)),
                     }
@@ -184,6 +175,7 @@ pub async fn root_search(
             Ok(fetch_docs_result) => {
                 hits.extend(fetch_docs_result.hits);
             }
+            // TODO handle failure.
             Err(err) => error!(err=?err),
         }
     }

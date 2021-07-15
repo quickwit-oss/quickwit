@@ -79,14 +79,38 @@ impl LocalFileStorage {
 fn delete_all_dirs(root: PathBuf, path: &Path) -> BoxFuture<'_, std::io::Result<()>> {
     async move {
         let full_path = root.join(path);
-        let is_not_empty = full_path.read_dir()?.next().is_some();
+        let path_entries_result = full_path.read_dir();
+        if let Err(err) = &path_entries_result {
+            // Ignore `ErrorKind::NotFound` as this could be deleted by another concurent task.
+            if err.kind() == ErrorKind::NotFound {
+                return Ok(());
+            }
+        }
+
+        let is_not_empty = path_entries_result?.next().is_some();
         if is_not_empty {
             return Ok(());
         }
-        fs::remove_dir(full_path).await?;
-        if let Some(parent) = path.parent() {
-            delete_all_dirs(root, parent).await?;
+
+        let delete_result = fs::remove_dir(full_path).await;
+        if let Err(err) = &delete_result {
+            // Ignore `ErrorKind::NotFound` as this could be deleted by another concurent task.
+            if err.kind() == ErrorKind::NotFound {
+                return Ok(());
+            }
+            let _ = delete_result?;
         }
+
+        match &path.parent() {
+            Some(path) => {
+                if path == &Path::new("") || path == &Path::new(".") {
+                    return Ok(());
+                }
+                delete_all_dirs(root, path).await?;
+            }
+            _ => return Ok(()),
+        }
+
         Ok(())
     }
     .boxed()
@@ -270,9 +294,15 @@ mod tests {
         tokio::fs::File::create(intermediate_file.clone()).await?;
         assert_eq!(dir_path.exists(), true);
         assert_eq!(intermediate_file.exists(), true);
-        delete_all_dirs(path_root, dir_path.as_path()).await?;
+        delete_all_dirs(path_root.clone(), dir_path.as_path()).await?;
         assert_eq!(dir_path.exists(), false);
         assert_eq!(dir_path.parent().unwrap().exists(), true);
+
+        // make sure it does not go beyond the path
+        tokio::fs::create_dir_all(path_root.join("home/foo/bar")).await?;
+        delete_all_dirs(path_root.join("home/foo"), Path::new("bar")).await?;
+        assert_eq!(path_root.join("home/foo").exists(), true);
+
         Ok(())
     }
 }
