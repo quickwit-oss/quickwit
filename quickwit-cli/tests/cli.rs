@@ -217,6 +217,13 @@ fn test_cmd_delete() -> Result<()> {
         test_env.resource_files["logs"].as_path(),
     );
 
+    make_command(format!("gc --index-uri {}", test_env.index_uri).as_str())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "No dangling files to garbage collect",
+        ));
+
     make_command(format!("delete --index-uri {} ", test_env.index_uri).as_str())
         .assert()
         .success();
@@ -245,6 +252,13 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
         &test_env.index_uri,
         test_env.resource_files["logs"].as_path(),
     );
+
+    make_command(format!("gc --index-uri {}", test_env.index_uri).as_str())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "No dangling files to garbage collect",
+        ));
 
     make_command(format!("delete --index-uri {} --dry-run", test_env.index_uri).as_str())
         .assert()

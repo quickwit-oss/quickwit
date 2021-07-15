@@ -84,7 +84,7 @@ subcommands:
                 help: Filters out documents after that timestamp (time-series indexes only)
                 long: end-timestamp
                 value_name: TIMESTAMP
-    - clean:
+    - gc:
         about: Removes danglings files from an index
         args:
             - index-uri:

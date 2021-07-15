@@ -98,19 +98,23 @@ pub async fn delete_index(
         .mark_splits_as_deleted(index_id, split_ids)
         .await?;
 
-    let files = garbage_collect(metastore.as_ref(), index_id, storage_resolver).await?;
+    let files = garbage_remove(metastore.as_ref(), index_id, storage_resolver).await?;
     //TODO: discuss & fix possible data race
     metastore.delete_index(index_id).await?;
 
     Ok(files)
 }
 
-/// Removes danglings files from the index specified with `index_id`.
+/// Prepare all danglings files for removal from the index specified with `index_id`.
+/// It also performs the removal.
 ///
 /// * `metastore_uri` - The metastore Uri for accessing the metastore.
 /// * `index_id` - The target index Id.
 ///
-pub async fn clean_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<Vec<FileEntry>> {
+pub async fn garbage_collect_index(
+    metastore_uri: &str,
+    index_id: &str,
+) -> anyhow::Result<Vec<FileEntry>> {
     let metastore = MetastoreUriResolver::default()
         .resolve(&metastore_uri)
         .await?;
@@ -128,7 +132,7 @@ pub async fn clean_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<
         .mark_splits_as_deleted(index_id, split_ids)
         .await?;
 
-    let files = garbage_collect(metastore.as_ref(), index_id, storage_resolver).await?;
+    let files = garbage_remove(metastore.as_ref(), index_id, storage_resolver).await?;
     Ok(files)
 }
 
@@ -139,7 +143,7 @@ pub async fn clean_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<
 /// * `index_id` - The target index id.
 /// * `storage_resolver` - The storage resolver object.
 ///
-pub async fn garbage_collect(
+pub async fn garbage_remove(
     metastore: &dyn Metastore,
     index_id: &str,
     storage_resolver: StorageUriResolver,

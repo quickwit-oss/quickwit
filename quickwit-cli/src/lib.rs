@@ -55,7 +55,8 @@ use tokio::try_join;
 use tracing::debug;
 
 use quickwit_core::{
-    clean_index, create_index, delete_index, index_data, IndexDataParams, IndexingStatistics,
+    create_index, delete_index, garbage_collect_index, index_data, IndexDataParams,
+    IndexingStatistics,
 };
 
 #[derive(Debug)]
@@ -120,7 +121,7 @@ pub struct DeleteIndexArgs {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct CleanIndexArgs {
+pub struct GarbageCollectIndexArgs {
     pub index_uri: String,
 }
 
@@ -302,16 +303,16 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn clean_index_cli(args: CleanIndexArgs) -> anyhow::Result<()> {
+pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri = %args.index_uri,
-        "clean-index"
+        "garbage-collect-index"
     );
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Clean).await;
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
 
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let affected_files = clean_index(metastore_uri, index_id).await?;
+    let affected_files = garbage_collect_index(metastore_uri, index_id).await?;
 
     let deleted_bytes: u64 = affected_files
         .iter()
@@ -319,11 +320,17 @@ pub async fn clean_index_cli(args: CleanIndexArgs) -> anyhow::Result<()> {
         .sum();
 
     if deleted_bytes > 0 {
-        println!("{}MB of storage reclaimed.", deleted_bytes / 1_000_000);
+        println!(
+            "{}MB of storage garbage collected.",
+            deleted_bytes / 1_000_000
+        );
     } else {
-        println!("No dangling files to reclaime.");
+        println!("No dangling files to garbage collect.");
     }
-    println!("Index successfully cleaned at `{}`", args.index_uri);
+    println!(
+        "Index successfully garbage collected at `{}`",
+        args.index_uri
+    );
     Ok(())
 }
 
