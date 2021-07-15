@@ -70,6 +70,8 @@ pub enum TelemetryEvent {
     IndexStart,
     /// Delete command
     Delete,
+    /// Clean command
+    Clean,
     /// Serve command is called.
     Serve(ServeEvent),
     /// EndCommand (with the return code)

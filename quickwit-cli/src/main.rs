@@ -40,6 +40,7 @@ enum CliCommand {
     Index(IndexDataArgs),
     Search(SearchIndexArgs),
     Serve(ServeArgs),
+    Clean(CleanIndexArgs),
     Delete(DeleteIndexArgs),
 }
 impl CliCommand {
@@ -49,6 +50,7 @@ impl CliCommand {
             CliCommand::Index(_) => Level::WARN,
             CliCommand::Search(_) => Level::WARN,
             CliCommand::Serve(_) => Level::INFO,
+            CliCommand::Clean(_) => Level::WARN,
             CliCommand::Delete(_) => Level::WARN,
         }
     }
@@ -63,6 +65,7 @@ impl CliCommand {
             "index" => Self::parse_index_args(submatches),
             "search" => Self::parse_search_args(submatches),
             "serve" => Self::parse_serve_args(submatches),
+            "clean" => Self::parse_clean_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
             _ => bail!("Subcommand '{}' is not implemented", subcommand),
         }
@@ -194,6 +197,13 @@ impl CliCommand {
         let dry_run = matches.is_present("dry-run");
         Ok(CliCommand::Delete(DeleteIndexArgs { index_uri, dry_run }))
     }
+    fn parse_clean_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let index_uri = matches
+            .value_of("index-uri")
+            .context("'index-uri' is a required arg")?
+            .to_string();
+        Ok(CliCommand::Clean(CleanIndexArgs { index_uri }))
+    }
 }
 
 fn setup_logger(default_level: Level) {
@@ -235,6 +245,7 @@ async fn main() {
         CliCommand::Index(args) => index_data_cli(args).await,
         CliCommand::Search(args) => search_index_cli(args).await,
         CliCommand::Serve(args) => serve_cli(args).await,
+        CliCommand::Clean(args) => clean_index_cli(args).await,
         CliCommand::Delete(args) => delete_index_cli(args).await,
     };
 
@@ -479,6 +490,34 @@ mod tests {
             Ok(CliCommand::Delete(DeleteIndexArgs {
                 index_uri,
                 dry_run: true
+            })) if &index_uri == "file:///indexes/wikipedia"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_clean_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches =
+            app.get_matches_from_safe(vec!["clean", "--index-uri", "file:///indexes/wikipedia"])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Clean(CleanIndexArgs {
+                index_uri
+            })) if &index_uri == "file:///indexes/wikipedia"
+        ));
+
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches =
+            app.get_matches_from_safe(vec!["clean", "--index-uri", "file:///indexes/wikipedia"])?;
+        let command = CliCommand::parse_cli_args(&matches);
+        assert!(matches!(
+            command,
+            Ok(CliCommand::Clean(CleanIndexArgs {
+                index_uri
             })) if &index_uri == "file:///indexes/wikipedia"
         ));
         Ok(())

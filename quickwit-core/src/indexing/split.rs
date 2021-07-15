@@ -43,6 +43,7 @@ use tempfile::TempDir;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use super::manifest::ManifestEntry;
 use super::IndexDataParams;
 
 pub const MAX_DOC_PER_SPLIT: usize = if cfg!(test) { 100 } else { 5_000_000 };
@@ -329,6 +330,10 @@ async fn put_split_files_to_storage(
     Ok(manifest)
 }
 
+/// [`FileEntry`] is an alias of [`ManifestEntry`] for
+/// holding the full path & size of a file.
+pub type FileEntry = ManifestEntry;
+
 /// Removes all files contained within a single split from storage at `split_uri`.
 /// This function only cares about cleaning up files without any concern for the metastore.
 /// You should therefore make sure the metastore is left in good state.
@@ -341,7 +346,7 @@ pub async fn remove_split_files_from_storage(
     split_uri: &str,
     storage_resolver: StorageUriResolver,
     dry_run: bool,
-) -> anyhow::Result<Vec<PathBuf>> {
+) -> anyhow::Result<Vec<FileEntry>> {
     info!(split_uri =% split_uri, "delete-split");
     let storage = storage_resolver.resolve(split_uri)?;
 
@@ -360,14 +365,20 @@ pub async fn remove_split_files_from_storage(
         futures::future::try_join_all(delete_file_futures).await?;
     }
 
-    let mut files: Vec<_> = manifest
+    let mut file_entries: Vec<_> = manifest
         .files
         .iter()
-        .map(|entry| PathBuf::from(format!("{}/{}", split_uri, entry.file_name)))
+        .map(|entry| FileEntry {
+            file_name: format!("{}/{}", split_uri, entry.file_name),
+            file_size_in_bytes: entry.file_size_in_bytes,
+        })
         .collect();
-    files.push(PathBuf::from(format!("{}/{}", split_uri, ".manifest")));
+    file_entries.push(FileEntry {
+        file_name: format!("{}/{}", split_uri, ".manifest"),
+        file_size_in_bytes: data.len() as u64,
+    });
 
-    Ok(files)
+    Ok(file_entries)
 }
 
 #[cfg(test)]

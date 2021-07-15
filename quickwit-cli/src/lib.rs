@@ -54,7 +54,9 @@ use tokio::time::timeout;
 use tokio::try_join;
 use tracing::debug;
 
-use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, IndexingStatistics};
+use quickwit_core::{
+    clean_index, create_index, delete_index, index_data, IndexDataParams, IndexingStatistics,
+};
 
 #[derive(Debug)]
 pub struct CreateIndexArgs {
@@ -115,6 +117,11 @@ pub struct SearchIndexArgs {
 pub struct DeleteIndexArgs {
     pub index_uri: String,
     pub dry_run: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct CleanIndexArgs {
+    pub index_uri: String,
 }
 
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
@@ -285,13 +292,38 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
             "The following files will be removed along with the index at `{}`",
             args.index_uri
         );
-        for file in affected_files {
-            println!(" - {}", file.display());
+        for file_entry in affected_files {
+            println!(" - {}", file_entry.file_name);
         }
         return Ok(());
     }
 
     println!("Index successfully deleted at `{}`", args.index_uri);
+    Ok(())
+}
+
+pub async fn clean_index_cli(args: CleanIndexArgs) -> anyhow::Result<()> {
+    debug!(
+        index_uri = %args.index_uri,
+        "clean-index"
+    );
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Clean).await;
+
+    let (metastore_uri, index_id) =
+        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+    let affected_files = clean_index(metastore_uri, index_id).await?;
+
+    let deleted_bytes: u64 = affected_files
+        .iter()
+        .map(|entry| entry.file_size_in_bytes)
+        .sum();
+
+    if deleted_bytes > 0 {
+        println!("{}MB of storage reclaimed.", deleted_bytes / 1_000_000);
+    } else {
+        println!("No dangling files to reclaime.");
+    }
+    println!("Index successfully cleaned at `{}`", args.index_uri);
     Ok(())
 }
 

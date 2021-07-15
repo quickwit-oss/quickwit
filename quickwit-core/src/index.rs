@@ -23,10 +23,9 @@
 use futures::StreamExt;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver, SplitState};
 use quickwit_storage::StorageUriResolver;
-use std::path::PathBuf;
 use tracing::warn;
 
-use crate::indexing::remove_split_files_from_storage;
+use crate::indexing::{remove_split_files_from_storage, FileEntry};
 
 /// Creates an index at `index-path` extracted from `metastore_uri`. The command fails if an index
 /// already exists at `index-path`.
@@ -72,7 +71,7 @@ pub async fn delete_index(
     metastore_uri: &str,
     index_id: &str,
     dry_run: bool,
-) -> anyhow::Result<Vec<PathBuf>> {
+) -> anyhow::Result<Vec<FileEntry>> {
     let metastore = MetastoreUriResolver::default()
         .resolve(&metastore_uri)
         .await?;
@@ -106,6 +105,33 @@ pub async fn delete_index(
     Ok(files)
 }
 
+/// Removes danglings files from the index specified with `index_id`.
+///
+/// * `metastore_uri` - The metastore Uri for accessing the metastore.
+/// * `index_id` - The target index Id.
+///
+pub async fn clean_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<Vec<FileEntry>> {
+    let metastore = MetastoreUriResolver::default()
+        .resolve(&metastore_uri)
+        .await?;
+    let storage_resolver = StorageUriResolver::default();
+
+    // schedule all staged splits for delete
+    let staged_splits = metastore
+        .list_splits(index_id, SplitState::Staged, None)
+        .await?;
+    let split_ids = staged_splits
+        .iter()
+        .map(|split_meta| split_meta.split_id.as_str())
+        .collect::<Vec<_>>();
+    metastore
+        .mark_splits_as_deleted(index_id, split_ids)
+        .await?;
+
+    let files = garbage_collect(metastore.as_ref(), index_id, storage_resolver).await?;
+    Ok(files)
+}
+
 /// Removes all danglings files from an index specified at `index_uri`.
 /// It should leave the index and its metastore in good state.
 ///
@@ -117,14 +143,14 @@ pub async fn garbage_collect(
     metastore: &dyn Metastore,
     index_id: &str,
     storage_resolver: StorageUriResolver,
-) -> anyhow::Result<Vec<PathBuf>> {
+) -> anyhow::Result<Vec<FileEntry>> {
     let splits_to_delete = metastore
         .list_splits(index_id, SplitState::ScheduledForDeletion, None)
         .await?;
 
     let index_uri = metastore.index_metadata(index_id).await?.index_uri;
 
-    let mut delete_stream = tokio_stream::iter(splits_to_delete)
+    let mut delete_stream = tokio_stream::iter(splits_to_delete.clone())
         .map(|split_meta| {
             let moved_storage_resolver = storage_resolver.clone();
             let split_uri = format!("{}/{}", index_uri, split_meta.split_id);
@@ -143,6 +169,12 @@ pub async fn garbage_collect(
         files.extend(deleted_files);
     }
 
+    let split_ids = splits_to_delete
+        .iter()
+        .map(|split_meta| split_meta.split_id.as_str())
+        .collect::<Vec<_>>();
+    metastore.delete_splits(index_id, split_ids).await?;
+
     Ok(files)
 }
 
@@ -150,7 +182,7 @@ async fn list_index_files(
     metastore: &dyn Metastore,
     index_id: &str,
     storage_resolver: StorageUriResolver,
-) -> anyhow::Result<Vec<PathBuf>> {
+) -> anyhow::Result<Vec<FileEntry>> {
     let all_splits = metastore.list_all_splits(index_id).await?;
 
     let index_uri = metastore.index_metadata(index_id).await?.index_uri;
@@ -165,10 +197,10 @@ async fn list_index_files(
         })
         .buffer_unordered(crate::indexing::MAX_CONCURRENT_SPLIT_TASKS);
 
-    let mut files = vec![];
+    let mut file_entries = vec![];
     while let Some(list_result) = list_stream.next().await {
-        files.extend(list_result?);
+        file_entries.extend(list_result?);
     }
 
-    Ok(files)
+    Ok(file_entries)
 }
