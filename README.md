@@ -7,7 +7,7 @@
   <img src="docs/assets/images/logo_horizontal.svg" alt="Quickwit" height="100">
 </p>
 <h4 align="center">
-  <a href="https://quickwit.io/docs/getting-started/quickstart">Quickwstart</a> |
+  <a href="https://quickwit.io/docs/getting-started/quickstart">Quickstart</a> |
   <a href="https://quickwit.io/docs/">Docs</a> |
   <a href="https://quickwit.io/blog">Tutorials</a> |
   <a href="https://gitter.im/quickwit-search/community">Chat</a> |
