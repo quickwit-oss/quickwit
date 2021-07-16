@@ -23,10 +23,11 @@ use thiserror::Error;
 /// Cluster error kinds.
 #[derive(Debug, Error)]
 pub enum ClusterError {
-    /// The target index already exists (Returned when creating a new index).
+    /// Create cluster error.
     #[error("Failed to create cluster. Cause `{cause}`")]
     CreateClusterError {
         /// Root cause.
+        #[source]
         cause: anyhow::Error,
     },
 
@@ -34,6 +35,7 @@ pub enum ClusterError {
     #[error("Failed to read host key. Cause: `{cause}`")]
     ReadHostKeyError {
         /// Root cause.
+        #[source]
         cause: anyhow::Error,
     },
 
@@ -41,6 +43,7 @@ pub enum ClusterError {
     #[error("Failed to write host key. Cause: `{cause}`")]
     WriteHostKeyError {
         /// Root cause.
+        #[source]
         cause: anyhow::Error,
     },
 }
