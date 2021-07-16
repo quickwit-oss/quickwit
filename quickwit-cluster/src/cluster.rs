@@ -27,6 +27,7 @@ use artillery_core::epidemic::prelude::{
     ArtilleryMember, ArtilleryMemberEvent, ArtilleryMemberState, Cluster as ArtilleryCluster,
     ClusterConfig as ArtilleryClusterConfig,
 };
+use artillery_core::errors::ArtilleryError;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tracing::*;
@@ -113,8 +114,14 @@ impl Cluster {
         };
         let (artillery_cluster, _) =
             ArtilleryCluster::new_cluster(host_key, config).map_err(|err| {
-                ClusterError::CreateClusterError {
-                    cause: anyhow::anyhow!(err),
+                match err {
+                    ArtilleryError::Io(io_err) => ClusterError::UDPPortBindingError {
+                        port: listen_addr.port(),
+                        cause: io_err,
+                    },
+                    _ => ClusterError::CreateClusterError {
+                        cause: anyhow::anyhow!(err),
+                    },
                 }
             })?;
 

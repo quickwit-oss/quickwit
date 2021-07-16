@@ -18,6 +18,8 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::io;
+
 use thiserror::Error;
 
 /// Cluster error kinds.
@@ -29,6 +31,17 @@ pub enum ClusterError {
         /// Root cause.
         #[source]
         cause: anyhow::Error,
+    },
+
+    /// Port binding error.
+    #[error("Failed to bind UDP port :{port} for the gossip membership algorithm. Cause: {cause}")]
+    UDPPortBindingError {
+        /// Port number.
+        port: u16,
+
+        /// Root cause.
+        #[source]
+        cause: io::Error,
     },
 
     /// Read host key error.
