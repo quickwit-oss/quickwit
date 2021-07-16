@@ -85,7 +85,7 @@ subcommands:
                 long: end-timestamp
                 value_name: TIMESTAMP
     - gc:
-        about: Removes danglings files from an index
+        about: Garbage collects danglings files from an index
         args:
             - index-uri:
                 help: Location of the target index

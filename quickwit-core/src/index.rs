@@ -98,11 +98,11 @@ pub async fn delete_index(
         .mark_splits_as_deleted(index_id, split_ids)
         .await?;
 
-    let files = garbage_remove(metastore.as_ref(), index_id, storage_resolver).await?;
+    let file_entries = garbage_remove(metastore.as_ref(), index_id, storage_resolver).await?;
     //TODO: discuss & fix possible data race
     metastore.delete_index(index_id).await?;
 
-    Ok(files)
+    Ok(file_entries)
 }
 
 /// Prepare all danglings files for removal from the index specified with `index_id`.
@@ -132,8 +132,8 @@ pub async fn garbage_collect_index(
         .mark_splits_as_deleted(index_id, split_ids)
         .await?;
 
-    let files = garbage_remove(metastore.as_ref(), index_id, storage_resolver).await?;
-    Ok(files)
+    let file_entries = garbage_remove(metastore.as_ref(), index_id, storage_resolver).await?;
+    Ok(file_entries)
 }
 
 /// Removes all danglings files from an index specified at `index_uri`.
@@ -164,13 +164,13 @@ pub async fn garbage_remove(
         })
         .buffer_unordered(crate::indexing::MAX_CONCURRENT_SPLIT_TASKS);
 
-    let mut files = vec![];
+    let mut file_entries = vec![];
     while let Some(delete_result) = delete_stream.next().await {
         let deleted_files = delete_result.map_err(|error| {
             warn!("Some split files were not deleted.");
             error
         })?;
-        files.extend(deleted_files);
+        file_entries.extend(deleted_files);
     }
 
     let split_ids = splits_to_delete
@@ -179,7 +179,7 @@ pub async fn garbage_remove(
         .collect::<Vec<_>>();
     metastore.delete_splits(index_id, split_ids).await?;
 
-    Ok(files)
+    Ok(file_entries)
 }
 
 async fn list_index_files(

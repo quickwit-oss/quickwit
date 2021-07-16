@@ -351,6 +351,13 @@ pub async fn remove_split_files_from_storage(
     let storage = storage_resolver.resolve(split_uri)?;
 
     let manifest_file = Path::new(".manifest");
+    // Removing a non-existing split is considered ok.
+    // A split can be listed by the metastore when it doesn't in fact exist on disk for some reasons:
+    // - split was staged but failed to upload.
+    // - operation canceled by the user right in the middle.
+    if !storage.exists(manifest_file).await? {
+        return Ok(vec![]);
+    }
     let data = storage.get_all(manifest_file).await?;
     let manifest: Manifest = serde_json::from_slice(&data)?;
 
