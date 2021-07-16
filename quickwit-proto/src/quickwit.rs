@@ -134,16 +134,20 @@ pub mod search_service_client {
     use tonic::codegen::*;
     pub struct SearchServiceClient<T> {
         inner: tonic::client::Grpc<T>,
+        socket_addr: std::net::SocketAddr,
     }
     impl SearchServiceClient<tonic::transport::Channel> {
         #[doc = r" Attempt to create a new client by connecting to a given endpoint."]
-        pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+        pub async fn connect<D>(
+            dst: D,
+            socket_addr: std::net::SocketAddr,
+        ) -> Result<Self, tonic::transport::Error>
         where
             D: std::convert::TryInto<tonic::transport::Endpoint>,
             D::Error: Into<StdError>,
         {
             let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
-            Ok(Self::new(conn))
+            Ok(Self::new(conn, socket_addr))
         }
     }
     impl<T> SearchServiceClient<T>
@@ -153,13 +157,17 @@ pub mod search_service_client {
         T::Error: Into<StdError>,
         <T::ResponseBody as HttpBody>::Error: Into<StdError> + Send,
     {
-        pub fn new(inner: T) -> Self {
+        pub fn new(inner: T, socket_addr: std::net::SocketAddr) -> Self {
             let inner = tonic::client::Grpc::new(inner);
-            Self { inner }
+            Self { inner, socket_addr }
         }
-        pub fn with_interceptor(inner: T, interceptor: impl Into<tonic::Interceptor>) -> Self {
+        pub fn with_interceptor(
+            inner: T,
+            interceptor: impl Into<tonic::Interceptor>,
+            socket_addr: std::net::SocketAddr,
+        ) -> Self {
             let inner = tonic::client::Grpc::with_interceptor(inner, interceptor);
-            Self { inner }
+            Self { inner, socket_addr }
         }
         #[doc = " Root search API."]
         #[doc = " This RPC identifies the set of splits on which the query should run on,"]
@@ -222,6 +230,7 @@ pub mod search_service_client {
         fn clone(&self) -> Self {
             Self {
                 inner: self.inner.clone(),
+                socket_addr: self.socket_addr,
             }
         }
     }

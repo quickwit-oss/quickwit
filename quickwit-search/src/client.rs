@@ -41,7 +41,7 @@ pub async fn create_search_service_client(
     // Create a channel with connect_lazy to automatically reconnect to the node.
     let channel = Endpoint::from(uri).connect_lazy()?;
 
-    let client = SearchServiceClient::new(channel);
+    let client = SearchServiceClient::new(channel, grpc_addr);
 
     Ok(client)
 }

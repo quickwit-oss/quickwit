@@ -96,8 +96,7 @@ pub async fn root_search(
             split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
         };
 
-        // TODO wrap search clients with some info like their socketaddr to be able to log useful debug information
-        debug!(leaf_search_request=?leaf_search_request, "Leaf node search.");
+        debug!(leaf_search_request=?leaf_search_request, search_client=?search_client, "Leaf node search.");
         let mut search_client_clone = search_client.clone();
         let handle = tokio::spawn(async move {
             search_client_clone
