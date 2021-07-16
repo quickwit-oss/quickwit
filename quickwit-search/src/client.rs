@@ -27,11 +27,31 @@ use tonic::transport::Endpoint;
 
 use quickwit_proto::search_service_client::SearchServiceClient;
 
+#[derive(Debug, Clone)]
+pub struct WrappedSearchServiceClient {
+    client: SearchServiceClient<Channel>,
+    grpc_addr: SocketAddr,
+}
+
+impl WrappedSearchServiceClient {
+    fn new(client: SearchServiceClient<Channel>, grpc_addr: SocketAddr) -> Self {
+        Self { client, grpc_addr }
+    }
+    /// Return the grpc_addr the underlying client connects to.
+    pub fn grpc_addr(&self) -> SocketAddr {
+        self.grpc_addr
+    }
+    /// Returns the unterlying client.
+    pub fn client(&mut self) -> &mut SearchServiceClient<Channel> {
+        &mut self.client
+    }
+}
+
 /// Create a SearchServiceClient with SocketAddr as an argument.
 /// It will try to reconnect to the node automatically.
 pub async fn create_search_service_client(
     grpc_addr: SocketAddr,
-) -> anyhow::Result<SearchServiceClient<Channel>> {
+) -> anyhow::Result<WrappedSearchServiceClient> {
     let uri = Uri::builder()
         .scheme("http")
         .authority(grpc_addr.to_string().as_str())
@@ -41,7 +61,6 @@ pub async fn create_search_service_client(
     // Create a channel with connect_lazy to automatically reconnect to the node.
     let channel = Endpoint::from(uri).connect_lazy()?;
 
-    let client = SearchServiceClient::new(channel);
-
+    let client = WrappedSearchServiceClient::new(SearchServiceClient::new(channel), grpc_addr);
     Ok(client)
 }

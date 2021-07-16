@@ -101,6 +101,7 @@ pub async fn root_search(
         let mut search_client_clone = search_client.clone();
         let handle = tokio::spawn(async move {
             search_client_clone
+                .client()
                 .leaf_search(leaf_search_request)
                 .await
                 .map(|resp| resp.into_inner())
@@ -157,7 +158,11 @@ pub async fn root_search(
                 };
                 let mut search_client_clone = search_client.clone();
                 let handle = tokio::spawn(async move {
-                    match search_client_clone.fetch_docs(fetch_docs_request).await {
+                    match search_client_clone
+                        .client()
+                        .fetch_docs(fetch_docs_request)
+                        .await
+                    {
                         Ok(resp) => Ok(resp.into_inner()),
                         Err(err) => Err(anyhow::anyhow!("Failed to fetch docs due to {:?}", err)),
                     }

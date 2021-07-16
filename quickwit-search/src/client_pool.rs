@@ -23,8 +23,8 @@ pub mod search_client_pool;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use quickwit_proto::search_service_client::SearchServiceClient;
-use tonic::transport::Channel;
+
+use crate::client::WrappedSearchServiceClient;
 
 /// Job.
 /// The unit in which distributed search is performed.
@@ -46,5 +46,5 @@ pub trait ClientPool: Send + Sync + 'static {
     async fn assign_jobs(
         &self,
         jobs: Vec<Job>,
-    ) -> Result<Vec<(SearchServiceClient<Channel>, Vec<Job>)>>;
+    ) -> Result<Vec<(WrappedSearchServiceClient, Vec<Job>)>>;
 }
