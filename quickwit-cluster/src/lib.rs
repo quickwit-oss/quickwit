@@ -19,4 +19,5 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 pub mod cluster;
+pub mod error;
 pub mod service;
