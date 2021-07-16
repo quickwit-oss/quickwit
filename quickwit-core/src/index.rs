@@ -98,15 +98,14 @@ pub async fn delete_index(
         .mark_splits_as_deleted(index_id, split_ids)
         .await?;
 
-    let file_entries = garbage_remove(metastore.as_ref(), index_id, storage_resolver).await?;
+    let file_entries = delete_garbage_files(metastore.as_ref(), index_id, storage_resolver).await?;
     //TODO: discuss & fix possible data race
     metastore.delete_index(index_id).await?;
 
     Ok(file_entries)
 }
 
-/// Prepare all danglings files for removal from the index specified with `index_id`.
-/// It also performs the removal.
+/// Detect all dangling splits and associated files from the index and removes them.
 ///
 /// * `metastore_uri` - The metastore Uri for accessing the metastore.
 /// * `index_id` - The target index Id.
@@ -121,6 +120,7 @@ pub async fn garbage_collect_index(
     let storage_resolver = StorageUriResolver::default();
 
     // schedule all staged splits for delete
+    //TODO: consider prunning newly staged split as they might be a work in-progress
     let staged_splits = metastore
         .list_splits(index_id, SplitState::Staged, None)
         .await?;
@@ -132,18 +132,18 @@ pub async fn garbage_collect_index(
         .mark_splits_as_deleted(index_id, split_ids)
         .await?;
 
-    let file_entries = garbage_remove(metastore.as_ref(), index_id, storage_resolver).await?;
+    let file_entries = delete_garbage_files(metastore.as_ref(), index_id, storage_resolver).await?;
     Ok(file_entries)
 }
 
-/// Removes all danglings files from an index specified at `index_uri`.
+/// Get the list of files logically deleted from the index and removes them from the storage.
 /// It should leave the index and its metastore in good state.
 ///
 /// * `metastore_uri` - The target index metastore uri.
 /// * `index_id` - The target index id.
 /// * `storage_resolver` - The storage resolver object.
 ///
-pub async fn garbage_remove(
+pub async fn delete_garbage_files(
     metastore: &dyn Metastore,
     index_id: &str,
     storage_resolver: StorageUriResolver,

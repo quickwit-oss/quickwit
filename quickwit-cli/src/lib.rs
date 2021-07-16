@@ -312,14 +312,14 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
 
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let affected_files = garbage_collect_index(metastore_uri, index_id).await?;
+    let deleted_files = garbage_collect_index(metastore_uri, index_id).await?;
 
-    let deleted_bytes: u64 = affected_files
-        .iter()
-        .map(|entry| entry.file_size_in_bytes)
-        .sum();
+    if !deleted_files.is_empty() {
+        let deleted_bytes: u64 = deleted_files
+            .iter()
+            .map(|entry| entry.file_size_in_bytes)
+            .sum();
 
-    if deleted_bytes > 0 {
         println!(
             "{}MB of storage garbage collected.",
             deleted_bytes / 1_000_000
