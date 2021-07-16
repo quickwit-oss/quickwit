@@ -3,21 +3,21 @@ name: dockerhub
 on:
   release:
     types: [published]
-  push:
-    branches:
-      - 'fix-issue-270'
+  # push:
+  #   branches:
+  #     - 'fix-issue-270'
 
 jobs:
   docker:
     name: Build & push dockerhub image
     runs-on: ubuntu-latest
     steps:
+      # - id: tag
+      #   name: Get latest release tag 
+      #   uses: pozetroninc/github-action-get-latest-release@master
+      #   with:
+      #     repository: ${{ github.repository }}
       - uses: actions/checkout@v2
-      - id: tag
-        name: Get latest release tag 
-        uses: pozetroninc/github-action-get-latest-release@master
-        with:
-          repository: ${{ github.repository }}
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
       - name: Set up Docker Buildx
@@ -33,4 +33,4 @@ jobs:
           context: ./docker/
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/quickwit:latest, ${{ secrets.DOCKERHUB_USERNAME }}/quickwit:${{ steps.tag.outputs.release }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/quickwit:latest, ${{ secrets.DOCKERHUB_USERNAME }}/quickwit:${{ github.ref }}
