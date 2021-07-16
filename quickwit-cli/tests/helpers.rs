@@ -34,8 +34,9 @@ use tempfile::TempDir;
 const PACKAGE_BIN_NAME: &str = "quickwit";
 
 const DEFAULT_INDEX_CONFIG: &str = r#"{
+    // store the whole document as _source.
     "store_source": true,
-    "default_search_fields": ["event"],
+    "default_search_fields": ["event"], // Used when no field is specified in your query. 
     "timestamp_field": "ts",
     "field_mappings": [
         {
@@ -44,12 +45,13 @@ const DEFAULT_INDEX_CONFIG: &str = r#"{
         },
         {
             "name": "level",
-            "type": "text"
+            "type": "text",
+            "stored": false  /* Field not stored.*/
         },
         {
             "name": "ts",
             "type": "i64",
-            "fast": true
+            "fast": /* timestamp field should be fast*/ true
         }
     ]
 }"#;

@@ -28,13 +28,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tokio_stream::StreamExt;
-use tonic::transport::Channel;
 use tracing::*;
 
 use quickwit_cluster::cluster::Cluster;
-use quickwit_proto::search_service_client::SearchServiceClient;
 
-use crate::client::create_search_service_client;
+use crate::client::{create_search_service_client, WrappedSearchServiceClient};
 use crate::client_pool::{ClientPool, Job};
 use crate::rendezvous_hasher::{sort_by_rendez_vous_hash, Node};
 use crate::swim_addr_to_grpc_addr;
@@ -45,7 +43,7 @@ pub struct SearchClientPool {
     /// Search clients.
     /// A hash map with gRPC's SocketAddr as the key and SearchServiceClient as the value.
     /// It is not the cluster listen address.
-    pub clients: Arc<RwLock<HashMap<SocketAddr, SearchServiceClient<Channel>>>>,
+    pub clients: Arc<RwLock<HashMap<SocketAddr, WrappedSearchServiceClient>>>,
 }
 
 impl SearchClientPool {
@@ -131,12 +129,12 @@ impl ClientPool for SearchClientPool {
     async fn assign_jobs(
         &self,
         mut jobs: Vec<Job>,
-    ) -> anyhow::Result<Vec<(SearchServiceClient<Channel>, Vec<Job>)>> {
+    ) -> anyhow::Result<Vec<(WrappedSearchServiceClient, Vec<Job>)>> {
         let mut splits_groups: HashMap<SocketAddr, Vec<Job>> = HashMap::new();
 
         // Distribute using rendez-vous hashing
         let mut nodes: Vec<Node> = Vec::new();
-        let mut socket_to_client: HashMap<SocketAddr, SearchServiceClient<Channel>> =
+        let mut socket_to_client: HashMap<SocketAddr, WrappedSearchServiceClient> =
             Default::default();
 
         {
