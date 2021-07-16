@@ -113,16 +113,14 @@ impl Cluster {
             ..Default::default()
         };
         let (artillery_cluster, _) =
-            ArtilleryCluster::new_cluster(host_key, config).map_err(|err| {
-                match err {
-                    ArtilleryError::Io(io_err) => ClusterError::UDPPortBindingError {
-                        port: listen_addr.port(),
-                        cause: io_err,
-                    },
-                    _ => ClusterError::CreateClusterError {
-                        cause: anyhow::anyhow!(err),
-                    },
-                }
+            ArtilleryCluster::new_cluster(host_key, config).map_err(|err| match err {
+                ArtilleryError::Io(io_err) => ClusterError::UDPPortBindingError {
+                    port: listen_addr.port(),
+                    cause: io_err,
+                },
+                _ => ClusterError::CreateClusterError {
+                    cause: anyhow::anyhow!(err),
+                },
             })?;
 
         let (members_sender, members_receiver) = watch::channel(Vec::new());
