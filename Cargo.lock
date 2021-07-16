@@ -2688,6 +2688,7 @@ dependencies = [
  "artillery-core",
  "quickwit-proto",
  "tempfile",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tonic",
