@@ -31,5 +31,6 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           context: ./docker/
+          platforms: linux/amd64,linux/arm64
           push: true
-          tags: evanxg852000/quickwit:latest, evanxg852000/quickwit:${{ steps.tag.outputs.release }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/quickwit:latest, ${{ secrets.DOCKERHUB_USERNAME }}/quickwit:${{ steps.tag.outputs.release }}
