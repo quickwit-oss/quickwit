@@ -15,7 +15,7 @@ Look at `quickwit help` command output to check whether telemetry is enabled or 
 ```bash
 quickwit help
 Quickwit 0.1.0
-Quickwit, Inc. <hello@quickwit.com>
+Quickwit, Inc. <hello@quickwit.io>
 Indexing your large dataset on object storage & making it searchable from the command line.
 Telemetry enabled
 ```
