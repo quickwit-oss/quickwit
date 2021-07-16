@@ -30,6 +30,7 @@ mod error;
 mod fetch_docs;
 mod filters;
 mod leaf;
+mod mockable_client;
 mod rendezvous_hasher;
 mod root;
 mod search_result_json;
