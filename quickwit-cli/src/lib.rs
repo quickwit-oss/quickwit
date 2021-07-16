@@ -24,6 +24,7 @@ use crossterm::style::Print;
 use crossterm::style::PrintStyledContent;
 use crossterm::style::Stylize;
 use crossterm::QueueableCommand;
+use json_comments::StripComments;
 use quickwit_common::extract_metastore_uri_and_index_id_from_index_uri;
 use quickwit_core::DocumentSource;
 use quickwit_index_config::DefaultIndexConfigBuilder;
@@ -77,7 +78,8 @@ impl CreateIndexArgs {
     ) -> anyhow::Result<Self> {
         let json_file = std::fs::File::open(index_config_path)?;
         let reader = std::io::BufReader::new(json_file);
-        let builder: DefaultIndexConfigBuilder = serde_json::from_reader(reader)?;
+        let strip_comment_reader = StripComments::new(reader);
+        let builder: DefaultIndexConfigBuilder = serde_json::from_reader(strip_comment_reader)?;
         let index_config = Box::new(builder.build()?) as Box<dyn IndexConfig>;
 
         Ok(Self {
