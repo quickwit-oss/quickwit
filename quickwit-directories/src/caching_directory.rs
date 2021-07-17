@@ -43,7 +43,7 @@ pub struct CachingDirectory {
 }
 
 impl CachingDirectory {
-    /// Creates a new  CachingDirectory.
+    /// Creates a new CachingDirectory.
     /// `capacity_in_bytes` acts as a memory budget for the directory.
     ///
     /// The implementation is voluntarily very naive as it was design solely to
@@ -64,7 +64,7 @@ impl CachingDirectory {
         }
     }
 
-    /// Creates a new  CachingDirectory.
+    /// Creates a new CachingDirectory.
     ///
     /// Warming: The resulting CacheDirectory will cache all information without ever
     /// removing any item from the cache.

@@ -88,7 +88,7 @@ impl CliCommand {
     fn parse_index_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_uri = matches
             .value_of("index-uri")
-            .context("index-uri is required")?
+            .context("index-uri is a required arg")?
             .to_string();
         let input_path: Option<PathBuf> = matches.value_of("input-path").map(PathBuf::from);
         let temp_dir: Option<PathBuf> = matches.value_of("temp-dir").map(PathBuf::from);
@@ -156,7 +156,7 @@ impl CliCommand {
             .context("At least one 'index-uri' is required.")?;
         let host = matches
             .value_of("host")
-            .context("'host' has a default  value")?
+            .context("'host' has a default value")?
             .to_string();
         let port = value_t!(matches, "port", u16)?;
         let rest_addr = format!("{}:{}", host, port);

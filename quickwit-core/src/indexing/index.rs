@@ -97,7 +97,7 @@ pub async fn index_data(
 }
 
 /// Clears the index by applying the following actions:
-/// - mark all split as deleted.
+/// - mark all splits as deleted.
 /// - delete the files of all splits marked as deleted using garbage collection.
 /// - delete the splits from the metastore.
 ///

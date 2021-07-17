@@ -90,7 +90,7 @@ pub fn get_quickwit_env() -> QuickwitEnv {
     match std::env::var("QUICKWIT_ENV") {
         Ok(val) if val == "LOCAL" => QuickwitEnv::LOCAL,
         Ok(val) => {
-            panic!("unkown value set for QUICKWIT_ENV {}", val)
+            panic!("unknown value set for QUICKWIT_ENV {}", val)
         }
         Err(_) => QuickwitEnv::UNSET,
     }
