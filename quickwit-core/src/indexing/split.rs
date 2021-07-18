@@ -88,7 +88,7 @@ impl fmt::Debug for Split {
     }
 }
 
-/// returns true if merge is required to reach a state where
+/// returns true iff merge is required to reach a state where
 /// we have zero, or a single segment with no deletes segment.
 fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
     match &segment_metas {
