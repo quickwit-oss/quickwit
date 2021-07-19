@@ -242,8 +242,8 @@ pub async fn root_search(
     }
 
     let leaf_search_results = result_per_node_addr
-        .into_values()
-        .map(|result| result.unwrap())
+        .into_iter()
+        .map(|(_addr, results)| results.unwrap())
         .collect_vec();
     let leaf_search_result = spawn_blocking(move || collector.merge_fruits(leaf_search_results))
         .await?
