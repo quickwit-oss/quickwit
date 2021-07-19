@@ -170,7 +170,7 @@ impl Cluster {
         Ok(cluster)
     }
 
-    /// Return watchstream for monitoring change of `members` 
+    /// Return watchstream for monitoring change of `members`
     pub fn member_change_watcher(&self) -> WatchStream<Vec<Member>> {
         WatchStream::new(self.members.clone())
     }
