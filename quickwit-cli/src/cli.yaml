@@ -1,6 +1,6 @@
 name: Quickwit
 about: Index and search structured or unstructured data
-author: Quickwit, Inc. <hello@quickwit.com>
+author: Quickwit, Inc. <hello@quickwit.io>
 
 subcommands:
     - new:
