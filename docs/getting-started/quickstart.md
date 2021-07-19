@@ -23,6 +23,15 @@ Once it is here, let's check if it is working!
 You can now move this executable wherever sensible for your environment. (e.g. `/usr/local/bin`)
 You can also install it via [other means](installation.md).
 
+## Use Quickwit's docker image
+
+You can also pull and run the Quickwit binary in an isolated docker container.
+
+```bash
+docker run -it quickwitinc/quickwit
+./quickwit --version
+```
+
 ## Create your first index
 
 Before adding documents to Quickwit, you need to create an index configured with a JSON `config file`. This config file notably lets you define how to map your input documents to your index fields and whether these fields should be stored and indexed. See the [index config documentation](../reference/index-config.md).

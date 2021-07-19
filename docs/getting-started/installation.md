@@ -38,8 +38,17 @@ cargo install quickwit-cli
 
 ## Use the docker image
 
-Coming soon.
+If you use docker, this might be one of the quickest way to get going. 
+The following command will pull the image from [dockerhub](https://hub.docker.com/r/quickwitinc/quickwit)
+and gets you right in the running container ready to execute Quickwit commands.
 
+```bash
+docker run -it quickwitinc/quickwit
+./quickwit --version
+```
+
+Since the search API runs by default on port `:8080`, we expose this by default. 
+You can map it to a host port or choose any another port based on your needs.
 
 
 
