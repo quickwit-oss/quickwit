@@ -202,8 +202,10 @@ impl CliCommand {
             .value_of("index-uri")
             .context("'index-uri' is a required arg")?
             .to_string();
+        let dry_run = matches.is_present("dry-run");
         Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
             index_uri,
+            dry_run,
         }))
     }
 }
@@ -510,19 +512,25 @@ mod tests {
         assert!(matches!(
             command,
             Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
-                index_uri
+                index_uri,
+                dry_run: false
             })) if &index_uri == "file:///indexes/wikipedia"
         ));
 
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches =
-            app.get_matches_from_safe(vec!["gc", "--index-uri", "file:///indexes/wikipedia"])?;
+        let matches = app.get_matches_from_safe(vec![
+            "gc",
+            "--index-uri",
+            "file:///indexes/wikipedia",
+            "--dry-run",
+        ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
             Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
-                index_uri
+                index_uri,
+                dry_run: true
             })) if &index_uri == "file:///indexes/wikipedia"
         ));
         Ok(())
