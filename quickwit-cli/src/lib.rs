@@ -428,15 +428,13 @@ impl ThroughputCalculator {
         self.processed_bytes_values.pop_front();
         let current_instant = Instant::now();
         let (first_instant, first_processed_bytes) = *self.processed_bytes_values.front().unwrap();
-        let elapsed_time = (current_instant - first_instant).as_secs();
+        let elapsed_time = (current_instant - first_instant).as_millis() as f64 / 1_000f64;
         self.processed_bytes_values
             .push_back((current_instant, current_processed_bytes));
 
-        //TODO: what should we do when all docs are processed and `current_processed_bytes`
-        // is no longer increasing?
         (current_processed_bytes - first_processed_bytes) as f64
             / 1_000_000f64
-            / elapsed_time.max(1) as f64
+            / elapsed_time.max(1f64) as f64
     }
 }
 
