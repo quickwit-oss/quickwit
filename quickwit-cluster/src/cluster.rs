@@ -30,6 +30,8 @@ use artillery_core::epidemic::prelude::{
     ClusterConfig as ArtilleryClusterConfig,
 };
 use artillery_core::errors::ArtilleryError;
+use async_trait::async_trait;
+use mockall::mock;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tracing::*;
@@ -91,8 +93,50 @@ pub struct Member {
     pub is_self: bool,
 }
 
+#[async_trait]
+pub trait Cluster: Send + Sync + 'static {
+    fn members(&self) -> Vec<Member>;
+
+    fn member_change_watcher(&self) -> WatchStream<Vec<Member>>;
+
+    fn add_peer_node(&self, peer_addr: SocketAddr);
+
+    fn leave(&self);
+}
+
+mock! {
+    pub Cluster {
+        pub fn members(&self) -> Vec<Member>;
+
+        pub fn member_change_watcher(&self) -> WatchStream<Vec<Member>>;
+
+        pub fn add_peer_node(&self, peer_addr: SocketAddr);
+
+        pub fn leave(&self);
+    }
+}
+
+#[async_trait]
+impl Cluster for MockCluster {
+    fn members(&self) -> Vec<Member> {
+        self.members()
+    }
+
+    fn member_change_watcher(&self) -> WatchStream<Vec<Member>> {
+        self.member_change_watcher()
+    }
+
+    fn add_peer_node(&self, peer_addr: SocketAddr) {
+        self.add_peer_node(peer_addr)
+    }
+
+    fn leave(&self) {
+        self.leave()
+    }
+}
+
 /// This is an implementation of a cluster using the SWIM protocol.
-pub struct Cluster {
+pub struct EpidemicCluster {
     /// A socket address that represents itself.
     pub listen_addr: SocketAddr,
 
@@ -106,7 +150,7 @@ pub struct Cluster {
     stop: Arc<AtomicBool>,
 }
 
-impl Cluster {
+impl EpidemicCluster {
     /// Create a cluster given a host key and a listen address.
     /// When a cluster is created, the thread that monitors cluster events
     /// will be started at the same time.
@@ -131,7 +175,7 @@ impl Cluster {
         let (members_sender, members_receiver) = watch::channel(Vec::new());
 
         // Create cluster.
-        let cluster = Cluster {
+        let cluster = EpidemicCluster {
             listen_addr,
             artillery_cluster: Arc::new(artillery_cluster),
             members: members_receiver,
@@ -191,23 +235,25 @@ impl Cluster {
 
         Ok(cluster)
     }
+}
 
-    pub fn member_change_watcher(&self) -> WatchStream<Vec<Member>> {
+impl Cluster for EpidemicCluster {
+    fn member_change_watcher(&self) -> WatchStream<Vec<Member>> {
         WatchStream::new(self.members.clone())
     }
 
-    pub fn members(&self) -> Vec<Member> {
+    fn members(&self) -> Vec<Member> {
         self.members.borrow().clone()
     }
 
     /// Specify the address of a running node and join the cluster to which the node belongs.
-    pub fn add_peer_node(&self, peer_addr: SocketAddr) {
+    fn add_peer_node(&self, peer_addr: SocketAddr) {
         info!(peer_addr=?peer_addr, "Add peer node.");
         self.artillery_cluster.add_seed_node(peer_addr);
     }
 
     /// Leave the cluster it is joining in.
-    pub fn leave(&self) {
+    fn leave(&self) {
         info!("Leave the cluster.");
         self.artillery_cluster.leave_cluster();
         self.stop.store(true, Ordering::Relaxed);
@@ -261,8 +307,8 @@ mod tests {
 
     use artillery_core::epidemic::prelude::{ArtilleryMember, ArtilleryMemberState};
 
-    use crate::cluster::Cluster;
     use crate::cluster::{convert_member, read_host_key, Member};
+    use crate::cluster::{Cluster, EpidemicCluster};
 
     #[tokio::test]
     async fn test_cluster_read_host_key() {
@@ -340,7 +386,7 @@ mod tests {
         let addr_string = format!("127.0.0.1:{}", tmp_port);
         let remote_host: SocketAddr = addr_string.as_str().parse()?;
 
-        let cluster = Arc::new(Cluster::new(host_key, remote_host)?);
+        let cluster = Arc::new(EpidemicCluster::new(host_key, remote_host)?);
 
         let members = cluster.members();
         let expected = vec![Member {
@@ -366,14 +412,14 @@ mod tests {
         let tmp_port1 = available_port()?;
         let addr_str1 = format!("127.0.0.1:{}", tmp_port1);
         let remote_host1: SocketAddr = addr_str1.as_str().parse()?;
-        let cluster1 = Cluster::new(host_key1, remote_host1)?;
+        let cluster1 = EpidemicCluster::new(host_key1, remote_host1)?;
 
         let host_key_path2 = tmp_dir.path().join("host_key2");
         let host_key2 = read_host_key(host_key_path2.as_path())?;
         let tmp_port2 = available_port()?;
         let addr_str2 = format!("127.0.0.1:{}", tmp_port2);
         let remote_host2: SocketAddr = addr_str2.as_str().parse()?;
-        let cluster2 = Cluster::new(host_key2, remote_host2)?;
+        let cluster2 = EpidemicCluster::new(host_key2, remote_host2)?;
         cluster2.add_peer_node(remote_host1);
 
         let host_key_path3 = tmp_dir.path().join("host_key3");
@@ -381,7 +427,7 @@ mod tests {
         let tmp_port3 = available_port()?;
         let addr_str3 = format!("127.0.0.1:{}", tmp_port3);
         let remote_host3: SocketAddr = addr_str3.as_str().parse()?;
-        let cluster3 = Cluster::new(host_key3, remote_host3)?;
+        let cluster3 = EpidemicCluster::new(host_key3, remote_host3)?;
         cluster3.add_peer_node(remote_host1);
 
         // Wait for the cluster to be configured.

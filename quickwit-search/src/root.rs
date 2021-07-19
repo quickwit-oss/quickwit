@@ -216,13 +216,10 @@ mod tests {
 
     use serde_json::{json, Value};
 
-    use quickwit_cluster::cluster::{read_host_key, Cluster};
-    use quickwit_common::to_socket_addr;
     use quickwit_core::TestSandbox;
     use quickwit_index_config::WikipediaIndexConfig;
 
-    use crate::http_addr_to_swim_addr;
-    use crate::MockSearchService;
+    use crate::mockable_client::MockSearchService;
 
     #[tokio::test]
     async fn test_root_search_single_node_single_split() -> anyhow::Result<()> {
@@ -250,34 +247,21 @@ mod tests {
 
         let metastore = test_sandbox.metastore();
 
-        let tmp_dir = tempfile::tempdir().unwrap();
-        let host_key_path = tmp_dir.path().join("host_key");
-        let host_key = read_host_key(&host_key_path)?;
-
-        let rest_addr_str = format!("0.0.0.0:{}", available_port()?);
-        let rest_addr = to_socket_addr(&rest_addr_str)?;
-        let swim_addr = http_addr_to_swim_addr(rest_addr);
-
-        let cluster = Arc::new(Cluster::new(host_key, swim_addr)?);
-
-        let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
-
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().returning(
-            |_leaf_tonic_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResult {
+            |_leaf_tonic_req: tonic::Request<quickwit_proto::LeafSearchRequest>| {
+                Ok(tonic::Response::new(quickwit_proto::LeafSearchResult {
                     partial_hits: Vec::new(),
                     num_hits: 0,
-                })
+                }))
             },
         );
 
-        let search_result = root_search(&search_request, &*metastore, &client_pool).await?;
-        println!("search_result={:?}", search_result);
+        let client_pool =
+            Arc::new(SearchClientPool::from_mocks(vec![mock_search_service.into()]).await?);
 
-        cluster.leave();
-
-        tmp_dir.close().unwrap();
+        // let search_result = root_search(&search_request, &*metastore, &client_pool).await?;
+        // println!("search_result={:?}", search_result);
 
         Ok(())
     }

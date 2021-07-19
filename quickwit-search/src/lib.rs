@@ -59,6 +59,9 @@ use crate::root::root_search;
 pub use crate::search_result_json::SearchResultJson;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
+/// Mockable search service client.
+pub type SearchServiceClient = mockable_client::SearchServiceForTest;
+
 /// Compute the SWIM port from the HTTP port.
 /// Add 1 to the HTTP port to get the SWIM port.
 pub fn http_addr_to_swim_addr(http_addr: SocketAddr) -> SocketAddr {

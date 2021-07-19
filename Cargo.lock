@@ -2686,6 +2686,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "artillery-core",
+ "async-trait",
+ "mockall 0.9.1",
  "quickwit-proto",
  "tempfile",
  "thiserror",
@@ -2837,6 +2839,7 @@ dependencies = [
  "tokio-util",
  "tonic",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

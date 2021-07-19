@@ -22,20 +22,24 @@
 use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use tokio::sync::watch;
 use tokio::sync::RwLock;
+use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tracing::*;
+use uuid::Uuid;
 
-use quickwit_cluster::cluster::Cluster;
+use quickwit_cluster::cluster::{Cluster, Member, MockCluster};
 
 use crate::client::{create_search_service_client, WrappedSearchServiceClient};
 use crate::client_pool::{ClientPool, Job};
 use crate::rendezvous_hasher::{sort_by_rendez_vous_hash, Node};
 use crate::swim_addr_to_grpc_addr;
+use crate::SearchServiceClient;
 
 /// Search client pool implementation.
 #[derive(Clone)]
@@ -47,10 +51,43 @@ pub struct SearchClientPool {
 }
 
 impl SearchClientPool {
+    #[cfg(test)]
+    pub async fn from_mocks(mock_services: Vec<SearchServiceClient>) -> anyhow::Result<Self> {
+        let mut mock_members = Vec::new();
+        for (mock_ord, _mock_client) in mock_services.into_iter().enumerate() {
+            let host_key = Uuid::new_v4();
+            let listen_addr = SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                8080 + mock_ord as u16 * 10,
+            );
+            let is_self = if mock_ord == 0 { true } else { false };
+
+            let mock_member = Member {
+                host_key,
+                listen_addr,
+                is_self,
+            };
+
+            mock_members.push(mock_member);
+        }
+
+        let (_members_sender, members_receiver) = watch::channel(Vec::new());
+
+        let mut mock_cluster = MockCluster::new();
+        mock_cluster
+            .expect_members()
+            .returning(move || mock_members.clone());
+        mock_cluster
+            .expect_member_change_watcher()
+            .returning(move || WatchStream::new(members_receiver.clone()));
+
+        SearchClientPool::new(Arc::new(mock_cluster)).await
+    }
+
     /// Create a search client pool given a cluster.
     /// When a client pool is created, the thread that monitors cluster members
     /// will be started at the same time.
-    pub async fn new(cluster: Arc<Cluster>) -> anyhow::Result<Self> {
+    pub async fn new(cluster: Arc<dyn Cluster>) -> anyhow::Result<Self> {
         let mut clients = HashMap::new();
 
         // Initialize the client pool with members of the cluster.
@@ -202,7 +239,7 @@ mod tests {
     use std::thread;
     use std::time;
 
-    use quickwit_cluster::cluster::{read_host_key, Cluster};
+    use quickwit_cluster::cluster::{read_host_key, Cluster, EpidemicCluster};
     use quickwit_common::to_socket_addr;
 
     use crate::client_pool::{ClientPool, Job};
@@ -219,7 +256,7 @@ mod tests {
         let swim_addr_string = format!("127.0.0.1:{}", tmp_swim_port);
         let swim_addr = to_socket_addr(&swim_addr_string)?;
 
-        let cluster = Arc::new(Cluster::new(host_key, swim_addr)?);
+        let cluster = Arc::new(EpidemicCluster::new(host_key, swim_addr)?);
 
         let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
 
@@ -255,14 +292,14 @@ mod tests {
         let tmp_swim_port1 = available_port()?;
         let swim_addr_string1 = format!("127.0.0.1:{}", tmp_swim_port1);
         let swim_addr1 = to_socket_addr(&swim_addr_string1)?;
-        let cluster1 = Arc::new(Cluster::new(host_key1, swim_addr1)?);
+        let cluster1 = Arc::new(EpidemicCluster::new(host_key1, swim_addr1)?);
 
         let host_key_path2 = tmp_dir.path().join("host_key2");
         let host_key2 = read_host_key(host_key_path2.as_path())?;
         let tmp_swim_port2 = available_port()?;
         let swim_addr_string2 = format!("127.0.0.1:{}", tmp_swim_port2);
         let swim_addr2 = to_socket_addr(&swim_addr_string2)?;
-        let cluster2 = Arc::new(Cluster::new(host_key2, swim_addr2)?);
+        let cluster2 = Arc::new(EpidemicCluster::new(host_key2, swim_addr2)?);
         cluster2.add_peer_node(swim_addr1);
 
         // Wait for the cluster to be configured.
@@ -307,7 +344,7 @@ mod tests {
         let swim_addr_string = format!("127.0.0.1:{}", tmp_swim_port);
         let swim_addr = to_socket_addr(&swim_addr_string)?;
 
-        let cluster = Arc::new(Cluster::new(host_key, swim_addr)?);
+        let cluster = Arc::new(EpidemicCluster::new(host_key, swim_addr)?);
 
         let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
 
