@@ -170,6 +170,7 @@ impl ClientPool for SearchClientPool {
 
         let mut client_to_jobs = Vec::new();
         for (socket_addr, jobs) in splits_groups {
+            // Removing the client in order to ensure a 1:1 cardinality on grpc_addr and clients
             if let Some(client) = socket_to_client.remove(&socket_addr) {
                 client_to_jobs.push((client, jobs));
             } else {

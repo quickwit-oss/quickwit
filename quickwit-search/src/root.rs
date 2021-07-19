@@ -20,8 +20,10 @@
  */
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
+use itertools::Itertools;
 use tantivy::TantivyError;
 use tokio::task::JoinHandle;
 use tracing::*;
@@ -34,6 +36,7 @@ use quickwit_proto::{
 use tantivy::collector::Collector;
 use tokio::task::spawn_blocking;
 
+use crate::client::WrappedSearchServiceClient;
 use crate::client_pool::Job;
 use crate::error::parse_grpc_error;
 use crate::list_relevant_splits;
@@ -46,6 +49,127 @@ use crate::SearchError;
 fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
     //TODO: Have a smarter cost, by smoothing the number of docs.
     1
+}
+
+#[derive(Clone, Debug)]
+pub struct NodeSearchError {
+    status: tonic::Status,
+    split_ids: Vec<String>,
+}
+
+type SearchResultsByAddr = HashMap<SocketAddr, Result<LeafSearchResult, NodeSearchError>>;
+
+pub async fn execute_search(
+    assigned_leaf_search_jobs: &[(WrappedSearchServiceClient, Vec<Job>)],
+    search_request_with_offset_0: SearchRequest,
+) -> anyhow::Result<SearchResultsByAddr> {
+    // Perform the query phase.
+    let mut result_per_node_addr_futures = HashMap::new();
+
+    // Perform the query phase.
+    for (search_client, jobs) in assigned_leaf_search_jobs.iter() {
+        let leaf_search_request = LeafSearchRequest {
+            search_request: Some(search_request_with_offset_0.clone()),
+            split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
+        };
+
+        debug!(leaf_search_request=?leaf_search_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
+        let mut search_client_clone = search_client.clone();
+        let handle = tokio::spawn(async move {
+            let split_ids = leaf_search_request.split_ids.to_vec();
+            search_client_clone
+                .client()
+                .leaf_search(leaf_search_request)
+                .await
+                .map(|resp| resp.into_inner())
+                .map_err(|tonic| NodeSearchError {
+                    status: tonic,
+                    split_ids,
+                })
+        });
+        result_per_node_addr_futures.insert(search_client.grpc_addr(), handle);
+    }
+    let mut result_per_node_addr = HashMap::new();
+    for (addr, search_result) in result_per_node_addr_futures {
+        ////< An error here means that the tokio task panicked... Not that the grpc erorred.
+        //< The latter is handled later.
+        result_per_node_addr.insert(addr, search_result.await?);
+    }
+
+    Ok(result_per_node_addr)
+}
+
+pub struct ErrorRetries {
+    #[allow(dead_code)]
+    retry_split_ids: Vec<String>,
+    #[allow(dead_code)]
+    nodes_to_use: Vec<SocketAddr>,
+}
+
+/// There are different information which could be useful
+/// Scenario: Multiple requests on a node
+/// - Are all requests of one node failing? -> Don't consider this node as alternative of failing
+/// requests
+/// - Is the node ok, but just the split failing?
+/// - Did all requests fail? (Should we retry in that case?)
+pub fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
+    let contains_errors = search_result.values().any(|res| {
+        res.is_err()
+            || res
+                .as_ref()
+                .map(|ok_res| ok_res.failed_requests.is_empty())
+                .unwrap_or(false)
+    });
+    if !contains_errors {
+        return None;
+    }
+    let complete_failure_nodes: Vec<_> = search_result
+        .iter()
+        .filter(|(_addr, result)| {
+            result.is_err()
+                || result
+                    .as_ref()
+                    .map(|ok_res| ok_res.failed_requests.len() as u64 == ok_res.aggregated_results)
+                    .unwrap_or(false)
+        })
+        .map(|(addr, _)| *addr)
+        .collect();
+    let partial_or_no_failure_nodes: Vec<_> = search_result
+        .iter()
+        .filter(|(_addr, result)| {
+            result
+                .as_ref()
+                .map(|ok_res| ok_res.failed_requests.len() as u64 != ok_res.aggregated_results)
+                .unwrap_or(false)
+        })
+        .map(|(addr, _)| *addr)
+        .collect();
+
+    // Here we collect the failed requests on the node. It does not yet include failed requests
+    // against that node
+    let failed_split_ids = search_result
+        .values()
+        .filter_map(|result| result.as_ref().ok())
+        .flat_map(|res| {
+            let results = res
+                .failed_requests
+                .iter()
+                .map(move |failed_req| failed_req.split_id.to_string())
+                .collect_vec();
+            results.into_iter()
+        })
+        .collect_vec();
+
+    let retry_nodes = if partial_or_no_failure_nodes.is_empty() {
+        complete_failure_nodes
+    } else {
+        partial_or_no_failure_nodes
+    };
+
+    Some(ErrorRetries {
+        retry_split_ids: failed_split_ids,
+        nodes_to_use: retry_nodes,
+    })
 }
 
 /// Perform a distributed search.
@@ -88,48 +212,39 @@ pub async fn root_search(
     search_request_with_offset_0.max_hits += search_request.start_offset;
 
     // Perform the query phase.
-    let mut leaf_search_handles: Vec<JoinHandle<Result<LeafSearchResult, tonic::Status>>> =
-        Vec::new();
-    for (search_client, jobs) in assigned_leaf_search_jobs.iter() {
-        let leaf_search_request = LeafSearchRequest {
-            search_request: Some(search_request_with_offset_0.clone()),
-            split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
-        };
+    let result_per_node_addr = execute_search(
+        &assigned_leaf_search_jobs,
+        search_request_with_offset_0.clone(),
+    )
+    .await?;
 
-        // TODO wrap search clients with some info like their socketaddr to be able to log useful debug information
-        debug!(leaf_search_request=?leaf_search_request, "Leaf node search.");
-        let mut search_client_clone = search_client.clone();
-        let handle = tokio::spawn(async move {
-            search_client_clone
-                .client()
-                .leaf_search(leaf_search_request)
-                .await
-                .map(|resp| resp.into_inner())
-        });
-        leaf_search_handles.push(handle);
-    }
-    let leaf_search_responses = futures::future::try_join_all(leaf_search_handles).await?; //< An error here means that the tokio task panicked... Not that the grpc erorred.
-                                                                                           //< The latter is handled later.
+    analyze_errors(&result_per_node_addr);
+
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let index_config = index_metadata.index_config;
     let collector = make_collector(index_config.as_ref(), search_request);
 
     // Find the sum of the number of hits and merge multiple partial hits into a single partial hits.
     let mut leaf_search_results = Vec::new();
-    for leaf_search_response in leaf_search_responses {
+    for (_addr, leaf_search_response) in result_per_node_addr.iter() {
         match leaf_search_response {
             Ok(leaf_search_result) => {
                 debug!(leaf_search_result=?leaf_search_result, "Leaf search result.");
                 leaf_search_results.push(leaf_search_result)
             }
             Err(grpc_error) => {
-                let leaf_search_error = parse_grpc_error(&grpc_error);
+                let leaf_search_error = parse_grpc_error(&grpc_error.status);
                 error!(error=?grpc_error, "Leaf request failed");
                 // TODO list failed leaf nodes and retry.
                 return Err(leaf_search_error);
             }
         }
     }
+
+    let leaf_search_results = result_per_node_addr
+        .into_iter()
+        .map(|(_addr, results)| results.unwrap())
+        .collect_vec();
     let leaf_search_result = spawn_blocking(move || collector.merge_fruits(leaf_search_results))
         .await?
         .map_err(|merge_error: TantivyError| {

@@ -47,6 +47,17 @@ pub struct SearchResult {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SplitSearchError {
+    /// The searcherror that occured formatted as string.
+    #[prost(string, tag = "1")]
+    pub error: ::prost::alloc::string::String,
+    /// Split id that failed.
+    #[prost(string, tag = "2")]
+    pub split_id: ::prost::alloc::string::String,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequest {
     /// Search request. This is a perfect copy of the original search request,
     /// that was sent to root apart from the start_offset & max_hits params.
@@ -108,6 +119,12 @@ pub struct LeafSearchResult {
     /// List of the best top-K candidates for the given leaf query.
     #[prost(message, repeated, tag = "2")]
     pub partial_hits: ::prost::alloc::vec::Vec<PartialHit>,
+    /// The list of requests that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
+    #[prost(message, repeated, tag = "3")]
+    pub failed_requests: ::prost::alloc::vec::Vec<SplitSearchError>,
+    /// Total number of aggregated results into this result.
+    #[prost(uint64, tag = "4")]
+    pub aggregated_results: u64,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
