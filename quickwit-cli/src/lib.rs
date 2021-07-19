@@ -37,6 +37,7 @@ use quickwit_search::single_node_search;
 use quickwit_search::SearchResultJson;
 use quickwit_storage::StorageUriResolver;
 use quickwit_telemetry::payload::TelemetryEvent;
+use std::collections::VecDeque;
 use std::env;
 use std::io;
 use std::io::Stdout;
@@ -57,8 +58,8 @@ use tracing::debug;
 
 use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, IndexingStatistics};
 
-/// Throughput calculation window size in seconds.
-const THROUGHPUT_WINDOW_SIZE: u64 = 5;
+/// Throughput calculation window size.
+const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
 #[derive(Debug)]
 pub struct CreateIndexArgs {
@@ -310,8 +311,7 @@ pub async fn start_statistics_reporting(
         let mut stdout_handle = stdout();
         let start_time = Instant::now();
         let is_tty = atty::is(atty::Stream::Stdout);
-        let mut throughput_calculator =
-            ThroughputCalculator::new(start_time, THROUGHPUT_WINDOW_SIZE);
+        let mut throughput_calculator = ThroughputCalculator::new(start_time);
         loop {
             // Try to receive with a timeout of 1 second.
             // 1 second is also the frequency at which we update statistic in the console
@@ -407,50 +407,36 @@ fn display_statistics(
     Ok(())
 }
 
-/// ThroughputCalculator is used to calculate throughput on time interval.
+/// ThroughputCalculator is used to calculate throughput.
 struct ThroughputCalculator {
-    /// clock for tracking the time
-    clock: Instant,
-    /// How long it takes before calculating the throughput.
-    window_size: u64,
-    /// Stores the previous value of processed bytes.
-    processed_bytes_from_last_window: usize,
-    /// Stores the caluclated throughput.
-    throughput: f64,
+    /// Stores the time series of processed bytes value.
+    processed_bytes_values: VecDeque<(Instant, usize)>,
 }
 
 impl ThroughputCalculator {
     /// Creates new instance.
-    pub fn new(clock: Instant, window_size: u64) -> Self {
+    pub fn new(now: Instant) -> Self {
+        let processed_bytes_values: VecDeque<(Instant, usize)> =
+            (0..THROUGHPUT_WINDOW_SIZE).map(|_| (now, 0usize)).collect();
         Self {
-            clock,
-            window_size,
-            processed_bytes_from_last_window: 0,
-            throughput: 0f64,
+            processed_bytes_values,
         }
     }
 
     /// Calculates the throughput.
-    pub fn calculate(&mut self, processed_bytes: usize) -> f64 {
-        let elapsed_secs = self.clock.elapsed().as_secs();
+    pub fn calculate(&mut self, current_processed_bytes: usize) -> f64 {
+        self.processed_bytes_values.pop_front();
+        let current_instant = Instant::now();
+        let (first_instant, first_processed_bytes) = *self.processed_bytes_values.front().unwrap();
+        let elapsed_time = (current_instant - first_instant).as_secs();
+        self.processed_bytes_values
+            .push_back((current_instant, current_processed_bytes));
 
-        // Only recompute if we have reached the end of a window
-        // and the number of processed byte has changed.
-        if elapsed_secs % self.window_size == 0
-            && self.processed_bytes_from_last_window != processed_bytes
-        {
-            let window_processed_bytes = processed_bytes - self.processed_bytes_from_last_window;
-            self.throughput =
-                window_processed_bytes as f64 / 1_000_000f64 / self.window_size as f64;
-            self.processed_bytes_from_last_window = processed_bytes;
-        }
-
-        // First window is calculated progressively.
-        if self.processed_bytes_from_last_window == 0 {
-            self.throughput = processed_bytes as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
-        }
-
-        self.throughput
+        //TODO: what should we do when all docs are processed and `current_processed_bytes`
+        // is no longer increasing?
+        (current_processed_bytes - first_processed_bytes) as f64
+            / 1_000_000f64
+            / elapsed_time.max(1) as f64
     }
 }
 
