@@ -81,6 +81,14 @@ message SearchResult {
   uint64 elapsed_time_micros = 3;
 }
 
+message SplitSearchError {
+  // The searcherror that occured formatted as string.
+  string error = 1;
+
+  // Split id that failed. 
+  string split_id = 2;
+}
+
 message LeafSearchRequest {
   // Search request. This is a perfect copy of the original search request,
   // that was sent to root apart from the start_offset & max_hits params.
@@ -127,8 +135,16 @@ message PartialHit {
 message LeafSearchResult {
   // Total number of documents matched by the query.
   uint64 num_hits = 1;
+
   // List of the best top-K candidates for the given leaf query.
   repeated PartialHit partial_hits = 2;
+
+  // The list of requests that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
+  repeated SplitSearchError failed_requests = 3;
+
+  // Total number of aggregated results into this result. 
+  uint64 aggregated_results = 4;
+
 }
 
 message FetchDocsRequest {

@@ -159,11 +159,18 @@ pub async fn leaf_search(
         })
         .collect();
     // TODO avoid failing all for one issue. We could be more resilient on storage failures.
-    let split_search_results: Vec<LeafSearchResult> =
-        futures::future::try_join_all(leaf_search_single_split_futures).await?;
-    let merged_search_results =
-        spawn_blocking(move || collector.merge_fruits(split_search_results))
-            .await
-            .with_context(|| "Merging search on split results failed")??;
+    let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
+
+    let (search_results, _errors): (Vec<_>, Vec<_>) =
+        split_search_results.into_iter().partition(Result::is_ok);
+    let search_results: Vec<_> = search_results.into_iter().map(Result::unwrap).collect();
+    //let errors: Vec<_> = errors.into_iter().map(Result::unwrap_err).collect();
+
+    let merged_search_results = spawn_blocking(move || collector.merge_fruits(search_results))
+        .await
+        .with_context(|| "Merging search on split results failed")??;
+
+    // TODO save error, but switch away from anyhow first
+    //merged_search_results.failed_requests.extend(errors.iter());
     Ok(merged_search_results)
 }
