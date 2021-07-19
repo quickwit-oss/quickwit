@@ -45,7 +45,6 @@ pub fn read_host_key(host_key_path: &Path) -> ClusterResult<Uuid> {
     let host_key;
 
     if host_key_path.exists() {
-        // let host_key_contents = fs::read(host_key_path)?;
         let host_key_contents =
             fs::read(host_key_path).map_err(|err| ClusterError::ReadHostKeyError {
                 cause: anyhow::anyhow!(err),
@@ -76,7 +75,7 @@ pub fn read_host_key(host_key_path: &Path) -> ClusterResult<Uuid> {
     Ok(host_key)
 }
 
-/// A mamber information.
+/// A member information.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Member {
     /// An ID that makes a member unique.
@@ -171,10 +170,12 @@ impl Cluster {
         Ok(cluster)
     }
 
+    /// Return watchstream for monitoring change of `members`
     pub fn member_change_watcher(&self) -> WatchStream<Vec<Member>> {
         WatchStream::new(self.members.clone())
     }
 
+    /// Return `members` list
     pub fn members(&self) -> Vec<Member> {
         self.members.borrow().clone()
     }

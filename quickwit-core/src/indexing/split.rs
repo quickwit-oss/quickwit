@@ -118,7 +118,7 @@ impl Split {
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
         let index_uri = metastore.index_metadata(&params.index_id).await?.index_uri;
         let mut metadata = SplitMetadata::new(id.to_string());
-        // Letadata range is initialized with i64 MAX and MIN.
+        // Metadata range is initialized with i64 MAX and MIN.
         // Note that this range will be saved if none of documents in this split have a timestamp
         // which is obviously a strange situation.
         if timestamp_field.is_some() {
