@@ -29,6 +29,8 @@ use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::{create_index_cli, CreateIndexArgs};
+use quickwit_common::extract_metastore_uri_and_index_id_from_index_uri;
+use quickwit_metastore::MetastoreUriResolver;
 use quickwit_storage::{localstack_region, S3CompatibleObjectStorage, Storage};
 use serde_json::{Number, Value};
 use serial_test::serial;
@@ -229,6 +231,61 @@ fn test_cmd_delete() -> Result<()> {
         .success();
     assert_eq!(test_env.local_directory_path.exists(), false);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_cmd_garbae_collect() -> Result<()> {
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["logs"].as_path(),
+    );
+
+    let (metastore_uri, index_id) =
+        extract_metastore_uri_and_index_id_from_index_uri(&test_env.index_uri)?;
+    let metastore = MetastoreUriResolver::default()
+        .resolve(metastore_uri)
+        .await?;
+    let splits = metastore.list_all_splits(index_id).await?;
+    assert_eq!(splits.len(), 1);
+    make_command(format!("gc --index-uri {}", test_env.index_uri).as_str())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "No dangling files to garbage collect",
+        ));
+
+    let split_ids = vec![splits[0].split_id.as_str()];
+    metastore
+        .mark_splits_as_deleted(index_id, split_ids)
+        .await?;
+    make_command(format!("gc --index-uri {} --dry-run", test_env.index_uri).as_str())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "The following files will be garbage collected.",
+        ))
+        .stdout(predicate::str::contains("/hotcache"))
+        .stdout(predicate::str::contains("/.manifest"));
+
+    make_command(format!("gc --index-uri {}", test_env.index_uri).as_str())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Index successfully garbage collected",
+        ));
+
+    let metastore = MetastoreUriResolver::default()
+        .resolve(metastore_uri)
+        .await?;
+    assert_eq!(metastore.list_all_splits(index_id).await?.len(), 0);
+
+    make_command(format!("delete --index-uri {} ", test_env.index_uri).as_str())
+        .assert()
+        .success();
+    assert_eq!(test_env.local_directory_path.exists(), false);
     Ok(())
 }
 

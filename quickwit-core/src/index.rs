@@ -197,33 +197,7 @@ pub async fn delete_garbage_files(
     Ok(file_entries)
 }
 
-// async fn list_index_files(
-//     metastore: &dyn Metastore,
-//     index_id: &str,
-//     storage_resolver: StorageUriResolver,
-// ) -> anyhow::Result<Vec<FileEntry>> {
-//     let all_splits = metastore.list_all_splits(index_id).await?;
-
-//     let index_uri = metastore.index_metadata(index_id).await?.index_uri;
-
-//     let mut list_stream = tokio_stream::iter(all_splits)
-//         .map(|split_meta| {
-//             let moved_storage_resolver = storage_resolver.clone();
-//             let split_uri = format!("{}/{}", index_uri, split_meta.split_id);
-//             async move {
-//                 remove_split_files_from_storage(&split_uri, moved_storage_resolver, true).await
-//             }
-//         })
-//         .buffer_unordered(crate::indexing::MAX_CONCURRENT_SPLIT_TASKS);
-
-//     let mut file_entries = vec![];
-//     while let Some(list_result) = list_stream.next().await {
-//         file_entries.extend(list_result?);
-//     }
-
-//     Ok(file_entries)
-// }
-
+/// list the files for a list of splits.
 async fn list_splits_files(
     splits: Vec<SplitMetadata>,
     index_uri: String,
