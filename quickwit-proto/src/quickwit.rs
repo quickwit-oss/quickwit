@@ -122,9 +122,10 @@ pub struct LeafSearchResult {
     /// The list of requests that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
     #[prost(message, repeated, tag = "3")]
     pub failed_requests: ::prost::alloc::vec::Vec<SplitSearchError>,
-    /// Total number of aggregated results into this result.
+    /// Total number of splits the leaf(s) were in charge of.
+    /// num_attempted_splits = num_successful_splits + num_failed_splits.
     #[prost(uint64, tag = "4")]
-    pub aggregated_results: u64,
+    pub num_attempted_splits: u64,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

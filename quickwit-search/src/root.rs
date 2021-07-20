@@ -59,7 +59,7 @@ pub struct NodeSearchError {
 
 type SearchResultsByAddr = HashMap<SocketAddr, Result<LeafSearchResult, NodeSearchError>>;
 
-pub async fn execute_search(
+async fn execute_search(
     assigned_leaf_search_jobs: &[(WrappedSearchServiceClient, Vec<Job>)],
     search_request_with_offset_0: SearchRequest,
 ) -> anyhow::Result<SearchResultsByAddr> {
@@ -112,7 +112,7 @@ pub struct ErrorRetries {
 /// requests
 /// - Is the node ok, but just the split failing?
 /// - Did all requests fail? (Should we retry in that case?)
-pub fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
+fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
     let contains_errors = search_result.values().any(|res| {
         res.is_err()
             || res
@@ -126,11 +126,11 @@ pub fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetrie
     let complete_failure_nodes: Vec<_> = search_result
         .iter()
         .filter(|(_addr, result)| {
-            result.is_err()
-                || result
-                    .as_ref()
-                    .map(|ok_res| ok_res.failed_requests.len() as u64 == ok_res.aggregated_results)
-                    .unwrap_or(false)
+            if let Ok(ok_res) = result {
+                ok_res.failed_requests.len() as u64 == ok_res.num_attempted_splits
+            } else {
+                true
+            }
         })
         .map(|(addr, _)| *addr)
         .collect();
@@ -139,7 +139,7 @@ pub fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetrie
         .filter(|(_addr, result)| {
             result
                 .as_ref()
-                .map(|ok_res| ok_res.failed_requests.len() as u64 != ok_res.aggregated_results)
+                .map(|ok_res| ok_res.failed_requests.len() as u64 != ok_res.num_attempted_splits)
                 .unwrap_or(false)
         })
         .map(|(addr, _)| *addr)
@@ -226,7 +226,7 @@ pub async fn root_search(
 
     // Find the sum of the number of hits and merge multiple partial hits into a single partial hits.
     let mut leaf_search_results = Vec::new();
-    for (_addr, leaf_search_response) in result_per_node_addr.iter() {
+    for (_addr, leaf_search_response) in result_per_node_addr.into_iter() {
         match leaf_search_response {
             Ok(leaf_search_result) => {
                 debug!(leaf_search_result=?leaf_search_result, "Leaf search result.");
@@ -241,10 +241,6 @@ pub async fn root_search(
         }
     }
 
-    let leaf_search_results = result_per_node_addr
-        .into_iter()
-        .map(|(_addr, results)| results.unwrap())
-        .collect_vec();
     let leaf_search_result = spawn_blocking(move || collector.merge_fruits(leaf_search_results))
         .await?
         .map_err(|merge_error: TantivyError| {
