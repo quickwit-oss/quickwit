@@ -257,7 +257,9 @@ async fn test_cmd_garbage_collect() -> Result<()> {
             "No dangling files to garbage collect",
         ));
 
-    let split_path = test_env.local_directory_path.join(splits[0].split_id.as_str());
+    let split_path = test_env
+        .local_directory_path
+        .join(splits[0].split_id.as_str());
     assert_eq!(split_path.exists(), true);
 
     let split_ids = vec![splits[0].split_id.as_str()];
