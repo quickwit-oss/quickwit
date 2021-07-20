@@ -32,10 +32,11 @@ use tracing::*;
 
 use quickwit_cluster::cluster::Cluster;
 
-use crate::client::{create_search_service_client, WrappedSearchServiceClient};
+use crate::client::create_search_service_client;
 use crate::client_pool::{ClientPool, Job};
 use crate::rendezvous_hasher::{sort_by_rendez_vous_hash, Node};
 use crate::swim_addr_to_grpc_addr;
+use crate::SearchServiceClient;
 
 /// Search client pool implementation.
 #[derive(Clone)]
@@ -43,7 +44,7 @@ pub struct SearchClientPool {
     /// Search clients.
     /// A hash map with gRPC's SocketAddr as the key and SearchServiceClient as the value.
     /// It is not the cluster listen address.
-    pub clients: Arc<RwLock<HashMap<SocketAddr, WrappedSearchServiceClient>>>,
+    pub clients: Arc<RwLock<HashMap<SocketAddr, SearchServiceClient>>>,
 }
 
 impl SearchClientPool {
@@ -51,7 +52,21 @@ impl SearchClientPool {
     /// When a client pool is created, the thread that monitors cluster members
     /// will be started at the same time.
     pub async fn new(cluster: Arc<dyn Cluster>) -> anyhow::Result<Self> {
-        let clients = HashMap::new();
+        let mut clients = HashMap::new();
+
+        // Initialize the client pool with members of the cluster.
+        for member in cluster.members() {
+            let grpc_addr = swim_addr_to_grpc_addr(member.listen_addr);
+            match create_search_service_client(grpc_addr).await {
+                Ok(client) => {
+                    debug!(grpc_addr=?grpc_addr, "Add a new client to connect to the members of the cluster.");
+                    clients.insert(grpc_addr, client);
+                }
+                Err(err) => {
+                    error!(grpc_addr=?grpc_addr, err=?err, "Failed to create search client.")
+                }
+            };
+        }
 
         // Create search client pool.
         let client_pool = SearchClientPool {
@@ -115,13 +130,12 @@ impl ClientPool for SearchClientPool {
     async fn assign_jobs(
         &self,
         mut jobs: Vec<Job>,
-    ) -> anyhow::Result<Vec<(WrappedSearchServiceClient, Vec<Job>)>> {
+    ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<Job>)>> {
         let mut splits_groups: HashMap<SocketAddr, Vec<Job>> = HashMap::new();
 
         // Distribute using rendez-vous hashing
         let mut nodes: Vec<Node> = Vec::new();
-        let mut socket_to_client: HashMap<SocketAddr, WrappedSearchServiceClient> =
-            Default::default();
+        let mut socket_to_client: HashMap<SocketAddr, SearchServiceClient> = Default::default();
 
         {
             // restricting the lock guard lifetime.
@@ -177,6 +191,185 @@ impl ClientPool for SearchClientPool {
                 error!("Missing client. This should never happen! Please report");
             }
         }
+
         Ok(client_to_jobs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{SocketAddr, TcpListener};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time;
+
+    use quickwit_cluster::cluster::{read_host_key, Cluster, EpidemicCluster};
+    use quickwit_common::to_socket_addr;
+
+    use crate::client_pool::search_client_pool::create_search_service_client;
+    use crate::client_pool::{ClientPool, Job};
+    use crate::swim_addr_to_grpc_addr;
+    use crate::SearchClientPool;
+
+    #[tokio::test]
+    async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
+        let tmp_dir = tempfile::tempdir()?;
+
+        let host_key_path = tmp_dir.path().join("host_key");
+        let host_key = read_host_key(host_key_path.as_path())?;
+        let tmp_swim_port = available_port()?;
+        let swim_addr_string = format!("127.0.0.1:{}", tmp_swim_port);
+        let swim_addr = to_socket_addr(&swim_addr_string)?;
+        let cluster = Arc::new(EpidemicCluster::new(host_key, swim_addr)?);
+
+        let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
+
+        let clients = client_pool.clients.read().await;
+
+        let mut addrs: Vec<SocketAddr> = clients
+            .clone()
+            .into_iter()
+            .map(|(addr, _client)| addr)
+            .collect();
+        addrs.sort_by_key(|addr| addr.to_string());
+        println!("addrs={:?}", addrs);
+
+        let mut expected = vec![swim_addr_to_grpc_addr(swim_addr)];
+        expected.sort_by_key(|addr| addr.to_string());
+        println!("expected={:?}", expected);
+
+        assert_eq!(addrs, expected);
+
+        cluster.leave();
+
+        tmp_dir.close()?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_search_client_pool_multiple_nodes() -> anyhow::Result<()> {
+        let tmp_dir = tempfile::tempdir()?;
+
+        let host_key_path1 = tmp_dir.path().join("host_key1");
+        let host_key1 = read_host_key(host_key_path1.as_path())?;
+        let tmp_swim_port1 = available_port()?;
+        let swim_addr_string1 = format!("127.0.0.1:{}", tmp_swim_port1);
+        let swim_addr1 = to_socket_addr(&swim_addr_string1)?;
+        let cluster1 = Arc::new(EpidemicCluster::new(host_key1, swim_addr1)?);
+
+        let host_key_path2 = tmp_dir.path().join("host_key2");
+        let host_key2 = read_host_key(host_key_path2.as_path())?;
+        let tmp_swim_port2 = available_port()?;
+        let swim_addr_string2 = format!("127.0.0.1:{}", tmp_swim_port2);
+        let swim_addr2 = to_socket_addr(&swim_addr_string2)?;
+        let cluster2 = Arc::new(EpidemicCluster::new(host_key2, swim_addr2)?);
+        cluster2.add_peer_node(swim_addr1);
+
+        // Wait for the cluster to be configured.
+        thread::sleep(time::Duration::from_secs(5));
+
+        let client_pool1 = Arc::new(SearchClientPool::new(cluster1.clone()).await?);
+
+        let clients1 = client_pool1.clients.read().await;
+
+        let mut addrs: Vec<SocketAddr> = clients1
+            .clone()
+            .into_iter()
+            .map(|(addr, _client)| addr)
+            .collect();
+        addrs.sort_by_key(|addr| addr.to_string());
+        println!("addrs={:?}", addrs);
+
+        let mut expected = vec![
+            swim_addr_to_grpc_addr(swim_addr1),
+            swim_addr_to_grpc_addr(swim_addr2),
+        ];
+        expected.sort_by_key(|addr| addr.to_string());
+        println!("expected={:?}", expected);
+
+        assert_eq!(addrs, expected);
+
+        cluster1.leave();
+        cluster2.leave();
+
+        tmp_dir.close()?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_search_client_pool_single_node_assign_jobs() -> anyhow::Result<()> {
+        let tmp_dir = tempfile::tempdir()?;
+
+        let host_key_path = tmp_dir.path().join("host_key");
+        let host_key = read_host_key(host_key_path.as_path())?;
+        let tmp_swim_port = available_port()?;
+        let swim_addr_string = format!("127.0.0.1:{}", tmp_swim_port);
+        let swim_addr = to_socket_addr(&swim_addr_string)?;
+        let cluster = Arc::new(EpidemicCluster::new(host_key, swim_addr)?);
+
+        let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
+
+        let jobs = vec![
+            Job {
+                split: "split1".to_string(),
+                cost: 1,
+            },
+            Job {
+                split: "split2".to_string(),
+                cost: 2,
+            },
+            Job {
+                split: "split3".to_string(),
+                cost: 3,
+            },
+            Job {
+                split: "split4".to_string(),
+                cost: 4,
+            },
+        ];
+
+        let assigned_jobs = client_pool.assign_jobs(jobs).await?;
+        println!("assigned_jobs={:?}", assigned_jobs);
+
+        let expected = vec![(
+            create_search_service_client(swim_addr_to_grpc_addr(swim_addr)).await?,
+            vec![
+                Job {
+                    split: "split4".to_string(),
+                    cost: 4,
+                },
+                Job {
+                    split: "split3".to_string(),
+                    cost: 3,
+                },
+                Job {
+                    split: "split2".to_string(),
+                    cost: 2,
+                },
+                Job {
+                    split: "split1".to_string(),
+                    cost: 1,
+                },
+            ],
+        )];
+        println!("expected={:?}", expected);
+
+        // compare jobs
+        assert_eq!(assigned_jobs.get(0).unwrap().1, expected.get(0).unwrap().1);
+
+        cluster.leave();
+
+        tmp_dir.close()?;
+
+        Ok(())
+    }
+
+    fn available_port() -> anyhow::Result<u16> {
+        match TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => Ok(listener.local_addr().unwrap().port()),
+            Err(e) => anyhow::bail!(e),
+        }
     }
 }

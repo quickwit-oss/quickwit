@@ -48,6 +48,7 @@ use quickwit_proto::SearchRequest;
 use quickwit_proto::{PartialHit, SearchResult};
 use quickwit_storage::StorageUriResolver;
 
+pub use crate::client::SearchServiceClient;
 pub use crate::client_pool::search_client_pool::SearchClientPool;
 pub use crate::client_pool::ClientPool;
 use crate::collector::make_collector;

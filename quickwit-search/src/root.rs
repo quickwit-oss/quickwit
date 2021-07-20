@@ -24,7 +24,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use itertools::Itertools;
+use tantivy::collector::Collector;
 use tantivy::TantivyError;
+use tokio::task::spawn_blocking;
 use tokio::task::JoinHandle;
 use tracing::*;
 
@@ -33,17 +35,14 @@ use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, Hit, LeafSearchRequest, LeafSearchResult, PartialHit,
     SearchRequest, SearchResult,
 };
-use tantivy::collector::Collector;
-use tokio::task::spawn_blocking;
 
-use crate::client::WrappedSearchServiceClient;
 use crate::client_pool::Job;
-use crate::error::parse_grpc_error;
 use crate::list_relevant_splits;
 use crate::make_collector;
 use crate::ClientPool;
 use crate::SearchClientPool;
 use crate::SearchError;
+use crate::SearchServiceClient;
 
 // Measure the cost associated to searching in a given split metadata.
 fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
@@ -51,16 +50,16 @@ fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
     1
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct NodeSearchError {
-    status: tonic::Status,
+    search_error: SearchError,
     split_ids: Vec<String>,
 }
 
 type SearchResultsByAddr = HashMap<SocketAddr, Result<LeafSearchResult, NodeSearchError>>;
 
 async fn execute_search(
-    assigned_leaf_search_jobs: &[(WrappedSearchServiceClient, Vec<Job>)],
+    assigned_leaf_search_jobs: &[(SearchServiceClient, Vec<Job>)],
     search_request_with_offset_0: SearchRequest,
 ) -> anyhow::Result<SearchResultsByAddr> {
     // Perform the query phase.
@@ -74,16 +73,14 @@ async fn execute_search(
         };
 
         debug!(leaf_search_request=?leaf_search_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
-        let mut search_client_clone = search_client.clone();
+        let mut search_client_clone: SearchServiceClient = search_client.clone();
         let handle = tokio::spawn(async move {
             let split_ids = leaf_search_request.split_ids.to_vec();
             search_client_clone
-                .client()
                 .leaf_search(leaf_search_request)
                 .await
-                .map(|resp| resp.into_inner())
-                .map_err(|tonic| NodeSearchError {
-                    status: tonic,
+                .map_err(|search_error| NodeSearchError {
+                    search_error,
                     split_ids,
                 })
         });
@@ -232,9 +229,9 @@ pub async fn root_search(
                 debug!(leaf_search_result=?leaf_search_result, "Leaf search result.");
                 leaf_search_results.push(leaf_search_result)
             }
-            Err(grpc_error) => {
-                let leaf_search_error = parse_grpc_error(&grpc_error.status);
-                error!(error=?grpc_error, "Leaf request failed");
+            Err(node_search_error) => {
+                let leaf_search_error = node_search_error.search_error.clone();
+                error!(error=?node_search_error, "Leaf request failed");
                 // TODO list failed leaf nodes and retry.
                 return Err(leaf_search_error);
             }
@@ -269,12 +266,8 @@ pub async fn root_search(
                 };
                 let mut search_client_clone = search_client.clone();
                 let handle = tokio::spawn(async move {
-                    match search_client_clone
-                        .client()
-                        .fetch_docs(fetch_docs_request)
-                        .await
-                    {
-                        Ok(resp) => Ok(resp.into_inner()),
+                    match search_client_clone.fetch_docs(fetch_docs_request).await {
+                        Ok(resp) => Ok(resp),
                         Err(err) => Err(anyhow::anyhow!("Failed to fetch docs due to {:?}", err)),
                     }
                 });
