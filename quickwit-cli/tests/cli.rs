@@ -235,7 +235,7 @@ fn test_cmd_delete() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_cmd_garbae_collect() -> Result<()> {
+async fn test_cmd_garbage_collect() -> Result<()> {
     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);
     index_data(
@@ -257,6 +257,9 @@ async fn test_cmd_garbae_collect() -> Result<()> {
             "No dangling files to garbage collect",
         ));
 
+    let split_path = test_env.local_directory_path.join(splits[0].split_id.as_str());
+    assert_eq!(split_path.exists(), true);
+
     let split_ids = vec![splits[0].split_id.as_str()];
     metastore
         .mark_splits_as_deleted(index_id, split_ids)
@@ -277,6 +280,7 @@ async fn test_cmd_garbae_collect() -> Result<()> {
             "Index successfully garbage collected",
         ));
 
+    assert_eq!(split_path.exists(), false);
     let metastore = MetastoreUriResolver::default()
         .resolve(metastore_uri)
         .await?;
