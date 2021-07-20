@@ -377,6 +377,13 @@ fn display_statistics(
     statistics: Arc<IndexingStatistics>,
     is_tty: bool,
 ) -> anyhow::Result<()> {
+    let elapsed_duration = chrono::Duration::from_std(throughput_calculator.elapsed_time())?;
+    let elapsed_time = format!(
+        "{:02}:{:02}:{:02}",
+        elapsed_duration.num_hours(),
+        elapsed_duration.num_minutes(),
+        elapsed_duration.num_seconds()
+    );
     let throughput_mb_s = throughput_calculator.calculate(statistics.total_bytes_processed.get());
     if is_tty {
         stdout_handle.queue(PrintStyledContent("Num docs: ".blue()))?;
@@ -391,16 +398,19 @@ fn display_statistics(
             statistics.total_bytes_processed.get() / 1_000_000
         )))?;
         stdout_handle.queue(PrintStyledContent(" Thrghput: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:.2}MB/s\n", throughput_mb_s)))?;
+        stdout_handle.queue(Print(format!("{:>5.2}MB/s", throughput_mb_s)))?;
+        stdout_handle.queue(PrintStyledContent(" Time: ".blue()))?;
+        stdout_handle.queue(Print(format!("{}\n", elapsed_time)))?;
     } else {
         let report_line = format!(
-        "Num docs: {:>7} Parse errs: {:>5} Staged splits: {:>3} Input size: {:>5}MB Thrghput: {:.2}MB/s\n",
-        statistics.num_docs.get(),
-        statistics.num_parse_errors.get(),
-        statistics.num_staged_splits.get(),
-        statistics.total_bytes_processed.get() / 1_000_000,
-        throughput_mb_s,
-    );
+            "Num docs: {:>7} Parse errs: {:>5} Staged splits: {:>3} Input size: {:>5}MB Thrghput: {:>5.2}MB/s Time: {}\n",
+            statistics.num_docs.get(),
+            statistics.num_parse_errors.get(),
+            statistics.num_staged_splits.get(),
+            statistics.total_bytes_processed.get() / 1_000_000,
+            throughput_mb_s,
+            elapsed_time,
+        );
         stdout_handle.write_all(report_line.as_bytes())?;
     }
     stdout_handle.flush()?;
@@ -411,15 +421,19 @@ fn display_statistics(
 struct ThroughputCalculator {
     /// Stores the time series of processed bytes value.
     processed_bytes_values: VecDeque<(Instant, usize)>,
+    /// Store the time this calculator started
+    start_time: Instant,
 }
 
 impl ThroughputCalculator {
     /// Creates new instance.
-    pub fn new(now: Instant) -> Self {
-        let processed_bytes_values: VecDeque<(Instant, usize)> =
-            (0..THROUGHPUT_WINDOW_SIZE).map(|_| (now, 0usize)).collect();
+    pub fn new(start_time: Instant) -> Self {
+        let processed_bytes_values: VecDeque<(Instant, usize)> = (0..THROUGHPUT_WINDOW_SIZE)
+            .map(|_| (start_time, 0usize))
+            .collect();
         Self {
             processed_bytes_values,
+            start_time,
         }
     }
 
@@ -435,6 +449,10 @@ impl ThroughputCalculator {
         (current_processed_bytes - first_processed_bytes) as f64
             / 1_000_000f64
             / elapsed_time.max(1f64) as f64
+    }
+
+    pub fn elapsed_time(&self) -> Duration {
+        self.start_time.elapsed()
     }
 }
 
