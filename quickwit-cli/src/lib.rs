@@ -37,6 +37,7 @@ use quickwit_search::single_node_search;
 use quickwit_search::SearchResultJson;
 use quickwit_storage::StorageUriResolver;
 use quickwit_telemetry::payload::TelemetryEvent;
+use std::collections::VecDeque;
 use std::env;
 use std::io;
 use std::io::Stdout;
@@ -44,6 +45,7 @@ use std::io::{stdout, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::usize;
 use tempfile::TempDir;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
@@ -58,6 +60,9 @@ use quickwit_core::{
     create_index, delete_index, garbage_collect_index, index_data, IndexDataParams,
     IndexingStatistics,
 };
+
+/// Throughput calculation window size.
+const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
 #[derive(Debug)]
 pub struct CreateIndexArgs {
@@ -354,6 +359,7 @@ pub async fn start_statistics_reporting(
         let mut stdout_handle = stdout();
         let start_time = Instant::now();
         let is_tty = atty::is(atty::Stream::Stdout);
+        let mut throughput_calculator = ThroughputCalculator::new(start_time);
         loop {
             // Try to receive with a timeout of 1 second.
             // 1 second is also the frequency at which we update statistic in the console
@@ -363,7 +369,12 @@ pub async fn start_statistics_reporting(
 
             // Let's not display live statistics to allow screen to scroll.
             if statistics.num_docs.get() > 0 {
-                display_statistics(&mut stdout_handle, start_time, statistics.clone(), is_tty)?;
+                display_statistics(
+                    &mut stdout_handle,
+                    &mut throughput_calculator,
+                    statistics.clone(),
+                    is_tty,
+                )?;
             }
 
             if is_done {
@@ -378,7 +389,12 @@ pub async fn start_statistics_reporting(
         }
 
         if input_path_opt.is_none() {
-            display_statistics(&mut stdout_handle, start_time, statistics.clone(), is_tty)?;
+            display_statistics(
+                &mut stdout_handle,
+                &mut throughput_calculator,
+                statistics.clone(),
+                is_tty,
+            )?;
         }
         //display end of task report
         println!();
@@ -405,13 +421,18 @@ pub async fn start_statistics_reporting(
 
 fn display_statistics(
     stdout_handle: &mut Stdout,
-    start_time: Instant,
+    throughput_calculator: &mut ThroughputCalculator,
     statistics: Arc<IndexingStatistics>,
     is_tty: bool,
 ) -> anyhow::Result<()> {
-    let elapsed_secs = start_time.elapsed().as_secs();
-    let throughput_mb_s =
-        statistics.total_bytes_processed.get() as f64 / 1_000_000f64 / elapsed_secs.max(1) as f64;
+    let elapsed_duration = chrono::Duration::from_std(throughput_calculator.elapsed_time())?;
+    let elapsed_time = format!(
+        "{:02}:{:02}:{:02}",
+        elapsed_duration.num_hours(),
+        elapsed_duration.num_minutes(),
+        elapsed_duration.num_seconds()
+    );
+    let throughput_mb_s = throughput_calculator.calculate(statistics.total_bytes_processed.get());
     if is_tty {
         stdout_handle.queue(PrintStyledContent("Num docs: ".blue()))?;
         stdout_handle.queue(Print(format!("{:>7}", statistics.num_docs.get())))?;
@@ -425,20 +446,62 @@ fn display_statistics(
             statistics.total_bytes_processed.get() / 1_000_000
         )))?;
         stdout_handle.queue(PrintStyledContent(" Thrghput: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:.2}MB/s\n", throughput_mb_s)))?;
+        stdout_handle.queue(Print(format!("{:>5.2}MB/s", throughput_mb_s)))?;
+        stdout_handle.queue(PrintStyledContent(" Time: ".blue()))?;
+        stdout_handle.queue(Print(format!("{}\n", elapsed_time)))?;
     } else {
         let report_line = format!(
-        "Num docs: {:>7} Parse errs: {:>5} Staged splits: {:>3} Input size: {:>5}MB Thrghput: {:.2}MB/s\n",
-        statistics.num_docs.get(),
-        statistics.num_parse_errors.get(),
-        statistics.num_staged_splits.get(),
-        statistics.total_bytes_processed.get() / 1_000_000,
-        throughput_mb_s,
-    );
+            "Num docs: {:>7} Parse errs: {:>5} Staged splits: {:>3} Input size: {:>5}MB Thrghput: {:>5.2}MB/s Time: {}\n",
+            statistics.num_docs.get(),
+            statistics.num_parse_errors.get(),
+            statistics.num_staged_splits.get(),
+            statistics.total_bytes_processed.get() / 1_000_000,
+            throughput_mb_s,
+            elapsed_time,
+        );
         stdout_handle.write_all(report_line.as_bytes())?;
     }
     stdout_handle.flush()?;
     Ok(())
+}
+
+/// ThroughputCalculator is used to calculate throughput.
+struct ThroughputCalculator {
+    /// Stores the time series of processed bytes value.
+    processed_bytes_values: VecDeque<(Instant, usize)>,
+    /// Store the time this calculator started
+    start_time: Instant,
+}
+
+impl ThroughputCalculator {
+    /// Creates new instance.
+    pub fn new(start_time: Instant) -> Self {
+        let processed_bytes_values: VecDeque<(Instant, usize)> = (0..THROUGHPUT_WINDOW_SIZE)
+            .map(|_| (start_time, 0usize))
+            .collect();
+        Self {
+            processed_bytes_values,
+            start_time,
+        }
+    }
+
+    /// Calculates the throughput.
+    pub fn calculate(&mut self, current_processed_bytes: usize) -> f64 {
+        self.processed_bytes_values.pop_front();
+        let current_instant = Instant::now();
+        let (first_instant, first_processed_bytes) = *self.processed_bytes_values.front().unwrap();
+        let elapsed_time = (current_instant - first_instant).as_millis() as f64 / 1_000f64;
+        self.processed_bytes_values
+            .push_back((current_instant, current_processed_bytes));
+
+        (current_processed_bytes - first_processed_bytes) as f64
+            / 1_000_000f64
+            / elapsed_time.max(1f64) as f64
+    }
+
+    pub fn elapsed_time(&self) -> Duration {
+        self.start_time.elapsed()
+    }
 }
 
 #[test]
