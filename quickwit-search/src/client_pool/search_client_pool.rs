@@ -37,6 +37,7 @@ use crate::client_pool::{ClientPool, Job};
 use crate::rendezvous_hasher::{sort_by_rendez_vous_hash, Node};
 use crate::swim_addr_to_grpc_addr;
 use crate::SearchServiceClient;
+// use crate::SearchService;
 
 /// Search client pool implementation.
 #[derive(Clone)]
@@ -48,6 +49,23 @@ pub struct SearchClientPool {
 }
 
 impl SearchClientPool {
+    #[cfg(test)]
+    pub async fn from_mocks(
+        mock_services: Vec<Arc<dyn crate::SearchService>>,
+    ) -> anyhow::Result<Self> {
+        let mut mock_clients = HashMap::new();
+        for (mock_ord, mock_service) in mock_services.into_iter().enumerate() {
+            let grpc_addr: SocketAddr =
+                format!("127.0.0.1:{}", 10000 + mock_ord as u16 * 10).parse()?;
+            let mock_client = SearchServiceClient::from_service(mock_service, grpc_addr);
+            mock_clients.insert(grpc_addr, mock_client);
+        }
+
+        Ok(SearchClientPool {
+            clients: Arc::new(RwLock::new(mock_clients)),
+        })
+    }
+
     /// Create a search client pool given a cluster.
     /// When a client pool is created, the thread that monitors cluster members
     /// will be started at the same time.

@@ -311,3 +311,87 @@ pub async fn root_search(
         elapsed_time_micros: elapsed.as_micros() as u64,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use quickwit_core::TestSandbox;
+    use quickwit_index_config::WikipediaIndexConfig;
+
+    use crate::MockSearchService;
+
+    #[tokio::test]
+    async fn test_root_search_single_node_single_split() -> anyhow::Result<()> {
+        let index_id = "wikipedia-idx";
+
+        let test_sandbox =
+            TestSandbox::create(index_id, Box::new(WikipediaIndexConfig::new())).await?;
+
+        let search_request = quickwit_proto::SearchRequest {
+            index_id: index_id.to_string(),
+            query: "snoopy".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+        };
+
+        let metastore = test_sandbox.metastore();
+
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service.expect_leaf_search().returning(
+            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+                Ok(quickwit_proto::LeafSearchResult {
+                    num_hits: 3,
+                    partial_hits: vec![
+                        quickwit_proto::PartialHit {
+                            sorting_field_value: 3,
+                            split_id: "split1".to_string(),
+                            segment_ord: 1,
+                            doc_id: 1,
+                        },
+                        quickwit_proto::PartialHit {
+                            sorting_field_value: 2,
+                            split_id: "split1".to_string(),
+                            segment_ord: 2,
+                            doc_id: 2,
+                        },
+                        quickwit_proto::PartialHit {
+                            sorting_field_value: 1,
+                            split_id: "split1".to_string(),
+                            segment_ord: 3,
+                            doc_id: 3,
+                        },
+                    ],
+                    failed_requests: Vec::new(),
+                    aggregated_results: 3,
+                })
+            },
+        );
+        mock_search_service.expect_fetch_docs().returning(
+            |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+                Ok(quickwit_proto::FetchDocsResult {
+                    hits: vec![quickwit_proto::Hit {
+                        json: "{\"hoge\" : \"fuga\"}".to_string(),
+                        partial_hit: Some(quickwit_proto::PartialHit {
+                            sorting_field_value: 3,
+                            split_id: "split1".to_string(),
+                            segment_ord: 1,
+                            doc_id: 1,
+                        }),
+                    }],
+                })
+            },
+        );
+
+        let client_pool =
+            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
+
+        let search_result = root_search(&search_request, &*metastore, &client_pool).await?;
+        println!("search_result={:?}", search_result);
+
+        Ok(())
+    }
+}
