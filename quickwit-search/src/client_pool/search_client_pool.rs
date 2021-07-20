@@ -54,11 +54,12 @@ impl SearchClientPool {
     #[cfg(test)]
     pub async fn from_mocks(mock_services: Vec<SearchServiceClient>) -> anyhow::Result<Self> {
         let mut mock_members = Vec::new();
-        for (mock_ord, _mock_client) in mock_services.into_iter().enumerate() {
+        let mut mock_clients = HashMap::new();
+        for (mock_ord, mock_client) in mock_services.into_iter().enumerate() {
             let host_key = Uuid::new_v4();
             let listen_addr = SocketAddr::new(
                 IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                8080 + mock_ord as u16 * 10,
+                10000 + mock_ord as u16 * 10,
             );
             let is_self = if mock_ord == 0 { true } else { false };
 
@@ -67,8 +68,14 @@ impl SearchClientPool {
                 listen_addr,
                 is_self,
             };
-
             mock_members.push(mock_member);
+
+            let wrapped_client = WrappedSearchServiceClient {
+                client: mock_client.clone(),
+                grpc_addr: listen_addr,
+            };
+
+            mock_clients.insert(listen_addr, wrapped_client);
         }
 
         let (_members_sender, members_receiver) = watch::channel(Vec::new());
@@ -81,7 +88,9 @@ impl SearchClientPool {
             .expect_member_change_watcher()
             .returning(move || WatchStream::new(members_receiver.clone()));
 
-        SearchClientPool::new(Arc::new(mock_cluster)).await
+        Ok(SearchClientPool {
+            clients: Arc::new(RwLock::new(mock_clients)),
+        })
     }
 
     /// Create a search client pool given a cluster.

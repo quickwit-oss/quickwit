@@ -22,27 +22,28 @@
 use std::net::SocketAddr;
 
 use http::Uri;
-use tonic::transport::Channel;
 use tonic::transport::Endpoint;
 
-use quickwit_proto::search_service_client::SearchServiceClient;
+use crate::SearchServiceClient;
 
 #[derive(Debug, Clone)]
 pub struct WrappedSearchServiceClient {
-    client: SearchServiceClient<Channel>,
-    grpc_addr: SocketAddr,
+    pub client: SearchServiceClient,
+    pub grpc_addr: SocketAddr,
 }
 
 impl WrappedSearchServiceClient {
-    fn new(client: SearchServiceClient<Channel>, grpc_addr: SocketAddr) -> Self {
+    fn new(client: SearchServiceClient, grpc_addr: SocketAddr) -> Self {
         Self { client, grpc_addr }
     }
+
     /// Return the grpc_addr the underlying client connects to.
     pub fn grpc_addr(&self) -> SocketAddr {
         self.grpc_addr
     }
+
     /// Returns the unterlying client.
-    pub fn client(&mut self) -> &mut SearchServiceClient<Channel> {
+    pub fn client(&mut self) -> &mut SearchServiceClient {
         &mut self.client
     }
 }

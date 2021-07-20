@@ -91,7 +91,7 @@ use quickwit_proto::search_service_client as grpc;
 #[cfg(test)]
 pub use self::mock::*;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum SearchServiceForTest {
     Grpc(grpc::SearchServiceClient<Channel>),
     #[cfg(test)]

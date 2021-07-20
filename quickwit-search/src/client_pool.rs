@@ -21,8 +21,8 @@
 
 pub mod search_client_pool;
 
-use anyhow::Result;
 use async_trait::async_trait;
+use mockall::mock;
 
 use crate::client::WrappedSearchServiceClient;
 
@@ -46,5 +46,24 @@ pub trait ClientPool: Send + Sync + 'static {
     async fn assign_jobs(
         &self,
         jobs: Vec<Job>,
-    ) -> Result<Vec<(WrappedSearchServiceClient, Vec<Job>)>>;
+    ) -> anyhow::Result<Vec<(WrappedSearchServiceClient, Vec<Job>)>>;
+}
+
+mock! {
+    pub ClientPool {
+        pub async fn assign_jobs(
+            &self,
+            jobs: Vec<Job>,
+        ) -> anyhow::Result<Vec<(WrappedSearchServiceClient, Vec<Job>)>>;
+    }
+}
+
+#[async_trait]
+impl ClientPool for MockClientPool {
+    async fn assign_jobs(
+        &self,
+        jobs: Vec<Job>,
+    ) -> anyhow::Result<Vec<(WrappedSearchServiceClient, Vec<Job>)>> {
+        Ok(self.assign_jobs(jobs).await?)
+    }
 }

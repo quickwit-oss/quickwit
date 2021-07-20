@@ -212,8 +212,6 @@ pub async fn root_search(
 mod tests {
     use super::*;
 
-    use std::net::TcpListener;
-
     use serde_json::{json, Value};
 
     use quickwit_core::TestSandbox;
@@ -252,7 +250,7 @@ mod tests {
             |_leaf_tonic_req: tonic::Request<quickwit_proto::LeafSearchRequest>| {
                 Ok(tonic::Response::new(quickwit_proto::LeafSearchResult {
                     partial_hits: Vec::new(),
-                    num_hits: 0,
+                    num_hits: 99,
                 }))
             },
         );
@@ -260,16 +258,9 @@ mod tests {
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![mock_search_service.into()]).await?);
 
-        // let search_result = root_search(&search_request, &*metastore, &client_pool).await?;
-        // println!("search_result={:?}", search_result);
+        let search_result = root_search(&search_request, &*metastore, &client_pool).await?;
+        println!("search_result={:?}", search_result);
 
         Ok(())
-    }
-
-    fn available_port() -> anyhow::Result<u16> {
-        match TcpListener::bind("127.0.0.1:0") {
-            Ok(listener) => Ok(listener.local_addr().unwrap().port()),
-            Err(e) => anyhow::bail!(e),
-        }
     }
 }
