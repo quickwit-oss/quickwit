@@ -50,7 +50,7 @@ impl SearchClientPool {
     /// Create a search client pool given a cluster.
     /// When a client pool is created, the thread that monitors cluster members
     /// will be started at the same time.
-    pub async fn new(cluster: Arc<Cluster>) -> anyhow::Result<Self> {
+    pub async fn new(cluster: Arc<dyn Cluster>) -> anyhow::Result<Self> {
         let clients = HashMap::new();
 
         // Create search client pool.

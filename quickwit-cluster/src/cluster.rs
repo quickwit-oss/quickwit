@@ -21,6 +21,8 @@
 use std::fs;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::TryRecvError;
 use std::sync::Arc;
 
 use artillery_core::epidemic::prelude::{
@@ -28,6 +30,7 @@ use artillery_core::epidemic::prelude::{
     ClusterConfig as ArtilleryClusterConfig,
 };
 use artillery_core::errors::ArtilleryError;
+use async_trait::async_trait;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tracing::*;
@@ -88,8 +91,24 @@ pub struct Member {
     pub is_self: bool,
 }
 
+/// Cluster meant to manage Quickwit's cluster formation and its events.
+#[async_trait]
+pub trait Cluster: Send + Sync + 'static {
+    /// Return cluster members.
+    fn members(&self) -> Vec<Member>;
+
+    /// Return cluster member change watcher.
+    fn member_change_watcher(&self) -> WatchStream<Vec<Member>>;
+
+    /// Specify the address of a running node and join the cluster to which the node belongs.
+    fn add_peer_node(&self, peer_addr: SocketAddr);
+
+    /// Leave the cluster it is joining in.
+    fn leave(&self);
+}
+
 /// This is an implementation of a cluster using the SWIM protocol.
-pub struct Cluster {
+pub struct EpidemicCluster {
     /// A socket address that represents itself.
     pub listen_addr: SocketAddr,
 
@@ -98,9 +117,12 @@ pub struct Cluster {
 
     /// A receiver(channel) for exchanging members in a cluster.
     members: watch::Receiver<Vec<Member>>,
+
+    /// A stop flag of cluster monitoring task.
+    stop: Arc<AtomicBool>,
 }
 
-impl Cluster {
+impl EpidemicCluster {
     /// Create a cluster given a host key and a listen address.
     /// When a cluster is created, the thread that monitors cluster events
     /// will be started at the same time.
@@ -125,10 +147,11 @@ impl Cluster {
         let (members_sender, members_receiver) = watch::channel(Vec::new());
 
         // Create cluster.
-        let cluster = Cluster {
+        let cluster = EpidemicCluster {
             listen_addr,
             artillery_cluster: Arc::new(artillery_cluster),
             members: members_receiver,
+            stop: Arc::new(AtomicBool::new(false)),
         };
 
         // Add itself as the initial member of the cluster.
@@ -145,51 +168,69 @@ impl Cluster {
         // Prepare to start a task that will monitor cluster events.
         let task_inner = cluster.artillery_cluster.clone();
         let task_listen_addr = cluster.listen_addr;
+        let task_stop = cluster.stop.clone();
 
         // Start to monitor the cluster events.
         tokio::task::spawn_blocking(move || {
-            for (artillery_members, artillery_member_event) in task_inner.events.iter() {
-                log_artillery_event(artillery_member_event);
-                let updated_memberlist: Vec<Member> = artillery_members
-                    .into_iter()
-                    .filter(|member| match member.state() {
-                        ArtilleryMemberState::Alive | ArtilleryMemberState::Suspect => true,
-                        ArtilleryMemberState::Down | ArtilleryMemberState::Left => false,
-                    })
-                    .map(|member| convert_member(member, task_listen_addr))
-                    .collect();
-                debug!(updated_memberlist=?updated_memberlist);
-                if members_sender.send(updated_memberlist).is_err() {
-                    // Somehow the cluster has been dropped.
-                    warn!("Failed to send a member list.");
-                    break;
+            loop {
+                match task_inner.events.try_recv() {
+                    Ok((artillery_members, artillery_member_event)) => {
+                        log_artillery_event(&artillery_member_event);
+                        let updated_memberlist: Vec<Member> = artillery_members
+                            .into_iter()
+                            .filter(|member| match member.state() {
+                                ArtilleryMemberState::Alive | ArtilleryMemberState::Suspect => true,
+                                ArtilleryMemberState::Down | ArtilleryMemberState::Left => false,
+                            })
+                            .map(|member| convert_member(member, task_listen_addr))
+                            .collect();
+                        debug!(updated_memberlist=?updated_memberlist);
+                        if members_sender.send(updated_memberlist).is_err() {
+                            // Somehow the cluster has been dropped.
+                            error!("Failed to send a member list.");
+                            break;
+                        }
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        debug!("channel disconnected");
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => {
+                        if task_stop.load(Ordering::Relaxed) {
+                            debug!("receive a stop signal");
+                            break;
+                        }
+                    }
                 }
             }
         });
 
         Ok(cluster)
     }
+}
 
-    /// Return watchstream for monitoring change of `members`
-    pub fn member_change_watcher(&self) -> WatchStream<Vec<Member>> {
-        WatchStream::new(self.members.clone())
-    }
-
-    /// Return `members` list
-    pub fn members(&self) -> Vec<Member> {
+impl Cluster for EpidemicCluster {
+    /// Return cluster members
+    fn members(&self) -> Vec<Member> {
         self.members.borrow().clone()
     }
 
+    /// Return cluster member change watcher.
+    fn member_change_watcher(&self) -> WatchStream<Vec<Member>> {
+        WatchStream::new(self.members.clone())
+    }
+
     /// Specify the address of a running node and join the cluster to which the node belongs.
-    pub fn add_peer_node(&self, peer_addr: SocketAddr) {
+    fn add_peer_node(&self, peer_addr: SocketAddr) {
         info!(peer_addr=?peer_addr, "Add peer node.");
         self.artillery_cluster.add_seed_node(peer_addr);
     }
 
     /// Leave the cluster it is joining in.
-    pub fn leave(&self) {
+    fn leave(&self) {
         info!("Leave the cluster.");
         self.artillery_cluster.leave_cluster();
+        self.stop.store(true, Ordering::Relaxed);
     }
 }
 
@@ -209,7 +250,7 @@ fn convert_member(member: ArtilleryMember, self_listen_addr: SocketAddr) -> Memb
 }
 
 /// Output member event as log.
-fn log_artillery_event(artillery_member_event: ArtilleryMemberEvent) {
+fn log_artillery_event(artillery_member_event: &ArtilleryMemberEvent) {
     match artillery_member_event {
         ArtilleryMemberEvent::Joined(artillery_member) => {
             info!(host_key=?artillery_member.host_key(), remote_host=?artillery_member.remote_host(), "Joined.");
@@ -236,10 +277,13 @@ fn log_artillery_event(artillery_member_event: ArtilleryMemberEvent) {
 mod tests {
     use std::io;
     use std::net::{SocketAddr, TcpListener};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time;
 
     use artillery_core::epidemic::prelude::{ArtilleryMember, ArtilleryMemberState};
 
-    use crate::cluster::{convert_member, read_host_key, Member};
+    use crate::cluster::{convert_member, read_host_key, Cluster, EpidemicCluster, Member};
 
     #[tokio::test]
     async fn test_cluster_read_host_key() {
@@ -305,6 +349,96 @@ mod tests {
         }
 
         tmp_dir.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_cluster_single_node() -> anyhow::Result<()> {
+        let tmp_dir = tempfile::tempdir()?;
+        let host_key_path = tmp_dir.path().join("host_key");
+        let host_key = read_host_key(host_key_path.as_path())?;
+
+        let tmp_port = available_port()?;
+        let addr_string = format!("127.0.0.1:{}", tmp_port);
+        let remote_host: SocketAddr = addr_string.as_str().parse()?;
+
+        let cluster = Arc::new(EpidemicCluster::new(host_key, remote_host)?);
+
+        let members = cluster.members();
+        let expected = vec![Member {
+            host_key,
+            listen_addr: remote_host,
+            is_self: true,
+        }];
+        assert_eq!(members, expected);
+
+        cluster.leave();
+
+        tmp_dir.close()?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cluster_multiple_node() -> anyhow::Result<()> {
+        let tmp_dir = tempfile::tempdir()?;
+
+        let host_key_path1 = tmp_dir.path().join("host_key1");
+        let host_key1 = read_host_key(host_key_path1.as_path())?;
+        let tmp_port1 = available_port()?;
+        let addr_str1 = format!("127.0.0.1:{}", tmp_port1);
+        let remote_host1: SocketAddr = addr_str1.as_str().parse()?;
+        let cluster1 = EpidemicCluster::new(host_key1, remote_host1)?;
+
+        let host_key_path2 = tmp_dir.path().join("host_key2");
+        let host_key2 = read_host_key(host_key_path2.as_path())?;
+        let tmp_port2 = available_port()?;
+        let addr_str2 = format!("127.0.0.1:{}", tmp_port2);
+        let remote_host2: SocketAddr = addr_str2.as_str().parse()?;
+        let cluster2 = EpidemicCluster::new(host_key2, remote_host2)?;
+        cluster2.add_peer_node(remote_host1);
+
+        let host_key_path3 = tmp_dir.path().join("host_key3");
+        let host_key3 = read_host_key(host_key_path3.as_path())?;
+        let tmp_port3 = available_port()?;
+        let addr_str3 = format!("127.0.0.1:{}", tmp_port3);
+        let remote_host3: SocketAddr = addr_str3.as_str().parse()?;
+        let cluster3 = EpidemicCluster::new(host_key3, remote_host3)?;
+        cluster3.add_peer_node(remote_host1);
+
+        // Wait for the cluster to be configured.
+        thread::sleep(time::Duration::from_secs(5));
+
+        let mut members = cluster1.members();
+        members.sort_by_key(|member| member.host_key.to_string());
+        println!("{:?}", members);
+        let mut expected = vec![
+            Member {
+                host_key: host_key1,
+                listen_addr: remote_host1,
+                is_self: true,
+            },
+            Member {
+                host_key: host_key2,
+                listen_addr: remote_host2,
+                is_self: false,
+            },
+            Member {
+                host_key: host_key3,
+                listen_addr: remote_host3,
+                is_self: false,
+            },
+        ];
+        expected.sort_by_key(|member| member.host_key.to_string());
+        println!("{:?}", expected);
+        assert_eq!(members, expected);
+
+        cluster1.leave();
+        cluster2.leave();
+        cluster3.leave();
+
+        tmp_dir.close().unwrap();
+
+        Ok(())
     }
 
     fn available_port() -> io::Result<u16> {
