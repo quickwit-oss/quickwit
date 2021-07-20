@@ -54,7 +54,10 @@ use tokio::time::timeout;
 use tokio::try_join;
 use tracing::debug;
 
-use quickwit_core::{create_index, delete_index, index_data, IndexDataParams, IndexingStatistics};
+use quickwit_core::{
+    create_index, delete_index, garbage_collect_index, index_data, IndexDataParams,
+    IndexingStatistics,
+};
 
 #[derive(Debug)]
 pub struct CreateIndexArgs {
@@ -113,6 +116,12 @@ pub struct SearchIndexArgs {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DeleteIndexArgs {
+    pub index_uri: String,
+    pub dry_run: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct GarbageCollectIndexArgs {
     pub index_uri: String,
     pub dry_run: bool,
 }
@@ -285,13 +294,52 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
             "The following files will be removed along with the index at `{}`",
             args.index_uri
         );
-        for file in affected_files {
-            println!(" - {}", file.display());
+        for file_entry in affected_files {
+            println!(" - {}", file_entry.file_name);
         }
         return Ok(());
     }
 
     println!("Index successfully deleted at `{}`", args.index_uri);
+    Ok(())
+}
+
+pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow::Result<()> {
+    debug!(
+        index_uri = %args.index_uri,
+        dry_run = args.dry_run,
+        "garbage-collect-index"
+    );
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
+
+    let (metastore_uri, index_id) =
+        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+    let deleted_files = garbage_collect_index(metastore_uri, index_id, args.dry_run).await?;
+    if deleted_files.is_empty() {
+        println!("No dangling files to garbage collect.");
+        return Ok(());
+    }
+
+    if args.dry_run {
+        println!("The following files will be garbage collected.");
+        for file_entry in deleted_files {
+            println!(" - {}", file_entry.file_name);
+        }
+        return Ok(());
+    }
+
+    let deleted_bytes: u64 = deleted_files
+        .iter()
+        .map(|entry| entry.file_size_in_bytes)
+        .sum();
+    println!(
+        "{}MB of storage garbage collected.",
+        deleted_bytes / 1_000_000
+    );
+    println!(
+        "Index successfully garbage collected at `{}`",
+        args.index_uri
+    );
     Ok(())
 }
 

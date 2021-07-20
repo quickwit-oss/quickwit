@@ -84,6 +84,17 @@ subcommands:
                 help: Filters out documents after that timestamp (time-series indexes only)
                 long: end-timestamp
                 value_name: TIMESTAMP
+    - gc:
+        about: Garbage collects danglings files from an index
+        args:
+            - index-uri:
+                help: Location of the target index
+                long: index-uri
+                value_name: INDEX URI
+                required: true
+            - dry-run:
+                help: Executes the command in dry run mode and displays the list of files to remove
+                long: dry-run
     - delete:
         about: Deletes an index
         args:
