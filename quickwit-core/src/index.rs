@@ -197,7 +197,7 @@ pub async fn delete_garbage_files(
     Ok(file_entries)
 }
 
-/// list the files for a list of splits.
+/// list the files for a list of split.
 async fn list_splits_files(
     splits: Vec<SplitMetadata>,
     index_uri: String,

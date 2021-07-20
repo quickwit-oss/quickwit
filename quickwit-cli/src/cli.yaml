@@ -93,7 +93,7 @@ subcommands:
                 value_name: INDEX URI
                 required: true
             - dry-run:
-                help: Executes the command in dry run mode and displays the list of files to delete
+                help: Executes the command in dry run mode and displays the list of files to remove
                 long: dry-run
     - delete:
         about: Deletes an index
