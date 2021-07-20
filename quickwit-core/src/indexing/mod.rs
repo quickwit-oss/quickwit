@@ -30,6 +30,6 @@ mod statistics;
 
 pub use document_source::{test_document_source, DocumentSource};
 pub use index::{index_data, IndexDataParams};
-pub use split::remove_split_files_from_storage;
+pub use split::{remove_split_files_from_storage, FileEntry};
 pub use split_finalizer::MAX_CONCURRENT_SPLIT_TASKS;
 pub use statistics::IndexingStatistics;
