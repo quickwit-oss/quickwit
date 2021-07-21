@@ -206,7 +206,7 @@ impl CliCommand {
         let grace_period = matches
             .value_of("grace-period")
             .map(parse_duration_with_unit)
-            .context("'index-uri' is a required arg")??;
+            .context("'grace-period' should have default")??;
         let dry_run = matches.is_present("dry-run");
         Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
             index_uri,
@@ -282,7 +282,8 @@ fn about_text() -> String {
     about_text
 }
 
-/// Parse duration with specified unit.
+/// Parse duration with unit.
+/// examples: 1s 2m 3h 5d
 pub fn parse_duration_with_unit(duration: &str) -> anyhow::Result<Duration> {
     let mut value = "".to_string();
     let mut unit = "".to_string();
