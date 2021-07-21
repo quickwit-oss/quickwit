@@ -129,7 +129,7 @@ pub async fn garbage_collect_index(
         .await?;
     let storage_resolver = StorageUriResolver::default();
 
-    //TODO: consider prunning newly staged split as they might be a work in-progress
+    // We don't consider staged splits that are not older than the `grace_period`
     let grace_period_timestamp = Utc::now().timestamp() - grace_period.as_secs() as i64;
     let staged_splits = metastore
         .list_splits(index_id, SplitState::Staged, None)

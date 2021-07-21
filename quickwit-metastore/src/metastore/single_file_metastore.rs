@@ -392,12 +392,14 @@ mod tests {
     use std::ops::Range;
     use std::path::Path;
     use std::sync::Arc;
+    use std::time::Duration;
 
     use crate::{IndexMetadata, MetastoreError};
     use crate::{Metastore, SingleFileMetastore, SplitMetadata, SplitState};
     use chrono::Utc;
     use quickwit_index_config::AllFlattenIndexConfig;
     use quickwit_storage::{MockStorage, StorageErrorKind};
+    use tokio::time::sleep;
 
     #[tokio::test]
     async fn test_single_file_metastore_index_exists() {
@@ -1628,7 +1630,59 @@ mod tests {
         }
     }
 
-    //TODO check stage,mark_as_deleted, publish, updated the time
+    #[tokio::test]
+    async fn test_single_file_metastore_split_update_timestamp() {
+        let metastore = SingleFileMetastore::for_test();
+        let index_id = "my-index";
+        let split_id = "split-one";
+        let mut current_timestamp = Utc::now().timestamp();
+        let split_metadata = SplitMetadata {
+            split_id: split_id.to_string(),
+            split_state: SplitState::New,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(Range { start: 0, end: 100 }),
+            generation: 3,
+            update_timestamp: current_timestamp,
+        };
+        let index_metadata = IndexMetadata {
+            index_id: index_id.to_string(),
+            index_uri: "ram://indexes/my-index".to_string(),
+            index_config: Box::new(AllFlattenIndexConfig::default()),
+        };
+
+        // Create index
+        metastore.create_index(index_metadata).await.unwrap();
+
+        // wait for 1s, stage split & check `update_timestamp`
+        sleep(Duration::from_secs(1)).await;
+        metastore
+            .stage_split(index_id, split_metadata.clone())
+            .await
+            .unwrap();
+        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
+        assert!(split_meta.update_timestamp > current_timestamp);
+        current_timestamp = split_meta.update_timestamp;
+
+        // wait for 1s, publish split & check `update_timestamp`
+        sleep(Duration::from_secs(1)).await;
+        metastore
+            .publish_splits(index_id, vec![split_id])
+            .await
+            .unwrap();
+        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
+        assert!(split_meta.update_timestamp > current_timestamp);
+        current_timestamp = split_meta.update_timestamp;
+
+        // wait for 1s, mark split as deleted & check `update_timestamp`
+        sleep(Duration::from_secs(1)).await;
+        metastore
+            .mark_splits_as_deleted(index_id, vec![split_id])
+            .await
+            .unwrap();
+        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
+        assert!(split_meta.update_timestamp > current_timestamp);
+    }
 
     #[tokio::test]
     async fn test_single_file_metastore_storage_failing() {

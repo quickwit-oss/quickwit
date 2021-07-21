@@ -266,16 +266,22 @@ async fn test_cmd_garbage_collect() -> Result<()> {
     metastore
         .mark_splits_as_deleted(index_id, split_ids)
         .await?;
-    make_command(format!("gc --index-uri {} --dry-run", test_env.index_uri).as_str())
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "The following files will be garbage collected.",
-        ))
-        .stdout(predicate::str::contains("/hotcache"))
-        .stdout(predicate::str::contains("/.manifest"));
+    make_command(
+        format!(
+            "gc --index-uri {} --dry-run --grace-period 10m",
+            test_env.index_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "The following files will be garbage collected.",
+    ))
+    .stdout(predicate::str::contains("/hotcache"))
+    .stdout(predicate::str::contains("/.manifest"));
 
-    make_command(format!("gc --index-uri {}", test_env.index_uri).as_str())
+    make_command(format!("gc --index-uri {} --grace-period 10m", test_env.index_uri).as_str())
         .assert()
         .success()
         .stdout(predicate::str::contains(
