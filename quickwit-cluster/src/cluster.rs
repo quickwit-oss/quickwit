@@ -260,14 +260,14 @@ fn log_artillery_event(artillery_member_event: ArtilleryMemberEvent) {
 #[cfg(test)]
 mod tests {
     use std::io;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
-    use std::sync::Arc;
+    use std::net::{SocketAddr, TcpListener};
     use std::thread;
     use std::time;
 
     use artillery_core::epidemic::prelude::{ArtilleryMember, ArtilleryMemberState};
 
-    use crate::cluster::{convert_member, read_host_key, Cluster, Member};
+    use crate::cluster::{convert_member, read_host_key, Member};
+    use crate::test_utils::test_cluster;
 
     #[tokio::test]
     async fn test_cluster_read_host_key() {
@@ -339,17 +339,11 @@ mod tests {
     async fn test_cluster_single_node() -> anyhow::Result<()> {
         let tmp_dir = tempfile::tempdir()?;
 
-        let host_key = read_host_key(tmp_dir.path().join("host_key").as_path())?;
-        let listen_addr =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
-        let cluster = Arc::new(Cluster::new(host_key, listen_addr)?);
+        let cluster = test_cluster(tmp_dir.path().join("host_key").as_path())?;
 
-        let members = cluster.members();
-        let expected = vec![Member {
-            host_key,
-            listen_addr,
-            is_self: true,
-        }];
+        let members: Vec<SocketAddr> = cluster.members().iter().map(|member| member.listen_addr).collect();
+        println!("member={:?}", members);
+        let expected = vec![cluster.listen_addr];
         assert_eq!(members, expected);
 
         cluster.leave();
@@ -363,47 +357,26 @@ mod tests {
     async fn test_cluster_multiple_node() -> anyhow::Result<()> {
         let tmp_dir = tempfile::tempdir()?;
 
-        let host_key1 = read_host_key(tmp_dir.path().join("host_key1").as_path())?;
-        let listen_addr1 =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
-        let cluster1 = Arc::new(Cluster::new(host_key1, listen_addr1)?);
+        let cluster1 = test_cluster(tmp_dir.path().join("host_key1").as_path())?;
 
-        let host_key2 = read_host_key(tmp_dir.path().join("host_key2").as_path())?;
-        let listen_addr2 =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
-        let cluster2 = Arc::new(Cluster::new(host_key2, listen_addr2)?);
-        cluster2.add_peer_node(listen_addr1);
+        let cluster2 = test_cluster(tmp_dir.path().join("host_key2").as_path())?;
+        cluster2.add_peer_node(cluster1.listen_addr);
 
-        let host_key3 = read_host_key(tmp_dir.path().join("host_key3").as_path())?;
-        let listen_addr3 =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
-        let cluster3 = Arc::new(Cluster::new(host_key3, listen_addr3)?);
-        cluster3.add_peer_node(listen_addr1);
+        let cluster3 = test_cluster(tmp_dir.path().join("host_key3").as_path())?;
+        cluster3.add_peer_node(cluster1.listen_addr);
 
         // Wait for the cluster to be configured.
         thread::sleep(time::Duration::from_secs(5));
 
-        let mut members = cluster1.members();
-        members.sort_by_key(|member| member.host_key.to_string());
+        let mut members: Vec<SocketAddr> = cluster1.members().iter().map(|member| member.listen_addr).collect();
+        members.sort();
         println!("{:?}", members);
         let mut expected = vec![
-            Member {
-                host_key: host_key1,
-                listen_addr: listen_addr1,
-                is_self: true,
-            },
-            Member {
-                host_key: host_key2,
-                listen_addr: listen_addr2,
-                is_self: false,
-            },
-            Member {
-                host_key: host_key3,
-                listen_addr: listen_addr3,
-                is_self: false,
-            },
+            cluster1.listen_addr,
+            cluster2.listen_addr,
+            cluster3.listen_addr,
         ];
-        expected.sort_by_key(|member| member.host_key.to_string());
+        expected.sort();
         println!("{:?}", expected);
         assert_eq!(members, expected);
 

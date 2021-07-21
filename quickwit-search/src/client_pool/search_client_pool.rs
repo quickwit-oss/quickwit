@@ -221,6 +221,7 @@ mod tests {
     use std::time;
 
     use quickwit_cluster::cluster::{read_host_key, Cluster};
+    use quickwit_cluster::test_utils::test_cluster;
 
     use crate::client_pool::search_client_pool::create_search_service_client;
     use crate::client_pool::{ClientPool, Job};
@@ -231,10 +232,7 @@ mod tests {
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
         let tmp_dir = tempfile::tempdir()?;
 
-        let host_key = read_host_key(tmp_dir.path().join("host_key").as_path())?;
-        let listen_addr =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
-        let cluster = Arc::new(Cluster::new(host_key, listen_addr)?);
+        let cluster = Arc::new(test_cluster(tmp_dir.path().join("host_key").as_path())?);
 
         let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
 
@@ -248,7 +246,7 @@ mod tests {
         addrs.sort_by_key(|addr| addr.to_string());
         println!("addrs={:?}", addrs);
 
-        let mut expected = vec![swim_addr_to_grpc_addr(listen_addr)];
+        let mut expected = vec![swim_addr_to_grpc_addr(cluster.listen_addr)];
         expected.sort_by_key(|addr| addr.to_string());
         println!("expected={:?}", expected);
 
@@ -265,16 +263,10 @@ mod tests {
     async fn test_search_client_pool_multiple_nodes() -> anyhow::Result<()> {
         let tmp_dir = tempfile::tempdir()?;
 
-        let host_key1 = read_host_key(tmp_dir.path().join("host_key1").as_path())?;
-        let listen_addr1 =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
-        let cluster1 = Arc::new(Cluster::new(host_key1, listen_addr1)?);
+        let cluster1 = Arc::new(test_cluster(tmp_dir.path().join("host_key1").as_path())?);
 
-        let host_key2 = read_host_key(tmp_dir.path().join("host_key2").as_path())?;
-        let listen_addr2 =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
-        let cluster2 = Arc::new(Cluster::new(host_key2, listen_addr2)?);
-        cluster2.add_peer_node(listen_addr1);
+        let cluster2 = Arc::new(test_cluster(tmp_dir.path().join("host_key2").as_path())?);
+        cluster2.add_peer_node(cluster1.listen_addr);
 
         // Wait for the cluster to be configured.
         thread::sleep(time::Duration::from_secs(5));
@@ -288,14 +280,14 @@ mod tests {
             .into_iter()
             .map(|(addr, _client)| addr)
             .collect();
-        addrs.sort_by_key(|addr| addr.to_string());
+        addrs.sort();
         println!("addrs={:?}", addrs);
 
         let mut expected = vec![
-            swim_addr_to_grpc_addr(listen_addr1),
-            swim_addr_to_grpc_addr(listen_addr2),
+            swim_addr_to_grpc_addr(cluster1.listen_addr),
+            swim_addr_to_grpc_addr(cluster2.listen_addr),
         ];
-        expected.sort_by_key(|addr| addr.to_string());
+        expected.sort();
         println!("expected={:?}", expected);
 
         assert_eq!(addrs, expected);
