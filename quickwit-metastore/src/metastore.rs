@@ -27,6 +27,7 @@ use std::fmt::Debug;
 use std::ops::Range;
 
 use async_trait::async_trait;
+use chrono::Utc;
 use quickwit_index_config::IndexConfig;
 use serde::{Deserialize, Serialize};
 
@@ -67,6 +68,9 @@ pub struct SplitMetadata {
 
     /// Number of merges this segment has been subjected to during its lifetime.
     pub generation: usize,
+
+    /// Timestamp specifying when the split was last modified.
+    pub update_timestamp: i64,
 }
 
 impl SplitMetadata {
@@ -79,6 +83,7 @@ impl SplitMetadata {
             size_in_bytes: 0,
             time_range: None,
             generation: 0,
+            update_timestamp: Utc::now().timestamp(),
         }
     }
 }
