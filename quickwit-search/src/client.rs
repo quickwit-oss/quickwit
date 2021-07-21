@@ -32,9 +32,9 @@ use crate::error::parse_grpc_error;
 use crate::SearchError;
 use crate::SearchService;
 
-/// Impl is an enumlation that meant to manage Quickwit's search service client types.
+/// Impl is an enumeration that meant to manage Quickwit's search service client types.
 #[derive(Clone)]
-enum Impl {
+enum SearchServiceClientImpl {
     Local(Arc<dyn SearchService>),
     Grpc(quickwit_proto::search_service_client::SearchServiceClient<Channel>),
 }
@@ -43,17 +43,17 @@ enum Impl {
 /// It contains the client implementation and the gRPC address of the node to which the client connects.
 #[derive(Clone)]
 pub struct SearchServiceClient {
-    implementation: Impl,
+    client_impl: SearchServiceClientImpl,
     grpc_addr: SocketAddr,
 }
 
 impl fmt::Debug for SearchServiceClient {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        match &self.implementation {
-            Impl::Local(_service) => {
+        match &self.client_impl {
+            SearchServiceClientImpl::Local(_service) => {
                 write!(formatter, "Local({:?})", self.grpc_addr)
             }
-            Impl::Grpc(_grpc_client) => {
+            SearchServiceClientImpl::Grpc(_grpc_client) => {
                 write!(formatter, "Grpc({:?})", self.grpc_addr)
             }
         }
@@ -67,7 +67,7 @@ impl SearchServiceClient {
         grpc_addr: SocketAddr,
     ) -> Self {
         SearchServiceClient {
-            implementation: Impl::Grpc(client),
+            client_impl: SearchServiceClientImpl::Grpc(client),
             grpc_addr,
         }
     }
@@ -75,7 +75,7 @@ impl SearchServiceClient {
     /// Create a search service client instance given a search service and gRPC address.
     pub fn from_service(service: Arc<dyn SearchService>, grpc_addr: SocketAddr) -> Self {
         SearchServiceClient {
-            implementation: Impl::Local(service),
+            client_impl: SearchServiceClientImpl::Local(service),
             grpc_addr,
         }
     }
@@ -90,8 +90,8 @@ impl SearchServiceClient {
         &mut self,
         request: quickwit_proto::SearchRequest,
     ) -> Result<quickwit_proto::SearchResult, SearchError> {
-        match &mut self.implementation {
-            Impl::Grpc(grpc_client) => {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);
                 let tonic_result = grpc_client
                     .root_search(tonic_request)
@@ -99,7 +99,7 @@ impl SearchServiceClient {
                     .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
                 Ok(tonic_result.into_inner())
             }
-            Impl::Local(service) => service.root_search(request).await,
+            SearchServiceClientImpl::Local(service) => service.root_search(request).await,
         }
     }
 
@@ -108,8 +108,8 @@ impl SearchServiceClient {
         &mut self,
         request: quickwit_proto::LeafSearchRequest,
     ) -> Result<quickwit_proto::LeafSearchResult, SearchError> {
-        match &mut self.implementation {
-            Impl::Grpc(grpc_client) => {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);
                 let tonic_result = grpc_client
                     .leaf_search(tonic_request)
@@ -117,7 +117,7 @@ impl SearchServiceClient {
                     .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
                 Ok(tonic_result.into_inner())
             }
-            Impl::Local(service) => service.leaf_search(request).await,
+            SearchServiceClientImpl::Local(service) => service.leaf_search(request).await,
         }
     }
 
@@ -126,8 +126,8 @@ impl SearchServiceClient {
         &mut self,
         request: quickwit_proto::FetchDocsRequest,
     ) -> Result<quickwit_proto::FetchDocsResult, SearchError> {
-        match &mut self.implementation {
-            Impl::Grpc(grpc_client) => {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);
                 let tonic_result = grpc_client
                     .fetch_docs(tonic_request)
@@ -135,7 +135,7 @@ impl SearchServiceClient {
                     .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
                 Ok(tonic_result.into_inner())
             }
-            Impl::Local(service) => service.fetch_docs(request).await,
+            SearchServiceClientImpl::Local(service) => service.fetch_docs(request).await,
         }
     }
 }

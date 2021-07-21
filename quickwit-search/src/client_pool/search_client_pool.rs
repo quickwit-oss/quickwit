@@ -215,13 +215,12 @@ impl ClientPool for SearchClientPool {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{SocketAddr, TcpListener};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
     use std::sync::Arc;
     use std::thread;
     use std::time;
 
     use quickwit_cluster::cluster::{read_host_key, Cluster};
-    use quickwit_common::to_socket_addr;
 
     use crate::client_pool::search_client_pool::create_search_service_client;
     use crate::client_pool::{ClientPool, Job};
@@ -232,12 +231,10 @@ mod tests {
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
         let tmp_dir = tempfile::tempdir()?;
 
-        let host_key_path = tmp_dir.path().join("host_key");
-        let host_key = read_host_key(host_key_path.as_path())?;
-        let tmp_swim_port = available_port()?;
-        let swim_addr_string = format!("127.0.0.1:{}", tmp_swim_port);
-        let swim_addr = to_socket_addr(&swim_addr_string)?;
-        let cluster = Arc::new(Cluster::new(host_key, swim_addr)?);
+        let host_key = read_host_key(tmp_dir.path().join("host_key").as_path())?;
+        let listen_addr =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
+        let cluster = Arc::new(Cluster::new(host_key, listen_addr)?);
 
         let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
 
@@ -251,7 +248,7 @@ mod tests {
         addrs.sort_by_key(|addr| addr.to_string());
         println!("addrs={:?}", addrs);
 
-        let mut expected = vec![swim_addr_to_grpc_addr(swim_addr)];
+        let mut expected = vec![swim_addr_to_grpc_addr(listen_addr)];
         expected.sort_by_key(|addr| addr.to_string());
         println!("expected={:?}", expected);
 
@@ -268,20 +265,16 @@ mod tests {
     async fn test_search_client_pool_multiple_nodes() -> anyhow::Result<()> {
         let tmp_dir = tempfile::tempdir()?;
 
-        let host_key_path1 = tmp_dir.path().join("host_key1");
-        let host_key1 = read_host_key(host_key_path1.as_path())?;
-        let tmp_swim_port1 = available_port()?;
-        let swim_addr_string1 = format!("127.0.0.1:{}", tmp_swim_port1);
-        let swim_addr1 = to_socket_addr(&swim_addr_string1)?;
-        let cluster1 = Arc::new(Cluster::new(host_key1, swim_addr1)?);
+        let host_key1 = read_host_key(tmp_dir.path().join("host_key1").as_path())?;
+        let listen_addr1 =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
+        let cluster1 = Arc::new(Cluster::new(host_key1, listen_addr1)?);
 
-        let host_key_path2 = tmp_dir.path().join("host_key2");
-        let host_key2 = read_host_key(host_key_path2.as_path())?;
-        let tmp_swim_port2 = available_port()?;
-        let swim_addr_string2 = format!("127.0.0.1:{}", tmp_swim_port2);
-        let swim_addr2 = to_socket_addr(&swim_addr_string2)?;
-        let cluster2 = Arc::new(Cluster::new(host_key2, swim_addr2)?);
-        cluster2.add_peer_node(swim_addr1);
+        let host_key2 = read_host_key(tmp_dir.path().join("host_key2").as_path())?;
+        let listen_addr2 =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
+        let cluster2 = Arc::new(Cluster::new(host_key2, listen_addr2)?);
+        cluster2.add_peer_node(listen_addr1);
 
         // Wait for the cluster to be configured.
         thread::sleep(time::Duration::from_secs(5));
@@ -299,8 +292,8 @@ mod tests {
         println!("addrs={:?}", addrs);
 
         let mut expected = vec![
-            swim_addr_to_grpc_addr(swim_addr1),
-            swim_addr_to_grpc_addr(swim_addr2),
+            swim_addr_to_grpc_addr(listen_addr1),
+            swim_addr_to_grpc_addr(listen_addr2),
         ];
         expected.sort_by_key(|addr| addr.to_string());
         println!("expected={:?}", expected);
@@ -319,12 +312,10 @@ mod tests {
     async fn test_search_client_pool_single_node_assign_jobs() -> anyhow::Result<()> {
         let tmp_dir = tempfile::tempdir()?;
 
-        let host_key_path = tmp_dir.path().join("host_key");
-        let host_key = read_host_key(host_key_path.as_path())?;
-        let tmp_swim_port = available_port()?;
-        let swim_addr_string = format!("127.0.0.1:{}", tmp_swim_port);
-        let swim_addr = to_socket_addr(&swim_addr_string)?;
-        let cluster = Arc::new(Cluster::new(host_key, swim_addr)?);
+        let host_key = read_host_key(tmp_dir.path().join("host_key").as_path())?;
+        let listen_addr =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
+        let cluster = Arc::new(Cluster::new(host_key, listen_addr)?);
 
         let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
 
@@ -351,7 +342,7 @@ mod tests {
         println!("assigned_jobs={:?}", assigned_jobs);
 
         let expected = vec![(
-            create_search_service_client(swim_addr_to_grpc_addr(swim_addr)).await?,
+            create_search_service_client(swim_addr_to_grpc_addr(listen_addr)).await?,
             vec![
                 Job {
                     split: "split4".to_string(),

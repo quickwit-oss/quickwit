@@ -102,6 +102,9 @@ pub struct Cluster {
     members: watch::Receiver<Vec<Member>>,
 
     /// A stop flag of cluster monitoring task.
+    /// Once the cluster is created, a task to monitor cluster events will be started.
+    /// Nodes do not need to be monitored for events once they are detached from the cluster.
+    /// You need to update this value to get out of the task loop.
     stop: Arc<AtomicBool>,
 }
 
@@ -257,7 +260,7 @@ fn log_artillery_event(artillery_member_event: ArtilleryMemberEvent) {
 #[cfg(test)]
 mod tests {
     use std::io;
-    use std::net::{SocketAddr, TcpListener};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
     use std::sync::Arc;
     use std::thread;
     use std::time;
@@ -335,19 +338,16 @@ mod tests {
     #[tokio::test]
     async fn test_cluster_single_node() -> anyhow::Result<()> {
         let tmp_dir = tempfile::tempdir()?;
-        let host_key_path = tmp_dir.path().join("host_key");
-        let host_key = read_host_key(host_key_path.as_path())?;
 
-        let tmp_port = available_port()?;
-        let addr_string = format!("127.0.0.1:{}", tmp_port);
-        let remote_host: SocketAddr = addr_string.as_str().parse()?;
-
-        let cluster = Arc::new(Cluster::new(host_key, remote_host)?);
+        let host_key = read_host_key(tmp_dir.path().join("host_key").as_path())?;
+        let listen_addr =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
+        let cluster = Arc::new(Cluster::new(host_key, listen_addr)?);
 
         let members = cluster.members();
         let expected = vec![Member {
             host_key,
-            listen_addr: remote_host,
+            listen_addr,
             is_self: true,
         }];
         assert_eq!(members, expected);
@@ -363,28 +363,22 @@ mod tests {
     async fn test_cluster_multiple_node() -> anyhow::Result<()> {
         let tmp_dir = tempfile::tempdir()?;
 
-        let host_key_path1 = tmp_dir.path().join("host_key1");
-        let host_key1 = read_host_key(host_key_path1.as_path())?;
-        let tmp_port1 = available_port()?;
-        let addr_str1 = format!("127.0.0.1:{}", tmp_port1);
-        let remote_host1: SocketAddr = addr_str1.as_str().parse()?;
-        let cluster1 = Cluster::new(host_key1, remote_host1)?;
+        let host_key1 = read_host_key(tmp_dir.path().join("host_key1").as_path())?;
+        let listen_addr1 =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
+        let cluster1 = Arc::new(Cluster::new(host_key1, listen_addr1)?);
 
-        let host_key_path2 = tmp_dir.path().join("host_key2");
-        let host_key2 = read_host_key(host_key_path2.as_path())?;
-        let tmp_port2 = available_port()?;
-        let addr_str2 = format!("127.0.0.1:{}", tmp_port2);
-        let remote_host2: SocketAddr = addr_str2.as_str().parse()?;
-        let cluster2 = Cluster::new(host_key2, remote_host2)?;
-        cluster2.add_peer_node(remote_host1);
+        let host_key2 = read_host_key(tmp_dir.path().join("host_key2").as_path())?;
+        let listen_addr2 =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
+        let cluster2 = Arc::new(Cluster::new(host_key2, listen_addr2)?);
+        cluster2.add_peer_node(listen_addr1);
 
-        let host_key_path3 = tmp_dir.path().join("host_key3");
-        let host_key3 = read_host_key(host_key_path3.as_path())?;
-        let tmp_port3 = available_port()?;
-        let addr_str3 = format!("127.0.0.1:{}", tmp_port3);
-        let remote_host3: SocketAddr = addr_str3.as_str().parse()?;
-        let cluster3 = Cluster::new(host_key3, remote_host3)?;
-        cluster3.add_peer_node(remote_host1);
+        let host_key3 = read_host_key(tmp_dir.path().join("host_key3").as_path())?;
+        let listen_addr3 =
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
+        let cluster3 = Arc::new(Cluster::new(host_key3, listen_addr3)?);
+        cluster3.add_peer_node(listen_addr1);
 
         // Wait for the cluster to be configured.
         thread::sleep(time::Duration::from_secs(5));
@@ -395,17 +389,17 @@ mod tests {
         let mut expected = vec![
             Member {
                 host_key: host_key1,
-                listen_addr: remote_host1,
+                listen_addr: listen_addr1,
                 is_self: true,
             },
             Member {
                 host_key: host_key2,
-                listen_addr: remote_host2,
+                listen_addr: listen_addr2,
                 is_self: false,
             },
             Member {
                 host_key: host_key3,
-                listen_addr: remote_host3,
+                listen_addr: listen_addr3,
                 is_self: false,
             },
         ];
