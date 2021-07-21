@@ -35,6 +35,10 @@ mod root;
 mod search_result_json;
 mod service;
 
+///
+/// Refer to this as `crate::Result<T>`.
+pub type Result<T> = std::result::Result<T, SearchError>;
+
 use std::cmp::Reverse;
 use std::net::SocketAddr;
 use std::ops::Range;
@@ -143,7 +147,7 @@ pub async fn single_node_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
     storage_resolver: StorageUriResolver,
-) -> Result<SearchResult, SearchError> {
+) -> Result<SearchResult> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let storage = storage_resolver.resolve(&index_metadata.index_uri)?;

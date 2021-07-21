@@ -108,7 +108,7 @@ pub struct IndexDataArgs {
     pub overwrite: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub struct SearchIndexArgs {
     pub index_uri: String,
     pub query: String,
@@ -243,7 +243,7 @@ async fn create_document_source_from_args(
     }
 }
 
-pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
+pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResult> {
     debug!(
         index_uri = %args.index_uri,
         query = %args.query,
@@ -271,6 +271,11 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     };
     let search_result: SearchResult =
         single_node_search(&search_request, &*metastore, storage_uri_resolver).await?;
+    Ok(search_result)
+}
+
+pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
+    let search_result: SearchResult = search_index(args).await?;
 
     let search_result_json = SearchResultJson::from(search_result);
 

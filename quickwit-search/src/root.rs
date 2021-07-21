@@ -20,6 +20,7 @@
  */
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -100,7 +101,7 @@ pub struct ErrorRetries {
     #[allow(dead_code)]
     retry_split_ids: Vec<String>,
     #[allow(dead_code)]
-    nodes_to_use: Vec<SocketAddr>,
+    nodes_to_use: HashSet<SocketAddr>,
 }
 
 /// There are different information which could be useful
@@ -165,8 +166,24 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
 
     Some(ErrorRetries {
         retry_split_ids: failed_split_ids,
-        nodes_to_use: retry_nodes,
+        nodes_to_use: retry_nodes.into_iter().collect(),
     })
+}
+
+fn job_for_split(
+    split_ids: &HashSet<&String>,
+    split_metadata_map: &HashMap<String, SplitMetadata>,
+) -> Vec<Job> {
+    // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
+    let leaf_search_jobs: Vec<Job> = split_metadata_map
+        .iter()
+        .filter(|(split_id, _)| split_ids.contains(split_id))
+        .map(|(split_id, split_metadata)| Job {
+            split: split_id.clone(),
+            cost: compute_split_cost(split_metadata),
+        })
+        .collect();
+    leaf_search_jobs
 }
 
 /// Perform a distributed search.
@@ -188,19 +205,11 @@ pub async fn root_search(
         .collect();
 
     // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
-    let leaf_search_jobs: Vec<Job> = split_metadata_map
-        .keys()
-        .map(|split_id| {
-            // TODO: Change to a better way that does not use unwrap().
-            let split_metadata = split_metadata_map.get(split_id).unwrap();
-            Job {
-                split: split_id.clone(),
-                cost: compute_split_cost(split_metadata),
-            }
-        })
-        .collect();
+    //
+    let leaf_search_jobs: Vec<Job> =
+        job_for_split(&split_metadata_map.keys().collect(), &split_metadata_map);
 
-    let assigned_leaf_search_jobs = client_pool.assign_jobs(leaf_search_jobs).await?;
+    let assigned_leaf_search_jobs = client_pool.assign_jobs(leaf_search_jobs, None).await?;
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
 
     // Create search request with start offset is 0 that used by leaf node search.
@@ -209,13 +218,32 @@ pub async fn root_search(
     search_request_with_offset_0.max_hits += search_request.start_offset;
 
     // Perform the query phase.
-    let result_per_node_addr = execute_search(
+    let mut result_per_node_addr = execute_search(
         &assigned_leaf_search_jobs,
         search_request_with_offset_0.clone(),
     )
     .await?;
 
-    analyze_errors(&result_per_node_addr);
+    if let Some(retry_action) = analyze_errors(&result_per_node_addr) {
+        // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
+        //
+        let leaf_search_jobs: Vec<Job> = job_for_split(
+            &retry_action.retry_split_ids.iter().collect(),
+            &split_metadata_map,
+        );
+
+        let assigned_leaf_search_jobs = client_pool
+            .assign_jobs(leaf_search_jobs, Some(retry_action.nodes_to_use))
+            .await?;
+        // Perform the query phase.
+        let result_per_node_addr_new = execute_search(
+            &assigned_leaf_search_jobs,
+            search_request_with_offset_0.clone(),
+        )
+        .await?;
+
+        result_per_node_addr.extend(result_per_node_addr_new.into_iter());
+    }
 
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let index_config = index_metadata.index_config;

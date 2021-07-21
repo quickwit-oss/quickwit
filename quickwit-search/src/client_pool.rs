@@ -21,6 +21,8 @@
 
 pub mod search_client_pool;
 
+use std::{collections::HashSet, net::SocketAddr};
+
 use async_trait::async_trait;
 
 use crate::SearchServiceClient;
@@ -45,5 +47,6 @@ pub trait ClientPool: Send + Sync + 'static {
     async fn assign_jobs(
         &self,
         jobs: Vec<Job>,
+        address_whitelist: Option<HashSet<SocketAddr>>,
     ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<Job>)>>;
 }

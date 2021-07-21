@@ -18,12 +18,12 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::collector::QuickwitCollector;
+use crate::{collector::QuickwitCollector, SearchError};
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory, HOTCACHE_FILENAME};
-use quickwit_proto::LeafSearchResult;
+use quickwit_proto::{LeafSearchResult, SplitSearchError};
 use quickwit_storage::Storage;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -125,7 +125,7 @@ async fn leaf_search_single_split(
     query: &dyn Query,
     quickwit_collector: QuickwitCollector,
     storage: Arc<dyn Storage>,
-) -> anyhow::Result<LeafSearchResult> {
+) -> crate::Result<LeafSearchResult> {
     let index = open_index(storage).await?;
     let reader = index
         .reader_builder()
@@ -148,29 +148,36 @@ pub async fn leaf_search(
     collector: QuickwitCollector,
     split_ids: &[String],
     storage: Arc<dyn Storage>,
-) -> anyhow::Result<LeafSearchResult> {
+) -> Result<LeafSearchResult, SearchError> {
     let leaf_search_single_split_futures: Vec<_> = split_ids
         .iter()
         .map(|split_id| {
             let split_storage: Arc<dyn Storage> =
                 quickwit_storage::add_prefix_to_storage(storage.clone(), split_id);
             let collector_for_split = collector.for_split(split_id.clone());
-            async move { leaf_search_single_split(query, collector_for_split, split_storage).await }
+            async move {
+                leaf_search_single_split(query, collector_for_split, split_storage)
+                    .await
+                    .map_err(|err| (split_id.to_string(), err))
+            }
         })
         .collect();
-    // TODO avoid failing all for one issue. We could be more resilient on storage failures.
     let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
 
-    let (search_results, _errors): (Vec<_>, Vec<_>) =
+    let (search_results, errors): (Vec<_>, Vec<_>) =
         split_search_results.into_iter().partition(Result::is_ok);
     let search_results: Vec<_> = search_results.into_iter().map(Result::unwrap).collect();
-    //let errors: Vec<_> = errors.into_iter().map(Result::unwrap_err).collect();
+    let errors: Vec<_> = errors.into_iter().map(Result::unwrap_err).collect();
 
-    let merged_search_results = spawn_blocking(move || collector.merge_fruits(search_results))
+    let mut merged_search_results = spawn_blocking(move || collector.merge_fruits(search_results))
         .await
         .with_context(|| "Merging search on split results failed")??;
 
-    // TODO save error, but switch away from anyhow first
-    //merged_search_results.failed_requests.extend(errors.iter());
+    merged_search_results
+        .failed_requests
+        .extend(errors.iter().map(|(split_id, err)| SplitSearchError {
+            split_id: split_id.to_string(),
+            error: format!("{:?}", err),
+        }));
     Ok(merged_search_results)
 }
