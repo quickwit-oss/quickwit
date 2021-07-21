@@ -385,7 +385,7 @@ mod tests {
                         },
                     ],
                     failed_requests: Vec::new(),
-                    aggregated_results: 0,
+                    num_attempted_splits: 0,
                 })
             },
         );
@@ -503,7 +503,7 @@ mod tests {
                         },
                     ],
                     failed_requests: Vec::new(),
-                    aggregated_results: 0,
+                    num_attempted_splits: 0,
                 })
             },
         );
@@ -546,7 +546,7 @@ mod tests {
                         doc_id: 2,
                     }],
                     failed_requests: Vec::new(),
-                    aggregated_results: 0,
+                    num_attempted_splits: 0,
                 })
             },
         );
