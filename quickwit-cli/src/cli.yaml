@@ -93,7 +93,7 @@ subcommands:
                 value_name: INDEX URI
                 required: true
             - grace-period:
-                help: Threshold period after which an intermediate file can be collected.
+                help: Threshold period after which intermediate files can be garbage collected.
                 long: grace-period
                 value_name: GRACE PERIOD
                 default_value: '1h'

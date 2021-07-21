@@ -69,7 +69,7 @@ pub struct SplitMetadata {
     /// Number of merges this segment has been subjected to during its lifetime.
     pub generation: usize,
 
-    /// Timestamp specifying when the split was last modified.
+    /// Timestamp for tracking when the split was last modified.
     pub update_timestamp: i64,
 }
 
