@@ -39,16 +39,34 @@ cargo install quickwit-cli
 ## Use the docker image
 
 If you use docker, this might be one of the quickest way to get going. 
-The following command will pull the image from [dockerhub](https://hub.docker.com/r/quickwitinc/quickwit)
-and gets you right in the running container ready to execute Quickwit commands.
+The following command will pull the image from [dockerhub](https://hub.docker.com/r/quickwit/quickwit-cli)
+and gets you right in the shell of the running container ready to execute Quickwit commands. 
+Note that we are also mounting the working directory as volume. This is useful when you already have your dataset ready on your machine and want to work with Quickwit docker image.
 
 ```bash
-docker run -it quickwitinc/quickwit
-./quickwit --version
+docker run -it -v "$(pwd)":"/usr/quickwit" --entrypoint ash quickwit/quickwit-cli
+quickwit --version
 ```
 
-Since the search API runs by default on port `:8080`, we expose this by default. 
-You can map it to a host port or choose any another port based on your needs.
+To get the full gist of this, let's run a minified version of the - [Quickstart guide](./quickstart.md).
 
+```bash
+# let's create a `data` directory
+mkdir data && cd data
 
+# download wikipedia dataset files
+curl -o wikipedia_index_config.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/wikipedia_index_config.json
+curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 
+# run the container with `data` folder mounted
+docker run -it -v "$(pwd)":"/usr/quickwit" --entrypoint ash quickwit/quickwit-cli
+
+# create, index and search from inside the container 
+quickwit new --index-uri file:///$(pwd)/wikipedia --index-config-path ./wikipedia_index_config.json
+quickwit index --index-uri file:///$(pwd)/wikipedia --input-path wiki-articles-10000.json
+quickwit search --index-uri file:///$(pwd)/wikipedia --query "barack AND obama"
+quickwit delete --index-uri file:///$(pwd)/wikipedia
+```
+
+*Note: Since the search API runs by default on port `:8080`, we expose this by default. 
+You can map it to a host port or choose any another port based on your needs.*

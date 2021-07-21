@@ -28,8 +28,7 @@ You can also install it via [other means](installation.md).
 You can also pull and run the Quickwit binary in an isolated docker container.
 
 ```bash
-docker run -it quickwitinc/quickwit
-./quickwit --version
+docker run quickwit/quickwit-cli --version
 ```
 
 ## Create your first index
