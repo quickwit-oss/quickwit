@@ -230,10 +230,9 @@ pub async fn root_search(
                 leaf_search_results.push(leaf_search_result)
             }
             Err(node_search_error) => {
-                let leaf_search_error = node_search_error.search_error.clone();
                 error!(error=?node_search_error, "Leaf request failed");
                 // TODO list failed leaf nodes and retry.
-                return Err(leaf_search_error);
+                return Err(node_search_error.search_error);
             }
         }
     }
@@ -255,7 +254,7 @@ pub async fn root_search(
     }
 
     // Perform the fetch docs phese.
-    let mut fetch_docs_handles: Vec<JoinHandle<anyhow::Result<FetchDocsResult>>> = Vec::new();
+    let mut fetch_docs_handles: Vec<JoinHandle<Result<FetchDocsResult, SearchError>>> = Vec::new();
     for (search_client, jobs) in assigned_leaf_search_jobs.iter() {
         for job in jobs {
             // TODO group fetch doc requests.
@@ -266,10 +265,7 @@ pub async fn root_search(
                 };
                 let mut search_client_clone = search_client.clone();
                 let handle = tokio::spawn(async move {
-                    match search_client_clone.fetch_docs(fetch_docs_request).await {
-                        Ok(resp) => Ok(resp),
-                        Err(err) => Err(anyhow::anyhow!("Failed to fetch docs due to {:?}", err)),
-                    }
+                    search_client_clone.fetch_docs(fetch_docs_request).await
                 });
                 fetch_docs_handles.push(handle);
             }

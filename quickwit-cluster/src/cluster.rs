@@ -226,7 +226,7 @@ impl Cluster for EpidemicCluster {
         self.artillery_cluster.add_seed_node(peer_addr);
     }
 
-    /// Leave the cluster it is joining in.
+    /// Leave the cluster.
     fn leave(&self) {
         info!("Leave the cluster.");
         self.artillery_cluster.leave_cluster();

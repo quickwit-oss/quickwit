@@ -37,7 +37,6 @@ use crate::client_pool::{ClientPool, Job};
 use crate::rendezvous_hasher::{sort_by_rendez_vous_hash, Node};
 use crate::swim_addr_to_grpc_addr;
 use crate::SearchServiceClient;
-// use crate::SearchService;
 
 /// Search client pool implementation.
 #[derive(Clone)]
