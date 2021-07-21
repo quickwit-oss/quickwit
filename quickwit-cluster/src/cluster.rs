@@ -259,15 +259,14 @@ fn log_artillery_event(artillery_member_event: ArtilleryMemberEvent) {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-    use std::net::{SocketAddr, TcpListener};
+    use std::net::SocketAddr;
     use std::thread;
     use std::time;
 
     use artillery_core::epidemic::prelude::{ArtilleryMember, ArtilleryMemberState};
 
     use crate::cluster::{convert_member, read_host_key, Member};
-    use crate::test_utils::test_cluster;
+    use crate::test_utils::{available_port, test_cluster};
 
     #[tokio::test]
     async fn test_cluster_read_host_key() {
@@ -341,7 +340,11 @@ mod tests {
 
         let cluster = test_cluster(tmp_dir.path().join("host_key").as_path())?;
 
-        let members: Vec<SocketAddr> = cluster.members().iter().map(|member| member.listen_addr).collect();
+        let members: Vec<SocketAddr> = cluster
+            .members()
+            .iter()
+            .map(|member| member.listen_addr)
+            .collect();
         println!("member={:?}", members);
         let expected = vec![cluster.listen_addr];
         assert_eq!(members, expected);
@@ -368,7 +371,11 @@ mod tests {
         // Wait for the cluster to be configured.
         thread::sleep(time::Duration::from_secs(5));
 
-        let mut members: Vec<SocketAddr> = cluster1.members().iter().map(|member| member.listen_addr).collect();
+        let mut members: Vec<SocketAddr> = cluster1
+            .members()
+            .iter()
+            .map(|member| member.listen_addr)
+            .collect();
         members.sort();
         println!("{:?}", members);
         let mut expected = vec![
@@ -387,12 +394,5 @@ mod tests {
         tmp_dir.close().unwrap();
 
         Ok(())
-    }
-
-    fn available_port() -> io::Result<u16> {
-        match TcpListener::bind("127.0.0.1:0") {
-            Ok(listener) => Ok(listener.local_addr().unwrap().port()),
-            Err(e) => Err(e),
-        }
     }
 }

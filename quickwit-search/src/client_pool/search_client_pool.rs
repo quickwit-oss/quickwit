@@ -215,13 +215,13 @@ impl ClientPool for SearchClientPool {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::sync::Arc;
     use std::thread;
     use std::time;
 
     use quickwit_cluster::cluster::{read_host_key, Cluster};
-    use quickwit_cluster::test_utils::test_cluster;
+    use quickwit_cluster::test_utils::{available_port, test_cluster};
 
     use crate::client_pool::search_client_pool::create_search_service_client;
     use crate::client_pool::{ClientPool, Job};
@@ -364,12 +364,5 @@ mod tests {
         tmp_dir.close()?;
 
         Ok(())
-    }
-
-    fn available_port() -> anyhow::Result<u16> {
-        match TcpListener::bind("127.0.0.1:0") {
-            Ok(listener) => Ok(listener.local_addr().unwrap().port()),
-            Err(e) => anyhow::bail!(e),
-        }
     }
 }

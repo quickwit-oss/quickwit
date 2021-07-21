@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::cluster::{read_host_key, Cluster};
 
-fn available_port() -> io::Result<u16> {
+pub fn available_port() -> io::Result<u16> {
     match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => Ok(listener.local_addr().unwrap().port()),
         Err(e) => Err(e),
