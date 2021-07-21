@@ -42,12 +42,12 @@ impl From<Member> for PMember {
 /// This is a service to check the status of the cluster and to operate the cluster.
 pub struct ClusterServiceImpl {
     /// Cluster.
-    cluster: Arc<dyn Cluster>,
+    cluster: Arc<Cluster>,
 }
 
 impl ClusterServiceImpl {
     /// Create a cluster service given a cluster.
-    pub fn new(cluster: Arc<dyn Cluster>) -> Self {
+    pub fn new(cluster: Arc<Cluster>) -> Self {
         ClusterServiceImpl { cluster }
     }
 }

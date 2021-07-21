@@ -38,7 +38,7 @@ use bytes::Bytes;
 use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use tracing::debug;
 
-use quickwit_cluster::cluster::{read_host_key, Cluster, EpidemicCluster};
+use quickwit_cluster::cluster::{read_host_key, Cluster};
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_directories::HOTCACHE_FILENAME;
 use quickwit_metastore::{Metastore, MetastoreUriResolver};
@@ -264,7 +264,7 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
 
     let host_key = read_host_key(args.host_key_path.as_path())?;
     let swim_addr = http_addr_to_swim_addr(args.rest_socket_addr);
-    let cluster = Arc::new(EpidemicCluster::new(host_key, swim_addr)?);
+    let cluster = Arc::new(Cluster::new(host_key, swim_addr)?);
     for peer_socket_addr in args
         .peer_socket_addrs
         .iter()

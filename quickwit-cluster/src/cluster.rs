@@ -30,7 +30,6 @@ use artillery_core::epidemic::prelude::{
     ClusterConfig as ArtilleryClusterConfig,
 };
 use artillery_core::errors::ArtilleryError;
-use async_trait::async_trait;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tracing::*;
@@ -91,24 +90,8 @@ pub struct Member {
     pub is_self: bool,
 }
 
-/// Cluster meant to manage Quickwit's cluster formation and its events.
-#[async_trait]
-pub trait Cluster: Send + Sync + 'static {
-    /// Return cluster members.
-    fn members(&self) -> Vec<Member>;
-
-    /// Return cluster member change watcher.
-    fn member_change_watcher(&self) -> WatchStream<Vec<Member>>;
-
-    /// Specify the address of a running node and join the cluster to which the node belongs.
-    fn add_peer_node(&self, peer_addr: SocketAddr);
-
-    /// Leave the cluster it is joining in.
-    fn leave(&self);
-}
-
 /// This is an implementation of a cluster using the SWIM protocol.
-pub struct EpidemicCluster {
+pub struct Cluster {
     /// A socket address that represents itself.
     pub listen_addr: SocketAddr,
 
@@ -122,7 +105,7 @@ pub struct EpidemicCluster {
     stop: Arc<AtomicBool>,
 }
 
-impl EpidemicCluster {
+impl Cluster {
     /// Create a cluster given a host key and a listen address.
     /// When a cluster is created, the thread that monitors cluster events
     /// will be started at the same time.
@@ -147,7 +130,7 @@ impl EpidemicCluster {
         let (members_sender, members_receiver) = watch::channel(Vec::new());
 
         // Create cluster.
-        let cluster = EpidemicCluster {
+        let cluster = Cluster {
             listen_addr,
             artillery_cluster: Arc::new(artillery_cluster),
             members: members_receiver,
@@ -175,7 +158,7 @@ impl EpidemicCluster {
             loop {
                 match task_inner.events.try_recv() {
                     Ok((artillery_members, artillery_member_event)) => {
-                        log_artillery_event(&artillery_member_event);
+                        log_artillery_event(artillery_member_event);
                         let updated_memberlist: Vec<Member> = artillery_members
                             .into_iter()
                             .filter(|member| match member.state() {
@@ -207,27 +190,25 @@ impl EpidemicCluster {
 
         Ok(cluster)
     }
-}
 
-impl Cluster for EpidemicCluster {
-    /// Return cluster members
-    fn members(&self) -> Vec<Member> {
-        self.members.borrow().clone()
-    }
-
-    /// Return cluster member change watcher.
-    fn member_change_watcher(&self) -> WatchStream<Vec<Member>> {
+    /// Return watchstream for monitoring change of `members`
+    pub fn member_change_watcher(&self) -> WatchStream<Vec<Member>> {
         WatchStream::new(self.members.clone())
     }
 
+    /// Return `members` list
+    pub fn members(&self) -> Vec<Member> {
+        self.members.borrow().clone()
+    }
+
     /// Specify the address of a running node and join the cluster to which the node belongs.
-    fn add_peer_node(&self, peer_addr: SocketAddr) {
+    pub fn add_peer_node(&self, peer_addr: SocketAddr) {
         info!(peer_addr=?peer_addr, "Add peer node.");
         self.artillery_cluster.add_seed_node(peer_addr);
     }
 
     /// Leave the cluster.
-    fn leave(&self) {
+    pub fn leave(&self) {
         info!("Leave the cluster.");
         self.artillery_cluster.leave_cluster();
         self.stop.store(true, Ordering::Relaxed);
@@ -250,7 +231,7 @@ fn convert_member(member: ArtilleryMember, self_listen_addr: SocketAddr) -> Memb
 }
 
 /// Output member event as log.
-fn log_artillery_event(artillery_member_event: &ArtilleryMemberEvent) {
+fn log_artillery_event(artillery_member_event: ArtilleryMemberEvent) {
     match artillery_member_event {
         ArtilleryMemberEvent::Joined(artillery_member) => {
             info!(host_key=?artillery_member.host_key(), remote_host=?artillery_member.remote_host(), "Joined.");
@@ -283,7 +264,7 @@ mod tests {
 
     use artillery_core::epidemic::prelude::{ArtilleryMember, ArtilleryMemberState};
 
-    use crate::cluster::{convert_member, read_host_key, Cluster, EpidemicCluster, Member};
+    use crate::cluster::{convert_member, read_host_key, Cluster, Member};
 
     #[tokio::test]
     async fn test_cluster_read_host_key() {
@@ -361,7 +342,7 @@ mod tests {
         let addr_string = format!("127.0.0.1:{}", tmp_port);
         let remote_host: SocketAddr = addr_string.as_str().parse()?;
 
-        let cluster = Arc::new(EpidemicCluster::new(host_key, remote_host)?);
+        let cluster = Arc::new(Cluster::new(host_key, remote_host)?);
 
         let members = cluster.members();
         let expected = vec![Member {
@@ -387,14 +368,14 @@ mod tests {
         let tmp_port1 = available_port()?;
         let addr_str1 = format!("127.0.0.1:{}", tmp_port1);
         let remote_host1: SocketAddr = addr_str1.as_str().parse()?;
-        let cluster1 = EpidemicCluster::new(host_key1, remote_host1)?;
+        let cluster1 = Cluster::new(host_key1, remote_host1)?;
 
         let host_key_path2 = tmp_dir.path().join("host_key2");
         let host_key2 = read_host_key(host_key_path2.as_path())?;
         let tmp_port2 = available_port()?;
         let addr_str2 = format!("127.0.0.1:{}", tmp_port2);
         let remote_host2: SocketAddr = addr_str2.as_str().parse()?;
-        let cluster2 = EpidemicCluster::new(host_key2, remote_host2)?;
+        let cluster2 = Cluster::new(host_key2, remote_host2)?;
         cluster2.add_peer_node(remote_host1);
 
         let host_key_path3 = tmp_dir.path().join("host_key3");
@@ -402,7 +383,7 @@ mod tests {
         let tmp_port3 = available_port()?;
         let addr_str3 = format!("127.0.0.1:{}", tmp_port3);
         let remote_host3: SocketAddr = addr_str3.as_str().parse()?;
-        let cluster3 = EpidemicCluster::new(host_key3, remote_host3)?;
+        let cluster3 = Cluster::new(host_key3, remote_host3)?;
         cluster3.add_peer_node(remote_host1);
 
         // Wait for the cluster to be configured.
