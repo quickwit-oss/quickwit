@@ -29,9 +29,6 @@ serde = { version = "1.0", features = ["derive"] }
 git = 'https://github.com/quickwit-inc/tantivy'
 rev = 'c1d1d84'
 
-[dependencies.quickwit-core]
-path = '../quickwit-core'
-
 [dependencies.quickwit-cluster]
 path = '../quickwit-cluster'
 
@@ -64,3 +61,6 @@ assert-json-diff = "2"
 
 [dev-dependencies.quickwit-proto]
 path = '../quickwit-proto'
+
+[dev-dependencies.quickwit-core]
+path = '../quickwit-core'
