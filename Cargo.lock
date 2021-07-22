@@ -2687,6 +2687,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "artillery-core",
+ "async-trait",
  "quickwit-proto",
  "tempfile",
  "thiserror",
@@ -2830,6 +2831,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tantivy",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",
