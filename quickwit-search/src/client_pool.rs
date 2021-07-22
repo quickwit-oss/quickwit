@@ -21,10 +21,9 @@
 
 pub mod search_client_pool;
 
-use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::client::WrappedSearchServiceClient;
+use crate::SearchServiceClient;
 
 /// Job.
 /// The unit in which distributed search is performed.
@@ -46,5 +45,5 @@ pub trait ClientPool: Send + Sync + 'static {
     async fn assign_jobs(
         &self,
         jobs: Vec<Job>,
-    ) -> Result<Vec<(WrappedSearchServiceClient, Vec<Job>)>>;
+    ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<Job>)>>;
 }
