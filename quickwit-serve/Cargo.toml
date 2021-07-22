@@ -13,7 +13,6 @@ documentation = "https://quickwit.io/docs/"
 anyhow = '1'
 warp = '0.3'
 tracing = '0.1'
-tracing-subscriber = '0.2'
 quickwit-proto = {path="../quickwit-proto"}
 serde_json = "1"
 quickwit-storage = {path="../quickwit-storage"}
