@@ -330,17 +330,17 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
         .join(splits[0].split_id.as_str());
     assert_eq!(split_path.exists(), true);
 
-    // The following is a hack to turn a published split into a staged one
-    // without deleting the files
+    // The following steps help turn an existing published split into a staged one
+    // without deleting the files.
     let split_ids = vec![splits[0].split_id.as_str()];
     metastore
         .mark_splits_as_deleted(index_id, split_ids.clone())
         .await?;
     metastore.delete_splits(index_id, split_ids).await?;
+    let mut split_meta = splits[0].clone();
+    split_meta.split_state = SplitState::New;
+    metastore.stage_split(index_id, split_meta).await?;
     assert_eq!(split_path.exists(), true);
-    let mut meta = splits[0].clone();
-    meta.split_state = SplitState::New;
-    metastore.stage_split(index_id, meta).await?;
 
     make_command(format!("gc --index-uri {} --grace-period 2s", test_env.index_uri).as_str())
         .assert()
