@@ -335,7 +335,7 @@ mod tests {
             },
         ];
 
-        let assigned_jobs = client_pool.assign_jobs(jobs).await?;
+        let assigned_jobs = client_pool.assign_jobs(jobs, None).await?;
         println!("assigned_jobs={:?}", assigned_jobs);
 
         let expected = vec![(

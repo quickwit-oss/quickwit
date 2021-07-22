@@ -25,6 +25,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use itertools::Itertools;
+use quickwit_proto::SplitSearchError;
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
 use tokio::task::spawn_blocking;
@@ -97,6 +98,7 @@ async fn execute_search(
     Ok(result_per_node_addr)
 }
 
+#[derive(Debug)]
 pub struct ErrorRetries {
     #[allow(dead_code)]
     retry_split_ids: Vec<String>,
@@ -112,11 +114,8 @@ pub struct ErrorRetries {
 /// - Did all requests fail? (Should we retry in that case?)
 fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
     let contains_errors = search_result.values().any(|res| {
-        res.is_err()
-            || res
-                .as_ref()
-                .map(|ok_res| ok_res.failed_requests.is_empty())
-                .unwrap_or(false)
+        res.as_ref()
+            .map_or(true, |ok_res| !ok_res.failed_requests.is_empty())
     });
     if !contains_errors {
         return None;
@@ -232,17 +231,56 @@ pub async fn root_search(
             &split_metadata_map,
         );
 
-        let assigned_leaf_search_jobs = client_pool
+        let retry_assigned_leaf_search_jobs = client_pool
             .assign_jobs(leaf_search_jobs, Some(retry_action.nodes_to_use))
             .await?;
         // Perform the query phase.
         let result_per_node_addr_new = execute_search(
-            &assigned_leaf_search_jobs,
+            &retry_assigned_leaf_search_jobs,
             search_request_with_offset_0.clone(),
         )
         .await?;
 
-        result_per_node_addr.extend(result_per_node_addr_new.into_iter());
+        //assigned_leaf_search_jobs.extend(retry_assigned_leaf_search_jobs.into_iter());
+        // clean out old errors
+        let complete_errors = result_per_node_addr
+            .iter()
+            .filter(|(_addr, res)| res.is_err())
+            .map(|(addr, _err)| *addr)
+            .collect_vec();
+        for err_addr in complete_errors {
+            result_per_node_addr.remove(&err_addr);
+        }
+        // remove partial errors
+        for result in result_per_node_addr.values_mut().flatten() {
+            result.failed_requests = vec![];
+        }
+
+        for (addr, new_result) in result_per_node_addr_new {
+            if let Some(Ok(orig_res)) = result_per_node_addr.get_mut(&addr) {
+                // old one exists and is_ok and new one is_ok
+                if let Ok(result) = new_result {
+                    orig_res.num_hits += result.num_hits;
+                    orig_res.num_attempted_splits += result.num_attempted_splits;
+                    orig_res
+                        .failed_requests
+                        .extend(result.failed_requests.into_iter());
+                    orig_res
+                        .partial_hits
+                        .extend(result.partial_hits.into_iter());
+                } else if let Err(err) = new_result {
+                    // old one exists and is_ok and new one is not ok
+                    orig_res
+                        .failed_requests
+                        .extend(err.split_ids.iter().map(|split_id| SplitSearchError {
+                            error: err.search_error.to_string(),
+                            split_id: split_id.to_string(),
+                        }));
+                }
+            } else {
+                panic!("unexpected error leftover");
+            }
+        }
     }
 
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
@@ -281,8 +319,9 @@ pub async fn root_search(
             .push(partial_hit.clone());
     }
 
-    // Perform the fetch docs phese.
+    // Perform the fetch docs phase.
     let mut fetch_docs_handles: Vec<JoinHandle<Result<FetchDocsResult, SearchError>>> = Vec::new();
+    dbg!(assigned_leaf_search_jobs.len());
     for (search_client, jobs) in assigned_leaf_search_jobs.iter() {
         for job in jobs {
             // TODO group fetch doc requests.
@@ -344,8 +383,48 @@ mod tests {
 
     use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
+    use quickwit_proto::SplitSearchError;
 
-    use crate::MockSearchService;
+    use crate::{MockSearchService, SearchResultJson};
+
+    fn mock_split_meta(split_id: &str) -> SplitMetadata {
+        SplitMetadata {
+            split_id: split_id.to_string(),
+            split_state: SplitState::Published,
+            num_records: 10,
+            size_in_bytes: 256,
+            time_range: None,
+            generation: 1,
+        }
+    }
+
+    fn mock_partial_hit(
+        split_id: &str,
+        sorting_field_value: u64,
+        doc_id: u32,
+    ) -> quickwit_proto::PartialHit {
+        quickwit_proto::PartialHit {
+            sorting_field_value,
+            split_id: split_id.to_string(),
+            segment_ord: 1,
+            doc_id,
+        }
+    }
+
+    fn get_doc_for_fetch_req(
+        fetch_docs_req: quickwit_proto::FetchDocsRequest,
+    ) -> Vec<quickwit_proto::Hit> {
+        fetch_docs_req
+            .partial_hits
+            .into_iter()
+            .map(|req| quickwit_proto::Hit {
+                json: r#"{"title" : ""#.to_string()
+                    + &req.doc_id.to_string()
+                    + r#"", "body" : "test 1", "url" : "http://127.0.0.1/1"}"#,
+                partial_hit: Some(req),
+            })
+            .collect_vec()
+    }
 
     #[tokio::test]
     async fn test_root_search_single_split() -> anyhow::Result<()> {
@@ -372,15 +451,7 @@ mod tests {
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
-                Ok(vec![SplitMetadata {
-                    split_id: "split1".to_string(),
-                    split_state: SplitState::Published,
-                    num_records: 10,
-                    size_in_bytes: 256,
-                    time_range: None,
-                    generation: 1,
-                    update_timestamp: 0,
-                }])
+                Ok(vec![mock_split_meta("split1")])
             },
         );
 
@@ -390,62 +461,19 @@ mod tests {
                 Ok(quickwit_proto::LeafSearchResult {
                     num_hits: 3,
                     partial_hits: vec![
-                        quickwit_proto::PartialHit {
-                            sorting_field_value: 3,
-                            split_id: "split1".to_string(),
-                            segment_ord: 1,
-                            doc_id: 1,
-                        },
-                        quickwit_proto::PartialHit {
-                            sorting_field_value: 2,
-                            split_id: "split1".to_string(),
-                            segment_ord: 2,
-                            doc_id: 2,
-                        },
-                        quickwit_proto::PartialHit {
-                            sorting_field_value: 1,
-                            split_id: "split1".to_string(),
-                            segment_ord: 3,
-                            doc_id: 3,
-                        },
+                        mock_partial_hit("split1", 3, 1),
+                        mock_partial_hit("split1", 2, 2),
+                        mock_partial_hit("split1", 1, 3),
                     ],
                     failed_requests: Vec::new(),
-                    num_attempted_splits: 0,
+                    num_attempted_splits: 1,
                 })
             },
         );
         mock_search_service.expect_fetch_docs().returning(
-            |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResult {
-                    hits: vec![
-                        quickwit_proto::Hit {
-                            json: "{\"title\" : \"1\", \"body\" : \"test 1\", \"url\" : \"http://127.0.0.1/1\"}".to_string(),
-                            partial_hit: Some(quickwit_proto::PartialHit {
-                                sorting_field_value: 3,
-                                split_id: "split1".to_string(),
-                                segment_ord: 1,
-                                doc_id: 1,
-                            }),
-                        },
-                        quickwit_proto::Hit {
-                            json: "{\"title\" : \"2\", \"body\" : \"test 22\", \"url\" : \"http://127.0.0.1/2\"}".to_string(),
-                            partial_hit: Some(quickwit_proto::PartialHit {
-                                sorting_field_value: 2,
-                                split_id: "split1".to_string(),
-                                segment_ord: 2,
-                                doc_id: 2,
-                            }),
-                        },
-                        quickwit_proto::Hit {
-                            json: "{\"title\" : \"3\", \"body\" : \"test 3\", \"url\" : \"http://127.0.0.1/3\"}".to_string(),
-                            partial_hit: Some(quickwit_proto::PartialHit {
-                                sorting_field_value: 1,
-                                split_id: "split1".to_string(),
-                                segment_ord: 3,
-                                doc_id: 3,
-                            }),
-                        },
-                    ],
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
@@ -487,26 +515,7 @@ mod tests {
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
-                Ok(vec![
-                    SplitMetadata {
-                        split_id: "split1".to_string(),
-                        split_state: SplitState::Published,
-                        num_records: 10,
-                        size_in_bytes: 256,
-                        time_range: None,
-                        generation: 1,
-                        update_timestamp: 0,
-                    },
-                    SplitMetadata {
-                        split_id: "split2".to_string(),
-                        split_state: SplitState::Published,
-                        num_records: 10,
-                        size_in_bytes: 256,
-                        time_range: None,
-                        generation: 1,
-                        update_timestamp: 0,
-                    },
-                ])
+                Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
             },
         );
 
@@ -516,47 +525,18 @@ mod tests {
                 Ok(quickwit_proto::LeafSearchResult {
                     num_hits: 2,
                     partial_hits: vec![
-                        quickwit_proto::PartialHit {
-                            sorting_field_value: 3,
-                            split_id: "split1".to_string(),
-                            segment_ord: 1,
-                            doc_id: 1,
-                        },
-                        quickwit_proto::PartialHit {
-                            sorting_field_value: 1,
-                            split_id: "split1".to_string(),
-                            segment_ord: 3,
-                            doc_id: 3,
-                        },
+                        mock_partial_hit("split1", 3, 1),
+                        mock_partial_hit("split1", 1, 3),
                     ],
                     failed_requests: Vec::new(),
-                    num_attempted_splits: 0,
+                    num_attempted_splits: 1,
                 })
             },
         );
         mock_search_service1.expect_fetch_docs().returning(
-            |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResult {
-                    hits: vec![
-                        quickwit_proto::Hit {
-                            json: "{\"title\" : \"1\", \"body\" : \"test 1\", \"url\" : \"http://127.0.0.1/1\"}".to_string(),
-                            partial_hit: Some(quickwit_proto::PartialHit {
-                                sorting_field_value: 3,
-                                split_id: "split1".to_string(),
-                                segment_ord: 1,
-                                doc_id: 1,
-                            }),
-                        },
-                        quickwit_proto::Hit {
-                            json: "{\"title\" : \"3\", \"body\" : \"test 3\", \"url\" : \"http://127.0.0.1/3\"}".to_string(),
-                            partial_hit: Some(quickwit_proto::PartialHit {
-                                sorting_field_value: 1,
-                                split_id: "split1".to_string(),
-                                segment_ord: 3,
-                                doc_id: 3,
-                            }),
-                        },
-                    ],
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
@@ -566,31 +546,16 @@ mod tests {
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 Ok(quickwit_proto::LeafSearchResult {
                     num_hits: 1,
-                    partial_hits: vec![quickwit_proto::PartialHit {
-                        sorting_field_value: 2,
-                        split_id: "split2".to_string(),
-                        segment_ord: 2,
-                        doc_id: 2,
-                    }],
+                    partial_hits: vec![mock_partial_hit("split2", 2, 2)],
                     failed_requests: Vec::new(),
-                    num_attempted_splits: 0,
+                    num_attempted_splits: 1,
                 })
             },
         );
         mock_search_service2.expect_fetch_docs().returning(
-            |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResult {
-                    hits: vec![
-                        quickwit_proto::Hit {
-                            json: "{\"title\" : \"2\", \"body\" : \"test 22\", \"url\" : \"http://127.0.0.1/2\"}".to_string(),
-                            partial_hit: Some(quickwit_proto::PartialHit {
-                                sorting_field_value: 2,
-                                split_id: "split2".to_string(),
-                                segment_ord: 2,
-                                doc_id: 2,
-                            }),
-                        },
-                    ],
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
@@ -605,6 +570,114 @@ mod tests {
 
         let search_result = root_search(&search_request, &metastore, &client_pool).await?;
         println!("search_result={:?}", search_result);
+
+        assert_eq!(search_result.num_hits, 3);
+        assert_eq!(search_result.hits.len(), 3);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_root_search_multiple_splits_retry_on_other_node() -> anyhow::Result<()> {
+        let search_request = quickwit_proto::SearchRequest {
+            index_id: "test-idx".to_string(),
+            query: "test".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+        };
+        println!("search_request={:?}", search_request);
+
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata {
+                    index_id: "test-idx".to_string(),
+                    index_uri: "file:///path/to/index/test-idx".to_string(),
+                    index_config: Box::new(WikipediaIndexConfig::new()),
+                })
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
+                Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
+            },
+        );
+
+        let mut mock_search_service1 = MockSearchService::new();
+        mock_search_service1.expect_leaf_search().returning(
+            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+                Ok(quickwit_proto::LeafSearchResult {
+                    // requests from split 2 arrive here - simulate failure
+                    num_hits: 0,
+                    partial_hits: vec![],
+                    failed_requests: vec![SplitSearchError {
+                        error: "mock_error".to_string(),
+                        split_id: "split2".to_string(),
+                    }],
+                    num_attempted_splits: 1,
+                })
+            },
+        );
+
+        mock_search_service1.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+                Ok(quickwit_proto::FetchDocsResult {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+
+        let mut mock_search_service2 = MockSearchService::new();
+        mock_search_service2.expect_leaf_search().returning(
+            |leaf_search_req: quickwit_proto::LeafSearchRequest| {
+                if leaf_search_req.split_ids == vec!["split1".to_string()] {
+                    Ok(quickwit_proto::LeafSearchResult {
+                        num_hits: 2,
+                        partial_hits: vec![
+                            mock_partial_hit("split1", 3, 1),
+                            mock_partial_hit("split1", 1, 3),
+                        ],
+                        failed_requests: Vec::new(),
+                        num_attempted_splits: 1,
+                    })
+                } else if leaf_search_req.split_ids == vec!["split2".to_string()] {
+                    // RETRY REQUEST!
+                    Ok(quickwit_proto::LeafSearchResult {
+                        num_hits: 1,
+                        partial_hits: vec![mock_partial_hit("split2", 2, 2)],
+                        failed_requests: Vec::new(),
+                        num_attempted_splits: 1,
+                    })
+                } else {
+                    panic!("unexpected request in test {:?}", leaf_search_req.split_ids);
+                }
+            },
+        );
+        mock_search_service2.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+                Ok(quickwit_proto::FetchDocsResult {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+
+        let client_pool = Arc::new(
+            SearchClientPool::from_mocks(vec![
+                Arc::new(mock_search_service1),
+                Arc::new(mock_search_service2),
+            ])
+            .await?,
+        );
+
+        let search_result = root_search(&search_request, &metastore, &client_pool).await?;
+        //println!("search_result={:?}", search_result);
+
+        let search_result_json = SearchResultJson::from(search_result.clone());
+        let search_result_json = serde_json::to_string_pretty(&search_result_json)?;
+        println!("{}", search_result_json);
 
         assert_eq!(search_result.num_hits, 3);
         assert_eq!(search_result.hits.len(), 3);

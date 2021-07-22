@@ -49,8 +49,8 @@ pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
 }
 
 impl From<TantivyError> for SearchError {
-    fn from(any_err: TantivyError) -> Self {
-        SearchError::InternalError(format!("{}", any_err))
+    fn from(tantivy_err: TantivyError) -> Self {
+        SearchError::InternalError(format!("{}", tantivy_err))
     }
 }
 
