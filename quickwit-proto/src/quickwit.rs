@@ -43,6 +43,9 @@ pub struct SearchResult {
     /// server-side and expressed in microseconds.
     #[prost(uint64, tag = "3")]
     pub elapsed_time_micros: u64,
+    /// The searcherrors that occured formatted as string.
+    #[prost(string, repeated, tag = "4")]
+    pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +57,9 @@ pub struct SplitSearchError {
     /// Split id that failed.
     #[prost(string, tag = "2")]
     pub split_id: ::prost::alloc::string::String,
+    /// Flag to indicate if the error can be considered a retryable error
+    #[prost(bool, tag = "3")]
+    pub retryable_error: bool,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

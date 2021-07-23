@@ -147,7 +147,7 @@ impl ClientPool for SearchClientPool {
     async fn assign_jobs(
         &self,
         mut jobs: Vec<Job>,
-        address_whitelist: Option<HashSet<SocketAddr>>,
+        mut exclude_addresses: Option<HashSet<SocketAddr>>,
     ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<Job>)>> {
         let mut splits_groups: HashMap<SocketAddr, Vec<Job>> = HashMap::new();
 
@@ -156,15 +156,25 @@ impl ClientPool for SearchClientPool {
         let mut socket_to_client: HashMap<SocketAddr, SearchServiceClient> = Default::default();
 
         {
-            // restricting the lock guard lifetime.
+            // Restricting the lock guard lifetime.
 
             // TODO optimize the case where there are few jobs and many clients.
             let clients = self.clients.read().await;
 
+            // when exclude_addresses excludes all adresses we discard it
+            if exclude_addresses
+                .as_ref()
+                .map_or(false, |addresses| addresses.len() == clients.len())
+            {
+                exclude_addresses = None;
+            }
+
             for (grpc_addr, client) in clients.iter().filter(|(grpc_addr, _)| {
-                address_whitelist
+                exclude_addresses
                     .as_ref()
-                    .map_or(true, |whilelist| whilelist.contains(grpc_addr))
+                    .map_or(true, |exclude_addresses| {
+                        !exclude_addresses.contains(grpc_addr)
+                    })
             }) {
                 let node = Node::new(*grpc_addr, 0);
                 nodes.push(node);

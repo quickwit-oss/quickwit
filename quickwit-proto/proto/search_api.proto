@@ -79,6 +79,10 @@ message SearchResult {
   // Elapsed time to perform the request. This time is measured
   // server-side and expressed in microseconds.
   uint64 elapsed_time_micros = 3;
+
+  // The searcherrors that occured formatted as string.
+  repeated string errors = 4;
+
 }
 
 message SplitSearchError {
@@ -87,6 +91,9 @@ message SplitSearchError {
 
   // Split id that failed. 
   string split_id = 2;
+
+  // Flag to indicate if the error can be considered a retryable error
+  bool retryable_error = 3;
 }
 
 message LeafSearchRequest {

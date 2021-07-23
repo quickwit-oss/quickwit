@@ -44,9 +44,11 @@ pub struct Job {
 pub trait ClientPool: Send + Sync + 'static {
     /// Assign the given job to the clients.
     /// Returns a list of pair (SocketAddr, Vec<Job>)
+    ///
+    /// When exclude_addresses filters all clients it is ignored.
     async fn assign_jobs(
         &self,
         jobs: Vec<Job>,
-        address_whitelist: Option<HashSet<SocketAddr>>,
+        exclude_addresses: Option<HashSet<SocketAddr>>,
     ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<Job>)>>;
 }

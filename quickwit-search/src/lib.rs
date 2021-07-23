@@ -171,6 +171,7 @@ pub async fn single_node_search(
         num_hits: leaf_search_result.num_hits,
         hits: fetch_docs_result.hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
+        errors: vec![],
     })
 }
 
