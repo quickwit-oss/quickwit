@@ -147,7 +147,7 @@ impl ClientPool for SearchClientPool {
     async fn assign_jobs(
         &self,
         mut jobs: Vec<Job>,
-        mut exclude_addresses: Option<HashSet<SocketAddr>>,
+        mut exclude_addresses: &Option<HashSet<SocketAddr>>,
     ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<Job>)>> {
         let mut splits_groups: HashMap<SocketAddr, Vec<Job>> = HashMap::new();
 
@@ -166,7 +166,7 @@ impl ClientPool for SearchClientPool {
                 .as_ref()
                 .map_or(false, |addresses| addresses.len() == clients.len())
             {
-                exclude_addresses = None;
+                exclude_addresses = &None;
             }
 
             for (grpc_addr, client) in clients.iter().filter(|(grpc_addr, _)| {
@@ -345,7 +345,7 @@ mod tests {
             },
         ];
 
-        let assigned_jobs = client_pool.assign_jobs(jobs, None).await?;
+        let assigned_jobs = client_pool.assign_jobs(jobs, &None).await?;
         println!("assigned_jobs={:?}", assigned_jobs);
 
         let expected = vec![(

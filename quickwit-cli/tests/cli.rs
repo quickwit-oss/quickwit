@@ -28,7 +28,7 @@ use crate::helpers::{create_test_env, make_command, spawn_command};
 use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
-use quickwit_cli::{create_index_cli, search_index, CreateIndexArgs, SearchIndexArgs};
+use quickwit_cli::{create_index_cli, CreateIndexArgs};
 use quickwit_common::extract_metastore_uri_and_index_id_from_index_uri;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
 use quickwit_storage::{localstack_region, S3CompatibleObjectStorage, Storage};
@@ -589,41 +589,5 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     let metadata_file_exist = object_storage.exists(Path::new("quickwit.json")).await?;
     assert_eq!(metadata_file_exist, false);
 
-    Ok(())
-}
-
-// TODO add failure test
-#[tokio::test]
-async fn test_failure_not() -> Result<()> {
-    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
-    create_logs_index(&test_env);
-
-    index_data(
-        &test_env.index_uri,
-        test_env.resource_files["logs"].as_path(),
-    );
-
-    // using piped input.
-    let log_path = test_env.resource_files["logs"].clone();
-    make_command(format!("index --index-uri {} ", test_env.index_uri).as_str())
-        .pipe_stdin(log_path)?
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Indexed"))
-        .stdout(predicate::str::contains("documents in"))
-        .stdout(predicate::str::contains(
-            "You can now query your index with",
-        ));
-
-    let args = SearchIndexArgs {
-        index_uri: test_env.index_uri.to_string(),
-        query: "level:info".to_string(),
-        max_hits: 10,
-        start_offset: 0,
-        ..Default::default()
-    };
-    let search_result = search_index(args).await.unwrap();
-
-    assert_eq!(search_result.num_hits, 4);
     Ok(())
 }
