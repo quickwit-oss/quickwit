@@ -316,7 +316,6 @@ pub async fn root_search(
             }
             Err(node_search_error) => {
                 error!(error=?node_search_error, "Leaf request failed");
-                // TODO list failed leaf nodes and retry.
                 return Err(node_search_error.search_error);
             }
         }
@@ -328,6 +327,14 @@ pub async fn root_search(
             crate::SearchError::InternalError(format!("{}", merge_error))
         })?;
     debug!(leaf_search_result=?leaf_search_result, "Merged leaf search result.");
+
+    if !leaf_search_result.failed_requests.is_empty() {
+        error!(error=?leaf_search_result.failed_requests, "Leaf request contains failed splits");
+        return Err(SearchError::InternalError(format!(
+            "{:?}",
+            leaf_search_result.failed_requests
+        )));
+    }
 
     // Create a hash map of PartialHit with split as a key.
     let mut partial_hits_map: HashMap<String, Vec<PartialHit>> = HashMap::new();
@@ -926,6 +933,128 @@ mod tests {
 
         assert_eq!(search_result.num_hits, 1);
         assert_eq!(search_result.hits.len(), 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_root_search_single_split_retry_single_node_fails_non_retryable(
+    ) -> anyhow::Result<()> {
+        let search_request = quickwit_proto::SearchRequest {
+            index_id: "test-idx".to_string(),
+            query: "test".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+        };
+        println!("search_request={:?}", search_request);
+
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata {
+                    index_id: "test-idx".to_string(),
+                    index_uri: "file:///path/to/index/test-idx".to_string(),
+                    index_config: Box::new(WikipediaIndexConfig::new()),
+                })
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
+                Ok(vec![mock_split_meta("split1")])
+            },
+        );
+
+        let mut mock_search_service1 = MockSearchService::new();
+        mock_search_service1
+            .expect_leaf_search()
+            .times(1)
+            .returning(move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+                Ok(quickwit_proto::LeafSearchResult {
+                    num_hits: 0,
+                    partial_hits: vec![],
+                    failed_requests: vec![SplitSearchError {
+                        error: "mock_error".to_string(),
+                        split_id: "split1".to_string(),
+                        retryable_error: false,
+                    }],
+                    num_attempted_splits: 1,
+                })
+            });
+
+        mock_search_service1.expect_fetch_docs().returning(
+            |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+                Err(SearchError::InternalError("mockerr docs".to_string()))
+            },
+        );
+
+        let client_pool =
+            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?);
+
+        let search_result = root_search(&search_request, &metastore, &client_pool).await;
+        assert!(search_result.is_err());
+
+        Ok(())
+    }
+    #[tokio::test]
+    async fn test_root_search_single_split_retry_single_node_fails() -> anyhow::Result<()> {
+        let search_request = quickwit_proto::SearchRequest {
+            index_id: "test-idx".to_string(),
+            query: "test".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 0,
+        };
+        println!("search_request={:?}", search_request);
+
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata {
+                    index_id: "test-idx".to_string(),
+                    index_uri: "file:///path/to/index/test-idx".to_string(),
+                    index_config: Box::new(WikipediaIndexConfig::new()),
+                })
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
+                Ok(vec![mock_split_meta("split1")])
+            },
+        );
+
+        let mut mock_search_service1 = MockSearchService::new();
+        mock_search_service1
+            .expect_leaf_search()
+            .times(2)
+            .returning(move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+                Ok(quickwit_proto::LeafSearchResult {
+                    num_hits: 0,
+                    partial_hits: vec![],
+                    failed_requests: vec![SplitSearchError {
+                        error: "mock_error".to_string(),
+                        split_id: "split1".to_string(),
+                        retryable_error: true,
+                    }],
+                    num_attempted_splits: 1,
+                })
+            });
+
+        mock_search_service1.expect_fetch_docs().returning(
+            |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+                Err(SearchError::InternalError("mockerr docs".to_string()))
+            },
+        );
+
+        let client_pool =
+            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?);
+
+        let search_result = root_search(&search_request, &metastore, &client_pool).await;
+        assert!(search_result.is_err());
 
         Ok(())
     }
