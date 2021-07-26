@@ -174,7 +174,7 @@ pub async fn leaf_search(
         .with_context(|| "Merging search on split results failed")??;
 
     merged_search_results
-        .failed_requests
+        .failed_splits
         .extend(errors.iter().map(|(split_id, err)| SplitSearchError {
             split_id: split_id.to_string(),
             error: format!("{:?}", err),

@@ -213,7 +213,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
         LeafSearchResult {
             num_hits: self.num_hits,
             partial_hits,
-            failed_requests: vec![],
+            failed_splits: vec![],
             num_attempted_splits: 1,
         }
     }
@@ -317,7 +317,7 @@ fn merge_leaf_results(leaf_results: Vec<LeafSearchResult>, max_hits: usize) -> L
         .sum();
     let failed_requests = leaf_results
         .iter()
-        .flat_map(|res| res.failed_requests.iter().cloned())
+        .flat_map(|res| res.failed_splits.iter().cloned())
         .collect_vec();
     let all_partial_hits: Vec<PartialHit> = leaf_results
         .into_iter()
@@ -328,7 +328,7 @@ fn merge_leaf_results(leaf_results: Vec<LeafSearchResult>, max_hits: usize) -> L
     LeafSearchResult {
         num_hits,
         partial_hits: top_k_partial_hits,
-        failed_requests,
+        failed_splits: failed_requests,
         num_attempted_splits,
     }
 }

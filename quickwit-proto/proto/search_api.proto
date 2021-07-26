@@ -147,7 +147,7 @@ message LeafSearchResult {
   repeated PartialHit partial_hits = 2;
 
   // The list of requests that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
-  repeated SplitSearchError failed_requests = 3;
+  repeated SplitSearchError failed_splits = 3;
 
   // Total number of splits the leaf(s) were in charge of.
   // num_attempted_splits = num_successful_splits + num_failed_splits.

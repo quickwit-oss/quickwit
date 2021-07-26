@@ -116,7 +116,7 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
     let contains_retryable_errors = search_result.values().any(|res| {
         res.as_ref().map_or(true, |ok_res| {
             ok_res
-                .failed_requests
+                .failed_splits
                 .iter()
                 .filter(|err| err.retryable_error)
                 .count()
@@ -130,7 +130,7 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
         .iter()
         .filter(|(_addr, result)| {
             if let Ok(ok_res) = result {
-                ok_res.failed_requests.len() as u64 == ok_res.num_attempted_splits
+                ok_res.failed_splits.len() as u64 == ok_res.num_attempted_splits
             } else {
                 true
             }
@@ -142,7 +142,7 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
         .filter(|(_addr, result)| {
             result
                 .as_ref()
-                .map(|ok_res| ok_res.failed_requests.len() as u64 != ok_res.num_attempted_splits)
+                .map(|ok_res| ok_res.failed_splits.len() as u64 != ok_res.num_attempted_splits)
                 .unwrap_or(false)
         })
         .map(|(addr, _)| *addr)
@@ -157,10 +157,10 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
         .filter_map(|result| result.as_ref().ok())
         .flat_map(|res| {
             let results = res
-                .failed_requests
+                .failed_splits
                 .iter()
-                .filter(move |failed_req| failed_req.retryable_error) // only retry splits marked as retryable
-                .map(move |failed_req| failed_req.split_id.to_string())
+                .filter(move |failed_splits| failed_splits.retryable_error) // only retry splits marked as retryable
+                .map(move |failed_splits| failed_splits.split_id.to_string())
                 .collect_vec();
             results.into_iter()
         })
@@ -264,8 +264,8 @@ pub async fn root_search(
         }
         // remove partial, retryable errors
         for result in result_per_node_addr.values_mut().flatten() {
-            let failed_requests: Vec<SplitSearchError> = std::mem::take(&mut vec![]);
-            result.failed_requests = failed_requests
+            let failed_splits: Vec<SplitSearchError> = std::mem::take(&mut vec![]);
+            result.failed_splits = failed_splits
                 .into_iter()
                 .filter(|err| !err.retryable_error)
                 .collect_vec();
@@ -278,15 +278,15 @@ pub async fn root_search(
                     orig_res.num_hits += result.num_hits;
                     orig_res.num_attempted_splits += result.num_attempted_splits;
                     orig_res
-                        .failed_requests
-                        .extend(result.failed_requests.into_iter());
+                        .failed_splits
+                        .extend(result.failed_splits.into_iter());
                     orig_res
                         .partial_hits
                         .extend(result.partial_hits.into_iter());
                 } else if let Err(err) = new_result {
                     // old one exists and is_ok and new one is not ok
                     orig_res
-                        .failed_requests
+                        .failed_splits
                         .extend(err.split_ids.iter().map(|split_id| SplitSearchError {
                             error: err.search_error.to_string(),
                             split_id: split_id.to_string(),
@@ -328,11 +328,11 @@ pub async fn root_search(
         })?;
     debug!(leaf_search_result=?leaf_search_result, "Merged leaf search result.");
 
-    if !leaf_search_result.failed_requests.is_empty() {
-        error!(error=?leaf_search_result.failed_requests, "Leaf request contains failed splits");
+    if !leaf_search_result.failed_splits.is_empty() {
+        error!(error=?leaf_search_result.failed_splits, "Leaf request contains failed splits");
         return Err(SearchError::InternalError(format!(
             "{:?}",
-            leaf_search_result.failed_requests
+            leaf_search_result.failed_splits
         )));
     }
 
@@ -505,7 +505,7 @@ mod tests {
                         mock_partial_hit("split1", 2, 2),
                         mock_partial_hit("split1", 1, 3),
                     ],
-                    failed_requests: Vec::new(),
+                    failed_splits: Vec::new(),
                     num_attempted_splits: 1,
                 })
             },
@@ -568,7 +568,7 @@ mod tests {
                         mock_partial_hit("split1", 3, 1),
                         mock_partial_hit("split1", 1, 3),
                     ],
-                    failed_requests: Vec::new(),
+                    failed_splits: Vec::new(),
                     num_attempted_splits: 1,
                 })
             },
@@ -587,7 +587,7 @@ mod tests {
                 Ok(quickwit_proto::LeafSearchResult {
                     num_hits: 1,
                     partial_hits: vec![mock_partial_hit("split2", 2, 2)],
-                    failed_requests: Vec::new(),
+                    failed_splits: Vec::new(),
                     num_attempted_splits: 1,
                 })
             },
@@ -655,7 +655,7 @@ mod tests {
                     // requests from split 2 arrive here - simulate failure
                     num_hits: 0,
                     partial_hits: vec![],
-                    failed_requests: vec![SplitSearchError {
+                    failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split2".to_string(),
                         retryable_error: true,
@@ -684,7 +684,7 @@ mod tests {
                             mock_partial_hit("split1", 3, 1),
                             mock_partial_hit("split1", 1, 3),
                         ],
-                        failed_requests: Vec::new(),
+                        failed_splits: Vec::new(),
                         num_attempted_splits: 1,
                     })
                 } else if leaf_search_req.split_ids == vec!["split2".to_string()] {
@@ -692,7 +692,7 @@ mod tests {
                     Ok(quickwit_proto::LeafSearchResult {
                         num_hits: 1,
                         partial_hits: vec![mock_partial_hit("split2", 2, 2)],
-                        failed_requests: Vec::new(),
+                        failed_splits: Vec::new(),
                         num_attempted_splits: 1,
                     })
                 } else {
@@ -768,7 +768,7 @@ mod tests {
                     Ok(quickwit_proto::LeafSearchResult {
                         num_hits: 0,
                         partial_hits: vec![],
-                        failed_requests: vec![SplitSearchError {
+                        failed_splits: vec![SplitSearchError {
                             error: "mock_error".to_string(),
                             split_id: "split2".to_string(),
                             retryable_error: true,
@@ -779,7 +779,7 @@ mod tests {
                     Ok(quickwit_proto::LeafSearchResult {
                         num_hits: 1,
                         partial_hits: vec![mock_partial_hit("split2", 2, 2)],
-                        failed_requests: Vec::new(),
+                        failed_splits: Vec::new(),
                         num_attempted_splits: 1,
                     })
                 }
@@ -806,7 +806,7 @@ mod tests {
                         // requests from split 2 arrive here - simulate failure
                         num_hits: 0,
                         partial_hits: vec![],
-                        failed_requests: vec![SplitSearchError {
+                        failed_splits: vec![SplitSearchError {
                             error: "mock_error".to_string(),
                             split_id: "split1".to_string(),
                             retryable_error: true,
@@ -821,7 +821,7 @@ mod tests {
                             mock_partial_hit("split1", 3, 1),
                             mock_partial_hit("split1", 1, 3),
                         ],
-                        failed_requests: Vec::new(),
+                        failed_splits: Vec::new(),
                         num_attempted_splits: 1,
                     })
                 }
@@ -896,7 +896,7 @@ mod tests {
                     Ok(quickwit_proto::LeafSearchResult {
                         num_hits: 0,
                         partial_hits: vec![],
-                        failed_requests: vec![SplitSearchError {
+                        failed_splits: vec![SplitSearchError {
                             error: "mock_error".to_string(),
                             split_id: "split1".to_string(),
                             retryable_error: true,
@@ -907,7 +907,7 @@ mod tests {
                     Ok(quickwit_proto::LeafSearchResult {
                         num_hits: 1,
                         partial_hits: vec![mock_partial_hit("split1", 2, 2)],
-                        failed_requests: Vec::new(),
+                        failed_splits: Vec::new(),
                         num_attempted_splits: 1,
                     })
                 }
@@ -975,7 +975,7 @@ mod tests {
                 Ok(quickwit_proto::LeafSearchResult {
                     num_hits: 0,
                     partial_hits: vec![],
-                    failed_requests: vec![SplitSearchError {
+                    failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split1".to_string(),
                         retryable_error: false,
@@ -1035,7 +1035,7 @@ mod tests {
                 Ok(quickwit_proto::LeafSearchResult {
                     num_hits: 0,
                     partial_hits: vec![],
-                    failed_requests: vec![SplitSearchError {
+                    failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split1".to_string(),
                         retryable_error: true,
@@ -1097,7 +1097,7 @@ mod tests {
                 Ok(quickwit_proto::LeafSearchResult {
                     num_hits: 1,
                     partial_hits: vec![mock_partial_hit("split1", 2, 2)],
-                    failed_requests: Vec::new(),
+                    failed_splits: Vec::new(),
                     num_attempted_splits: 1,
                 })
             },
@@ -1118,7 +1118,7 @@ mod tests {
                 Ok(quickwit_proto::LeafSearchResult {
                     num_hits: 0,
                     partial_hits: vec![],
-                    failed_requests: vec![SplitSearchError {
+                    failed_splits: vec![SplitSearchError {
                         error: "mock_error".to_string(),
                         split_id: "split1".to_string(),
                         retryable_error: true,
@@ -1191,7 +1191,7 @@ mod tests {
                 Ok(quickwit_proto::LeafSearchResult {
                     num_hits: 1,
                     partial_hits: vec![mock_partial_hit("split1", 2, 2)],
-                    failed_requests: Vec::new(),
+                    failed_splits: Vec::new(),
                     num_attempted_splits: 1,
                 })
             },
