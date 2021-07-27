@@ -161,8 +161,8 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
         })
         .map(|(addr, _)| *addr)
         .collect();
-    debug!("complete_failure_nodes: {:?}", &complete_failure_nodes);
-    debug!(
+    info!("complete_failure_nodes: {:?}", &complete_failure_nodes);
+    info!(
         "partial_or_no_failure_nodes: {:?}",
         &partial_or_no_failure_nodes
     );
@@ -175,7 +175,7 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
     })
 }
 
-fn job_for_split(
+fn job_for_splits(
     split_ids: &HashSet<&String>,
     split_metadata_map: &HashMap<String, SplitMetadata>,
 ) -> Vec<Job> {
@@ -193,6 +193,13 @@ fn job_for_split(
 
 /// Perform a distributed search.
 /// It sends a search request over gRPC to multiple leaf nodes and merges the search results.
+///
+/// Retry Logic:
+/// After a first round of leaf_search requests, we identify the list of failed but retryable splits,
+/// and retry them. Complete failure against nodes are also considered retryable splits.
+/// The leaf nodes which did not return any result are suspected to be unhealthy and are excluded
+/// from this retry round. If all nodes are unhealthy the retry will not exclude any nodes.
+///
 pub async fn root_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
@@ -212,7 +219,7 @@ pub async fn root_search(
     // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
     //
     let leaf_search_jobs: Vec<Job> =
-        job_for_split(&split_metadata_map.keys().collect(), &split_metadata_map);
+        job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
 
     let assigned_leaf_search_jobs = client_pool
         .assign_jobs(leaf_search_jobs, &HashSet::default())
@@ -231,11 +238,11 @@ pub async fn root_search(
     )
     .await?;
 
-    let analyze_result = analyze_errors(&result_per_node_addr);
-    if let Some(retry_action) = analyze_result.as_ref() {
+    let retry_action_opt = analyze_errors(&result_per_node_addr);
+    if let Some(retry_action) = retry_action_opt.as_ref() {
         // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
         //
-        let leaf_search_jobs: Vec<Job> = job_for_split(
+        let leaf_search_jobs: Vec<Job> = job_for_splits(
             &retry_action.retry_split_ids.iter().collect(),
             &split_metadata_map,
         );
@@ -250,7 +257,13 @@ pub async fn root_search(
         )
         .await?;
 
-        // clean out old errors
+        // Clean out old errors
+        //
+        // When we retry requests, we delete the old error.
+        // We have complete errors against that node that we remove here, because complete errors
+        // are considered retryable.
+        //
+        // Below we remove partial errors which are retryable.
         let complete_errors = result_per_node_addr
             .iter()
             .filter(|(_addr, res)| res.is_err())
@@ -259,9 +272,9 @@ pub async fn root_search(
         for err_addr in complete_errors {
             result_per_node_addr.remove(&err_addr);
         }
-        // remove partial, retryable errors
+        // Remove partial, retryable errors
         for result in result_per_node_addr.values_mut().flatten() {
-            let failed_splits: Vec<SplitSearchError> = std::mem::take(&mut vec![]);
+            let failed_splits: Vec<SplitSearchError> = vec![];
             result.failed_splits = failed_splits
                 .into_iter()
                 .filter(|err| !err.retryable_error)
@@ -269,9 +282,8 @@ pub async fn root_search(
         }
 
         for (addr, new_result) in result_per_node_addr_new {
-            if let Some(Ok(orig_res)) = result_per_node_addr.get_mut(&addr) {
-                // old one exists and is_ok and new one is_ok
-                if let Ok(result) = new_result {
+            match (result_per_node_addr.get_mut(&addr), new_result) {
+                (Some(Ok(orig_res)), Ok(result)) => {
                     orig_res.num_hits += result.num_hits;
                     orig_res.num_attempted_splits += result.num_attempted_splits;
                     orig_res
@@ -280,8 +292,8 @@ pub async fn root_search(
                     orig_res
                         .partial_hits
                         .extend(result.partial_hits.into_iter());
-                } else if let Err(err) = new_result {
-                    // old one exists and is_ok and new one is not ok
+                }
+                (Some(Ok(orig_res)), Err(err)) => {
                     orig_res
                         .failed_splits
                         .extend(err.split_ids.iter().map(|split_id| SplitSearchError {
@@ -290,11 +302,12 @@ pub async fn root_search(
                             retryable_error: true,
                         }));
                 }
-            } else if let Some(Err(err)) = result_per_node_addr.get_mut(&addr) {
-                panic!("unexpected error leftover: {:?}", err);
-            } else {
-                // empty slot
-                result_per_node_addr.insert(addr, new_result);
+                (Some(Err(err)), _) => {
+                    panic!("unexpected error leftover: {:?}", err);
+                }
+                (None, new_result) => {
+                    result_per_node_addr.insert(addr, new_result);
+                }
             }
         }
     }
@@ -349,7 +362,7 @@ pub async fn root_search(
             cost: 1,
         })
         .collect_vec();
-    let exclude_addresses = analyze_result
+    let exclude_addresses = retry_action_opt
         .map(|retry_action| retry_action.nodes_to_avoid)
         .unwrap_or_default();
 
