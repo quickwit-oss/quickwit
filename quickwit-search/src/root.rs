@@ -351,6 +351,7 @@ mod tests {
                     size_in_bytes: 256,
                     time_range: None,
                     generation: 1,
+                    update_timestamp: 0,
                 }])
             },
         );
@@ -466,6 +467,7 @@ mod tests {
                         size_in_bytes: 256,
                         time_range: None,
                         generation: 1,
+                        update_timestamp: 0,
                     },
                     SplitMetadata {
                         split_id: "split2".to_string(),
@@ -474,6 +476,7 @@ mod tests {
                         size_in_bytes: 256,
                         time_range: None,
                         generation: 1,
+                        update_timestamp: 0,
                     },
                 ])
             },

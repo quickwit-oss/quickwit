@@ -30,7 +30,7 @@ use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::{create_index_cli, CreateIndexArgs};
 use quickwit_common::extract_metastore_uri_and_index_id_from_index_uri;
-use quickwit_metastore::MetastoreUriResolver;
+use quickwit_metastore::{MetastoreUriResolver, SplitState};
 use quickwit_storage::{localstack_region, S3CompatibleObjectStorage, Storage};
 use serde_json::{Number, Value};
 use serial_test::serial;
@@ -266,16 +266,23 @@ async fn test_cmd_garbage_collect() -> Result<()> {
     metastore
         .mark_splits_as_deleted(index_id, split_ids)
         .await?;
-    make_command(format!("gc --index-uri {} --dry-run", test_env.index_uri).as_str())
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "The following files will be garbage collected.",
-        ))
-        .stdout(predicate::str::contains("/hotcache"))
-        .stdout(predicate::str::contains("/.manifest"));
+    make_command(
+        format!(
+            "gc --index-uri {} --dry-run --grace-period 10m",
+            test_env.index_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "The following files will be garbage collected.",
+    ))
+    .stdout(predicate::str::contains("/hotcache"))
+    .stdout(predicate::str::contains("/.manifest"));
+    assert_eq!(split_path.exists(), true);
 
-    make_command(format!("gc --index-uri {}", test_env.index_uri).as_str())
+    make_command(format!("gc --index-uri {} --grace-period 10m", test_env.index_uri).as_str())
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -292,6 +299,83 @@ async fn test_cmd_garbage_collect() -> Result<()> {
         .assert()
         .success();
     assert_eq!(test_env.local_directory_path.exists(), false);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<()> {
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["logs"].as_path(),
+    );
+
+    let (metastore_uri, index_id) =
+        extract_metastore_uri_and_index_id_from_index_uri(&test_env.index_uri)?;
+    let metastore = MetastoreUriResolver::default()
+        .resolve(metastore_uri)
+        .await?;
+    let splits = metastore.list_all_splits(index_id).await?;
+    assert_eq!(splits.len(), 1);
+    make_command(format!("gc --index-uri {}", test_env.index_uri).as_str())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "No dangling files to garbage collect",
+        ));
+
+    let split_path = test_env
+        .local_directory_path
+        .join(splits[0].split_id.as_str());
+    assert_eq!(split_path.exists(), true);
+
+    // The following steps help turn an existing published split into a staged one
+    // without deleting the files.
+    let split_ids = vec![splits[0].split_id.as_str()];
+    metastore
+        .mark_splits_as_deleted(index_id, split_ids.clone())
+        .await?;
+    metastore.delete_splits(index_id, split_ids).await?;
+    let mut split_meta = splits[0].clone();
+    split_meta.split_state = SplitState::New;
+    metastore.stage_split(index_id, split_meta).await?;
+    assert_eq!(split_path.exists(), true);
+
+    make_command(format!("gc --index-uri {} --grace-period 2s", test_env.index_uri).as_str())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "No dangling files to garbage collect",
+        ));
+    assert_eq!(split_path.exists(), true);
+
+    // wait for grace period
+    sleep(Duration::from_secs(3)).await;
+    make_command(
+        format!(
+            "gc --index-uri {} --dry-run --grace-period 2s",
+            test_env.index_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "The following files will be garbage collected.",
+    ))
+    .stdout(predicate::str::contains("/hotcache"))
+    .stdout(predicate::str::contains("/.manifest"));
+    assert_eq!(split_path.exists(), true);
+
+    make_command(format!("gc --index-uri {} --grace-period 2s", test_env.index_uri).as_str())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Index successfully garbage collected",
+        ));
+    assert_eq!(split_path.exists(), false);
+
     Ok(())
 }
 

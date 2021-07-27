@@ -20,11 +20,14 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use std::time::Duration;
+
 use futures::StreamExt;
 use quickwit_metastore::{
     IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadata, SplitState,
 };
 use quickwit_storage::StorageUriResolver;
+use tantivy::chrono::Utc;
 use tracing::warn;
 
 use crate::indexing::{remove_split_files_from_storage, FileEntry};
@@ -112,11 +115,13 @@ pub async fn delete_index(
 ///
 /// * `metastore_uri` - The metastore Uri for accessing the metastore.
 /// * `index_id` - The target index Id.
+/// * `grace_period` -  Threshold period after which a staged split can be garbage collected.
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
 ///
 pub async fn garbage_collect_index(
     metastore_uri: &str,
     index_id: &str,
+    grace_period: Duration,
     dry_run: bool,
 ) -> anyhow::Result<Vec<FileEntry>> {
     let metastore = MetastoreUriResolver::default()
@@ -124,10 +129,15 @@ pub async fn garbage_collect_index(
         .await?;
     let storage_resolver = StorageUriResolver::default();
 
-    //TODO: consider prunning newly staged split as they might be a work in-progress
+    // Prune staged splits that are not older than the `grace_period`
+    let grace_period_timestamp = Utc::now().timestamp() - grace_period.as_secs() as i64;
     let staged_splits = metastore
         .list_splits(index_id, SplitState::Staged, None)
-        .await?;
+        .await?
+        .into_iter()
+        .filter(|split_meta| split_meta.update_timestamp < grace_period_timestamp)
+        .collect::<Vec<_>>();
+
     if dry_run {
         let mut scheduled_for_delete_splits = metastore
             .list_splits(index_id, SplitState::ScheduledForDeletion, None)
