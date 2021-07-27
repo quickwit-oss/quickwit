@@ -106,6 +106,14 @@ pub struct ErrorRetries {
     nodes_to_avoid: HashSet<SocketAddr>,
 }
 
+fn is_complete_failure(leaf_search_result: &Result<LeafSearchResult, NodeSearchError>) -> bool {
+    if let Ok(ok_res) = leaf_search_result {
+        ok_res.failed_splits.len() as u64 == ok_res.num_attempted_splits
+    } else {
+        true
+    }
+}
+
 /// There are different information which could be useful
 /// Scenario: Multiple requests on a node
 /// - Are all requests of one node failing? -> Don't consider this node as alternative of failing
@@ -113,43 +121,6 @@ pub struct ErrorRetries {
 /// - Is the node ok, but just the split failing?
 /// - Did all requests fail? (Should we retry in that case?)
 fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
-    let contains_retryable_errors = search_result.values().any(|res| {
-        res.as_ref().map_or(true, |ok_res| {
-            ok_res
-                .failed_splits
-                .iter()
-                .filter(|err| err.retryable_error)
-                .count()
-                > 0
-        })
-    });
-    if !contains_retryable_errors {
-        return None;
-    }
-    let complete_failure_nodes: Vec<_> = search_result
-        .iter()
-        .filter(|(_addr, result)| {
-            if let Ok(ok_res) = result {
-                ok_res.failed_splits.len() as u64 == ok_res.num_attempted_splits
-            } else {
-                true
-            }
-        })
-        .map(|(addr, _)| *addr)
-        .collect();
-    let partial_or_no_failure_nodes: Vec<_> = search_result
-        .iter()
-        .filter(|(_addr, result)| {
-            result
-                .as_ref()
-                .map(|ok_res| ok_res.failed_splits.len() as u64 != ok_res.num_attempted_splits)
-                .unwrap_or(false)
-        })
-        .map(|(addr, _)| *addr)
-        .collect();
-    debug!("{:?}", &complete_failure_nodes);
-    debug!("{:?}", &partial_or_no_failure_nodes);
-
     // Here we collect the failed requests on the node. It does not yet include failed requests
     // against that node
     let mut retry_split_ids = search_result
@@ -163,11 +134,38 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
         })
         .collect_vec();
 
+    // Include failed requests against that node
     let failed_splits = search_result
         .values()
         .filter_map(|result| result.as_ref().err())
         .flat_map(|err| err.split_ids.iter().cloned());
     retry_split_ids.extend(failed_splits);
+
+    let contains_retryable_error = retry_split_ids.is_empty();
+    if contains_retryable_error {
+        return None;
+    }
+
+    let complete_failure_nodes: Vec<_> = search_result
+        .iter()
+        .filter(|(_addr, result)| is_complete_failure(*result))
+        .map(|(addr, _)| *addr)
+        .collect();
+    let partial_or_no_failure_nodes: Vec<_> = search_result
+        .iter()
+        .filter(|(_addr, result)| {
+            result
+                .as_ref()
+                .map(|ok_res| ok_res.failed_splits.len() as u64 != ok_res.num_attempted_splits)
+                .unwrap_or(false)
+        })
+        .map(|(addr, _)| *addr)
+        .collect();
+    debug!("complete_failure_nodes: {:?}", &complete_failure_nodes);
+    debug!(
+        "partial_or_no_failure_nodes: {:?}",
+        &partial_or_no_failure_nodes
+    );
 
     let nodes_to_avoid = complete_failure_nodes;
 
