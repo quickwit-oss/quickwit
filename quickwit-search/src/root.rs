@@ -353,7 +353,7 @@ pub async fn root_search(
         .collect_vec();
     let exclude_addresses = analyze_result
         .map(|retry_action| retry_action.nodes_to_avoid)
-        .unwrap_or(Default::default());
+        .unwrap_or_default();
 
     let doc_fetch_jobs = client_pool
         .assign_jobs(fetch_docs_req_jobs, &exclude_addresses)
