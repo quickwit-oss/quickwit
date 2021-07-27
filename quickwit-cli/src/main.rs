@@ -32,6 +32,7 @@ use std::env;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
 use tracing::Level;
 use tracing_subscriber::fmt::Subscriber;
 #[derive(Debug, PartialEq)]
@@ -202,9 +203,14 @@ impl CliCommand {
             .value_of("index-uri")
             .context("'index-uri' is a required arg")?
             .to_string();
+        let grace_period = matches
+            .value_of("grace-period")
+            .map(parse_duration_with_unit)
+            .context("'grace-period' should have default")??;
         let dry_run = matches.is_present("dry-run");
         Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
             index_uri,
+            grace_period,
             dry_run,
         }))
     }
@@ -276,17 +282,43 @@ fn about_text() -> String {
     about_text
 }
 
+/// Parse duration with unit.
+/// examples: 1s 2m 3h 5d
+pub fn parse_duration_with_unit(duration: &str) -> anyhow::Result<Duration> {
+    let mut value = "".to_string();
+    let mut unit = "".to_string();
+    for character in duration.chars() {
+        if character.is_numeric() {
+            value.push(character);
+        } else {
+            unit.push(character);
+        }
+    }
+
+    match value.parse::<u64>() {
+        Ok(value) => match unit.as_str() {
+            "s" => Ok(Duration::from_secs(value)),
+            "m" => Ok(Duration::from_secs(value * 60)),
+            "h" => Ok(Duration::from_secs(value * 60 * 60)),
+            "d" => Ok(Duration::from_secs(value * 60 * 60 * 24)),
+            _ => Err(anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]`")),
+        },
+        Err(err) => Err(anyhow::anyhow!(err)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
-        CliCommand, CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IndexDataArgs,
-        SearchIndexArgs,
+        parse_duration_with_unit, CliCommand, CreateIndexArgs, DeleteIndexArgs,
+        GarbageCollectIndexArgs, IndexDataArgs, SearchIndexArgs,
     };
     use clap::{load_yaml, App, AppSettings};
     use quickwit_common::to_socket_addr;
     use quickwit_serve::ServeArgs;
     use std::io::Write;
     use std::path::{Path, PathBuf};
+    use std::time::Duration;
     use tempfile::NamedTempFile;
 
     #[test]
@@ -513,8 +545,9 @@ mod tests {
             command,
             Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
                 index_uri,
+                grace_period,
                 dry_run: false
-            })) if &index_uri == "file:///indexes/wikipedia"
+            })) if &index_uri == "file:///indexes/wikipedia" && grace_period == Duration::from_secs(60 * 60)
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -523,6 +556,8 @@ mod tests {
             "gc",
             "--index-uri",
             "file:///indexes/wikipedia",
+            "--grace-period",
+            "5m",
             "--dry-run",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
@@ -530,8 +565,9 @@ mod tests {
             command,
             Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
                 index_uri,
+                grace_period,
                 dry_run: true
-            })) if &index_uri == "file:///indexes/wikipedia"
+            })) if &index_uri == "file:///indexes/wikipedia" && grace_period == Duration::from_secs(5 * 60)
         ));
         Ok(())
     }
@@ -611,6 +647,26 @@ mod tests {
             })) if index_uris == vec!["file:///indexes/wikipedia".to_string(), "file:///indexes/hdfslogs".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap(), to_socket_addr("192.168.1.14:9090").unwrap()]
         ));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_duration_with_unit() -> anyhow::Result<()> {
+        assert_eq!(parse_duration_with_unit("8s")?, Duration::from_secs(8));
+        assert_eq!(parse_duration_with_unit("5m")?, Duration::from_secs(5 * 60));
+        assert_eq!(
+            parse_duration_with_unit("2h")?,
+            Duration::from_secs(2 * 60 * 60)
+        );
+        assert_eq!(
+            parse_duration_with_unit("3d")?,
+            Duration::from_secs(3 * 60 * 60 * 24)
+        );
+
+        assert!(parse_duration_with_unit("").is_err());
+        assert!(parse_duration_with_unit("a2d").is_err());
+        assert!(parse_duration_with_unit("3 d").is_err());
+        assert!(parse_duration_with_unit("3").is_err());
         Ok(())
     }
 }
