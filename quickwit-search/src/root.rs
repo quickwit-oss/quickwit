@@ -156,13 +156,10 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
         .values()
         .filter_map(|result| result.as_ref().ok())
         .flat_map(|res| {
-            let results = res
-                .failed_splits
+            res.failed_splits
                 .iter()
                 .filter(move |failed_splits| failed_splits.retryable_error) // only retry splits marked as retryable
                 .map(move |failed_splits| failed_splits.split_id.to_string())
-                .collect_vec();
-            results.into_iter()
         })
         .collect_vec();
 
@@ -219,7 +216,9 @@ pub async fn root_search(
     let leaf_search_jobs: Vec<Job> =
         job_for_split(&split_metadata_map.keys().collect(), &split_metadata_map);
 
-    let assigned_leaf_search_jobs = client_pool.assign_jobs(leaf_search_jobs, &None).await?;
+    let assigned_leaf_search_jobs = client_pool
+        .assign_jobs(leaf_search_jobs, &HashSet::default())
+        .await?;
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
 
     // Create search request with start offset is 0 that used by leaf node search.
@@ -244,7 +243,7 @@ pub async fn root_search(
         );
 
         let retry_assigned_leaf_search_jobs = client_pool
-            .assign_jobs(leaf_search_jobs, &Some(retry_action.nodes_to_avoid.clone()))
+            .assign_jobs(leaf_search_jobs, &retry_action.nodes_to_avoid)
             .await?;
         // Perform the query phase.
         let result_per_node_addr_new = execute_search(
@@ -352,11 +351,12 @@ pub async fn root_search(
             cost: 1,
         })
         .collect_vec();
+    let exclude_addresses = analyze_result
+        .map(|retry_action| retry_action.nodes_to_avoid)
+        .unwrap_or(Default::default());
+
     let doc_fetch_jobs = client_pool
-        .assign_jobs(
-            fetch_docs_req_jobs,
-            &analyze_result.map(|retry_action| retry_action.nodes_to_avoid),
-        )
+        .assign_jobs(fetch_docs_req_jobs, &exclude_addresses)
         .await?;
 
     // Perform the fetch docs phase.

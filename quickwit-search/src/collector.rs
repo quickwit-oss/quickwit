@@ -315,7 +315,7 @@ fn merge_leaf_results(leaf_results: Vec<LeafSearchResult>, max_hits: usize) -> L
         .iter()
         .map(|leaf_result| leaf_result.num_hits)
         .sum();
-    let failed_requests = leaf_results
+    let failed_splits = leaf_results
         .iter()
         .flat_map(|res| res.failed_splits.iter().cloned())
         .collect_vec();
@@ -328,7 +328,7 @@ fn merge_leaf_results(leaf_results: Vec<LeafSearchResult>, max_hits: usize) -> L
     LeafSearchResult {
         num_hits,
         partial_hits: top_k_partial_hits,
-        failed_splits: failed_requests,
+        failed_splits,
         num_attempted_splits,
     }
 }

@@ -144,10 +144,12 @@ impl SearchClientPool {
 impl ClientPool for SearchClientPool {
     /// Assign the given job to the clients.
     /// Returns a list of pair (SocketAddr, Vec<Job>)
+    ///
+    /// When exclude_addresses filters all clients it is ignored.
     async fn assign_jobs(
         &self,
         mut jobs: Vec<Job>,
-        mut exclude_addresses: &Option<HashSet<SocketAddr>>,
+        mut exclude_addresses: &HashSet<SocketAddr>,
     ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<Job>)>> {
         let mut splits_groups: HashMap<SocketAddr, Vec<Job>> = HashMap::new();
 
@@ -161,21 +163,16 @@ impl ClientPool for SearchClientPool {
             // TODO optimize the case where there are few jobs and many clients.
             let clients = self.clients.read().await;
 
+            let fallback = HashSet::default();
             // when exclude_addresses excludes all adresses we discard it
-            if exclude_addresses
-                .as_ref()
-                .map_or(false, |addresses| addresses.len() == clients.len())
-            {
-                exclude_addresses = &None;
+            if exclude_addresses.len() == clients.len() {
+                exclude_addresses = &fallback;
             }
 
-            for (grpc_addr, client) in clients.iter().filter(|(grpc_addr, _)| {
-                exclude_addresses
-                    .as_ref()
-                    .map_or(true, |exclude_addresses| {
-                        !exclude_addresses.contains(grpc_addr)
-                    })
-            }) {
+            for (grpc_addr, client) in clients
+                .iter()
+                .filter(|(grpc_addr, _)| !exclude_addresses.contains(grpc_addr))
+            {
                 let node = Node::new(*grpc_addr, 0);
                 nodes.push(node);
                 socket_to_client.insert(*grpc_addr, client.clone());
@@ -230,6 +227,7 @@ impl ClientPool for SearchClientPool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::sync::Arc;
     use std::thread;
@@ -345,7 +343,7 @@ mod tests {
             },
         ];
 
-        let assigned_jobs = client_pool.assign_jobs(jobs, &None).await?;
+        let assigned_jobs = client_pool.assign_jobs(jobs, &HashSet::default()).await?;
         println!("assigned_jobs={:?}", assigned_jobs);
 
         let expected = vec![(

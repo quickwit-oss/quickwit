@@ -146,7 +146,7 @@ message LeafSearchResult {
   // List of the best top-K candidates for the given leaf query.
   repeated PartialHit partial_hits = 2;
 
-  // The list of requests that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
+  // The list of splits that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
   repeated SplitSearchError failed_splits = 3;
 
   // Total number of splits the leaf(s) were in charge of.

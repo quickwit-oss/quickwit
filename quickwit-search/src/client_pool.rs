@@ -49,6 +49,6 @@ pub trait ClientPool: Send + Sync + 'static {
     async fn assign_jobs(
         &self,
         jobs: Vec<Job>,
-        exclude_addresses: &Option<HashSet<SocketAddr>>,
+        exclude_addresses: &HashSet<SocketAddr>,
     ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<Job>)>>;
 }

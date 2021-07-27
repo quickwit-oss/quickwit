@@ -125,7 +125,7 @@ pub struct LeafSearchResult {
     /// List of the best top-K candidates for the given leaf query.
     #[prost(message, repeated, tag = "2")]
     pub partial_hits: ::prost::alloc::vec::Vec<PartialHit>,
-    /// The list of requests that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
+    /// The list of splits that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
     #[prost(message, repeated, tag = "3")]
     pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
     /// Total number of splits the leaf(s) were in charge of.
