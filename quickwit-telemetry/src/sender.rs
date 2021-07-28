@@ -280,7 +280,7 @@ impl TelemetrySender {
 
 /// Check to see if telemetry is enabled.
 pub fn is_telemetry_enabled() -> bool {
-    std::env::var_os(crate::DISABLE_TELEMETRY_ENV_KEY).is_none()
+    !cfg!(debug_assertions) || std::env::var_os(crate::DISABLE_TELEMETRY_ENV_KEY).is_none()
 }
 
 fn create_http_client() -> Option<HttpClient> {
@@ -292,7 +292,9 @@ fn create_http_client() -> Option<HttpClient> {
     };
     if let Some(client) = client_opt.as_ref() {
         info!("telemetry to {} is enabled.", client.endpoint());
+        println!("telemetry to quickwit is enabled.");
     } else {
+        println!("telemetry to quickwit is disabled.");
         info!("telemetry to quickwit is disabled.");
     }
     client_opt
