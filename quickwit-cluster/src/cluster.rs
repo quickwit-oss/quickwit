@@ -390,12 +390,12 @@ mod tests {
         cluster1.leave();
 
         // Wait for leaving the cluster.
-        thread::sleep(time::Duration::from_secs(1));
+        thread::sleep(time::Duration::from_millis(10));
 
         cluster2.leave();
 
         // Wait for leaving the cluster.
-        thread::sleep(time::Duration::from_secs(1));
+        thread::sleep(time::Duration::from_millis(10));
 
         cluster3.leave();
 
