@@ -299,7 +299,8 @@ quickwit gc
 
 :::note
 
-Intermediate files are created while executing Quickwit commands. These intermediate files are always cleaned at the end of each successfully executed command. However, failed or interrupted commands can leave behind intermediate files that need to be removed. 
+Intermediate files are created while executing Quickwit commands. These intermediate files are always cleaned at the end of each successfully executed command. However, failed or interrupted commands can leave behind intermediate files that need to be removed.
+Also note that using very short grace-period (like seconds) can cause removal of intermediate files being operated on especially when using Quickwit concurently on the same index. In practice you can settle with the default value (1 hour) and only specify a value if you really know what you are doing.
 
 :::
 
