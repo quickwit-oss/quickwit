@@ -79,6 +79,10 @@ message SearchResult {
   // Elapsed time to perform the request. This time is measured
   // server-side and expressed in microseconds.
   uint64 elapsed_time_micros = 3;
+
+  // The searcherrors that occured formatted as string.
+  repeated string errors = 4;
+
 }
 
 message SplitSearchError {
@@ -87,6 +91,9 @@ message SplitSearchError {
 
   // Split id that failed. 
   string split_id = 2;
+
+  // Flag to indicate if the error can be considered a retryable error
+  bool retryable_error = 3;
 }
 
 message LeafSearchRequest {
@@ -139,8 +146,8 @@ message LeafSearchResult {
   // List of the best top-K candidates for the given leaf query.
   repeated PartialHit partial_hits = 2;
 
-  // The list of requests that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
-  repeated SplitSearchError failed_requests = 3;
+  // The list of splits that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
+  repeated SplitSearchError failed_splits = 3;
 
   // Total number of splits the leaf(s) were in charge of.
   // num_attempted_splits = num_successful_splits + num_failed_splits.

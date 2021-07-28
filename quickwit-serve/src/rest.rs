@@ -320,6 +320,7 @@ mod tests {
                 hits: Vec::new(),
                 num_hits: 10,
                 elapsed_time_micros: 16,
+                errors: vec![],
             })
         });
         let rest_search_api_handler = super::search_handler(Arc::new(mock_search_service));
