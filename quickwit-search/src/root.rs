@@ -146,28 +146,25 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
         return None;
     }
 
-    let complete_failure_nodes: Vec<_> = search_result
+    let (complete_failure_nodes, partial_or_no_failure_nodes): (Vec<_>, Vec<_>) = search_result
         .iter()
-        .filter(|(_addr, result)| is_complete_failure(*result))
+        .partition(|(_addr, leaf_search_result)| is_complete_failure(leaf_search_result));
+    let complete_failure_nodes_addr = complete_failure_nodes
+        .into_iter()
         .map(|(addr, _)| *addr)
-        .collect();
-    let partial_or_no_failure_nodes: Vec<_> = search_result
-        .iter()
-        .filter(|(_addr, result)| {
-            result
-                .as_ref()
-                .map(|ok_res| ok_res.failed_splits.len() as u64 != ok_res.num_attempted_splits)
-                .unwrap_or(false)
-        })
+        .collect_vec();
+    let partial_or_no_failure_nodes_addr = partial_or_no_failure_nodes
+        .into_iter()
         .map(|(addr, _)| *addr)
-        .collect();
-    info!("complete_failure_nodes: {:?}", &complete_failure_nodes);
+        .collect_vec();
+
+    info!("complete_failure_nodes: {:?}", &complete_failure_nodes_addr);
     info!(
         "partial_or_no_failure_nodes: {:?}",
-        &partial_or_no_failure_nodes
+        &partial_or_no_failure_nodes_addr
     );
 
-    let nodes_to_avoid = complete_failure_nodes;
+    let nodes_to_avoid = complete_failure_nodes_addr;
 
     Some(ErrorRetries {
         retry_split_ids,
