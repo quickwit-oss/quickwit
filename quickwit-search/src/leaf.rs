@@ -203,10 +203,19 @@ pub async fn leaf_search(
 
     merged_search_results
         .failed_splits
-        .extend(errors.iter().map(|(split_id, err)| SplitSearchError {
-            split_id: split_id.to_string(),
-            error: format!("{:?}", err),
-            retryable_error: true,
+        .extend(errors.iter().map(|(split_id, err)| {
+            let retryable_error = match err {
+                SearchError::IndexDoesNotExist { index_id: _ } | SearchError::InvalidQuery(_) => {
+                    false
+                }
+                _ => true,
+            };
+
+            SplitSearchError {
+                split_id: split_id.to_string(),
+                error: format!("{:?}", err),
+                retryable_error,
+            }
         }));
     Ok(merged_search_results)
 }
