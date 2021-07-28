@@ -58,14 +58,23 @@ mkdir data && cd data
 curl -o wikipedia_index_config.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/wikipedia_index_config.json
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 
-# run the container with `data` folder mounted
-docker run -it -v "$(pwd)":"/usr/quickwit" --entrypoint ash quickwit/quickwit-cli
+# create, index and search using the container 
+docker run -v "$(pwd)":"/usr/quickwit" quickwit/quickwit-cli new --index-uri file:///usr/quickwit/wikipedia --index-config-path wikipedia_index_config.json
+docker run -v "$(pwd)":"/usr/quickwit" quickwit/quickwit-cli index --index-uri file:///usr/quickwit/wikipedia --input-path wiki-articles-10000.json
+docker run -v "$(pwd)":"/usr/quickwit" quickwit/quickwit-cli search --index-uri file:///usr/quickwit/wikipedia --query "barack obama"
+docker run -v "$(pwd)":"/usr/quickwit" -p 8080:8080 quickwit/quickwit-cli serve --index-uri file:///usr/quickwit/wikipedia 
+```
 
+Alternatively, you can run a container shell session with `data` folder mounted and execute the commands from within that session.
+
+```bash
+# start the shell session
+docker run -it -v "$(pwd)":"/usr/quickwit" --entrypoint ash quickwit/quickwit-cli
 # create, index and search from inside the container 
-quickwit new --index-uri file:///$(pwd)/wikipedia --index-config-path ./wikipedia_index_config.json
+quickwit new --index-uri file:///$(pwd)/wikipedia --index-config-path wikipedia_index_config.json
 quickwit index --index-uri file:///$(pwd)/wikipedia --input-path wiki-articles-10000.json
 quickwit search --index-uri file:///$(pwd)/wikipedia --query "barack AND obama"
-quickwit delete --index-uri file:///$(pwd)/wikipedia
+quickwit serve --index-uri file:///$(pwd)/wikipedia
 ```
 
 *Note: Since the search API runs by default on port `:8080`, we expose this by default. 
