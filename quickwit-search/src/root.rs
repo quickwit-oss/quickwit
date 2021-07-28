@@ -273,12 +273,13 @@ pub async fn root_search(
             result_per_node_addr.remove(&err_addr);
         }
         // Remove partial, retryable errors
+        // In this step we have only retryable errors, since it aborts with non-retryable errors, so we can just replace them.
         for result in result_per_node_addr.values_mut().flatten() {
-            let failed_splits: Vec<SplitSearchError> = vec![];
-            result.failed_splits = failed_splits
-                .into_iter()
-                .filter(|err| !err.retryable_error)
-                .collect_vec();
+            let contains_non_retryable_errors =
+                result.failed_splits.iter().any(|err| !err.retryable_error);
+            assert!(!contains_non_retryable_errors, "Result still contains non-retryable errors, but logic expects to have aborted with non-retryable errors. (this may change if we add partial results) ");
+
+            result.failed_splits = vec![];
         }
 
         for (addr, new_result) in result_per_node_addr_new {
