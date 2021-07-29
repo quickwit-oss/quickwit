@@ -2828,6 +2828,7 @@ dependencies = [
  "base64",
  "bytes 1.0.1",
  "futures",
+ "hyper",
  "lru",
  "md5",
  "mockall 0.9.1",
