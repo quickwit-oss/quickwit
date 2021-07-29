@@ -77,5 +77,5 @@ quickwit search --index-uri file:///$(pwd)/wikipedia --query "barack AND obama"
 quickwit serve --index-uri file:///$(pwd)/wikipedia
 ```
 
-*Note: Since the search API runs by default on port `:8080`, we expose this by default. 
-You can map it to a host port or choose any another port based on your needs.*
+*Note: Since the search API runs by default on port `:8080`, we already expose this port. 
+You can choose another port based on your needs and map it to a host port.*
