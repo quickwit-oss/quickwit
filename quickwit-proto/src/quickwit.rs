@@ -43,6 +43,9 @@ pub struct SearchResult {
     /// server-side and expressed in microseconds.
     #[prost(uint64, tag = "3")]
     pub elapsed_time_micros: u64,
+    /// The searcherrors that occured formatted as string.
+    #[prost(string, repeated, tag = "4")]
+    pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +57,9 @@ pub struct SplitSearchError {
     /// Split id that failed.
     #[prost(string, tag = "2")]
     pub split_id: ::prost::alloc::string::String,
+    /// Flag to indicate if the error can be considered a retryable error
+    #[prost(bool, tag = "3")]
+    pub retryable_error: bool,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -119,9 +125,9 @@ pub struct LeafSearchResult {
     /// List of the best top-K candidates for the given leaf query.
     #[prost(message, repeated, tag = "2")]
     pub partial_hits: ::prost::alloc::vec::Vec<PartialHit>,
-    /// The list of requests that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
+    /// The list of splits that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
     #[prost(message, repeated, tag = "3")]
-    pub failed_requests: ::prost::alloc::vec::Vec<SplitSearchError>,
+    pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
     /// Total number of splits the leaf(s) were in charge of.
     /// num_attempted_splits = num_successful_splits + num_failed_splits.
     #[prost(uint64, tag = "4")]

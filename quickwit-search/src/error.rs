@@ -19,6 +19,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 use serde::{Deserialize, Serialize};
+use tantivy::TantivyError;
 use thiserror::Error;
 use tokio::task::JoinError;
 
@@ -44,6 +45,12 @@ pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
     match serde_json::from_str(grpc_error.message()) {
         Ok(search_error) => search_error,
         Err(_) => SearchError::InternalError(grpc_error.message().to_string()),
+    }
+}
+
+impl From<TantivyError> for SearchError {
+    fn from(tantivy_err: TantivyError) -> Self {
+        SearchError::InternalError(format!("{}", tantivy_err))
     }
 }
 

@@ -2738,6 +2738,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "mockall 0.9.1",
  "quickwit-index-config",
  "quickwit-storage",
