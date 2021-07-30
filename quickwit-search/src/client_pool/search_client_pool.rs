@@ -253,8 +253,7 @@ mod tests {
 
         let mut addrs: Vec<SocketAddr> = clients
             .clone()
-            .into_iter()
-            .map(|(addr, _client)| addr)
+            .into_keys()
             .collect();
         addrs.sort_by_key(|addr| addr.to_string());
         println!("addrs={:?}", addrs);
@@ -290,8 +289,7 @@ mod tests {
 
         let mut addrs: Vec<SocketAddr> = clients1
             .clone()
-            .into_iter()
-            .map(|(addr, _client)| addr)
+            .into_keys()
             .collect();
         addrs.sort();
         println!("addrs={:?}", addrs);
