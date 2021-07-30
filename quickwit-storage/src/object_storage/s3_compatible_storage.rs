@@ -33,11 +33,11 @@ use futures::stream;
 use futures::StreamExt;
 use once_cell::sync::OnceCell;
 use regex::Regex;
-use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 use tracing::warn;
 
+use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider};
 use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
 use rusoto_s3::{
     AbortMultipartUploadRequest, CompleteMultipartUploadRequest, CompletedMultipartUpload,
