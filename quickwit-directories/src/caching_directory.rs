@@ -215,9 +215,7 @@ mod tests {
             CachingDirectory::new_with_capacity_in_bytes(debug_proxy_directory.clone(), 10_000);
         caching_directory.atomic_read(test_path)?;
         caching_directory.atomic_read(test_path)?;
-        let records: Vec<crate::ReadOperation> =
-            debug_proxy_directory.drain_read_operations().collect();
-        assert_eq!(records.len(), 1);
+        assert_eq!(debug_proxy_directory.drain_read_operations().count(), 1);
         Ok(())
     }
 }

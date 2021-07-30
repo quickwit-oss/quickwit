@@ -149,22 +149,22 @@ mod tests {
         {
             let data = Bytes::from_static(&b"abc"[..]);
             cache.put(PathBuf::from("3"), 0..3, data);
-            assert_eq!(cache.get(&Path::new("3"), 0..3).unwrap(), &b"abc"[..]);
+            assert_eq!(cache.get(Path::new("3"), 0..3).unwrap(), &b"abc"[..]);
         }
         {
             let data = Bytes::from_static(&b"de"[..]);
             cache.put(PathBuf::from("2"), 0..2, data);
             // our first entry should still be here.
-            assert_eq!(cache.get(&Path::new("3"), 0..3).unwrap(), &b"abc"[..]);
-            assert_eq!(cache.get(&Path::new("2"), 0..2).unwrap(), &b"de"[..]);
+            assert_eq!(cache.get(Path::new("3"), 0..3).unwrap(), &b"abc"[..]);
+            assert_eq!(cache.get(Path::new("2"), 0..2).unwrap(), &b"de"[..]);
         }
         {
             let data = Bytes::from_static(&b"fghij"[..]);
             cache.put(PathBuf::from("5"), 0..5, data);
-            assert_eq!(cache.get(&Path::new("5"), 0..5).unwrap(), &b"fghij"[..]);
+            assert_eq!(cache.get(Path::new("5"), 0..5).unwrap(), &b"fghij"[..]);
             // our two first entries should have be removed from the cache
-            assert!(cache.get(&Path::new("2"), 0..2).is_none());
-            assert!(cache.get(&Path::new("3"), 0..3).is_none());
+            assert!(cache.get(Path::new("2"), 0..2).is_none());
+            assert!(cache.get(Path::new("3"), 0..3).is_none());
         }
         {
             let data = Bytes::from_static(&b"klmnop"[..]);
@@ -187,19 +187,19 @@ mod tests {
         {
             let data = Bytes::from_static(&b"de"[..]);
             cache.put(PathBuf::from("2"), 0..2, data);
-            assert_eq!(cache.get(&Path::new("3"), 0..3).unwrap(), &b"abc"[..]);
-            assert_eq!(cache.get(&Path::new("2"), 0..2).unwrap(), &b"de"[..]);
+            assert_eq!(cache.get(Path::new("3"), 0..3).unwrap(), &b"abc"[..]);
+            assert_eq!(cache.get(Path::new("2"), 0..2).unwrap(), &b"de"[..]);
         }
     }
 
     #[test]
     fn test_cache() {
         let cache = SliceCache::with_capacity_in_bytes(10_000);
-        assert!(cache.get(&Path::new("hello.seg"), 1..3).is_none());
+        assert!(cache.get(Path::new("hello.seg"), 1..3).is_none());
         let data = Bytes::from_static(&b"werwer"[..]);
         cache.put(PathBuf::from("hello.seg"), 1..3, data);
         assert_eq!(
-            cache.get(&Path::new("hello.seg"), 1..3).unwrap(),
+            cache.get(Path::new("hello.seg"), 1..3).unwrap(),
             &b"werwer"[..]
         );
     }

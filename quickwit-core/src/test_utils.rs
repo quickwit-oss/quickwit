@@ -55,7 +55,7 @@ impl TestSandbox {
         };
         let storage_uri_resolver = StorageUriResolver::default();
         let metastore = MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone())
-            .resolve(&metastore_uri)
+            .resolve(metastore_uri)
             .await?;
         metastore.create_index(index_metadata).await?;
         Ok(TestSandbox {
