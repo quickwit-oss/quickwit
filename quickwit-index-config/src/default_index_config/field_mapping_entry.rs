@@ -117,16 +117,16 @@ impl FieldMappingEntry {
                 self.parse_text(json_value, options, cardinality)
             }
             FieldMappingType::I64(options, cardinality) => {
-                self.parse_i64(&json_value, options, cardinality)
+                self.parse_i64(json_value, options, cardinality)
             }
             FieldMappingType::F64(options, cardinality) => {
-                self.parse_f64(&json_value, options, cardinality)
+                self.parse_f64(json_value, options, cardinality)
             }
             FieldMappingType::Date(options, cardinality) => {
-                self.parse_date(&json_value, options, cardinality)
+                self.parse_date(json_value, options, cardinality)
             }
             FieldMappingType::Bytes(options, cardinality) => {
-                self.parse_bytes(&json_value, options, cardinality)
+                self.parse_bytes(json_value, options, cardinality)
             }
             FieldMappingType::Object(field_mappings) => {
                 self.parse_object(json_value, field_mappings)
@@ -147,7 +147,7 @@ impl FieldMappingEntry {
                 }
                 array
                     .iter()
-                    .map(|element| self.parse_text(&element, options, cardinality))
+                    .map(|element| self.parse_text(element, options, cardinality))
                     .collect::<Result<Vec<_>, _>>()?
                     .into_iter()
                     .flatten()
@@ -185,7 +185,7 @@ impl FieldMappingEntry {
                 }
                 array
                     .iter()
-                    .map(|element| self.parse_i64(&element, options, cardinality))
+                    .map(|element| self.parse_i64(element, options, cardinality))
                     .collect::<Result<Vec<_>, _>>()?
                     .into_iter()
                     .flatten()
@@ -233,7 +233,7 @@ impl FieldMappingEntry {
                 }
                 array
                     .iter()
-                    .map(|element| self.parse_f64(&element, options, cardinality))
+                    .map(|element| self.parse_f64(element, options, cardinality))
                     .collect::<Result<Vec<_>, _>>()?
                     .into_iter()
                     .flatten()
@@ -284,7 +284,7 @@ impl FieldMappingEntry {
                 }
                 array
                     .iter()
-                    .map(|element| self.parse_date(&element, options, cardinality))
+                    .map(|element| self.parse_date(element, options, cardinality))
                     .collect::<Result<Vec<_>, _>>()?
                     .into_iter()
                     .flatten()
@@ -335,7 +335,7 @@ impl FieldMappingEntry {
                 }
                 array
                     .iter()
-                    .map(|element| self.parse_bytes(&element, options, cardinality))
+                    .map(|element| self.parse_bytes(element, options, cardinality))
                     .collect::<Result<Vec<_>, _>>()?
                     .into_iter()
                     .flatten()

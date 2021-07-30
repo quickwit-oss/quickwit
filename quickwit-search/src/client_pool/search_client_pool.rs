@@ -251,10 +251,7 @@ mod tests {
 
         let clients = client_pool.clients.read().await;
 
-        let mut addrs: Vec<SocketAddr> = clients
-            .clone()
-            .into_keys()
-            .collect();
+        let mut addrs: Vec<SocketAddr> = clients.clone().into_keys().collect();
         addrs.sort_by_key(|addr| addr.to_string());
         println!("addrs={:?}", addrs);
 
@@ -287,10 +284,7 @@ mod tests {
 
         let clients1 = client_pool1.clients.read().await;
 
-        let mut addrs: Vec<SocketAddr> = clients1
-            .clone()
-            .into_keys()
-            .collect();
+        let mut addrs: Vec<SocketAddr> = clients1.clone().into_keys().collect();
         addrs.sort();
         println!("addrs={:?}", addrs);
 

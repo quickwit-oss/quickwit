@@ -325,10 +325,7 @@ impl Metastore for SingleFileMetastore {
 
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitMetadata>> {
         let metadata_set = self.get_index(index_id).await?;
-        let splits = metadata_set
-            .splits
-            .into_values()
-            .collect();
+        let splits = metadata_set.splits.into_values().collect();
         Ok(splits)
     }
 

@@ -71,7 +71,7 @@ fn resolve_fields(schema: &Schema, field_names: &[String]) -> anyhow::Result<Vec
     let mut fields = vec![];
     for field_name in field_names {
         let field = schema
-            .get_field(&field_name)
+            .get_field(field_name)
             .ok_or_else(|| TantivyQueryParserError::FieldDoesNotExist(field_name.clone()))?;
         fields.push(field);
     }
