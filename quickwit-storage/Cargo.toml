@@ -24,8 +24,6 @@ thiserror = '1'
 rand = '0.8'
 lru = "0.6"
 serde = { version = "1.0", features = ["derive"] }
-# hyper = { version = "0.14", features = ["client", "http1", "http2", "tcp"] }
-hyper = "0.14"
 
 [dependencies.rusoto_core]
 version = '0.46'

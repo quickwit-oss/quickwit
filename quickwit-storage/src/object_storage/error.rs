@@ -24,7 +24,6 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::io;
 
-use hyper::StatusCode;
 use rusoto_core::RusotoError;
 use rusoto_s3::{
     AbortMultipartUploadError, CompleteMultipartUploadError, CreateMultipartUploadError,
@@ -85,9 +84,9 @@ where
         let error_kind = match &err.0 {
             RusotoError::Credentials(_) => StorageErrorKind::Unauthorized,
             RusotoError::Service(err) => err.to_storage_error_kind(),
-            RusotoError::Unknown(http_resp) => match http_resp.status {
-                StatusCode::FORBIDDEN => StorageErrorKind::Unauthorized,
-                StatusCode::NOT_FOUND => StorageErrorKind::DoesNotExist,
+            RusotoError::Unknown(http_resp) => match http_resp.status.as_u16() {
+                403 => StorageErrorKind::Unauthorized,
+                404 => StorageErrorKind::DoesNotExist,
                 _ => StorageErrorKind::InternalError,
             },
             _ => StorageErrorKind::InternalError,
