@@ -388,7 +388,15 @@ mod tests {
         assert_eq!(members, expected);
 
         cluster1.leave();
+
+        // Wait for leaving the cluster.
+        thread::sleep(time::Duration::from_millis(10));
+
         cluster2.leave();
+
+        // Wait for leaving the cluster.
+        thread::sleep(time::Duration::from_millis(10));
+
         cluster3.leave();
 
         tmp_dir.close().unwrap();

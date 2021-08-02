@@ -108,7 +108,7 @@ pub struct IndexDataArgs {
     pub overwrite: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub struct SearchIndexArgs {
     pub index_uri: String,
     pub query: String,
@@ -128,6 +128,7 @@ pub struct DeleteIndexArgs {
 #[derive(Debug, PartialEq, Eq)]
 pub struct GarbageCollectIndexArgs {
     pub index_uri: String,
+    pub grace_period: Duration,
     pub dry_run: bool,
 }
 
@@ -242,7 +243,7 @@ async fn create_document_source_from_args(
     }
 }
 
-pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
+pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResult> {
     debug!(
         index_uri = %args.index_uri,
         query = %args.query,
@@ -270,6 +271,11 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     };
     let search_result: SearchResult =
         single_node_search(&search_request, &*metastore, storage_uri_resolver).await?;
+    Ok(search_result)
+}
+
+pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
+    let search_result: SearchResult = search_index(args).await?;
 
     let search_result_json = SearchResultJson::from(search_result);
 
@@ -312,6 +318,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
 pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow::Result<()> {
     debug!(
         index_uri = %args.index_uri,
+        grace_period = ?args.grace_period,
         dry_run = args.dry_run,
         "garbage-collect-index"
     );
@@ -319,7 +326,8 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
 
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let deleted_files = garbage_collect_index(metastore_uri, index_id, args.dry_run).await?;
+    let deleted_files =
+        garbage_collect_index(metastore_uri, index_id, args.grace_period, args.dry_run).await?;
     if deleted_files.is_empty() {
         println!("No dangling files to garbage collect.");
         return Ok(());

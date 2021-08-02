@@ -92,6 +92,11 @@ subcommands:
                 long: index-uri
                 value_name: INDEX URI
                 required: true
+            - grace-period:
+                help: Threshold period after which intermediate files can be garbage collected.
+                long: grace-period
+                value_name: GRACE PERIOD
+                default_value: '1h'
             - dry-run:
                 help: Executes the command in dry run mode and displays the list of files to remove
                 long: dry-run

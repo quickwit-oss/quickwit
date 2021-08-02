@@ -267,8 +267,8 @@ quickwit delete
 
 *Options*
 
-`--index-uri` (string) Location of the target index.
-`--dry-run` (boolean) Executes the command in dry run mode and displays the list of files subject to be deleted.
+`--index-uri` (string) Location of the target index.<br />
+`--dry-run` (boolean) Executes the command in dry run mode and displays the list of files subject to be deleted.<br />
 
 *Examples*
 
@@ -281,3 +281,58 @@ quickwit delete --index-uri s3://quickwit-indexes/catalog
 ```bash
 quickwit delete --index-uri s3://quickwit-indexes/catalog --dry-run
 ```
+
+### Garbage collect (gc)
+
+*Description*
+
+Garbage collects all dangling files within the index at `index-uri`.
+
+*Synopsis*
+
+```bash
+quickwit gc
+    --index-uri <uri>
+    [--grace-period <duration>]
+    [--dry-run]
+```
+
+:::note
+
+Intermediate files are created while executing Quickwit commands. These intermediate files are always cleaned at the end of each successfully executed command. However, failed or interrupted commands can leave behind intermediate files that need to be removed.
+Also note that using very short grace-period (like seconds) can cause removal of intermediate files being operated on especially when using Quickwit concurently on the same index. In practice you can settle with the default value (1 hour) and only specify a value if you really know what you are doing.
+
+:::
+
+*Options*
+
+`--index-uri` (string) Location of the target index.<br />
+`--grace-period` (string) Threshold period after which intermediate files can be garbage collected. This is an integer followed by one of the letters `s`(second), `m`(minutes), `h`(hours) and `d`(days) as unit, (defaults to `1h`).<br />
+`--dry-run` (boolean) Executes the command in dry run mode and displays the list of files subject to be removed.<br />
+
+*Examples*
+
+*Garbage collecting an index*
+```bash
+quickwit gc --index-uri s3://quickwit-indexes/catalog
+```
+
+*Executing in dry run mode*
+```bash
+quickwit gc --index-uri s3://quickwit-indexes/catalog --dry-run
+```
+
+*Executing with five minutes of grace period*
+```bash
+quickwit gc --index-uri s3://quickwit-indexes/catalog --grace-period 5m
+```
+
+## Environment Variables
+
+### QUICKWIT_ENV
+
+Specifies the nature of the current working environment. Currently, this environment variable is used exclusively for testing purposes, and `LOCAL` is the only supported value.
+
+### QUICKWIT_DISABLE_TELEMETRY
+
+Disables [telemetry](telemetry.md) when set to any non-empty value.
