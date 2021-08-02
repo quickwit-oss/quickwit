@@ -55,6 +55,12 @@ use crate::retry::{retry, IsRetryable, Retry};
 use crate::{PutPayload, Storage, StorageErrorKind};
 use crate::{StorageError, StorageResult};
 
+/// A credential timeout.
+const CREDENTIAL_TIMEOUT: u64 = 5;
+
+/// An timeout for idle sockets being kept-alive.
+const POOL_IDIE_TIMEOUT: u64 = 10;
+
 /// S3 Compatible object storage implementation.
 pub struct S3CompatibleObjectStorage {
     s3_client: S3Client,
@@ -75,13 +81,13 @@ impl fmt::Debug for S3CompatibleObjectStorage {
 
 fn create_s3_client(region: Region) -> anyhow::Result<S3Client> {
     let mut chain_provider = ChainProvider::new();
-    chain_provider.set_timeout(Duration::from_secs(5));
+    chain_provider.set_timeout(Duration::from_secs(CREDENTIAL_TIMEOUT));
     let credentials_provider = AutoRefreshingProvider::new(chain_provider)
         .with_context(|| "Failed to fetch credentials for the object storage.")?;
     let mut http_config: HttpConfig = HttpConfig::default();
     // We experience an issue similar to https://github.com/hyperium/hyper/issues/2312.
     // It seems like the setting below solved it.
-    http_config.pool_idle_timeout(std::time::Duration::from_secs(10));
+    http_config.pool_idle_timeout(std::time::Duration::from_secs(POOL_IDIE_TIMEOUT));
     let http_client = HttpClient::new_with_config(http_config)
         .with_context(|| "failed to create request dispatcher")?;
     Ok(S3Client::new_with(
