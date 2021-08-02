@@ -11,7 +11,7 @@ Here is Quickwit featureset:
 - Subsecond search on an object storage or any storage which provides bytes range queries
 - Full text search, including phrase query
 - Native support for time partitionning
-- Boolean queries: `((michael AND jackson) OR "king of pop")`
+- Boolean queries: `(michael AND jackson) OR "king of pop"`
 - Mapping feature to define your schema and easily convert a json into a document to index
 - Support data types text, i64, f64, date, bytes and composite types object and array.
 
