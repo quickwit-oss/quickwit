@@ -264,6 +264,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResult>
         index_id: index_id.to_string(),
         query: args.query.clone(),
         search_fields: args.search_fields.unwrap_or_default(),
+        fast_fields: vec![], //TODO add cli arg
         start_timestamp: args.start_timestamp,
         end_timestamp: args.end_timestamp,
         max_hits: args.max_hits as u64,

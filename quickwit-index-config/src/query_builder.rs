@@ -109,6 +109,7 @@ mod test {
             index_id: "test_index".to_string(),
             query: query_str.to_string(),
             search_fields,
+            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 20,

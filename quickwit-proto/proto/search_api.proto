@@ -55,20 +55,23 @@ message SearchRequest {
 
   // Fields to search on
   repeated string  search_fields = 3;
+  
+  // Fast fields to extract values
+  repeated string fast_fields = 4;
 
   // Time filter
-  optional int64 start_timestamp = 4;
-  optional int64 end_timestamp = 5;
+  optional int64 start_timestamp = 5;
+  optional int64 end_timestamp = 6;
 
   // Maximum number of hits to return.
-  uint64 max_hits = 6;
+  uint64 max_hits = 7;
 
   // First hit to return. Together with max_hits, this parameter
   // can be used for pagination.
   //
   // E.g.
   // The results with rank [start_offset..start_offset + max_hits) are returned.
-  uint64 start_offset = 7;
+  uint64 start_offset = 8;
 }
 
 message SearchResult {
@@ -137,6 +140,13 @@ message PartialHit {
 
   // The DocId identifies a unique document at the scale of a tantivy segment.
   uint32 doc_id = 4;
+
+  repeated FastFieldValues fast_field_values = 5;
+}
+
+message FastFieldValues {
+  string name = 1;
+  repeated uint64 values = 2;
 }
 
 message LeafSearchResult {
