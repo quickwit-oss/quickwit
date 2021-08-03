@@ -47,7 +47,11 @@ impl Storage for StorageWithCache {
         if let Some(bytes) = self.cache.get(path, byte_range.clone()).await {
             Ok(bytes)
         } else {
-            self.storage.get_slice(path, byte_range).await
+            let bytes = self.storage.get_slice(path, byte_range.clone()).await?;
+            self.cache
+                .put(path.to_owned(), byte_range, bytes.clone())
+                .await;
+            Ok(bytes)
         }
     }
 
@@ -55,7 +59,9 @@ impl Storage for StorageWithCache {
         if let Some(bytes) = self.cache.get_all(&path).await {
             Ok(bytes)
         } else {
-            self.storage.get_all(path).await
+            let bytes = self.storage.get_all(path).await?;
+            self.cache.put_all(path.to_owned(), bytes.clone()).await;
+            Ok(bytes)
         }
     }
 
@@ -101,5 +107,58 @@ impl StorageFactory for StorageWithCacheFactory {
             storage,
             cache: self.cache.clone(),
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    use super::*;
+    use crate::cache::MockCache;
+    use crate::MockStorage;
+
+    #[tokio::test]
+    async fn put_in_cache_test() {
+        let mut mock_storage = MockStorage::default();
+        let mut mock_cache = MockCache::default();
+        let actual_cache: Arc<Mutex<HashMap<PathBuf, Bytes>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
+        let cache1 = actual_cache.clone();
+        mock_cache
+            .expect_get_all()
+            .times(2)
+            .returning(move |path| cache1.lock().unwrap().get(path).cloned());
+        mock_cache
+            .expect_put_all()
+            .times(1)
+            .returning(move |path, data| {
+                let actual_cache = actual_cache.clone();
+                actual_cache.lock().unwrap().insert(path, data);
+            });
+
+        mock_storage
+            .expect_get_all()
+            .times(1)
+            .returning(|_path| Ok(Bytes::from_static(&[1, 2, 3])));
+
+        let storage_with_cache = StorageWithCache {
+            storage: Arc::new(mock_storage),
+            cache: Arc::new(mock_cache),
+        };
+
+        let data1 = storage_with_cache
+            .get_all(Path::new("cool_file"))
+            .await
+            .unwrap();
+        // hitting the cache
+        let data2 = storage_with_cache
+            .get_all(Path::new("cool_file"))
+            .await
+            .unwrap();
+        assert_eq!(data1, data2);
     }
 }
