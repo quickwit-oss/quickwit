@@ -342,7 +342,7 @@ impl GenericFastFieldReader {
             .schema()
             .get_field(field_name)
             .context("Field does not exist")?;
-        let field_entry = segment_reader.schema().get_field_entry(field.clone());
+        let field_entry = segment_reader.schema().get_field_entry(field);
         let field_reader = match field_entry.field_type() {
             FieldType::U64(options)
             | FieldType::I64(options)
