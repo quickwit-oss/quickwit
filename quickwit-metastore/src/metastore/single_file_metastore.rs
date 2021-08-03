@@ -84,8 +84,7 @@ impl SingleFileMetastore {
                         index_id: index_id.to_string(),
                     },
                     StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
-                        message: "The request credentials do not allow this operation."
-                            .to_string(),
+                        message: "The request credentials do not allow this operation.".to_string(),
                     },
                     _ => MetastoreError::InternalError {
                         message: "Failed to check index file existence.".to_string(),
