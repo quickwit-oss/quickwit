@@ -36,14 +36,14 @@ pub enum MetastoreError {
     },
 
     /// Forbidden error.
-    #[error("Access forbidden. `{message}`")]
+    #[error("Access forbidden: `{message}`.")]
     Forbidden {
         /// Error Message
         message: String,
     },
 
     /// The target index does not exist.
-    #[error("Index `{index_id}` does not exists.")]
+    #[error("Index `{index_id}` does not exist.")]
     IndexDoesNotExist {
         /// Index Id that was request (but is missing).
         index_id: String,
@@ -52,7 +52,7 @@ pub enum MetastoreError {
     /// Any generic internal error.
     /// The message can be helpful to users, but the detail of the error
     /// are judged uncoverable and not useful for error handling.
-    #[error("Another error occured. `{message}` Cause: `{cause}`")]
+    #[error("Internal error: `{message}` Cause: `{cause}`.")]
     InternalError {
         /// Error Message
         message: String,
@@ -61,7 +61,7 @@ pub enum MetastoreError {
     },
 
     /// Invalid manifest.
-    #[error("Failed to deserialize metadata set. Cause: `{cause}`")]
+    #[error("Failed to deserialize index metadata: `{cause}`")]
     InvalidManifest {
         /// Serde error
         cause: serde_json::Error,
