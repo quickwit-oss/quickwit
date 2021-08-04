@@ -255,10 +255,10 @@ mod tests {
         let test_file2_name = temp_dir.join("f2");
 
         let mut file1 = File::create(&test_file1_name).unwrap();
-        file1.write(&[123, 76])?;
+        file1.write_all(&[123, 76])?;
 
         let mut file2 = File::create(&test_file2_name).unwrap();
-        file2.write(&[99, 55, 44])?;
+        file2.write_all(&[99, 55, 44])?;
 
         create_bundle.add_file(&test_file1_name)?;
         create_bundle.add_file(&test_file2_name)?;
