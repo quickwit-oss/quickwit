@@ -229,7 +229,7 @@ impl CreateBundleStorage {
     /// Writes the metadata into the footer.
     pub fn finalize(&mut self) -> io::Result<()> {
         let metadata_json = serde_json::to_string(&self.metadata)?;
-        self.bundle_file.write(metadata_json.as_bytes())?;
+        self.bundle_file.write_all(metadata_json.as_bytes())?;
         let len = metadata_json.len() as u64;
         BinarySerializable::serialize(&len, &mut self.bundle_file)?;
         Ok(())
