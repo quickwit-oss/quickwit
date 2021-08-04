@@ -39,6 +39,8 @@ use tracing::error;
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::HOTCACHE_FILENAME;
+
 /// BundleStorage bundles together multiple files into a single file.
 /// with some metadata
 pub struct BundleStorage {
@@ -178,6 +180,9 @@ fn unsupported_operation(path: &Path) -> StorageError {
 pub struct CreateBundleStorage {
     metadata: BundleStorageMetadata,
     current_offset: u64,
+    /// the offset in the file where the hotcache begins. This is used to read
+    /// the hotcache and footer in a single read.
+    pub hotcache_offset: u64,
     bundle_file: File,
 }
 
@@ -189,6 +194,7 @@ impl CreateBundleStorage {
         Ok(CreateBundleStorage {
             bundle_file: sink,
             current_offset: 0,
+            hotcache_offset: 0,
             metadata: Default::default(),
         })
     }
@@ -206,6 +212,9 @@ impl CreateBundleStorage {
                 format!("could not extract file_name from path {:?}", path),
             )
         })?);
+        if file_name.to_string_lossy() == HOTCACHE_FILENAME {
+            self.hotcache_offset = self.current_offset;
+        }
         self.metadata.files.insert(
             file_name,
             FileOffsets {
