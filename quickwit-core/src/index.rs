@@ -35,7 +35,7 @@ use crate::indexing::{remove_split_files_from_storage, FileEntry};
 /// Creates an index at `index-path` extracted from `metastore_uri`. The command fails if an index
 /// already exists at `index-path`.
 ///
-/// * `metastore_uri` - The metastore Uri for accessing the metastore.
+/// * `metastore_uri` - The metastore URI for accessing the metastore.
 /// * `index_metadata` - The metadata used to create the target index.
 ///
 pub async fn create_index(
@@ -49,9 +49,9 @@ pub async fn create_index(
     Ok(())
 }
 
-/// Searches the index with `index_id` and returns the documents matching the query query.
+/// Searches the index with `index_id` and returns the documents matching the query `query`.
 /// The offset of the first hit returned and the number of hits returned can be set with the `start-offset`
-/// and max-hits options.
+/// and `max-hits` options.
 ///
 /// By default, the search fields  are those specified at index creation unless restricted to `target-fields`.
 pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
@@ -68,7 +68,7 @@ pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result
 /// This is equivalent to running `rm -rf <index path>` for a local index or
 /// `aws s3 rm --recursive <index path>` for a remote Amazon S3 index.
 ///
-/// * `metastore_uri` - The metastore Uri for accessing the metastore.
+/// * `metastore_uri` - The metastore URI for accessing the metastore.
 /// * `index_id` - The target index Id.
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
 ///
@@ -113,7 +113,7 @@ pub async fn delete_index(
 
 /// Detect all dangling splits and associated files from the index and removes them.
 ///
-/// * `metastore_uri` - The metastore Uri for accessing the metastore.
+/// * `metastore_uri` - The metastore URI for accessing the metastore.
 /// * `index_id` - The target index Id.
 /// * `grace_period` -  Threshold period after which a staged split can be garbage collected.
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
