@@ -25,5 +25,3 @@ pub struct RawDocBatch {
     pub docs: Vec<String>,
     pub checkpoint: Checkpoint,
 }
-
-

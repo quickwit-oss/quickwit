@@ -18,14 +18,24 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::sync::Arc;
+
+use crate::models::UploadedSplit;
+use async_trait::async_trait;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
 use quickwit_actors::AsyncActor;
-use async_trait::async_trait;
-use crate::models::PackagedSplit;
-use crate::models::UploadedSplit;
+use quickwit_metastore::Metastore;
 
-pub struct Publisher;
+pub struct Publisher {
+    metastore: Arc<dyn Metastore>,
+}
+
+impl Publisher {
+    pub fn new(metastore: Arc<dyn Metastore>) -> Publisher {
+        Publisher { metastore }
+    }
+}
 
 impl Actor for Publisher {
     type Message = UploadedSplit;
