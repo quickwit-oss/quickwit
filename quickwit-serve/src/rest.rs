@@ -32,14 +32,17 @@ use warp::{reply, Filter, Rejection, Reply};
 use quickwit_search::{SearchResultJson, SearchService, SearchServiceImpl};
 
 use crate::ApiError;
+use crate::HealthService;
 
 /// Start REST service given a HTTP address and a search service.
 pub async fn start_rest_service(
     rest_addr: SocketAddr,
     search_service: Arc<SearchServiceImpl>,
+    health_service: HealthService,
 ) -> anyhow::Result<()> {
     info!(rest_addr=?rest_addr, "Start REST service.");
-    let rest_routes = search_handler(search_service);
+    health_service.healty().await;
+    let rest_routes = health_check_handler(health_service).or(search_handler(search_service));
     warp::serve(rest_routes).run(rest_addr).await;
     Ok(())
 }
@@ -90,6 +93,7 @@ impl Format {
         reply::with_status(reply_with_header, status_code)
     }
 }
+
 /// This struct represents the QueryString passed to
 /// the rest API.
 #[derive(Deserialize, Debug, PartialEq, Eq)]
@@ -141,6 +145,25 @@ async fn search_endpoint<TSearchService: SearchService>(
     Ok(search_result_json)
 }
 
+/// Health check handler.
+pub fn health_check_handler(
+    health_service: HealthService,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    warp::path("health").and(health_service.service())
+}
+
+/// Rest search handler.
+///
+/// It parses the search request from the
+pub fn search_handler<TSearchService: SearchService>(
+    search_service: Arc<TSearchService>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    search_filter()
+        .and(warp::any().map(move || search_service.clone()))
+        .and_then(search)
+        .recover(recover_fn)
+}
+
 fn search_filter(
 ) -> impl Filter<Extract = (String, SearchRequestQueryString), Error = Rejection> + Clone {
     warp::path!("api" / "v1" / String / "search")
@@ -157,18 +180,6 @@ async fn search<TSearchService: SearchService>(
     Ok(request
         .format
         .make_reply(search_endpoint(index_id, request, &*search_service).await))
-}
-
-/// Rest search handler.
-///
-/// It parses the search request from the
-pub fn search_handler<TSearchService: SearchService>(
-    search_service: Arc<TSearchService>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-    search_filter()
-        .and(warp::any().map(move || search_service.clone()))
-        .and_then(search)
-        .recover(recover_fn)
 }
 
 /// This function returns a formated error based on the given rejection reason.
@@ -416,5 +427,55 @@ mod tests {
             400
         );
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_health_check_health() {
+        let health_service = HealthService::default();
+        let rest_search_api_filter = health_check_handler(health_service);
+        let resp = warp::test::request()
+            .path("/health")
+            .reply(&rest_search_api_filter)
+            .await;
+        println!("{:?}", resp);
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_health_check_livez() {
+        let health_service = HealthService::default();
+        health_service.healty().await;
+        let rest_search_api_filter = health_check_handler(health_service);
+        let resp = warp::test::request()
+            .path("/health/livez")
+            .reply(&rest_search_api_filter)
+            .await;
+        println!("{:?}", resp);
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_health_check_readyz() {
+        let health_service = HealthService::default();
+        health_service.healty().await;
+        let rest_search_api_filter = health_check_handler(health_service);
+        let resp = warp::test::request()
+            .path("/health/readyz")
+            .reply(&rest_search_api_filter)
+            .await;
+        println!("{:?}", resp);
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_health_check_startz() {
+        let health_service = HealthService::default();
+        let rest_search_api_filter = health_check_handler(health_service);
+        let resp = warp::test::request()
+            .path("/health/startz")
+            .reply(&rest_search_api_filter)
+            .await;
+        println!("{:?}", resp);
+        assert_eq!(resp.status(), 200);
     }
 }

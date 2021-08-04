@@ -23,6 +23,7 @@ mod args;
 mod error;
 mod grpc;
 mod grpc_adapter;
+mod health_check;
 mod rest;
 
 use std::collections::HashMap;
@@ -55,6 +56,7 @@ pub use crate::args::ServeArgs;
 pub use crate::error::ApiError;
 use crate::grpc::start_grpc_service;
 use crate::grpc_adapter::GrpcAdapter;
+use crate::health_check::HealthService;
 use crate::rest::start_rest_service;
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
@@ -292,7 +294,9 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
     let grpc_server =
         start_grpc_service(grpc_socket_addr, grpc_search_service, cluster_service_impl);
 
-    let rest_server = start_rest_service(args.rest_socket_addr, search_service);
+    let health_service = HealthService::default();
+    let rest_server = start_rest_service(args.rest_socket_addr, search_service, health_service);
+
     display_help_message(args.rest_socket_addr, &example_index_name)?;
 
     tokio::try_join!(rest_server, grpc_server)?;
