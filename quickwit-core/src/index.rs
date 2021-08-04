@@ -120,6 +120,7 @@ pub async fn garbage_collect_index(
         .list_splits(index_id, SplitState::Staged, None)
         .await?
         .into_iter()
+        // TODO: Update metastore API and push this filter down.
         .filter(|split_meta| split_meta.update_timestamp < grace_period_timestamp)
         .collect::<Vec<_>>();
 
