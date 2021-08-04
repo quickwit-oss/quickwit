@@ -21,13 +21,14 @@
 */
 
 use std::io;
+
 use thiserror::Error;
 
 /// Metastore error kinds.
 #[derive(Debug, Error)]
 pub enum MetastoreError {
     /// The target index already exists (Returned when creating a new index).
-    #[error("Index already exists `{index_id}`")]
+    #[error("Index `{index_id}` already exists.")]
     IndexAlreadyExists {
         /// The `index_id` of the index that failed to be created because another index
         /// with the same id already exists.
@@ -35,14 +36,14 @@ pub enum MetastoreError {
     },
 
     /// Forbidden error.
-    #[error("Access forbidden")]
+    #[error("Access forbidden: `{message}`.")]
     Forbidden {
         /// Error Message
         message: String,
     },
 
     /// The target index does not exist.
-    #[error("Index `{index_id}` does not exists.")]
+    #[error("Index `{index_id}` does not exist.")]
     IndexDoesNotExist {
         /// Index Id that was request (but is missing).
         index_id: String,
@@ -51,7 +52,7 @@ pub enum MetastoreError {
     /// Any generic internal error.
     /// The message can be helpful to users, but the detail of the error
     /// are judged uncoverable and not useful for error handling.
-    #[error("Another error occured. `{message}`. Cause: `{cause}`.")]
+    #[error("Internal error: `{message}` Cause: `{cause}`.")]
     InternalError {
         /// Error Message
         message: String,
@@ -60,7 +61,7 @@ pub enum MetastoreError {
     },
 
     /// Invalid manifest.
-    #[error("Failed to deserialize metadata set. Cause: `{cause}`")]
+    #[error("Failed to deserialize index metadata: `{cause}`")]
     InvalidManifest {
         /// Serde error
         cause: serde_json::Error,
@@ -71,14 +72,14 @@ pub enum MetastoreError {
     Io(io::Error),
 
     /// The target split does not exist.
-    #[error("Split does not exists `{split_id}`")]
+    #[error("Split `{split_id}` does not exists.")]
     SplitDoesNotExist {
         /// missing split id.
         split_id: String,
     },
 
     /// The target split is not staged.
-    #[error("Split is not staged `{split_id}`")]
+    #[error("Split `{split_id}` is not staged.")]
     SplitIsNotStaged {
         /// Split that should have been staged.
         split_id: String,
