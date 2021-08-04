@@ -21,3 +21,5 @@ tracing = "0.1"
 anyhow = "1"
 async-trait = "0.1"
 quickwit-actors = {path = "../quickwit-actors" }
+quickwit-metastore = {path = "../quickwit-metastore" }
+quickwit-index-config = {path = "../quickwit-index-config" }

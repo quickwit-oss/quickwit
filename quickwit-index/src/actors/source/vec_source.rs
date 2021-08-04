@@ -1,11 +1,11 @@
-use quickwit_actors::Actor;
-use quickwit_actors::AsyncActor;
-use quickwit_actors::ActorContext;
-use quickwit_actors::Mailbox;
-use quickwit_actors::MessageProcessError;
-use async_trait::async_trait;
 use crate::models::Checkpoint;
 use crate::models::RawDocBatch;
+use async_trait::async_trait;
+use quickwit_actors::Actor;
+use quickwit_actors::ActorContext;
+use quickwit_actors::AsyncActor;
+use quickwit_actors::Mailbox;
+use quickwit_actors::MessageProcessError;
 
 // Quickwit
 //  Copyright (C) 2021 Quickwit Inc.
@@ -33,7 +33,6 @@ pub struct VecSource {
     batch_num_docs: usize,
     sink: Mailbox<RawDocBatch>,
 }
-
 
 impl Actor for VecSource {
     type Message = ();
@@ -66,7 +65,8 @@ impl AsyncActor for VecSource {
         _message: Self::Message,
         _context: ActorContext<'_, Self::Message>,
     ) -> Result<(), MessageProcessError> {
-        let line_docs: Vec<String> = self.items[self.next_item_id..].iter()
+        let line_docs: Vec<String> = self.items[self.next_item_id..]
+            .iter()
             .take(self.batch_num_docs)
             .cloned()
             .collect();
@@ -85,17 +85,23 @@ impl AsyncActor for VecSource {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_actors::create_test_mailbox;
     use quickwit_actors::KillSwitch;
     use quickwit_actors::QueueCapacity;
-    use quickwit_actors::create_test_mailbox;
 
     use super::*;
     use quickwit_actors::ActorTermination;
 
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
-        let (mailbox, inbox)= create_test_mailbox();
-        let vec_source = VecSource::new(std::iter::repeat_with(|| "{}".to_string()).take(100).collect() , 3, mailbox);
+        let (mailbox, inbox) = create_test_mailbox();
+        let vec_source = VecSource::new(
+            std::iter::repeat_with(|| "{}".to_string())
+                .take(100)
+                .collect(),
+            3,
+            mailbox,
+        );
         let vec_source_handle = vec_source.spawn(QueueCapacity::Unbounded, KillSwitch::default());
         let actor_termination = vec_source_handle.join().await?;
         assert!(matches!(actor_termination, ActorTermination::Disconnect));
@@ -104,5 +110,3 @@ mod tests {
         Ok(())
     }
 }
-
-

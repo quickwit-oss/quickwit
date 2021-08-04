@@ -18,11 +18,11 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-pub mod source;
 mod indexer;
-mod publisher;
-mod uploader;
 mod packager;
+mod publisher;
+pub mod source;
+mod uploader;
 
 pub use self::indexer::Indexer;
 pub use self::packager::Packager;

@@ -18,14 +18,14 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
-use std::path::Path;
 use async_trait::async_trait;
 use quickwit_actors::Actor;
-use quickwit_actors::AsyncActor;
 use quickwit_actors::ActorContext;
+use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
 use quickwit_actors::MessageProcessError;
+use std::io;
+use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
@@ -108,16 +108,16 @@ impl AsyncActor for FileSource {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_actors::create_test_mailbox;
     use quickwit_actors::KillSwitch;
     use quickwit_actors::QueueCapacity;
-    use quickwit_actors::create_test_mailbox;
 
     use super::*;
     use quickwit_actors::ActorTermination;
 
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
-        let (mailbox, inbox)= create_test_mailbox();
+        let (mailbox, inbox) = create_test_mailbox();
         let file_source = FileSource::try_new(Path::new("data/test_corpus.json"), mailbox).await?;
         let file_source_handle = file_source.spawn(QueueCapacity::Unbounded, KillSwitch::default());
         let actor_termination = file_source_handle.join().await?;

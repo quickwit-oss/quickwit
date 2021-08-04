@@ -29,6 +29,12 @@ pub struct Packager {
     sink: Mailbox<PackagedSplit>,
 }
 
+impl Packager {
+    pub fn new(sink: Mailbox<PackagedSplit>) -> Self {
+        Packager { sink }
+    }
+}
+
 impl Actor for Packager {
     type Message = IndexedSplit;
 

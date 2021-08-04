@@ -18,12 +18,38 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_actors::Actor;
-use quickwit_actors::AsyncActor;
-use async_trait::async_trait;
-use crate::models::PackagedSplit;
+use std::sync::Arc;
 
-pub struct Uploader;
+use crate::models::PackagedSplit;
+use crate::models::UploadedSplit;
+use async_trait::async_trait;
+use quickwit_actors::Actor;
+use quickwit_actors::ActorContext;
+use quickwit_actors::AsyncActor;
+use quickwit_actors::Mailbox;
+use quickwit_actors::MessageProcessError;
+use quickwit_metastore::Metastore;
+use quickwit_storage::Storage;
+
+pub struct Uploader {
+    metastore: Arc<dyn Metastore>,
+    index_storage: Arc<dyn Storage>,
+    sink: Mailbox<UploadedSplit>,
+}
+
+impl Uploader {
+    pub fn new(
+        metastore: Arc<dyn Metastore>,
+        index_storage: Arc<dyn Storage>,
+        sink: Mailbox<UploadedSplit>,
+    ) -> Uploader {
+        Uploader {
+            metastore,
+            index_storage,
+            sink,
+        }
+    }
+}
 
 impl Actor for Uploader {
     type Message = PackagedSplit;
@@ -39,9 +65,9 @@ impl Actor for Uploader {
 impl AsyncActor for Uploader {
     async fn process_message(
         &mut self,
-        message: Self::Message,
-        context: quickwit_actors::ActorContext<'_, Self::Message>,
-    ) -> Result<(), quickwit_actors::MessageProcessError> {
+        split: PackagedSplit,
+        context: ActorContext<'_, Self::Message>,
+    ) -> Result<(), MessageProcessError> {
         Ok(())
     }
 }

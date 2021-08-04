@@ -18,14 +18,14 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-mod packaged_split;
-mod uploaded_split;
-mod indexed_split;
 mod checkpoint;
+mod indexed_split;
+mod packaged_split;
 mod raw_doc_batch;
+mod uploaded_split;
 
+pub use checkpoint::Checkpoint;
 pub use indexed_split::IndexedSplit;
 pub use packaged_split::PackagedSplit;
-pub use uploaded_split::UploadedSplit;
 pub use raw_doc_batch::RawDocBatch;
-pub use checkpoint::Checkpoint;
+pub use uploaded_split::UploadedSplit;
