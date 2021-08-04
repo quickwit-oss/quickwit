@@ -49,21 +49,6 @@ pub async fn create_index(
     Ok(())
 }
 
-/// Searches the index with `index_id` and returns the documents matching the query `query`.
-/// The offset of the first hit returned and the number of hits returned can be set with the `start-offset`
-/// and `max-hits` options.
-///
-/// By default, the search fields  are those specified at index creation unless restricted to `target-fields`.
-pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default()
-        .resolve(&metastore_uri)
-        .await?;
-    let _splits = metastore
-        .list_splits(index_id, SplitState::Published, None)
-        .await?;
-    Ok(())
-}
-
 /// Deletes the index specified with `index_id`.
 /// This is equivalent to running `rm -rf <index path>` for a local index or
 /// `aws s3 rm --recursive <index path>` for a remote Amazon S3 index.
