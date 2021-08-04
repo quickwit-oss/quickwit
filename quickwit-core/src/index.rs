@@ -73,17 +73,17 @@ pub async fn delete_index(
         return list_splits_files(all_splits, index_uri, storage_resolver).await;
     }
 
-    // schedule all staged & published splits for delete
-    let mut active_splits = metastore
-        .list_splits(index_id, SplitState::Published, None)
-        .await?;
+    // Schedule staged and published splits for deletion.
     let staged_splits = metastore
         .list_splits(index_id, SplitState::Staged, None)
         .await?;
-    active_splits.extend(staged_splits);
-    let split_ids = active_splits
+    let published_splits = metastore
+        .list_splits(index_id, SplitState::Published, None)
+        .await?;
+    let split_ids = staged_splits
         .iter()
-        .map(|split_meta| split_meta.split_id.as_str())
+        .chain(published_splits.iter())
+        .map(|split_meta| split_meta.split_id.as_ref())
         .collect::<Vec<_>>();
     metastore
         .mark_splits_as_deleted(index_id, split_ids)
