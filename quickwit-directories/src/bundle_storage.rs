@@ -227,12 +227,14 @@ impl CreateBundleStorage {
     }
 
     /// Writes the metadata into the footer.
-    pub fn finalize(&mut self) -> io::Result<()> {
+    ///
+    /// Returns the hotcache_offset in the file.
+    pub fn finalize(&mut self) -> io::Result<u64> {
         let metadata_json = serde_json::to_string(&self.metadata)?;
         self.bundle_file.write_all(metadata_json.as_bytes())?;
         let len = metadata_json.len() as u64;
         BinarySerializable::serialize(&len, &mut self.bundle_file)?;
-        Ok(())
+        Ok(self.hotcache_offset)
     }
 }
 #[cfg(test)]
@@ -253,10 +255,10 @@ mod tests {
         let test_file2_name = temp_dir.join("f2");
 
         let mut file1 = File::create(&test_file1_name).unwrap();
-        file1.write(&vec![123, 76])?;
+        file1.write(&[123, 76])?;
 
         let mut file2 = File::create(&test_file2_name).unwrap();
-        file2.write(&vec![99, 55, 44])?;
+        file2.write(&[99, 55, 44])?;
 
         create_bundle.add_file(&test_file1_name)?;
         create_bundle.add_file(&test_file2_name)?;
