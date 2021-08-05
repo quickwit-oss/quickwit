@@ -186,7 +186,7 @@ impl QuickwitSegmentCollector {
 
     // TODO (Help Needed): idealy we should create a separate collector for export
     // but this might involve duplicating things like warmup and other functions.
-    // Come up with a common type that embodies the common functionalities so that 
+    // Come up with a common type that embodies the common functionalities so that
     // most function implementations that need the collector stay the same (Generic or Trait object).
     // For now we are asumming if fast_field is requested then we are exporting,
     // meaning this will just collect all of them
@@ -196,7 +196,7 @@ impl QuickwitSegmentCollector {
         if let Some(fast_field_reader) = &self.fast_field_reader {
             let fast_field_value = fast_field_reader.get_value(doc_id);
             self.hits.push(PartialHitHeapItem {
-                sorting_field_value, 
+                sorting_field_value,
                 doc_id,
                 fast_field_value,
             });
