@@ -21,7 +21,7 @@
 */
 
 use std::collections::HashMap;
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -44,9 +44,9 @@ fn meta_path(index_id: &str) -> PathBuf {
     Path::new(index_id).join(Path::new(META_FILENAME))
 }
 
-/// Takes 2 semi-open intervals and returns true iff their intersection is empty
-fn is_disjoint(left: &Range<i64>, right: &Range<i64>) -> bool {
-    left.end <= right.start || right.end <= left.start
+/// Takes 2 intervals and returns true iff their intersection is empty
+fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
+    left.end <= *right.start() || *right.end() < left.start
 }
 
 /// Single file meta store implementation.
@@ -410,7 +410,7 @@ impl Metastore for SingleFileMetastore {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use std::ops::Range;
+    use std::ops::{Range, RangeInclusive};
     use std::path::Path;
     use std::sync::Arc;
     use std::time::Duration;
@@ -587,7 +587,7 @@ mod tests {
             split_state: SplitState::Staged,
             num_records: 1,
             size_in_bytes: 2,
-            time_range: Some(Range { start: 0, end: 100 }),
+            time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: Utc::now().timestamp(),
         };
@@ -670,7 +670,7 @@ mod tests {
                     .get(split_id)
                     .unwrap()
                     .time_range,
-                Some(Range { start: 0, end: 100 })
+                Some(RangeInclusive::new(0, 99))
             );
             assert_eq!(
                 cache
@@ -721,7 +721,7 @@ mod tests {
             split_state: SplitState::Staged,
             num_records: 1,
             size_in_bytes: 2,
-            time_range: Some(Range { start: 0, end: 100 }),
+            time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: current_timestamp,
         };
@@ -730,10 +730,7 @@ mod tests {
             split_state: SplitState::Staged,
             num_records: 5,
             size_in_bytes: 6,
-            time_range: Some(Range {
-                start: 30,
-                end: 100,
-            }),
+            time_range: Some(RangeInclusive::new(30, 99)),
             generation: 2,
             update_timestamp: current_timestamp,
         };
@@ -908,7 +905,7 @@ mod tests {
                 split_state: SplitState::Staged,
                 num_records: 1,
                 size_in_bytes: 2,
-                time_range: Some(Range { start: 0, end: 100 }),
+                time_range: Some(RangeInclusive::new(0, 99)),
                 generation: 3,
                 update_timestamp: current_timestamp,
             };
@@ -918,10 +915,7 @@ mod tests {
                 split_state: SplitState::Staged,
                 num_records: 1,
                 size_in_bytes: 2,
-                time_range: Some(Range {
-                    start: 100,
-                    end: 200,
-                }),
+                time_range: Some(RangeInclusive::new(100, 199)),
                 generation: 3,
                 update_timestamp: current_timestamp,
             };
@@ -931,10 +925,7 @@ mod tests {
                 split_state: SplitState::Staged,
                 num_records: 1,
                 size_in_bytes: 2,
-                time_range: Some(Range {
-                    start: 200,
-                    end: 300,
-                }),
+                time_range: Some(RangeInclusive::new(200, 299)),
                 generation: 3,
                 update_timestamp: current_timestamp,
             };
@@ -944,10 +935,7 @@ mod tests {
                 split_state: SplitState::Staged,
                 num_records: 1,
                 size_in_bytes: 2,
-                time_range: Some(Range {
-                    start: 300,
-                    end: 400,
-                }),
+                time_range: Some(RangeInclusive::new(300, 399)),
                 generation: 3,
                 update_timestamp: current_timestamp,
             };
@@ -1450,7 +1438,7 @@ mod tests {
             split_state: SplitState::Staged,
             num_records: 1,
             size_in_bytes: 2,
-            time_range: Some(Range { start: 0, end: 100 }),
+            time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: Utc::now().timestamp(),
         };
@@ -1557,7 +1545,7 @@ mod tests {
             split_state: SplitState::Staged,
             num_records: 1,
             size_in_bytes: 2,
-            time_range: Some(Range { start: 0, end: 100 }),
+            time_range: Some(RangeInclusive::new(0, 100)),
             generation: 3,
             update_timestamp: Utc::now().timestamp(),
         };
@@ -1664,7 +1652,7 @@ mod tests {
             split_state: SplitState::New,
             num_records: 1,
             size_in_bytes: 2,
-            time_range: Some(Range { start: 0, end: 100 }),
+            time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: current_timestamp,
         };

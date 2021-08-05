@@ -76,9 +76,7 @@ async fn async_actor_loop<A: AsyncActor>(
                 Some(default_message)
             }
         });
-        let reception_result = inbox
-            .try_recv_msg_async(running, default_message_opt)
-            .await;
+        let reception_result = inbox.try_recv_msg_async(running, default_message_opt).await;
         progress.record_progress();
         if !kill_switch.is_alive() {
             return ActorTermination::KillSwitch;

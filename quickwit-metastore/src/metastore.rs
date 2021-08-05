@@ -24,7 +24,7 @@ pub mod single_file_metastore;
 
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -42,7 +42,7 @@ pub struct IndexMetadata {
     /// split files.
     pub index_uri: String,
     /// The config used for this index.
-    pub index_config: Box<dyn IndexConfig>,
+    pub index_config: Box<dyn IndexConfig>, //< TODO it would be good to make this an Arc.
 }
 
 /// A split metadata carries all meta data about a split.
@@ -54,22 +54,25 @@ pub struct SplitMetadata {
     /// in the storage URI resolver: for instance, the Amazon S3 region.
     pub split_id: String,
 
-    /// The state of the split.
-    pub split_state: SplitState,
-
     /// Number of records (or documents) in the split.
     pub num_records: usize,
 
-    /// Weight of the split in bytes.
-    pub size_in_bytes: usize,
+    /// Sum of the size (in bytes) of the documents in this split.
+    ///
+    /// Note this is not the split file size. It is the size of the original
+    /// JSON payloads.
+    pub size_in_bytes: u64,
 
     /// If a timestamp field is available, the min / max timestamp in the split.
-    pub time_range: Option<Range<i64>>,
+    pub time_range: Option<RangeInclusive<i64>>,
 
     /// Number of merges this segment has been subjected to during its lifetime.
     pub generation: usize,
 
-    /// Timestamp for tracking when the split was last modified.
+    /// The state of the split. This is the only mutable attribute of the split.
+    pub split_state: SplitState,
+
+    /// Timestamp for tracking when the split state was last modified.
     pub update_timestamp: i64,
 }
 

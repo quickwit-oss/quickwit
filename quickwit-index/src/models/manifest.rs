@@ -1,24 +1,22 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
-
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+// Quickwit
+//  Copyright (C) 2021 Quickwit Inc.
+//
+//  Quickwit is offered under the AGPL v3.0 and as commercial software.
+//  For commercial licensing, contact us at hello@quickwit.io.
+//
+//  AGPL:
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Affero General Public License as
+//  published by the Free Software Foundation, either version 3 of the
+//  License, or (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU Affero General Public License for more details.
+//
+//  You should have received a copy of the GNU Affero General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_metastore::SplitMetadata;
 use serde::{Deserialize, Serialize};
@@ -42,17 +40,9 @@ impl ManifestEntry {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub split_metadata: SplitMetadata,
-    // This is the sum of the size that compose the split.
-    // The size of the JSON payloads of the documents in
-    // the split on another hand, can be found in the `SplitMetadata`.
-    pub split_size_in_bytes: u64,
-    // Should be equal to `files.len()`.
+    pub split_size_in_bytes: u64, //< this is already in the split metadata
     pub num_files: u64,
     pub files: Vec<ManifestEntry>,
-    // In the current version, we can only have one segment,
-    // but a) it used to be different
-    //     b) it could very well change in the future.
-    // It does make sense to keep it a Vec.
     pub segments: Vec<SegmentId>,
 }
 
@@ -100,6 +90,7 @@ impl Manifest {
         file_statistics
     }
 }
+
 #[derive(Default)]
 pub struct FileStatistics {
     pub min_file_size_in_bytes: u64,

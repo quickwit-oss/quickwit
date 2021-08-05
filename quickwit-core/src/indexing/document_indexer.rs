@@ -59,7 +59,7 @@ pub async fn index_documents(
         // which is a little bit confusing.
         let doc = match parse_result {
             Ok(doc) => {
-                current_split.metadata.size_in_bytes += doc_size;
+                current_split.metadata.size_in_bytes += doc_size as u64;
                 statistics.num_docs.inc();
                 statistics.total_bytes_processed.add(doc_size);
                 doc
