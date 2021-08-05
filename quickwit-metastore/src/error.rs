@@ -72,7 +72,7 @@ pub enum MetastoreError {
     Io(io::Error),
 
     /// The target split does not exist.
-    #[error("Split `{split_id}` does not exists.")]
+    #[error("Split `{split_id}` does not exist.")]
     SplitDoesNotExist {
         /// missing split id.
         split_id: String,
