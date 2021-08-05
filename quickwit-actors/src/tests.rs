@@ -1,6 +1,6 @@
 use crate::actor::{Actor, KillSwitch};
 use crate::mailbox::{Command, QueueCapacity};
-use crate::{AsyncActor, ActorContext, Mailbox, MessageProcessError, Observation, SyncActor};
+use crate::{ActorContext, AsyncActor, Mailbox, MessageProcessError, Observation, SyncActor};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::time::Duration;

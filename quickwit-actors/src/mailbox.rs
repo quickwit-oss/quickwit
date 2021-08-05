@@ -199,12 +199,12 @@ impl<Message: fmt::Debug> Inbox<Message> {
         &self,
         message_enabled: bool,
         default_message_opt: Option<Message>, //< TODO this is not looking good...
-            // We don't want to force message to be cloned and therefore we passed the message
-            // by value.
-            // We should probably leave it to the called to replace the message.
-            //
-            // The problem is that in presence of a message, we do not want to wait either.
-            // A refactoring might be tricky, but is necessary.
+                                              // We don't want to force message to be cloned and therefore we passed the message
+                                              // by value.
+                                              // We should probably leave it to the called to replace the message.
+                                              //
+                                              // The problem is that in presence of a message, we do not want to wait either.
+                                              // A refactoring might be tricky, but is necessary.
     ) -> ReceptionResult<Message> {
         if let Some(command) = self.get_command_if_available() {
             return ReceptionResult::Command(command);

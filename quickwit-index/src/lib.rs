@@ -31,7 +31,6 @@ use quickwit_actors::AsyncActor;
 use quickwit_actors::KillSwitch;
 use quickwit_actors::QueueCapacity;
 use quickwit_actors::SyncActor;
-use quickwit_index_config::IndexConfig;
 use quickwit_metastore::Metastore;
 use quickwit_storage::Storage;
 
@@ -41,10 +40,11 @@ pub mod models;
 const COMMIT_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub async fn run_indexing(
-    index_config: Arc<dyn IndexConfig>,
+    index_id: String,
     metastore: Arc<dyn Metastore>,
     index_storage: Arc<dyn Storage>,
 ) -> anyhow::Result<()> {
+    let index_metadata = metastore.index_metadata(&index_id).await?;
     // TODO add a supervisition that checks the progress of all of these actors.
     let kill_switch = KillSwitch::default();
     let publisher = Publisher::new(metastore.clone());
@@ -58,7 +58,8 @@ pub async fn run_indexing(
     let packager = Packager::new(uploader_handler.mailbox().clone());
     let packager_handler = packager.spawn(QueueCapacity::Bounded(1), kill_switch.clone());
     let indexer = Indexer::try_new(
-        index_config,
+        index_id,
+        index_metadata.index_config.into(),
         None,
         COMMIT_TIMEOUT,
         packager_handler.mailbox().clone(),
@@ -74,4 +75,3 @@ pub async fn run_indexing(
 }
 
 // TODO supervisor with respawn, one for all and respawn system.
-

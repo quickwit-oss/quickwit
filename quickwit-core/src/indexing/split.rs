@@ -21,7 +21,7 @@
 */
 
 use std::fmt;
-use std::ops::Range;
+use std::ops::RangeInclusive;
 use std::path::Path;
 
 use crate::indexing::manifest::Manifest;
@@ -123,10 +123,7 @@ impl Split {
         // Note that this range will be saved if none of documents in this split have a timestamp
         // which is obviously a strange situation.
         if timestamp_field.is_some() {
-            metadata.time_range = Some(Range {
-                start: i64::MAX,
-                end: i64::MIN,
-            });
+            metadata.time_range = Some(RangeInclusive::new(i64::MAX, i64::MIN));
         }
         let split_uri = format!("{}/{}", index_uri, id);
         let storage = storage_resolver.resolve(&split_uri)?;
@@ -159,19 +156,18 @@ impl Split {
     /// Update the split metadata (num_records, time_range) based on incomming document.
     fn update_metadata(&mut self, doc: &Document) -> anyhow::Result<()> {
         if let Some(timestamp_field) = self.timestamp_field {
-            let mut split_time_range = self.metadata.time_range.as_mut().ok_or_else(|| {
-                anyhow::anyhow!("Split time range must be set if timestamp field is present.")
-            })?;
+            let split_time_range =
+                self.metadata.time_range.as_mut().with_context(|| {
+                    "Split time range must be set if timestamp field is present."
+                })?;
             if let Some(timestamp) = doc
                 .get_first(timestamp_field)
                 .and_then(|field_value| field_value.i64_value())
             {
-                if timestamp < split_time_range.start {
-                    split_time_range.start = timestamp;
-                }
-                if timestamp > split_time_range.end {
-                    split_time_range.end = timestamp;
-                }
+                *split_time_range = RangeInclusive::new(
+                    timestamp.min(*split_time_range.start()),
+                    timestamp.max(*split_time_range.end()),
+                );
             }
         };
         self.metadata.num_records += 1;
@@ -521,7 +517,7 @@ mod tests {
         }
 
         assert_eq!(split.metadata.num_records, 5);
-        assert_eq!(split.metadata.time_range, Some(2..6));
+        assert_eq!(split.metadata.time_range, Some(2..=6));
         Ok(())
     }
 }

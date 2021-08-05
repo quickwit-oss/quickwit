@@ -23,4 +23,8 @@ async-trait = "0.1"
 quickwit-actors = {path = "../quickwit-actors" }
 quickwit-metastore = {path = "../quickwit-metastore" }
 quickwit-index-config = {path = "../quickwit-index-config" }
+quickwit-directories = {path = "../quickwit-directories"}
 tempfile = "3.2"
+flume = "0.10"
+serde = "1"
+serde_json = "1"

@@ -5,7 +5,7 @@ use tracing::debug;
 use crate::actor::MessageProcessError;
 use crate::actor_handle::ActorTermination;
 use crate::mailbox::{create_mailbox, Command, Inbox, QueueCapacity};
-use crate::{Actor, ActorHandle, ActorContext, KillSwitch, Mailbox, Progress, ReceptionResult};
+use crate::{Actor, ActorContext, ActorHandle, KillSwitch, Mailbox, Progress, ReceptionResult};
 
 /// An sync actor is executed on a tokio blocking task.
 ///
@@ -82,7 +82,7 @@ fn sync_actor_loop<A: SyncActor>(
             return ActorTermination::KillSwitch;
         }
         progress.record_progress();
-        let default_message_opt= actor.default_message().and_then(|default_message| {
+        let default_message_opt = actor.default_message().and_then(|default_message| {
             if self_mailbox.is_last_mailbox() {
                 None
             } else {

@@ -7,6 +7,9 @@ use tracing::error;
 
 use crate::{Mailbox, SendError};
 
+// While the lack of message cannot pause a problem with heartbeating,  sending a message to a saturated channel
+// can be interpreted as a blocked actor.
+
 #[derive(Error, Debug)]
 pub enum MessageProcessError {
     /// The actor was stopped upon reception of a Command.
