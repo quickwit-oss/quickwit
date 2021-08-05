@@ -45,6 +45,7 @@ pub async fn run_indexing(
     metastore: Arc<dyn Metastore>,
     index_storage: Arc<dyn Storage>,
 ) -> anyhow::Result<()> {
+    // TODO add a supervisition that checks the progress of all of these actors.
     let kill_switch = KillSwitch::default();
     let publisher = Publisher::new(metastore.clone());
     let publisher_handler = publisher.spawn(QueueCapacity::Bounded(3), kill_switch.clone());
@@ -58,6 +59,7 @@ pub async fn run_indexing(
     let packager_handler = packager.spawn(QueueCapacity::Bounded(1), kill_switch.clone());
     let indexer = Indexer::try_new(
         index_config,
+        None,
         COMMIT_TIMEOUT,
         packager_handler.mailbox().clone(),
     )?;
@@ -71,4 +73,5 @@ pub async fn run_indexing(
     Ok(())
 }
 
-fn main() {}
+// TODO supervisor with respawn, one for all and respawn system.
+

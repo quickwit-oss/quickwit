@@ -18,6 +18,9 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::io;
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -39,12 +42,32 @@ pub struct IndexerCounters {
     docs: u64,
 }
 
+enum ScratchDirectory {
+    Path(PathBuf),
+    TempDir(tempfile::TempDir),
+}
+
+impl ScratchDirectory {
+    fn try_new_temp() -> io::Result<ScratchDirectory> {
+        let temp_dir = tempfile::tempdir()?;
+        Ok(ScratchDirectory::TempDir(temp_dir))
+    }
+    fn path(&self) -> &Path {
+        match self {
+            ScratchDirectory::Path(path) => path,
+            ScratchDirectory::TempDir(tempdir) => tempdir.path(),
+        }
+    }
+}
+
 pub struct Indexer {
     index_config: Arc<dyn IndexConfig>,
+    // splits index writer will write in TempDir within this directory
+    indexing_scratch_directory: ScratchDirectory,
     commit_timeout: Duration,
     sink: Mailbox<IndexedSplit>,
     next_commit_deadline_opt: Option<Instant>,
-    index_writer_opt: Option<IndexWriter>,
+    current_split_opt: Option<IndexedSplit>,
     counters: IndexerCounters,
 }
 
@@ -77,6 +100,9 @@ impl SyncActor for Indexer {
                 }
             }
         }
+        // TODO this approach of deadline is not correct, as it never triggers if no need
+        // new message arrives.
+        // We do need to implement timeout message in actors to get the right behavior.
         if let Some(deadline) = self.next_commit_deadline_opt {
             let now = Instant::now();
             if now >= deadline {
@@ -90,35 +116,47 @@ impl SyncActor for Indexer {
 }
 
 impl Indexer {
+    // TODO take all of the parameter and dispatch them in index config, or in a different
+    // IndexerParams object.
     pub fn try_new(
         index_config: Arc<dyn IndexConfig>,
+        indexing_directory: Option<PathBuf>, //< if None, we create a tempdirectory.
         commit_timeout: Duration,
         sink: Mailbox<IndexedSplit>,
     ) -> anyhow::Result<Indexer> {
-        Ok(Indexer {
+        let indexing_scratch_directory =
+            if let Some(path) = indexing_directory {
+                ScratchDirectory::Path(path)
+            } else {
+                ScratchDirectory::try_new_temp()?
+            };
+       Ok(Indexer {
             index_config,
             commit_timeout,
             sink,
             next_commit_deadline_opt: None,
-            index_writer_opt: None,
             counters: IndexerCounters::default(),
+            current_split_opt: None,
+            indexing_scratch_directory
         })
     }
 
-    fn create_index_writer(&self) -> anyhow::Result<IndexWriter> {
-        todo!()
+    fn create_indexed_split(&self) -> anyhow::Result<IndexedSplit> {
+        let schema = self.index_config.schema();
+        let indexed_split = IndexedSplit::new_in_dir(self.indexing_scratch_directory.path(), schema)?;
+        Ok(indexed_split)
     }
 
     fn index_writer(&mut self) -> anyhow::Result<&mut IndexWriter> {
-        if self.index_writer_opt.is_none() {
-            let index_writer = self.create_index_writer()?;
-            self.index_writer_opt = Some(index_writer);
+        if self.current_split_opt.is_none() {
+            let new_indexed_split = self.create_indexed_split()?;
+            self.current_split_opt = Some(new_indexed_split);
             self.next_commit_deadline_opt = Some(Instant::now() + self.commit_timeout);
         }
-        let index_writer = self.index_writer_opt.as_mut().with_context(|| {
+        let current_index_split = self.current_split_opt.as_mut().with_context(|| {
             "No index writer available. Please report: this should never happen."
         })?;
-        Ok(index_writer)
+        Ok(&mut current_index_split.index_writer)
     }
 
     fn commit(&mut self) -> anyhow::Result<()> {

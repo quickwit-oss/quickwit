@@ -63,14 +63,13 @@ async fn async_actor_loop<A: AsyncActor>(
     progress: Progress,
 ) -> ActorTermination {
     let mut running = true;
-    let default_message_opt = actor.default_message();
     loop {
         tokio::task::yield_now().await;
         if !kill_switch.is_alive() {
             return ActorTermination::KillSwitch;
         }
         progress.record_progress();
-        let default_message_opt_ref = default_message_opt.as_ref().and_then(|default_message| {
+        let default_message_opt = actor.default_message().and_then(|default_message| {
             if self_mailbox.is_last_mailbox() {
                 None
             } else {
@@ -78,7 +77,7 @@ async fn async_actor_loop<A: AsyncActor>(
             }
         });
         let reception_result = inbox
-            .try_recv_msg_async(running, default_message_opt_ref)
+            .try_recv_msg_async(running, default_message_opt)
             .await;
         progress.record_progress();
         if !kill_switch.is_alive() {

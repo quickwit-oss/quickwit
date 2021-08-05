@@ -50,11 +50,7 @@ pub use sync_actor::SyncActor;
 ///
 /// If an actor does not advertise a progress within an interval of duration `HEARTBEAT`,
 /// the killswith is hit, and all of the actors in this generation are killed.
-pub const HEARTBEAT: Duration = if cfg!(test) {
-    Duration::from_millis(2)
-} else {
-    Duration::from_secs(1)
-};
+pub const HEARTBEAT: Duration = Duration::from_secs(1);
 
 pub fn message_timeout() -> Duration {
     HEARTBEAT.mul_f32(0.2f32)
