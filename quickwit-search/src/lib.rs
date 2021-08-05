@@ -59,7 +59,7 @@ use crate::collector::make_collector;
 pub use crate::error::SearchError;
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
-use crate::root::root_search;
+use crate::root::{root_export, root_search};
 pub use crate::search_result_json::SearchResultJson;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
@@ -199,11 +199,12 @@ mod tests {
             index_id: index_name.to_string(),
             query: "anthropomorphic".to_string(),
             search_fields: vec!["body".to_string()],
-            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 2,
             start_offset: 0,
+            fast_field: None,
+            format: String::from(""),
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -247,7 +248,7 @@ mod tests {
         let test_sandbox =
             TestSandbox::create("single-node-simple", Box::new(WikipediaIndexConfig::new()))
                 .await?;
-        for _ in 0..10 {
+        for _ in 0..10u32 {
             test_sandbox.add_documents(vec![
             json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
             json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle"}),
@@ -257,11 +258,12 @@ mod tests {
             index_id: index_name.to_string(),
             query: "beagle".to_string(),
             search_fields: vec![],
-            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 6,
             start_offset: 0,
+            fast_field: None,
+            format: String::from(""),
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -315,11 +317,12 @@ mod tests {
             index_id: index_name.to_string(),
             query: "info".to_string(),
             search_fields: vec![],
-            fast_fields: vec![],
             start_timestamp: Some(10),
             end_timestamp: Some(20),
             max_hits: 15,
             start_offset: 0,
+            fast_field: None,
+            format: String::from(""),
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -337,11 +340,12 @@ mod tests {
             index_id: index_name.to_string(),
             query: "info".to_string(),
             search_fields: vec![],
-            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: Some(20),
             max_hits: 25,
             start_offset: 0,
+            fast_field: None,
+            format: String::from(""),
         };
         let single_node_result = single_node_search(
             &search_request,

@@ -24,9 +24,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use http::Uri;
+use quickwit_proto::LeafExportResult;
 use tonic::transport::Channel;
 use tonic::transport::Endpoint;
 use tonic::Request;
+use tonic::Streaming;
 
 use crate::error::parse_grpc_error;
 use crate::SearchError;
@@ -118,6 +120,24 @@ impl SearchServiceClient {
                 Ok(tonic_result.into_inner())
             }
             SearchServiceClientImpl::Local(service) => service.leaf_search(request).await,
+        }
+    }
+
+    /// Perform leaf export.
+    pub async fn leaf_export(
+        &mut self,
+        request: quickwit_proto::LeafSearchRequest,
+    ) -> Result<Streaming<LeafExportResult>, SearchError> {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Grpc(grpc_client) => {
+                let tonic_request = Request::new(request);
+                let tonic_result = grpc_client
+                    .leaf_export(tonic_request)
+                    .await
+                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+                Ok(tonic_result.into_inner())
+            }
+            SearchServiceClientImpl::Local(service) => service.leaf_export(request).await,
         }
     }
 

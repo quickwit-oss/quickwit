@@ -20,10 +20,8 @@
 
 use anyhow::Context;
 use itertools::Itertools;
-use quickwit_proto::FastFieldValues;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::collections::HashMap;
 use tantivy::fastfield::MultiValuedFastFieldReader;
 use tantivy::schema::Cardinality;
 use tantivy::schema::FieldType;
@@ -108,7 +106,7 @@ fn resolve_sort_by(
 struct PartialHitHeapItem {
     sorting_field_value: u64,
     doc_id: DocId,
-    fast_field_values: Vec<FastFieldValues>,
+    fast_field_value: Option<i64>,
 }
 
 impl PartialOrd for PartialHitHeapItem {
@@ -153,7 +151,7 @@ pub struct QuickwitSegmentCollector {
     max_hits: usize,
     segment_ord: u32,
     timestamp_filter_opt: Option<TimestampFilter>,
-    fast_field_readers: HashMap<String, GenericFastFieldReader>,
+    fast_field_reader: Option<GenericFastFieldReader>,
 }
 
 impl QuickwitSegmentCollector {
@@ -163,15 +161,6 @@ impl QuickwitSegmentCollector {
 
     fn collect_top_k(&mut self, doc_id: DocId) {
         let sorting_field_value: u64 = self.sort_by.compute_sorting_field(doc_id);
-
-        let mut fast_field_values = vec![];
-        for (field_name, field_reader) in self.fast_field_readers.iter() {
-            let values = field_reader.get_values(doc_id);
-            fast_field_values.push(FastFieldValues{
-                name: field_name.clone(),
-                values,
-            });
-        }
 
         if self.at_capacity() {
             if let Some(limit_sorting_field) = self.hits.peek().map(|head| head.sorting_field_value)
@@ -190,7 +179,26 @@ impl QuickwitSegmentCollector {
             self.hits.push(PartialHitHeapItem {
                 sorting_field_value,
                 doc_id,
-                fast_field_values,
+                fast_field_value: None,
+            });
+        }
+    }
+
+    // TODO (Help Needed): idealy we should create a separate collector for export
+    // but this might involve duplicating things like warmup and other functions.
+    // Come up with a common type that embodies the common functionalities so that 
+    // most function implementations that need the collector stay the same (Generic or Trait object).
+    // For now we are asumming if fast_field is requested then we are exporting,
+    // meaning this will just collect all of them
+    fn collect_all(&mut self, doc_id: DocId) {
+        //TODO: No sorting during export we could as well forget this
+        let sorting_field_value: u64 = self.sort_by.compute_sorting_field(doc_id);
+        if let Some(fast_field_reader) = &self.fast_field_reader {
+            let fast_field_value = fast_field_reader.get_value(doc_id);
+            self.hits.push(PartialHitHeapItem {
+                sorting_field_value, 
+                doc_id,
+                fast_field_value,
             });
         }
     }
@@ -212,7 +220,11 @@ impl SegmentCollector for QuickwitSegmentCollector {
         }
 
         self.num_hits += 1;
-        self.collect_top_k(doc_id);
+        if self.fast_field_reader.is_some() {
+            self.collect_all(doc_id);
+        } else {
+            self.collect_top_k(doc_id);
+        }
     }
 
     fn harvest(self) -> LeafSearchResult {
@@ -227,7 +239,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
                 sorting_field_value: hit.sorting_field_value,
                 segment_ord,
                 doc_id: hit.doc_id,
-                fast_field_values: hit.fast_field_values,
+                fast_field_value: hit.fast_field_value,
                 split_id: split_id.clone(),
             })
             .collect();
@@ -251,7 +263,7 @@ pub struct QuickwitCollector {
     pub max_hits: usize,
     pub sort_by: SortBy,
     pub fast_field_names: Vec<String>,
-    pub requested_field_names: Vec<String>,
+    pub requested_fast_field_name: Option<String>,
     pub timestamp_field_opt: Option<Field>,
     pub start_timestamp_opt: Option<i64>,
     pub end_timestamp_opt: Option<i64>,
@@ -290,12 +302,14 @@ impl Collector for QuickwitCollector {
             None
         };
 
-        let mut fast_field_readers = HashMap::new();
-        for field_name in self.requested_field_names.iter() {
-            let reader = GenericFastFieldReader::new(field_name, segment_reader)
+        // construct fast field reader if any
+        let fast_field_reader = if let Some(fast_field_name) = &self.requested_fast_field_name {
+            let reader = GenericFastFieldReader::new(fast_field_name, segment_reader)
                 .map_err(|err| TantivyError::SchemaError(err.to_string()))?;
-            fast_field_readers.insert(String::from(field_name), reader);
-        }
+            Some(reader)
+        } else {
+            None
+        };
 
         Ok(QuickwitSegmentCollector {
             num_hits: 0u64,
@@ -305,7 +319,7 @@ impl Collector for QuickwitCollector {
             segment_ord,
             max_hits: leaf_max_hits,
             timestamp_filter_opt,
-            fast_field_readers,
+            fast_field_reader,
         })
     }
 
@@ -332,8 +346,8 @@ impl Collector for QuickwitCollector {
 }
 
 enum GenericFastFieldReader {
-    U64(DynamicFastFieldReader<u64>),
-    U64s(MultiValuedFastFieldReader<u64>),
+    I64(DynamicFastFieldReader<i64>),
+    I64s(MultiValuedFastFieldReader<i64>),
 }
 
 impl GenericFastFieldReader {
@@ -344,31 +358,33 @@ impl GenericFastFieldReader {
             .context("Field does not exist")?;
         let field_entry = segment_reader.schema().get_field_entry(field);
         let field_reader = match field_entry.field_type() {
-            FieldType::U64(options)
-            | FieldType::I64(options)
-            | FieldType::F64(options)
-            | FieldType::Date(options) => match options.get_fastfield_cardinality() {
+            FieldType::I64(options) => match options.get_fastfield_cardinality() {
                 Some(Cardinality::SingleValue) => {
-                    GenericFastFieldReader::U64(segment_reader.fast_fields().u64(field)?)
+                    GenericFastFieldReader::I64(segment_reader.fast_fields().i64(field)?)
                 }
                 Some(Cardinality::MultiValues) => {
-                    GenericFastFieldReader::U64s(segment_reader.fast_fields().u64s(field)?)
+                    GenericFastFieldReader::I64s(segment_reader.fast_fields().i64s(field)?)
                 }
-                _ => anyhow::bail!("Could not fetch cardinality"),
+                _ => anyhow::bail!("Could not fetch cardinality."),
             },
-            _ => anyhow::bail!("Unknown type"),
+            _ => anyhow::bail!("Only i64 is supported for now."),
         };
 
         Ok(field_reader)
     }
 
-    pub fn get_values(&self, doc_id: DocId) -> Vec<u64> {
+    pub fn get_value(&self, doc_id: DocId) -> Option<i64> {
         let mut values = vec![];
         match &self {
-            Self::U64(reader) => values.push(reader.get(doc_id)),
-            Self::U64s(reader) => reader.get_vals(doc_id, &mut values),
+            Self::I64(reader) => values.push(reader.get(doc_id)),
+            Self::I64s(reader) => reader.get_vals(doc_id, &mut values),
         };
-        values
+
+        if values.is_empty() {
+            None
+        } else {
+            Some(values[0])
+        }
     }
 }
 
@@ -419,7 +435,10 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
 }
 
 /// Extracts all fast field names.
-fn extract_fast_field_names(index_config: &dyn IndexConfig) -> Vec<String> {
+fn extract_fast_field_names(
+    search_request: &SearchRequest,
+    index_config: &dyn IndexConfig,
+) -> Vec<String> {
     let mut fast_fields = vec![];
     if let Some(timestamp_field) = index_config.timestamp_field_name() {
         fast_fields.push(timestamp_field);
@@ -431,7 +450,11 @@ fn extract_fast_field_names(index_config: &dyn IndexConfig) -> Vec<String> {
         }
     }
 
-    fast_fields
+    if let Some(field_name) = &search_request.fast_field {
+        fast_fields.push((*field_name).clone());
+    }
+
+    fast_fields.into_iter().unique().collect()
 }
 
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
@@ -444,8 +467,8 @@ pub fn make_collector(
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by: index_config.default_sort_by(),
-        fast_field_names: extract_fast_field_names(index_config),
-        requested_field_names: search_request.fast_fields.clone(),
+        fast_field_names: extract_fast_field_names(&search_request, index_config),
+        requested_fast_field_name: search_request.fast_field.clone(),
         timestamp_field_opt: index_config.timestamp_field(),
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,
@@ -465,12 +488,12 @@ mod tests {
         let lesser_score = PartialHitHeapItem {
             sorting_field_value: 1u64,
             doc_id: 1u32,
-            fast_field_values: vec![],
+            fast_field_value: None,
         };
         let higher_score = PartialHitHeapItem {
             sorting_field_value: 2u64,
             doc_id: 1u32,
-            fast_field_values: vec![],
+            fast_field_value: None,
         };
         assert_eq!(lesser_score.cmp(&higher_score), Ordering::Greater);
     }
@@ -482,7 +505,7 @@ mod tests {
             split_id: "split1".to_string(),
             segment_ord: 0u32,
             doc_id: 0u32,
-            fast_field_values: vec![],
+            fast_field_value: None,
         };
         assert_eq!(
             top_k_partial_hits(vec![make_doc(1u64), make_doc(3u64), make_doc(2u64),], 2),
@@ -497,7 +520,7 @@ mod tests {
             split_id: format!("split_{}", split_id),
             segment_ord: 0u32,
             doc_id: 0u32,
-            fast_field_values: vec![],
+            fast_field_value: None,
         };
         assert_eq!(
             top_k_partial_hits(

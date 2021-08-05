@@ -19,24 +19,29 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use bytes::Bytes;
 use quickwit_metastore::Metastore;
+use quickwit_proto::LeafExportResult;
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, SearchRequest,
     SearchResult,
 };
 use quickwit_storage::StorageUriResolver;
+use tokio::sync::mpsc::Receiver;
+use tonic::Streaming;
 use tracing::info;
 
 use crate::fetch_docs;
 use crate::leaf_search;
 use crate::make_collector;
-use crate::root_search;
 use crate::SearchClientPool;
 use crate::SearchError;
+use crate::{root_export, root_search};
 
 #[derive(Clone)]
 /// The search service implementation.
@@ -77,6 +82,18 @@ pub trait SearchService: 'static + Send + Sync {
     /// Fetches the documents contents from the document store.
     /// This methods takes `PartialHit`s and returns `Hit`s.
     async fn fetch_docs(&self, _request: FetchDocsRequest) -> Result<FetchDocsResult, SearchError>;
+
+    /// Perfomrs a root search returning a receiver for streaming
+    async fn root_export(
+        &self,
+        _request: SearchRequest,
+    ) -> Result<Receiver<Result<Bytes, Infallible>>, SearchError>;
+
+    /// Perform a leaf search on a given set of splits and return a stream.
+    async fn leaf_export(
+        &self,
+        _request: LeafSearchRequest,
+    ) -> Result<Streaming<LeafExportResult>, SearchError>;
 }
 
 impl SearchServiceImpl {
@@ -161,5 +178,31 @@ impl SearchService for SearchServiceImpl {
             fetch_docs(fetch_docs_request.partial_hits, storage.clone()).await?;
 
         Ok(fetch_docs_result)
+    }
+
+    async fn root_export(
+        &self,
+        search_request: SearchRequest,
+    ) -> Result<Receiver<Result<Bytes, Infallible>>, SearchError> {
+        let metastore = self
+            .metastore_router
+            .get(&search_request.index_id)
+            .cloned()
+            .ok_or_else(|| SearchError::IndexDoesNotExist {
+                index_id: search_request.index_id.clone(),
+            })?;
+
+        let response_receiver =
+            root_export(&search_request, metastore.as_ref(), &self.client_pool).await?;
+
+        Ok(response_receiver)
+    }
+
+    async fn leaf_export(
+        &self,
+        _request: LeafSearchRequest,
+    ) -> Result<Streaming<LeafExportResult>, SearchError> {
+        //TODO implement when adding tests
+        unimplemented!()
     }
 }

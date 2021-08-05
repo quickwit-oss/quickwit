@@ -42,6 +42,8 @@ service SearchService {
   /// Fetches the documents contents from the document store.
   /// This methods takes `PartialHit`s and returns `Hit`s.
   rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResult);
+
+  rpc LeafExport(LeafSearchRequest) returns (stream LeafExportResult);
 }
 
 // -- Search -------------------
@@ -56,22 +58,23 @@ message SearchRequest {
   // Fields to search on
   repeated string  search_fields = 3;
   
-  // Fast fields to extract values
-  repeated string fast_fields = 4;
-
   // Time filter
-  optional int64 start_timestamp = 5;
-  optional int64 end_timestamp = 6;
+  optional int64 start_timestamp = 4;
+  optional int64 end_timestamp = 5;
 
   // Maximum number of hits to return.
-  uint64 max_hits = 7;
+  uint64 max_hits = 6;
 
   // First hit to return. Together with max_hits, this parameter
   // can be used for pagination.
   //
   // E.g.
   // The results with rank [start_offset..start_offset + max_hits) are returned.
-  uint64 start_offset = 8;
+  uint64 start_offset = 7;
+
+  optional string fast_field = 8;
+
+  string format = 9;
 }
 
 message SearchResult {
@@ -141,12 +144,8 @@ message PartialHit {
   // The DocId identifies a unique document at the scale of a tantivy segment.
   uint32 doc_id = 4;
 
-  repeated FastFieldValues fast_field_values = 5;
-}
+  optional int64 fast_field_value = 5;
 
-message FastFieldValues {
-  string name = 1;
-  repeated uint64 values = 2;
 }
 
 message LeafSearchResult {
@@ -176,4 +175,12 @@ message FetchDocsRequest {
 message FetchDocsResult {
   // List of complete hits.
   repeated Hit hits = 1;
+}
+
+
+// -- Export -------------------
+
+message LeafExportResult {
+  // Row of data serialized  in bytes (DocID, fast_field_value)
+  bytes row = 1;
 }

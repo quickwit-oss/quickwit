@@ -21,13 +21,18 @@
 
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use bytes::Bytes;
+use futures::future::try_join_all;
+use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_proto::SplitSearchError;
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
+use tokio::sync::mpsc::Receiver;
 use tokio::task::spawn_blocking;
 use tokio::task::JoinHandle;
 use tracing::*;
@@ -424,6 +429,108 @@ pub async fn root_search(
     })
 }
 
+/// Perform a distributed search by streaming the result.
+pub async fn root_export(
+    search_request: &SearchRequest,
+    metastore: &dyn Metastore,
+    client_pool: &Arc<SearchClientPool>,
+) -> Result<Receiver<Result<Bytes, Infallible>>, SearchError> {
+    let _start_instant = tokio::time::Instant::now();
+
+    // Create a job for leaf node search and assign the splits that the node is responsible for based on the job.
+    let split_metadata_list = list_relevant_splits(search_request, metastore).await?;
+
+    // Create a hash map of SplitMetadata with split id as a key.
+    let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
+        .into_iter()
+        .map(|split_metadata| (split_metadata.split_id.clone(), split_metadata))
+        .collect();
+
+    // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
+    //
+    let leaf_search_jobs: Vec<Job> =
+        job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
+
+    let assigned_leaf_search_jobs = client_pool
+        .assign_jobs(leaf_search_jobs, &HashSet::default())
+        .await?;
+    debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
+
+    // Create search request with start offset is 0 that used by leaf node search.
+    let mut search_request_with_offset_0 = search_request.clone();
+    search_request_with_offset_0.start_offset = 0;
+    search_request_with_offset_0.max_hits += search_request.start_offset;
+
+    let (result_sender, result_receiver) = tokio::sync::mpsc::channel(100);
+
+    let mut assigned_leaf_search_jobs_stream = tokio_stream::iter(assigned_leaf_search_jobs)
+        .map(|(mut search_client, jobs)| {
+            let leaf_search_request = LeafSearchRequest {
+                search_request: Some(search_request_with_offset_0.clone()),
+                split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
+            };
+
+            debug!(leaf_search_request=?leaf_search_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
+            async move {
+                let addr = search_client.grpc_addr();
+                let handle = async move {
+                    let split_ids = leaf_search_request.split_ids.to_vec();
+                    search_client
+                        .leaf_export(leaf_search_request)
+                        .await
+                        .map_err(|search_error| NodeSearchError {
+                            search_error,
+                            split_ids,
+                        })
+                };
+                (addr, handle)
+            }
+        }).buffer_unordered(10);
+
+    let mut result_sender_futures = vec![];
+    result_sender
+        .send(Ok(bytes::Bytes::from(row_header(search_request))))
+        .await
+        .map_err(|_| SearchError::InternalError("unable to send data".to_string()))?;
+
+    while let Some((_addr, handle)) = assigned_leaf_search_jobs_stream.next().await {
+        //TODO check error & add to retry list
+        // currently we are not handling the complex retry logic
+        if let Ok(mut search_result_stream) = handle.await {
+            //send to streaming channel
+            let result_sender_clone = result_sender.clone();
+            result_sender_futures.push(tokio::spawn(async move {
+                while let Some(data) = search_result_stream.next().await {
+                    let data =
+                        data.map_err(|_| SearchError::InternalError("grpc error".to_string()))?;
+
+                    result_sender_clone
+                        .send(Ok(bytes::Bytes::from(data.row)))
+                        .await
+                        .map_err(|_| {
+                            SearchError::InternalError("unable to send data".to_string())
+                        })?;
+                }
+                Result::<(), SearchError>::Ok(())
+            }));
+        }
+    }
+
+    try_join_all(result_sender_futures).await?;
+
+    Ok(result_receiver)
+}
+
+/// Format the data header
+pub(crate) fn row_header(request: &SearchRequest) -> Vec<u8> {
+    //TODO take into account the format (csv, rawbin)
+    format!(
+        "docId, {}\n",
+        request.fast_field.clone().unwrap_or_default()
+    )
+    .into_bytes()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -458,7 +565,7 @@ mod tests {
             split_id: split_id.to_string(),
             segment_ord: 1,
             doc_id,
-            fast_field_values: vec![],
+            fast_field_value: None,
         }
     }
 
@@ -483,11 +590,12 @@ mod tests {
             index_id: "test-idx".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
-            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            fast_field: None,
+            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -548,11 +656,12 @@ mod tests {
             index_id: "test-idx".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
-            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            fast_field: None,
+            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -636,11 +745,12 @@ mod tests {
             index_id: "test-idx".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
-            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            fast_field: None,
+            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -747,11 +857,12 @@ mod tests {
             index_id: "test-idx".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
-            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            fast_field: None,
+            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -876,11 +987,12 @@ mod tests {
             index_id: "test-idx".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
-            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            fast_field: None,
+            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -960,11 +1072,12 @@ mod tests {
             index_id: "test-idx".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
-            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            fast_field: None,
+            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -1021,11 +1134,12 @@ mod tests {
             index_id: "test-idx".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
-            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            fast_field: None,
+            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -1084,11 +1198,12 @@ mod tests {
             index_id: "test-idx".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
-            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            fast_field: None,
+            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -1180,11 +1295,12 @@ mod tests {
             index_id: "test-idx".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
-            fast_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            fast_field: None,
+            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 

@@ -23,7 +23,9 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use hyper::header::CONTENT_DISPOSITION;
 use serde::{Deserialize, Deserializer};
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::*;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
@@ -39,7 +41,9 @@ pub async fn start_rest_service(
     search_service: Arc<SearchServiceImpl>,
 ) -> anyhow::Result<()> {
     info!(rest_addr=?rest_addr, "Start REST service.");
-    let rest_routes = search_handler(search_service);
+    let rest_routes = search_handler(search_service.clone())
+        .or(export_handler(search_service))
+        .recover(recover_fn);
     warp::serve(rest_routes).run(rest_addr).await;
     Ok(())
 }
@@ -59,6 +63,15 @@ pub enum Format {
 impl Default for Format {
     fn default() -> Self {
         Format::PrettyJson
+    }
+}
+
+impl ToString for Format {
+    fn to_string(&self) -> String {
+        match &self {
+            Self::Json => "json".to_string(),
+            Self::PrettyJson => "prety-json".to_string(),
+        }
     }
 }
 
@@ -89,6 +102,27 @@ impl Format {
         let reply_with_header = reply::with_header(body_json, CONTENT_TYPE, "application/json");
         reply::with_status(reply_with_header, status_code)
     }
+
+    fn make_streaming_reply(self, result: Result<hyper::Body, ApiError>) -> impl Reply {
+        let status_code: StatusCode;
+        let body = match result {
+            Ok(body) => {
+                status_code = StatusCode::OK;
+                warp::reply::Response::new(body)
+            }
+            Err(err) => {
+                status_code = err.http_status_code();
+                warp::reply::Response::new(hyper::Body::from(err.message()))
+            }
+        };
+        let reply_with_header = reply::with_header(body, CONTENT_TYPE, "text/csv");
+        let reply_with_header = reply::with_header(
+            reply_with_header,
+            CONTENT_DISPOSITION,
+            "attachment;filename=export.csv",
+        );
+        reply::with_status(reply_with_header, status_code)
+    }
 }
 /// This struct represents the QueryString passed to
 /// the rest API.
@@ -103,10 +137,6 @@ pub struct SearchRequestQueryString {
     #[serde(rename(deserialize = "searchField"))]
     #[serde(deserialize_with = "from_simple_list")]
     pub search_fields: Option<Vec<String>>,
-    #[serde(default)]
-    #[serde(rename(deserialize = "fastField"))]
-    #[serde(deserialize_with = "from_simple_list")]
-    pub fast_fields: Option<Vec<String>>,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
     pub start_timestamp: Option<i64>,
     /// If set, restrict search to documents with a `timestamp < end_timestamp``.
@@ -121,6 +151,11 @@ pub struct SearchRequestQueryString {
     /// The results with rank [start_offset..start_offset + max_hits) are returned
     #[serde(default)] // Default to 0. (We are 0-indexed)
     pub start_offset: u64,
+
+    /// The fast field to extract
+    #[serde(default)]
+    #[serde(rename(deserialize = "fastField"))]
+    pub fast_field: Option<String>,
     /// The output format.
     #[serde(default)]
     pub format: Format,
@@ -135,11 +170,12 @@ async fn search_endpoint<TSearchService: SearchService>(
         index_id,
         query: search_request.query,
         search_fields: search_request.search_fields.unwrap_or_default(),
-        fast_fields: search_request.fast_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,
         max_hits: search_request.max_hits,
         start_offset: search_request.start_offset,
+        fast_field: search_request.fast_field,
+        format: search_request.format.to_string(),
     };
     let search_result = search_service.root_search(search_request).await?;
     let search_result_json = SearchResultJson::from(search_result);
@@ -173,7 +209,52 @@ pub fn search_handler<TSearchService: SearchService>(
     search_filter()
         .and(warp::any().map(move || search_service.clone()))
         .and_then(search)
-        .recover(recover_fn)
+}
+
+//TODO rethink & refactor
+
+async fn export<TSearchService: SearchService>(
+    index_id: String,
+    request: SearchRequestQueryString,
+    search_service: Arc<TSearchService>,
+) -> Result<impl warp::Reply, Infallible> {
+    info!(index_id=%index_id,request=?request, "export");
+    Ok(request
+        .format
+        .make_streaming_reply(export_endpoint(index_id, request, &*search_service).await))
+}
+
+pub fn export_handler<TSearchService: SearchService>(
+    search_service: Arc<TSearchService>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    warp::path!("api" / "v1" / String / "export")
+        .and(warp::get())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::any().map(move || search_service.clone()))
+        .and_then(export)
+}
+
+async fn export_endpoint<TSearchService: SearchService>(
+    index_id: String,
+    search_request: SearchRequestQueryString,
+    search_service: &TSearchService,
+) -> Result<hyper::Body, ApiError> {
+    let export_request = quickwit_proto::SearchRequest {
+        index_id,
+        query: search_request.query,
+        search_fields: search_request.search_fields.unwrap_or_default(),
+        start_timestamp: search_request.start_timestamp,
+        end_timestamp: search_request.end_timestamp,
+        max_hits: search_request.max_hits,
+        start_offset: search_request.start_offset,
+        fast_field: search_request.fast_field,
+        format: search_request.format.to_string(),
+    };
+
+    let response_receiver = search_service.root_export(export_request).await?;
+    let stream = ReceiverStream::new(response_receiver);
+    let body = hyper::Body::wrap_stream(stream);
+    Ok(body)
 }
 
 /// This function returns a formated error based on the given rejection reason.
@@ -245,12 +326,12 @@ mod tests {
             &super::SearchRequestQueryString {
                 query: "*".to_string(),
                 search_fields: None,
-                fast_fields: None,
                 start_timestamp: None,
                 end_timestamp: Some(1450720000),
                 max_hits: 10,
                 start_offset: 22,
                 format: Format::default(),
+                fast_field: None,
             }
         );
     }
@@ -269,12 +350,12 @@ mod tests {
             &super::SearchRequestQueryString {
                 query: "*".to_string(),
                 search_fields: Some(vec!["title".to_string(), "body".to_string()]),
-                fast_fields: None,
                 start_timestamp: None,
                 end_timestamp: Some(1450720000),
                 max_hits: 20,
                 start_offset: 0,
                 format: Format::default(),
+                fast_field: None,
             }
         );
     }
@@ -298,7 +379,7 @@ mod tests {
                 start_offset: 0,
                 format: Format::Json,
                 search_fields: None,
-                fast_fields: None,
+                fast_field: None,
             }
         );
     }
@@ -306,7 +387,8 @@ mod tests {
     #[tokio::test]
     async fn test_rest_search_api_route_invalid_key() -> anyhow::Result<()> {
         let mock_search_service = MockSearchService::new();
-        let rest_search_api_handler = super::search_handler(Arc::new(mock_search_service));
+        let rest_search_api_handler =
+            super::search_handler(Arc::new(mock_search_service)).recover(recover_fn);
         let resp = warp::test::request()
             .path("/api/v1/quickwit-demo-index/search?query=*&endUnixTimestamp=1450720000")
             .reply(&rest_search_api_handler)
@@ -314,7 +396,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `fastField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`."
+            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `fastField`, `format`."
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
@@ -331,7 +413,8 @@ mod tests {
                 errors: vec![],
             })
         });
-        let rest_search_api_handler = super::search_handler(Arc::new(mock_search_service));
+        let rest_search_api_handler =
+            super::search_handler(Arc::new(mock_search_service)).recover(recover_fn);
         let resp = warp::test::request()
             .path("/api/v1/quickwit-demo-index/search?query=*")
             .reply(&rest_search_api_handler)
@@ -358,7 +441,8 @@ mod tests {
                 },
             ))
             .returning(|_| Ok(Default::default()));
-        let rest_search_api_handler = super::search_handler(Arc::new(mock_search_service));
+        let rest_search_api_handler =
+            super::search_handler(Arc::new(mock_search_service)).recover(recover_fn);
         assert_eq!(
             warp::test::request()
                 .path("/api/v1/quickwit-demo-index/search?query=*&startOffset=5&maxHits=30")
@@ -378,7 +462,8 @@ mod tests {
                 index_id: "not-found-index".to_string(),
             })
         });
-        let rest_search_api_handler = super::search_handler(Arc::new(mock_search_service));
+        let rest_search_api_handler =
+            super::search_handler(Arc::new(mock_search_service)).recover(recover_fn);
         assert_eq!(
             warp::test::request()
                 .path("/api/v1/index-does-not-exist/search?query=myfield:test")
@@ -396,7 +481,8 @@ mod tests {
         mock_search_service
             .expect_root_search()
             .returning(|_| Err(SearchError::InternalError("ty".to_string())));
-        let rest_search_api_handler = super::search_handler(Arc::new(mock_search_service));
+        let rest_search_api_handler =
+            super::search_handler(Arc::new(mock_search_service)).recover(recover_fn);
         assert_eq!(
             warp::test::request()
                 .path("/api/v1/index-does-not-exist/search?query=myfield:test")
@@ -414,7 +500,8 @@ mod tests {
         mock_search_service
             .expect_root_search()
             .returning(|_| Err(SearchError::InvalidQuery("invalid query".to_string())));
-        let rest_search_api_handler = super::search_handler(Arc::new(mock_search_service));
+        let rest_search_api_handler =
+            super::search_handler(Arc::new(mock_search_service)).recover(recover_fn);
         assert_eq!(
             warp::test::request()
                 .path("/api/v1/my-index/search?query=myfield:test")

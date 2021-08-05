@@ -23,8 +23,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use quickwit_proto::search_service_server as grpc;
+use quickwit_proto::{search_service_server as grpc, LeafExportResult, LeafSearchRequest};
 use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
+use tokio::sync::mpsc::channel;
+use tokio_stream::wrappers::ReceiverStream;
+use tonic::Status;
 
 /// gRPC adapter that wraped SearchService.
 #[derive(Clone)]
@@ -75,6 +78,42 @@ impl grpc::SearchService for GrpcAdapter {
             .await
             .map_err(convert_error_to_tonic_status)?;
         Ok(tonic::Response::new(fetch_docs_result))
+    }
+
+    type LeafExportStream = ReceiverStream<Result<LeafExportResult, Status>>;
+
+    async fn leaf_export(
+        &self,
+        request: tonic::Request<LeafSearchRequest>,
+    ) -> Result<tonic::Response<Self::LeafExportStream>, tonic::Status> {
+        let (sender, receiver) = channel(100);
+        let service = self.0.clone();
+        tokio::spawn(async move {
+            let leaf_search_request = request.into_inner();
+            let leaf_search_result = service
+                .leaf_search(leaf_search_request)
+                .await
+                .map_err(convert_error_to_tonic_status)
+                .unwrap();
+
+            //TODO change loop to iter stream
+            for hit in leaf_search_result.partial_hits {
+                //TODO take into account request format (currently its just csv)
+                sender
+                    .send(Ok(LeafExportResult {
+                        row: format!(
+                            "{}, {}\n",
+                            hit.doc_id,
+                            hit.fast_field_value.unwrap_or_default()
+                        )
+                        .into_bytes(),
+                    }))
+                    .await
+                    .unwrap();
+            }
+        });
+
+        Ok(tonic::Response::new(ReceiverStream::new(receiver)))
     }
 }
 
