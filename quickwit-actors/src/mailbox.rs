@@ -31,12 +31,19 @@ use uuid::Uuid;
 use crate::actor_handle::ActorMessage;
 use crate::SendError;
 
-#[derive(Clone)]
-pub struct Mailbox<M> {
-    inner: Arc<Inner<M>>,
+pub struct Mailbox<Message> {
+    inner: Arc<Inner<Message>>,
 }
 
-impl<M: Send + Sync + fmt::Debug + Clone> Mailbox<M> {
+impl<Message> Clone for Mailbox<Message> {
+    fn clone(&self) -> Self {
+        Mailbox {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<Message> Mailbox<Message> {
     pub(crate) fn is_last_mailbox(&self) -> bool {
         Arc::strong_count(&self.inner) == 1
     }
@@ -50,8 +57,8 @@ impl<Message> Deref for Mailbox<Message> {
     }
 }
 
-pub struct Inner<M> {
-    sender: flume::Sender<ActorMessage<M>>,
+pub struct Inner<Message> {
+    sender: flume::Sender<ActorMessage<Message>>,
     command_sender: flume::Sender<Command>,
     id: Uuid,
     actor_name: String,
@@ -75,7 +82,7 @@ impl fmt::Debug for Command {
     }
 }
 
-impl<M: Sync + Send + fmt::Debug + Clone> fmt::Debug for Mailbox<M> {
+impl<Message: fmt::Debug> fmt::Debug for Mailbox<Message> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Mailbox({})", self.actor_name())
     }
@@ -151,7 +158,7 @@ pub enum ReceptionResult<M> {
     Disconnect,
 }
 
-impl<Message: fmt::Debug + Clone> Inbox<Message> {
+impl<Message: fmt::Debug> Inbox<Message> {
     fn get_command_if_available(&self) -> Option<Command> {
         match self.command_rx.try_recv() {
             Ok(command) => Some(command),
@@ -163,7 +170,7 @@ impl<Message: fmt::Debug + Clone> Inbox<Message> {
     pub async fn try_recv_msg_async(
         &self,
         message_enabled: bool,
-        default_message_opt_ref: Option<&Message>,
+        default_message_opt: Option<Message>,
     ) -> ReceptionResult<Message> {
         if let Some(command) = self.get_command_if_available() {
             return ReceptionResult::Command(command);
@@ -171,11 +178,11 @@ impl<Message: fmt::Debug + Clone> Inbox<Message> {
         if !message_enabled {
             return ReceptionResult::None;
         }
-        if let Some(default_message) = default_message_opt_ref {
+        if let Some(default_message) = default_message_opt {
             match self.rx.try_recv() {
                 Ok(ActorMessage::Message(msg)) => ReceptionResult::Message(msg),
                 Ok(ActorMessage::Observe(cb)) => ReceptionResult::Command(Command::Observe(cb)),
-                Err(TryRecvError::Empty) => ReceptionResult::Message(default_message.clone()),
+                Err(TryRecvError::Empty) => ReceptionResult::Message(default_message),
                 Err(TryRecvError::Disconnected) => ReceptionResult::Disconnect,
             }
         } else {
@@ -191,7 +198,13 @@ impl<Message: fmt::Debug + Clone> Inbox<Message> {
     pub fn try_recv_msg(
         &self,
         message_enabled: bool,
-        default_message_opt_ref: Option<&Message>,
+        default_message_opt: Option<Message>, //< TODO this is not looking good...
+            // We don't want to force message to be cloned and therefore we passed the message
+            // by value.
+            // We should probably leave it to the called to replace the message.
+            //
+            // The problem is that in presence of a message, we do not want to wait either.
+            // A refactoring might be tricky, but is necessary.
     ) -> ReceptionResult<Message> {
         if let Some(command) = self.get_command_if_available() {
             return ReceptionResult::Command(command);
@@ -199,11 +212,11 @@ impl<Message: fmt::Debug + Clone> Inbox<Message> {
         if !message_enabled {
             return ReceptionResult::None;
         }
-        if let Some(default_message) = default_message_opt_ref {
+        if let Some(default_message) = default_message_opt {
             match self.rx.try_recv() {
                 Ok(ActorMessage::Message(msg)) => ReceptionResult::Message(msg),
                 Ok(ActorMessage::Observe(cb)) => ReceptionResult::Command(Command::Observe(cb)),
-                Err(TryRecvError::Empty) => ReceptionResult::Message(default_message.clone()),
+                Err(TryRecvError::Empty) => ReceptionResult::Message(default_message),
                 Err(TryRecvError::Disconnected) => ReceptionResult::Disconnect,
             }
         } else {

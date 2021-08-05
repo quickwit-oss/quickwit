@@ -77,20 +77,19 @@ fn sync_actor_loop<A: SyncActor>(
     progress: Progress,
 ) -> ActorTermination {
     let mut running = true;
-    let default_message_opt = actor.default_message();
     loop {
         if !kill_switch.is_alive() {
             return ActorTermination::KillSwitch;
         }
         progress.record_progress();
-        let default_message_opt_ref = default_message_opt.as_ref().and_then(|default_message| {
+        let default_message_opt= actor.default_message().and_then(|default_message| {
             if self_mailbox.is_last_mailbox() {
                 None
             } else {
                 Some(default_message)
             }
         });
-        let reception_result = inbox.try_recv_msg(running, default_message_opt_ref);
+        let reception_result = inbox.try_recv_msg(running, default_message_opt);
         progress.record_progress();
         if !kill_switch.is_alive() {
             return ActorTermination::KillSwitch;

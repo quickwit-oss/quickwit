@@ -18,5 +18,41 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#[derive(Clone, Debug)]
-pub struct IndexedSplit;
+use std::fmt;
+use std::io;
+use std::path::Path;
+use std::sync::Arc;
+
+use tantivy::Index;
+use tantivy::IndexWriter;
+use tantivy::schema::Schema;
+use tempfile::TempDir;
+use ulid::Ulid;
+
+const MEM_BUDGET_IN_BYTES: usize = 1_000_000_000;
+
+pub struct IndexedSplit {
+    pub split_id: Ulid,
+    pub index_writer: IndexWriter,
+    temp_dir: TempDir,
+}
+
+impl IndexedSplit {
+    pub fn new_in_dir(root_path: &Path, schema: Schema) -> anyhow::Result<Self> {
+        // TODO make mem budget configurable.
+        let index= Index::create_in_dir( root_path, schema)?;
+        let index_writer = index.writer_with_num_threads(1, MEM_BUDGET_IN_BYTES)?;
+        let temp_dir = tempfile::tempdir_in(root_path)?;
+        Ok(IndexedSplit {
+            split_id: Ulid::new(),
+            temp_dir: temp_dir,
+            index_writer,
+        })
+    }
+}
+
+impl fmt::Debug for IndexedSplit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "IndexedSplit(id={}, path={})", self.split_id, self.temp_dir.path().display())
+    }
+}
