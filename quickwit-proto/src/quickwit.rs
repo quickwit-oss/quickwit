@@ -208,7 +208,7 @@ pub struct LeafExportRequest {
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafExportResult {
-    /// Row of data serialized  in bytes (DocID, fast_field_value)
+    /// Row of data serialized in bytes.
     #[prost(bytes = "vec", tag = "1")]
     pub row: ::prost::alloc::vec::Vec<u8>,
 }

@@ -440,7 +440,7 @@ pub async fn root_export(
     let _start_instant = tokio::time::Instant::now();
 
     // Create a job for leaf node search and assign the splits that the node is responsible for based on the job.
-    let search_request = convert_to_search_request(&export_request);
+    let search_request = convert_to_search_request(export_request);
     let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
 
     // Create a hash map of SplitMetadata with split id as a key.
