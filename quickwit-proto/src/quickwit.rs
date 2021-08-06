@@ -177,18 +177,11 @@ pub struct ExportRequest {
     /// Maximum number of hits to return.
     #[prost(uint64, tag = "6")]
     pub max_hits: u64,
-    /// First hit to return. Together with max_hits, this parameter
-    /// can be used for pagination.
-    ///
-    /// E.g.
-    /// The results with rank [start_offset..start_offset + max_hits) are returned.
-    #[prost(uint64, tag = "7")]
-    pub start_offset: u64,
     /// Name of the fast field to export
-    #[prost(string, tag = "8")]
+    #[prost(string, tag = "7")]
     pub fast_field: ::prost::alloc::string::String,
     /// The output format
-    #[prost(string, tag = "9")]
+    #[prost(string, tag = "8")]
     pub output_format: ::prost::alloc::string::String,
 }
 #[derive(Serialize)]
@@ -210,7 +203,7 @@ pub struct LeafExportRequest {
 pub struct LeafExportResult {
     /// Row of data serialized in bytes.
     #[prost(bytes = "vec", tag = "1")]
-    pub row: ::prost::alloc::vec::Vec<u8>,
+    pub data: ::prost::alloc::vec::Vec<u8>,
 }
 #[doc = r" Generated client implementations."]
 pub mod search_service_client {
@@ -301,23 +294,7 @@ pub mod search_service_client {
             let path = http::uri::PathAndQuery::from_static("/quickwit.SearchService/FetchDocs");
             self.inner.unary(request.into_request(), path, codec).await
         }
-        pub async fn root_export(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ExportRequest>,
-        ) -> Result<tonic::Response<tonic::codec::Streaming<super::LeafExportResult>>, tonic::Status>
-        {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::new(
-                    tonic::Code::Unknown,
-                    format!("Service was not ready: {}", e.into()),
-                )
-            })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/quickwit.SearchService/RootExport");
-            self.inner
-                .server_streaming(request.into_request(), path, codec)
-                .await
-        }
+        #[doc = " Perform an export on a given set of splits."]
         pub async fn leaf_export(
             &mut self,
             request: impl tonic::IntoRequest<super::LeafExportRequest>,
@@ -382,20 +359,12 @@ pub mod search_service_server {
             &self,
             request: tonic::Request<super::FetchDocsRequest>,
         ) -> Result<tonic::Response<super::FetchDocsResult>, tonic::Status>;
-        #[doc = "Server streaming response type for the RootExport method."]
-        type RootExportStream: futures_core::Stream<Item = Result<super::LeafExportResult, tonic::Status>>
-            + Send
-            + Sync
-            + 'static;
-        async fn root_export(
-            &self,
-            request: tonic::Request<super::ExportRequest>,
-        ) -> Result<tonic::Response<Self::RootExportStream>, tonic::Status>;
         #[doc = "Server streaming response type for the LeafExport method."]
         type LeafExportStream: futures_core::Stream<Item = Result<super::LeafExportResult, tonic::Status>>
             + Send
             + Sync
             + 'static;
+        #[doc = " Perform an export on a given set of splits."]
         async fn leaf_export(
             &self,
             request: tonic::Request<super::LeafExportRequest>,
@@ -522,42 +491,6 @@ pub mod search_service_server {
                             tonic::server::Grpc::new(codec)
                         };
                         let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.SearchService/RootExport" => {
-                    #[allow(non_camel_case_types)]
-                    struct RootExportSvc<T: SearchService>(pub Arc<T>);
-                    impl<T: SearchService>
-                        tonic::server::ServerStreamingService<super::ExportRequest>
-                        for RootExportSvc<T>
-                    {
-                        type Response = super::LeafExportResult;
-                        type ResponseStream = T::RootExportStream;
-                        type Future =
-                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ExportRequest>,
-                        ) -> Self::Future {
-                            let inner = self.0.clone();
-                            let fut = async move { (*inner).root_export(request).await };
-                            Box::pin(fut)
-                        }
-                    }
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let interceptor = inner.1;
-                        let inner = inner.0;
-                        let method = RootExportSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = if let Some(interceptor) = interceptor {
-                            tonic::server::Grpc::with_interceptor(codec, interceptor)
-                        } else {
-                            tonic::server::Grpc::new(codec)
-                        };
-                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

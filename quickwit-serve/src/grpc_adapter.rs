@@ -20,11 +20,10 @@
  */
 
 use std::sync::Arc;
-
 use async_trait::async_trait;
 
 use quickwit_proto::{
-    search_service_server as grpc, ExportRequest, LeafExportRequest, LeafExportResult,
+    search_service_server as grpc, LeafExportRequest, LeafExportResult,
 };
 use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
 use tokio_stream::wrappers::ReceiverStream;
@@ -94,35 +93,5 @@ impl grpc::SearchService for GrpcAdapter {
             .await
             .map_err(SearchError::convert_to_tonic_status)?;
         Ok(tonic::Response::new(leaf_search_result))
-    }
-
-    type RootExportStream = ReceiverStream<Result<LeafExportResult, Status>>;
-
-    async fn root_export(
-        &self,
-        request: tonic::Request<ExportRequest>,
-    ) -> Result<tonic::Response<Self::RootExportStream>, tonic::Status> {
-        let search_request = request.into_inner();
-        let mut search_result = self
-            .0
-            .root_export(search_request)
-            .await
-            .map_err(SearchError::convert_to_tonic_status)?;
-
-        let (sender, receiver) = tokio::sync::mpsc::channel(100);
-        while let Some(data) = search_result.recv().await {
-            let raw_bytes = data.unwrap();
-            let _ = sender
-                .send(Ok(LeafExportResult {
-                    row: raw_bytes.to_vec(),
-                }))
-                .await
-                .map_err(|_| {
-                    SearchError::convert_to_tonic_status(SearchError::InternalError(
-                        "Unable to send LeafExportResult".to_string(),
-                    ))
-                })?;
-        }
-        Ok(tonic::Response::new(ReceiverStream::new(receiver)))
     }
 }

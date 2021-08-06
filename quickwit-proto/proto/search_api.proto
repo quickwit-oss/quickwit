@@ -43,8 +43,7 @@ service SearchService {
   /// This methods takes `PartialHit`s and returns `Hit`s.
   rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResult);
 
-  rpc RootExport(ExportRequest) returns (stream LeafExportResult);
-
+  // Perform an export on a given set of splits.
   rpc LeafExport(LeafExportRequest) returns (stream LeafExportResult);
 }
 
@@ -196,18 +195,11 @@ message ExportRequest {
   // Maximum number of hits to return.
   uint64 max_hits = 6;
 
-  // First hit to return. Together with max_hits, this parameter
-  // can be used for pagination.
-  //
-  // E.g.
-  // The results with rank [start_offset..start_offset + max_hits) are returned.
-  uint64 start_offset = 7;
-
   // Name of the fast field to export
-  string fast_field = 8;
+  string fast_field = 7;
 
   // The output format
-  string output_format = 9;
+  string output_format = 8;
 }
 
 message LeafExportRequest {
@@ -223,5 +215,5 @@ message LeafExportRequest {
 
 message LeafExportResult {
   // Row of data serialized in bytes.
-  bytes row = 1;
+  bytes data = 1;
 }

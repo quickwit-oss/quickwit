@@ -26,10 +26,9 @@ use async_trait::async_trait;
 
 use bytes::Bytes;
 use quickwit_metastore::Metastore;
-use quickwit_proto::{ExportRequest, LeafExportRequest, LeafExportResult};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, SearchRequest,
-    SearchResult,
+    SearchResult, ExportRequest, LeafExportRequest, LeafExportResult
 };
 use quickwit_storage::StorageUriResolver;
 use tokio::sync::mpsc::Receiver;
@@ -37,7 +36,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;
 use tracing::info;
 
-use crate::collector::{convert_to_search_request, make_export_collector};
+use crate::collector::make_export_collector;
 use crate::fetch_docs;
 use crate::leaf::leaf_export;
 use crate::leaf_search;
@@ -220,7 +219,7 @@ impl SearchService for SearchServiceImpl {
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let split_ids = leaf_export_request.split_ids;
         let index_config = index_metadata.index_config;
-        let search_request = convert_to_search_request(&export_request);
+        let search_request = SearchRequest::from(export_request.clone());
         let query = index_config.query(&search_request)?;
         let collector = make_export_collector(index_config.as_ref(), &export_request);
 

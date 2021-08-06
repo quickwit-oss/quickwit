@@ -42,11 +42,10 @@ use tracing::*;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, Hit, LeafSearchRequest, LeafSearchResult, PartialHit,
-    SearchRequest, SearchResult,
+    SearchRequest, SearchResult
 };
 
 use crate::client_pool::Job;
-use crate::collector::convert_to_search_request;
 use crate::list_relevant_splits;
 use crate::make_collector;
 use crate::ClientPool;
@@ -441,7 +440,7 @@ pub async fn root_export(
     let _start_instant = tokio::time::Instant::now();
 
     // Create a job for leaf node search and assign the splits that the node is responsible for based on the job.
-    let search_request = convert_to_search_request(export_request);
+    let search_request = SearchRequest::from(export_request.clone());
     let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
 
     // Create a hash map of SplitMetadata with split id as a key.
@@ -459,15 +458,10 @@ pub async fn root_export(
         .await?;
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
 
-    // Create search request with start offset is 0 that used by leaf node search.
-    let mut export_request_with_offset_0 = export_request.clone();
-    export_request_with_offset_0.start_offset = 0;
-    export_request_with_offset_0.max_hits += export_request.start_offset;
-
     let (result_sender, result_receiver) = tokio::sync::mpsc::channel(100);
     for (mut search_client, jobs) in assigned_leaf_search_jobs {
         let leaf_export_request = LeafExportRequest {
-            export_request: Some(export_request_with_offset_0.clone()),
+            export_request: Some(export_request.clone()),
             split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
         };
 
@@ -481,7 +475,7 @@ pub async fn root_export(
             while let Some(leaf_result) = stream.next().await {
                 let leaf_data = leaf_result?;
                 result_sender_clone
-                    .send(Ok(bytes::Bytes::from(leaf_data.row)))
+                    .send(Ok(bytes::Bytes::from(leaf_data.data)))
                     .await
                     .map_err(|_| {
                         SearchError::convert_to_tonic_status(SearchError::InternalError(
@@ -495,6 +489,7 @@ pub async fn root_export(
 
     Ok(result_receiver)
 }
+
 
 #[cfg(test)]
 mod tests {

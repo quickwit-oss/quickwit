@@ -265,7 +265,7 @@ impl SegmentCollector for QuickwitSegmentExportCollector {
     }
 
     fn harvest(self) -> LeafExportResult {
-        LeafExportResult { row: self.values }
+        LeafExportResult { data: self.values }
     }
 }
 
@@ -339,12 +339,12 @@ impl Collector for QuickwitExportCollector {
     }
 
     fn merge_fruits(&self, segment_fruits: Vec<LeafExportResult>) -> tantivy::Result<Self::Fruit> {
-        let rows = segment_fruits
+        let data = segment_fruits
             .iter()
-            .map(|fruit| fruit.row.clone())
+            .map(|fruit| fruit.data.clone())
             .flatten()
             .collect::<Vec<_>>();
-        Ok(LeafExportResult { row: rows })
+        Ok(LeafExportResult { data })
     }
 }
 
@@ -532,19 +532,6 @@ pub fn make_export_collector(
         start_timestamp_opt: export_request.start_timestamp,
         end_timestamp_opt: export_request.end_timestamp,
         output_format: export_request.output_format.clone().into(),
-    }
-}
-
-/// Helper to convert ExportRequest to SearchRequest
-pub fn convert_to_search_request(export_request: &ExportRequest) -> SearchRequest {
-    SearchRequest {
-        index_id: export_request.index_id.clone(),
-        query: export_request.query.clone(),
-        search_fields: export_request.search_fields.clone(),
-        start_timestamp: export_request.start_timestamp,
-        end_timestamp: export_request.end_timestamp,
-        max_hits: export_request.max_hits,
-        start_offset: export_request.start_offset,
     }
 }
 
