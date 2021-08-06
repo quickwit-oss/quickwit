@@ -31,7 +31,7 @@ use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
-use quickwit_search::{SearchResultJson, SearchService, SearchServiceImpl};
+use quickwit_search::{OutputFormat, SearchResultJson, SearchService, SearchServiceImpl};
 
 use crate::ApiError;
 
@@ -100,27 +100,6 @@ impl Format {
             "Error: Failed to serialize response.".to_string()
         });
         let reply_with_header = reply::with_header(body_json, CONTENT_TYPE, "application/json");
-        reply::with_status(reply_with_header, status_code)
-    }
-
-    fn make_streaming_reply(self, result: Result<hyper::Body, ApiError>) -> impl Reply {
-        let status_code: StatusCode;
-        let body = match result {
-            Ok(body) => {
-                status_code = StatusCode::OK;
-                warp::reply::Response::new(body)
-            }
-            Err(err) => {
-                status_code = err.http_status_code();
-                warp::reply::Response::new(hyper::Body::from(err.message()))
-            }
-        };
-        let reply_with_header = reply::with_header(body, CONTENT_TYPE, "text/csv");
-        let reply_with_header = reply::with_header(
-            reply_with_header,
-            CONTENT_DISPOSITION,
-            "attachment;filename=export.csv",
-        );
         reply::with_status(reply_with_header, status_code)
     }
 }
@@ -211,17 +190,89 @@ pub fn search_handler<TSearchService: SearchService>(
         .and_then(search)
 }
 
-//TODO rethink & refactor
+
+/// This struct represents the QueryString passed to
+/// the rest API.
+#[derive(Deserialize, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportRequestQueryString {
+    /// Query text. The query language is that of tantivy.
+    pub query: String,
+    // Fields to search on
+    #[serde(default)]
+    #[serde(rename(deserialize = "searchField"))]
+    #[serde(deserialize_with = "from_simple_list")]
+    pub search_fields: Option<Vec<String>>,
+    /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
+    pub start_timestamp: Option<i64>,
+    /// If set, restrict search to documents with a `timestamp < end_timestamp``.
+    pub end_timestamp: Option<i64>,
+    /// Maximum number of hits to return (by default 20).
+    #[serde(default = "default_max_hits")]
+    pub max_hits: u64,
+
+    /// The fast field to extract
+    #[serde(default)]
+    #[serde(rename(deserialize = "fastField"))]
+    pub fast_field: String,
+    /// The output format.
+    #[serde(default)]
+    #[serde(rename(deserialize = "OutputFormat"))]
+    pub output_format: OutputFormat,
+}
+
+async fn export_endpoint<TSearchService: SearchService>(
+    index_id: String,
+    search_request: ExportRequestQueryString,
+    search_service: &TSearchService,
+) -> Result<hyper::Body, ApiError> {
+    let export_request = quickwit_proto::SearchRequest {
+        index_id,
+        query: search_request.query,
+        search_fields: search_request.search_fields.unwrap_or_default(),
+        start_timestamp: search_request.start_timestamp,
+        end_timestamp: search_request.end_timestamp,
+        max_hits: search_request.max_hits,
+        start_offset: 0,
+        fast_field: Some(search_request.fast_field),
+        format: search_request.output_format.to_string(),
+    };
+
+    let response_receiver = search_service.root_export(export_request).await?;
+    let stream = ReceiverStream::new(response_receiver);
+    let body = hyper::Body::wrap_stream(stream);
+    Ok(body)
+}
+
+fn make_streaming_reply(result: Result<hyper::Body, ApiError>) -> impl Reply {
+    let status_code: StatusCode;
+    let body = match result {
+        Ok(body) => {
+            status_code = StatusCode::OK;
+            warp::reply::Response::new(body)
+        }
+        Err(err) => {
+            status_code = err.http_status_code();
+            warp::reply::Response::new(hyper::Body::from(err.message()))
+        }
+    };
+    let reply_with_header = reply::with_header(body, CONTENT_TYPE, "text/csv");
+    let reply_with_header = reply::with_header(
+        reply_with_header,
+        CONTENT_DISPOSITION,
+        "attachment;filename=export.csv",
+    );
+    reply::with_status(reply_with_header, status_code)
+}
 
 async fn export<TSearchService: SearchService>(
     index_id: String,
-    request: SearchRequestQueryString,
+    request: ExportRequestQueryString,
     search_service: Arc<TSearchService>,
 ) -> Result<impl warp::Reply, Infallible> {
     info!(index_id=%index_id,request=?request, "export");
-    Ok(request
-        .format
-        .make_streaming_reply(export_endpoint(index_id, request, &*search_service).await))
+    Ok(make_streaming_reply(export_endpoint(index_id, request, &*search_service).await))
 }
 
 pub fn export_handler<TSearchService: SearchService>(
@@ -232,29 +283,6 @@ pub fn export_handler<TSearchService: SearchService>(
         .and(serde_qs::warp::query(serde_qs::Config::default()))
         .and(warp::any().map(move || search_service.clone()))
         .and_then(export)
-}
-
-async fn export_endpoint<TSearchService: SearchService>(
-    index_id: String,
-    search_request: SearchRequestQueryString,
-    search_service: &TSearchService,
-) -> Result<hyper::Body, ApiError> {
-    let export_request = quickwit_proto::SearchRequest {
-        index_id,
-        query: search_request.query,
-        search_fields: search_request.search_fields.unwrap_or_default(),
-        start_timestamp: search_request.start_timestamp,
-        end_timestamp: search_request.end_timestamp,
-        max_hits: search_request.max_hits,
-        start_offset: search_request.start_offset,
-        fast_field: search_request.fast_field,
-        format: search_request.format.to_string(),
-    };
-
-    let response_receiver = search_service.root_export(export_request).await?;
-    let stream = ReceiverStream::new(response_receiver);
-    let body = hyper::Body::wrap_stream(stream);
-    Ok(body)
 }
 
 /// This function returns a formated error based on the given rejection reason.

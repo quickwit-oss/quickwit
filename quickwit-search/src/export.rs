@@ -37,3 +37,12 @@ impl Default for OutputFormat {
         OutputFormat::RowBinary
     }
 }
+
+impl ToString for OutputFormat {
+    fn to_string(&self) -> String {
+        match &self {
+            Self::RowBinary => "row-binary".to_string(),
+            Self::CSV => "csv".to_string(),
+        }
+    }
+}
