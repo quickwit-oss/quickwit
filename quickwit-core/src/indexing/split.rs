@@ -27,7 +27,7 @@ use std::path::Path;
 use crate::indexing::manifest::Manifest;
 use anyhow::{self, Context};
 use quickwit_directories::write_hotcache;
-use quickwit_directories::CreateBundleStorage;
+use quickwit_directories::BundleStorageBuilder;
 use quickwit_directories::BUNDLE_FILENAME;
 use quickwit_directories::HOTCACHE_FILENAME;
 use quickwit_metastore::Metastore;
@@ -277,7 +277,7 @@ impl Split {
 
         // create bundle
         let bundle_path = self.split_scratch_dir.path().join(BUNDLE_FILENAME);
-        let mut create_bundle = CreateBundleStorage::new(&bundle_path)?;
+        let mut create_bundle = BundleStorageBuilder::new(&bundle_path)?;
         let mut upload_res_futures = vec![];
         for path in files_to_upload.iter() {
             create_bundle.add_file(path)?;

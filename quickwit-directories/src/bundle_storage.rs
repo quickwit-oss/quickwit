@@ -180,7 +180,7 @@ fn unsupported_operation(path: &Path) -> StorageError {
 
 /// BundleStorage bundles together multiple files into a single file
 /// with some metadata
-pub struct CreateBundleStorage {
+pub struct BundleStorageBuilder {
     metadata: BundleStorageMetadata,
     current_offset: u64,
     /// The offset in the file where the hotcache begins. This is used to read
@@ -193,12 +193,12 @@ pub struct CreateBundleStorage {
     bundle_file: File,
 }
 
-impl CreateBundleStorage {
+impl BundleStorageBuilder {
     /// Creates a new CreateBundleStorage, to which files can be added.
     pub fn new(path: &Path) -> io::Result<Self> {
         let sink = OpenOptions::new().create(true).append(true).open(path)?;
 
-        Ok(CreateBundleStorage {
+        Ok(BundleStorageBuilder {
             bundle_file: sink,
             current_offset: 0,
             hotcache_offset: 0,
@@ -257,7 +257,7 @@ mod tests {
     async fn bundlestorage_test() -> anyhow::Result<()> {
         let temp_dir = temp_dir();
         let bundle_file_name = temp_dir.join("asdf");
-        let mut create_bundle = CreateBundleStorage::new(&bundle_file_name)?;
+        let mut create_bundle = BundleStorageBuilder::new(&bundle_file_name)?;
 
         let test_file1_name = temp_dir.join("f1");
         let test_file2_name = temp_dir.join("f2");
