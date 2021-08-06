@@ -1,12 +1,3 @@
-use crate::models::Checkpoint;
-use crate::models::RawDocBatch;
-use async_trait::async_trait;
-use quickwit_actors::Actor;
-use quickwit_actors::ActorContext;
-use quickwit_actors::AsyncActor;
-use quickwit_actors::Mailbox;
-use quickwit_actors::MessageProcessError;
-
 // Quickwit
 //  Copyright (C) 2021 Quickwit Inc.
 //
@@ -26,6 +17,15 @@ use quickwit_actors::MessageProcessError;
 //
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+use crate::models::Checkpoint;
+use crate::models::RawDocBatch;
+use async_trait::async_trait;
+use quickwit_actors::Actor;
+use quickwit_actors::ActorContext;
+use quickwit_actors::AsyncActor;
+use quickwit_actors::Mailbox;
+use quickwit_actors::MessageProcessError;
 
 pub struct VecSource {
     next_item_id: usize,
@@ -87,7 +87,6 @@ impl AsyncActor for VecSource {
 mod tests {
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::KillSwitch;
-    use quickwit_actors::QueueCapacity;
 
     use super::*;
     use quickwit_actors::ActorTermination;
@@ -102,7 +101,7 @@ mod tests {
             3,
             mailbox,
         );
-        let vec_source_handle = vec_source.spawn(QueueCapacity::Unbounded, KillSwitch::default());
+        let vec_source_handle = vec_source.spawn(KillSwitch::default());
         let actor_termination = vec_source_handle.join().await?;
         assert!(matches!(actor_termination, ActorTermination::Disconnect));
         let batch = inbox.to_vec_for_test();

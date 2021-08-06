@@ -28,3 +28,7 @@ tempfile = "3.2"
 flume = "0.10"
 serde = "1"
 serde_json = "1"
+
+[dev-dependencies]
+quickwit-metastore = {path = "../quickwit-metastore", features=["testsuite"]}
+mockall = "0.9"

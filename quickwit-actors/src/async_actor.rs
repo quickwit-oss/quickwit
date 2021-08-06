@@ -1,6 +1,6 @@
 use crate::actor::MessageProcessError;
 use crate::actor_handle::{ActorHandle, ActorTermination};
-use crate::mailbox::{create_mailbox, Command, Inbox, QueueCapacity};
+use crate::mailbox::{create_mailbox, Command, Inbox};
 use crate::Mailbox;
 use crate::{Actor, ActorContext, KillSwitch, Progress, ReceptionResult};
 use async_trait::async_trait;
@@ -26,15 +26,12 @@ pub trait AsyncActor: Actor + Sized {
     ) -> Result<(), MessageProcessError>;
 
     #[doc(hidden)]
-    fn spawn(
-        self,
-        capacity: QueueCapacity,
-        kill_switch: KillSwitch,
-    ) -> ActorHandle<Self::Message, Self::ObservableState> {
+    fn spawn(self, kill_switch: KillSwitch) -> ActorHandle<Self::Message, Self::ObservableState> {
         let (state_tx, state_rx) = watch::channel(self.observable_state());
         let actor_name = self.name();
         let progress = Progress::default();
-        let (mailbox, inbox) = create_mailbox(actor_name, capacity);
+        let queue_capacity = self.queue_capacity();
+        let (mailbox, inbox) = create_mailbox(actor_name, queue_capacity);
         let join_handle = tokio::spawn(async_actor_loop(
             self,
             inbox,

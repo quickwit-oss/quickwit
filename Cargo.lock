@@ -2827,6 +2827,7 @@ dependencies = [
  "async-trait",
  "flume",
  "futures",
+ "mockall 0.9.1",
  "once_cell",
  "quickwit-actors",
  "quickwit-directories",

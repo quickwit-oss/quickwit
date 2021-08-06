@@ -110,7 +110,6 @@ impl AsyncActor for FileSource {
 mod tests {
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::KillSwitch;
-    use quickwit_actors::QueueCapacity;
 
     use super::*;
     use quickwit_actors::ActorTermination;
@@ -119,7 +118,7 @@ mod tests {
     async fn test_file_source() -> anyhow::Result<()> {
         let (mailbox, inbox) = create_test_mailbox();
         let file_source = FileSource::try_new(Path::new("data/test_corpus.json"), mailbox).await?;
-        let file_source_handle = file_source.spawn(QueueCapacity::Unbounded, KillSwitch::default());
+        let file_source_handle = file_source.spawn(KillSwitch::default());
         let actor_termination = file_source_handle.join().await?;
         assert!(matches!(actor_termination, ActorTermination::Disconnect));
         let batch = inbox.to_vec_for_test();

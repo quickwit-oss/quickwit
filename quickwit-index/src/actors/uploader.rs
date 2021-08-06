@@ -18,9 +18,6 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
-use std::os::unix::prelude::MetadataExt;
-use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -37,7 +34,7 @@ use quickwit_actors::ActorContext;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
 use quickwit_actors::MessageProcessError;
-use quickwit_directories::HOTCACHE_FILENAME;
+use quickwit_actors::QueueCapacity;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::SplitMetadata;
 use quickwit_metastore::SplitState;
@@ -80,50 +77,10 @@ impl Actor for Uploader {
     fn observable_state(&self) -> Self::ObservableState {
         ()
     }
-}
 
-async fn list_files_to_upload(split: &PackagedSplit) -> anyhow::Result<Vec<(PathBuf, u64)>> {
-    let mut files_to_upload = Vec::new();
-    // list the segment files
-    for relative_path in split.segment_meta.list_files() {
-        let filepath = split.split_scratch_dir.path().join(&relative_path);
-        match tokio::fs::metadata(&filepath).await {
-            Ok(metadata) => {
-                files_to_upload.push((filepath, metadata.size()));
-            }
-            Err(io_err) => {
-                // If the file is missing, this is fine.
-                // segment_meta.list_files() may actually returns files that are
-                // do not exist.
-                if io_err.kind() != io::ErrorKind::NotFound {
-                    return Err(io_err).with_context(|| {
-                        format!(
-                            "Failed to read metadata of segment file `{}` for split {:?}",
-                            relative_path.display(),
-                            split
-                        )
-                    })?;
-                }
-            }
-        }
+    fn queue_capacity(&self) -> QueueCapacity {
+        QueueCapacity::Bounded(0)
     }
-    // We also need the meta.json file and the hotcache. Contrary to segment files,
-    // we return an error here if they are missing.
-    for relative_path in [Path::new("meta.json"), Path::new(HOTCACHE_FILENAME)]
-        .iter()
-        .cloned()
-    {
-        let filepath = split.split_scratch_dir.path().join(&relative_path);
-        let metadata = tokio::fs::metadata(&filepath).await.with_context(|| {
-            format!(
-                "Failed to read metadata of mandatory file `{}` for split {:?}",
-                relative_path.display(),
-                split
-            )
-        })?;
-        files_to_upload.push((filepath, metadata.size()));
-    }
-    Ok(files_to_upload)
 }
 
 fn create_manifest(
@@ -144,16 +101,14 @@ fn create_manifest(
 /// Upload all files within a single split to the storage
 async fn put_split_files_to_storage(
     storage: &dyn Storage,
-    split: &PackagedSplit,
+    split: PackagedSplit,
 ) -> anyhow::Result<Manifest> {
     info!("upload-split");
     let start = Instant::now();
 
-    let files_to_upload: Vec<(PathBuf, u64)> = list_files_to_upload(split).await?;
-
     let mut upload_res_futures = vec![];
     let mut manifest_entries = Vec::new();
-    for (path, file_size_in_bytes) in files_to_upload {
+    for (path, file_size_in_bytes) in &split.files_to_upload {
         let file_name = path
             .file_name()
             .and_then(|filename| filename.to_str())
@@ -161,7 +116,7 @@ async fn put_split_files_to_storage(
             .with_context(|| format!("Failed to extract filename from path {}", path.display()))?;
         manifest_entries.push(ManifestEntry {
             file_name: file_name.to_string(),
-            file_size_in_bytes,
+            file_size_in_bytes: *file_size_in_bytes,
         });
         let key = PathBuf::from(file_name);
         let payload = quickwit_storage::PutPayload::from(path.clone());
@@ -187,11 +142,7 @@ async fn put_split_files_to_storage(
         split_state: SplitState::New,
         update_timestamp: Utc::now().timestamp(),
     };
-    let manifest = create_manifest(
-        manifest_entries,
-        vec![split.segment_meta.id()],
-        split_metadata,
-    );
+    let manifest = create_manifest(manifest_entries, split.segment_ids, split_metadata);
     futures::future::try_join_all(upload_res_futures).await?;
 
     let manifest_body = manifest.to_json()?.into_bytes();
@@ -289,5 +240,35 @@ impl AsyncActor for Uploader {
             Result::<(), anyhow::Error>::Ok(())
         });
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use mockall::*;
+    use quickwit_actors::create_mailbox;
+    use quickwit_actors::create_test_mailbox;
+    use quickwit_actors::KillSwitch;
+    use quickwit_metastore::MockMetastore;
+    use quickwit_storage::RamStorage;
+
+    use super::*;
+
+    #[test]
+    fn test_uploader() {
+        let (mailbox, inbox) = create_test_mailbox();
+        let mut mock_metastore = MockMetastore::default();
+        let index_storage: Arc<dyn Storage> = Arc::new(RamStorage::default());
+        let uploader = Uploader::new(Arc::new(mock_metastore), index_storage, mailbox);
+        let uploader_handle = uploader.spawn(KillSwitch::default());
+        // uploader_handle.mailbox().send_async(PackagedSplit {
+        //     split_id: "test-split".to_string(),
+        //     index_id: "test-index".to_string(),
+        //     time_range: Some(1_628_203_589i64..=1_628_203_619i64),
+        //     size_in_bytes: 10_000_000,
+        //     segment_meta: Segm,
+        //     split_scratch_dir: (),
+        //     num_docs: (),
+        // });
     }
 }
