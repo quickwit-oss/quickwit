@@ -31,3 +31,9 @@ pub enum OutputFormat {
     /// By default, the delimiter is ,.
     CSV,
 }
+
+impl Default for OutputFormat {
+    fn default() -> Self {
+        OutputFormat::RowBinary
+    }
+}
