@@ -1,5 +1,8 @@
 use std::fmt;
+
 /// Object returned by [ActorHandle::observe()].
+//
+// TODO It should be a struct with a kind enum rather than a rich enum
 #[derive(Debug)]
 pub enum Observation<ObservableState: fmt::Debug> {
     /// The actor is alive and was able to snapshot its state within `HEARTBEAT`

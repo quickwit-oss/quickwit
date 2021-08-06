@@ -100,8 +100,9 @@ fn create_manifest(
 
 /// Upload all files within a single split to the storage
 async fn put_split_files_to_storage(
+    split: &PackagedSplit,
+    split_metadata: SplitMetadata,
     storage: &dyn Storage,
-    split: PackagedSplit,
 ) -> anyhow::Result<Manifest> {
     info!("upload-split");
     let start = Instant::now();
@@ -119,7 +120,7 @@ async fn put_split_files_to_storage(
             file_size_in_bytes: *file_size_in_bytes,
         });
         let key = PathBuf::from(file_name);
-        let payload = quickwit_storage::PutPayload::from(path.clone());
+        let payload = quickwit_storage::PutPayload::from(split.split_scratch_dir.path().join(path));
         let upload_res_future = async move {
             storage.put(&key, payload).await.with_context(|| {
                 format!(
@@ -133,16 +134,7 @@ async fn put_split_files_to_storage(
         upload_res_futures.push(upload_res_future);
     }
 
-    let split_metadata = SplitMetadata {
-        split_id: split.split_id.clone(),
-        num_records: split.num_docs as usize,
-        time_range: split.time_range.clone(),
-        size_in_bytes: split.size_in_bytes,
-        generation: 0,
-        split_state: SplitState::New,
-        update_timestamp: Utc::now().timestamp(),
-    };
-    let manifest = create_manifest(manifest_entries, split.segment_ids, split_metadata);
+    let manifest = create_manifest(manifest_entries, split.segment_ids.clone(), split_metadata);
     futures::future::try_join_all(upload_res_futures).await?;
 
     let manifest_body = manifest.to_json()?.into_bytes();
@@ -178,25 +170,18 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadata {
     }
 }
 
-async fn stage_split(
-    metastore: Arc<dyn Metastore>,
-    split_storage: Arc<dyn Storage>,
-    split: &PackagedSplit,
-) -> anyhow::Result<SplitMetadata> {
-    let split_metadata = create_split_metadata(split);
-    metastore
-        .stage_split(&split.index_id, split_metadata.clone())
-        .await?;
-    Ok(split_metadata)
-}
-
 async fn run_upload(
     split: PackagedSplit,
     split_storage: Arc<dyn Storage>,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<UploadedSplit> {
+    let split_metadata = create_split_metadata(&split);
+    metastore
+        .stage_split(&split.index_id, split_metadata.clone())
+        .await?;
+    put_split_files_to_storage(&split, split_metadata, &*split_storage).await?;
     Ok(UploadedSplit {
-        index_id: split.index_id,
+        index_id: split.index_id.clone(),
         split_id: split.split_id,
     })
 }
@@ -245,30 +230,80 @@ impl AsyncActor for Uploader {
 
 #[cfg(test)]
 mod tests {
-    use mockall::*;
-    use quickwit_actors::create_mailbox;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::KillSwitch;
+    use quickwit_actors::Observation;
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
 
     use super::*;
 
-    #[test]
-    fn test_uploader() {
-        let (mailbox, inbox) = create_test_mailbox();
+    #[tokio::test]
+    async fn test_uploader() -> anyhow::Result<()> {
+        let (mailbox, mut inbox) = create_test_mailbox();
         let mut mock_metastore = MockMetastore::default();
-        let index_storage: Arc<dyn Storage> = Arc::new(RamStorage::default());
-        let uploader = Uploader::new(Arc::new(mock_metastore), index_storage, mailbox);
+        mock_metastore
+            .expect_stage_split()
+            .withf(move |index_id, split_metadata| -> bool {
+                (index_id == "test-index")
+                    && &split_metadata.split_id == "test-split"
+                    && split_metadata.time_range == Some(1628203589..=1628203640)
+                    && split_metadata.split_state == SplitState::New
+            })
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let ram_storage = RamStorage::default();
+        let index_storage: Arc<dyn Storage> = Arc::new(ram_storage.clone());
+        let uploader = Uploader::new(Arc::new(mock_metastore), index_storage.clone(), mailbox);
         let uploader_handle = uploader.spawn(KillSwitch::default());
-        // uploader_handle.mailbox().send_async(PackagedSplit {
-        //     split_id: "test-split".to_string(),
-        //     index_id: "test-index".to_string(),
-        //     time_range: Some(1_628_203_589i64..=1_628_203_619i64),
-        //     size_in_bytes: 10_000_000,
-        //     segment_meta: Segm,
-        //     split_scratch_dir: (),
-        //     num_docs: (),
-        // });
+        let scratch_dir = tempfile::tempdir()?;
+        std::fs::write(scratch_dir.path().join("anyfile"), &b"bubu"[..])?;
+        std::fs::write(scratch_dir.path().join("anyfile2"), &b"bubu2"[..])?;
+        let files_to_upload = vec![
+            (PathBuf::from("anyfile"), 4),
+            (PathBuf::from("anyfile2"), 5),
+        ];
+        let segment_ids = vec![SegmentId::from_uuid_string(
+            "f45425f4-f67c-417e-9de7-8a8327115d47",
+        )?];
+        uploader_handle
+            .mailbox()
+            .send_async(PackagedSplit {
+                split_id: "test-split".to_string(),
+                index_id: "test-index".to_string(),
+                time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+                size_in_bytes: 1_000,
+                files_to_upload,
+                segment_ids,
+                split_scratch_dir: scratch_dir,
+                num_docs: 10,
+            })
+            .await?;
+        assert_eq!(
+            uploader_handle.process_and_observe().await,
+            Observation::Running(())
+        );
+        let publish_futures = inbox.drain_available_message_for_test();
+        assert_eq!(publish_futures.len(), 1);
+        let publish_future = publish_futures.into_iter().next().unwrap();
+        let uploaded_split = publish_future.await?;
+        assert_eq!(
+            &uploaded_split,
+            &UploadedSplit {
+                index_id: "test-index".to_string(),
+                split_id: "test-split".to_string()
+            }
+        );
+        let mut files = ram_storage.list_files().await;
+        files.sort();
+        assert_eq!(
+            &files,
+            &[
+                PathBuf::from("test-split/.manifest"),
+                PathBuf::from("test-split/anyfile"),
+                PathBuf::from("test-split/anyfile2"),
+            ]
+        );
+        Ok(())
     }
 }
