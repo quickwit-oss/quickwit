@@ -93,7 +93,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
-        let (mailbox, mut inbox) = create_test_mailbox();
+        let (mailbox, inbox) = create_test_mailbox();
         let vec_source = VecSource::new(
             std::iter::repeat_with(|| "{}".to_string())
                 .take(100)

@@ -116,7 +116,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
-        let (mailbox, mut inbox) = create_test_mailbox();
+        let (mailbox, inbox) = create_test_mailbox();
         let file_source = FileSource::try_new(Path::new("data/test_corpus.json"), mailbox).await?;
         let file_source_handle = file_source.spawn(KillSwitch::default());
         let actor_termination = file_source_handle.join().await?;

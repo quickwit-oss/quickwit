@@ -240,7 +240,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_uploader() -> anyhow::Result<()> {
-        let (mailbox, mut inbox) = create_test_mailbox();
+        let (mailbox, inbox) = create_test_mailbox();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_stage_split()

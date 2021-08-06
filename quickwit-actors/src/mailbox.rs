@@ -235,7 +235,7 @@ impl<Message: fmt::Debug> Inbox<Message> {
     ///
     /// Warning this iterator might never be exhausted if there is a living
     /// mailbox associated to it.
-    pub fn drain_available_message_for_test(&mut self) -> Vec<Message> {
+    pub fn drain_available_message_for_test(&self) -> Vec<Message> {
         let mut messages = Vec::new();
         loop {
             match self.rx.try_recv() {
