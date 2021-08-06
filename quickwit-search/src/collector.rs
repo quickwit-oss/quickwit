@@ -43,6 +43,7 @@ use tantivy::SegmentReader;
 
 use crate::filters::TimestampFilter;
 use crate::partial_hit_sorting_key;
+use crate::OutputFormat;
 
 /// The `SortingFieldComputer` can be seen as the specialization of `SortBy` applied to a specific `SegmentReader`.
 /// Its role is to compute the sorting field given a `DocId`.
@@ -230,6 +231,7 @@ pub struct QuickwitSegmentExportCollector {
     values: Vec<u8>,
     timestamp_filter_opt: Option<TimestampFilter>,
     fast_field_reader: DynamicFastFieldReader<i64>,
+    output_format: OutputFormat,
 }
 
 impl QuickwitSegmentExportCollector {
@@ -249,10 +251,17 @@ impl SegmentCollector for QuickwitSegmentExportCollector {
             return;
         }
         let fast_field_value = self.fast_field_reader.get(doc_id);
-        //TODO: change format (csv hard coded)
-        self.values
-            .extend(format!("{}\n", fast_field_value).as_bytes());
-        //self.values.extend_from_slice(&fast_field_value.to_le_bytes());
+        match self.output_format {
+            OutputFormat::CSV => {
+                self.values
+                    .extend(format!("{}\n", fast_field_value).as_bytes());
+            }
+            OutputFormat::RowBinary => {
+                //TODO should format to raw binary
+                self.values
+                    .extend(format!("{}\n", fast_field_value).as_bytes());
+            }
+        }
     }
 
     fn harvest(self) -> LeafExportResult {
@@ -273,6 +282,7 @@ pub struct QuickwitExportCollector {
     pub requested_fast_field_name: String,
     pub start_timestamp_opt: Option<i64>,
     pub end_timestamp_opt: Option<i64>,
+    pub output_format: OutputFormat,
 }
 
 impl QuickwitExportCollector {
@@ -317,6 +327,7 @@ impl Collector for QuickwitExportCollector {
             values: vec![],
             timestamp_filter_opt,
             fast_field_reader,
+            output_format: self.output_format,
         })
     }
 
@@ -520,6 +531,7 @@ pub fn make_export_collector(
         timestamp_field_opt: index_config.timestamp_field(),
         start_timestamp_opt: export_request.start_timestamp,
         end_timestamp_opt: export_request.end_timestamp,
+        output_format: export_request.output_format.clone().into(),
     }
 }
 

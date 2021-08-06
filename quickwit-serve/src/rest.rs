@@ -210,7 +210,7 @@ pub struct ExportRequestQueryString {
     pub fast_field: String,
     /// The output format.
     #[serde(default)]
-    #[serde(rename(deserialize = "OutputFormat"))]
+    #[serde(rename(deserialize = "outputFormat"))]
     pub output_format: OutputFormat,
 }
 

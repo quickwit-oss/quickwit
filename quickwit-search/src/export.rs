@@ -46,3 +46,12 @@ impl ToString for OutputFormat {
         }
     }
 }
+
+impl From<String> for OutputFormat {
+    fn from(spec: String) -> Self {
+        match spec.as_str() {
+            "rowbinary" => Self::RowBinary,
+            _ => Self::CSV,
+        }
+    }
+}
