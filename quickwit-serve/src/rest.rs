@@ -41,7 +41,7 @@ pub async fn start_rest_service(
     health_service: HealthService,
 ) -> anyhow::Result<()> {
     info!(rest_addr=?rest_addr, "Start REST service.");
-    health_service.healty().await;
+    health_service.ready().await;
     let rest_routes = health_check_handler(health_service).or(search_handler(search_service));
     warp::serve(rest_routes).run(rest_addr).await;
     Ok(())
@@ -430,21 +430,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rest_search_api_health_check_health() {
-        let health_service = HealthService::default();
-        let rest_search_api_filter = health_check_handler(health_service);
-        let resp = warp::test::request()
-            .path("/health")
-            .reply(&rest_search_api_filter)
-            .await;
-        println!("{:?}", resp);
-        assert_eq!(resp.status(), 200);
-    }
-
-    #[tokio::test]
     async fn test_rest_search_api_health_check_livez() {
         let health_service = HealthService::default();
-        health_service.healty().await;
+        health_service.alive().await;
         let rest_search_api_filter = health_check_handler(health_service);
         let resp = warp::test::request()
             .path("/health/livez")
@@ -457,22 +445,10 @@ mod tests {
     #[tokio::test]
     async fn test_rest_search_api_health_check_readyz() {
         let health_service = HealthService::default();
-        health_service.healty().await;
+        health_service.ready().await;
         let rest_search_api_filter = health_check_handler(health_service);
         let resp = warp::test::request()
             .path("/health/readyz")
-            .reply(&rest_search_api_filter)
-            .await;
-        println!("{:?}", resp);
-        assert_eq!(resp.status(), 200);
-    }
-
-    #[tokio::test]
-    async fn test_rest_search_api_health_check_startz() {
-        let health_service = HealthService::default();
-        let rest_search_api_filter = health_check_handler(health_service);
-        let resp = warp::test::request()
-            .path("/health/startz")
             .reply(&rest_search_api_filter)
             .await;
         println!("{:?}", resp);
