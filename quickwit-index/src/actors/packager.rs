@@ -33,6 +33,7 @@ use quickwit_directories::write_hotcache;
 use quickwit_directories::HOTCACHE_FILENAME;
 use tantivy::SegmentId;
 use tantivy::SegmentMeta;
+use tracing::info;
 
 pub struct Packager {
     sink: Mailbox<PackagedSplit>,
@@ -79,6 +80,7 @@ fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
 /// CPU and IO, the longest once being the serialization of
 /// the inverted index. This phase is CPU bound.
 fn commit_split(split: &mut IndexedSplit) -> anyhow::Result<()> {
+    info!("commit-split");
     split
         .index_writer
         .commit()
@@ -137,26 +139,44 @@ fn list_files_to_upload(
 ///
 /// Note this function implicitly drops the IndexWriter
 /// which potentially olds a lot of RAM.
-fn merge_segments_in_split(mut split: IndexedSplit) -> anyhow::Result<PackagedSplit> {
-    let segment_metas = split.index.searchable_segment_metas()?;
-    let num_docs: u64 = segment_metas
-        .iter()
-        .map(|segment_meta| segment_meta.num_docs() as u64)
-        .sum();
-    if is_merge_required(&segment_metas[..]) {
-        let segment_ids: Vec<SegmentId> = segment_metas
+fn merge_segments_if_required(split: &mut IndexedSplit) -> anyhow::Result<Vec<SegmentMeta>> {
+    info!("merge-segments-if-required");
+    let segment_metas_before_merge = split.index.searchable_segment_metas()?;
+    if is_merge_required(&segment_metas_before_merge[..]) {
+        let segment_ids: Vec<SegmentId> = segment_metas_before_merge
             .into_iter()
             .map(|segment_meta| segment_meta.id())
             .collect();
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
+        info!(segment_ids=?segment_ids, "merge");
         futures::executor::block_on(split.index_writer.merge(&segment_ids))?;
     }
-    let segment_metas: Vec<SegmentMeta> = split.index.searchable_segment_metas()?;
-    let segment_ids = segment_metas
+    let segment_metas_after_merge: Vec<SegmentMeta> = split.index.searchable_segment_metas()?;
+    Ok(segment_metas_after_merge)
+}
+
+fn build_hotcache(path: &Path) -> anyhow::Result<()> {
+    info!("build-hotcache");
+    let hotcache_path = path.join(HOTCACHE_FILENAME);
+    let mut hotcache_file = std::fs::File::create(&hotcache_path)?;
+    let mmap_directory = tantivy::directory::MmapDirectory::open(path)?;
+    write_hotcache(mmap_directory, &mut hotcache_file)?;
+    Ok(())
+}
+
+fn create_packaged_split(
+    segment_metas: &[SegmentMeta],
+    split: IndexedSplit,
+) -> anyhow::Result<PackagedSplit> {
+    info!("create-packaged-split");
+    let num_docs = segment_metas
+        .iter()
+        .map(|segment_meta| segment_meta.num_docs() as u64)
+        .sum();
+    let segment_ids: Vec<SegmentId> = segment_metas
         .iter()
         .map(|segment_meta| segment_meta.id())
         .collect();
-
     let files_to_upload = list_files_to_upload(&segment_metas[..], split.temp_dir.path())
         .with_context(|| {
             format!(
@@ -177,15 +197,6 @@ fn merge_segments_in_split(mut split: IndexedSplit) -> anyhow::Result<PackagedSp
     Ok(packaged_split)
 }
 
-fn build_hotcache(split: &PackagedSplit) -> anyhow::Result<()> {
-    let split_scratch_dir = split.split_scratch_dir.path().to_path_buf();
-    let hotcache_path = split_scratch_dir.join(HOTCACHE_FILENAME);
-    let mut hotcache_file = std::fs::File::create(&hotcache_path)?;
-    let mmap_directory = tantivy::directory::MmapDirectory::open(split_scratch_dir)?;
-    write_hotcache(mmap_directory, &mut hotcache_file)?;
-    Ok(())
-}
-
 impl SyncActor for Packager {
     fn process_message(
         &mut self,
@@ -193,8 +204,9 @@ impl SyncActor for Packager {
         _context: quickwit_actors::ActorContext<'_, Self::Message>,
     ) -> Result<(), quickwit_actors::MessageProcessError> {
         commit_split(&mut split)?;
-        let packaged_split = merge_segments_in_split(split)?;
-        build_hotcache(&packaged_split)?;
+        let segment_metas = merge_segments_if_required(&mut split)?;
+        build_hotcache(split.temp_dir.path())?;
+        let packaged_split = create_packaged_split(&segment_metas[..], split)?;
         self.sink.send_blocking(packaged_split)?;
         Ok(())
     }
@@ -269,11 +281,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_packager_no_merger_required() -> anyhow::Result<()> {
+    async fn test_packager_no_merge_required() -> anyhow::Result<()> {
+        crate::test_util::setup_logging_for_tests();
         let (mailbox, inbox) = create_test_mailbox();
         let packager = Packager::new(mailbox);
         let packager_handle = packager.spawn(KillSwitch::default());
         let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]])?;
+        packager_handle.mailbox().send_async(indexed_split).await?;
+        assert_eq!(
+            packager_handle.process_and_observe().await,
+            Observation::Running(())
+        );
+        let packaged_splits = inbox.drain_available_message_for_test();
+        assert_eq!(packaged_splits.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_packager_merge_required() -> anyhow::Result<()> {
+        crate::test_util::setup_logging_for_tests();
+        let (mailbox, inbox) = create_test_mailbox();
+        let packager = Packager::new(mailbox);
+        let packager_handle = packager.spawn(KillSwitch::default());
+        let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
         packager_handle.mailbox().send_async(indexed_split).await?;
         assert_eq!(
             packager_handle.process_and_observe().await,

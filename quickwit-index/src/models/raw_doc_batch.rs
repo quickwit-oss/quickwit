@@ -23,5 +23,5 @@ use crate::models::Checkpoint;
 #[derive(Default, Debug, Clone)]
 pub struct RawDocBatch {
     pub docs: Vec<String>,
-    pub checkpoint: Checkpoint,
+    // pub checkpoint: Checkpoint,
 }

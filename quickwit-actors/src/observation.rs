@@ -4,7 +4,7 @@ use std::fmt;
 //
 // TODO It should be a struct with a kind enum rather than a rich enum
 #[derive(Debug)]
-pub enum Observation<ObservableState: fmt::Debug> {
+pub enum Observation<ObservableState> {
     /// The actor is alive and was able to snapshot its state within `HEARTBEAT`
     Running(ObservableState),
     /// The actor is terminated. The post-mortem state was snapshotted and is joined.
@@ -13,6 +13,16 @@ pub enum Observation<ObservableState: fmt::Debug> {
     /// the actor had too much work. In that case, in a best effort fashion, the
     /// last observed state is returned.
     Timeout(ObservableState),
+}
+
+impl<ObservableState> Observation<ObservableState> {
+    pub fn into_inner(self) -> ObservableState {
+        match self {
+            Observation::Running(obs) => obs,
+            Observation::Terminated(obs) => obs,
+            Observation::Timeout(obs) => obs,
+        }
+    }
 }
 
 impl<ObservableState: fmt::Debug> Observation<ObservableState> {

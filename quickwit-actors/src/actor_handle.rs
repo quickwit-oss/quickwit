@@ -84,12 +84,12 @@ impl<Message, ObservableState: Clone + Send + fmt::Debug> ActorHandle<Message, O
         }
         // TODO The timeout is required here. If the actor fails, the inbox is properly dropped but the send channel might actually
         // prevent the onechannel Receiver from being dropped.
-        let observable_state_res = tokio::time::timeout( crate::HEARTBEAT, rx).await;
+        let observable_state_res = tokio::time::timeout(crate::HEARTBEAT, rx).await;
         let state = self.last_state.borrow().clone();
         match observable_state_res {
             Ok(Ok(_)) => Observation::Running(state),
             Ok(Err(_)) => Observation::Terminated(state),
-            Err(_) => Observation::Timeout(state)
+            Err(_) => Observation::Timeout(state),
         }
     }
 

@@ -40,3 +40,65 @@ pub use all_flatten_config::AllFlattenIndexConfig;
 pub use config::{IndexConfig, SortBy, SortOrder};
 pub use default_index_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
 pub use wikipedia_config::WikipediaIndexConfig;
+
+#[cfg(any(test, feature = "testsuite"))]
+pub fn default_config_for_tests() -> DefaultIndexConfig {
+    const JSON_CONFIG_VALUE: &str = r#"
+        {
+            "store_source": true,
+            "default_search_fields": [
+                "body", "attributes.server", "attributes.server.status"
+            ],
+            "timestamp_field": "timestamp",
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "i64",
+                    "fast": true
+                },
+                {
+                    "name": "body",
+                    "type": "text",
+                    "stored": true
+                },
+                {
+                    "name": "response_date",
+                    "type": "date",
+                    "fast": true
+                },
+                {
+                    "name": "response_time",
+                    "type": "f64",
+                    "fast": true
+                },
+                {
+                    "name": "response_payload",
+                    "type": "bytes",
+                    "fast": true
+                },
+                {
+                    "name": "attributes",
+                    "type": "object",
+                    "field_mappings": [
+                        {
+                            "name": "tags",
+                            "type": "array<i64>"
+                        },
+                        {
+                            "name": "server",
+                            "type": "text"
+                        },
+                        {
+                            "name": "server.status",
+                            "type": "array<text>"
+                        },
+                        {
+                            "name": "server.payload",
+                            "type": "array<bytes>"
+                        }
+                    ]
+                }
+            ]
+        }"#;
+    serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE).unwrap()
+}

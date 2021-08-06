@@ -89,6 +89,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_publisher_publishes_in_order() {
+        crate::test_util::setup_logging_for_tests();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
@@ -128,7 +129,7 @@ mod tests {
                 split_id: "split1".to_string(),
             })
             .is_ok());
-        let publisher_observation = publisher_handle.process_and_observe().await;
-        assert_eq!(publisher_observation.state().num_published_splits, 2);
+        let publisher_observation = publisher_handle.process_and_observe().await.into_inner();
+        assert_eq!(publisher_observation.num_published_splits, 2);
     }
 }
