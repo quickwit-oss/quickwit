@@ -27,6 +27,8 @@ use std::path::Path;
 use crate::indexing::manifest::Manifest;
 use anyhow::{self, Context};
 use quickwit_directories::write_hotcache;
+use quickwit_directories::CreateBundleStorage;
+use quickwit_directories::BUNDLE_FILENAME;
 use quickwit_directories::HOTCACHE_FILENAME;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::SplitMetadata;
@@ -236,96 +238,127 @@ impl Split {
     }
 
     /// Upload all split artifacts using the storage.
-    pub async fn upload(&self) -> anyhow::Result<Manifest> {
-        let manifest = put_split_files_to_storage(&*self.storage, self).await?;
+    pub async fn upload(&mut self) -> anyhow::Result<Manifest> {
+        info!("upload-split");
+        let start = Instant::now();
+
+        let mut manifest = Manifest::new(self.metadata.clone());
+        manifest.segments = self.index.searchable_segment_ids()?;
+
+        let mut files_to_upload: Vec<PathBuf> = self
+            .index
+            .searchable_segment_metas()?
+            .into_iter()
+            .flat_map(|segment_meta| segment_meta.list_files())
+            .filter(|filepath| {
+                // the list given by segment_meta.list_files() can contain false positives.
+                // Some of those files actually do not exists.
+                // Lets' filter them out.
+                // TODO modify tantivy to make this list
+                self.index.directory().exists(filepath).unwrap_or(true) //< true might look like a very odd choice here.
+                                                                        // It has the benefit of triggering an error when we will effectively try to upload the files.
+            })
+            .map(|relative_filepath| self.split_scratch_dir.path().join(relative_filepath))
+            .collect();
+        files_to_upload.push(self.split_scratch_dir.path().join("meta.json"));
+
+        files_to_upload.push(self.split_scratch_dir.path().join("hotcache"));
+
+        // IMPORTANT: hotcache needs to be the last file in the list
+        assert!(
+            files_to_upload
+                .last()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                == "hotcache"
+        );
+
+        // create bundle
+        let bundle_path = self.split_scratch_dir.path().join(BUNDLE_FILENAME);
+        let mut create_bundle = CreateBundleStorage::new(&bundle_path)?;
+        let mut upload_res_futures = vec![];
+        for path in files_to_upload.iter() {
+            create_bundle.add_file(path)?;
+        }
+        create_bundle.finalize()?;
+        //upload bundle
+        let file: tokio::fs::File = tokio::fs::File::open(&bundle_path)
+            .await
+            .with_context(|| format!("Failed to get metadata for {:?}", &bundle_path))?;
+        let metadata = file.metadata().await?;
+        let file_name = "bundle";
+        manifest.push(&file_name, metadata.len());
+        let key = PathBuf::from(file_name);
+        let payload = quickwit_storage::PutPayload::from(bundle_path.clone());
+        self.storage.put(&key, payload).await.with_context(|| {
+            format!(
+                "Failed uploading key {} in bucket {}",
+                key.display(),
+                self.index_uri
+            )
+        })?;
+
+        self.metadata.hotcache_offset = create_bundle.hotcache_offset;
+        self.metadata.bundle_footer_offset = create_bundle.footer_offset;
+
+        // upload files
+        for path in files_to_upload {
+            let file: tokio::fs::File = tokio::fs::File::open(&path)
+                .await
+                .with_context(|| format!("Failed to get metadata for {:?}", &path))?;
+            let metadata = file.metadata().await?;
+            let file_name = match path.file_name() {
+                Some(fname) => fname.to_string_lossy().to_string(),
+                _ => {
+                    warn!(path = %path.display(), "Could not extract path as string");
+                    continue;
+                }
+            };
+
+            manifest.push(&file_name, metadata.len());
+            let key = PathBuf::from(file_name);
+            let payload = quickwit_storage::PutPayload::from(path.clone());
+            let storage = self.storage.clone();
+            let index_uri = self.index_uri.to_string();
+            let upload_res_future = async move {
+                storage.put(&key, payload).await.with_context(|| {
+                    format!(
+                        "Failed uploading key {} in bucket {}",
+                        key.display(),
+                        index_uri
+                    )
+                })?;
+                Result::<(), anyhow::Error>::Ok(())
+            };
+
+            upload_res_futures.push(upload_res_future);
+        }
+
+        futures::future::try_join_all(upload_res_futures).await?;
+
+        let manifest_body = manifest.to_json()?.into_bytes();
+        let manifest_path = PathBuf::from(".manifest");
+        self.storage
+            .put(&manifest_path, PutPayload::from(manifest_body))
+            .await?;
+
+        let elapsed_secs = start.elapsed().as_secs();
+        let file_statistics = manifest.file_statistics();
+        info!(
+            min_file_size_in_bytes = %file_statistics.min_file_size_in_bytes,
+            max_file_size_in_bytes = %file_statistics.max_file_size_in_bytes,
+            avg_file_size_in_bytes = %file_statistics.avg_file_size_in_bytes,
+            split_size_in_megabytes = %manifest.split_size_in_bytes / 1000,
+            elapsed_secs = %elapsed_secs,
+            throughput_mb_s = %manifest.split_size_in_bytes / 1000 / elapsed_secs.max(1),
+            "Uploaded split to storage"
+        );
+
         Ok(manifest)
     }
 }
-
-/// Upload all files within a single split to the storage
-async fn put_split_files_to_storage(
-    storage: &dyn Storage,
-    split: &Split,
-) -> anyhow::Result<Manifest> {
-    info!("upload-split");
-    let start = Instant::now();
-
-    let mut manifest = Manifest::new(split.metadata.clone());
-    manifest.segments = split.index.searchable_segment_ids()?;
-
-    let mut files_to_upload: Vec<PathBuf> = split
-        .index
-        .searchable_segment_metas()?
-        .into_iter()
-        .flat_map(|segment_meta| segment_meta.list_files())
-        .filter(|filepath| {
-            // the list given by segment_meta.list_files() can contain false positives.
-            // Some of those files actually do not exists.
-            // Lets' filter them out.
-            // TODO modify tantivy to make this list
-            split.index.directory().exists(filepath).unwrap_or(true) //< true might look like a very odd choice here.
-                                                                     // It has the benefit of triggering an error when we will effectively try to upload the files.
-        })
-        .map(|relative_filepath| split.split_scratch_dir.path().join(relative_filepath))
-        .collect();
-    files_to_upload.push(split.split_scratch_dir.path().join("meta.json"));
-    files_to_upload.push(split.split_scratch_dir.path().join("hotcache"));
-
-    let mut upload_res_futures = vec![];
-
-    for path in files_to_upload {
-        let file: tokio::fs::File = tokio::fs::File::open(&path)
-            .await
-            .with_context(|| format!("Failed to get metadata for {:?}", &path))?;
-        let metadata = file.metadata().await?;
-        let file_name = match path.file_name() {
-            Some(fname) => fname.to_string_lossy().to_string(),
-            _ => {
-                warn!(path = %path.display(), "Could not extract path as string");
-                continue;
-            }
-        };
-
-        manifest.push(&file_name, metadata.len());
-        let key = PathBuf::from(file_name);
-        let payload = quickwit_storage::PutPayload::from(path.clone());
-        let upload_res_future = async move {
-            storage.put(&key, payload).await.with_context(|| {
-                format!(
-                    "Failed uploading key {} in bucket {}",
-                    key.display(),
-                    split.index_uri
-                )
-            })?;
-            Result::<(), anyhow::Error>::Ok(())
-        };
-
-        upload_res_futures.push(upload_res_future);
-    }
-
-    futures::future::try_join_all(upload_res_futures).await?;
-
-    let manifest_body = manifest.to_json()?.into_bytes();
-    let manifest_path = PathBuf::from(".manifest");
-    storage
-        .put(&manifest_path, PutPayload::from(manifest_body))
-        .await?;
-
-    let elapsed_secs = start.elapsed().as_secs();
-    let file_statistics = manifest.file_statistics();
-    info!(
-        min_file_size_in_bytes = %file_statistics.min_file_size_in_bytes,
-        max_file_size_in_bytes = %file_statistics.max_file_size_in_bytes,
-        avg_file_size_in_bytes = %file_statistics.avg_file_size_in_bytes,
-        split_size_in_megabytes = %manifest.split_size_in_bytes / 1000,
-        elapsed_secs = %elapsed_secs,
-        throughput_mb_s = %manifest.split_size_in_bytes / 1000 / elapsed_secs.max(1),
-        "Uploaded split to storage"
-    );
-
-    Ok(manifest)
-}
-
 /// [`FileEntry`] is an alias of [`ManifestEntry`] for
 /// holding the full path & size of a file.
 pub type FileEntry = ManifestEntry;

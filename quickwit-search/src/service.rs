@@ -143,6 +143,14 @@ impl SearchService for SearchServiceImpl {
                 index_id: search_request.index_id.clone(),
             })?;
         let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+        let split_meta_data = metastore
+            .list_split_ids(
+                &search_request.index_id,
+                quickwit_metastore::SplitState::Published,
+                None,
+                &leaf_search_request.split_ids,
+            )
+            .await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let split_ids = leaf_search_request.split_ids;
         let index_config = index_metadata.index_config;

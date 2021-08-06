@@ -37,7 +37,7 @@ mod debug_proxy_directory;
 mod hot_directory;
 mod storage_directory;
 
-pub use self::bundle_storage::{BundleStorage, CreateBundleStorage};
+pub use self::bundle_storage::{BundleStorage, CreateBundleStorage, BUNDLE_FILENAME};
 pub use self::caching_directory::CachingDirectory;
 pub use self::debug_proxy_directory::{DebugProxyDirectory, ReadOperation};
 pub use self::hot_directory::{write_hotcache, HotDirectory, HOTCACHE_FILENAME};

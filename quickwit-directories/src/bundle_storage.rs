@@ -41,6 +41,9 @@ use serde::Serialize;
 
 use crate::HOTCACHE_FILENAME;
 
+/// Filename used for the bundle.
+pub const BUNDLE_FILENAME: &str = "bundle";
+
 /// BundleStorage bundles together multiple files into a single file.
 /// with some metadata
 pub struct BundleStorage {
@@ -180,9 +183,13 @@ fn unsupported_operation(path: &Path) -> StorageError {
 pub struct CreateBundleStorage {
     metadata: BundleStorageMetadata,
     current_offset: u64,
-    /// the offset in the file where the hotcache begins. This is used to read
+    /// The offset in the file where the hotcache begins. This is used to read
     /// the hotcache and footer in a single read.
     pub hotcache_offset: u64,
+    /// The footer offset, where the footer begins.
+    /// The footer includes the footer metadata as json encoded and the size of the footer in
+    /// bytes.
+    pub footer_offset: u64,
     bundle_file: File,
 }
 
@@ -195,6 +202,7 @@ impl CreateBundleStorage {
             bundle_file: sink,
             current_offset: 0,
             hotcache_offset: 0,
+            footer_offset: 0,
             metadata: Default::default(),
         })
     }
@@ -228,13 +236,13 @@ impl CreateBundleStorage {
 
     /// Writes the metadata into the footer.
     ///
-    /// Returns the hotcache_offset in the file.
-    pub fn finalize(&mut self) -> io::Result<u64> {
+    pub fn finalize(&mut self) -> io::Result<()> {
+        self.footer_offset = self.current_offset;
         let metadata_json = serde_json::to_string(&self.metadata)?;
         self.bundle_file.write_all(metadata_json.as_bytes())?;
         let len = metadata_json.len() as u64;
         BinarySerializable::serialize(&len, &mut self.bundle_file)?;
-        Ok(self.hotcache_offset)
+        Ok(())
     }
 }
 #[cfg(test)]

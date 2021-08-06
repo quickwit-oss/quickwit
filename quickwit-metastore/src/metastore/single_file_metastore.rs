@@ -590,6 +590,7 @@ mod tests {
             time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: Utc::now().timestamp(),
+            ..Default::default()
         };
 
         {
@@ -724,6 +725,7 @@ mod tests {
             time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: current_timestamp,
+            ..Default::default()
         };
         let split_metadata_two = SplitMetadata {
             split_id: split_id_two.to_string(),
@@ -733,6 +735,7 @@ mod tests {
             time_range: Some(RangeInclusive::new(30, 99)),
             generation: 2,
             update_timestamp: current_timestamp,
+            ..Default::default()
         };
 
         {
@@ -908,6 +911,7 @@ mod tests {
                 time_range: Some(RangeInclusive::new(0, 99)),
                 generation: 3,
                 update_timestamp: current_timestamp,
+                ..Default::default()
             };
 
             let split_metadata_2 = SplitMetadata {
@@ -918,6 +922,7 @@ mod tests {
                 time_range: Some(RangeInclusive::new(100, 199)),
                 generation: 3,
                 update_timestamp: current_timestamp,
+                ..Default::default()
             };
 
             let split_metadata_3 = SplitMetadata {
@@ -928,6 +933,7 @@ mod tests {
                 time_range: Some(RangeInclusive::new(200, 299)),
                 generation: 3,
                 update_timestamp: current_timestamp,
+                ..Default::default()
             };
 
             let split_metadata_4 = SplitMetadata {
@@ -938,6 +944,7 @@ mod tests {
                 time_range: Some(RangeInclusive::new(300, 399)),
                 generation: 3,
                 update_timestamp: current_timestamp,
+                ..Default::default()
             };
             let split_metadata_5 = SplitMetadata {
                 split_id: "five".to_string(),
@@ -947,6 +954,7 @@ mod tests {
                 time_range: None,
                 generation: 3,
                 update_timestamp: current_timestamp,
+                ..Default::default()
             };
 
             metastore
@@ -1441,6 +1449,7 @@ mod tests {
             time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: Utc::now().timestamp(),
+            ..Default::default()
         };
 
         {
@@ -1548,6 +1557,7 @@ mod tests {
             time_range: Some(RangeInclusive::new(0, 100)),
             generation: 3,
             update_timestamp: Utc::now().timestamp(),
+            ..Default::default()
         };
 
         {
@@ -1655,6 +1665,7 @@ mod tests {
             time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: current_timestamp,
+            ..Default::default()
         };
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
@@ -1724,6 +1735,7 @@ mod tests {
             time_range: None,
             generation: 3,
             update_timestamp: Utc::now().timestamp(),
+            ..Default::default()
         };
 
         let index_metadata = IndexMetadata {

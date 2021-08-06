@@ -445,6 +445,7 @@ mod tests {
             time_range: None,
             generation: 1,
             update_timestamp: 0,
+            ..Default::default()
         }
     }
 
