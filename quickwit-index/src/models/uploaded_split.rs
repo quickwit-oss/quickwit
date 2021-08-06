@@ -19,4 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #[derive(Clone, Debug)]
-pub struct UploadedSplit;
+pub struct UploadedSplit {
+    pub index_id: String,
+    pub split_id: String,
+}

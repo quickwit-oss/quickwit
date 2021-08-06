@@ -21,11 +21,13 @@
 use std::sync::Arc;
 
 use crate::models::UploadedSplit;
+use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
 use quickwit_actors::AsyncActor;
 use quickwit_metastore::Metastore;
+use tokio::sync::oneshot::Receiver;
 
 pub struct Publisher {
     metastore: Arc<dyn Metastore>,
@@ -38,7 +40,7 @@ impl Publisher {
 }
 
 impl Actor for Publisher {
-    type Message = UploadedSplit;
+    type Message = Receiver<UploadedSplit>;
     type ObservableState = ();
 
     fn observable_state(&self) -> Self::ObservableState {
@@ -50,10 +52,16 @@ impl Actor for Publisher {
 impl AsyncActor for Publisher {
     async fn process_message(
         &mut self,
-        message: UploadedSplit,
-        context: ActorContext<'_, Self::Message>,
+        uploaded_split_future: Receiver<UploadedSplit>,
+        _context: ActorContext<'_, Self::Message>,
     ) -> Result<(), quickwit_actors::MessageProcessError> {
-        println!("publishing");
+        let uploaded_split = uploaded_split_future
+            .await
+            .with_context(|| "Upload apparently failed")?; //< splits must be published in order, so one uploaded failing means we should fail entirely.
+        self.metastore
+            .publish_splits(&uploaded_split.index_id, vec![&uploaded_split.split_id])
+            .await
+            .with_context(|| "Failed to publish splits")?;
         Ok(())
     }
 }

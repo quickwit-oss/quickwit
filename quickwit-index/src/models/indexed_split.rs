@@ -21,6 +21,7 @@
 use std::fmt;
 use std::ops::RangeInclusive;
 use std::path::Path;
+use std::time::Instant;
 
 use tantivy::merge_policy::NoMergePolicy;
 use tantivy::schema::Schema;
@@ -32,7 +33,10 @@ pub struct IndexedSplit {
     pub split_id: String,
     pub index_id: String,
     pub time_range: Option<RangeInclusive<i64>>,
+
+    pub num_docs: u64,
     pub size_in_bytes: u64,
+    pub start_time: Instant,
 
     pub index: tantivy::Index,
     pub index_writer: tantivy::IndexWriter,
@@ -59,6 +63,8 @@ impl IndexedSplit {
             index_id,
             time_range: None,
             size_in_bytes: 0,
+            num_docs: 0,
+            start_time: Instant::now(),
 
             index,
             index_writer,

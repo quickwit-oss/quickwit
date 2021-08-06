@@ -29,6 +29,7 @@ use crate::models::Manifest;
 use crate::models::ManifestEntry;
 use crate::models::PackagedSplit;
 use crate::models::UploadedSplit;
+use crate::semaphore::Semaphore;
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::Actor;
@@ -44,6 +45,7 @@ use quickwit_storage::PutPayload;
 use quickwit_storage::Storage;
 use tantivy::chrono::Utc;
 use tantivy::SegmentId;
+use tokio::sync::oneshot::Receiver;
 use tracing::info;
 
 pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 3;
@@ -51,23 +53,21 @@ pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 3;
 pub struct Uploader {
     metastore: Arc<dyn Metastore>,
     index_storage: Arc<dyn Storage>,
-    sink: Mailbox<UploadedSplit>,
-    num_concurrent_upload: usize,
+    sink: Mailbox<Receiver<UploadedSplit>>,
+    concurrent_upload_permits: Semaphore,
 }
-
-struct UploadTask;
 
 impl Uploader {
     pub fn new(
         metastore: Arc<dyn Metastore>,
         index_storage: Arc<dyn Storage>,
-        sink: Mailbox<UploadedSplit>,
+        sink: Mailbox<Receiver<UploadedSplit>>,
     ) -> Uploader {
         Uploader {
             metastore,
             index_storage,
             sink,
-            num_concurrent_upload: 0,
+            concurrent_upload_permits: Semaphore::new(MAX_CONCURRENT_SPLIT_UPLOAD),
         }
     }
 }
@@ -239,17 +239,55 @@ async fn stage_split(
     Ok(split_metadata)
 }
 
+async fn run_upload(
+    split: PackagedSplit,
+    split_storage: Arc<dyn Storage>,
+    metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<UploadedSplit> {
+    Ok(UploadedSplit {
+        index_id: split.index_id,
+        split_id: split.split_id,
+    })
+}
+
 #[async_trait]
 impl AsyncActor for Uploader {
     async fn process_message(
         &mut self,
         split: PackagedSplit,
-        _context: ActorContext<'_, Self::Message>,
+        context: ActorContext<'_, Self::Message>,
     ) -> Result<(), MessageProcessError> {
-        let split_storage =
-            quickwit_storage::add_prefix_to_storage(self.index_storage.clone(), split.split_id);
+        let (split_uploaded_tx, split_uploaded_rx) = tokio::sync::oneshot::channel();
+
+        // We send the future to the publisher right away.
+        // That way the publisher will process the uploaded split in order as opposed to
+        // publishing in the order splits finish their uploading.
+        self.sink.send_async(split_uploaded_rx).await?;
+
+        // The juggling here happens because the permit lifetime prevents it from being passed to a task.
+        // Instead we acquire the resource, but forget the permit.
+        //
+        // The permit will be added back manually to the semaphore the task after it is finished.
+        let permit = self.concurrent_upload_permits.acquire().await;
+
+        let split_storage = quickwit_storage::add_prefix_to_storage(
+            self.index_storage.clone(),
+            split.split_id.clone(),
+        );
         let metastore = self.metastore.clone();
-        // upload_split(self.metastore);
+        let kill_switch = context.kill_switch.clone();
+        tokio::task::spawn(async move {
+            let run_upload_res = run_upload(split, split_storage, metastore).await;
+            if run_upload_res.is_err() {
+                kill_switch.kill();
+            }
+            let uploaded_split = run_upload_res?;
+            if split_uploaded_tx.send(uploaded_split).is_err() {
+                kill_switch.kill();
+            }
+            std::mem::drop(permit); //< we explicitely drop the permit to allow for another upload to happen here.
+            Result::<(), anyhow::Error>::Ok(())
+        });
         Ok(())
     }
 }

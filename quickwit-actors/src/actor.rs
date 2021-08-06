@@ -118,6 +118,7 @@ impl KillSwitch {
 pub struct ActorContext<'a, Message> {
     pub self_mailbox: &'a Mailbox<Message>,
     pub progress: &'a Progress,
+    pub kill_switch: &'a KillSwitch,
 }
 
 impl<'a, Message> ActorContext<'a, Message> {
