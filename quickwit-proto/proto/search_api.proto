@@ -222,6 +222,6 @@ message LeafExportRequest {
 
 
 message LeafExportResult {
-  // Row of data serialized  in bytes (DocID, fast_field_value)
+  // Row of data serialized in bytes.
   bytes row = 1;
 }
