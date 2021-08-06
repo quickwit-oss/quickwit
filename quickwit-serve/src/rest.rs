@@ -264,9 +264,13 @@ async fn export<TSearchService: SearchService>(
     search_service: Arc<TSearchService>,
 ) -> Result<impl warp::Reply, Infallible> {
     info!(index_id=%index_id,request=?request, "export");
-    Ok(make_streaming_reply(
-        export_endpoint(index_id, request, &*search_service).await,
-    ))
+    let content_type = match request.output_format {
+        OutputFormat::RowBinary => "application/octet-stream",
+        OutputFormat::CSV => "text/csv",
+    };
+    let reply = make_streaming_reply(export_endpoint(index_id, request, &*search_service).await);
+    let reply_with_header = reply::with_header(reply, CONTENT_TYPE, content_type);
+    Ok(reply_with_header)
 }
 
 pub fn export_handler<TSearchService: SearchService>(
@@ -529,6 +533,29 @@ mod tests {
                 .status(),
             400
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rest_export_api() -> anyhow::Result<()> {
+        let mut mock_search_service = MockSearchService::new();
+        let (result_sender, result_receiver) = tokio::sync::mpsc::channel(2);
+        result_sender.send(Ok(bytes::Bytes::from("first row\n"))).await?;
+        result_sender.send(Ok(bytes::Bytes::from("second row"))).await?;
+        mock_search_service
+            .expect_root_export()
+            .return_once(|_| Ok(result_receiver));
+        let rest_export_api_handler =
+            super::export_handler(Arc::new(mock_search_service)).recover(recover_fn);
+        // send needs to be dropped so otherwise we will wait indefinititely new rows. 
+        drop(result_sender);
+        let response = warp::test::request()
+            .path("/api/v1/my-index/export?query=obama&fastField=external_id&outputFormat=csv")
+            .reply(&rest_export_api_handler)
+            .await;
+        assert_eq!(response.status(), 200);
+        let body = String::from_utf8_lossy(response.body());
+        assert_eq!(body, "first row\nsecond row");
         Ok(())
     }
 }
