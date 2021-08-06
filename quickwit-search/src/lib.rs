@@ -34,6 +34,7 @@ mod rendezvous_hasher;
 mod root;
 mod search_result_json;
 mod service;
+mod export;
 
 ///
 /// Refer to this as `crate::Result<T>`.
@@ -62,6 +63,7 @@ use crate::leaf::leaf_search;
 use crate::root::{root_export, root_search};
 pub use crate::search_result_json::SearchResultJson;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
+pub use crate::export::OutputFormat;
 
 /// Compute the SWIM port from the HTTP port.
 /// Add 1 to the HTTP port to get the SWIM port.
