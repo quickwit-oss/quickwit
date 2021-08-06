@@ -41,7 +41,9 @@ mod prefix_storage;
 mod ram_storage;
 mod retry;
 mod storage_resolver;
+mod bundle_storage;
 
+pub use self::bundle_storage::{BundleStorage, BundleStorageBuilder, BUNDLE_FILENAME};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,

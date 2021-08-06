@@ -41,7 +41,7 @@ use tracing::debug;
 
 use quickwit_cluster::cluster::{read_host_key, Cluster};
 use quickwit_cluster::service::ClusterServiceImpl;
-use quickwit_directories::HOTCACHE_FILENAME;
+use quickwit_common::HOTCACHE_FILENAME;
 use quickwit_metastore::{Metastore, MetastoreUriResolver};
 use quickwit_search::{
     http_addr_to_grpc_addr, http_addr_to_swim_addr, SearchClientPool, SearchServiceImpl,

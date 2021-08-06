@@ -26,12 +26,12 @@ use std::path::Path;
 
 use crate::indexing::manifest::Manifest;
 use anyhow::{self, Context};
+use quickwit_common::HOTCACHE_FILENAME;
 use quickwit_directories::write_hotcache;
-use quickwit_directories::BundleStorageBuilder;
-use quickwit_directories::BUNDLE_FILENAME;
-use quickwit_directories::HOTCACHE_FILENAME;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::SplitMetadata;
+use quickwit_storage::BundleStorageBuilder;
+use quickwit_storage::BUNDLE_FILENAME;
 use quickwit_storage::{PutPayload, Storage, StorageUriResolver};
 use std::sync::Arc;
 use std::time::Instant;

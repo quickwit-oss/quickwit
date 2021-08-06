@@ -20,10 +20,13 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use crate::Storage;
+use crate::{StorageError, StorageResult};
 use async_trait::async_trait;
 use bytes::Bytes;
-use quickwit_storage::Storage;
-use quickwit_storage::{StorageError, StorageResult};
+use quickwit_common::HOTCACHE_FILENAME;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Debug;
@@ -35,11 +38,6 @@ use std::sync::Arc;
 use tantivy::common::BinarySerializable;
 use tantivy::HasLen;
 use tracing::error;
-
-use serde::Deserialize;
-use serde::Serialize;
-
-use crate::HOTCACHE_FILENAME;
 
 /// Filename used for the bundle.
 pub const BUNDLE_FILENAME: &str = "bundle";
@@ -80,7 +78,6 @@ impl BundleStorageMetadata {
         let footer_size: u64 = BinarySerializable::deserialize(&mut &data[data.len() - 8..])?;
 
         let footer_slice = &data[data.len() - 8 - footer_size as usize..data.len() - 8];
-        //println!("{}", String::from_utf8(footer_slice.to_owned()).unwrap());
         serde_json::from_slice(footer_slice)
             .map_err(|err| io::Error::new(ErrorKind::InvalidData, err))
     }
@@ -97,27 +94,15 @@ impl BundleStorageMetadata {
 
 #[async_trait]
 impl Storage for BundleStorage {
-    async fn put(
-        &self,
-        path: &Path,
-        _payload: quickwit_storage::PutPayload,
-    ) -> quickwit_storage::StorageResult<()> {
+    async fn put(&self, path: &Path, _payload: crate::PutPayload) -> crate::StorageResult<()> {
         Err(unsupported_operation(path))
     }
 
-    async fn copy_to_file(
-        &self,
-        path: &Path,
-        _output_path: &Path,
-    ) -> quickwit_storage::StorageResult<()> {
+    async fn copy_to_file(&self, path: &Path, _output_path: &Path) -> crate::StorageResult<()> {
         Err(unsupported_operation(path))
     }
 
-    async fn get_slice(
-        &self,
-        path: &Path,
-        range: Range<usize>,
-    ) -> quickwit_storage::StorageResult<Bytes> {
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> crate::StorageResult<Bytes> {
         let file_offsets = self.metadata.get(path)?;
         let new_range =
             range.start + file_offsets.start as usize..range.end + file_offsets.start as usize;
@@ -126,7 +111,7 @@ impl Storage for BundleStorage {
             .await
     }
 
-    async fn get_all(&self, path: &Path) -> quickwit_storage::StorageResult<Bytes> {
+    async fn get_all(&self, path: &Path) -> crate::StorageResult<Bytes> {
         let file_offsets = self.metadata.get(path)?;
         self.storage
             .get_slice(
@@ -136,11 +121,11 @@ impl Storage for BundleStorage {
             .await
     }
 
-    async fn delete(&self, path: &Path) -> quickwit_storage::StorageResult<()> {
+    async fn delete(&self, path: &Path) -> crate::StorageResult<()> {
         Err(unsupported_operation(path))
     }
 
-    async fn exists(&self, path: &Path) -> quickwit_storage::StorageResult<bool> {
+    async fn exists(&self, path: &Path) -> crate::StorageResult<bool> {
         // also check if self.bundle_file_name exists ?
         Ok(self.metadata.exists(path))
     }
@@ -249,7 +234,7 @@ impl BundleStorageBuilder {
 mod tests {
     use std::env::temp_dir;
 
-    use quickwit_storage::LocalFileStorage;
+    use crate::LocalFileStorage;
 
     use super::*;
 
