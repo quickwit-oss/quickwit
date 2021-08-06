@@ -60,6 +60,11 @@ impl RamStorage {
     async fn get_data(&self, path: &Path) -> Option<Bytes> {
         self.files.read().await.get(path).cloned()
     }
+
+    /// Returns the list of files that are present in the RamStorage.
+    pub async fn list_files(&self) -> Vec<PathBuf> {
+        self.files.read().await.keys().cloned().collect()
+    }
 }
 
 async fn read_all(put: &PutPayload) -> io::Result<Bytes> {

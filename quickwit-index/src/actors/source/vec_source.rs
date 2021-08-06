@@ -93,7 +93,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
-        let (mailbox, inbox) = create_test_mailbox();
+        let (mailbox, mut inbox) = create_test_mailbox();
         let vec_source = VecSource::new(
             std::iter::repeat_with(|| "{}".to_string())
                 .take(100)
@@ -104,7 +104,7 @@ mod tests {
         let vec_source_handle = vec_source.spawn(KillSwitch::default());
         let actor_termination = vec_source_handle.join().await?;
         assert!(matches!(actor_termination, ActorTermination::Disconnect));
-        let batch = inbox.to_vec_for_test();
+        let batch = inbox.drain_available_message_for_test();
         assert_eq!(batch.len(), 34);
         Ok(())
     }

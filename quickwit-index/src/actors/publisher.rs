@@ -32,7 +32,7 @@ use tokio::sync::oneshot::Receiver;
 
 #[derive(Debug, Clone, Default)]
 pub struct PublisherCounters {
-    num_published_splits: usize,
+    pub num_published_splits: usize,
 }
 pub struct Publisher {
     metastore: Arc<dyn Metastore>,
@@ -129,5 +129,6 @@ mod tests {
             })
             .is_ok());
         let publisher_observation = publisher_handle.process_and_observe().await;
+        assert_eq!(publisher_observation.state().num_published_splits, 2);
     }
 }
