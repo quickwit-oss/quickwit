@@ -43,7 +43,7 @@ pub async fn create_index(
     index_metadata: IndexMetadata,
 ) -> anyhow::Result<()> {
     let metastore = MetastoreUriResolver::default()
-        .resolve(&metastore_uri)
+        .resolve(metastore_uri)
         .await?;
     metastore.create_index(index_metadata).await?;
     Ok(())
@@ -63,7 +63,7 @@ pub async fn delete_index(
     dry_run: bool,
 ) -> anyhow::Result<Vec<FileEntry>> {
     let metastore = MetastoreUriResolver::default()
-        .resolve(&metastore_uri)
+        .resolve(metastore_uri)
         .await?;
     let storage_resolver = StorageUriResolver::default();
 
@@ -110,7 +110,7 @@ pub async fn garbage_collect_index(
     dry_run: bool,
 ) -> anyhow::Result<Vec<FileEntry>> {
     let metastore = MetastoreUriResolver::default()
-        .resolve(&metastore_uri)
+        .resolve(metastore_uri)
         .await?;
     let storage_resolver = StorageUriResolver::default();
 

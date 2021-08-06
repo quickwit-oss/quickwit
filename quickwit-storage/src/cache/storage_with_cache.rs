@@ -56,7 +56,7 @@ impl Storage for StorageWithCache {
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<Bytes> {
-        if let Some(bytes) = self.cache.get_all(&path).await {
+        if let Some(bytes) = self.cache.get_all(path).await {
             Ok(bytes)
         } else {
             let bytes = self.storage.get_all(path).await?;

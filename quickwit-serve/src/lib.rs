@@ -92,7 +92,7 @@ async fn create_index_to_metastore_router(
         }
         let metastore = get_from_cache_or_create_metastore(
             &mut metastore_cache,
-            &metastore_resolver,
+            metastore_resolver,
             metastore_uri,
         )
         .await?;
@@ -112,14 +112,14 @@ fn display_help_message(
     // No-color if we are not in a terminal.
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
     write!(&mut stdout, "Server started on ")?;
-    stdout.set_color(&ColorSpec::new().set_fg(Some(Color::Green)))?;
+    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
     writeln!(&mut stdout, "http://{}/", &rest_socket_addr)?;
     stdout.set_color(&ColorSpec::new())?;
     writeln!(
         &mut stdout,
         "\nYou can test it using the following command:"
     )?;
-    stdout.set_color(&ColorSpec::new().set_fg(Some(Color::Blue)))?;
+    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Blue)))?;
     writeln!(
         &mut stdout,
         "curl 'http://{}/api/v1/{}/search?query=my+query'",
