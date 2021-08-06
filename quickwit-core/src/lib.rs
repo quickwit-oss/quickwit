@@ -34,7 +34,7 @@ mod index;
 mod indexing;
 mod test_utils;
 
-pub use index::{create_index, delete_index, garbage_collect_index, search_index};
+pub use index::{create_index, delete_index, garbage_collect_index};
 pub use indexing::{
     index_data, test_document_source, DocumentSource, IndexDataParams, IndexingStatistics,
 };
