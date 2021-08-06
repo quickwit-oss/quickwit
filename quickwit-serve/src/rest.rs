@@ -23,7 +23,6 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use hyper::header::CONTENT_DISPOSITION;
 use serde::{Deserialize, Deserializer};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::*;
@@ -249,13 +248,7 @@ fn make_streaming_reply(result: Result<hyper::Body, ApiError>) -> impl Reply {
             warp::reply::Response::new(hyper::Body::from(err.message()))
         }
     };
-    let reply_with_header = reply::with_header(body, CONTENT_TYPE, "text/csv");
-    let reply_with_header = reply::with_header(
-        reply_with_header,
-        CONTENT_DISPOSITION,
-        "attachment;filename=export.csv",
-    );
-    reply::with_status(reply_with_header, status_code)
+    reply::with_status(body, status_code)
 }
 
 async fn export<TSearchService: SearchService>(
