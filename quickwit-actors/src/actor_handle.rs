@@ -69,6 +69,9 @@ impl<Message, ObservableState: Clone + Send + fmt::Debug> ActorHandle<Message, O
     ///
     /// To actually observe the state of an actor for ops purpose,
     /// prefer using the `.observe()` method.
+    ///
+    /// This method timeout if reaching the end of the message takes more than an HEARTBEAT.
+    /// Hence, it is only useful or unit tests.
     pub async fn process_and_observe(&self) -> Observation<ObservableState> {
         let (tx, rx) = oneshot::channel();
         if self
@@ -79,11 +82,14 @@ impl<Message, ObservableState: Clone + Send + fmt::Debug> ActorHandle<Message, O
         {
             error!("Failed to send message");
         }
-        let observable_state = rx.await;
+        // TODO The timeout is required here. If the actor fails, the inbox is properly dropped but the send channel might actually
+        // prevent the onechannel Receiver from being dropped.
+        let observable_state_res = tokio::time::timeout( crate::HEARTBEAT, rx).await;
         let state = self.last_state.borrow().clone();
-        match observable_state {
-            Ok(()) => Observation::Running(state),
-            Err(_) => Observation::Terminated(state),
+        match observable_state_res {
+            Ok(Ok(_)) => Observation::Running(state),
+            Ok(Err(_)) => Observation::Terminated(state),
+            Err(_) => Observation::Timeout(state)
         }
     }
 

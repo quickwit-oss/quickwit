@@ -1,19 +1,3 @@
-use std::io;
-use std::path::Path;
-use std::path::PathBuf;
-
-use crate::models::IndexedSplit;
-use crate::models::PackagedSplit;
-use anyhow::Context;
-use quickwit_actors::Actor;
-use quickwit_actors::Mailbox;
-use quickwit_actors::QueueCapacity;
-use quickwit_actors::SyncActor;
-use quickwit_directories::write_hotcache;
-use quickwit_directories::HOTCACHE_FILENAME;
-use tantivy::SegmentId;
-use tantivy::SegmentMeta;
-
 // Quickwit
 //  Copyright (C) 2021 Quickwit Inc.
 //
@@ -33,6 +17,22 @@ use tantivy::SegmentMeta;
 //
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+use std::io;
+use std::path::Path;
+use std::path::PathBuf;
+
+use crate::models::IndexedSplit;
+use crate::models::PackagedSplit;
+use anyhow::Context;
+use quickwit_actors::Actor;
+use quickwit_actors::Mailbox;
+use quickwit_actors::QueueCapacity;
+use quickwit_actors::SyncActor;
+use quickwit_directories::write_hotcache;
+use quickwit_directories::HOTCACHE_FILENAME;
+use tantivy::SegmentId;
+use tantivy::SegmentMeta;
 
 pub struct Packager {
     sink: Mailbox<PackagedSplit>,
@@ -164,7 +164,6 @@ fn merge_segments_in_split(mut split: IndexedSplit) -> anyhow::Result<PackagedSp
                 split.split_id
             )
         })?;
-
     let packaged_split = PackagedSplit {
         index_id: split.index_id.clone(),
         split_id: split.split_id.to_string(),
@@ -191,12 +190,97 @@ impl SyncActor for Packager {
     fn process_message(
         &mut self,
         mut split: IndexedSplit,
-        context: quickwit_actors::ActorContext<'_, Self::Message>,
+        _context: quickwit_actors::ActorContext<'_, Self::Message>,
     ) -> Result<(), quickwit_actors::MessageProcessError> {
         commit_split(&mut split)?;
         let packaged_split = merge_segments_in_split(split)?;
         build_hotcache(&packaged_split)?;
         self.sink.send_blocking(packaged_split)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ops::RangeInclusive;
+    use std::time::Instant;
+
+    use quickwit_actors::create_test_mailbox;
+    use quickwit_actors::KillSwitch;
+    use quickwit_actors::Observation;
+    use tantivy::doc;
+    use tantivy::schema::Schema;
+    use tantivy::schema::FAST;
+    use tantivy::schema::TEXT;
+    use tantivy::Index;
+
+    use super::*;
+
+    fn make_indexed_split_for_test(segments_timestamps: &[&[i64]]) -> anyhow::Result<IndexedSplit> {
+        let temp_dir = tempfile::tempdir()?;
+        let mut schema_builder = Schema::builder();
+        let text_field = schema_builder.add_text_field("text", TEXT);
+        let timestamp_field = schema_builder.add_u64_field("timestamp", FAST);
+        let schema = schema_builder.build();
+        let index = Index::create_in_dir(temp_dir.path(), schema)?;
+        let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
+        let mut timerange_opt: Option<RangeInclusive<i64>> = None;
+        let mut num_docs = 0;
+        for (segment_num, segment_timestamps) in segments_timestamps.iter().enumerate() {
+            if segment_num > 0 {
+                index_writer.commit()?;
+            }
+            for &timestamp in segment_timestamps.iter() {
+                let doc = doc!(
+                    text_field => format!("timestamp is {}", timestamp),
+                    timestamp_field => timestamp
+                );
+                index_writer.add_document(doc);
+                num_docs += 1;
+                timerange_opt = Some(
+                    timerange_opt
+                        .map(|timestamp_range| {
+                            let start = timestamp.min(*timestamp_range.start());
+                            let end = timestamp.max(*timestamp_range.end());
+                            RangeInclusive::new(start, end)
+                        })
+                        .unwrap_or_else(|| RangeInclusive::new(timestamp, timestamp)),
+                )
+            }
+        }
+        // We don't emit the last segment, that's the job of the packager.
+        // In reality, the indexer does not commit at all, but it may emit segments
+        // if its memory budget is reached before the commit policy triggers.
+        //
+        // TODO: In the future we would like that kind of segment flush to emit a new split,
+        // but this will require work on tantivy.
+        let indexed_split = IndexedSplit {
+            split_id: "test-split".to_string(),
+            index_id: "test-index".to_string(),
+            time_range: timerange_opt,
+            num_docs,
+            size_in_bytes: num_docs * 15, //< bogus number
+            start_time: Instant::now(),
+            index,
+            index_writer,
+            temp_dir,
+        };
+        Ok(indexed_split)
+    }
+
+    #[tokio::test]
+    async fn test_packager_no_merger_required() -> anyhow::Result<()> {
+        let (mailbox, inbox) = create_test_mailbox();
+        let packager = Packager::new(mailbox);
+        let packager_handle = packager.spawn(KillSwitch::default());
+        let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]])?;
+        packager_handle.mailbox().send_async(indexed_split).await?;
+        assert_eq!(
+            packager_handle.process_and_observe().await,
+            Observation::Running(())
+        );
+        let packaged_splits = inbox.drain_available_message_for_test();
+        assert_eq!(packaged_splits.len(), 1);
         Ok(())
     }
 }
