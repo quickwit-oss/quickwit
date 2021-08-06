@@ -127,7 +127,7 @@ impl SearchServiceClient {
     /// Perform leaf export.
     pub async fn leaf_export(
         &mut self,
-        request: quickwit_proto::LeafSearchRequest,
+        request: quickwit_proto::LeafExportRequest,
     ) -> Result<ReceiverStream<Result<LeafExportResult, Status>>, SearchError> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {

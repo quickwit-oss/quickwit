@@ -113,8 +113,6 @@ mod test {
             end_timestamp: None,
             max_hits: 20,
             start_offset: 0,
-            fast_field: None,
-            format: String::from(""),
         };
 
         let default_field_names = vec!["title".to_string(), "desc".to_string()];

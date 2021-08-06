@@ -26,7 +26,7 @@ use async_trait::async_trait;
 
 use bytes::Bytes;
 use quickwit_metastore::Metastore;
-use quickwit_proto::LeafExportResult;
+use quickwit_proto::{ExportRequest, LeafExportRequest, LeafExportResult};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, SearchRequest,
     SearchResult,
@@ -37,7 +37,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;
 use tracing::info;
 
-use crate::collector::make_export_collector;
+use crate::collector::{convert_to_search_request, make_export_collector};
 use crate::fetch_docs;
 use crate::leaf::leaf_export;
 use crate::leaf_search;
@@ -89,13 +89,13 @@ pub trait SearchService: 'static + Send + Sync {
     /// Perfomrs a root search returning a receiver for streaming
     async fn root_export(
         &self,
-        _request: SearchRequest,
+        _request: ExportRequest,
     ) -> Result<Receiver<Result<Bytes, Infallible>>, SearchError>;
 
     /// Perform a leaf search on a given set of splits and return a stream.
     async fn leaf_export(
         &self,
-        _request: LeafSearchRequest,
+        _request: LeafExportRequest,
     ) -> Result<ReceiverStream<Result<LeafExportResult, Status>>, SearchError>;
 }
 
@@ -185,43 +185,44 @@ impl SearchService for SearchServiceImpl {
 
     async fn root_export(
         &self,
-        search_request: SearchRequest,
+        export_request: ExportRequest,
     ) -> Result<Receiver<Result<Bytes, Infallible>>, SearchError> {
         let metastore = self
             .metastore_router
-            .get(&search_request.index_id)
+            .get(&export_request.index_id)
             .cloned()
             .ok_or_else(|| SearchError::IndexDoesNotExist {
-                index_id: search_request.index_id.clone(),
+                index_id: export_request.index_id.clone(),
             })?;
 
         let response_receiver =
-            root_export(&search_request, metastore.as_ref(), &self.client_pool).await?;
+            root_export(&export_request, metastore.as_ref(), &self.client_pool).await?;
 
         Ok(response_receiver)
     }
 
     async fn leaf_export(
         &self,
-        leaf_search_request: LeafSearchRequest,
+        leaf_export_request: LeafExportRequest,
     ) -> Result<ReceiverStream<Result<LeafExportResult, Status>>, SearchError> {
-        let search_request = leaf_search_request
-            .search_request
+        let export_request = leaf_export_request
+            .export_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
-        info!(index=?search_request.index_id, splits=?leaf_search_request.split_ids, "leaf_search");
+        info!(index=?export_request.index_id, splits=?leaf_export_request.split_ids, "leaf_search");
         let metastore = self
             .metastore_router
-            .get(&search_request.index_id)
+            .get(&export_request.index_id)
             .cloned()
             .ok_or_else(|| SearchError::IndexDoesNotExist {
-                index_id: search_request.index_id.clone(),
+                index_id: export_request.index_id.clone(),
             })?;
-        let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+        let index_metadata = metastore.index_metadata(&export_request.index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
-        let split_ids = leaf_search_request.split_ids;
+        let split_ids = leaf_export_request.split_ids;
         let index_config = index_metadata.index_config;
+        let search_request = convert_to_search_request(&export_request);
         let query = index_config.query(&search_request)?;
-        let collector = make_export_collector(index_config.as_ref(), &search_request);
+        let collector = make_export_collector(index_config.as_ref(), &export_request);
 
         let leaf_search_result = leaf_export(query, collector, split_ids, storage.clone()).await?;
 

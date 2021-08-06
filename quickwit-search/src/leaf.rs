@@ -210,8 +210,7 @@ pub async fn leaf_export(
                 )
                 .await
                 .map_err(|err| (split_id.to_string(), err));
-                if result.is_ok() {
-                    let data = result.unwrap();
+                if let Ok(data) = result {
                     let _ = result_sender_clone
                         .send(Ok(data))
                         .await
@@ -220,53 +219,9 @@ pub async fn leaf_export(
             });
         }
         futures::future::join_all(tasks).await;
-
-        // let mut task_stream = tokio_stream::iter(split_ids)
-        // .map(|split_id|{
-        //     let split_storage: Arc<dyn Storage> =
-        //             quickwit_storage::add_prefix_to_storage(storage.clone(), split_id.clone());
-        //     let export_collector_for_split = export_collector.for_split(split_id.clone());
-        //     let query_clone = query.box_clone();
-        //     async move {
-        //         leaf_export_single_split(query_clone, export_collector_for_split, split_storage)
-        //             .await
-        //             .map_err(|err| (split_id.to_string(), err))
-        //     }
-        // }).buffer_unordered(10);
-
-        // while let Some(leaf_result) = task_stream.next().await {
-        //     //TODO handle error
-        //     if leaf_result.is_ok() {
-        //         let data = leaf_result.unwrap();
-        //         result_sender
-        //             .send(data)
-        //             .await
-        //             .map_err(|_| {
-        //                 SearchError::InternalError("unable to send data".to_string())
-        //             });
-        //     }
-        // }
     });
 
     Ok(ReceiverStream::new(result_receiver))
-
-    // let (search_results, errors): (Vec<_>, Vec<_>) =
-    //     split_search_results.into_iter().partition(Result::is_ok);
-    // let search_results: Vec<_> = search_results.into_iter().map(Result::unwrap).collect();
-    // let errors: Vec<_> = errors.into_iter().map(Result::unwrap_err).collect();
-
-    // let mut merged_search_results = spawn_blocking(move || collector.merge_fruits(search_results))
-    //     .await
-    //     .with_context(|| "Merging search on split results failed")??;
-
-    // merged_search_results
-    //     .failed_splits
-    //     .extend(errors.iter().map(|(split_id, err)| SplitSearchError {
-    //         split_id: split_id.to_string(),
-    //         error: format!("{:?}", err),
-    //         retryable_error: true,
-    //     }));
-    // Ok(merged_search_results)
 }
 
 /// Apply a leaf search on a single split.

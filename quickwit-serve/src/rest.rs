@@ -130,11 +130,6 @@ pub struct SearchRequestQueryString {
     /// The results with rank [start_offset..start_offset + max_hits) are returned
     #[serde(default)] // Default to 0. (We are 0-indexed)
     pub start_offset: u64,
-
-    /// The fast field to extract
-    #[serde(default)]
-    #[serde(rename(deserialize = "fastField"))]
-    pub fast_field: Option<String>,
     /// The output format.
     #[serde(default)]
     pub format: Format,
@@ -153,8 +148,6 @@ async fn search_endpoint<TSearchService: SearchService>(
         end_timestamp: search_request.end_timestamp,
         max_hits: search_request.max_hits,
         start_offset: search_request.start_offset,
-        fast_field: search_request.fast_field,
-        format: search_request.format.to_string(),
     };
     let search_result = search_service.root_search(search_request).await?;
     let search_result_json = SearchResultJson::from(search_result);
@@ -189,7 +182,6 @@ pub fn search_handler<TSearchService: SearchService>(
         .and(warp::any().map(move || search_service.clone()))
         .and_then(search)
 }
-
 
 /// This struct represents the QueryString passed to
 /// the rest API.
@@ -227,7 +219,7 @@ async fn export_endpoint<TSearchService: SearchService>(
     search_request: ExportRequestQueryString,
     search_service: &TSearchService,
 ) -> Result<hyper::Body, ApiError> {
-    let export_request = quickwit_proto::SearchRequest {
+    let export_request = quickwit_proto::ExportRequest {
         index_id,
         query: search_request.query,
         search_fields: search_request.search_fields.unwrap_or_default(),
@@ -235,8 +227,8 @@ async fn export_endpoint<TSearchService: SearchService>(
         end_timestamp: search_request.end_timestamp,
         max_hits: search_request.max_hits,
         start_offset: 0,
-        fast_field: Some(search_request.fast_field),
-        format: search_request.output_format.to_string(),
+        fast_field: search_request.fast_field,
+        output_format: search_request.output_format.to_string(),
     };
 
     let response_receiver = search_service.root_export(export_request).await?;
@@ -272,7 +264,9 @@ async fn export<TSearchService: SearchService>(
     search_service: Arc<TSearchService>,
 ) -> Result<impl warp::Reply, Infallible> {
     info!(index_id=%index_id,request=?request, "export");
-    Ok(make_streaming_reply(export_endpoint(index_id, request, &*search_service).await))
+    Ok(make_streaming_reply(
+        export_endpoint(index_id, request, &*search_service).await,
+    ))
 }
 
 pub fn export_handler<TSearchService: SearchService>(
@@ -359,7 +353,6 @@ mod tests {
                 max_hits: 10,
                 start_offset: 22,
                 format: Format::default(),
-                fast_field: None,
             }
         );
     }
@@ -383,7 +376,6 @@ mod tests {
                 max_hits: 20,
                 start_offset: 0,
                 format: Format::default(),
-                fast_field: None,
             }
         );
     }
@@ -407,7 +399,6 @@ mod tests {
                 start_offset: 0,
                 format: Format::Json,
                 search_fields: None,
-                fast_field: None,
             }
         );
     }
@@ -424,7 +415,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `fastField`, `format`."
+            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`."
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())

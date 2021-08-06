@@ -27,6 +27,7 @@ mod client;
 mod client_pool;
 mod collector;
 mod error;
+mod export;
 mod fetch_docs;
 mod filters;
 mod leaf;
@@ -34,7 +35,6 @@ mod rendezvous_hasher;
 mod root;
 mod search_result_json;
 mod service;
-mod export;
 
 ///
 /// Refer to this as `crate::Result<T>`.
@@ -58,12 +58,12 @@ pub use crate::client_pool::search_client_pool::SearchClientPool;
 pub use crate::client_pool::ClientPool;
 use crate::collector::make_collector;
 pub use crate::error::SearchError;
+pub use crate::export::OutputFormat;
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
 use crate::root::{root_export, root_search};
 pub use crate::search_result_json::SearchResultJson;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
-pub use crate::export::OutputFormat;
 
 /// Compute the SWIM port from the HTTP port.
 /// Add 1 to the HTTP port to get the SWIM port.
@@ -205,8 +205,6 @@ mod tests {
             end_timestamp: None,
             max_hits: 2,
             start_offset: 0,
-            fast_field: None,
-            format: String::from(""),
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -264,8 +262,6 @@ mod tests {
             end_timestamp: None,
             max_hits: 6,
             start_offset: 0,
-            fast_field: None,
-            format: String::from(""),
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -323,8 +319,6 @@ mod tests {
             end_timestamp: Some(20),
             max_hits: 15,
             start_offset: 0,
-            fast_field: None,
-            format: String::from(""),
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -346,8 +340,6 @@ mod tests {
             end_timestamp: Some(20),
             max_hits: 25,
             start_offset: 0,
-            fast_field: None,
-            format: String::from(""),
         };
         let single_node_result = single_node_search(
             &search_request,

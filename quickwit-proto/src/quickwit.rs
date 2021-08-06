@@ -28,10 +28,6 @@ pub struct SearchRequest {
     /// The results with rank [start_offset..start_offset + max_hits) are returned.
     #[prost(uint64, tag = "7")]
     pub start_offset: u64,
-    #[prost(string, optional, tag = "8")]
-    pub fast_field: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, tag = "9")]
-    pub format: ::prost::alloc::string::String,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -163,6 +159,54 @@ pub struct FetchDocsResult {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ExportRequest {
+    /// Index ID
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    /// Query
+    #[prost(string, tag = "2")]
+    pub query: ::prost::alloc::string::String,
+    /// Fields to search on
+    #[prost(string, repeated, tag = "3")]
+    pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Time filter
+    #[prost(int64, optional, tag = "4")]
+    pub start_timestamp: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "5")]
+    pub end_timestamp: ::core::option::Option<i64>,
+    /// Maximum number of hits to return.
+    #[prost(uint64, tag = "6")]
+    pub max_hits: u64,
+    /// First hit to return. Together with max_hits, this parameter
+    /// can be used for pagination.
+    ///
+    /// E.g.
+    /// The results with rank [start_offset..start_offset + max_hits) are returned.
+    #[prost(uint64, tag = "7")]
+    pub start_offset: u64,
+    /// Name of the fast field to export
+    #[prost(string, tag = "8")]
+    pub fast_field: ::prost::alloc::string::String,
+    /// The output format
+    #[prost(string, tag = "9")]
+    pub output_format: ::prost::alloc::string::String,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafExportRequest {
+    /// Export request. This is a perfect copy of the original export request,
+    /// that was sent to root apart from the start_offset & max_hits params.
+    #[prost(message, optional, tag = "1")]
+    pub export_request: ::core::option::Option<ExportRequest>,
+    /// Index split ids to apply the query on.
+    /// This ids are resolved from the index_uri defined in the export_request.
+    #[prost(string, repeated, tag = "2")]
+    pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafExportResult {
     /// Row of data serialized  in bytes (DocID, fast_field_value)
     #[prost(bytes = "vec", tag = "1")]
@@ -259,7 +303,7 @@ pub mod search_service_client {
         }
         pub async fn root_export(
             &mut self,
-            request: impl tonic::IntoRequest<super::SearchRequest>,
+            request: impl tonic::IntoRequest<super::ExportRequest>,
         ) -> Result<tonic::Response<tonic::codec::Streaming<super::LeafExportResult>>, tonic::Status>
         {
             self.inner.ready().await.map_err(|e| {
@@ -276,7 +320,7 @@ pub mod search_service_client {
         }
         pub async fn leaf_export(
             &mut self,
-            request: impl tonic::IntoRequest<super::LeafSearchRequest>,
+            request: impl tonic::IntoRequest<super::LeafExportRequest>,
         ) -> Result<tonic::Response<tonic::codec::Streaming<super::LeafExportResult>>, tonic::Status>
         {
             self.inner.ready().await.map_err(|e| {
@@ -345,7 +389,7 @@ pub mod search_service_server {
             + 'static;
         async fn root_export(
             &self,
-            request: tonic::Request<super::SearchRequest>,
+            request: tonic::Request<super::ExportRequest>,
         ) -> Result<tonic::Response<Self::RootExportStream>, tonic::Status>;
         #[doc = "Server streaming response type for the LeafExport method."]
         type LeafExportStream: futures_core::Stream<Item = Result<super::LeafExportResult, tonic::Status>>
@@ -354,7 +398,7 @@ pub mod search_service_server {
             + 'static;
         async fn leaf_export(
             &self,
-            request: tonic::Request<super::LeafSearchRequest>,
+            request: tonic::Request<super::LeafExportRequest>,
         ) -> Result<tonic::Response<Self::LeafExportStream>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -486,7 +530,7 @@ pub mod search_service_server {
                     #[allow(non_camel_case_types)]
                     struct RootExportSvc<T: SearchService>(pub Arc<T>);
                     impl<T: SearchService>
-                        tonic::server::ServerStreamingService<super::SearchRequest>
+                        tonic::server::ServerStreamingService<super::ExportRequest>
                         for RootExportSvc<T>
                     {
                         type Response = super::LeafExportResult;
@@ -495,7 +539,7 @@ pub mod search_service_server {
                             BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::SearchRequest>,
+                            request: tonic::Request<super::ExportRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move { (*inner).root_export(request).await };
@@ -522,7 +566,7 @@ pub mod search_service_server {
                     #[allow(non_camel_case_types)]
                     struct LeafExportSvc<T: SearchService>(pub Arc<T>);
                     impl<T: SearchService>
-                        tonic::server::ServerStreamingService<super::LeafSearchRequest>
+                        tonic::server::ServerStreamingService<super::LeafExportRequest>
                         for LeafExportSvc<T>
                     {
                         type Response = super::LeafExportResult;
@@ -531,7 +575,7 @@ pub mod search_service_server {
                             BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::LeafSearchRequest>,
+                            request: tonic::Request<super::LeafExportRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
                             let fut = async move { (*inner).leaf_export(request).await };

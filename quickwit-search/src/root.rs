@@ -28,6 +28,8 @@ use std::sync::Arc;
 use bytes::Bytes;
 use futures::StreamExt;
 use itertools::Itertools;
+use quickwit_proto::ExportRequest;
+use quickwit_proto::LeafExportRequest;
 use quickwit_proto::SplitSearchError;
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
@@ -43,6 +45,7 @@ use quickwit_proto::{
 };
 
 use crate::client_pool::Job;
+use crate::collector::convert_to_search_request;
 use crate::list_relevant_splits;
 use crate::make_collector;
 use crate::ClientPool;
@@ -430,14 +433,15 @@ pub async fn root_search(
 
 /// Perform a distributed search by streaming the result.
 pub async fn root_export(
-    search_request: &SearchRequest,
+    export_request: &ExportRequest,
     metastore: &dyn Metastore,
     client_pool: &Arc<SearchClientPool>,
 ) -> Result<Receiver<Result<Bytes, Infallible>>, SearchError> {
     let _start_instant = tokio::time::Instant::now();
 
     // Create a job for leaf node search and assign the splits that the node is responsible for based on the job.
-    let split_metadata_list = list_relevant_splits(search_request, metastore).await?;
+    let search_request = convert_to_search_request(&export_request);
+    let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
 
     // Create a hash map of SplitMetadata with split id as a key.
     let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
@@ -455,23 +459,23 @@ pub async fn root_export(
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
 
     // Create search request with start offset is 0 that used by leaf node search.
-    let mut search_request_with_offset_0 = search_request.clone();
-    search_request_with_offset_0.start_offset = 0;
-    search_request_with_offset_0.max_hits += search_request.start_offset;
+    let mut export_request_with_offset_0 = export_request.clone();
+    export_request_with_offset_0.start_offset = 0;
+    export_request_with_offset_0.max_hits += export_request.start_offset;
 
     let (result_sender, result_receiver) = tokio::sync::mpsc::channel(100);
     for (mut search_client, jobs) in assigned_leaf_search_jobs {
-        let leaf_search_request = LeafSearchRequest {
-            search_request: Some(search_request_with_offset_0.clone()),
+        let leaf_export_request = LeafExportRequest {
+            export_request: Some(export_request_with_offset_0.clone()),
             split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
         };
 
-        debug!(leaf_search_request=?leaf_search_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
+        debug!(leaf_export_request=?leaf_export_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
         let result_sender_clone = result_sender.clone();
         tokio::spawn(async move {
-            let split_ids = leaf_search_request.split_ids.to_vec();
+            let split_ids = leaf_export_request.split_ids.to_vec();
             let mut stream = search_client
-                .leaf_export(leaf_search_request)
+                .leaf_export(leaf_export_request)
                 .await
                 .map_err(|search_error| NodeSearchError {
                     search_error,
@@ -554,8 +558,6 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            fast_field: None,
-            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -620,8 +622,6 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            fast_field: None,
-            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -709,8 +709,6 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            fast_field: None,
-            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -821,8 +819,6 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            fast_field: None,
-            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -951,8 +947,6 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            fast_field: None,
-            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -1036,8 +1030,6 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            fast_field: None,
-            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -1098,8 +1090,6 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            fast_field: None,
-            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -1162,8 +1152,6 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            fast_field: None,
-            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 
@@ -1259,8 +1247,6 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            fast_field: None,
-            format: "json".to_string(),
         };
         println!("search_request={:?}", search_request);
 

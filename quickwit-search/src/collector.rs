@@ -19,6 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use itertools::Itertools;
+use quickwit_proto::ExportRequest;
 use quickwit_proto::LeafExportResult;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -284,7 +285,7 @@ impl QuickwitExportCollector {
 
 impl GenericQuickwitCollector for QuickwitExportCollector {
     fn fast_field_names(&self) -> Vec<String> {
-        return self.fast_field_names.clone();
+        self.fast_field_names.clone()
     }
 }
 
@@ -310,7 +311,7 @@ impl Collector for QuickwitExportCollector {
         let field = segment_reader
             .schema()
             .get_field(&self.requested_fast_field_name)
-            .ok_or(TantivyError::SchemaError("field does not exist".to_owned()))?;
+            .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
         let fast_field_reader = segment_reader.fast_fields().i64(field)?;
         Ok(QuickwitSegmentExportCollector {
             values: vec![],
@@ -362,7 +363,7 @@ impl QuickwitCollector {
 
 impl GenericQuickwitCollector for QuickwitCollector {
     fn fast_field_names(&self) -> Vec<String> {
-        return self.fast_field_names.clone();
+        self.fast_field_names.clone()
     }
 }
 
@@ -471,10 +472,7 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
 }
 
 /// Extracts all fast field names.
-fn extract_fast_field_names(
-    search_request: &SearchRequest,
-    index_config: &dyn IndexConfig,
-) -> Vec<String> {
+fn extract_fast_field_names(index_config: &dyn IndexConfig) -> Vec<String> {
     let mut fast_fields = vec![];
     if let Some(timestamp_field) = index_config.timestamp_field_name() {
         fast_fields.push(timestamp_field);
@@ -484,10 +482,6 @@ fn extract_fast_field_names(
         if !fast_fields.contains(&field_name) {
             fast_fields.push(field_name);
         }
-    }
-
-    if let Some(field_name) = &search_request.fast_field {
-        fast_fields.push((*field_name).clone());
     }
 
     fast_fields.into_iter().unique().collect()
@@ -503,25 +497,42 @@ pub fn make_collector(
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by: index_config.default_sort_by(),
-        fast_field_names: extract_fast_field_names(&search_request, index_config),
+        fast_field_names: extract_fast_field_names(index_config),
         timestamp_field_opt: index_config.timestamp_field(),
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,
     }
 }
 
+/// Helper to build QuickwitExportCollector.
 pub fn make_export_collector(
     index_config: &dyn IndexConfig,
-    search_request: &SearchRequest,
+    export_request: &ExportRequest,
 ) -> QuickwitExportCollector {
+    let mut fast_fields = vec![export_request.fast_field.clone()];
+    if let Some(timestamp_field) = index_config.timestamp_field_name() {
+        fast_fields.push(timestamp_field);
+    }
     QuickwitExportCollector {
         split_id: String::new(),
-        fast_field_names: extract_fast_field_names(&search_request, index_config),
-        //TODO find a good default or 404
-        requested_fast_field_name: search_request.fast_field.clone().unwrap_or_default(),
+        fast_field_names: fast_fields,
+        requested_fast_field_name: export_request.fast_field.clone(),
         timestamp_field_opt: index_config.timestamp_field(),
-        start_timestamp_opt: search_request.start_timestamp,
-        end_timestamp_opt: search_request.end_timestamp,
+        start_timestamp_opt: export_request.start_timestamp,
+        end_timestamp_opt: export_request.end_timestamp,
+    }
+}
+
+/// Helper to convert ExportRequest to SearchRequest
+pub fn convert_to_search_request(export_request: &ExportRequest) -> SearchRequest {
+    SearchRequest {
+        index_id: export_request.index_id.clone(),
+        query: export_request.query.clone(),
+        search_fields: export_request.search_fields.clone(),
+        start_timestamp: export_request.start_timestamp,
+        end_timestamp: export_request.end_timestamp,
+        max_hits: export_request.max_hits,
+        start_offset: export_request.start_offset,
     }
 }
 

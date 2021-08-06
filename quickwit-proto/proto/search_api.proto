@@ -43,9 +43,9 @@ service SearchService {
   /// This methods takes `PartialHit`s and returns `Hit`s.
   rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResult);
 
-  rpc RootExport(SearchRequest) returns (stream LeafExportResult);
+  rpc RootExport(ExportRequest) returns (stream LeafExportResult);
 
-  rpc LeafExport(LeafSearchRequest) returns (stream LeafExportResult);
+  rpc LeafExport(LeafExportRequest) returns (stream LeafExportResult);
 }
 
 // -- Search -------------------
@@ -73,10 +73,6 @@ message SearchRequest {
   // E.g.
   // The results with rank [start_offset..start_offset + max_hits) are returned.
   uint64 start_offset = 7;
-
-  optional string fast_field = 8;
-
-  string format = 9;
 }
 
 message SearchResult {
@@ -181,6 +177,49 @@ message FetchDocsResult {
 
 
 // -- Export -------------------
+
+
+message ExportRequest {
+  // Index ID
+  string index_id = 1;
+
+  // Query
+  string query = 2;
+
+  // Fields to search on
+  repeated string  search_fields = 3;
+  
+  // Time filter
+  optional int64 start_timestamp = 4;
+  optional int64 end_timestamp = 5;
+
+  // Maximum number of hits to return.
+  uint64 max_hits = 6;
+
+  // First hit to return. Together with max_hits, this parameter
+  // can be used for pagination.
+  //
+  // E.g.
+  // The results with rank [start_offset..start_offset + max_hits) are returned.
+  uint64 start_offset = 7;
+
+  // Name of the fast field to export
+  string fast_field = 8;
+
+  // The output format
+  string output_format = 9;
+}
+
+message LeafExportRequest {
+  // Export request. This is a perfect copy of the original export request,
+  // that was sent to root apart from the start_offset & max_hits params.
+  ExportRequest export_request = 1;
+
+  // Index split ids to apply the query on.
+  // This ids are resolved from the index_uri defined in the export_request.
+  repeated string split_ids = 2;
+}
+
 
 message LeafExportResult {
   // Row of data serialized  in bytes (DocID, fast_field_value)
