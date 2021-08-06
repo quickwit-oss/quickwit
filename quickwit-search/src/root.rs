@@ -26,7 +26,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use futures::future::try_join_all;
 use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_proto::SplitSearchError;
@@ -447,7 +446,6 @@ pub async fn root_export(
         .collect();
 
     // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
-    //
     let leaf_search_jobs: Vec<Job> =
         job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
 
@@ -462,73 +460,35 @@ pub async fn root_export(
     search_request_with_offset_0.max_hits += search_request.start_offset;
 
     let (result_sender, result_receiver) = tokio::sync::mpsc::channel(100);
+    for (mut search_client, jobs) in assigned_leaf_search_jobs {
+        let leaf_search_request = LeafSearchRequest {
+            search_request: Some(search_request_with_offset_0.clone()),
+            split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
+        };
 
-    let mut assigned_leaf_search_jobs_stream = tokio_stream::iter(assigned_leaf_search_jobs)
-        .map(|(mut search_client, jobs)| {
-            let leaf_search_request = LeafSearchRequest {
-                search_request: Some(search_request_with_offset_0.clone()),
-                split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
-            };
-
-            debug!(leaf_search_request=?leaf_search_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
-            async move {
-                let addr = search_client.grpc_addr();
-                let handle = async move {
-                    let split_ids = leaf_search_request.split_ids.to_vec();
-                    search_client
-                        .leaf_export(leaf_search_request)
-                        .await
-                        .map_err(|search_error| NodeSearchError {
-                            search_error,
-                            split_ids,
-                        })
-                };
-                (addr, handle)
+        debug!(leaf_search_request=?leaf_search_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
+        let result_sender_clone = result_sender.clone();
+        tokio::spawn(async move {
+            let split_ids = leaf_search_request.split_ids.to_vec();
+            let mut stream = search_client
+                .leaf_export(leaf_search_request)
+                .await
+                .map_err(|search_error| NodeSearchError {
+                    search_error,
+                    split_ids,
+                })?;
+            while let Some(result) = stream.next().await {
+                let data = result.unwrap();
+                result_sender_clone
+                    .send(Ok(bytes::Bytes::from(data.row)))
+                    .await
+                    .unwrap();
             }
-        }).buffer_unordered(10);
-
-    let mut result_sender_futures = vec![];
-    result_sender
-        .send(Ok(bytes::Bytes::from(row_header(search_request))))
-        .await
-        .map_err(|_| SearchError::InternalError("unable to send data".to_string()))?;
-
-    while let Some((_addr, handle)) = assigned_leaf_search_jobs_stream.next().await {
-        //TODO check error & add to retry list
-        // currently we are not handling the complex retry logic
-        if let Ok(mut search_result_stream) = handle.await {
-            //send to streaming channel
-            let result_sender_clone = result_sender.clone();
-            result_sender_futures.push(tokio::spawn(async move {
-                while let Some(data) = search_result_stream.next().await {
-                    let data =
-                        data.map_err(|_| SearchError::InternalError("grpc error".to_string()))?;
-
-                    result_sender_clone
-                        .send(Ok(bytes::Bytes::from(data.row)))
-                        .await
-                        .map_err(|_| {
-                            SearchError::InternalError("unable to send data".to_string())
-                        })?;
-                }
-                Result::<(), SearchError>::Ok(())
-            }));
-        }
+            Result::<(), NodeSearchError>::Ok(())
+        });
     }
 
-    try_join_all(result_sender_futures).await?;
-
     Ok(result_receiver)
-}
-
-/// Format the data header
-pub(crate) fn row_header(request: &SearchRequest) -> Vec<u8> {
-    //TODO take into account the format (csv, rawbin)
-    format!(
-        "docId, {}\n",
-        request.fast_field.clone().unwrap_or_default()
-    )
-    .into_bytes()
 }
 
 #[cfg(test)]

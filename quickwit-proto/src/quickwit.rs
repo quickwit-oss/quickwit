@@ -257,6 +257,23 @@ pub mod search_service_client {
             let path = http::uri::PathAndQuery::from_static("/quickwit.SearchService/FetchDocs");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn root_export(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SearchRequest>,
+        ) -> Result<tonic::Response<tonic::codec::Streaming<super::LeafExportResult>>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/quickwit.SearchService/RootExport");
+            self.inner
+                .server_streaming(request.into_request(), path, codec)
+                .await
+        }
         pub async fn leaf_export(
             &mut self,
             request: impl tonic::IntoRequest<super::LeafSearchRequest>,
@@ -321,6 +338,15 @@ pub mod search_service_server {
             &self,
             request: tonic::Request<super::FetchDocsRequest>,
         ) -> Result<tonic::Response<super::FetchDocsResult>, tonic::Status>;
+        #[doc = "Server streaming response type for the RootExport method."]
+        type RootExportStream: futures_core::Stream<Item = Result<super::LeafExportResult, tonic::Status>>
+            + Send
+            + Sync
+            + 'static;
+        async fn root_export(
+            &self,
+            request: tonic::Request<super::SearchRequest>,
+        ) -> Result<tonic::Response<Self::RootExportStream>, tonic::Status>;
         #[doc = "Server streaming response type for the LeafExport method."]
         type LeafExportStream: futures_core::Stream<Item = Result<super::LeafExportResult, tonic::Status>>
             + Send
@@ -452,6 +478,42 @@ pub mod search_service_server {
                             tonic::server::Grpc::new(codec)
                         };
                         let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.SearchService/RootExport" => {
+                    #[allow(non_camel_case_types)]
+                    struct RootExportSvc<T: SearchService>(pub Arc<T>);
+                    impl<T: SearchService>
+                        tonic::server::ServerStreamingService<super::SearchRequest>
+                        for RootExportSvc<T>
+                    {
+                        type Response = super::LeafExportResult;
+                        type ResponseStream = T::RootExportStream;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).root_export(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1;
+                        let inner = inner.0;
+                        let method = RootExportSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

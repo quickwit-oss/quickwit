@@ -18,18 +18,21 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::collector::{GenericQuickwitCollector, QuickwitExportCollector};
 use crate::{collector::QuickwitCollector, SearchError};
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory, HOTCACHE_FILENAME};
-use quickwit_proto::{LeafSearchResult, SplitSearchError};
+use quickwit_proto::{LeafExportResult, LeafSearchResult, SplitSearchError};
 use quickwit_storage::Storage;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 use tantivy::{collector::Collector, query::Query, Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
+use tokio_stream::wrappers::ReceiverStream;
+use tonic::Status;
 
 /// Opens a `tantivy::Index` for the given split.
 ///
@@ -57,19 +60,19 @@ pub(crate) async fn open_index(split_storage: Arc<dyn Storage>) -> anyhow::Resul
 async fn warmup(
     searcher: &Searcher,
     query: &dyn Query,
-    quickwit_collector: &QuickwitCollector,
+    fast_field_names: Vec<String>,
 ) -> anyhow::Result<()> {
     warm_up_terms(searcher, query).await?;
-    warm_up_fastfields(searcher, quickwit_collector).await?;
+    warm_up_fastfields(searcher, fast_field_names).await?;
     Ok(())
 }
 
 async fn warm_up_fastfields(
     searcher: &Searcher,
-    quickwit_collector: &QuickwitCollector,
+    fast_field_names: Vec<String>,
 ) -> anyhow::Result<()> {
     let mut fast_fields = Vec::new();
-    for fast_field_name in quickwit_collector.fast_field_names.iter() {
+    for fast_field_name in fast_field_names.iter() {
         let fast_field = searcher
             .schema()
             .get_field(fast_field_name)
@@ -133,7 +136,7 @@ async fn leaf_search_single_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
-    warmup(&*searcher, query, &quickwit_collector).await?;
+    warmup(&*searcher, query, quickwit_collector.fast_field_names()).await?;
     let leaf_search_result = searcher.search(query, &quickwit_collector)?;
     Ok(leaf_search_result)
 }
@@ -181,4 +184,106 @@ pub async fn leaf_search(
             retryable_error: true,
         }));
     Ok(merged_search_results)
+}
+
+/// `leaf` step of export.
+pub async fn leaf_export(
+    query: Box<dyn Query>,
+    export_collector: QuickwitExportCollector,
+    split_ids: Vec<String>,
+    storage: Arc<dyn Storage>,
+) -> Result<ReceiverStream<Result<LeafExportResult, Status>>, SearchError> {
+    let (result_sender, result_receiver) = tokio::sync::mpsc::channel(100);
+    tokio::spawn(async move {
+        let mut tasks = vec![];
+        for split_id in split_ids {
+            let split_storage: Arc<dyn Storage> =
+                quickwit_storage::add_prefix_to_storage(storage.clone(), split_id.clone());
+            let export_collector_for_split = export_collector.for_split(split_id.clone());
+            let query_clone = query.box_clone();
+            let result_sender_clone = result_sender.clone();
+            tasks.push(async move {
+                let result = leaf_export_single_split(
+                    query_clone,
+                    export_collector_for_split,
+                    split_storage,
+                )
+                .await
+                .map_err(|err| (split_id.to_string(), err));
+                if result.is_ok() {
+                    let data = result.unwrap();
+                    let _ = result_sender_clone
+                        .send(Ok(data))
+                        .await
+                        .map_err(|_| SearchError::InternalError("unable to send data".to_string()));
+                }
+            });
+        }
+        futures::future::join_all(tasks).await;
+
+        // let mut task_stream = tokio_stream::iter(split_ids)
+        // .map(|split_id|{
+        //     let split_storage: Arc<dyn Storage> =
+        //             quickwit_storage::add_prefix_to_storage(storage.clone(), split_id.clone());
+        //     let export_collector_for_split = export_collector.for_split(split_id.clone());
+        //     let query_clone = query.box_clone();
+        //     async move {
+        //         leaf_export_single_split(query_clone, export_collector_for_split, split_storage)
+        //             .await
+        //             .map_err(|err| (split_id.to_string(), err))
+        //     }
+        // }).buffer_unordered(10);
+
+        // while let Some(leaf_result) = task_stream.next().await {
+        //     //TODO handle error
+        //     if leaf_result.is_ok() {
+        //         let data = leaf_result.unwrap();
+        //         result_sender
+        //             .send(data)
+        //             .await
+        //             .map_err(|_| {
+        //                 SearchError::InternalError("unable to send data".to_string())
+        //             });
+        //     }
+        // }
+    });
+
+    Ok(ReceiverStream::new(result_receiver))
+
+    // let (search_results, errors): (Vec<_>, Vec<_>) =
+    //     split_search_results.into_iter().partition(Result::is_ok);
+    // let search_results: Vec<_> = search_results.into_iter().map(Result::unwrap).collect();
+    // let errors: Vec<_> = errors.into_iter().map(Result::unwrap_err).collect();
+
+    // let mut merged_search_results = spawn_blocking(move || collector.merge_fruits(search_results))
+    //     .await
+    //     .with_context(|| "Merging search on split results failed")??;
+
+    // merged_search_results
+    //     .failed_splits
+    //     .extend(errors.iter().map(|(split_id, err)| SplitSearchError {
+    //         split_id: split_id.to_string(),
+    //         error: format!("{:?}", err),
+    //         retryable_error: true,
+    //     }));
+    // Ok(merged_search_results)
+}
+
+/// Apply a leaf search on a single split.
+async fn leaf_export_single_split(
+    query: Box<dyn Query>,
+    quickwit_export_collector: QuickwitExportCollector,
+    storage: Arc<dyn Storage>,
+) -> crate::Result<LeafExportResult> {
+    let index = open_index(storage).await?;
+    let reader = index
+        .reader_builder()
+        .num_searchers(1)
+        .reload_policy(ReloadPolicy::Manual)
+        .try_into()?;
+    let searcher = reader.searcher();
+    let fast_field_names = quickwit_export_collector.fast_field_names();
+    warmup(&*searcher, query.as_ref(), fast_field_names).await?;
+    let leaf_search_result = searcher.search(query.as_ref(), &quickwit_export_collector)?;
+    Ok(leaf_search_result)
 }

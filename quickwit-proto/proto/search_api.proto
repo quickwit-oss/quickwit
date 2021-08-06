@@ -43,6 +43,8 @@ service SearchService {
   /// This methods takes `PartialHit`s and returns `Hit`s.
   rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResult);
 
+  rpc RootExport(SearchRequest) returns (stream LeafExportResult);
+
   rpc LeafExport(LeafSearchRequest) returns (stream LeafExportResult);
 }
 

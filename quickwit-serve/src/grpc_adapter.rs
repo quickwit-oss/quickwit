@@ -23,9 +23,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use quickwit_proto::{search_service_server as grpc, LeafExportResult, LeafSearchRequest};
+use quickwit_proto::{
+    search_service_server as grpc, LeafExportResult, LeafSearchRequest, SearchRequest,
+};
 use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
-use tokio::sync::mpsc::channel;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;
 
@@ -86,33 +87,36 @@ impl grpc::SearchService for GrpcAdapter {
         &self,
         request: tonic::Request<LeafSearchRequest>,
     ) -> Result<tonic::Response<Self::LeafExportStream>, tonic::Status> {
-        let (sender, receiver) = channel(100);
-        let service = self.0.clone();
-        tokio::spawn(async move {
-            let leaf_search_request = request.into_inner();
-            let leaf_search_result = service
-                .leaf_search(leaf_search_request)
-                .await
-                .map_err(convert_error_to_tonic_status)
-                .unwrap();
+        let leaf_search_request = request.into_inner();
+        let leaf_search_result = self
+            .0
+            .leaf_export(leaf_search_request)
+            .await
+            .map_err(convert_error_to_tonic_status)?;
+        Ok(tonic::Response::new(leaf_search_result))
+    }
 
-            //TODO change loop to iter stream
-            for hit in leaf_search_result.partial_hits {
-                //TODO take into account request format (currently its just csv)
-                sender
-                    .send(Ok(LeafExportResult {
-                        row: format!(
-                            "{}, {}\n",
-                            hit.doc_id,
-                            hit.fast_field_value.unwrap_or_default()
-                        )
-                        .into_bytes(),
-                    }))
-                    .await
-                    .unwrap();
-            }
-        });
+    type RootExportStream = ReceiverStream<Result<LeafExportResult, Status>>;
 
+    async fn root_export(
+        &self,
+        request: tonic::Request<SearchRequest>,
+    ) -> Result<tonic::Response<Self::RootExportStream>, tonic::Status> {
+        let search_request = request.into_inner();
+        let mut search_result = self
+            .0
+            .root_export(search_request)
+            .await
+            .map_err(convert_error_to_tonic_status)?;
+        let (sender, receiver) = tokio::sync::mpsc::channel(100);
+        while let Some(data) = search_result.recv().await {
+            let raw_bytes = data.unwrap();
+            let _ = sender
+                .send(Ok(LeafExportResult {
+                    row: raw_bytes.to_vec(),
+                }))
+                .await;
+        }
         Ok(tonic::Response::new(ReceiverStream::new(receiver)))
     }
 }

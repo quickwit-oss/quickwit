@@ -18,13 +18,10 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use anyhow::Context;
 use itertools::Itertools;
+use quickwit_proto::LeafExportResult;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use tantivy::fastfield::MultiValuedFastFieldReader;
-use tantivy::schema::Cardinality;
-use tantivy::schema::FieldType;
 use tantivy::TantivyError;
 
 use quickwit_index_config::IndexConfig;
@@ -151,7 +148,6 @@ pub struct QuickwitSegmentCollector {
     max_hits: usize,
     segment_ord: u32,
     timestamp_filter_opt: Option<TimestampFilter>,
-    fast_field_reader: Option<GenericFastFieldReader>,
 }
 
 impl QuickwitSegmentCollector {
@@ -184,25 +180,6 @@ impl QuickwitSegmentCollector {
         }
     }
 
-    // TODO (Help Needed): idealy we should create a separate collector for export
-    // but this might involve duplicating things like warmup and other functions.
-    // Come up with a common type that embodies the common functionalities so that
-    // most function implementations that need the collector stay the same (Generic or Trait object).
-    // For now we are asumming if fast_field is requested then we are exporting,
-    // meaning this will just collect all of them
-    fn collect_all(&mut self, doc_id: DocId) {
-        //TODO: No sorting during export we could as well forget this
-        let sorting_field_value: u64 = self.sort_by.compute_sorting_field(doc_id);
-        if let Some(fast_field_reader) = &self.fast_field_reader {
-            let fast_field_value = fast_field_reader.get_value(doc_id);
-            self.hits.push(PartialHitHeapItem {
-                sorting_field_value,
-                doc_id,
-                fast_field_value,
-            });
-        }
-    }
-
     fn accept_document(&self, doc_id: DocId) -> bool {
         if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
             return timestamp_filter.is_within_range(doc_id);
@@ -220,11 +197,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
         }
 
         self.num_hits += 1;
-        if self.fast_field_reader.is_some() {
-            self.collect_all(doc_id);
-        } else {
-            self.collect_top_k(doc_id);
-        }
+        self.collect_top_k(doc_id);
     }
 
     fn harvest(self) -> LeafSearchResult {
@@ -252,6 +225,117 @@ impl SegmentCollector for QuickwitSegmentCollector {
     }
 }
 
+pub struct QuickwitSegmentExportCollector {
+    values: Vec<u8>,
+    timestamp_filter_opt: Option<TimestampFilter>,
+    fast_field_reader: DynamicFastFieldReader<i64>,
+}
+
+impl QuickwitSegmentExportCollector {
+    fn accept_document(&self, doc_id: DocId) -> bool {
+        if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
+            return timestamp_filter.is_within_range(doc_id);
+        }
+        true
+    }
+}
+
+impl SegmentCollector for QuickwitSegmentExportCollector {
+    type Fruit = LeafExportResult;
+
+    fn collect(&mut self, doc_id: DocId, _score: Score) {
+        if !self.accept_document(doc_id) {
+            return;
+        }
+        let fast_field_value = self.fast_field_reader.get(doc_id);
+        //TODO: change format (csv hard coded)
+        self.values
+            .extend(format!("{}\n", fast_field_value).as_bytes());
+        //self.values.extend_from_slice(&fast_field_value.to_le_bytes());
+    }
+
+    fn harvest(self) -> LeafExportResult {
+        LeafExportResult { row: self.values }
+    }
+}
+
+/// The quickwit generic collector.
+pub trait GenericQuickwitCollector {
+    fn fast_field_names(&self) -> Vec<String>;
+}
+
+#[derive(Clone)]
+pub struct QuickwitExportCollector {
+    pub split_id: String,
+    fast_field_names: Vec<String>,
+    pub timestamp_field_opt: Option<Field>,
+    pub requested_fast_field_name: String,
+    pub start_timestamp_opt: Option<i64>,
+    pub end_timestamp_opt: Option<i64>,
+}
+
+impl QuickwitExportCollector {
+    pub fn for_split(&self, split_id: String) -> Self {
+        let mut self_clone = self.clone();
+        self_clone.split_id = split_id;
+        self_clone
+    }
+}
+
+impl GenericQuickwitCollector for QuickwitExportCollector {
+    fn fast_field_names(&self) -> Vec<String> {
+        return self.fast_field_names.clone();
+    }
+}
+
+impl Collector for QuickwitExportCollector {
+    type Child = QuickwitSegmentExportCollector;
+    type Fruit = LeafExportResult;
+
+    fn for_segment(
+        &self,
+        _segment_ord: SegmentOrdinal,
+        segment_reader: &SegmentReader,
+    ) -> tantivy::Result<Self::Child> {
+        let timestamp_filter_opt = if let Some(timestamp_field) = self.timestamp_field_opt {
+            TimestampFilter::new(
+                timestamp_field,
+                self.start_timestamp_opt,
+                self.end_timestamp_opt,
+                segment_reader,
+            )?
+        } else {
+            None
+        };
+        let field = segment_reader
+            .schema()
+            .get_field(&self.requested_fast_field_name)
+            .ok_or(TantivyError::SchemaError("field does not exist".to_owned()))?;
+        let fast_field_reader = segment_reader.fast_fields().i64(field)?;
+        Ok(QuickwitSegmentExportCollector {
+            values: vec![],
+            timestamp_filter_opt,
+            fast_field_reader,
+        })
+    }
+
+    fn requires_scoring(&self) -> bool {
+        // We do not need BM25 scoring in Quickwit.
+        // By returning false, we inform tantivy that it does not need to decompress
+        // term frequencies.
+        false
+    }
+
+    fn merge_fruits(&self, segment_fruits: Vec<LeafExportResult>) -> tantivy::Result<Self::Fruit> {
+        let rows = segment_fruits
+            .iter()
+            .map(|fruit| fruit.row.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+        Ok(LeafExportResult { row: rows })
+    }
+}
+
 /// The quickwit collector is the tantivy Collector used in Quickwit.
 ///
 /// It defines the data that should be accumulated about the documents matching
@@ -263,7 +347,6 @@ pub struct QuickwitCollector {
     pub max_hits: usize,
     pub sort_by: SortBy,
     pub fast_field_names: Vec<String>,
-    pub requested_fast_field_name: Option<String>,
     pub timestamp_field_opt: Option<Field>,
     pub start_timestamp_opt: Option<i64>,
     pub end_timestamp_opt: Option<i64>,
@@ -274,6 +357,12 @@ impl QuickwitCollector {
         let mut self_clone = self.clone();
         self_clone.split_id = split_id;
         self_clone
+    }
+}
+
+impl GenericQuickwitCollector for QuickwitCollector {
+    fn fast_field_names(&self) -> Vec<String> {
+        return self.fast_field_names.clone();
     }
 }
 
@@ -302,15 +391,6 @@ impl Collector for QuickwitCollector {
             None
         };
 
-        // construct fast field reader if any
-        let fast_field_reader = if let Some(fast_field_name) = &self.requested_fast_field_name {
-            let reader = GenericFastFieldReader::new(fast_field_name, segment_reader)
-                .map_err(|err| TantivyError::SchemaError(err.to_string()))?;
-            Some(reader)
-        } else {
-            None
-        };
-
         Ok(QuickwitSegmentCollector {
             num_hits: 0u64,
             split_id: self.split_id.clone(),
@@ -319,7 +399,6 @@ impl Collector for QuickwitCollector {
             segment_ord,
             max_hits: leaf_max_hits,
             timestamp_filter_opt,
-            fast_field_reader,
         })
     }
 
@@ -342,49 +421,6 @@ impl Collector for QuickwitCollector {
             .drain(0..self.start_offset)
             .count(); //< we just use count as a way to consume the entire iterator.
         Ok(merged_leaf_result)
-    }
-}
-
-enum GenericFastFieldReader {
-    I64(DynamicFastFieldReader<i64>),
-    I64s(MultiValuedFastFieldReader<i64>),
-}
-
-impl GenericFastFieldReader {
-    pub fn new(field_name: &str, segment_reader: &SegmentReader) -> anyhow::Result<Self> {
-        let field = segment_reader
-            .schema()
-            .get_field(field_name)
-            .context("Field does not exist")?;
-        let field_entry = segment_reader.schema().get_field_entry(field);
-        let field_reader = match field_entry.field_type() {
-            FieldType::I64(options) => match options.get_fastfield_cardinality() {
-                Some(Cardinality::SingleValue) => {
-                    GenericFastFieldReader::I64(segment_reader.fast_fields().i64(field)?)
-                }
-                Some(Cardinality::MultiValues) => {
-                    GenericFastFieldReader::I64s(segment_reader.fast_fields().i64s(field)?)
-                }
-                _ => anyhow::bail!("Could not fetch cardinality."),
-            },
-            _ => anyhow::bail!("Only i64 is supported for now."),
-        };
-
-        Ok(field_reader)
-    }
-
-    pub fn get_value(&self, doc_id: DocId) -> Option<i64> {
-        let mut values = vec![];
-        match &self {
-            Self::I64(reader) => values.push(reader.get(doc_id)),
-            Self::I64s(reader) => reader.get_vals(doc_id, &mut values),
-        };
-
-        if values.is_empty() {
-            None
-        } else {
-            Some(values[0])
-        }
     }
 }
 
@@ -468,7 +504,21 @@ pub fn make_collector(
         max_hits: search_request.max_hits as usize,
         sort_by: index_config.default_sort_by(),
         fast_field_names: extract_fast_field_names(&search_request, index_config),
-        requested_fast_field_name: search_request.fast_field.clone(),
+        timestamp_field_opt: index_config.timestamp_field(),
+        start_timestamp_opt: search_request.start_timestamp,
+        end_timestamp_opt: search_request.end_timestamp,
+    }
+}
+
+pub fn make_export_collector(
+    index_config: &dyn IndexConfig,
+    search_request: &SearchRequest,
+) -> QuickwitExportCollector {
+    QuickwitExportCollector {
+        split_id: String::new(),
+        fast_field_names: extract_fast_field_names(&search_request, index_config),
+        //TODO find a good default or 404
+        requested_fast_field_name: search_request.fast_field.clone().unwrap_or_default(),
         timestamp_field_opt: index_config.timestamp_field(),
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,

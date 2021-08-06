@@ -33,10 +33,13 @@ use quickwit_proto::{
 };
 use quickwit_storage::StorageUriResolver;
 use tokio::sync::mpsc::Receiver;
-use tonic::Streaming;
+use tokio_stream::wrappers::ReceiverStream;
+use tonic::Status;
 use tracing::info;
 
+use crate::collector::make_export_collector;
 use crate::fetch_docs;
+use crate::leaf::leaf_export;
 use crate::leaf_search;
 use crate::make_collector;
 use crate::SearchClientPool;
@@ -93,7 +96,7 @@ pub trait SearchService: 'static + Send + Sync {
     async fn leaf_export(
         &self,
         _request: LeafSearchRequest,
-    ) -> Result<Streaming<LeafExportResult>, SearchError>;
+    ) -> Result<ReceiverStream<Result<LeafExportResult, Status>>, SearchError>;
 }
 
 impl SearchServiceImpl {
@@ -200,9 +203,28 @@ impl SearchService for SearchServiceImpl {
 
     async fn leaf_export(
         &self,
-        _request: LeafSearchRequest,
-    ) -> Result<Streaming<LeafExportResult>, SearchError> {
-        //TODO implement when adding tests
-        unimplemented!()
+        leaf_search_request: LeafSearchRequest,
+    ) -> Result<ReceiverStream<Result<LeafExportResult, Status>>, SearchError> {
+        let search_request = leaf_search_request
+            .search_request
+            .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
+        info!(index=?search_request.index_id, splits=?leaf_search_request.split_ids, "leaf_search");
+        let metastore = self
+            .metastore_router
+            .get(&search_request.index_id)
+            .cloned()
+            .ok_or_else(|| SearchError::IndexDoesNotExist {
+                index_id: search_request.index_id.clone(),
+            })?;
+        let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+        let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let split_ids = leaf_search_request.split_ids;
+        let index_config = index_metadata.index_config;
+        let query = index_config.query(&search_request)?;
+        let collector = make_export_collector(index_config.as_ref(), &search_request);
+
+        let leaf_search_result = leaf_export(query, collector, split_ids, storage.clone()).await?;
+
+        Ok(leaf_search_result)
     }
 }

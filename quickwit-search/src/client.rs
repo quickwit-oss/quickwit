@@ -25,10 +25,11 @@ use std::sync::Arc;
 
 use http::Uri;
 use quickwit_proto::LeafExportResult;
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Channel;
 use tonic::transport::Endpoint;
 use tonic::Request;
-use tonic::Streaming;
+use tonic::Status;
 
 use crate::error::parse_grpc_error;
 use crate::SearchError;
@@ -127,15 +128,23 @@ impl SearchServiceClient {
     pub async fn leaf_export(
         &mut self,
         request: quickwit_proto::LeafSearchRequest,
-    ) -> Result<Streaming<LeafExportResult>, SearchError> {
+    ) -> Result<ReceiverStream<Result<LeafExportResult, Status>>, SearchError> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);
-                let tonic_result = grpc_client
+                let mut tonic_result = grpc_client
                     .leaf_export(tonic_request)
                     .await
-                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-                Ok(tonic_result.into_inner())
+                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
+                    .into_inner();
+
+                //TODO find a transparent type to achive this
+                let (sender, receiver) = tokio::sync::mpsc::channel(100);
+                while let Some(data) = tonic_result.message().await.unwrap() {
+                    let _ = sender.send(Ok(data)).await;
+                }
+
+                Ok(ReceiverStream::new(receiver))
             }
             SearchServiceClientImpl::Local(service) => service.leaf_export(request).await,
         }
