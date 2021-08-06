@@ -36,6 +36,7 @@ use tantivy::TantivyError;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::spawn_blocking;
 use tokio::task::JoinHandle;
+use tonic::Status;
 use tracing::*;
 
 use quickwit_metastore::{Metastore, SplitMetadata};
@@ -473,22 +474,22 @@ pub async fn root_export(
         debug!(leaf_export_request=?leaf_export_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
         let result_sender_clone = result_sender.clone();
         tokio::spawn(async move {
-            let split_ids = leaf_export_request.split_ids.to_vec();
             let mut stream = search_client
                 .leaf_export(leaf_export_request)
                 .await
-                .map_err(|search_error| NodeSearchError {
-                    search_error,
-                    split_ids,
-                })?;
-            while let Some(result) = stream.next().await {
-                let data = result.unwrap();
+                .map_err(SearchError::convert_to_tonic_status)?;
+            while let Some(leaf_result) = stream.next().await {
+                let leaf_data = leaf_result?;
                 result_sender_clone
-                    .send(Ok(bytes::Bytes::from(data.row)))
+                    .send(Ok(bytes::Bytes::from(leaf_data.row)))
                     .await
-                    .unwrap();
+                    .map_err(|_| {
+                        SearchError::convert_to_tonic_status(SearchError::InternalError(
+                            "Unable to send LeafExportResult".to_string(),
+                        ))
+                    })?;
             }
-            Result::<(), NodeSearchError>::Ok(())
+            Result::<(), Status>::Ok(())
         });
     }
 

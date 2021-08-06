@@ -138,7 +138,7 @@ impl SearchServiceClient {
                     .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
                     .into_inner();
 
-                //TODO find a transparent type to achive this
+                //TODO Try to find a transparent type to achive this wrapping
                 let (sender, receiver) = tokio::sync::mpsc::channel(100);
                 while let Some(data) = tonic_result.message().await.unwrap() {
                     let _ = sender.send(Ok(data)).await;

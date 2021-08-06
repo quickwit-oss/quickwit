@@ -203,22 +203,39 @@ pub async fn leaf_export(
             let query_clone = query.box_clone();
             let result_sender_clone = result_sender.clone();
             tasks.push(async move {
-                let result = leaf_export_single_split(
+                let leaf_split_result = leaf_export_single_split(
                     query_clone,
                     export_collector_for_split,
                     split_storage,
                 )
                 .await
-                .map_err(|err| (split_id.to_string(), err));
-                if let Ok(data) = result {
-                    let _ = result_sender_clone
-                        .send(Ok(data))
-                        .await
-                        .map_err(|_| SearchError::InternalError("unable to send data".to_string()));
-                }
+                .map_err(|_| SearchError::InternalError(format!("Split failed {}", split_id)))?;
+
+                result_sender_clone
+                    .send(Ok(leaf_split_result))
+                    .await
+                    .map_err(|_| {
+                        SearchError::InternalError(format!("Split failed {}", split_id))
+                    })?;
+
+                Result::<(), SearchError>::Ok(())
             });
         }
-        futures::future::join_all(tasks).await;
+
+        let results = futures::future::join_all(tasks).await;
+        let failed_splits = results
+            .into_iter()
+            .filter(|result| result.is_err())
+            .map(|error| error.unwrap_err().to_string())
+            .collect_vec();
+        if !failed_splits.is_empty() {
+            return Err(SearchError::InternalError(format!(
+                "Some splits failed {:?}",
+                failed_splits
+            )));
+        }
+
+        Ok(())
     });
 
     Ok(ReceiverStream::new(result_receiver))
