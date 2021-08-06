@@ -540,14 +540,18 @@ mod tests {
     async fn test_rest_export_api() -> anyhow::Result<()> {
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::channel(2);
-        result_sender.send(Ok(bytes::Bytes::from("first row\n"))).await?;
-        result_sender.send(Ok(bytes::Bytes::from("second row"))).await?;
+        result_sender
+            .send(Ok(bytes::Bytes::from("first row\n")))
+            .await?;
+        result_sender
+            .send(Ok(bytes::Bytes::from("second row")))
+            .await?;
         mock_search_service
             .expect_root_export()
             .return_once(|_| Ok(result_receiver));
         let rest_export_api_handler =
             super::export_handler(Arc::new(mock_search_service)).recover(recover_fn);
-        // send needs to be dropped so otherwise we will wait indefinititely new rows. 
+        // send needs to be dropped so otherwise we will wait indefinititely new rows.
         drop(result_sender);
         let response = warp::test::request()
             .path("/api/v1/my-index/export?query=obama&fastField=external_id&outputFormat=csv")
