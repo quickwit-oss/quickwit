@@ -125,6 +125,7 @@ fn sync_actor_loop<A: SyncActor>(
                 let context = ActorContext {
                     self_mailbox: &self_mailbox,
                     progress: &progress,
+                    kill_switch: &kill_switch,
                 };
                 match actor.process_message(msg, context) {
                     Ok(()) => (),

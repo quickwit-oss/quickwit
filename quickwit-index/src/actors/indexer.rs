@@ -39,6 +39,9 @@ use tracing::warn;
 use crate::models::IndexedSplit;
 use crate::models::RawDocBatch;
 
+const DEFAULT_COMMIT_TIMEOUT: Duration = Duration::from_secs(60);
+const DEFAULT_NUM_DOCS_COMMIT_THRESHOLD: u64 = 10_000_000;
+
 #[derive(Clone, Default, Debug)]
 pub struct IndexerCounters {
     parse_error: u64,
@@ -66,14 +69,22 @@ impl ScratchDirectory {
 pub struct Indexer {
     index_id: String,
     index_config: Arc<dyn IndexConfig>,
+    commit_policy: CommitPolicy, //< TODO should move into the index config.
     // splits index writer will write in TempDir within this directory
     indexing_scratch_directory: ScratchDirectory,
-    commit_timeout: Duration,
     sink: Mailbox<IndexedSplit>,
-    next_commit_deadline_opt: Option<Instant>,
     current_split_opt: Option<IndexedSplit>,
     counters: IndexerCounters,
     timestamp_field_opt: Option<Field>,
+}
+
+impl Default for CommitPolicy {
+    fn default() -> Self {
+        CommitPolicy {
+            timeout: DEFAULT_COMMIT_TIMEOUT,
+            num_docs_threshold: DEFAULT_NUM_DOCS_COMMIT_THRESHOLD,
+        }
+    }
 }
 
 impl Actor for Indexer {
@@ -92,6 +103,23 @@ fn extract_timestamp(doc: &Document, timestamp_field_opt: Option<Field>) -> Opti
     timestamp_value.i64_value()
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct CommitPolicy {
+    pub timeout: Duration,
+    pub num_docs_threshold: u64,
+}
+
+impl CommitPolicy {
+    fn should_commit(&self, num_docs: u64, split_start_time: Instant) -> bool {
+        if num_docs >= self.num_docs_threshold {
+            return true;
+        }
+        let now = Instant::now();
+        let deadline = split_start_time + self.timeout;
+        now >= deadline
+    }
+}
+
 impl SyncActor for Indexer {
     fn process_message(
         &mut self,
@@ -100,6 +128,7 @@ impl SyncActor for Indexer {
     ) -> Result<(), quickwit_actors::MessageProcessError> {
         let index_config = self.index_config.clone();
         let timestamp_field_opt = self.timestamp_field_opt;
+        let commit_policy = self.commit_policy;
         let indexed_split = self.indexed_split()?;
         for doc_json in batch.docs {
             indexed_split.size_in_bytes += doc_json.len() as u64;
@@ -123,19 +152,16 @@ impl SyncActor for Indexer {
                 indexed_split.time_range = Some(new_timestamp_range);
             }
             indexed_split.index_writer.add_document(doc);
+            indexed_split.num_docs += 1;
         }
 
         // TODO this approach of deadline is not correct, as it never triggers if no need
         // new message arrives.
         // We do need to implement timeout message in actors to get the right behavior.
-        if let Some(deadline) = self.next_commit_deadline_opt {
-            let now = Instant::now();
-            if now >= deadline {
-                self.send_to_packager()?;
-            }
-        } else {
-            self.next_commit_deadline_opt = None;
+        if commit_policy.should_commit(indexed_split.num_docs, indexed_split.start_time) {
+            self.send_to_packager()?;
         }
+
         Ok(())
     }
 }
@@ -147,7 +173,7 @@ impl Indexer {
         index_id: String,
         index_config: Arc<dyn IndexConfig>,
         indexing_directory: Option<PathBuf>, //< if None, we create a tempdirectory.
-        commit_timeout: Duration,
+        commit_policy: CommitPolicy,
         sink: Mailbox<IndexedSplit>,
     ) -> anyhow::Result<Indexer> {
         let indexing_scratch_directory = if let Some(path) = indexing_directory {
@@ -159,13 +185,12 @@ impl Indexer {
         Ok(Indexer {
             index_id,
             index_config,
-            commit_timeout,
             sink,
-            next_commit_deadline_opt: None,
             counters: IndexerCounters::default(),
             current_split_opt: None,
             indexing_scratch_directory,
             timestamp_field_opt: time_field_opt,
+            commit_policy,
         })
     }
 
@@ -183,7 +208,6 @@ impl Indexer {
         if self.current_split_opt.is_none() {
             let new_indexed_split = self.create_indexed_split()?;
             self.current_split_opt = Some(new_indexed_split);
-            self.next_commit_deadline_opt = Some(Instant::now() + self.commit_timeout);
         }
         let current_index_split = self.current_split_opt.as_mut().with_context(|| {
             "No index writer available. Please report: this should never happen."
@@ -199,5 +223,24 @@ impl Indexer {
         };
         self.sink.send_blocking(indexed_split)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_commit_policy() {
+        let commit_policy = CommitPolicy {
+            num_docs_threshold: 1_000,
+            timeout: Duration::from_secs(60),
+        };
+        assert_eq!(commit_policy.should_commit(1, Instant::now()), false);
+        assert_eq!(commit_policy.should_commit(999, Instant::now()), false);
+        assert_eq!(commit_policy.should_commit(1_000, Instant::now()), true);
+        let past_instant = Instant::now() - Duration::from_secs(70);
+        assert_eq!(commit_policy.should_commit(1, past_instant), true);
+        assert_eq!(commit_policy.should_commit(20_000, past_instant), true);
     }
 }
