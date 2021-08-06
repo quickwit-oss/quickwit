@@ -254,10 +254,8 @@ impl IndexConfig for DefaultIndexConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        default_index_config::default_config::SOURCE_FIELD_NAME, DefaultIndexConfigBuilder,
-        DocParsingError, IndexConfig,
-    };
+    use crate::{default_index_config::default_config::SOURCE_FIELD_NAME, IndexConfig};
+    use crate::{DefaultIndexConfigBuilder, DocParsingError};
 
     use super::DefaultIndexConfig;
     use serde_json::{self, Value as JsonValue};
@@ -291,67 +289,9 @@ mod tests {
             "attributes.server.status": ["200", "201"]
         }"#;
 
-    const JSON_CONFIG_VALUE: &str = r#"
-        {
-            "store_source": true,
-            "default_search_fields": [
-                "body", "attributes.server", "attributes.server.status"
-            ],
-            "timestamp_field": "timestamp",
-            "field_mappings": [
-                {
-                    "name": "timestamp",
-                    "type": "i64",
-                    "fast": true
-                },
-                {
-                    "name": "body",
-                    "type": "text",
-                    "stored": true
-                },
-                {
-                    "name": "response_date",
-                    "type": "date",
-                    "fast": true
-                },
-                {
-                    "name": "response_time",
-                    "type": "f64",
-                    "fast": true
-                },
-                {
-                    "name": "response_payload",
-                    "type": "bytes",
-                    "fast": true
-                },
-                {
-                    "name": "attributes",
-                    "type": "object",
-                    "field_mappings": [
-                        {
-                            "name": "tags",
-                            "type": "array<i64>"
-                        },
-                        {
-                            "name": "server",
-                            "type": "text"
-                        },
-                        {
-                            "name": "server.status",
-                            "type": "array<text>"
-                        },
-                        {
-                            "name": "server.payload",
-                            "type": "array<bytes>"
-                        }
-                    ]
-                }
-            ]
-        }"#;
-
     #[test]
     fn test_json_deserialize() -> anyhow::Result<()> {
-        let config = serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE)?;
+        let config = crate::default_config_for_tests();
         assert!(config.store_source);
         let mut default_search_field_names: Vec<String> = config.default_search_field_names;
         default_search_field_names.sort();
@@ -366,7 +306,7 @@ mod tests {
 
     #[test]
     fn test_json_serialize() -> anyhow::Result<()> {
-        let mut config = serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE)?;
+        let mut config = crate::default_config_for_tests();
         let json_config = serde_json::to_string_pretty(&config)?;
         let mut config_after_serialization =
             serde_json::from_str::<DefaultIndexConfig>(&json_config)?;
@@ -384,7 +324,7 @@ mod tests {
 
     #[test]
     fn test_parsing_document() -> anyhow::Result<()> {
-        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE)?;
+        let index_config = crate::default_config_for_tests();
         let document = index_config.doc_from_json(JSON_DOC_VALUE)?;
         let schema = index_config.schema();
         // 6 property entry + 1 field "_source" + two fields values for "tags" field
@@ -414,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_accept_parsing_document_with_unknown_fields_and_missing_fields() -> anyhow::Result<()> {
-        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE)?;
+        let index_config = crate::default_config_for_tests();
         index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -426,7 +366,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_cardinality() -> anyhow::Result<()> {
-        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE)?;
+        let index_config = crate::default_config_for_tests();
         let result = index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -444,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_value() -> anyhow::Result<()> {
-        let index_config = serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE)?;
+        let index_config = crate::default_config_for_tests();
         let result = index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -476,7 +416,6 @@ mod tests {
                 }
             ]
         }"#;
-
         let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
         let expected_msg = "Timestamp field must be a fast field, please add fast property to your field `timestamp`.".to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);

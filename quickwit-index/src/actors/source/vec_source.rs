@@ -76,7 +76,7 @@ impl AsyncActor for VecSource {
         }
         let batch = RawDocBatch {
             docs: line_docs,
-            checkpoint: Checkpoint::default(),
+            // checkpoint: Checkpoint::default(),
         };
         self.sink.send_async(batch).await?;
         Ok(())

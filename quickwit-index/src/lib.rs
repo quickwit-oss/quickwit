@@ -73,3 +73,12 @@ pub async fn run_indexing(
 }
 
 // TODO supervisor with respawn, one for all and respawn system.
+
+#[cfg(test)]
+pub mod test_util {
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+    pub fn setup_logging_for_tests() {
+        INIT.call_once(env_logger::init);
+    }
+}

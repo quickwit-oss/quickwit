@@ -41,8 +41,8 @@ use crate::models::RawDocBatch;
 
 #[derive(Clone, Default, Debug)]
 pub struct IndexerCounters {
-    parse_error: u64,
-    docs: u64,
+    pub num_parse_errors: u64,
+    pub num_docs: u64,
 }
 
 enum ScratchDirectory {
@@ -104,7 +104,7 @@ impl SyncActor for Indexer {
         let index_config = self.index_config.clone();
         let timestamp_field_opt = self.timestamp_field_opt;
         let commit_policy = self.commit_policy;
-        let indexed_split = self.indexed_split()?;
+        let (indexed_split, counts) = self.indexed_split()?;
         for doc_json in batch.docs {
             indexed_split.size_in_bytes += doc_json.len() as u64;
             let doc_parsing_result = index_config.doc_from_json(&doc_json);
@@ -113,6 +113,7 @@ impl SyncActor for Indexer {
                 Err(doc_parsing_error) => {
                     // TODO we should at least keep track of the number of parse error.
                     warn!(err=?doc_parsing_error);
+                    counts.num_parse_errors += 1;
                     continue;
                 }
             };
@@ -127,6 +128,7 @@ impl SyncActor for Indexer {
                 indexed_split.time_range = Some(new_timestamp_range);
             }
             indexed_split.index_writer.add_document(doc);
+            counts.num_docs += 1;
             indexed_split.num_docs += 1;
         }
 
@@ -179,7 +181,7 @@ impl Indexer {
         Ok(indexed_split)
     }
 
-    fn indexed_split(&mut self) -> anyhow::Result<&mut IndexedSplit> {
+    fn indexed_split(&mut self) -> anyhow::Result<(&mut IndexedSplit, &mut IndexerCounters)> {
         if self.current_split_opt.is_none() {
             let new_indexed_split = self.create_indexed_split()?;
             self.current_split_opt = Some(new_indexed_split);
@@ -187,7 +189,7 @@ impl Indexer {
         let current_index_split = self.current_split_opt.as_mut().with_context(|| {
             "No index writer available. Please report: this should never happen."
         })?;
-        Ok(current_index_split)
+        Ok((current_index_split, &mut self.counters))
     }
 
     fn send_to_packager(&mut self) -> Result<(), SendError> {
@@ -197,6 +199,63 @@ impl Indexer {
             return Ok(());
         };
         self.sink.send_blocking(indexed_split)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use quickwit_actors::create_test_mailbox;
+    use quickwit_actors::KillSwitch;
+    use quickwit_actors::SyncActor;
+
+    use crate::models::CommitPolicy;
+    use crate::models::RawDocBatch;
+
+    use super::Indexer;
+
+    #[tokio::test]
+    async fn test_indexer() -> anyhow::Result<()> {
+        crate::test_util::setup_logging_for_tests();
+        let commit_policy = CommitPolicy {
+            timeout: Duration::from_secs(60),
+            num_docs_threshold: 3,
+        };
+        let (mailbox, inbox) = create_test_mailbox();
+        let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
+        let indexer = Indexer::try_new(
+            "test-index".to_string(),
+            index_config,
+            None,
+            commit_policy,
+            mailbox,
+        )?;
+        let indexer_handle = indexer.spawn(KillSwitch::default());
+        indexer_handle
+            .mailbox()
+            .send_async(RawDocBatch {
+                docs: vec![
+                    "{\"body\": \"happy\"}".to_string(),
+                    "{\"body\": \"happy2\"}".to_string(),
+                    "{".to_string(),
+                ],
+            })
+            .await?;
+        indexer_handle
+            .mailbox()
+            .send_async(RawDocBatch {
+                docs: vec!["{\"body\": \"happy3\"}".to_string()],
+            })
+            .await?;
+        let indexer_counters = indexer_handle.process_and_observe().await.into_inner();
+        assert_eq!(indexer_counters.num_docs, 3);
+        assert_eq!(indexer_counters.num_parse_errors, 1);
+        let output_messages = inbox.drain_available_message_for_test();
+        assert_eq!(output_messages.len(), 1);
+        assert_eq!(output_messages[0].num_docs, 3);
         Ok(())
     }
 }
