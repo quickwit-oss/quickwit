@@ -265,8 +265,11 @@ impl QueueCapacity {
     }
 }
 
-pub fn create_mailbox<M>(actor_name: String, capacity: QueueCapacity) -> (Mailbox<M>, Inbox<M>) {
-    let (msg_tx, msg_rx) = capacity.create_channel();
+pub fn create_mailbox<M>(
+    actor_name: String,
+    queue_capacity: QueueCapacity,
+) -> (Mailbox<M>, Inbox<M>) {
+    let (msg_tx, msg_rx) = queue_capacity.create_channel();
     let (cmd_tx, cmd_rx) = QueueCapacity::Unbounded.create_channel();
     let mailbox = Mailbox {
         inner: Arc::new(Inner {

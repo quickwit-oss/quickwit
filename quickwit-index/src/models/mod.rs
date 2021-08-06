@@ -19,6 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 mod checkpoint;
+mod commit_policy;
 mod indexed_split;
 mod manifest;
 mod packaged_split;
@@ -26,6 +27,7 @@ mod raw_doc_batch;
 mod uploaded_split;
 
 pub use checkpoint::Checkpoint;
+pub use commit_policy::CommitPolicy;
 pub use indexed_split::IndexedSplit;
 pub use manifest::{Manifest, ManifestEntry};
 pub use packaged_split::PackagedSplit;

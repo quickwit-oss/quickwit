@@ -1,7 +1,3 @@
-use std::ops::RangeInclusive;
-use tantivy::SegmentMeta;
-use tempfile::TempDir;
-
 // Quickwit
 //  Copyright (C) 2021 Quickwit Inc.
 //
@@ -22,6 +18,11 @@ use tempfile::TempDir;
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::ops::RangeInclusive;
+use std::path::PathBuf;
+use tantivy::SegmentId;
+use tempfile::TempDir;
+
 #[derive(Debug)]
 pub struct PackagedSplit {
     pub split_id: String,
@@ -29,7 +30,8 @@ pub struct PackagedSplit {
     pub time_range: Option<RangeInclusive<i64>>,
     pub size_in_bytes: u64,
 
-    pub segment_meta: SegmentMeta,
+    pub files_to_upload: Vec<(PathBuf, u64)>,
+    pub segment_ids: Vec<SegmentId>,
     pub split_scratch_dir: TempDir,
     pub num_docs: u64,
 }

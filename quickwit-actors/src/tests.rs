@@ -1,5 +1,5 @@
 use crate::actor::{Actor, KillSwitch};
-use crate::mailbox::{Command, QueueCapacity};
+use crate::mailbox::Command;
 use crate::{ActorContext, AsyncActor, Mailbox, MessageProcessError, Observation, SyncActor};
 use async_trait::async_trait;
 use std::collections::HashSet;
@@ -141,10 +141,8 @@ impl AsyncActor for PingerAsyncSenderActor {
 #[tokio::test]
 async fn test_ping_actor() {
     let kill_switch = KillSwitch::default();
-    let ping_recv_handle =
-        PingReceiverSyncActor::default().spawn(QueueCapacity::Bounded(10), kill_switch.clone());
-    let ping_sender_handle =
-        PingerAsyncSenderActor::default().spawn(QueueCapacity::Bounded(10), kill_switch.clone());
+    let ping_recv_handle = PingReceiverSyncActor::default().spawn(kill_switch.clone());
+    let ping_sender_handle = PingerAsyncSenderActor::default().spawn(kill_switch.clone());
     assert_eq!(ping_recv_handle.observe().await, Observation::Running(0));
     // No peers. This one will have no impact.
     let ping_recv_mailbox = ping_recv_handle.mailbox().clone();
@@ -249,7 +247,7 @@ impl AsyncActor for BuggyActor {
 #[tokio::test]
 async fn test_timeouting_actor() {
     let kill_switch = KillSwitch::default();
-    let buggy_handle = BuggyActor.spawn(QueueCapacity::Bounded(10), kill_switch.clone());
+    let buggy_handle = BuggyActor.spawn(kill_switch.clone());
     let buggy_mailbox = buggy_handle.mailbox().clone();
     assert_eq!(buggy_handle.observe().await, Observation::Running(()));
     assert!(buggy_mailbox
@@ -268,7 +266,7 @@ async fn test_timeouting_actor() {
 async fn test_pause_sync_actor() {
     let actor = PingReceiverSyncActor::default();
     let kill_switch = KillSwitch::default();
-    let ping_handle = actor.spawn(QueueCapacity::Unbounded, kill_switch);
+    let ping_handle = actor.spawn(kill_switch);
     for _ in 0..1000 {
         assert!(ping_handle.mailbox().send_async(Ping).await.is_ok());
     }
@@ -295,7 +293,7 @@ async fn test_pause_sync_actor() {
 async fn test_pause_async_actor() {
     let actor = PingReceiverAsyncActor::default();
     let kill_switch = KillSwitch::default();
-    let ping_handle = actor.spawn(QueueCapacity::Unbounded, kill_switch);
+    let ping_handle = actor.spawn(kill_switch);
     for _ in 0u32..1000u32 {
         assert!(ping_handle.mailbox().send_async(Ping).await.is_ok());
     }
@@ -383,11 +381,8 @@ impl SyncActor for DefaultMessageActor {
 #[tokio::test]
 async fn test_default_message_async() {
     let actor_with_default_msg = DefaultMessageActor::default();
-    let actor_with_default_msg_handle = AsyncActor::spawn(
-        actor_with_default_msg,
-        QueueCapacity::Unbounded,
-        KillSwitch::default(),
-    );
+    let actor_with_default_msg_handle =
+        AsyncActor::spawn(actor_with_default_msg, KillSwitch::default());
     assert!(actor_with_default_msg_handle
         .mailbox()
         .send_async(Msg::Normal)
@@ -406,11 +401,8 @@ async fn test_default_message_async() {
 #[tokio::test]
 async fn test_default_message_sync() {
     let actor_with_default_msg = DefaultMessageActor::default();
-    let actor_with_default_msg_handle = SyncActor::spawn(
-        actor_with_default_msg,
-        QueueCapacity::Unbounded,
-        KillSwitch::default(),
-    );
+    let actor_with_default_msg_handle =
+        SyncActor::spawn(actor_with_default_msg, KillSwitch::default());
     assert!(actor_with_default_msg_handle
         .mailbox()
         .send_async(Msg::Normal)

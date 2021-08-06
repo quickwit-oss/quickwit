@@ -26,25 +26,38 @@ use async_trait::async_trait;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
 use quickwit_actors::AsyncActor;
+use quickwit_actors::QueueCapacity;
 use quickwit_metastore::Metastore;
 use tokio::sync::oneshot::Receiver;
 
+#[derive(Debug, Clone, Default)]
+pub struct PublisherCounters {
+    num_published_splits: usize,
+}
 pub struct Publisher {
     metastore: Arc<dyn Metastore>,
+    counters: PublisherCounters,
 }
 
 impl Publisher {
     pub fn new(metastore: Arc<dyn Metastore>) -> Publisher {
-        Publisher { metastore }
+        Publisher {
+            metastore,
+            counters: PublisherCounters::default(),
+        }
     }
 }
 
 impl Actor for Publisher {
     type Message = Receiver<UploadedSplit>;
-    type ObservableState = ();
+    type ObservableState = PublisherCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
-        ()
+        self.counters.clone()
+    }
+
+    fn queue_capacity(&self) -> quickwit_actors::QueueCapacity {
+        QueueCapacity::Bounded(3)
     }
 }
 
@@ -62,6 +75,59 @@ impl AsyncActor for Publisher {
             .publish_splits(&uploaded_split.index_id, vec![&uploaded_split.split_id])
             .await
             .with_context(|| "Failed to publish splits")?;
+        self.counters.num_published_splits += 1;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quickwit_actors::KillSwitch;
+    use quickwit_metastore::MockMetastore;
+    use tokio::sync::oneshot;
+
+    #[tokio::test]
+    async fn test_publisher_publishes_in_order() {
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_publish_splits()
+            .withf(|index_id, split_ids| index_id == "index" && &split_ids[..] == &["split1"])
+            .times(1)
+            .returning(|_, _| Ok(()));
+        mock_metastore
+            .expect_publish_splits()
+            .withf(|index_id, split_ids| index_id == "index" && &split_ids[..] == &["split2"])
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let publisher = Publisher::new(Arc::new(mock_metastore));
+        let kill_switch = KillSwitch::default();
+        let publisher_handle = publisher.spawn(kill_switch);
+        let (split_future_tx1, split_future_rx1) = oneshot::channel::<UploadedSplit>();
+        assert!(publisher_handle
+            .mailbox()
+            .send_async(split_future_rx1)
+            .await
+            .is_ok());
+        let (split_future_tx2, split_future_rx2) = oneshot::channel::<UploadedSplit>();
+        assert!(publisher_handle
+            .mailbox()
+            .send_async(split_future_rx2)
+            .await
+            .is_ok());
+        // note the future is resolved in the inverse of the expected order.
+        assert!(split_future_tx2
+            .send(UploadedSplit {
+                index_id: "index".to_string(),
+                split_id: "split2".to_string(),
+            })
+            .is_ok());
+        assert!(split_future_tx1
+            .send(UploadedSplit {
+                index_id: "index".to_string(),
+                split_id: "split1".to_string(),
+            })
+            .is_ok());
+        let publisher_observation = publisher_handle.process_and_observe().await;
     }
 }

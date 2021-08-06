@@ -5,7 +5,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use tracing::error;
 
-use crate::{Mailbox, SendError};
+use crate::{Mailbox, QueueCapacity, SendError};
 
 // While the lack of message cannot pause a problem with heartbeating,  sending a message to a saturated channel
 // can be interpreted as a blocked actor.
@@ -57,6 +57,10 @@ pub trait Actor: Send + Sync + 'static {
 
     fn default_message(&self) -> Option<Self::Message> {
         None
+    }
+
+    fn queue_capacity(&self) -> QueueCapacity {
+        QueueCapacity::Unbounded
     }
 
     /// Extracts an observable state. Useful for unit test, and admin UI.

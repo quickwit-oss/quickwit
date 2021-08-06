@@ -23,12 +23,11 @@ use std::ops::RangeInclusive;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
 
 use anyhow::Context;
 use quickwit_actors::Actor;
 use quickwit_actors::Mailbox;
+use quickwit_actors::QueueCapacity;
 use quickwit_actors::SendError;
 use quickwit_actors::SyncActor;
 use quickwit_index_config::IndexConfig;
@@ -36,11 +35,9 @@ use tantivy::schema::Field;
 use tantivy::Document;
 use tracing::warn;
 
+use crate::models::CommitPolicy;
 use crate::models::IndexedSplit;
 use crate::models::RawDocBatch;
-
-const DEFAULT_COMMIT_TIMEOUT: Duration = Duration::from_secs(60);
-const DEFAULT_NUM_DOCS_COMMIT_THRESHOLD: u64 = 10_000_000;
 
 #[derive(Clone, Default, Debug)]
 pub struct IndexerCounters {
@@ -78,15 +75,6 @@ pub struct Indexer {
     timestamp_field_opt: Option<Field>,
 }
 
-impl Default for CommitPolicy {
-    fn default() -> Self {
-        CommitPolicy {
-            timeout: DEFAULT_COMMIT_TIMEOUT,
-            num_docs_threshold: DEFAULT_NUM_DOCS_COMMIT_THRESHOLD,
-        }
-    }
-}
-
 impl Actor for Indexer {
     type Message = RawDocBatch;
 
@@ -95,29 +83,16 @@ impl Actor for Indexer {
     fn observable_state(&self) -> Self::ObservableState {
         self.counters.clone()
     }
+
+    fn queue_capacity(&self) -> QueueCapacity {
+        QueueCapacity::Bounded(10)
+    }
 }
 
 fn extract_timestamp(doc: &Document, timestamp_field_opt: Option<Field>) -> Option<i64> {
     let timestamp_field = timestamp_field_opt?;
     let timestamp_value = doc.get_first(timestamp_field)?;
     timestamp_value.i64_value()
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct CommitPolicy {
-    pub timeout: Duration,
-    pub num_docs_threshold: u64,
-}
-
-impl CommitPolicy {
-    fn should_commit(&self, num_docs: u64, split_start_time: Instant) -> bool {
-        if num_docs >= self.num_docs_threshold {
-            return true;
-        }
-        let now = Instant::now();
-        let deadline = split_start_time + self.timeout;
-        now >= deadline
-    }
 }
 
 impl SyncActor for Indexer {
@@ -223,24 +198,5 @@ impl Indexer {
         };
         self.sink.send_blocking(indexed_split)?;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_commit_policy() {
-        let commit_policy = CommitPolicy {
-            num_docs_threshold: 1_000,
-            timeout: Duration::from_secs(60),
-        };
-        assert_eq!(commit_policy.should_commit(1, Instant::now()), false);
-        assert_eq!(commit_policy.should_commit(999, Instant::now()), false);
-        assert_eq!(commit_policy.should_commit(1_000, Instant::now()), true);
-        let past_instant = Instant::now() - Duration::from_secs(70);
-        assert_eq!(commit_policy.should_commit(1, past_instant), true);
-        assert_eq!(commit_policy.should_commit(20_000, past_instant), true);
     }
 }

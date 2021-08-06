@@ -1,8 +1,13 @@
+use std::io;
+use std::path::Path;
+use std::path::PathBuf;
+
 use crate::models::IndexedSplit;
 use crate::models::PackagedSplit;
 use anyhow::Context;
 use quickwit_actors::Actor;
 use quickwit_actors::Mailbox;
+use quickwit_actors::QueueCapacity;
 use quickwit_actors::SyncActor;
 use quickwit_directories::write_hotcache;
 use quickwit_directories::HOTCACHE_FILENAME;
@@ -47,6 +52,10 @@ impl Actor for Packager {
     fn observable_state(&self) -> Self::ObservableState {
         ()
     }
+
+    fn queue_capacity(&self) -> QueueCapacity {
+        QueueCapacity::Bounded(1)
+    }
 }
 
 /// returns true iff merge is required to reach a state where
@@ -77,6 +86,53 @@ fn commit_split(split: &mut IndexedSplit) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn list_files_to_upload(
+    segment_metas: &[SegmentMeta],
+    scratch_dir: &Path,
+) -> anyhow::Result<Vec<(PathBuf, u64)>> {
+    let mut files_to_upload = Vec::new();
+    // list the segment files
+    for segment_meta in segment_metas {
+        for relative_path in segment_meta.list_files() {
+            let filepath = scratch_dir.join(&relative_path);
+            match std::fs::metadata(&filepath) {
+                Ok(metadata) => {
+                    files_to_upload.push((filepath, metadata.len()));
+                }
+                Err(io_err) => {
+                    // If the file is missing, this is fine.
+                    // segment_meta.list_files() may actually returns files that are
+                    // do not exist.
+                    if io_err.kind() != io::ErrorKind::NotFound {
+                        return Err(io_err).with_context(|| {
+                            format!(
+                                "Failed to read metadata of segment file `{}`",
+                                relative_path.display(),
+                            )
+                        })?;
+                    }
+                }
+            }
+        }
+    }
+    // We also need the meta.json file and the hotcache. Contrary to segment files,
+    // we return an error here if they are missing.
+    for relative_path in [Path::new("meta.json"), Path::new(HOTCACHE_FILENAME)]
+        .iter()
+        .cloned()
+    {
+        let filepath = scratch_dir.join(&relative_path);
+        let metadata = std::fs::metadata(&filepath).with_context(|| {
+            format!(
+                "Failed to read metadata of mandatory file `{}`.",
+                relative_path.display(),
+            )
+        })?;
+        files_to_upload.push((filepath, metadata.len()));
+    }
+    Ok(files_to_upload)
+}
+
 /// If necessary, merge all segments and returns a PackagedSplit.
 ///
 /// Note this function implicitly drops the IndexWriter
@@ -96,20 +152,28 @@ fn merge_segments_in_split(mut split: IndexedSplit) -> anyhow::Result<PackagedSp
         futures::executor::block_on(split.index_writer.merge(&segment_ids))?;
     }
     let segment_metas: Vec<SegmentMeta> = split.index.searchable_segment_metas()?;
-    if segment_metas.len() != 1 {
-        anyhow::bail!(
-            "Ended up with more than one segment despite successful merge. {:?}",
-            split
-        );
-    }
+    let segment_ids = segment_metas
+        .iter()
+        .map(|segment_meta| segment_meta.id())
+        .collect();
+
+    let files_to_upload = list_files_to_upload(&segment_metas[..], split.temp_dir.path())
+        .with_context(|| {
+            format!(
+                "Failed to identify files for upload in packaging for split `{}`.",
+                split.split_id
+            )
+        })?;
+
     let packaged_split = PackagedSplit {
         index_id: split.index_id.clone(),
         split_id: split.split_id.to_string(),
         split_scratch_dir: split.temp_dir,
         num_docs,
-        segment_meta: segment_metas[0].clone(),
+        segment_ids,
         time_range: split.time_range.clone(),
         size_in_bytes: split.size_in_bytes,
+        files_to_upload,
     };
     Ok(packaged_split)
 }
