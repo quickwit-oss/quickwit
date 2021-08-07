@@ -281,7 +281,7 @@ mod tests {
             })
             .await?;
         assert_eq!(
-            uploader_handle.process_and_observe().await,
+            uploader_handle.process_pending_and_observe().await,
             Observation::Running(())
         );
         let publish_futures = inbox.drain_available_message_for_test();

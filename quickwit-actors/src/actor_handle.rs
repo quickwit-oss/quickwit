@@ -43,11 +43,10 @@ impl<Message, ObservableState: Clone + Send + fmt::Debug> ActorHandle<Message, O
             interval.tick().await;
             while kill_switch.is_alive() {
                 interval.tick().await;
-                if !progress.has_changed() {
+                if !progress.harvest_changes() {
                     kill_switch.kill();
                     return;
                 }
-                progress.reset();
             }
         });
         ActorHandle {
@@ -72,7 +71,7 @@ impl<Message, ObservableState: Clone + Send + fmt::Debug> ActorHandle<Message, O
     ///
     /// This method timeout if reaching the end of the message takes more than an HEARTBEAT.
     /// Hence, it is only useful or unit tests.
-    pub async fn process_and_observe(&self) -> Observation<ObservableState> {
+    pub async fn process_pending_and_observe(&self) -> Observation<ObservableState> {
         let (tx, rx) = oneshot::channel();
         if self
             .mailbox

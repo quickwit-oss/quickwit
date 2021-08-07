@@ -1,11 +1,9 @@
 use std::any::type_name;
 use std::fmt;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use thiserror::Error;
 use tracing::error;
 
-use crate::{Mailbox, QueueCapacity, SendError};
+use crate::{KillSwitch, Mailbox, Progress, QueueCapacity, SendError};
 
 // While the lack of message cannot pause a problem with heartbeating,  sending a message to a saturated channel
 // can be interpreted as a blocked actor.
@@ -71,54 +69,6 @@ pub trait Actor: Send + Sync + 'static {
     fn observable_state(&self) -> Self::ObservableState;
 }
 
-/// Makes it possible to register some progress.
-///
-/// If no progress is observed until the next heartbeat, the actor will be killed.
-#[derive(Clone)]
-pub struct Progress(Arc<AtomicBool>);
-
-impl Default for Progress {
-    fn default() -> Progress {
-        Progress(Arc::new(AtomicBool::new(false)))
-    }
-}
-
-impl Progress {
-    pub fn record_progress(&self) {
-        self.0.store(true, Ordering::Relaxed);
-    }
-
-    pub fn has_changed(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
-    }
-
-    pub fn reset(&self) {
-        self.0.store(false, Ordering::Relaxed);
-    }
-}
-
-#[derive(Clone)]
-pub struct KillSwitch {
-    alive: Arc<AtomicBool>,
-}
-
-impl Default for KillSwitch {
-    fn default() -> Self {
-        KillSwitch {
-            alive: Arc::new(AtomicBool::new(true)),
-        }
-    }
-}
-
-impl KillSwitch {
-    pub fn kill(&self) {
-        self.alive.store(false, Ordering::Relaxed);
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.alive.load(Ordering::Relaxed)
-    }
-}
 pub struct ActorContext<'a, Message> {
     pub self_mailbox: &'a Mailbox<Message>,
     pub progress: &'a Progress,
@@ -134,20 +84,5 @@ impl<'a, Message> ActorContext<'a, Message> {
 
     pub fn record_progress(&self) {
         self.progress.record_progress();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::KillSwitch;
-
-    #[test]
-    fn test_kill_switch() {
-        let kill_switch = KillSwitch::default();
-        assert_eq!(kill_switch.is_alive(), true);
-        kill_switch.kill();
-        assert_eq!(kill_switch.is_alive(), false);
-        kill_switch.kill();
-        assert_eq!(kill_switch.is_alive(), false);
     }
 }
