@@ -25,7 +25,7 @@ pub struct ActorHandle<Message, ObservableState> {
 
 impl<M, ObservableState> fmt::Debug for ActorHandle<M, ObservableState> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ActorHandle({})", self.mailbox.actor_name())
+        write!(f, "ActorHandle({})", self.mailbox.actor_instance_name())
     }
 }
 
