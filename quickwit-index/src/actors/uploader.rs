@@ -240,7 +240,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_uploader() -> anyhow::Result<()> {
-        crate::test_util::setup_logging_for_tests();
+        quickwit_common::setup_logging_for_tests();
         let (mailbox, inbox) = create_test_mailbox();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore

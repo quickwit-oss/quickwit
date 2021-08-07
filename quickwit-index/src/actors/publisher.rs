@@ -89,7 +89,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_publisher_publishes_in_order() {
-        crate::test_util::setup_logging_for_tests();
+        quickwit_common::setup_logging_for_tests();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()

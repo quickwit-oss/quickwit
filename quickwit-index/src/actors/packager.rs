@@ -288,7 +288,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_packager_no_merge_required() -> anyhow::Result<()> {
-        crate::test_util::setup_logging_for_tests();
+        quickwit_common::setup_logging_for_tests();
         let (mailbox, inbox) = create_test_mailbox();
         let packager = Packager::new(mailbox);
         let packager_handle = packager.spawn(KillSwitch::default());
@@ -305,7 +305,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_packager_merge_required() -> anyhow::Result<()> {
-        crate::test_util::setup_logging_for_tests();
+        quickwit_common::setup_logging_for_tests();
         let (mailbox, inbox) = create_test_mailbox();
         let packager = Packager::new(mailbox);
         let packager_handle = packager.spawn(KillSwitch::default());

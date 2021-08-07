@@ -214,7 +214,6 @@ mod tests {
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::KillSwitch;
     use quickwit_actors::SyncActor;
-
     use crate::models::CommitPolicy;
     use crate::models::RawDocBatch;
 
@@ -222,7 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer() -> anyhow::Result<()> {
-        crate::test_util::setup_logging_for_tests();
+        quickwit_common::setup_logging_for_tests();
         let commit_policy = CommitPolicy {
             timeout: Duration::from_secs(60),
             num_docs_threshold: 3,

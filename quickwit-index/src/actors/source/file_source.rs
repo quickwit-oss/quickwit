@@ -116,7 +116,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
-        crate::test_util::setup_logging_for_tests();
+        quickwit_common::setup_logging_for_tests();
         let (mailbox, inbox) = create_test_mailbox();
         let file_source = FileSource::try_new(Path::new("data/test_corpus.json"), mailbox).await?;
         let file_source_handle = file_source.spawn(KillSwitch::default());
