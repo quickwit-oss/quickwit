@@ -31,18 +31,22 @@ use quickwit_actors::AsyncActor;
 use quickwit_actors::KillSwitch;
 use quickwit_actors::SyncActor;
 use quickwit_metastore::Metastore;
-use quickwit_storage::Storage;
+use quickwit_storage::StorageUriResolver;
+use tracing::info;
 
 pub mod actors;
 pub mod models;
 pub(crate) mod semaphore;
 
-pub async fn run_indexing(
+pub async fn spawn_indexing_pipeline(
     index_id: String,
     metastore: Arc<dyn Metastore>,
-    index_storage: Arc<dyn Storage>,
+    storage_uri_resolver: StorageUriResolver,
 ) -> anyhow::Result<()> {
+    info!(index_id=%index_id, "start-indexing-pipeline");
     let index_metadata = metastore.index_metadata(&index_id).await?;
+    let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
+
     // TODO supervisor with respawn, one for all and respawn system.
     // TODO add a supervisition that checks the progress of all of these actors.
     let kill_switch = KillSwitch::default();
@@ -64,18 +68,46 @@ pub async fn run_indexing(
         packager_handler.mailbox().clone(),
     )?;
     let indexer_handler = indexer.spawn(kill_switch.clone());
+
+    // TODO the source is hardcoded here.
     let source = FileSource::try_new(
         Path::new("data/test_corpus.json"),
         indexer_handler.mailbox().clone(),
     )
     .await?;
+
     let _source = source.spawn(kill_switch.clone());
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
 
+    use std::sync::Arc;
+    use std::time::Duration;
 
+    use super::spawn_indexing_pipeline;
+    use quickwit_metastore::IndexMetadata;
+    use quickwit_metastore::MockMetastore;
 
-
-
-
+    #[tokio::test]
+    async fn test_indexing_pipeline() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_index_metadata()
+            .withf(|index_id| index_id == "test-index")
+            .times(1)
+            .returning(|_| {
+                let index_metadata = IndexMetadata {
+                    index_id: "test-index".to_string(),
+                    index_uri: "ram://test-index".to_string(),
+                    index_config: Box::new(quickwit_index_config::default_config_for_tests()),
+                };
+                Ok(index_metadata)
+            });
+        spawn_indexing_pipeline("test-index".to_string(), Arc::new(metastore), Default::default()).await?;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        Ok(())
+    }
+}

@@ -84,7 +84,7 @@ impl fmt::Debug for Command {
 
 impl<Message: fmt::Debug> fmt::Debug for Mailbox<Message> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Mailbox({})", self.actor_name())
+        write!(f, "Mailbox({})", self.actor_instance_name())
     }
 }
 
@@ -103,7 +103,7 @@ impl<Message> PartialEq for Mailbox<Message> {
 impl<Message> Eq for Mailbox<Message> {}
 
 impl<Message> Mailbox<Message> {
-    pub fn actor_name(&self) -> String {
+    pub fn actor_instance_name(&self) -> String {
         format!("{}:{}", self.actor_name, self.id)
     }
 

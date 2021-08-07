@@ -1,6 +1,6 @@
 use tokio::sync::watch;
 use tokio::task::spawn_blocking;
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::actor::MessageProcessError;
 use crate::actor_handle::ActorTermination;
@@ -36,6 +36,7 @@ pub trait SyncActor: Actor + Sized {
         kill_switch: KillSwitch,
     ) -> ActorHandle<Self::Message, Self::ObservableState> {
         let actor_name = self.name();
+        debug!(actor_name=%actor_name,"spawning-sync-actor");
         let queue_capacity = self.queue_capacity();
         let (mailbox, inbox) = create_mailbox(actor_name, queue_capacity);
         let (state_tx, state_rx) = watch::channel(self.observable_state());
@@ -53,7 +54,7 @@ pub trait SyncActor: Actor + Sized {
                 kill_switch,
                 progress,
             );
-            debug!("Termination of actor {}", actor_name);
+            debug!(cause=?termination, actor=%actor_name, "termination");
             let _ = state_tx.send(self.observable_state());
             termination
         });

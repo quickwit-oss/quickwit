@@ -5,6 +5,7 @@ use crate::Mailbox;
 use crate::{Actor, ActorContext, KillSwitch, Progress, ReceptionResult};
 use async_trait::async_trait;
 use tokio::sync::watch;
+use tracing::{debug, info};
 
 /// An async actor is executed on a regular tokio task.
 ///
@@ -27,6 +28,7 @@ pub trait AsyncActor: Actor + Sized {
 
     #[doc(hidden)]
     fn spawn(self, kill_switch: KillSwitch) -> ActorHandle<Self::Message, Self::ObservableState> {
+        debug!(actor_name=%self.name(),"spawning-async-actor");
         let (state_tx, state_rx) = watch::channel(self.observable_state());
         let actor_name = self.name();
         let progress = Progress::default();
@@ -59,21 +61,17 @@ async fn async_actor_loop<A: AsyncActor>(
     kill_switch: KillSwitch,
     progress: Progress,
 ) -> ActorTermination {
-    let mut running = true;
+    let mut should_not_accept_msgs_as_it_is_paused = true;
     loop {
+        debug!(name=%self_mailbox.actor_instance_name(), "message-loop");
         tokio::task::yield_now().await;
         if !kill_switch.is_alive() {
+            debug!(name=%self_mailbox.actor_instance_name(), "killed-by-killswitch");
             return ActorTermination::KillSwitch;
         }
         progress.record_progress();
-        let default_message_opt = actor.default_message().and_then(|default_message| {
-            if self_mailbox.is_last_mailbox() {
-                None
-            } else {
-                Some(default_message)
-            }
-        });
-        let reception_result = inbox.try_recv_msg_async(running, default_message_opt).await;
+        let default_message_opt = actor.default_message();
+        let reception_result = inbox.try_recv_msg_async(should_not_accept_msgs_as_it_is_paused, default_message_opt).await;
         progress.record_progress();
         if !kill_switch.is_alive() {
             return ActorTermination::KillSwitch;
@@ -87,14 +85,14 @@ async fn async_actor_loop<A: AsyncActor>(
             ReceptionResult::Command(cmd) => {
                 match cmd {
                     Command::Pause => {
-                        running = false;
+                        should_not_accept_msgs_as_it_is_paused = false;
                     }
                     Command::Stop(cb) => {
                         let _ = cb.send(());
                         return ActorTermination::OnDemand;
                     }
                     Command::Start => {
-                        running = true;
+                        should_not_accept_msgs_as_it_is_paused = true;
                     }
                     Command::Observe(cb) => {
                         let state = actor.observable_state();
