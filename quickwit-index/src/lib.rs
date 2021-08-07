@@ -43,6 +43,7 @@ pub async fn run_indexing(
     index_storage: Arc<dyn Storage>,
 ) -> anyhow::Result<()> {
     let index_metadata = metastore.index_metadata(&index_id).await?;
+    // TODO supervisor with respawn, one for all and respawn system.
     // TODO add a supervisition that checks the progress of all of these actors.
     let kill_switch = KillSwitch::default();
     let publisher = Publisher::new(metastore.clone());
@@ -72,13 +73,9 @@ pub async fn run_indexing(
     Ok(())
 }
 
-// TODO supervisor with respawn, one for all and respawn system.
 
-#[cfg(test)]
-pub mod test_util {
-    use std::sync::Once;
-    static INIT: Once = Once::new();
-    pub fn setup_logging_for_tests() {
-        INIT.call_once(env_logger::init);
-    }
-}
+
+
+
+
+

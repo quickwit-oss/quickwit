@@ -2780,6 +2780,7 @@ name = "quickwit-common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "env_logger",
  "once_cell",
  "regex",
 ]
@@ -2838,12 +2839,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "env_logger",
  "flume",
  "futures",
  "mockall 0.9.1",
  "once_cell",
  "quickwit-actors",
+ "quickwit-common",
  "quickwit-directories",
  "quickwit-index-config",
  "quickwit-metastore",

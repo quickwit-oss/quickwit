@@ -95,3 +95,9 @@ pub fn get_quickwit_env() -> QuickwitEnv {
         Err(_) => QuickwitEnv::UNSET,
     }
 }
+
+pub fn setup_logging_for_tests() {
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+    INIT.call_once(env_logger::init);
+}
