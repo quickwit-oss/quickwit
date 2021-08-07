@@ -41,6 +41,7 @@ pub use config::{IndexConfig, SortBy, SortOrder};
 pub use default_index_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
 pub use wikipedia_config::WikipediaIndexConfig;
 
+/// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]
 pub fn default_config_for_tests() -> DefaultIndexConfig {
     const JSON_CONFIG_VALUE: &str = r#"

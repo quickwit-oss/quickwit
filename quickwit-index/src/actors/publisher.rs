@@ -129,7 +129,10 @@ mod tests {
                 split_id: "split1".to_string(),
             })
             .is_ok());
-        let publisher_observation = publisher_handle.process_and_observe().await.into_inner();
+        let publisher_observation = publisher_handle
+            .process_pending_and_observe()
+            .await
+            .into_inner();
         assert_eq!(publisher_observation.num_published_splits, 2);
     }
 }

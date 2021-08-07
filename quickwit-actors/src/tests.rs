@@ -1,5 +1,6 @@
-use crate::actor::{Actor, KillSwitch};
 use crate::mailbox::Command;
+use crate::Actor;
+use crate::KillSwitch;
 use crate::{ActorContext, AsyncActor, Mailbox, MessageProcessError, Observation, SyncActor};
 use async_trait::async_trait;
 use std::collections::HashSet;
@@ -157,7 +158,7 @@ async fn test_ping_actor() {
         .await
         .is_ok());
     assert_eq!(
-        ping_sender_handle.process_and_observe().await,
+        ping_sender_handle.process_pending_and_observe().await,
         Observation::Running(SenderState {
             num_peers: 1,
             count: 1
@@ -174,23 +175,23 @@ async fn test_ping_actor() {
         .await
         .is_ok());
     assert_eq!(
-        ping_sender_handle.process_and_observe().await,
+        ping_sender_handle.process_pending_and_observe().await,
         Observation::Running(SenderState {
             num_peers: 1,
             count: 3
         })
     );
     assert_eq!(
-        ping_recv_handle.process_and_observe().await,
+        ping_recv_handle.process_pending_and_observe().await,
         Observation::Running(2)
     );
     kill_switch.kill();
     assert_eq!(
-        ping_recv_handle.process_and_observe().await,
+        ping_recv_handle.process_pending_and_observe().await,
         Observation::Terminated(2)
     );
     assert_eq!(
-        ping_sender_handle.process_and_observe().await,
+        ping_sender_handle.process_pending_and_observe().await,
         Observation::Terminated(SenderState {
             num_peers: 1,
             count: 3
@@ -285,7 +286,7 @@ async fn test_pause_sync_actor() {
         .send_command(Command::Start)
         .await
         .is_ok());
-    let end_state = *ping_handle.process_and_observe().await.state();
+    let end_state = *ping_handle.process_pending_and_observe().await.state();
     assert_eq!(end_state, 1000);
 }
 
@@ -311,7 +312,7 @@ async fn test_pause_async_actor() {
         .send_command(Command::Start)
         .await
         .is_ok());
-    let end_state = *ping_handle.process_and_observe().await.state();
+    let end_state = *ping_handle.process_pending_and_observe().await.state();
     assert_eq!(end_state, 1000);
 }
 
@@ -390,7 +391,7 @@ async fn test_default_message_async() {
         .is_ok());
     tokio::time::sleep(Duration::from_millis(10)).await;
     let state = actor_with_default_msg_handle
-        .process_and_observe()
+        .process_pending_and_observe()
         .await
         .state()
         .clone();
@@ -410,7 +411,7 @@ async fn test_default_message_sync() {
         .is_ok());
     tokio::time::sleep(Duration::from_millis(10)).await;
     let state = actor_with_default_msg_handle
-        .process_and_observe()
+        .process_pending_and_observe()
         .await
         .state()
         .clone();

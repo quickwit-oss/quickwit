@@ -27,6 +27,7 @@ use crate::models::PackagedSplit;
 use anyhow::Context;
 use quickwit_actors::Actor;
 use quickwit_actors::Mailbox;
+use quickwit_actors::Progress;
 use quickwit_actors::QueueCapacity;
 use quickwit_actors::SyncActor;
 use quickwit_directories::write_hotcache;
@@ -79,8 +80,9 @@ fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
 /// It consists in several sequentials phases mixing both
 /// CPU and IO, the longest once being the serialization of
 /// the inverted index. This phase is CPU bound.
-fn commit_split(split: &mut IndexedSplit) -> anyhow::Result<()> {
+fn commit_split(split: &mut IndexedSplit, progress: &Progress) -> anyhow::Result<()> {
     info!("commit-split");
+    let _protected_zone_guard = progress.protect_zone();
     split
         .index_writer
         .commit()
@@ -139,7 +141,10 @@ fn list_files_to_upload(
 ///
 /// Note this function implicitly drops the IndexWriter
 /// which potentially olds a lot of RAM.
-fn merge_segments_if_required(split: &mut IndexedSplit) -> anyhow::Result<Vec<SegmentMeta>> {
+fn merge_segments_if_required(
+    split: &mut IndexedSplit,
+    progress: &Progress,
+) -> anyhow::Result<Vec<SegmentMeta>> {
     info!("merge-segments-if-required");
     let segment_metas_before_merge = split.index.searchable_segment_metas()?;
     if is_merge_required(&segment_metas_before_merge[..]) {
@@ -149,6 +154,7 @@ fn merge_segments_if_required(split: &mut IndexedSplit) -> anyhow::Result<Vec<Se
             .collect();
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         info!(segment_ids=?segment_ids, "merge");
+        let _protected_zone_guard = progress.protect_zone();
         futures::executor::block_on(split.index_writer.merge(&segment_ids))?;
     }
     let segment_metas_after_merge: Vec<SegmentMeta> = split.index.searchable_segment_metas()?;
@@ -201,10 +207,10 @@ impl SyncActor for Packager {
     fn process_message(
         &mut self,
         mut split: IndexedSplit,
-        _context: quickwit_actors::ActorContext<'_, Self::Message>,
+        context: quickwit_actors::ActorContext<'_, Self::Message>,
     ) -> Result<(), quickwit_actors::MessageProcessError> {
-        commit_split(&mut split)?;
-        let segment_metas = merge_segments_if_required(&mut split)?;
+        commit_split(&mut split, &context.progress)?;
+        let segment_metas = merge_segments_if_required(&mut split, &context.progress)?;
         build_hotcache(split.temp_dir.path())?;
         let packaged_split = create_packaged_split(&segment_metas[..], split)?;
         self.sink.send_blocking(packaged_split)?;
@@ -289,7 +295,7 @@ mod tests {
         let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]])?;
         packager_handle.mailbox().send_async(indexed_split).await?;
         assert_eq!(
-            packager_handle.process_and_observe().await,
+            packager_handle.process_pending_and_observe().await,
             Observation::Running(())
         );
         let packaged_splits = inbox.drain_available_message_for_test();
@@ -306,7 +312,7 @@ mod tests {
         let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
         packager_handle.mailbox().send_async(indexed_split).await?;
         assert_eq!(
-            packager_handle.process_and_observe().await,
+            packager_handle.process_pending_and_observe().await,
             Observation::Running(())
         );
         let packaged_splits = inbox.drain_available_message_for_test();

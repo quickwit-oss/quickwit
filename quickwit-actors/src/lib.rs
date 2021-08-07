@@ -30,9 +30,12 @@ use tokio::time::Duration;
 mod actor;
 mod actor_handle;
 mod async_actor;
+mod kill_switch;
 mod mailbox;
 mod observation;
+mod progress;
 mod sync_actor;
+
 #[cfg(test)]
 mod tests;
 
@@ -40,10 +43,12 @@ pub use self::actor::ActorContext;
 pub use self::mailbox::{
     create_mailbox, create_test_mailbox, Mailbox, QueueCapacity, ReceptionResult,
 };
-pub use actor::{Actor, KillSwitch, MessageProcessError, Progress};
+pub use actor::{Actor, MessageProcessError};
 pub use actor_handle::{ActorHandle, ActorTermination};
 pub use async_actor::AsyncActor;
+pub use kill_switch::KillSwitch;
 pub use observation::Observation;
+pub use progress::Progress;
 pub use sync_actor::SyncActor;
 
 /// Heartbeat used to verify that actors are progressing.
