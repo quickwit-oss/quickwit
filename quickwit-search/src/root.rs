@@ -53,6 +53,7 @@ fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
     1
 }
 
+// TODO: move it to error.rs.
 #[derive(Debug)]
 pub struct NodeSearchError {
     pub search_error: SearchError,

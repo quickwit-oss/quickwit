@@ -19,14 +19,15 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use itertools::Itertools;
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
+
 use quickwit_index_config::IndexConfig;
 use quickwit_index_config::SortBy;
 use quickwit_index_config::SortOrder;
 use quickwit_proto::LeafSearchResult;
 use quickwit_proto::PartialHit;
 use quickwit_proto::SearchRequest;
-use std::cmp::Ordering;
-use std::collections::BinaryHeap;
 use tantivy::collector::Collector;
 use tantivy::collector::SegmentCollector;
 use tantivy::fastfield::DynamicFastFieldReader;
@@ -96,7 +97,7 @@ fn resolve_sort_by(
 
 /// PartialHitHeapItem order is the inverse of the natural order
 /// so that we actually have a min-heap.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct PartialHitHeapItem {
     sorting_field_value: u64,
     doc_id: DocId,
@@ -153,7 +154,6 @@ impl QuickwitSegmentCollector {
 
     fn collect_top_k(&mut self, doc_id: DocId) {
         let sorting_field_value: u64 = self.sort_by.compute_sorting_field(doc_id);
-
         if self.at_capacity() {
             if let Some(limit_sorting_field) = self.hits.peek().map(|head| head.sorting_field_value)
             {
@@ -219,7 +219,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
     }
 }
 
-/// Collector that
+// TODO: seems not very useful, remove it and refactor it.
 pub trait GenericQuickwitCollector: Collector {
     fn fast_field_names(&self) -> Vec<String>;
 }
@@ -371,7 +371,7 @@ fn extract_fast_field_names(index_config: &dyn IndexConfig) -> Vec<String> {
         }
     }
 
-    fast_fields.into_iter().unique().collect()
+    fast_fields
 }
 
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.

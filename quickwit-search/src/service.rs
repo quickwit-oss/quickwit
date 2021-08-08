@@ -25,9 +25,10 @@ use async_trait::async_trait;
 
 use bytes::Bytes;
 use quickwit_metastore::Metastore;
+use quickwit_proto::{ExportRequest, LeafExportRequest, LeafExportResult};
 use quickwit_proto::{
-    ExportRequest, FetchDocsRequest, FetchDocsResult, LeafExportRequest, LeafExportResult,
-    LeafSearchRequest, LeafSearchResult, SearchRequest, SearchResult,
+    FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, SearchRequest,
+    SearchResult
 };
 use quickwit_storage::StorageUriResolver;
 use tokio_stream::wrappers::ReceiverStream;

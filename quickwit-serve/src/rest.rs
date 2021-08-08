@@ -24,7 +24,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use serde::{Deserialize, Deserializer};
-use tokio_stream::wrappers::ReceiverStream;
 use tracing::*;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
@@ -182,7 +181,7 @@ pub fn search_handler<TSearchService: SearchService>(
         .and_then(search)
 }
 
-/// This struct represents the QueryString passed to
+/// This struct represents the export query passed to
 /// the rest API.
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
