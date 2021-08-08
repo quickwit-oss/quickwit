@@ -169,10 +169,7 @@ impl FastFieldCollectorBuilder {
 
     pub fn fast_field_to_warm(&self) -> Vec<String> {
         if let Some(timestamp_field_name) = &self.timestamp_field_name {
-            vec![
-                timestamp_field_name.clone(),
-                self.fast_field_name.clone(),
-            ]
+            vec![timestamp_field_name.clone(), self.fast_field_name.clone()]
         } else {
             vec![self.fast_field_name.clone()]
         }

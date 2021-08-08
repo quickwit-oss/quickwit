@@ -28,6 +28,7 @@ pub use root::root_export;
 
 use serde::Deserialize;
 use std::{fmt::Display, io::Write};
+use tracing::info;
 
 use crate::SearchError;
 
@@ -68,7 +69,7 @@ impl From<String> for OutputFormat {
 
 pub struct ExportSerializer<'a> {
     output_format: OutputFormat,
-    writer: &'a mut [u8],
+    writer: &'a mut Vec<u8>,
 }
 
 impl<'a> ExportSerializer<'a> {
@@ -113,7 +114,8 @@ impl<'a> ExportSerializer<'a> {
     }
 
     fn write_csv<T: Display>(&mut self, value: T) -> crate::Result<()> {
-        writeln!(self.writer, "{}", value).map_err(|_| {
+        writeln!(self.writer, "{}", value).map_err(|error| {
+            info!("error here, {:?}", error);
             SearchError::InternalError("Error when serializing to csv during export".to_owned())
         })?;
         Ok(())

@@ -29,7 +29,6 @@ use std::sync::Arc;
 use tantivy::schema::Type;
 use tantivy::{query::Query, ReloadPolicy};
 use tokio_stream::wrappers::ReceiverStream;
-
 use super::FastFieldCollectorBuilder;
 
 /// `leaf` step of export.
@@ -99,13 +98,13 @@ async fn leaf_export_single_split(
         fast_field_collector_builder.fast_field_to_warm(),
     )
     .await?;
-    let mut writer = Vec::new();
+    let mut buffer = Vec::new();
     match fast_field_collector_builder.value_type() {
         Type::I64 => {
             let fast_field_collector = fast_field_collector_builder.build_i64();
             let fast_field_values = searcher.search(query.as_ref(), &fast_field_collector)?;
             let mut serializer = ExportSerializer {
-                writer: &mut writer,
+                writer: &mut buffer,
                 output_format,
             };
             serializer.write_i64(fast_field_values)?;
@@ -114,7 +113,7 @@ async fn leaf_export_single_split(
             let fast_field_collector = fast_field_collector_builder.build_u64();
             let fast_field_values = searcher.search(query.as_ref(), &fast_field_collector)?;
             let mut serializer = ExportSerializer {
-                writer: &mut writer,
+                writer: &mut buffer,
                 output_format,
             };
             serializer.write_u64(fast_field_values)?;
@@ -126,6 +125,5 @@ async fn leaf_export_single_split(
             )));
         }
     }
-
-    Ok(LeafExportResult { data: writer })
+    Ok(LeafExportResult { data: buffer })
 }
