@@ -26,6 +26,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use quickwit_actors::Actor;
+use quickwit_actors::ActorContext;
 use quickwit_actors::Mailbox;
 use quickwit_actors::QueueCapacity;
 use quickwit_actors::SendError;
@@ -99,7 +100,7 @@ impl SyncActor for Indexer {
     fn process_message(
         &mut self,
         batch: RawDocBatch,
-        context: quickwit_actors::ActorContext<'_, Self::Message>,
+        ctx: &ActorContext<Self::Message>,
     ) -> Result<(), quickwit_actors::MessageProcessError> {
         let index_config = self.index_config.clone();
         let timestamp_field_opt = self.timestamp_field_opt;
@@ -108,7 +109,7 @@ impl SyncActor for Indexer {
         for doc_json in batch.docs {
             // One batch might take a long time to process. Let's register progress
             // after each doc.
-            context.progress.record_progress();
+            ctx.progress.record_progress();
             indexed_split.size_in_bytes += doc_json.len() as u64;
             let doc_parsing_result = index_config.doc_from_json(&doc_json);
             let doc = match doc_parsing_result {
@@ -211,11 +212,11 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use crate::models::CommitPolicy;
+    use crate::models::RawDocBatch;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::KillSwitch;
     use quickwit_actors::SyncActor;
-    use crate::models::CommitPolicy;
-    use crate::models::RawDocBatch;
 
     use super::Indexer;
 

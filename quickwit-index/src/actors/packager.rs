@@ -26,6 +26,7 @@ use crate::models::IndexedSplit;
 use crate::models::PackagedSplit;
 use anyhow::Context;
 use quickwit_actors::Actor;
+use quickwit_actors::ActorContext;
 use quickwit_actors::Mailbox;
 use quickwit_actors::Progress;
 use quickwit_actors::QueueCapacity;
@@ -207,10 +208,10 @@ impl SyncActor for Packager {
     fn process_message(
         &mut self,
         mut split: IndexedSplit,
-        context: quickwit_actors::ActorContext<'_, Self::Message>,
+        ctx: &ActorContext<Self::Message>,
     ) -> Result<(), quickwit_actors::MessageProcessError> {
-        commit_split(&mut split, &context.progress)?;
-        let segment_metas = merge_segments_if_required(&mut split, &context.progress)?;
+        commit_split(&mut split, &ctx.progress)?;
+        let segment_metas = merge_segments_if_required(&mut split, &ctx.progress)?;
         build_hotcache(split.temp_dir.path())?;
         let packaged_split = create_packaged_split(&segment_metas[..], split)?;
         self.sink.send_blocking(packaged_split)?;

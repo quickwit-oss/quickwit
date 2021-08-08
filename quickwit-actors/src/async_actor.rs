@@ -1,11 +1,10 @@
 use crate::actor::MessageProcessError;
 use crate::actor_handle::{ActorHandle, ActorTermination};
 use crate::mailbox::{create_mailbox, Command, Inbox};
-use crate::Mailbox;
 use crate::{Actor, ActorContext, KillSwitch, Progress, ReceptionResult};
 use async_trait::async_trait;
 use tokio::sync::watch;
-use tracing::{debug, info};
+use tracing::debug;
 
 /// An async actor is executed on a regular tokio task.
 ///
@@ -23,7 +22,7 @@ pub trait AsyncActor: Actor + Sized {
     async fn process_message(
         &mut self,
         message: Self::Message,
-        context: ActorContext<'_, Self::Message>,
+        ctx: &ActorContext<Self::Message>,
     ) -> Result<(), MessageProcessError>;
 
     #[doc(hidden)]
@@ -37,10 +36,12 @@ pub trait AsyncActor: Actor + Sized {
         let join_handle = tokio::spawn(async_actor_loop(
             self,
             inbox,
-            mailbox.clone(),
             state_tx,
-            kill_switch.clone(),
-            progress.clone(),
+            ActorContext {
+                self_mailbox: mailbox.clone(),
+                kill_switch: kill_switch.clone(),
+                progress: progress.clone()
+            }
         ));
         let actor_handle = ActorHandle::new(
             mailbox.clone(),
@@ -56,28 +57,26 @@ pub trait AsyncActor: Actor + Sized {
 async fn async_actor_loop<A: AsyncActor>(
     mut actor: A,
     inbox: Inbox<A::Message>,
-    self_mailbox: Mailbox<A::Message>,
     state_tx: watch::Sender<A::ObservableState>,
-    kill_switch: KillSwitch,
-    progress: Progress,
+    ctx: ActorContext<A::Message>
 ) -> ActorTermination {
-    let mut should_not_accept_msgs_as_it_is_paused = true;
+    let mut is_paused = true;
     loop {
-        debug!(name=%self_mailbox.actor_instance_name(), "message-loop");
+        debug!(name=%ctx.self_mailbox.actor_instance_name(), "message-loop");
         tokio::task::yield_now().await;
-        if !kill_switch.is_alive() {
-            debug!(name=%self_mailbox.actor_instance_name(), "killed-by-killswitch");
+        if !ctx.kill_switch.is_alive() {
+            debug!(name=%ctx.self_mailbox.actor_instance_name(), "killed-by-killswitch");
             return ActorTermination::KillSwitch;
         }
-        progress.record_progress();
+        ctx.progress.record_progress();
         let default_message_opt = actor.default_message();
-        let reception_result = inbox.try_recv_msg_async(should_not_accept_msgs_as_it_is_paused, default_message_opt).await;
-        progress.record_progress();
-        if !kill_switch.is_alive() {
+        let reception_result = inbox.try_recv_msg_async(is_paused, default_message_opt).await;
+        ctx.progress.record_progress();
+        if !ctx.kill_switch.is_alive() {
             return ActorTermination::KillSwitch;
         }
         if let ReceptionResult::None = reception_result {
-            if self_mailbox.is_last_mailbox() {
+            if ctx.self_mailbox.is_last_mailbox() {
                 return ActorTermination::Disconnect;
             }
         }
@@ -85,14 +84,14 @@ async fn async_actor_loop<A: AsyncActor>(
             ReceptionResult::Command(cmd) => {
                 match cmd {
                     Command::Pause => {
-                        should_not_accept_msgs_as_it_is_paused = false;
+                        is_paused = false;
                     }
                     Command::Stop(cb) => {
                         let _ = cb.send(());
                         return ActorTermination::OnDemand;
                     }
                     Command::Start => {
-                        should_not_accept_msgs_as_it_is_paused = true;
+                        is_paused = true;
                     }
                     Command::Observe(cb) => {
                         let state = actor.observable_state();
@@ -104,27 +103,22 @@ async fn async_actor_loop<A: AsyncActor>(
                 }
             }
             ReceptionResult::Message(msg) => {
-                let context = ActorContext {
-                    self_mailbox: &self_mailbox,
-                    progress: &progress,
-                    kill_switch: &kill_switch,
-                };
-                match actor.process_message(msg, context).await {
+                match actor.process_message(msg, &ctx).await {
                     Ok(()) => (),
                     Err(MessageProcessError::OnDemand) => return ActorTermination::OnDemand,
                     Err(MessageProcessError::Terminated) => return ActorTermination::Disconnect,
                     Err(MessageProcessError::Error(err)) => {
-                        kill_switch.kill();
+                        ctx.kill_switch.kill();
                         return ActorTermination::ActorError(err);
                     }
                     Err(MessageProcessError::DownstreamClosed) => {
-                        kill_switch.kill();
+                        ctx.kill_switch.kill();
                         return ActorTermination::DownstreamClosed;
                     }
                 }
             }
             ReceptionResult::None => {
-                if self_mailbox.is_last_mailbox() {
+                if ctx.self_mailbox.is_last_mailbox() {
                     return ActorTermination::Disconnect;
                 } else {
                     continue;

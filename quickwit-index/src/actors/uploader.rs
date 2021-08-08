@@ -191,7 +191,7 @@ impl AsyncActor for Uploader {
     async fn process_message(
         &mut self,
         split: PackagedSplit,
-        context: ActorContext<'_, Self::Message>,
+        ctx: &ActorContext<Self::Message>,
     ) -> Result<(), MessageProcessError> {
         let (split_uploaded_tx, split_uploaded_rx) = tokio::sync::oneshot::channel();
 
@@ -211,7 +211,7 @@ impl AsyncActor for Uploader {
             split.split_id.clone(),
         );
         let metastore = self.metastore.clone();
-        let kill_switch = context.kill_switch.clone();
+        let kill_switch = ctx.kill_switch.clone();
         tokio::task::spawn(async move {
             let run_upload_res = run_upload(split, split_storage, metastore).await;
             if run_upload_res.is_err() {
