@@ -1,6 +1,6 @@
 use tokio::sync::watch;
 use tokio::task::spawn_blocking;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::actor::MessageProcessError;
 use crate::actor_handle::ActorTermination;
@@ -22,7 +22,7 @@ pub trait SyncActor: Actor + Sized {
     fn process_message(
         &mut self,
         message: Self::Message,
-        context: crate::ActorContext<'_, Self::Message>,
+        ctx: &ActorContext<Self::Message>,
     ) -> Result<(), MessageProcessError>;
 
     /// Function called if there are no more messages available.
@@ -41,18 +41,18 @@ pub trait SyncActor: Actor + Sized {
         let (mailbox, inbox) = create_mailbox(actor_name, queue_capacity);
         let (state_tx, state_rx) = watch::channel(self.observable_state());
         let progress = Progress::default();
-        let progress_clone = progress.clone();
-        let kill_switch_clone = kill_switch.clone();
-        let mailbox_clone = mailbox.clone();
+        let ctx = ActorContext {
+            progress: progress.clone(),
+            self_mailbox: mailbox.clone(),
+            kill_switch: kill_switch.clone(),
+        };
         let join_handle = spawn_blocking::<_, ActorTermination>(move || {
             let actor_name = self.name();
             let termination = sync_actor_loop(
                 &mut self,
                 inbox,
-                mailbox_clone,
                 &state_tx,
-                kill_switch,
-                progress,
+                ctx
             );
             debug!(cause=?termination, actor=%actor_name, "termination");
             let _ = state_tx.send(self.observable_state());
@@ -62,8 +62,8 @@ pub trait SyncActor: Actor + Sized {
             mailbox.clone(),
             state_rx,
             join_handle,
-            progress_clone,
-            kill_switch_clone,
+            progress,
+            kill_switch,
         );
         actor_handle
     }
@@ -72,31 +72,29 @@ pub trait SyncActor: Actor + Sized {
 fn sync_actor_loop<A: SyncActor>(
     actor: &mut A,
     inbox: Inbox<A::Message>,
-    self_mailbox: Mailbox<A::Message>,
     state_tx: &watch::Sender<A::ObservableState>,
-    kill_switch: KillSwitch,
-    progress: Progress,
+    ctx: ActorContext<A::Message>
 ) -> ActorTermination {
-    let mut running = true;
+    let mut is_paused = true;
     loop {
-        if !kill_switch.is_alive() {
+        if !ctx.kill_switch.is_alive() {
             return ActorTermination::KillSwitch;
         }
-        progress.record_progress();
+        ctx.progress.record_progress();
         let default_message_opt = actor.default_message().and_then(|default_message| {
-            if self_mailbox.is_last_mailbox() {
+            if ctx.self_mailbox.is_last_mailbox() {
                 None
             } else {
                 Some(default_message)
             }
         });
-        let reception_result = inbox.try_recv_msg(running, default_message_opt);
-        progress.record_progress();
-        if !kill_switch.is_alive() {
+        let reception_result = inbox.try_recv_msg(is_paused, default_message_opt);
+        ctx.progress.record_progress();
+        if !ctx.kill_switch.is_alive() {
             return ActorTermination::KillSwitch;
         }
         if let ReceptionResult::None = reception_result {
-            if self_mailbox.is_last_mailbox() {
+            if ctx.self_mailbox.is_last_mailbox() {
                 return ActorTermination::Disconnect;
             }
         }
@@ -104,14 +102,14 @@ fn sync_actor_loop<A: SyncActor>(
             ReceptionResult::Command(cmd) => {
                 match cmd {
                     Command::Pause => {
-                        running = false;
+                        is_paused = false;
                     }
                     Command::Stop(cb) => {
                         let _ = cb.send(());
                         return ActorTermination::OnDemand;
                     }
                     Command::Start => {
-                        running = true;
+                        is_paused = true;
                     }
                     Command::Observe(cb) => {
                         let state = actor.observable_state();
@@ -123,21 +121,18 @@ fn sync_actor_loop<A: SyncActor>(
                 }
             }
             ReceptionResult::Message(msg) => {
-                let context = ActorContext {
-                    self_mailbox: &self_mailbox,
-                    progress: &progress,
-                    kill_switch: &kill_switch,
-                };
-                match actor.process_message(msg, context) {
+                // TODO avoid building the contexdt all of the time.
+
+                match actor.process_message(msg, &ctx) {
                     Ok(()) => (),
                     Err(MessageProcessError::OnDemand) => return ActorTermination::OnDemand,
                     Err(MessageProcessError::Terminated) => return ActorTermination::OnDemand,
                     Err(MessageProcessError::Error(err)) => {
-                        kill_switch.kill();
+                        ctx.kill_switch.kill();
                         return ActorTermination::ActorError(err);
                     }
                     Err(MessageProcessError::DownstreamClosed) => {
-                        kill_switch.kill();
+                        ctx.kill_switch.kill();
                         return ActorTermination::DownstreamClosed;
                     }
                 }

@@ -69,13 +69,13 @@ pub trait Actor: Send + Sync + 'static {
     fn observable_state(&self) -> Self::ObservableState;
 }
 
-pub struct ActorContext<'a, Message> {
-    pub self_mailbox: &'a Mailbox<Message>,
-    pub progress: &'a Progress,
-    pub kill_switch: &'a KillSwitch,
+pub struct ActorContext< Message> {
+    pub self_mailbox: Mailbox<Message>,
+    pub progress: Progress,
+    pub kill_switch: KillSwitch,
 }
 
-impl<'a, Message> ActorContext<'a, Message> {
+impl<Message> ActorContext<Message> {
     pub async fn self_send_async(&self, msg: Message) {
         if let Err(_send_err) = self.self_mailbox.send_async(msg).await {
             error!("Failed to send error to self. This should never happen.");

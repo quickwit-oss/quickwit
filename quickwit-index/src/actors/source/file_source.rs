@@ -24,13 +24,13 @@ use quickwit_actors::ActorContext;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
 use quickwit_actors::MessageProcessError;
-use tracing::debug;
-use tracing::info;
 use std::io;
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
+use tracing::debug;
+use tracing::info;
 
 use crate::models::RawDocBatch;
 
@@ -78,7 +78,7 @@ impl AsyncActor for FileSource {
     async fn process_message(
         &mut self,
         _message: Self::Message,
-        _context: ActorContext<'_, Self::Message>,
+        _ctx: &ActorContext<Self::Message>,
     ) -> Result<(), MessageProcessError> {
         let limit_num_bytes = self.file_position.num_bytes + BATCH_NUM_BYTES_THRESHOLD;
         let mut reached_eof = false;

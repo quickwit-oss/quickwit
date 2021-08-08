@@ -106,7 +106,12 @@ mod tests {
                 };
                 Ok(index_metadata)
             });
-        spawn_indexing_pipeline("test-index".to_string(), Arc::new(metastore), Default::default()).await?;
+        spawn_indexing_pipeline(
+            "test-index".to_string(),
+            Arc::new(metastore),
+            Default::default(),
+        )
+        .await?;
         tokio::time::sleep(Duration::from_secs(2)).await;
         Ok(())
     }
