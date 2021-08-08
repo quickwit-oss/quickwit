@@ -19,7 +19,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 use std::collections::HashMap;
-use std::convert::Infallible;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -27,23 +26,23 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, SearchRequest,
-    SearchResult, ExportRequest, LeafExportRequest, LeafExportResult
+    ExportRequest, FetchDocsRequest, FetchDocsResult, LeafExportRequest, LeafExportResult,
+    LeafSearchRequest, LeafSearchResult, SearchRequest, SearchResult,
 };
 use quickwit_storage::StorageUriResolver;
-use tokio::sync::mpsc::Receiver;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;
 use tracing::info;
 
-use crate::collector::make_export_collector;
+use crate::export::leaf_export;
+use crate::export::make_fast_field_collector;
+use crate::export::root_export;
 use crate::fetch_docs;
-use crate::leaf::leaf_export;
 use crate::leaf_search;
 use crate::make_collector;
+use crate::root_search;
 use crate::SearchClientPool;
 use crate::SearchError;
-use crate::{root_export, root_search};
 
 #[derive(Clone)]
 /// The search service implementation.
@@ -86,10 +85,7 @@ pub trait SearchService: 'static + Send + Sync {
     async fn fetch_docs(&self, _request: FetchDocsRequest) -> Result<FetchDocsResult, SearchError>;
 
     /// Perfomrs a root search returning a receiver for streaming
-    async fn root_export(
-        &self,
-        _request: ExportRequest,
-    ) -> Result<Receiver<Result<Bytes, Infallible>>, SearchError>;
+    async fn root_export(&self, _request: ExportRequest) -> Result<Bytes, SearchError>;
 
     /// Perform a leaf search on a given set of splits and return a stream.
     async fn leaf_export(
@@ -182,10 +178,7 @@ impl SearchService for SearchServiceImpl {
         Ok(fetch_docs_result)
     }
 
-    async fn root_export(
-        &self,
-        export_request: ExportRequest,
-    ) -> Result<Receiver<Result<Bytes, Infallible>>, SearchError> {
+    async fn root_export(&self, export_request: ExportRequest) -> Result<Bytes, SearchError> {
         let metastore = self
             .metastore_router
             .get(&export_request.index_id)
@@ -194,10 +187,9 @@ impl SearchService for SearchServiceImpl {
                 index_id: export_request.index_id.clone(),
             })?;
 
-        let response_receiver =
-            root_export(&export_request, metastore.as_ref(), &self.client_pool).await?;
+        let data = root_export(&export_request, metastore.as_ref(), &self.client_pool).await?;
 
-        Ok(response_receiver)
+        Ok(Bytes::from(data))
     }
 
     async fn leaf_export(
@@ -221,10 +213,16 @@ impl SearchService for SearchServiceImpl {
         let index_config = index_metadata.index_config;
         let search_request = SearchRequest::from(export_request.clone());
         let query = index_config.query(&search_request)?;
-        let collector = make_export_collector(index_config.as_ref(), &export_request);
+        let collector = make_fast_field_collector(index_config.as_ref(), &export_request);
+        let leaf_export_result = leaf_export(
+            query,
+            collector,
+            split_ids,
+            storage.clone(),
+            export_request.output_format.into(),
+        )
+        .await?;
 
-        let leaf_search_result = leaf_export(query, collector, split_ids, storage.clone()).await?;
-
-        Ok(leaf_search_result)
+        Ok(leaf_export_result)
     }
 }

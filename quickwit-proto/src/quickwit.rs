@@ -114,8 +114,6 @@ pub struct PartialHit {
     /// The DocId identifies a unique document at the scale of a tantivy segment.
     #[prost(uint32, tag = "4")]
     pub doc_id: u32,
-    #[prost(int64, optional, tag = "5")]
-    pub fast_field_value: ::core::option::Option<i64>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

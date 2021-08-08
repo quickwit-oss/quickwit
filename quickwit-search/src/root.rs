@@ -21,28 +21,22 @@
 
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::convert::Infallible;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use bytes::Bytes;
-use futures::StreamExt;
 use itertools::Itertools;
-use quickwit_proto::ExportRequest;
-use quickwit_proto::LeafExportRequest;
 use quickwit_proto::SplitSearchError;
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
-use tokio::sync::mpsc::Receiver;
 use tokio::task::spawn_blocking;
 use tokio::task::JoinHandle;
-use tonic::Status;
 use tracing::*;
 
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, Hit, LeafSearchRequest, LeafSearchResult, PartialHit,
-    SearchRequest, SearchResult
+    SearchRequest, SearchResult,
 };
 
 use crate::client_pool::Job;
@@ -61,8 +55,8 @@ fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
 
 #[derive(Debug)]
 pub struct NodeSearchError {
-    search_error: SearchError,
-    split_ids: Vec<String>,
+    pub search_error: SearchError,
+    pub split_ids: Vec<String>,
 }
 
 type SearchResultsByAddr = HashMap<SocketAddr, Result<LeafSearchResult, NodeSearchError>>;
@@ -179,7 +173,7 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
     })
 }
 
-fn job_for_splits(
+pub(crate) fn job_for_splits(
     split_ids: &HashSet<&String>,
     split_metadata_map: &HashMap<String, SplitMetadata>,
 ) -> Vec<Job> {
@@ -431,66 +425,6 @@ pub async fn root_search(
     })
 }
 
-/// Perform a distributed search by streaming the result.
-pub async fn root_export(
-    export_request: &ExportRequest,
-    metastore: &dyn Metastore,
-    client_pool: &Arc<SearchClientPool>,
-) -> Result<Receiver<Result<Bytes, Infallible>>, SearchError> {
-    let _start_instant = tokio::time::Instant::now();
-
-    // Create a job for leaf node search and assign the splits that the node is responsible for based on the job.
-    let search_request = SearchRequest::from(export_request.clone());
-    let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
-
-    // Create a hash map of SplitMetadata with split id as a key.
-    let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
-        .into_iter()
-        .map(|split_metadata| (split_metadata.split_id.clone(), split_metadata))
-        .collect();
-
-    // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
-    let leaf_search_jobs: Vec<Job> =
-        job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
-
-    let assigned_leaf_search_jobs = client_pool
-        .assign_jobs(leaf_search_jobs, &HashSet::default())
-        .await?;
-    debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
-
-    let (result_sender, result_receiver) = tokio::sync::mpsc::channel(100);
-    for (mut search_client, jobs) in assigned_leaf_search_jobs {
-        let leaf_export_request = LeafExportRequest {
-            export_request: Some(export_request.clone()),
-            split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
-        };
-
-        debug!(leaf_export_request=?leaf_export_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
-        let result_sender_clone = result_sender.clone();
-        tokio::spawn(async move {
-            let mut stream = search_client
-                .leaf_export(leaf_export_request)
-                .await
-                .map_err(SearchError::convert_to_tonic_status)?;
-            while let Some(leaf_result) = stream.next().await {
-                let leaf_data = leaf_result?;
-                result_sender_clone
-                    .send(Ok(bytes::Bytes::from(leaf_data.data)))
-                    .await
-                    .map_err(|_| {
-                        SearchError::convert_to_tonic_status(SearchError::InternalError(
-                            "Unable to send LeafExportResult".to_string(),
-                        ))
-                    })?;
-            }
-            Result::<(), Status>::Ok(())
-        });
-    }
-
-    Ok(result_receiver)
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,7 +459,6 @@ mod tests {
             split_id: split_id.to_string(),
             segment_ord: 1,
             doc_id,
-            fast_field_value: None,
         }
     }
 

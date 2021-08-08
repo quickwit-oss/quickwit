@@ -140,9 +140,6 @@ message PartialHit {
 
   // The DocId identifies a unique document at the scale of a tantivy segment.
   uint32 doc_id = 4;
-
-  optional int64 fast_field_value = 5;
-
 }
 
 message LeafSearchResult {

@@ -19,18 +19,14 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use itertools::Itertools;
-use quickwit_proto::ExportRequest;
-use quickwit_proto::LeafExportResult;
-use std::cmp::Ordering;
-use std::collections::BinaryHeap;
-use tantivy::TantivyError;
-
 use quickwit_index_config::IndexConfig;
 use quickwit_index_config::SortBy;
 use quickwit_index_config::SortOrder;
 use quickwit_proto::LeafSearchResult;
 use quickwit_proto::PartialHit;
 use quickwit_proto::SearchRequest;
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 use tantivy::collector::Collector;
 use tantivy::collector::SegmentCollector;
 use tantivy::fastfield::DynamicFastFieldReader;
@@ -43,7 +39,6 @@ use tantivy::SegmentReader;
 
 use crate::filters::TimestampFilter;
 use crate::partial_hit_sorting_key;
-use crate::OutputFormat;
 
 /// The `SortingFieldComputer` can be seen as the specialization of `SortBy` applied to a specific `SegmentReader`.
 /// Its role is to compute the sorting field given a `DocId`.
@@ -105,7 +100,6 @@ fn resolve_sort_by(
 struct PartialHitHeapItem {
     sorting_field_value: u64,
     doc_id: DocId,
-    fast_field_value: Option<i64>,
 }
 
 impl PartialOrd for PartialHitHeapItem {
@@ -177,7 +171,6 @@ impl QuickwitSegmentCollector {
             self.hits.push(PartialHitHeapItem {
                 sorting_field_value,
                 doc_id,
-                fast_field_value: None,
             });
         }
     }
@@ -214,7 +207,6 @@ impl SegmentCollector for QuickwitSegmentCollector {
                 sorting_field_value: hit.sorting_field_value,
                 segment_ord,
                 doc_id: hit.doc_id,
-                fast_field_value: hit.fast_field_value,
                 split_id: split_id.clone(),
             })
             .collect();
@@ -227,125 +219,9 @@ impl SegmentCollector for QuickwitSegmentCollector {
     }
 }
 
-pub struct QuickwitSegmentExportCollector {
-    values: Vec<u8>,
-    timestamp_filter_opt: Option<TimestampFilter>,
-    fast_field_reader: DynamicFastFieldReader<i64>,
-    output_format: OutputFormat,
-}
-
-impl QuickwitSegmentExportCollector {
-    fn accept_document(&self, doc_id: DocId) -> bool {
-        if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
-            return timestamp_filter.is_within_range(doc_id);
-        }
-        true
-    }
-}
-
-impl SegmentCollector for QuickwitSegmentExportCollector {
-    type Fruit = LeafExportResult;
-
-    fn collect(&mut self, doc_id: DocId, _score: Score) {
-        if !self.accept_document(doc_id) {
-            return;
-        }
-        let fast_field_value = self.fast_field_reader.get(doc_id);
-        match self.output_format {
-            OutputFormat::CSV => {
-                self.values
-                    .extend(format!("{}\n", fast_field_value).as_bytes());
-            }
-            OutputFormat::RowBinary => {
-                //TODO should format to raw binary
-                self.values
-                    .extend(format!("{}\n", fast_field_value).as_bytes());
-            }
-        }
-    }
-
-    fn harvest(self) -> LeafExportResult {
-        LeafExportResult { data: self.values }
-    }
-}
-
-/// The quickwit generic collector.
-pub trait GenericQuickwitCollector {
+/// Collector that
+pub trait GenericQuickwitCollector: Collector {
     fn fast_field_names(&self) -> Vec<String>;
-}
-
-#[derive(Clone)]
-pub struct QuickwitExportCollector {
-    pub split_id: String,
-    fast_field_names: Vec<String>,
-    pub timestamp_field_opt: Option<Field>,
-    pub requested_fast_field_name: String,
-    pub start_timestamp_opt: Option<i64>,
-    pub end_timestamp_opt: Option<i64>,
-    pub output_format: OutputFormat,
-}
-
-impl QuickwitExportCollector {
-    pub fn for_split(&self, split_id: String) -> Self {
-        let mut self_clone = self.clone();
-        self_clone.split_id = split_id;
-        self_clone
-    }
-}
-
-impl GenericQuickwitCollector for QuickwitExportCollector {
-    fn fast_field_names(&self) -> Vec<String> {
-        self.fast_field_names.clone()
-    }
-}
-
-impl Collector for QuickwitExportCollector {
-    type Child = QuickwitSegmentExportCollector;
-    type Fruit = LeafExportResult;
-
-    fn for_segment(
-        &self,
-        _segment_ord: SegmentOrdinal,
-        segment_reader: &SegmentReader,
-    ) -> tantivy::Result<Self::Child> {
-        let timestamp_filter_opt = if let Some(timestamp_field) = self.timestamp_field_opt {
-            TimestampFilter::new(
-                timestamp_field,
-                self.start_timestamp_opt,
-                self.end_timestamp_opt,
-                segment_reader,
-            )?
-        } else {
-            None
-        };
-        let field = segment_reader
-            .schema()
-            .get_field(&self.requested_fast_field_name)
-            .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
-        let fast_field_reader = segment_reader.fast_fields().i64(field)?;
-        Ok(QuickwitSegmentExportCollector {
-            values: vec![],
-            timestamp_filter_opt,
-            fast_field_reader,
-            output_format: self.output_format,
-        })
-    }
-
-    fn requires_scoring(&self) -> bool {
-        // We do not need BM25 scoring in Quickwit.
-        // By returning false, we inform tantivy that it does not need to decompress
-        // term frequencies.
-        false
-    }
-
-    fn merge_fruits(&self, segment_fruits: Vec<LeafExportResult>) -> tantivy::Result<Self::Fruit> {
-        let data = segment_fruits
-            .iter()
-            .map(|fruit| fruit.data.clone())
-            .flatten()
-            .collect::<Vec<_>>();
-        Ok(LeafExportResult { data })
-    }
 }
 
 /// The quickwit collector is the tantivy Collector used in Quickwit.
@@ -515,26 +391,6 @@ pub fn make_collector(
     }
 }
 
-/// Helper to build QuickwitExportCollector.
-pub fn make_export_collector(
-    index_config: &dyn IndexConfig,
-    export_request: &ExportRequest,
-) -> QuickwitExportCollector {
-    let mut fast_fields = vec![export_request.fast_field.clone()];
-    if let Some(timestamp_field) = index_config.timestamp_field_name() {
-        fast_fields.push(timestamp_field);
-    }
-    QuickwitExportCollector {
-        split_id: String::new(),
-        fast_field_names: fast_fields,
-        requested_fast_field_name: export_request.fast_field.clone(),
-        timestamp_field_opt: index_config.timestamp_field(),
-        start_timestamp_opt: export_request.start_timestamp,
-        end_timestamp_opt: export_request.end_timestamp,
-        output_format: export_request.output_format.clone().into(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::collector::top_k_partial_hits;
@@ -548,12 +404,10 @@ mod tests {
         let lesser_score = PartialHitHeapItem {
             sorting_field_value: 1u64,
             doc_id: 1u32,
-            fast_field_value: None,
         };
         let higher_score = PartialHitHeapItem {
             sorting_field_value: 2u64,
             doc_id: 1u32,
-            fast_field_value: None,
         };
         assert_eq!(lesser_score.cmp(&higher_score), Ordering::Greater);
     }
@@ -565,7 +419,6 @@ mod tests {
             split_id: "split1".to_string(),
             segment_ord: 0u32,
             doc_id: 0u32,
-            fast_field_value: None,
         };
         assert_eq!(
             top_k_partial_hits(vec![make_doc(1u64), make_doc(3u64), make_doc(2u64),], 2),
@@ -580,7 +433,6 @@ mod tests {
             split_id: format!("split_{}", split_id),
             segment_ord: 0u32,
             doc_id: 0u32,
-            fast_field_value: None,
         };
         assert_eq!(
             top_k_partial_hits(

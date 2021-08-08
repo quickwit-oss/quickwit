@@ -19,12 +19,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-use std::sync::Arc;
 use async_trait::async_trait;
+use std::sync::Arc;
 
-use quickwit_proto::{
-    search_service_server as grpc, LeafExportRequest, LeafExportResult,
-};
+use quickwit_proto::{search_service_server as grpc, LeafExportRequest, LeafExportResult};
 use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;

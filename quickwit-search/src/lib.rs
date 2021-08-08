@@ -61,7 +61,7 @@ pub use crate::error::SearchError;
 pub use crate::export::OutputFormat;
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
-use crate::root::{root_export, root_search};
+use crate::root::root_search;
 pub use crate::search_result_json::SearchResultJson;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
