@@ -39,28 +39,23 @@ use crate::ClientPool;
 use crate::SearchClientPool;
 use crate::SearchError;
 
-/// Perform a distributed search by streaming the result.
+/// Perform a distributed export.
 pub async fn root_export(
     export_request: &ExportRequest,
     metastore: &dyn Metastore,
     client_pool: &Arc<SearchClientPool>,
 ) -> Result<Vec<u8>, SearchError> {
-    let _start_instant = tokio::time::Instant::now();
-
-    // Create a job for leaf node search and assign the splits that the node is responsible for based on the job.
+    let start_instant = tokio::time::Instant::now();
+    // TODO: building a search request should not be necessary for listing splits.
+    // This needs some refactoring: relevant splits, metadata_map, jobs...
     let search_request = SearchRequest::from(export_request.clone());
     let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
-
-    // Create a hash map of SplitMetadata with split id as a key.
     let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
         .into_iter()
         .map(|split_metadata| (split_metadata.split_id.clone(), split_metadata))
         .collect();
-
-    // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
     let leaf_search_jobs: Vec<Job> =
         job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
-
     let assigned_leaf_search_jobs = client_pool
         .assign_jobs(leaf_search_jobs, &HashSet::default())
         .await?;
@@ -72,9 +67,9 @@ pub async fn root_export(
         let split_ids: Vec<String> = jobs.iter().map(|job| job.split.clone()).collect();
         let leaf_export_request = LeafExportRequest {
             export_request: Some(export_request.clone()),
-            split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
+            split_ids: split_ids.clone(),
         };
-        debug!(leaf_export_request=?leaf_export_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
+        debug!(leaf_export_request=?leaf_export_request, grpc_addr=?search_client.grpc_addr(), "Leaf node export.");
         let handle = tokio::spawn(async move {
             let mut stream = search_client
                 .leaf_export(leaf_export_request)
@@ -84,15 +79,15 @@ pub async fn root_export(
                     split_ids: split_ids.clone(),
                 })?;
 
-            let mut leaf_results = Vec::new();
+            let mut leaf_bytes = Vec::new();
             while let Some(leaf_result) = stream.next().await {
-                let leaf_data = leaf_result.map_err(|_| NodeSearchError {
+                let leaf_data = leaf_result.map_err(|error| NodeSearchError {
                     search_error: SearchError::InternalError("todo".to_owned()),
                     split_ids: split_ids.clone(),
                 })?;
-                leaf_results.extend(leaf_data.data);
+                leaf_bytes.extend(leaf_data.data);
             }
-            Result::<Vec<u8>, NodeSearchError>::Ok(leaf_results)
+            Result::<Vec<u8>, NodeSearchError>::Ok(leaf_bytes)
         });
         handles.push(handle);
     }
@@ -111,5 +106,7 @@ pub async fn root_export(
         error!(error=?errors, "Some export leaf requests have failed");
         return Err(SearchError::InternalError(format!("{:?}", errors)));
     }
+    let elapsed = start_instant.elapsed();
+    info!("Root export completed in {:?}", elapsed);
     Ok(buffer)
 }

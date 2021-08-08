@@ -22,72 +22,58 @@ use crate::leaf::open_index;
 use crate::leaf::warmup;
 use crate::OutputFormat;
 use crate::SearchError;
-use itertools::Itertools;
 use quickwit_proto::LeafExportResult;
 use quickwit_storage::Storage;
 use std::io::Write;
 use std::sync::Arc;
 use tantivy::{query::Query, ReloadPolicy};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::Status;
 
 use super::collector::FastFieldCollector;
 
 /// `leaf` step of export.
+// Note: we return a stream of a result with a tonic::Status error
+// to be compatible with the stream coming from the grpc client.
+// It would be better to have a SearchError but we need then
+// to process stream in grpc_adapater.rs to change SearchError
+// to tonic::Status as tonic::Status is required by the stream result
+// signature defined by proto generated code.
 pub async fn leaf_export(
     query: Box<dyn Query>,
     fast_field_collector: FastFieldCollector<i64>,
     split_ids: Vec<String>,
     storage: Arc<dyn Storage>,
     output_format: OutputFormat,
-) -> Result<ReceiverStream<Result<LeafExportResult, Status>>, SearchError> {
+) -> ReceiverStream<Result<LeafExportResult, tonic::Status>> {
     let (result_sender, result_receiver) = tokio::sync::mpsc::channel(10);
-    tokio::spawn(async move {
-        let mut tasks = vec![];
-        for split_id in split_ids {
-            let split_storage: Arc<dyn Storage> =
-                quickwit_storage::add_prefix_to_storage(storage.clone(), split_id.clone());
-            let collector_for_split = fast_field_collector.clone();
-            let query_clone = query.box_clone();
-            let result_sender_clone = result_sender.clone();
-            tasks.push(async move {
-                let leaf_split_result = leaf_export_single_split(
-                    query_clone,
-                    collector_for_split,
-                    split_storage,
-                    output_format,
-                )
+    for split_id in split_ids {
+        let split_storage: Arc<dyn Storage> =
+            quickwit_storage::add_prefix_to_storage(storage.clone(), split_id.clone());
+        let collector_for_split = fast_field_collector.clone();
+        let query_clone = query.box_clone();
+        let result_sender_clone = result_sender.clone();
+        tokio::spawn(async move {
+            let leaf_split_result = leaf_export_single_split(
+                query_clone,
+                collector_for_split,
+                split_storage,
+                output_format,
+            )
+            .await
+            .map_err(|_| SearchError::InternalError(format!("Export failed on split {}", split_id)))?;
+            result_sender_clone
+                .send(Ok(leaf_split_result))
                 .await
-                .map_err(|_| SearchError::InternalError(format!("Split failed {}", split_id)))?;
-
-                result_sender_clone
-                    .send(Ok(leaf_split_result))
-                    .await
-                    .map_err(|_| {
-                        SearchError::InternalError(format!("Split failed {}", split_id))
-                    })?;
-
-                Result::<(), SearchError>::Ok(())
-            });
-        }
-
-        let results = futures::future::join_all(tasks).await;
-        let failed_splits = results
-            .into_iter()
-            .filter(|result| result.is_err())
-            .map(|error| error.unwrap_err().to_string())
-            .collect_vec();
-        if !failed_splits.is_empty() {
-            return Err(SearchError::InternalError(format!(
-                "Some splits failed {:?}",
-                failed_splits
-            )));
-        }
-
-        Ok(())
-    });
-
-    Ok(ReceiverStream::new(result_receiver))
+                .map_err(|_| {
+                    SearchError::InternalError(format!(
+                        "Unable to send leaf export result for split {}",
+                        split_id
+                    ))
+                })?;
+            Result::<(), SearchError>::Ok(())
+        });
+    }
+    ReceiverStream::new(result_receiver)
 }
 
 /// Apply a leaf search on a single split.

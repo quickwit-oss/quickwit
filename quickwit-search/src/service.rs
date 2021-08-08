@@ -28,11 +28,10 @@ use quickwit_metastore::Metastore;
 use quickwit_proto::{ExportRequest, LeafExportRequest, LeafExportResult};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, SearchRequest,
-    SearchResult
+    SearchResult,
 };
 use quickwit_storage::StorageUriResolver;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::Status;
 use tracing::info;
 
 use crate::export::leaf_export;
@@ -92,7 +91,7 @@ pub trait SearchService: 'static + Send + Sync {
     async fn leaf_export(
         &self,
         _request: LeafExportRequest,
-    ) -> Result<ReceiverStream<Result<LeafExportResult, Status>>, SearchError>;
+    ) -> crate::Result<ReceiverStream<Result<LeafExportResult, tonic::Status>>>;
 }
 
 impl SearchServiceImpl {
@@ -187,16 +186,14 @@ impl SearchService for SearchServiceImpl {
             .ok_or_else(|| SearchError::IndexDoesNotExist {
                 index_id: export_request.index_id.clone(),
             })?;
-
         let data = root_export(&export_request, metastore.as_ref(), &self.client_pool).await?;
-
         Ok(Bytes::from(data))
     }
 
     async fn leaf_export(
         &self,
         leaf_export_request: LeafExportRequest,
-    ) -> Result<ReceiverStream<Result<LeafExportResult, Status>>, SearchError> {
+    ) -> crate::Result<ReceiverStream<Result<LeafExportResult, tonic::Status>>> {
         let export_request = leaf_export_request
             .export_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
@@ -214,16 +211,16 @@ impl SearchService for SearchServiceImpl {
         let index_config = index_metadata.index_config;
         let search_request = SearchRequest::from(export_request.clone());
         let query = index_config.query(&search_request)?;
+        // TODO: works only on i64, this needs to handle common tantivy types.
         let collector = make_fast_field_collector(index_config.as_ref(), &export_request);
-        let leaf_export_result = leaf_export(
+        let leaf_export_stream = leaf_export(
             query,
             collector,
             split_ids,
             storage.clone(),
             export_request.output_format.into(),
         )
-        .await?;
-
-        Ok(leaf_export_result)
+        .await;
+        Ok(leaf_export_stream)
     }
 }

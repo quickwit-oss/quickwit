@@ -78,8 +78,7 @@ impl grpc::SearchService for GrpcAdapter {
         Ok(tonic::Response::new(fetch_docs_result))
     }
 
-    type LeafExportStream = ReceiverStream<Result<LeafExportResult, Status>>;
-
+    type LeafExportStream = ReceiverStream<Result<LeafExportResult, tonic::Status>>;
     async fn leaf_export(
         &self,
         request: tonic::Request<LeafExportRequest>,

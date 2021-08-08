@@ -19,17 +19,15 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use http::Uri;
+use quickwit_proto::LeafExportResult;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
-
-use http::Uri;
-use quickwit_proto::LeafExportResult;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Channel;
 use tonic::transport::Endpoint;
 use tonic::Request;
-use tonic::Status;
 
 use crate::error::parse_grpc_error;
 use crate::SearchError;
@@ -128,23 +126,28 @@ impl SearchServiceClient {
     pub async fn leaf_export(
         &mut self,
         request: quickwit_proto::LeafExportRequest,
-    ) -> Result<ReceiverStream<Result<LeafExportResult, Status>>, SearchError> {
+    ) -> crate::Result<ReceiverStream<Result<LeafExportResult, tonic::Status>>> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);
-                let mut tonic_result = grpc_client
+                let mut export_result_stream = grpc_client
                     .leaf_export(tonic_request)
                     .await
                     .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
                     .into_inner();
 
-                //TODO Try to find a transparent type to achive this wrapping
-                let (sender, receiver) = tokio::sync::mpsc::channel(100);
-                while let Some(data) = tonic_result.message().await.unwrap() {
-                    let _ = sender.send(Ok(data)).await;
+                // TODO: returning stream instead of a channel may be better.
+                // But this seems to be difficult. Try it at your own expense.
+                let (export_sender, export_receiver) = tokio::sync::mpsc::channel(10);
+                while let Some(result) = export_result_stream
+                    .message()
+                    .await
+                    .map_err(|status| parse_grpc_error(&status))?
+                {
+                    let _ = export_sender.send(Ok(result)).await;
                 }
 
-                Ok(ReceiverStream::new(receiver))
+                Ok(ReceiverStream::new(export_receiver))
             }
             SearchServiceClientImpl::Local(service) => service.leaf_export(request).await,
         }
