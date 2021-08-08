@@ -18,18 +18,19 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::export::ExportSerializer;
 use crate::leaf::open_index;
 use crate::leaf::warmup;
 use crate::OutputFormat;
 use crate::SearchError;
 use quickwit_proto::LeafExportResult;
 use quickwit_storage::Storage;
-use std::io::Write;
 use std::sync::Arc;
+use tantivy::schema::Type;
 use tantivy::{query::Query, ReloadPolicy};
 use tokio_stream::wrappers::ReceiverStream;
 
-use super::collector::FastFieldCollector;
+use super::FastFieldCollectorBuilder;
 
 /// `leaf` step of export.
 // Note: we return a stream of a result with a tonic::Status error
@@ -40,7 +41,7 @@ use super::collector::FastFieldCollector;
 // signature defined by proto generated code.
 pub async fn leaf_export(
     query: Box<dyn Query>,
-    fast_field_collector: FastFieldCollector<i64>,
+    fast_field_collector_builder: FastFieldCollectorBuilder,
     split_ids: Vec<String>,
     storage: Arc<dyn Storage>,
     output_format: OutputFormat,
@@ -49,7 +50,7 @@ pub async fn leaf_export(
     for split_id in split_ids {
         let split_storage: Arc<dyn Storage> =
             quickwit_storage::add_prefix_to_storage(storage.clone(), split_id.clone());
-        let collector_for_split = fast_field_collector.clone();
+        let collector_for_split = fast_field_collector_builder.clone();
         let query_clone = query.box_clone();
         let result_sender_clone = result_sender.clone();
         tokio::spawn(async move {
@@ -60,13 +61,15 @@ pub async fn leaf_export(
                 output_format,
             )
             .await
-            .map_err(|_| SearchError::InternalError(format!("Export failed on split {}", split_id)))?;
+            .map_err(|_| {
+                SearchError::InternalError(format!("Export failed on split `{}`", split_id))
+            })?;
             result_sender_clone
                 .send(Ok(leaf_split_result))
                 .await
                 .map_err(|_| {
                     SearchError::InternalError(format!(
-                        "Unable to send leaf export result for split {}",
+                        "Unable to send leaf export result for split `{}`",
                         split_id
                     ))
                 })?;
@@ -79,7 +82,7 @@ pub async fn leaf_export(
 /// Apply a leaf search on a single split.
 async fn leaf_export_single_split(
     query: Box<dyn Query>,
-    fast_field_collector: FastFieldCollector<i64>,
+    fast_field_collector_builder: FastFieldCollectorBuilder,
     storage: Arc<dyn Storage>,
     output_format: OutputFormat,
 ) -> crate::Result<LeafExportResult> {
@@ -90,22 +93,39 @@ async fn leaf_export_single_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
-    let fast_field_names = fast_field_collector.fast_field_names();
-    warmup(&*searcher, query.as_ref(), fast_field_names).await?;
-    let export = searcher.search(query.as_ref(), &fast_field_collector)?;
-    let mut buffer = Vec::new();
-    // TODO: isolate the serialization.
-    match output_format {
-        OutputFormat::CSV => {
-            for row in export {
-                writeln!(&mut buffer, "{}", row);
-            }
+    warmup(
+        &*searcher,
+        query.as_ref(),
+        fast_field_collector_builder.fast_field_to_warm(),
+    )
+    .await?;
+    let mut writer = Vec::new();
+    match fast_field_collector_builder.value_type() {
+        Type::I64 => {
+            let fast_field_collector = fast_field_collector_builder.build_i64();
+            let fast_field_values = searcher.search(query.as_ref(), &fast_field_collector)?;
+            let mut serializer = ExportSerializer {
+                writer: &mut writer,
+                output_format,
+            };
+            serializer.write_i64(fast_field_values)?;
         }
-        OutputFormat::RowBinary => {
-            for row in export {
-                buffer.write(&row.to_le_bytes());
-            }
+        Type::U64 => {
+            let fast_field_collector = fast_field_collector_builder.build_u64();
+            let fast_field_values = searcher.search(query.as_ref(), &fast_field_collector)?;
+            let mut serializer = ExportSerializer {
+                writer: &mut writer,
+                output_format,
+            };
+            serializer.write_u64(fast_field_values)?;
         }
-    };
-    Ok(LeafExportResult { data: buffer })
+        value_type => {
+            return Err(SearchError::InvalidQuery(format!(
+                "Fast field type `{:?}` not supported",
+                value_type
+            )));
+        }
+    }
+
+    Ok(LeafExportResult { data: writer })
 }

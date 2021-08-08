@@ -34,9 +34,8 @@ use quickwit_storage::StorageUriResolver;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::info;
 
-use crate::export::leaf_export;
-use crate::export::make_fast_field_collector;
 use crate::export::root_export;
+use crate::export::{leaf_export, FastFieldCollectorBuilder};
 use crate::fetch_docs;
 use crate::leaf_search;
 use crate::make_collector;
@@ -212,10 +211,23 @@ impl SearchService for SearchServiceImpl {
         let search_request = SearchRequest::from(export_request.clone());
         let query = index_config.query(&search_request)?;
         // TODO: works only on i64, this needs to handle common tantivy types.
-        let collector = make_fast_field_collector(index_config.as_ref(), &export_request);
+        let fast_field_to_export = export_request.fast_field.clone();
+        let schema = index_config.schema();
+        let fast_field = schema
+            .get_field(&fast_field_to_export)
+            .ok_or_else(|| SearchError::InvalidQuery("Fast field does not exist.".to_owned()))?;
+        let fast_field_type = schema.get_field_entry(fast_field).field_type();
+        let fast_field_collector_builder = FastFieldCollectorBuilder::new(
+            fast_field_type.value_type(),
+            export_request.fast_field.clone(),
+            index_config.timestamp_field_name(),
+            index_config.timestamp_field(),
+            export_request.start_timestamp,
+            export_request.end_timestamp,
+        )?;
         let leaf_export_stream = leaf_export(
             query,
-            collector,
+            fast_field_collector_builder,
             split_ids,
             storage.clone(),
             export_request.output_format.into(),

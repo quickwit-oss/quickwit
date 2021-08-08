@@ -21,9 +21,9 @@
 use std::marker::PhantomData;
 
 use crate::filters::TimestampFilter;
-use quickwit_index_config::IndexConfig;
-use quickwit_proto::ExportRequest;
+use crate::SearchError;
 use tantivy::fastfield::FastFieldReader;
+use tantivy::schema::Type;
 use tantivy::{
     collector::{Collector, SegmentCollector},
     fastfield::{DynamicFastFieldReader, FastValue},
@@ -83,13 +83,6 @@ pub struct FastFieldCollector<Item: FastValue> {
     _marker: PhantomData<Item>,
 }
 
-impl<Item: FastValue> FastFieldCollector<Item> {
-    pub fn fast_field_names(&self) -> Vec<String> {
-        // TODO: add timestamp field
-        vec![self.fast_field_to_export.clone()]
-    }
-}
-
 impl<Item: FastValue> Collector for FastFieldCollector<Item> {
     type Child = FastFieldSegmentCollector<Item>;
     type Fruit = Vec<Item>;
@@ -132,19 +125,76 @@ impl<Item: FastValue> Collector for FastFieldCollector<Item> {
     }
 }
 
-pub fn make_fast_field_collector(
-    index_config: &dyn IndexConfig,
-    export_request: &ExportRequest,
-) -> FastFieldCollector<i64> {
-    let fast_field_to_export = export_request.fast_field.clone();
-    let timestamp_field_opt = index_config.timestamp_field();
-    let start_timestamp_opt = export_request.start_timestamp;
-    let end_timestamp_opt = export_request.end_timestamp;
-    FastFieldCollector::<i64> {
-        fast_field_to_export,
-        timestamp_field_opt,
-        start_timestamp_opt,
-        end_timestamp_opt,
-        _marker: PhantomData,
+#[derive(Clone)]
+pub struct FastFieldCollectorBuilder {
+    fast_field_value_type: Type,
+    fast_field_name: String,
+    timestamp_field_name: Option<String>,
+    timestamp_field: Option<Field>,
+    start_timestamp: Option<i64>,
+    end_timestamp: Option<i64>,
+}
+
+impl FastFieldCollectorBuilder {
+    pub fn new(
+        fast_field_value_type: Type,
+        fast_field_name: String,
+        timestamp_field_name: Option<String>,
+        timestamp_field: Option<Field>,
+        start_timestamp: Option<i64>,
+        end_timestamp: Option<i64>,
+    ) -> crate::Result<Self> {
+        match fast_field_value_type {
+            Type::U64 | Type::I64 => (),
+            _ => {
+                return Err(SearchError::InvalidQuery(format!(
+                    "Fast field type `{:?}` not supported",
+                    fast_field_value_type
+                )));
+            }
+        }
+        Ok(Self {
+            fast_field_value_type,
+            fast_field_name,
+            timestamp_field_name,
+            timestamp_field,
+            start_timestamp,
+            end_timestamp,
+        })
+    }
+
+    pub fn value_type(&self) -> Type {
+        self.fast_field_value_type
+    }
+
+    pub fn fast_field_to_warm(&self) -> Vec<String> {
+        if let Some(timestamp_field_name) = &self.timestamp_field_name {
+            vec![
+                timestamp_field_name.clone(),
+                self.fast_field_name.clone(),
+            ]
+        } else {
+            vec![self.fast_field_name.clone()]
+        }
+    }
+
+    pub fn typed_build<TFastValue: FastValue>(&self) -> FastFieldCollector<TFastValue> {
+        FastFieldCollector::<TFastValue> {
+            fast_field_to_export: self.fast_field_name.clone(),
+            timestamp_field_opt: self.timestamp_field,
+            start_timestamp_opt: self.start_timestamp,
+            end_timestamp_opt: self.end_timestamp,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn build_i64(&self) -> FastFieldCollector<i64> {
+        // TODO: check type
+        self.typed_build::<i64>()
+    }
+
+    pub fn build_u64(&self) -> FastFieldCollector<u64> {
+        // TODO: check type
+        self.typed_build::<u64>()
     }
 }

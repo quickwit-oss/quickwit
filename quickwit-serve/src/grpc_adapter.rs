@@ -25,7 +25,6 @@ use std::sync::Arc;
 use quickwit_proto::{search_service_server as grpc, LeafExportRequest, LeafExportResult};
 use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::Status;
 
 /// gRPC adapter that wraped SearchService.
 #[derive(Clone)]

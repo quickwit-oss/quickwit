@@ -22,13 +22,16 @@ mod collector;
 mod leaf;
 mod root;
 
-pub use collector::{make_fast_field_collector, FastFieldCollector};
+pub use collector::{FastFieldCollector, FastFieldCollectorBuilder};
 pub use leaf::leaf_export;
 pub use root::root_export;
 
 use serde::Deserialize;
+use std::{fmt::Display, io::Write};
 
-/// Output format for the search results.
+use crate::SearchError;
+
+/// Output format for export.
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputFormat {
@@ -60,5 +63,59 @@ impl From<String> for OutputFormat {
             "rowbinary" => Self::RowBinary,
             _ => Self::CSV,
         }
+    }
+}
+
+pub struct ExportSerializer<'a> {
+    output_format: OutputFormat,
+    writer: &'a mut [u8],
+}
+
+impl<'a> ExportSerializer<'a> {
+    pub fn write_u64(&mut self, values: Vec<u64>) -> crate::Result<()> {
+        match self.output_format {
+            OutputFormat::CSV => {
+                for value in values {
+                    self.write_csv(value)?;
+                }
+            }
+            OutputFormat::RowBinary => {
+                for value in values {
+                    self.writer.write(&value.to_le_bytes()).map_err(|_| {
+                        SearchError::InternalError(
+                            "Error when serializing u64 during export".to_owned(),
+                        )
+                    })?;
+                }
+            }
+        };
+        Ok(())
+    }
+
+    pub fn write_i64(&mut self, values: Vec<i64>) -> crate::Result<()> {
+        match self.output_format {
+            OutputFormat::CSV => {
+                for value in values {
+                    self.write_csv(value)?;
+                }
+            }
+            OutputFormat::RowBinary => {
+                for value in values {
+                    self.writer.write(&value.to_le_bytes()).map_err(|_| {
+                        SearchError::InternalError(
+                            "Error when serializing i64 during export".to_owned(),
+                        )
+                    })?;
+                }
+            }
+        };
+        Ok(())
+    }
+
+    fn write_csv<T: Display>(&mut self, value: T) -> crate::Result<()> {
+        writeln!(self.writer, "{}", value).map_err(|_| {
+            SearchError::InternalError("Error when serializing to csv during export".to_owned())
+        })?;
+        Ok(())
     }
 }

@@ -32,6 +32,7 @@ use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::SearchRequest;
 
 use crate::client_pool::Job;
+use crate::error::parse_grpc_error;
 use crate::list_relevant_splits;
 use crate::root::job_for_splits;
 use crate::root::NodeSearchError;
@@ -81,8 +82,8 @@ pub async fn root_export(
 
             let mut leaf_bytes = Vec::new();
             while let Some(leaf_result) = stream.next().await {
-                let leaf_data = leaf_result.map_err(|error| NodeSearchError {
-                    search_error: SearchError::InternalError("todo".to_owned()),
+                let leaf_data = leaf_result.map_err(|status| NodeSearchError {
+                    search_error: parse_grpc_error(&status),
                     split_ids: split_ids.clone(),
                 })?;
                 leaf_bytes.extend(leaf_data.data);
@@ -99,7 +100,11 @@ pub async fn root_export(
         if response.is_err() {
             errors.push(response.unwrap_err());
         } else {
-            buffer.write(&response.unwrap());
+            buffer.write(&response.unwrap()).map_err(|_| {
+                SearchError::InternalError(
+                    "Error when writing leaf export bytes into root buffer".to_owned(),
+                )
+            })?;
         }
     }
     if !errors.is_empty() {
