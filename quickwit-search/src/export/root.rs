@@ -98,6 +98,7 @@ pub async fn root_export(
     }
     let responses = futures::future::try_join_all(handles).await?;
     let mut errors = Vec::new();
+    // TODO: refactor this part...
     let mut buffer = Vec::new();
     for response in responses {
         if response.is_err() {
