@@ -124,6 +124,6 @@ mod tests {
     fn test_serialize_csv() {
         let mut buffer = Vec::new();
         serialize_csv::<i64>(&[-10i64], &mut buffer).unwrap();
-        assert_eq!(buffer, "-10".as_bytes());
+        assert_eq!(buffer, "-10\n".as_bytes());
     }
 }
