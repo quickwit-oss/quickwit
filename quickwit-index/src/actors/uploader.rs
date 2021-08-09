@@ -191,7 +191,7 @@ impl AsyncActor for Uploader {
     async fn process_message(
         &mut self,
         split: PackagedSplit,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         let (split_uploaded_tx, split_uploaded_rx) = tokio::sync::oneshot::channel();
 

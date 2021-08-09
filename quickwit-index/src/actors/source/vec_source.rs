@@ -63,7 +63,7 @@ impl AsyncActor for VecSource {
     async fn process_message(
         &mut self,
         _message: Self::Message,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         let line_docs: Vec<String> = self.items[self.next_item_id..]
             .iter()

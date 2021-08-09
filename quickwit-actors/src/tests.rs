@@ -37,7 +37,7 @@ impl SyncActor for PingReceiverSyncActor {
     fn process_message(
         &mut self,
         _message: Self::Message,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         self.ping_count += 1;
         Ok(())
@@ -73,7 +73,7 @@ impl AsyncActor for PingReceiverAsyncActor {
     async fn process_message(
         &mut self,
         _message: Self::Message,
-        _progress: &ActorContext<Self::Message>,
+        _progress: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         self.ping_count += 1;
         Ok(())
@@ -122,7 +122,7 @@ impl AsyncActor for PingerAsyncSenderActor {
     async fn process_message(
         &mut self,
         message: SenderMessage,
-        _ctx: &ActorContext<SenderMessage>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         match message {
             SenderMessage::AddPeer(peer) => {
@@ -230,7 +230,7 @@ impl AsyncActor for BuggyActor {
     async fn process_message(
         &mut self,
         message: BuggyMessage,
-        _ctx: &ActorContext<BuggyMessage>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         match message {
             BuggyMessage::Block => {
@@ -347,7 +347,7 @@ impl AsyncActor for DefaultMessageActor {
     async fn process_message(
         &mut self,
         message: Self::Message,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         match message {
             Msg::Default => {
@@ -365,7 +365,7 @@ impl SyncActor for DefaultMessageActor {
     fn process_message(
         &mut self,
         message: Self::Message,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         match message {
             Msg::Default => {

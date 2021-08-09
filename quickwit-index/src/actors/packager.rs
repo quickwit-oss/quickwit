@@ -208,7 +208,7 @@ impl SyncActor for Packager {
     fn process_message(
         &mut self,
         mut split: IndexedSplit,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorTermination> {
         commit_split(&mut split, &ctx.progress)?;
         let segment_metas = merge_segments_if_required(&mut split, &ctx.progress)?;
