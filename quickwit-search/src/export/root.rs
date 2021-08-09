@@ -23,6 +23,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use futures::StreamExt;
+use itertools::Either;
+use itertools::Itertools;
 use quickwit_proto::ExportRequest;
 use quickwit_proto::LeafExportRequest;
 use tracing::*;
@@ -44,7 +46,7 @@ pub async fn root_export(
     export_request: &ExportRequest,
     metastore: &dyn Metastore,
     client_pool: &Arc<SearchClientPool>,
-) -> Result<Vec<Vec<u8>>, SearchError> {
+) -> Result<Vec<u8>, SearchError> {
     let start_instant = tokio::time::Instant::now();
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
@@ -91,20 +93,23 @@ pub async fn root_export(
         });
         handles.push(handle);
     }
+
     let export_results = futures::future::try_join_all(handles).await?;
-    let mut errors = Vec::new();
-    // TODO: refactor this part...
-    let mut data = Vec::with_capacity(export_results.len());
-    for response in export_results {
-        if response.is_err() {
-            errors.push(response.unwrap_err());
-        } else {
-            data.push(response.unwrap());
-        }
-    }
+    let (exports_bytes, errors): (Vec<_>, Vec<_>) =
+        export_results
+            .into_iter()
+            .partition_map(|result| match result {
+                Ok(bytes) => Either::Left(bytes),
+                Err(error) => Either::Right(error),
+            });
     if !errors.is_empty() {
         error!(error=?errors, "Some export leaf requests have failed");
         return Err(SearchError::InternalError(format!("{:?}", errors)));
+    }
+    let export_len = exports_bytes.iter().map(|v| v.len()).sum();
+    let mut data = Vec::with_capacity(export_len);
+    for export_bytes in exports_bytes {
+        data.extend(export_bytes);
     }
     let elapsed = start_instant.elapsed();
     info!("Root export completed in {:?}", elapsed);
@@ -181,7 +186,6 @@ mod tests {
         let export_result = root_export(&export_request, &metastore, &client_pool)
             .await?
             .into_iter()
-            .flatten()
             .collect::<Vec<_>>();
         assert_eq!(export_result.len(), 6);
         assert_eq!(export_result, "123456".as_bytes().to_vec());

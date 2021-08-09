@@ -530,7 +530,7 @@ mod tests {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
             .expect_root_export()
-            .return_once(|_| Ok(bytes::Bytes::from("first row\nsecond row")));
+            .return_once(|_| Ok("first row\nsecond row".to_string().into_bytes()));
         let rest_export_api_handler =
             super::export_handler(Arc::new(mock_search_service)).recover(recover_fn);
         let response = warp::test::request()
