@@ -23,6 +23,7 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Deserializer};
 use tracing::*;
 use warp::hyper::header::CONTENT_TYPE;
@@ -226,9 +227,9 @@ async fn export_endpoint<TSearchService: SearchService>(
         fast_field: search_request.fast_field,
         output_format: search_request.output_format.to_string(),
     };
-
     let data = search_service.root_export(export_request).await?;
-    let body = hyper::Body::from(data);
+    let stream = stream::iter(data).map(Result::<Vec<u8>, std::io::Error>::Ok);
+    let body = hyper::Body::wrap_stream(stream);
     Ok(body)
 }
 
@@ -528,9 +529,12 @@ mod tests {
     #[tokio::test]
     async fn test_rest_export_api() -> anyhow::Result<()> {
         let mut mock_search_service = MockSearchService::new();
-        mock_search_service
-            .expect_root_export()
-            .return_once(|_| Ok("first row\nsecond row".to_string().into_bytes()));
+        mock_search_service.expect_root_export().return_once(|_| {
+            Ok(vec![
+                "first row\n".to_string().into_bytes(),
+                "second row".to_string().into_bytes(),
+            ])
+        });
         let rest_export_api_handler =
             super::export_handler(Arc::new(mock_search_service)).recover(recover_fn);
         let response = warp::test::request()

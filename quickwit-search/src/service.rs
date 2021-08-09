@@ -83,7 +83,7 @@ pub trait SearchService: 'static + Send + Sync {
     async fn fetch_docs(&self, _request: FetchDocsRequest) -> Result<FetchDocsResult, SearchError>;
 
     /// Perfomrs a root search returning a receiver for streaming
-    async fn root_export(&self, _request: ExportRequest) -> Result<Vec<u8>, SearchError>;
+    async fn root_export(&self, _request: ExportRequest) -> Result<Vec<Vec<u8>>, SearchError>;
 
     /// Perform a leaf search on a given set of splits and return a stream.
     async fn leaf_export(
@@ -176,7 +176,10 @@ impl SearchService for SearchServiceImpl {
         Ok(fetch_docs_result)
     }
 
-    async fn root_export(&self, export_request: ExportRequest) -> Result<Vec<u8>, SearchError> {
+    async fn root_export(
+        &self,
+        export_request: ExportRequest,
+    ) -> Result<Vec<Vec<u8>>, SearchError> {
         let metastore = self
             .metastore_router
             .get(&export_request.index_id)

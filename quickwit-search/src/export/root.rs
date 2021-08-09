@@ -46,7 +46,7 @@ pub async fn root_export(
     export_request: &ExportRequest,
     metastore: &dyn Metastore,
     client_pool: &Arc<SearchClientPool>,
-) -> Result<Vec<u8>, SearchError> {
+) -> Result<Vec<Vec<u8>>, SearchError> {
     let start_instant = tokio::time::Instant::now();
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
@@ -106,14 +106,9 @@ pub async fn root_export(
         error!(error=?errors, "Some export leaf requests have failed");
         return Err(SearchError::InternalError(format!("{:?}", errors)));
     }
-    let export_len = exports_bytes.iter().map(|v| v.len()).sum();
-    let mut data = Vec::with_capacity(export_len);
-    for export_bytes in exports_bytes {
-        data.extend(export_bytes);
-    }
     let elapsed = start_instant.elapsed();
     info!("Root export completed in {:?}", elapsed);
-    Ok(data)
+    Ok(exports_bytes)
 }
 
 #[cfg(test)]
@@ -183,12 +178,9 @@ mod tests {
         drop(result_sender);
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
-        let export_result = root_export(&export_request, &metastore, &client_pool)
-            .await?
-            .into_iter()
-            .collect::<Vec<_>>();
-        assert_eq!(export_result.len(), 6);
-        assert_eq!(export_result, "123456".as_bytes().to_vec());
+        let export_result = root_export(&export_request, &metastore, &client_pool).await?;
+        assert_eq!(export_result.len(), 1);
+        assert_eq!(export_result, vec!["123456".as_bytes().to_vec()]);
         Ok(())
     }
 }
