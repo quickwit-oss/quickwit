@@ -186,7 +186,7 @@ impl SearchService for SearchServiceImpl {
                 index_id: export_request.index_id.clone(),
             })?;
         let data = root_export(&export_request, metastore.as_ref(), &self.client_pool).await?;
-        Ok(Bytes::from(data))
+        Ok(data.into_iter().flatten().collect())
     }
 
     async fn leaf_export(

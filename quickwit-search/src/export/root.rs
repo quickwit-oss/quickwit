@@ -20,7 +20,6 @@
 
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::io::Write;
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -45,7 +44,7 @@ pub async fn root_export(
     export_request: &ExportRequest,
     metastore: &dyn Metastore,
     client_pool: &Arc<SearchClientPool>,
-) -> Result<Vec<u8>, SearchError> {
+) -> Result<Vec<Vec<u8>>, SearchError> {
     let start_instant = tokio::time::Instant::now();
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
@@ -95,16 +94,12 @@ pub async fn root_export(
     let export_results = futures::future::try_join_all(handles).await?;
     let mut errors = Vec::new();
     // TODO: refactor this part...
-    let mut buffer = Vec::new();
+    let mut data = Vec::with_capacity(export_results.len());
     for response in export_results {
         if response.is_err() {
             errors.push(response.unwrap_err());
         } else {
-            buffer.write(&response.unwrap()).map_err(|_| {
-                SearchError::InternalError(
-                    "Error when writing leaf export bytes into root buffer".to_owned(),
-                )
-            })?;
+            data.push(response.unwrap());
         }
     }
     if !errors.is_empty() {
@@ -113,7 +108,7 @@ pub async fn root_export(
     }
     let elapsed = start_instant.elapsed();
     info!("Root export completed in {:?}", elapsed);
-    Ok(buffer)
+    Ok(data)
 }
 
 #[cfg(test)]
@@ -183,7 +178,11 @@ mod tests {
         drop(result_sender);
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
-        let export_result = root_export(&export_request, &metastore, &client_pool).await?;
+        let export_result = root_export(&export_request, &metastore, &client_pool)
+            .await?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
         assert_eq!(export_result.len(), 6);
         assert_eq!(export_result, "123456".as_bytes().to_vec());
         Ok(())
