@@ -60,7 +60,7 @@ pub async fn leaf_export(
                 output_format,
             )
             .await
-            .map_err(|error| SearchError::convert_to_tonic_status(error));
+            .map_err(SearchError::convert_to_tonic_status);
             result_sender_clone
                 .send(leaf_split_result)
                 .await
