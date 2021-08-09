@@ -66,7 +66,7 @@ impl AsyncActor for Publisher {
     async fn process_message(
         &mut self,
         uploaded_split_future: Receiver<UploadedSplit>,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorTermination> {
         let uploaded_split = uploaded_split_future
             .await

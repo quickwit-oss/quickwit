@@ -100,7 +100,7 @@ impl SyncActor for Indexer {
     fn process_message(
         &mut self,
         batch: RawDocBatch,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorTermination> {
         let index_config = self.index_config.clone();
         let timestamp_field_opt = self.timestamp_field_opt;

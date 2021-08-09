@@ -1,6 +1,7 @@
 use std::any::type_name;
 use std::fmt;
 use thiserror::Error;
+use tokio::sync::watch;
 use tracing::error;
 
 use crate::{KillSwitch, Mailbox, Progress, QueueCapacity, SendError};
@@ -83,14 +84,17 @@ pub trait Actor: Send + Sync + 'static {
     fn observable_state(&self) -> Self::ObservableState;
 }
 
-pub struct ActorContext<Message> {
-    pub self_mailbox: Mailbox<Message>,
+// TODO hide all of this public stuff
+pub struct ActorContext<A: Actor> {
+    pub self_mailbox: Mailbox<A::Message>,
     pub progress: Progress,
     pub kill_switch: KillSwitch,
+    pub state_tx: watch::Sender<A::ObservableState>,
+    pub is_paused: bool,
 }
 
-impl<Message> ActorContext<Message> {
-    pub async fn self_send_async(&self, msg: Message) {
+impl<A: Actor> ActorContext<A> {
+    pub async fn self_send_async(&self, msg: A::Message) {
         if let Err(_send_err) = self.self_mailbox.send_async(msg).await {
             error!("Failed to send error to self. This should never happen.");
         }
@@ -98,5 +102,17 @@ impl<Message> ActorContext<Message> {
 
     pub fn record_progress(&self) {
         self.progress.record_progress();
+    }
+
+    pub(crate) fn is_paused(&self,) -> bool {
+        self.is_paused
+    }
+
+    pub(crate) fn pause(&mut self,) {
+        self.is_paused = true;
+    }
+
+    pub(crate) fn resume(&mut self,) {
+        self.is_paused = false;
     }
 }

@@ -21,17 +21,17 @@ pub trait SyncActor: Actor + Sized {
     fn process_message(
         &mut self,
         message: Self::Message,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination>;
 
-    /// Function called if there are no more messages available.
-    fn finalize(&mut self) -> anyhow::Result<()> {
-        Ok(())
+    /// Functionj
+    fn finalize(&mut self, termination: ActorTermination) -> ActorTermination {
+        termination
     }
 
     #[doc(hidden)]
     fn spawn(
-        mut self,
+        self,
         kill_switch: KillSwitch,
     ) -> ActorHandle<Self::Message, Self::ObservableState> {
         let actor_name = self.name();
@@ -44,12 +44,13 @@ pub trait SyncActor: Actor + Sized {
             progress: progress.clone(),
             self_mailbox: mailbox.clone(),
             kill_switch: kill_switch.clone(),
+            state_tx,
+            is_paused: false,
         };
         let join_handle = spawn_blocking::<_, ActorTermination>(move || {
             let actor_name = self.name();
-            let termination = sync_actor_loop(&mut self, inbox, &state_tx, ctx);
+            let termination = sync_actor_loop(self, inbox, ctx);
             debug!(cause=?termination, actor=%actor_name, "termination");
-            let _ = state_tx.send(self.observable_state());
             termination
         });
         let actor_handle = ActorHandle::new(
@@ -63,73 +64,91 @@ pub trait SyncActor: Actor + Sized {
     }
 }
 
-fn sync_actor_loop<A: SyncActor>(
+
+fn process_msg<A: Actor + SyncActor>(
     actor: &mut A,
+    inbox: &Inbox<A::Message>,
+    ctx: &mut ActorContext<A>
+) -> Option<ActorTermination> {
+    if !ctx.kill_switch.is_alive() {
+        return Some(ActorTermination::KillSwitch);
+    }
+
+    ctx.progress.record_progress();
+    let default_message_opt = actor.default_message().and_then(|default_message| {
+        if ctx.self_mailbox.is_last_mailbox() {
+            None
+        } else {
+            Some(default_message)
+        }
+    });
+    ctx.progress.record_progress();
+
+    let reception_result = inbox.try_recv_msg(!ctx.is_paused(), default_message_opt);
+
+    ctx.progress.record_progress();
+     if !ctx.kill_switch.is_alive() {
+        return Some(ActorTermination::KillSwitch);
+    }
+    match reception_result {
+        ReceptionResult::Command(cmd) => {
+            match cmd {
+                Command::Pause => {
+                    ctx.pause();
+                    None
+                }
+                Command::Stop(cb) => {
+                    let _ = cb.send(());
+                    Some(ActorTermination::OnDemand)
+                }
+                Command::Start => {
+                    ctx.resume();
+                    None
+                }
+                Command::Observe(cb) => {
+                    let state = actor.observable_state();
+                    let _ = ctx.state_tx.send(state);
+                    // We voluntarily ignore the error here. (An error only occurs if the
+                    // sender dropped its receiver.)
+                    let _ = cb.send(());
+                    None
+                }
+            }
+        }
+        ReceptionResult::Message(msg) => {
+            actor
+                .process_message(msg, &ctx)
+                .err()
+        }
+        ReceptionResult::None => {
+            if ctx.self_mailbox.is_last_mailbox() {
+                Some(ActorTermination::Terminated)
+            } else {
+                None
+            }
+        }
+        ReceptionResult::Disconnect => {
+            Some(ActorTermination::Terminated)
+        }
+    }
+}
+
+fn sync_actor_loop<A: SyncActor>(
+    mut actor: A,
     inbox: Inbox<A::Message>,
-    state_tx: &watch::Sender<A::ObservableState>,
-    ctx: ActorContext<A::Message>,
+    mut ctx: ActorContext<A>,
 ) -> ActorTermination {
     let mut is_paused = true;
     loop {
-        if !ctx.kill_switch.is_alive() {
-            return ActorTermination::KillSwitch;
-        }
-        ctx.progress.record_progress();
-        let default_message_opt = actor.default_message().and_then(|default_message| {
-            if ctx.self_mailbox.is_last_mailbox() {
-                None
-            } else {
-                Some(default_message)
+        let termination_opt = process_msg(&mut actor, &inbox,  &mut ctx);
+        if let Some(termination) = termination_opt {
+            if termination.is_failure() {
+                ctx.kill_switch.kill();
             }
-        });
-        let reception_result = inbox.try_recv_msg(is_paused, default_message_opt);
-        ctx.progress.record_progress();
-        if !ctx.kill_switch.is_alive() {
-            return ActorTermination::KillSwitch;
-        }
-        if let ReceptionResult::None = reception_result {
-            if ctx.self_mailbox.is_last_mailbox() {
-                return ActorTermination::Terminated;
-            }
-        }
-        match reception_result {
-            ReceptionResult::Command(cmd) => {
-                match cmd {
-                    Command::Pause => {
-                        is_paused = false;
-                    }
-                    Command::Stop(cb) => {
-                        let _ = cb.send(());
-                        return ActorTermination::OnDemand;
-                    }
-                    Command::Start => {
-                        is_paused = true;
-                    }
-                    Command::Observe(cb) => {
-                        let state = actor.observable_state();
-                        let _ = state_tx.send(state);
-                        // We voluntarily ignore the error here. (An error only occurs if the
-                        // sender dropped its receiver.)
-                        let _ = cb.send(());
-                    }
-                }
-            }
-            ReceptionResult::Message(msg) => {
-                // TODO avoid building the contexdt all of the time.
-                let process_result = actor.process_message(msg, &ctx);
-                if let Err(actor_termination) = process_result {
-                    if actor_termination.is_failure() {
-                        ctx.kill_switch.kill();
-                    }
-                    return actor_termination;
-                }
-            }
-            ReceptionResult::None => {
-                continue;
-            }
-            ReceptionResult::Disconnect => {
-                return ActorTermination::Terminated;
-            }
+            let termination = actor.finalize(termination);
+            let final_state = actor.observable_state();
+            let _ = ctx.state_tx.send(final_state);
+            return termination;
         }
     }
 }
