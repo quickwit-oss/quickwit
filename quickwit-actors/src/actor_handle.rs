@@ -5,7 +5,8 @@ use tokio::time::timeout;
 use tracing::error;
 
 use crate::mailbox::Command;
-use crate::{ActorTermination, KillSwitch, Mailbox, Observation, Progress};
+use crate::progress::Progress;
+use crate::{ActorTermination, KillSwitch, Mailbox, Observation};
 
 /// An Actor Handle serves as an address to communicate with an actor.
 ///

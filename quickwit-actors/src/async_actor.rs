@@ -1,7 +1,8 @@
 use crate::actor::ActorTermination;
 use crate::actor_handle::ActorHandle;
 use crate::mailbox::{create_mailbox, Command, Inbox};
-use crate::{Actor, ActorContext, KillSwitch, Progress, ReceptionResult};
+use crate::progress::Progress;
+use crate::{Actor, ActorContext, KillSwitch, ReceptionResult};
 use async_trait::async_trait;
 use tokio::sync::watch;
 use tracing::debug;
@@ -59,11 +60,10 @@ pub trait AsyncActor: Actor + Sized {
     }
 }
 
-
 async fn process_msg<A: Actor + AsyncActor>(
     actor: &mut A,
     inbox: &Inbox<A::Message>,
-    ctx: &mut ActorContext<A>
+    ctx: &mut ActorContext<A>,
 ) -> Option<ActorTermination> {
     if !ctx.kill_switch.is_alive() {
         return Some(ActorTermination::KillSwitch);
@@ -79,10 +79,12 @@ async fn process_msg<A: Actor + AsyncActor>(
     });
     ctx.progress.record_progress();
 
-    let reception_result = inbox.try_recv_msg_async(!ctx.is_paused(), default_message_opt).await;
+    let reception_result = inbox
+        .try_recv_msg_async(!ctx.is_paused(), default_message_opt)
+        .await;
 
     ctx.progress.record_progress();
-     if !ctx.kill_switch.is_alive() {
+    if !ctx.kill_switch.is_alive() {
         return Some(ActorTermination::KillSwitch);
     }
     match reception_result {
@@ -110,12 +112,7 @@ async fn process_msg<A: Actor + AsyncActor>(
                 }
             }
         }
-        ReceptionResult::Message(msg) => {
-            actor
-                .process_message(msg, &ctx)
-                .await
-                .err()
-        }
+        ReceptionResult::Message(msg) => actor.process_message(msg, &ctx).await.err(),
         ReceptionResult::None => {
             if ctx.self_mailbox.is_last_mailbox() {
                 Some(ActorTermination::Terminated)
@@ -123,13 +120,9 @@ async fn process_msg<A: Actor + AsyncActor>(
                 None
             }
         }
-        ReceptionResult::Disconnect => {
-            Some(ActorTermination::Terminated)
-        }
+        ReceptionResult::Disconnect => Some(ActorTermination::Terminated),
     }
 }
-
-
 
 async fn async_actor_loop<A: AsyncActor>(
     mut actor: A,
@@ -139,7 +132,7 @@ async fn async_actor_loop<A: AsyncActor>(
     loop {
         debug!(name=%ctx.self_mailbox.actor_instance_name(), "message-loop");
         tokio::task::yield_now().await;
-        let termination_opt = process_msg(&mut actor, &inbox,  &mut ctx).await;
+        let termination_opt = process_msg(&mut actor, &inbox, &mut ctx).await;
         if let Some(termination) = termination_opt {
             if termination.is_failure() {
                 ctx.kill_switch.kill();

@@ -200,18 +200,15 @@ impl AsyncActor for Uploader {
         // publishing in the order splits finish their uploading.
         self.sink.send_async(split_uploaded_rx).await?;
 
-        // The juggling here happens because the permit lifetime prevents it from being passed to a task.
-        // Instead we acquire the resource, but forget the permit.
-        //
         // The permit will be added back manually to the semaphore the task after it is finished.
-        let permit = self.concurrent_upload_permits.acquire().await;
+        let permit_guard = self.concurrent_upload_permits.acquire().await;
 
         let split_storage = quickwit_storage::add_prefix_to_storage(
             self.index_storage.clone(),
             split.split_id.clone(),
         );
         let metastore = self.metastore.clone();
-        let kill_switch = ctx.kill_switch.clone();
+        let kill_switch = ctx.kill_switch();
         tokio::task::spawn(async move {
             let run_upload_res = run_upload(split, split_storage, metastore).await;
             if run_upload_res.is_err() {
@@ -221,7 +218,7 @@ impl AsyncActor for Uploader {
             if split_uploaded_tx.send(uploaded_split).is_err() {
                 kill_switch.kill();
             }
-            std::mem::drop(permit); //< we explicitely drop the permit to allow for another upload to happen here.
+            std::mem::drop(permit_guard); //< we explicitely drop the permit to allow for another upload to happen here.
             Result::<(), anyhow::Error>::Ok(())
         });
         Ok(())

@@ -4,7 +4,10 @@ use thiserror::Error;
 use tokio::sync::watch;
 use tracing::error;
 
-use crate::{KillSwitch, Mailbox, Progress, QueueCapacity, SendError};
+use crate::{
+    progress::{Progress, ProtectZoneGuard},
+    KillSwitch, Mailbox, QueueCapacity, SendError,
+};
 
 // While the lack of message cannot pause a problem with heartbeating,  sending a message to a saturated channel
 // can be interpreted as a blocked actor.
@@ -86,33 +89,51 @@ pub trait Actor: Send + Sync + 'static {
 
 // TODO hide all of this public stuff
 pub struct ActorContext<A: Actor> {
-    pub self_mailbox: Mailbox<A::Message>,
-    pub progress: Progress,
-    pub kill_switch: KillSwitch,
-    pub state_tx: watch::Sender<A::ObservableState>,
-    pub is_paused: bool,
+    pub(crate) self_mailbox: Mailbox<A::Message>,
+    pub(crate) progress: Progress,
+    pub(crate) kill_switch: KillSwitch,
+    pub(crate) state_tx: watch::Sender<A::ObservableState>,
+    pub(crate) is_paused: bool,
 }
 
 impl<A: Actor> ActorContext<A> {
-    pub async fn self_send_async(&self, msg: A::Message) {
-        if let Err(_send_err) = self.self_mailbox.send_async(msg).await {
-            error!("Failed to send error to self. This should never happen.");
-        }
+    /// This function returns a guard that prevents any supervisor from identifying the
+    /// actor has dead.
+    /// The protection last as long as the `ProtectZoneGuard` it returns.
+    ///
+    /// In an ideal world, you should never need to call this function.
+    /// It is only useful in some corner like, like a calling a long blocking
+    /// from an external library that you trust.
+    pub fn protect_zone(&self) -> ProtectZoneGuard {
+        self.progress.protect_zone()
     }
 
+    /// Get a copy of the actor kill switch.
+    /// This should rarely be used.
+    /// For instance, when quitting from the process_message function, prefer simply
+    /// returning `Error(ActorTermination::Failure(..))`
+    pub fn kill_switch(&self) -> KillSwitch {
+        self.kill_switch.clone()
+    }
+
+    /// Record some progress.
+    /// This function is only useful when implementing actors that may takes more than
+    /// `HEARTBEAT` to process a single message.
+    /// In that case, you can call this function in the middle of the process_message method
+    /// to prevent the actor from being identified as blocked or dead.
     pub fn record_progress(&self) {
         self.progress.record_progress();
     }
 
-    pub(crate) fn is_paused(&self,) -> bool {
+    pub(crate) fn is_paused(&self) -> bool {
         self.is_paused
     }
 
-    pub(crate) fn pause(&mut self,) {
+    pub(crate) fn pause(&mut self) {
         self.is_paused = true;
     }
 
-    pub(crate) fn resume(&mut self,) {
+    pub(crate) fn resume(&mut self) {
         self.is_paused = false;
     }
 }
