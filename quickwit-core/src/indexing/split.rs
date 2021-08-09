@@ -289,7 +289,7 @@ impl Split {
             .with_context(|| format!("Failed to get metadata for {:?}", &bundle_path))?;
         let metadata = file.metadata().await?;
         let file_name = "bundle";
-        manifest.push(&file_name, metadata.len());
+        manifest.push(file_name, metadata.len());
         let key = PathBuf::from(file_name);
         let payload = quickwit_storage::PutPayload::from(bundle_path.clone());
         self.storage.put(&key, payload).await.with_context(|| {
