@@ -211,17 +211,16 @@ quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obam
 
 *Description*
 
-Starts a rest server at address `host`:`port` and makes searchable indexes located at `index-uri` and returns the documents matching the query specified with `query`. Optionally connects to peers listed at `peer-seed` using SWIM membership protocol to allow search workload distribution.
+Starts a web server listening on `host`:`port` that exposes the [Quickwit REST API](search-api.md). The `index-uri` option, which accepts a comma-separated list of index URIs, specifies the indexes targeted by the API. The node can optionally join a cluster using the `peer-seed` parameter. This list of comma-separated node addresses is used to discover the remaining peer nodes in the cluster through the use of a gossip protocol (SWIM).
 
 :::note
 
-Behind the scenes, Quickwit need to open the following port for cluster formation and workload distribution:
-- TCP port (default is 8080) for REST API
-- TCP and UDP port + 1 (default is 8081) for cluster membership protocol
-- TCP port + 2 (default is 8082) for gRPC address for the distributed search
+Quickwit services run on three TCP ports ranging from `port` to `port` + 2, and one UDP port (`port` + 1):
+- the web server listens on the first TCP port (default: 8080);
+- the cluster management service uses the second TCP port (default: 8081) and the UDP port with the same number;
+- gRPC services run on the third TCP port (default: 8082).
 
-In this case, if ports are already taken, the serve command will fail.
-
+If any of those ports is already in use when the services start, the command will fail.
 :::
 
 
@@ -229,26 +228,54 @@ In this case, if ports are already taken, the serve command will fail.
 
 ```bash
 quickwit serve
-    --index-uri <list of uris>
+    --index-uri <list of URIs>
     --host <hostname>
     --port <port>
-    --peer-seeds <list of seeds>
+    --peer-seed <list of addresses>
 ```
 
 *Options*
 
-`--index-uri` (string) List of location of target indexes.<br />
-`--host` (string) Hostname the rest server should bind to.<br />
-`--port` (string) Port the REST API server should bind to.<br />
-`--peer-seeds` (string) List of peer socket address (e.g. 192.1.1.3:8080) to connect to form a cluster.<br />
+`--index-uri` (string) Comma-separated list of target index locations.<br />
+`--host` (string) Hostname the web server should bind to.<br />
+`--port` (string) Port the web server should bind to.<br />
+`--peer-seed` (string) Comma-separated list of node addresses (e.g. 10.0.0.1:8080) used as seeds for cluster peer discovery.<br />
 
 
 *Examples*
 
-*Start a local server and for a local index*
+*Serving a local index*
 
 ```bash
-quickwit serve --index-uri file:///path-to-my-indexes/wikipedia
+quickwit serve --index-uri file:///my-indexes/wikipedia
+```
+
+*Serving a remote index*
+
+```bash
+quickwit serve --index-uri s3://my-bucket/nginx-logs
+```
+
+*Serving multiple indexes*
+
+```bash
+quickwit serve --index-uri file:///my-indexes/wikipedia,s3://my-bucket/nginx-logs
+```
+
+*Creating a multi-node cluster*
+
+```bash
+# On host 10.0.0.1
+quickwit serve --index-uri s3:///my-bucket/nginx-logs --peer-seed 10.0.0.2:8080
+
+# On host 10.0.0.2
+quickwit serve --index-uri s3:///my-bucket/nginx-logs --peer-seed 10.0.0.1:8080
+
+# On host 10.0.0.3
+quickwit serve --index-uri s3:///my-bucket/nginx-logs --peer-seed 10.0.0.1:8080,10.0.0.2.8080
+
+# On host 10.0.0.4
+quickwit serve --index-uri s3:///my-bucket/nginx-logs --peer-seed 10.0.0.1:8080,10.0.0.2.8080
 ```
 
 ### Delete

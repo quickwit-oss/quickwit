@@ -112,22 +112,22 @@ subcommands:
                 help: Executes the command in dry run mode and displays the list of files to delete
                 long: dry-run
     - serve:
-        about: Serve a REST API to search an index
+        about: Starts a web server that exposes the Quickwit REST API.
         args:
             - index-uri:
-                help: Location of the target index.
+                help: Comma-separated list of index locations.
                 long: index-uri
                 value_name: INDEX URI
                 multiple: true
                 use_delimiter: true
                 required: true
             - host:
-                help: Hostname the rest server should bind to.
+                help: Hostname the web server should bind to.
                 long: host
                 default_value: '0.0.0.0'
                 value_name: HOSTNAME
             - port:
-                help: Port the REST API server should bind to.
+                help: Port the web server should bind to.
                 long: port
                 default_value: '8080'
                 value_name: PORT
@@ -137,7 +137,7 @@ subcommands:
                 default_value: '/tmp/quickwit-host-key'
                 value_name: HOST KEY PREFIX
             - peer-seed:
-                help: Peer address the REST API server (e.g. 192.1.1.3:8080) to connect to form a cluster.
+                help: Comma-separated list of node addresses (e.g. 10.0.0.1:8080) used as seeds for cluster peer discovery.
                 long: peer-seed
                 value_name: PEER SEED
                 multiple: true

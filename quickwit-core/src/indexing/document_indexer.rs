@@ -45,7 +45,7 @@ pub async fn index_documents(
     let timestamp_field = index_metadata.index_config.timestamp_field();
 
     let mut current_split = Split::create(
-        &params,
+        params,
         storage_resolver.clone(),
         metastore.clone(),
         schema.clone(),
@@ -77,7 +77,7 @@ pub async fn index_documents(
             let split = std::mem::replace(
                 &mut current_split,
                 Split::create(
-                    &params,
+                    params,
                     storage_resolver.clone(),
                     metastore.clone(),
                     schema.clone(),

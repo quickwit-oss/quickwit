@@ -94,7 +94,7 @@ impl MetastoreUriResolver {
 
         let storage = self
             .default_storage_resolver
-            .resolve(&uri)
+            .resolve(uri)
             .map_err(|err| match err {
                 StorageResolverError::InvalidUri { message } => {
                     MetastoreResolverError::InvalidUri(message)

@@ -75,12 +75,22 @@ impl SingleFileMetastore {
     async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
         let index_path = meta_path(index_id);
 
-        let exists = self.storage.exists(&index_path).await.map_err(|err| {
-            MetastoreError::InternalError {
-                message: "Failed to check for existence of index file.".to_string(),
-                cause: anyhow::anyhow!(err),
-            }
-        })?;
+        let exists =
+            self.storage
+                .exists(&index_path)
+                .await
+                .map_err(|storage_err| match storage_err.kind() {
+                    StorageErrorKind::DoesNotExist => MetastoreError::IndexDoesNotExist {
+                        index_id: index_id.to_string(),
+                    },
+                    StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
+                        message: "The request credentials do not allow this operation.".to_string(),
+                    },
+                    _ => MetastoreError::InternalError {
+                        message: "Failed to check index file existence.".to_string(),
+                        cause: anyhow::anyhow!(storage_err),
+                    },
+                })?;
 
         Ok(exists)
     }
@@ -108,8 +118,11 @@ impl SingleFileMetastore {
                 StorageErrorKind::DoesNotExist => MetastoreError::IndexDoesNotExist {
                     index_id: index_id.to_string(),
                 },
+                StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
+                    message: "The request credentials do not allow for this operation.".to_string(),
+                },
                 _ => MetastoreError::InternalError {
-                    message: "Metastore error".to_string(),
+                    message: "Failed to get index files.".to_string(),
                     cause: anyhow::anyhow!(storage_err),
                 },
             })?;
@@ -141,9 +154,14 @@ impl SingleFileMetastore {
         self.storage
             .put(&index_path, PutPayload::from(content))
             .await
-            .map_err(|cause| MetastoreError::InternalError {
-                message: "Failed to put metadata set back into storage.".to_string(),
-                cause: From::from(cause),
+            .map_err(|storage_err| match storage_err.kind() {
+                StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
+                    message: "The request credentials do not allow for this operation.".to_string(),
+                },
+                _ => MetastoreError::InternalError {
+                    message: "Failed to put metadata set back into storage.".to_string(),
+                    cause: anyhow::anyhow!(storage_err),
+                },
             })?;
 
         // Update the internal data if the storage is successfully updated.
@@ -191,9 +209,17 @@ impl Metastore for SingleFileMetastore {
         self.storage
             .delete(&index_path)
             .await
-            .map_err(|cause| MetastoreError::InternalError {
-                message: "Failed to delete metadata set from storage.".to_string(),
-                cause: anyhow::anyhow!(cause),
+            .map_err(|storage_err| match storage_err.kind() {
+                StorageErrorKind::DoesNotExist => MetastoreError::IndexDoesNotExist {
+                    index_id: index_id.to_string(),
+                },
+                StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
+                    message: "The request credentials do not allow for this operation.".to_string(),
+                },
+                _ => MetastoreError::InternalError {
+                    message: "Failed to delete metadata set from storage.".to_string(),
+                    cause: anyhow::anyhow!(storage_err),
+                },
             })?;
 
         // Update the internal data if the storage is successfully updated.
@@ -289,8 +315,7 @@ impl Metastore for SingleFileMetastore {
         let metadata_set = self.get_index(index_id).await?;
         let splits = metadata_set
             .splits
-            .into_iter()
-            .map(|(_, split_metadata)| split_metadata)
+            .into_values()
             .filter(|split_metadata| {
                 split_metadata.split_state == state && time_range_filter(split_metadata)
             })
@@ -300,11 +325,7 @@ impl Metastore for SingleFileMetastore {
 
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitMetadata>> {
         let metadata_set = self.get_index(index_id).await?;
-        let splits = metadata_set
-            .splits
-            .into_iter()
-            .map(|(_, split_metadata)| split_metadata)
-            .collect();
+        let splits = metadata_set.splits.into_values().collect();
         Ok(splits)
     }
 
@@ -394,12 +415,14 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use crate::{IndexMetadata, MetastoreError};
-    use crate::{Metastore, SingleFileMetastore, SplitMetadata, SplitState};
     use chrono::Utc;
+    use tokio::time::sleep;
+
     use quickwit_index_config::AllFlattenIndexConfig;
     use quickwit_storage::{MockStorage, StorageErrorKind};
-    use tokio::time::sleep;
+
+    use crate::{IndexMetadata, MetastoreError};
+    use crate::{Metastore, SingleFileMetastore, SplitMetadata, SplitState};
 
     #[tokio::test]
     async fn test_single_file_metastore_index_exists() {
@@ -441,7 +464,7 @@ mod tests {
 
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
-                index_uri: "ram://indexes//my-index".to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
@@ -477,7 +500,7 @@ mod tests {
 
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
-                index_uri: "ram://indexes//my-index".to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
@@ -527,7 +550,7 @@ mod tests {
 
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
-                index_uri: "ram://indexes//my-index".to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 

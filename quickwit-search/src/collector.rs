@@ -81,7 +81,7 @@ fn resolve_sort_by(
 ) -> tantivy::Result<SortingFieldComputer> {
     match sort_by {
         SortBy::SortByFastField { field_name, order } => {
-            if let Some(field) = segment_reader.schema().get_field(&field_name) {
+            if let Some(field) = segment_reader.schema().get_field(field_name) {
                 let fast_field_reader = segment_reader.fast_fields().u64_lenient(field)?;
                 Ok(SortingFieldComputer::SortByFastField {
                     fast_field_reader,
