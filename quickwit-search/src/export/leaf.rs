@@ -18,6 +18,7 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use super::FastFieldCollectorBuilder;
 use crate::export::ExportSerializer;
 use crate::leaf::open_index;
 use crate::leaf::warmup;
@@ -29,7 +30,6 @@ use std::sync::Arc;
 use tantivy::schema::Type;
 use tantivy::{query::Query, ReloadPolicy};
 use tokio_stream::wrappers::ReceiverStream;
-use super::FastFieldCollectorBuilder;
 
 /// `leaf` step of export.
 // Note: we return a stream of a result with a tonic::Status error
@@ -60,11 +60,9 @@ pub async fn leaf_export(
                 output_format,
             )
             .await
-            .map_err(|_| {
-                SearchError::InternalError(format!("Export failed on split `{}`", split_id))
-            })?;
+            .map_err(|error| SearchError::convert_to_tonic_status(error));
             result_sender_clone
-                .send(Ok(leaf_split_result))
+                .send(leaf_split_result)
                 .await
                 .map_err(|_| {
                     SearchError::InternalError(format!(
