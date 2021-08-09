@@ -199,10 +199,6 @@ pub struct SearchStreamRequestQueryString {
     pub start_timestamp: Option<i64>,
     /// If set, restrict search to documents with a `timestamp < end_timestamp``.
     pub end_timestamp: Option<i64>,
-    /// Maximum number of hits to return (by default 20).
-    #[serde(default = "default_max_hits")]
-    pub max_hits: u64,
-
     /// The fast field to extract
     #[serde(default)]
     #[serde(rename(deserialize = "fastField"))]
