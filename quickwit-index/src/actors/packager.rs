@@ -209,7 +209,7 @@ impl SyncActor for Packager {
         &mut self,
         mut split: IndexedSplit,
         ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), quickwit_actors::MessageProcessError> {
+    ) -> Result<(), quickwit_actors::ActorTermination> {
         commit_split(&mut split, &ctx.progress)?;
         let segment_metas = merge_segments_if_required(&mut split, &ctx.progress)?;
         build_hotcache(split.temp_dir.path())?;

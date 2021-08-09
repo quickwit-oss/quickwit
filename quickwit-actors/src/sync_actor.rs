@@ -2,10 +2,9 @@ use tokio::sync::watch;
 use tokio::task::spawn_blocking;
 use tracing::debug;
 
-use crate::actor::MessageProcessError;
-use crate::actor_handle::ActorTermination;
+use crate::actor::ActorTermination;
 use crate::mailbox::{create_mailbox, Command, Inbox};
-use crate::{Actor, ActorContext, ActorHandle, KillSwitch, Mailbox, Progress, ReceptionResult};
+use crate::{Actor, ActorContext, ActorHandle, KillSwitch, Progress, ReceptionResult};
 
 /// An sync actor is executed on a tokio blocking task.
 ///
@@ -23,7 +22,7 @@ pub trait SyncActor: Actor + Sized {
         &mut self,
         message: Self::Message,
         ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), MessageProcessError>;
+    ) -> Result<(), ActorTermination>;
 
     /// Function called if there are no more messages available.
     fn finalize(&mut self) -> anyhow::Result<()> {
@@ -48,12 +47,7 @@ pub trait SyncActor: Actor + Sized {
         };
         let join_handle = spawn_blocking::<_, ActorTermination>(move || {
             let actor_name = self.name();
-            let termination = sync_actor_loop(
-                &mut self,
-                inbox,
-                &state_tx,
-                ctx
-            );
+            let termination = sync_actor_loop(&mut self, inbox, &state_tx, ctx);
             debug!(cause=?termination, actor=%actor_name, "termination");
             let _ = state_tx.send(self.observable_state());
             termination
@@ -73,7 +67,7 @@ fn sync_actor_loop<A: SyncActor>(
     actor: &mut A,
     inbox: Inbox<A::Message>,
     state_tx: &watch::Sender<A::ObservableState>,
-    ctx: ActorContext<A::Message>
+    ctx: ActorContext<A::Message>,
 ) -> ActorTermination {
     let mut is_paused = true;
     loop {
@@ -95,7 +89,7 @@ fn sync_actor_loop<A: SyncActor>(
         }
         if let ReceptionResult::None = reception_result {
             if ctx.self_mailbox.is_last_mailbox() {
-                return ActorTermination::Disconnect;
+                return ActorTermination::Terminated;
             }
         }
         match reception_result {
@@ -122,26 +116,19 @@ fn sync_actor_loop<A: SyncActor>(
             }
             ReceptionResult::Message(msg) => {
                 // TODO avoid building the contexdt all of the time.
-
-                match actor.process_message(msg, &ctx) {
-                    Ok(()) => (),
-                    Err(MessageProcessError::OnDemand) => return ActorTermination::OnDemand,
-                    Err(MessageProcessError::Terminated) => return ActorTermination::OnDemand,
-                    Err(MessageProcessError::Error(err)) => {
+                let process_result = actor.process_message(msg, &ctx);
+                if let Err(actor_termination) = process_result {
+                    if actor_termination.is_failure() {
                         ctx.kill_switch.kill();
-                        return ActorTermination::ActorError(err);
                     }
-                    Err(MessageProcessError::DownstreamClosed) => {
-                        ctx.kill_switch.kill();
-                        return ActorTermination::DownstreamClosed;
-                    }
+                    return actor_termination;
                 }
             }
             ReceptionResult::None => {
                 continue;
             }
             ReceptionResult::Disconnect => {
-                return ActorTermination::Disconnect;
+                return ActorTermination::Terminated;
             }
         }
     }

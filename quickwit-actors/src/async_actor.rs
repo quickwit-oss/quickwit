@@ -1,5 +1,5 @@
-use crate::actor::MessageProcessError;
-use crate::actor_handle::{ActorHandle, ActorTermination};
+use crate::actor::ActorTermination;
+use crate::actor_handle::ActorHandle;
 use crate::mailbox::{create_mailbox, Command, Inbox};
 use crate::{Actor, ActorContext, KillSwitch, Progress, ReceptionResult};
 use async_trait::async_trait;
@@ -23,7 +23,7 @@ pub trait AsyncActor: Actor + Sized {
         &mut self,
         message: Self::Message,
         ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), MessageProcessError>;
+    ) -> Result<(), ActorTermination>;
 
     #[doc(hidden)]
     fn spawn(self, kill_switch: KillSwitch) -> ActorHandle<Self::Message, Self::ObservableState> {
@@ -40,8 +40,8 @@ pub trait AsyncActor: Actor + Sized {
             ActorContext {
                 self_mailbox: mailbox.clone(),
                 kill_switch: kill_switch.clone(),
-                progress: progress.clone()
-            }
+                progress: progress.clone(),
+            },
         ));
         let actor_handle = ActorHandle::new(
             mailbox.clone(),
@@ -58,7 +58,7 @@ async fn async_actor_loop<A: AsyncActor>(
     mut actor: A,
     inbox: Inbox<A::Message>,
     state_tx: watch::Sender<A::ObservableState>,
-    ctx: ActorContext<A::Message>
+    ctx: ActorContext<A::Message>,
 ) -> ActorTermination {
     let mut is_paused = true;
     loop {
@@ -70,14 +70,16 @@ async fn async_actor_loop<A: AsyncActor>(
         }
         ctx.progress.record_progress();
         let default_message_opt = actor.default_message();
-        let reception_result = inbox.try_recv_msg_async(is_paused, default_message_opt).await;
+        let reception_result = inbox
+            .try_recv_msg_async(is_paused, default_message_opt)
+            .await;
         ctx.progress.record_progress();
         if !ctx.kill_switch.is_alive() {
             return ActorTermination::KillSwitch;
         }
         if let ReceptionResult::None = reception_result {
             if ctx.self_mailbox.is_last_mailbox() {
-                return ActorTermination::Disconnect;
+                return ActorTermination::Terminated;
             }
         }
         match reception_result {
@@ -103,29 +105,23 @@ async fn async_actor_loop<A: AsyncActor>(
                 }
             }
             ReceptionResult::Message(msg) => {
-                match actor.process_message(msg, &ctx).await {
-                    Ok(()) => (),
-                    Err(MessageProcessError::OnDemand) => return ActorTermination::OnDemand,
-                    Err(MessageProcessError::Terminated) => return ActorTermination::Disconnect,
-                    Err(MessageProcessError::Error(err)) => {
+                let process_result = actor.process_message(msg, &ctx).await;
+                if let Err(actor_termination) = process_result {
+                    if actor_termination.is_failure() {
                         ctx.kill_switch.kill();
-                        return ActorTermination::ActorError(err);
                     }
-                    Err(MessageProcessError::DownstreamClosed) => {
-                        ctx.kill_switch.kill();
-                        return ActorTermination::DownstreamClosed;
-                    }
+                    return actor_termination;
                 }
             }
             ReceptionResult::None => {
                 if ctx.self_mailbox.is_last_mailbox() {
-                    return ActorTermination::Disconnect;
+                    return ActorTermination::Terminated;
                 } else {
                     continue;
                 }
             }
             ReceptionResult::Disconnect => {
-                return ActorTermination::Disconnect;
+                return ActorTermination::Terminated;
             }
         }
     }

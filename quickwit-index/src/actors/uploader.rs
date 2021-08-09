@@ -31,9 +31,9 @@ use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
+use quickwit_actors::ActorTermination;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
-use quickwit_actors::MessageProcessError;
 use quickwit_actors::QueueCapacity;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::SplitMetadata;
@@ -192,7 +192,7 @@ impl AsyncActor for Uploader {
         &mut self,
         split: PackagedSplit,
         ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), MessageProcessError> {
+    ) -> Result<(), ActorTermination> {
         let (split_uploaded_tx, split_uploaded_rx) = tokio::sync::oneshot::channel();
 
         // We send the future to the publisher right away.
