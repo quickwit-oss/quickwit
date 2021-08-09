@@ -116,8 +116,6 @@ pub async fn root_export(
     Ok(buffer)
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,9 +124,9 @@ mod tests {
 
     use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
-    use tokio_stream::wrappers::ReceiverStream;
+    use tokio_stream::wrappers::UnboundedReceiverStream;
 
-    use crate::{MockSearchService};
+    use crate::MockSearchService;
 
     fn mock_split_meta(split_id: &str) -> SplitMetadata {
         SplitMetadata {
@@ -150,7 +148,6 @@ mod tests {
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
             end_timestamp: None,
-            max_hits: 10,
             fast_field: "timestamp".to_string(),
             output_format: "csv".to_string(),
         };
@@ -170,16 +167,16 @@ mod tests {
             },
         );
         let mut mock_search_service = MockSearchService::new();
-        let (result_sender, result_receiver) = tokio::sync::mpsc::channel(10);
+        let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafExportResult {
-            data: "123".as_bytes().to_vec()
-        })).await?;
+            data: "123".as_bytes().to_vec(),
+        }))?;
         result_sender.send(Ok(quickwit_proto::LeafExportResult {
-            data: "456".as_bytes().to_vec()
-        })).await?;
+            data: "456".as_bytes().to_vec(),
+        }))?;
         mock_search_service.expect_leaf_export().return_once(
             |_leaf_search_req: quickwit_proto::LeafExportRequest| {
-                Ok(ReceiverStream::new(result_receiver))
+                Ok(UnboundedReceiverStream::new(result_receiver))
             },
         );
         // The test will hang on indefinitely if we don't drop the receiver.

@@ -167,19 +167,16 @@ pub struct ExportRequest {
     /// Fields to search on
     #[prost(string, repeated, tag = "3")]
     pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// Time filter
+    /// The time filter is interpreted as a semi-open interval. [start, end)
     #[prost(int64, optional, tag = "4")]
     pub start_timestamp: ::core::option::Option<i64>,
     #[prost(int64, optional, tag = "5")]
     pub end_timestamp: ::core::option::Option<i64>,
-    /// Maximum number of hits to return.
-    #[prost(uint64, tag = "6")]
-    pub max_hits: u64,
     /// Name of the fast field to export
-    #[prost(string, tag = "7")]
+    #[prost(string, tag = "6")]
     pub fast_field: ::prost::alloc::string::String,
     /// The output format
-    #[prost(string, tag = "8")]
+    #[prost(string, tag = "7")]
     pub output_format: ::prost::alloc::string::String,
 }
 #[derive(Serialize)]
@@ -187,7 +184,7 @@ pub struct ExportRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafExportRequest {
     /// Export request. This is a perfect copy of the original export request,
-    /// that was sent to root apart from the start_offset & max_hits params.
+    /// that was sent to root.
     #[prost(message, optional, tag = "1")]
     pub export_request: ::core::option::Option<ExportRequest>,
     /// Index split ids to apply the query on.

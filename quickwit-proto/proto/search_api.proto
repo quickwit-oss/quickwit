@@ -185,23 +185,20 @@ message ExportRequest {
   // Fields to search on
   repeated string  search_fields = 3;
   
-  // Time filter
+  // The time filter is interpreted as a semi-open interval. [start, end)
   optional int64 start_timestamp = 4;
   optional int64 end_timestamp = 5;
 
-  // Maximum number of hits to return.
-  uint64 max_hits = 6;
-
   // Name of the fast field to export
-  string fast_field = 7;
+  string fast_field = 6;
 
   // The output format
-  string output_format = 8;
+  string output_format = 7;
 }
 
 message LeafExportRequest {
   // Export request. This is a perfect copy of the original export request,
-  // that was sent to root apart from the start_offset & max_hits params.
+  // that was sent to root.
   ExportRequest export_request = 1;
 
   // Index split ids to apply the query on.

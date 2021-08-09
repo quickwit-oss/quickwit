@@ -35,7 +35,7 @@ impl From<ExportRequest> for SearchRequest {
             search_fields: item.search_fields.clone(),
             start_timestamp: item.start_timestamp,
             end_timestamp: item.end_timestamp,
-            max_hits: item.max_hits,
+            max_hits: 0,
             start_offset: 0,
         }
     }

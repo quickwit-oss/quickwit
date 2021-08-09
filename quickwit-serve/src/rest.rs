@@ -223,7 +223,6 @@ async fn export_endpoint<TSearchService: SearchService>(
         search_fields: search_request.search_fields.unwrap_or_default(),
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,
-        max_hits: search_request.max_hits,
         fast_field: search_request.fast_field,
         output_format: search_request.output_format.to_string(),
     };

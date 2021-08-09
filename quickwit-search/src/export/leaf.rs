@@ -19,7 +19,6 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use super::FastFieldCollectorBuilder;
-use crate::export::ExportSerializer;
 use crate::leaf::open_index;
 use crate::leaf::warmup;
 use crate::OutputFormat;
@@ -29,7 +28,7 @@ use quickwit_storage::Storage;
 use std::sync::Arc;
 use tantivy::schema::Type;
 use tantivy::{query::Query, ReloadPolicy};
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 /// `leaf` step of export.
 // Note: we return a stream of a result with a tonic::Status error
@@ -44,8 +43,8 @@ pub async fn leaf_export(
     split_ids: Vec<String>,
     storage: Arc<dyn Storage>,
     output_format: OutputFormat,
-) -> ReceiverStream<Result<LeafExportResult, tonic::Status>> {
-    let (result_sender, result_receiver) = tokio::sync::mpsc::channel(10);
+) -> UnboundedReceiverStream<Result<LeafExportResult, tonic::Status>> {
+    let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
     for split_id in split_ids {
         let split_storage: Arc<dyn Storage> =
             quickwit_storage::add_prefix_to_storage(storage.clone(), split_id.clone());
@@ -61,19 +60,16 @@ pub async fn leaf_export(
             )
             .await
             .map_err(SearchError::convert_to_tonic_status);
-            result_sender_clone
-                .send(leaf_split_result)
-                .await
-                .map_err(|_| {
-                    SearchError::InternalError(format!(
-                        "Unable to send leaf export result for split `{}`",
-                        split_id
-                    ))
-                })?;
+            result_sender_clone.send(leaf_split_result).map_err(|_| {
+                SearchError::InternalError(format!(
+                    "Unable to send leaf export result for split `{}`",
+                    split_id
+                ))
+            })?;
             Result::<(), SearchError>::Ok(())
         });
     }
-    ReceiverStream::new(result_receiver)
+    UnboundedReceiverStream::new(result_receiver)
 }
 
 /// Apply a leaf search on a single split.
@@ -101,20 +97,24 @@ async fn leaf_export_single_split(
         Type::I64 => {
             let fast_field_collector = fast_field_collector_builder.build_i64();
             let fast_field_values = searcher.search(query.as_ref(), &fast_field_collector)?;
-            let mut serializer = ExportSerializer {
-                writer: &mut buffer,
-                output_format,
-            };
-            serializer.write_i64(fast_field_values)?;
+            super::serialize::<i64>(&fast_field_values, &mut buffer, output_format).map_err(
+                |_| {
+                    SearchError::InternalError(
+                        "Error when serializing i64 during export".to_owned(),
+                    )
+                },
+            )?;
         }
         Type::U64 => {
             let fast_field_collector = fast_field_collector_builder.build_u64();
             let fast_field_values = searcher.search(query.as_ref(), &fast_field_collector)?;
-            let mut serializer = ExportSerializer {
-                writer: &mut buffer,
-                output_format,
-            };
-            serializer.write_u64(fast_field_values)?;
+            super::serialize::<u64>(&fast_field_values, &mut buffer, output_format).map_err(
+                |_| {
+                    SearchError::InternalError(
+                        "Error when serializing u64 during export".to_owned(),
+                    )
+                },
+            )?;
         }
         value_type => {
             return Err(SearchError::InvalidQuery(format!(

@@ -24,7 +24,7 @@ use quickwit_proto::LeafExportResult;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Channel;
 use tonic::transport::Endpoint;
 use tonic::Request;
@@ -126,7 +126,7 @@ impl SearchServiceClient {
     pub async fn leaf_export(
         &mut self,
         request: quickwit_proto::LeafExportRequest,
-    ) -> crate::Result<ReceiverStream<Result<LeafExportResult, tonic::Status>>> {
+    ) -> crate::Result<UnboundedReceiverStream<Result<LeafExportResult, tonic::Status>>> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);
@@ -138,16 +138,16 @@ impl SearchServiceClient {
 
                 // TODO: returning stream instead of a channel may be better.
                 // But this seems to be difficult. Try it at your own expense.
-                let (export_sender, export_receiver) = tokio::sync::mpsc::channel(10);
+                let (export_sender, export_receiver) = tokio::sync::mpsc::unbounded_channel();
                 while let Some(result) = export_result_stream
                     .message()
                     .await
                     .map_err(|status| parse_grpc_error(&status))?
                 {
-                    let _ = export_sender.send(Ok(result)).await;
+                    let _ = export_sender.send(Ok(result));
                 }
 
-                Ok(ReceiverStream::new(export_receiver))
+                Ok(UnboundedReceiverStream::new(export_receiver))
             }
             SearchServiceClientImpl::Local(service) => service.leaf_export(request).await,
         }

@@ -31,7 +31,7 @@ use quickwit_proto::{
     SearchResult,
 };
 use quickwit_storage::StorageUriResolver;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
 use crate::export::root_export;
@@ -90,7 +90,7 @@ pub trait SearchService: 'static + Send + Sync {
     async fn leaf_export(
         &self,
         _request: LeafExportRequest,
-    ) -> crate::Result<ReceiverStream<Result<LeafExportResult, tonic::Status>>>;
+    ) -> crate::Result<UnboundedReceiverStream<Result<LeafExportResult, tonic::Status>>>;
 }
 
 impl SearchServiceImpl {
@@ -192,7 +192,7 @@ impl SearchService for SearchServiceImpl {
     async fn leaf_export(
         &self,
         leaf_export_request: LeafExportRequest,
-    ) -> crate::Result<ReceiverStream<Result<LeafExportResult, tonic::Status>>> {
+    ) -> crate::Result<UnboundedReceiverStream<Result<LeafExportResult, tonic::Status>>> {
         let export_request = leaf_export_request
             .export_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;

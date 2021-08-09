@@ -27,10 +27,11 @@ pub use leaf::leaf_export;
 pub use root::root_export;
 
 use serde::Deserialize;
-use std::{fmt::Display, io::Write};
-use tracing::info;
-
-use crate::SearchError;
+use std::{
+    fmt::Display,
+    io::{self, Write},
+};
+use tantivy::fastfield::FastValue;
 
 /// Output format for export.
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
@@ -67,57 +68,39 @@ impl From<String> for OutputFormat {
     }
 }
 
-pub struct ExportSerializer<'a> {
-    output_format: OutputFormat,
-    writer: &'a mut Vec<u8>,
+/// Serialize the values into the `buffer` as bytes.
+///
+/// Please note that the `buffer` is always cleared.
+pub fn serialize<TFastValue: FastValue + Display>(
+    values: &[TFastValue],
+    buffer: &mut Vec<u8>,
+    format: OutputFormat,
+) -> io::Result<()> {
+    match format {
+        OutputFormat::CSV => serialize_csv(values, buffer),
+        OutputFormat::RowBinary => serialize_row_binary(values, buffer),
+    }
 }
 
-impl<'a> ExportSerializer<'a> {
-    pub fn write_u64(&mut self, values: Vec<u64>) -> crate::Result<()> {
-        match self.output_format {
-            OutputFormat::CSV => {
-                for value in values {
-                    self.write_csv(value)?;
-                }
-            }
-            OutputFormat::RowBinary => {
-                for value in values {
-                    self.writer.write(&value.to_le_bytes()).map_err(|_| {
-                        SearchError::InternalError(
-                            "Error when serializing u64 during export".to_owned(),
-                        )
-                    })?;
-                }
-            }
-        };
-        Ok(())
+fn serialize_csv<TFastValue: FastValue + Display>(
+    values: &[TFastValue],
+    buffer: &mut Vec<u8>,
+) -> io::Result<()> {
+    buffer.clear();
+    for value in values {
+        writeln!(buffer, "{}", value)?;
     }
+    Ok(())
+}
 
-    pub fn write_i64(&mut self, values: Vec<i64>) -> crate::Result<()> {
-        match self.output_format {
-            OutputFormat::CSV => {
-                for value in values {
-                    self.write_csv(value)?;
-                }
-            }
-            OutputFormat::RowBinary => {
-                for value in values {
-                    self.writer.write(&value.to_le_bytes()).map_err(|_| {
-                        SearchError::InternalError(
-                            "Error when serializing i64 during export".to_owned(),
-                        )
-                    })?;
-                }
-            }
-        };
-        Ok(())
+fn serialize_row_binary<TFastValue: FastValue + Display>(
+    values: &[TFastValue],
+    buffer: &mut Vec<u8>,
+) -> io::Result<()> {
+    buffer.clear();
+    buffer.reserve_exact(std::mem::size_of::<TFastValue>() * values.len());
+    for value in values {
+        buffer.extend(value.as_u64().to_le_bytes());
     }
-
-    fn write_csv<T: Display>(&mut self, value: T) -> crate::Result<()> {
-        writeln!(self.writer, "{}", value).map_err(|error| {
-            info!("error here, {:?}", error);
-            SearchError::InternalError("Error when serializing to csv during export".to_owned())
-        })?;
-        Ok(())
-    }
+    Ok(())
 }
