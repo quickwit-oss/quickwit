@@ -109,7 +109,7 @@ impl SyncActor for Indexer {
         for doc_json in batch.docs {
             // One batch might take a long time to process. Let's register progress
             // after each doc.
-            ctx.progress.record_progress();
+            ctx.record_progress();
             indexed_split.size_in_bytes += doc_json.len() as u64;
             let doc_parsing_result = index_config.doc_from_json(&doc_json);
             let doc = match doc_parsing_result {

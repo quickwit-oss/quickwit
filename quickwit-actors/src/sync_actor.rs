@@ -4,7 +4,8 @@ use tracing::debug;
 
 use crate::actor::ActorTermination;
 use crate::mailbox::{create_mailbox, Command, Inbox};
-use crate::{Actor, ActorContext, ActorHandle, KillSwitch, Progress, ReceptionResult};
+use crate::progress::Progress;
+use crate::{Actor, ActorContext, ActorHandle, KillSwitch, ReceptionResult};
 
 /// An sync actor is executed on a tokio blocking task.
 ///
@@ -30,10 +31,7 @@ pub trait SyncActor: Actor + Sized {
     }
 
     #[doc(hidden)]
-    fn spawn(
-        self,
-        kill_switch: KillSwitch,
-    ) -> ActorHandle<Self::Message, Self::ObservableState> {
+    fn spawn(self, kill_switch: KillSwitch) -> ActorHandle<Self::Message, Self::ObservableState> {
         let actor_name = self.name();
         debug!(actor_name=%actor_name,"spawning-sync-actor");
         let queue_capacity = self.queue_capacity();
@@ -64,11 +62,10 @@ pub trait SyncActor: Actor + Sized {
     }
 }
 
-
 fn process_msg<A: Actor + SyncActor>(
     actor: &mut A,
     inbox: &Inbox<A::Message>,
-    ctx: &mut ActorContext<A>
+    ctx: &mut ActorContext<A>,
 ) -> Option<ActorTermination> {
     if !ctx.kill_switch.is_alive() {
         return Some(ActorTermination::KillSwitch);
@@ -87,7 +84,7 @@ fn process_msg<A: Actor + SyncActor>(
     let reception_result = inbox.try_recv_msg(!ctx.is_paused(), default_message_opt);
 
     ctx.progress.record_progress();
-     if !ctx.kill_switch.is_alive() {
+    if !ctx.kill_switch.is_alive() {
         return Some(ActorTermination::KillSwitch);
     }
     match reception_result {
@@ -115,11 +112,7 @@ fn process_msg<A: Actor + SyncActor>(
                 }
             }
         }
-        ReceptionResult::Message(msg) => {
-            actor
-                .process_message(msg, &ctx)
-                .err()
-        }
+        ReceptionResult::Message(msg) => actor.process_message(msg, &ctx).err(),
         ReceptionResult::None => {
             if ctx.self_mailbox.is_last_mailbox() {
                 Some(ActorTermination::Terminated)
@@ -127,9 +120,7 @@ fn process_msg<A: Actor + SyncActor>(
                 None
             }
         }
-        ReceptionResult::Disconnect => {
-            Some(ActorTermination::Terminated)
-        }
+        ReceptionResult::Disconnect => Some(ActorTermination::Terminated),
     }
 }
 
@@ -138,9 +129,8 @@ fn sync_actor_loop<A: SyncActor>(
     inbox: Inbox<A::Message>,
     mut ctx: ActorContext<A>,
 ) -> ActorTermination {
-    let mut is_paused = true;
     loop {
-        let termination_opt = process_msg(&mut actor, &inbox,  &mut ctx);
+        let termination_opt = process_msg(&mut actor, &inbox, &mut ctx);
         if let Some(termination) = termination_opt {
             if termination.is_failure() {
                 ctx.kill_switch.kill();

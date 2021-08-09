@@ -48,7 +48,6 @@ pub use actor_handle::ActorHandle;
 pub use async_actor::AsyncActor;
 pub use kill_switch::KillSwitch;
 pub use observation::Observation;
-pub use progress::Progress;
 pub use sync_actor::SyncActor;
 
 /// Heartbeat used to verify that actors are progressing.

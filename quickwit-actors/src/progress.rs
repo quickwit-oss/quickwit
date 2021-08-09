@@ -27,7 +27,7 @@ use std::sync::Arc;
 ///
 /// If no progress is observed until the next heartbeat, the actor will be killed.
 #[derive(Clone)]
-pub struct Progress(Arc<AtomicU32>);
+pub(crate) struct Progress(Arc<AtomicU32>);
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
 enum ProgressState {
