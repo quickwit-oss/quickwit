@@ -27,13 +27,13 @@ mod client;
 mod client_pool;
 mod collector;
 mod error;
-mod export;
 mod fetch_docs;
 mod filters;
 mod leaf;
 mod rendezvous_hasher;
 mod root;
 mod search_result_json;
+mod search_stream;
 mod service;
 
 ///
@@ -58,11 +58,11 @@ pub use crate::client_pool::search_client_pool::SearchClientPool;
 pub use crate::client_pool::ClientPool;
 use crate::collector::make_collector;
 pub use crate::error::SearchError;
-pub use crate::export::OutputFormat;
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
 use crate::root::root_search;
 pub use crate::search_result_json::SearchResultJson;
+pub use crate::search_stream::OutputFormat;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
 /// Compute the SWIM port from the HTTP port.

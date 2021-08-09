@@ -76,7 +76,7 @@ impl<Item: FastValue> SegmentCollector for FastFieldSegmentCollector<Item> {
 
 #[derive(Clone)]
 pub struct FastFieldCollector<Item: FastValue> {
-    pub fast_field_to_export: String,
+    pub fast_field_to_collect: String,
     pub timestamp_field_opt: Option<Field>,
     pub start_timestamp_opt: Option<i64>,
     pub end_timestamp_opt: Option<i64>,
@@ -104,7 +104,7 @@ impl<Item: FastValue> Collector for FastFieldCollector<Item> {
         };
         let field = segment_reader
             .schema()
-            .get_field(&self.fast_field_to_export)
+            .get_field(&self.fast_field_to_collect)
             .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
         // TODO: would be nice to access directly to typed_fast_field_reader
         let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
@@ -177,7 +177,7 @@ impl FastFieldCollectorBuilder {
 
     pub fn typed_build<TFastValue: FastValue>(&self) -> FastFieldCollector<TFastValue> {
         FastFieldCollector::<TFastValue> {
-            fast_field_to_export: self.fast_field_name.clone(),
+            fast_field_to_collect: self.fast_field_name.clone(),
             timestamp_field_opt: self.timestamp_field,
             start_timestamp_opt: self.start_timestamp,
             end_timestamp_opt: self.end_timestamp,

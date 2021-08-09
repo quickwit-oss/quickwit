@@ -41,7 +41,7 @@ pub async fn start_rest_service(
 ) -> anyhow::Result<()> {
     info!(rest_addr=?rest_addr, "Start REST service.");
     let rest_routes = search_handler(search_service.clone())
-        .or(export_handler(search_service))
+        .or(search_stream_handler(search_service))
         .recover(recover_fn);
     warp::serve(rest_routes).run(rest_addr).await;
     Ok(())
@@ -182,12 +182,12 @@ pub fn search_handler<TSearchService: SearchService>(
         .and_then(search)
 }
 
-/// This struct represents the export query passed to
+/// This struct represents the search stream query passed to
 /// the rest API.
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
-pub struct ExportRequestQueryString {
+pub struct SearchStreamRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
     // Fields to search on
@@ -213,12 +213,12 @@ pub struct ExportRequestQueryString {
     pub output_format: OutputFormat,
 }
 
-async fn export_endpoint<TSearchService: SearchService>(
+async fn search_stream_endpoint<TSearchService: SearchService>(
     index_id: String,
-    search_request: ExportRequestQueryString,
+    search_request: SearchStreamRequestQueryString,
     search_service: &TSearchService,
 ) -> Result<hyper::Body, ApiError> {
-    let export_request = quickwit_proto::ExportRequest {
+    let request = quickwit_proto::SearchStreamRequest {
         index_id,
         query: search_request.query,
         search_fields: search_request.search_fields.unwrap_or_default(),
@@ -227,7 +227,7 @@ async fn export_endpoint<TSearchService: SearchService>(
         fast_field: search_request.fast_field,
         output_format: search_request.output_format.to_string(),
     };
-    let data = search_service.root_export(export_request).await?;
+    let data = search_service.root_search_stream(request).await?;
     let stream = stream::iter(data).map(Result::<Vec<u8>, std::io::Error>::Ok);
     let body = hyper::Body::wrap_stream(stream);
     Ok(body)
@@ -248,29 +248,30 @@ fn make_streaming_reply(result: Result<hyper::Body, ApiError>) -> impl Reply {
     reply::with_status(body, status_code)
 }
 
-async fn export<TSearchService: SearchService>(
+async fn search_stream<TSearchService: SearchService>(
     index_id: String,
-    request: ExportRequestQueryString,
+    request: SearchStreamRequestQueryString,
     search_service: Arc<TSearchService>,
 ) -> Result<impl warp::Reply, Infallible> {
-    info!(index_id=%index_id,request=?request, "export");
+    info!(index_id=%index_id,request=?request, "search_stream");
     let content_type = match request.output_format {
-        OutputFormat::RowBinary => "application/octet-stream",
+        OutputFormat::CHRowBinary => "application/octet-stream",
         OutputFormat::CSV => "text/csv",
     };
-    let reply = make_streaming_reply(export_endpoint(index_id, request, &*search_service).await);
+    let reply =
+        make_streaming_reply(search_stream_endpoint(index_id, request, &*search_service).await);
     let reply_with_header = reply::with_header(reply, CONTENT_TYPE, content_type);
     Ok(reply_with_header)
 }
 
-pub fn export_handler<TSearchService: SearchService>(
+pub fn search_stream_handler<TSearchService: SearchService>(
     search_service: Arc<TSearchService>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-    warp::path!("api" / "v1" / String / "export")
+    warp::path!("api" / "v1" / String / "search" / "stream")
         .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
         .and(warp::any().map(move || search_service.clone()))
-        .and_then(export)
+        .and_then(search_stream)
 }
 
 /// This function returns a formated error based on the given rejection reason.
@@ -527,19 +528,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rest_export_api() -> anyhow::Result<()> {
+    async fn test_rest_search_stream_api() -> anyhow::Result<()> {
         let mut mock_search_service = MockSearchService::new();
-        mock_search_service.expect_root_export().return_once(|_| {
-            Ok(vec![
-                "first row\n".to_string().into_bytes(),
-                "second row".to_string().into_bytes(),
-            ])
-        });
-        let rest_export_api_handler =
-            super::export_handler(Arc::new(mock_search_service)).recover(recover_fn);
+        mock_search_service
+            .expect_root_search_stream()
+            .return_once(|_| {
+                Ok(vec![
+                    "first row\n".to_string().into_bytes(),
+                    "second row".to_string().into_bytes(),
+                ])
+            });
+        let rest_search_stream_api_handler =
+            super::search_stream_handler(Arc::new(mock_search_service)).recover(recover_fn);
         let response = warp::test::request()
-            .path("/api/v1/my-index/export?query=obama&fastField=external_id&outputFormat=csv")
-            .reply(&rest_export_api_handler)
+            .path(
+                "/api/v1/my-index/search/stream?query=obama&fastField=external_id&outputFormat=csv",
+            )
+            .reply(&rest_search_stream_api_handler)
             .await;
         assert_eq!(response.status(), 200);
         let body = String::from_utf8_lossy(response.body());

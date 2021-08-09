@@ -22,7 +22,9 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 
-use quickwit_proto::{search_service_server as grpc, LeafExportRequest, LeafExportResult};
+use quickwit_proto::{
+    search_service_server as grpc, LeafSearchStreamRequest, LeafSearchStreamResult,
+};
 use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -77,15 +79,16 @@ impl grpc::SearchService for GrpcAdapter {
         Ok(tonic::Response::new(fetch_docs_result))
     }
 
-    type LeafExportStream = UnboundedReceiverStream<Result<LeafExportResult, tonic::Status>>;
-    async fn leaf_export(
+    type LeafSearchStreamStream =
+        UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>;
+    async fn leaf_search_stream(
         &self,
-        request: tonic::Request<LeafExportRequest>,
-    ) -> Result<tonic::Response<Self::LeafExportStream>, tonic::Status> {
+        request: tonic::Request<LeafSearchStreamRequest>,
+    ) -> Result<tonic::Response<Self::LeafSearchStreamStream>, tonic::Status> {
         let leaf_search_request = request.into_inner();
         let leaf_search_result = self
             .0
-            .leaf_export(leaf_search_request)
+            .leaf_search_stream(leaf_search_request)
             .await
             .map_err(SearchError::convert_to_tonic_status)?;
         Ok(tonic::Response::new(leaf_search_result))

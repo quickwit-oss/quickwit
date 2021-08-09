@@ -23,8 +23,8 @@ mod leaf;
 mod root;
 
 pub use collector::{FastFieldCollector, FastFieldCollectorBuilder};
-pub use leaf::leaf_export;
-pub use root::root_export;
+pub use leaf::leaf_search_stream;
+pub use root::root_search_stream;
 
 use serde::Deserialize;
 use std::{
@@ -33,12 +33,12 @@ use std::{
 };
 use tantivy::fastfield::FastValue;
 
-/// Output format for export.
+/// Output format for stream.
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputFormat {
-    /// Format data by row in binary format. TODO: add link to format.
-    RowBinary,
+    /// Format data by row in ClickHouse binary format. TODO: add link to format.
+    CHRowBinary,
     /// Comma Separated Values format (https://datatracker.ietf.org/doc/html/rfc4180).
     /// By default, the delimiter is ,.
     CSV,
@@ -46,14 +46,14 @@ pub enum OutputFormat {
 
 impl Default for OutputFormat {
     fn default() -> Self {
-        OutputFormat::RowBinary
+        OutputFormat::CHRowBinary
     }
 }
 
 impl ToString for OutputFormat {
     fn to_string(&self) -> String {
         match &self {
-            Self::RowBinary => "rowbinary".to_string(),
+            Self::CHRowBinary => "ch-row-binary".to_string(),
             Self::CSV => "csv".to_string(),
         }
     }
@@ -62,7 +62,7 @@ impl ToString for OutputFormat {
 impl From<String> for OutputFormat {
     fn from(spec: String) -> Self {
         match spec.as_str() {
-            "rowbinary" => Self::RowBinary,
+            "ch-row-binary" => Self::CHRowBinary,
             _ => Self::CSV,
         }
     }
@@ -78,7 +78,7 @@ pub fn serialize<TFastValue: FastValue + Display>(
 ) -> io::Result<()> {
     match format {
         OutputFormat::CSV => serialize_csv(values, buffer),
-        OutputFormat::RowBinary => serialize_row_binary(values, buffer),
+        OutputFormat::CHRowBinary => serialize_ch_row_binary(values, buffer),
     }
 }
 
@@ -93,7 +93,7 @@ fn serialize_csv<TFastValue: FastValue + Display>(
     Ok(())
 }
 
-fn serialize_row_binary<TFastValue: FastValue + Display>(
+fn serialize_ch_row_binary<TFastValue: FastValue + Display>(
     values: &[TFastValue],
     buffer: &mut Vec<u8>,
 ) -> io::Result<()> {
@@ -107,16 +107,16 @@ fn serialize_row_binary<TFastValue: FastValue + Display>(
 
 #[cfg(test)]
 mod tests {
-    use crate::export::{serialize_csv, serialize_row_binary};
+    use crate::search_stream::{serialize_ch_row_binary, serialize_csv};
 
     #[test]
     fn test_serialize_row_binary() {
         let mut buffer = Vec::new();
-        serialize_row_binary::<i64>(&[-10i64], &mut buffer).unwrap();
+        serialize_ch_row_binary::<i64>(&[-10i64], &mut buffer).unwrap();
         assert_eq!(buffer, (-10i64).to_le_bytes());
 
         let mut buffer = Vec::new();
-        serialize_row_binary::<f64>(&[-10f64], &mut buffer).unwrap();
+        serialize_ch_row_binary::<f64>(&[-10f64], &mut buffer).unwrap();
         assert_eq!(buffer, (-10f64).to_le_bytes());
     }
 

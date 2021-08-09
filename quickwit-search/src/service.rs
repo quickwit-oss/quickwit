@@ -24,21 +24,20 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use quickwit_metastore::Metastore;
-use quickwit_proto::{ExportRequest, LeafExportRequest, LeafExportResult};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, SearchRequest,
     SearchResult,
 };
+use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResult, SearchStreamRequest};
 use quickwit_storage::StorageUriResolver;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
-use crate::export::root_export;
-use crate::export::{leaf_export, FastFieldCollectorBuilder};
 use crate::fetch_docs;
 use crate::leaf_search;
 use crate::make_collector;
 use crate::root_search;
+use crate::search_stream::{leaf_search_stream, root_search_stream, FastFieldCollectorBuilder};
 use crate::SearchClientPool;
 use crate::SearchError;
 
@@ -83,13 +82,16 @@ pub trait SearchService: 'static + Send + Sync {
     async fn fetch_docs(&self, _request: FetchDocsRequest) -> Result<FetchDocsResult, SearchError>;
 
     /// Perfomrs a root search returning a receiver for streaming
-    async fn root_export(&self, _request: ExportRequest) -> Result<Vec<Vec<u8>>, SearchError>;
+    async fn root_search_stream(
+        &self,
+        _request: SearchStreamRequest,
+    ) -> Result<Vec<Vec<u8>>, SearchError>;
 
     /// Perform a leaf search on a given set of splits and return a stream.
-    async fn leaf_export(
+    async fn leaf_search_stream(
         &self,
-        _request: LeafExportRequest,
-    ) -> crate::Result<UnboundedReceiverStream<Result<LeafExportResult, tonic::Status>>>;
+        _request: LeafSearchStreamRequest,
+    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>>;
 }
 
 impl SearchServiceImpl {
@@ -176,64 +178,65 @@ impl SearchService for SearchServiceImpl {
         Ok(fetch_docs_result)
     }
 
-    async fn root_export(
+    async fn root_search_stream(
         &self,
-        export_request: ExportRequest,
+        stream_request: SearchStreamRequest,
     ) -> Result<Vec<Vec<u8>>, SearchError> {
         let metastore = self
             .metastore_router
-            .get(&export_request.index_id)
+            .get(&stream_request.index_id)
             .cloned()
             .ok_or_else(|| SearchError::IndexDoesNotExist {
-                index_id: export_request.index_id.clone(),
+                index_id: stream_request.index_id.clone(),
             })?;
-        let data = root_export(&export_request, metastore.as_ref(), &self.client_pool).await?;
+        let data =
+            root_search_stream(&stream_request, metastore.as_ref(), &self.client_pool).await?;
         Ok(data)
     }
 
-    async fn leaf_export(
+    async fn leaf_search_stream(
         &self,
-        leaf_export_request: LeafExportRequest,
-    ) -> crate::Result<UnboundedReceiverStream<Result<LeafExportResult, tonic::Status>>> {
-        let export_request = leaf_export_request
-            .export_request
+        leaf_stream_request: LeafSearchStreamRequest,
+    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>> {
+        let stream_request = leaf_stream_request
+            .request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
-        info!(index=?export_request.index_id, splits=?leaf_export_request.split_ids, "leaf_search");
+        info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_ids, "leaf_search");
         let metastore = self
             .metastore_router
-            .get(&export_request.index_id)
+            .get(&stream_request.index_id)
             .cloned()
             .ok_or_else(|| SearchError::IndexDoesNotExist {
-                index_id: export_request.index_id.clone(),
+                index_id: stream_request.index_id.clone(),
             })?;
-        let index_metadata = metastore.index_metadata(&export_request.index_id).await?;
+        let index_metadata = metastore.index_metadata(&stream_request.index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
-        let split_ids = leaf_export_request.split_ids;
+        let split_ids = leaf_stream_request.split_ids;
         let index_config = index_metadata.index_config;
-        let search_request = SearchRequest::from(export_request.clone());
+        let search_request = SearchRequest::from(stream_request.clone());
         let query = index_config.query(&search_request)?;
-        let fast_field_to_export = export_request.fast_field.clone();
+        let fast_field_to_extract = stream_request.fast_field.clone();
         let schema = index_config.schema();
         let fast_field = schema
-            .get_field(&fast_field_to_export)
+            .get_field(&fast_field_to_extract)
             .ok_or_else(|| SearchError::InvalidQuery("Fast field does not exist.".to_owned()))?;
         let fast_field_type = schema.get_field_entry(fast_field).field_type();
         let fast_field_collector_builder = FastFieldCollectorBuilder::new(
             fast_field_type.value_type(),
-            export_request.fast_field.clone(),
+            stream_request.fast_field.clone(),
             index_config.timestamp_field_name(),
             index_config.timestamp_field(),
-            export_request.start_timestamp,
-            export_request.end_timestamp,
+            stream_request.start_timestamp,
+            stream_request.end_timestamp,
         )?;
-        let leaf_export_stream = leaf_export(
+        let leaf_receiver = leaf_search_stream(
             query,
             fast_field_collector_builder,
             split_ids,
             storage.clone(),
-            export_request.output_format.into(),
+            stream_request.output_format.into(),
         )
         .await;
-        Ok(leaf_export_stream)
+        Ok(leaf_receiver)
     }
 }

@@ -43,8 +43,8 @@ service SearchService {
   /// This methods takes `PartialHit`s and returns `Hit`s.
   rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResult);
 
-  // Perform an export on a given set of splits.
-  rpc LeafExport(LeafExportRequest) returns (stream LeafExportResult);
+  // Perform a leaf stream on a given set of splits.
+  rpc LeafSearchStream(LeafSearchStreamRequest) returns (stream LeafSearchStreamResult);
 }
 
 // -- Search -------------------
@@ -172,10 +172,10 @@ message FetchDocsResult {
 }
 
 
-// -- Export -------------------
+// -- Stream -------------------
 
 
-message ExportRequest {
+message SearchStreamRequest {
   // Index ID
   string index_id = 1;
 
@@ -189,25 +189,25 @@ message ExportRequest {
   optional int64 start_timestamp = 4;
   optional int64 end_timestamp = 5;
 
-  // Name of the fast field to export
+  // Name of the fast field to extract
   string fast_field = 6;
 
   // The output format
   string output_format = 7;
 }
 
-message LeafExportRequest {
-  // Export request. This is a perfect copy of the original export request,
+message LeafSearchStreamRequest {
+  // Stream request. This is a perfect copy of the original stream request,
   // that was sent to root.
-  ExportRequest export_request = 1;
+  SearchStreamRequest request = 1;
 
   // Index split ids to apply the query on.
-  // This ids are resolved from the index_uri defined in the export_request.
+  // This ids are resolved from the index_uri defined in the stream request.
   repeated string split_ids = 2;
 }
 
 
-message LeafExportResult {
+message LeafSearchStreamResult {
   // Row of data serialized in bytes.
   bytes data = 1;
 }

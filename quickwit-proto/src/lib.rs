@@ -27,8 +27,8 @@ extern crate serde;
 pub use cluster::*;
 pub use quickwit::*;
 
-impl From<ExportRequest> for SearchRequest {
-    fn from(item: ExportRequest) -> Self {
+impl From<SearchStreamRequest> for SearchRequest {
+    fn from(item: SearchStreamRequest) -> Self {
         Self {
             index_id: item.index_id.clone(),
             query: item.query.clone(),

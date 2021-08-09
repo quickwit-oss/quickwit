@@ -25,8 +25,8 @@ use std::sync::Arc;
 use futures::StreamExt;
 use itertools::Either;
 use itertools::Itertools;
-use quickwit_proto::ExportRequest;
-use quickwit_proto::LeafExportRequest;
+use quickwit_proto::LeafSearchStreamRequest;
+use quickwit_proto::SearchStreamRequest;
 use tracing::*;
 
 use quickwit_metastore::{Metastore, SplitMetadata};
@@ -41,16 +41,16 @@ use crate::ClientPool;
 use crate::SearchClientPool;
 use crate::SearchError;
 
-/// Perform a distributed export.
-pub async fn root_export(
-    export_request: &ExportRequest,
+/// Perform a distributed search stream.
+pub async fn root_search_stream(
+    search_stream_request: &SearchStreamRequest,
     metastore: &dyn Metastore,
     client_pool: &Arc<SearchClientPool>,
 ) -> Result<Vec<Vec<u8>>, SearchError> {
     let start_instant = tokio::time::Instant::now();
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
-    let search_request = SearchRequest::from(export_request.clone());
+    let search_request = SearchRequest::from(search_stream_request.clone());
     let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
     let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
         .into_iter()
@@ -67,14 +67,14 @@ pub async fn root_export(
     let mut handles = Vec::new();
     for (mut search_client, jobs) in assigned_leaf_search_jobs {
         let split_ids: Vec<String> = jobs.iter().map(|job| job.split.clone()).collect();
-        let leaf_export_request = LeafExportRequest {
-            export_request: Some(export_request.clone()),
+        let leaf_request = LeafSearchStreamRequest {
+            request: Some(search_stream_request.clone()),
             split_ids: split_ids.clone(),
         };
-        debug!(leaf_export_request=?leaf_export_request, grpc_addr=?search_client.grpc_addr(), "Leaf node export.");
+        debug!(leaf_request=?leaf_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search stream.");
         let handle = tokio::spawn(async move {
-            let mut stream = search_client
-                .leaf_export(leaf_export_request)
+            let mut receiver = search_client
+                .leaf_search_stream(leaf_request)
                 .await
                 .map_err(|search_error| NodeSearchError {
                     search_error,
@@ -82,7 +82,7 @@ pub async fn root_export(
                 })?;
 
             let mut leaf_bytes = Vec::new();
-            while let Some(leaf_result) = stream.next().await {
+            while let Some(leaf_result) = receiver.next().await {
                 let leaf_data = leaf_result.map_err(|status| NodeSearchError {
                     search_error: parse_grpc_error(&status),
                     split_ids: split_ids.clone(),
@@ -94,21 +94,21 @@ pub async fn root_export(
         handles.push(handle);
     }
 
-    let export_results = futures::future::try_join_all(handles).await?;
-    let (exports_bytes, errors): (Vec<_>, Vec<_>) =
-        export_results
+    let nodes_results = futures::future::try_join_all(handles).await?;
+    let (nodes_bytes, errors): (Vec<_>, Vec<_>) =
+        nodes_results
             .into_iter()
             .partition_map(|result| match result {
                 Ok(bytes) => Either::Left(bytes),
                 Err(error) => Either::Right(error),
             });
     if !errors.is_empty() {
-        error!(error=?errors, "Some export leaf requests have failed");
+        error!(error=?errors, "Some leaf requests have failed");
         return Err(SearchError::InternalError(format!("{:?}", errors)));
     }
     let elapsed = start_instant.elapsed();
-    info!("Root export completed in {:?}", elapsed);
-    Ok(exports_bytes)
+    info!("Root search stream completed in {:?}", elapsed);
+    Ok(nodes_bytes)
 }
 
 #[cfg(test)]
@@ -136,8 +136,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_root_export_single_split() -> anyhow::Result<()> {
-        let export_request = quickwit_proto::ExportRequest {
+    async fn test_root_search_stream_single_split() -> anyhow::Result<()> {
+        let request = quickwit_proto::SearchStreamRequest {
             index_id: "test-idx".to_string(),
             query: "test".to_string(),
             search_fields: vec!["body".to_string()],
@@ -163,14 +163,14 @@ mod tests {
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-        result_sender.send(Ok(quickwit_proto::LeafExportResult {
+        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
             data: "123".as_bytes().to_vec(),
         }))?;
-        result_sender.send(Ok(quickwit_proto::LeafExportResult {
+        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
             data: "456".as_bytes().to_vec(),
         }))?;
-        mock_search_service.expect_leaf_export().return_once(
-            |_leaf_search_req: quickwit_proto::LeafExportRequest| {
+        mock_search_service.expect_leaf_search_stream().return_once(
+            |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
                 Ok(UnboundedReceiverStream::new(result_receiver))
             },
         );
@@ -178,9 +178,9 @@ mod tests {
         drop(result_sender);
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
-        let export_result = root_export(&export_request, &metastore, &client_pool).await?;
-        assert_eq!(export_result.len(), 1);
-        assert_eq!(export_result, vec!["123456".as_bytes().to_vec()]);
+        let result = root_search_stream(&request, &metastore, &client_pool).await?;
+        assert_eq!(result.len(), 1);
+        assert_eq!(result, vec!["123456".as_bytes().to_vec()]);
         Ok(())
     }
 }

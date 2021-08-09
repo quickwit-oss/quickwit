@@ -23,27 +23,27 @@ use crate::leaf::open_index;
 use crate::leaf::warmup;
 use crate::OutputFormat;
 use crate::SearchError;
-use quickwit_proto::LeafExportResult;
+use quickwit_proto::LeafSearchStreamResult;
 use quickwit_storage::Storage;
 use std::sync::Arc;
 use tantivy::schema::Type;
 use tantivy::{query::Query, ReloadPolicy};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-/// `leaf` step of export.
+/// `leaf` step of search stream.
 // Note: we return a stream of a result with a tonic::Status error
 // to be compatible with the stream coming from the grpc client.
 // It would be better to have a SearchError but we need then
 // to process stream in grpc_adapater.rs to change SearchError
 // to tonic::Status as tonic::Status is required by the stream result
 // signature defined by proto generated code.
-pub async fn leaf_export(
+pub async fn leaf_search_stream(
     query: Box<dyn Query>,
     fast_field_collector_builder: FastFieldCollectorBuilder,
     split_ids: Vec<String>,
     storage: Arc<dyn Storage>,
     output_format: OutputFormat,
-) -> UnboundedReceiverStream<Result<LeafExportResult, tonic::Status>> {
+) -> UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>> {
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
     for split_id in split_ids {
         let split_storage: Arc<dyn Storage> =
@@ -52,7 +52,7 @@ pub async fn leaf_export(
         let query_clone = query.box_clone();
         let result_sender_clone = result_sender.clone();
         tokio::spawn(async move {
-            let leaf_split_result = leaf_export_single_split(
+            let leaf_split_result = leaf_search_stream_single_split(
                 query_clone,
                 collector_for_split,
                 split_storage,
@@ -73,12 +73,12 @@ pub async fn leaf_export(
 }
 
 /// Apply a leaf search on a single split.
-async fn leaf_export_single_split(
+async fn leaf_search_stream_single_split(
     query: Box<dyn Query>,
     fast_field_collector_builder: FastFieldCollectorBuilder,
     storage: Arc<dyn Storage>,
     output_format: OutputFormat,
-) -> crate::Result<LeafExportResult> {
+) -> crate::Result<LeafSearchStreamResult> {
     let index = open_index(storage).await?;
     let reader = index
         .reader_builder()
@@ -123,5 +123,5 @@ async fn leaf_export_single_split(
             )));
         }
     }
-    Ok(LeafExportResult { data: buffer })
+    Ok(LeafSearchStreamResult { data: buffer })
 }
