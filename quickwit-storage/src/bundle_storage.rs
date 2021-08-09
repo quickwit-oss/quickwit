@@ -70,7 +70,7 @@ impl BundleStorage {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct BundleStorageMetadata {
-    pub(crate) files: HashMap<PathBuf, FileOffsets>,
+    pub(crate) files: HashMap<PathBuf, Range<usize>>,
 }
 
 impl BundleStorageMetadata {
@@ -81,7 +81,7 @@ impl BundleStorageMetadata {
         serde_json::from_slice(footer_slice)
             .map_err(|err| io::Error::new(ErrorKind::InvalidData, err))
     }
-    fn get(&self, path: &Path) -> StorageResult<FileOffsets> {
+    fn get(&self, path: &Path) -> StorageResult<Range<usize>> {
         self.files
             .get(path)
             .cloned()
@@ -105,7 +105,7 @@ impl Storage for BundleStorage {
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> crate::StorageResult<Bytes> {
         let file_offsets = self.metadata.get(path)?;
         let new_range =
-            range.start + file_offsets.start as usize..range.end + file_offsets.start as usize;
+            file_offsets.start as usize + range.start..file_offsets.start as usize + range.end;
         self.storage
             .get_slice(&self.bundle_file_name, new_range)
             .await
@@ -135,12 +135,6 @@ impl Storage for BundleStorage {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-struct FileOffsets {
-    start: u64,
-    end: u64,
-}
-
 impl HasLen for BundleStorage {
     fn len(&self) -> usize {
         unimplemented!()
@@ -167,14 +161,14 @@ fn unsupported_operation(path: &Path) -> StorageError {
 /// with some metadata
 pub struct BundleStorageBuilder {
     metadata: BundleStorageMetadata,
-    current_offset: u64,
+    current_offset: usize,
     /// The offset in the file where the hotcache begins. This is used to read
     /// the hotcache and footer in a single read.
-    pub hotcache_offset: u64,
+    pub hotcache_offset: usize,
     /// The footer offset, where the footer begins.
     /// The footer includes the footer metadata as json encoded and the size of the footer in
     /// bytes.
-    pub footer_offset: u64,
+    pub footer_offset: usize,
     bundle_file: File,
 }
 
@@ -198,7 +192,7 @@ impl BundleStorageBuilder {
     /// the hotcache and the metadata in one continous read.
     pub fn add_file(&mut self, path: &Path) -> io::Result<()> {
         let mut file = File::open(path)?;
-        let bytes_written = io::copy(&mut file, &mut self.bundle_file)?;
+        let bytes_written = io::copy(&mut file, &mut self.bundle_file)? as usize;
         let file_name = PathBuf::from(path.file_name().ok_or_else(|| {
             io::Error::new(
                 ErrorKind::InvalidInput,
@@ -210,10 +204,7 @@ impl BundleStorageBuilder {
         }
         self.metadata.files.insert(
             file_name,
-            FileOffsets {
-                start: self.current_offset,
-                end: self.current_offset + bytes_written,
-            },
+            self.current_offset..self.current_offset + bytes_written,
         );
         self.current_offset += bytes_written;
         Ok(())

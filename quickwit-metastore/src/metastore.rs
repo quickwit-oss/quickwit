@@ -65,9 +65,9 @@ pub struct SplitMetadata {
 
     /// hotcache offset in the single file bundle.
     /// This is used to read the hotcache and footer in a single read.
-    pub hotcache_offset: u64,
+    pub hotcache_offset: usize,
     /// footer offset in the single file bundle.
-    pub bundle_footer_offset: u64,
+    pub bundle_footer_offset: usize,
 
     /// If a timestamp field is available, the min / max timestamp in the split.
     pub time_range: Option<RangeInclusive<i64>>,
