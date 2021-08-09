@@ -18,21 +18,18 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::models::RawDocBatch;
 use async_trait::async_trait;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
+use quickwit_actors::ActorTermination;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
-use quickwit_actors::MessageProcessError;
 use std::io;
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
-use tracing::debug;
-use tracing::info;
-
-use crate::models::RawDocBatch;
 
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
@@ -79,7 +76,7 @@ impl AsyncActor for FileSource {
         &mut self,
         _message: Self::Message,
         _ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), MessageProcessError> {
+    ) -> Result<(), ActorTermination> {
         let limit_num_bytes = self.file_position.num_bytes + BATCH_NUM_BYTES_THRESHOLD;
         let mut reached_eof = false;
         let mut raw_doc_batch = RawDocBatch::default();
@@ -89,7 +86,7 @@ impl AsyncActor for FileSource {
                 .file
                 .read_line(&mut doc_line)
                 .await
-                .map_err(|io_err: io::Error| MessageProcessError::Error(anyhow::anyhow!(io_err)))?;
+                .map_err(|io_err: io::Error| ActorTermination::Failure(anyhow::anyhow!(io_err)))?;
             if num_bytes == 0 {
                 reached_eof = true;
                 break;
@@ -102,7 +99,7 @@ impl AsyncActor for FileSource {
             self.sink.send_async(raw_doc_batch).await?;
         }
         if reached_eof {
-            return Err(MessageProcessError::Terminated);
+            return Err(ActorTermination::Terminated);
         }
         Ok(())
     }
@@ -123,7 +120,7 @@ mod tests {
         let file_source = FileSource::try_new(Path::new("data/test_corpus.json"), mailbox).await?;
         let file_source_handle = file_source.spawn(KillSwitch::default());
         let actor_termination = file_source_handle.join().await?;
-        assert!(matches!(actor_termination, ActorTermination::Disconnect));
+        assert!(matches!(actor_termination, ActorTermination::Terminated));
         let batch = inbox.drain_available_message_for_test();
         assert_eq!(batch.len(), 1);
         Ok(())

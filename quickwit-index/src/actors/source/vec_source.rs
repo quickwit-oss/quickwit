@@ -23,9 +23,9 @@ use crate::models::RawDocBatch;
 use async_trait::async_trait;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
+use quickwit_actors::ActorTermination;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
-use quickwit_actors::MessageProcessError;
 
 pub struct VecSource {
     next_item_id: usize,
@@ -64,7 +64,7 @@ impl AsyncActor for VecSource {
         &mut self,
         _message: Self::Message,
         _ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), MessageProcessError> {
+    ) -> Result<(), ActorTermination> {
         let line_docs: Vec<String> = self.items[self.next_item_id..]
             .iter()
             .take(self.batch_num_docs)
@@ -72,7 +72,7 @@ impl AsyncActor for VecSource {
             .collect();
         self.next_item_id += line_docs.len();
         if line_docs.is_empty() {
-            return Err(MessageProcessError::Terminated);
+            return Err(ActorTermination::Terminated);
         }
         let batch = RawDocBatch {
             docs: line_docs,
@@ -103,7 +103,7 @@ mod tests {
         );
         let vec_source_handle = vec_source.spawn(KillSwitch::default());
         let actor_termination = vec_source_handle.join().await?;
-        assert!(matches!(actor_termination, ActorTermination::Disconnect));
+        assert!(matches!(actor_termination, ActorTermination::Terminated));
         let batch = inbox.drain_available_message_for_test();
         assert_eq!(batch.len(), 34);
         Ok(())

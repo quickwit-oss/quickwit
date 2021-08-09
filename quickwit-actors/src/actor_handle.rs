@@ -5,7 +5,7 @@ use tokio::time::timeout;
 use tracing::error;
 
 use crate::mailbox::Command;
-use crate::{KillSwitch, Mailbox, Observation, Progress};
+use crate::{ActorTermination, KillSwitch, Mailbox, Observation, Progress};
 
 /// An Actor Handle serves as an address to communicate with an actor.
 ///
@@ -136,21 +136,6 @@ impl<Message, ObservableState: Clone + Send + fmt::Debug> ActorHandle<Message, O
     pub fn last_observation(&self) -> ObservableState {
         self.last_state.borrow().clone()
     }
-}
-
-/// Represents the cause of termination of an actor.
-#[derive(Debug)]
-pub enum ActorTermination {
-    /// Process command returned false.
-    OnDemand,
-    /// The actor process method returned an error.
-    ActorError(anyhow::Error),
-    /// The actor was killed by the kill switch.
-    KillSwitch,
-    /// All of the actor handle were dropped and no more message were available.
-    Disconnect,
-
-    DownstreamClosed,
 }
 
 pub enum ActorMessage<Message> {

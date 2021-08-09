@@ -43,8 +43,8 @@ pub use self::actor::ActorContext;
 pub use self::mailbox::{
     create_mailbox, create_test_mailbox, Mailbox, QueueCapacity, ReceptionResult,
 };
-pub use actor::{Actor, MessageProcessError};
-pub use actor_handle::{ActorHandle, ActorTermination};
+pub use actor::{Actor, ActorTermination};
+pub use actor_handle::ActorHandle;
 pub use async_actor::AsyncActor;
 pub use kill_switch::KillSwitch;
 pub use observation::Observation;

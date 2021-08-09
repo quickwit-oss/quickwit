@@ -9,7 +9,7 @@ use crate::{KillSwitch, Mailbox, Progress, QueueCapacity, SendError};
 // can be interpreted as a blocked actor.
 
 #[derive(Error, Debug)]
-pub enum MessageProcessError {
+pub enum ActorTermination {
     /// The actor was stopped upon reception of a Command.
     #[error("On Demand")]
     OnDemand,
@@ -19,16 +19,30 @@ pub enum MessageProcessError {
     DownstreamClosed,
     /// Some unexpected error happened.
     #[error("Failure")]
-    Error(#[from] anyhow::Error),
+    Failure(#[from] anyhow::Error),
     /// The actor terminated, as it identified it reached a state where it
     /// would not send any more message.
     #[error("Terminated")]
     Terminated,
+    #[error("Actor stopped working as the killswitch was pushed by another actor.")]
+    KillSwitch,
 }
 
-impl From<SendError> for MessageProcessError {
+impl ActorTermination {
+    pub fn is_failure(&self) -> bool {
+        match self {
+            ActorTermination::OnDemand => false,
+            ActorTermination::DownstreamClosed => true,
+            ActorTermination::Failure(_) => true,
+            ActorTermination::Terminated => false,
+            ActorTermination::KillSwitch => false,
+        }
+    }
+}
+
+impl From<SendError> for ActorTermination {
     fn from(_: SendError) -> Self {
-        MessageProcessError::DownstreamClosed
+        ActorTermination::DownstreamClosed
     }
 }
 
@@ -69,7 +83,7 @@ pub trait Actor: Send + Sync + 'static {
     fn observable_state(&self) -> Self::ObservableState;
 }
 
-pub struct ActorContext< Message> {
+pub struct ActorContext<Message> {
     pub self_mailbox: Mailbox<Message>,
     pub progress: Progress,
     pub kill_switch: KillSwitch,

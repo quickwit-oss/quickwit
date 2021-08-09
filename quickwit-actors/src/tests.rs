@@ -1,7 +1,7 @@
 use crate::mailbox::Command;
 use crate::Actor;
 use crate::KillSwitch;
-use crate::{ActorContext, AsyncActor, Mailbox, MessageProcessError, Observation, SyncActor};
+use crate::{ActorContext, ActorTermination, AsyncActor, Mailbox, Observation, SyncActor};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -37,8 +37,8 @@ impl SyncActor for PingReceiverSyncActor {
     fn process_message(
         &mut self,
         _message: Self::Message,
-        _ctx: &ActorContext< Self::Message>,
-    ) -> Result<(), MessageProcessError> {
+        _ctx: &ActorContext<Self::Message>,
+    ) -> Result<(), ActorTermination> {
         self.ping_count += 1;
         Ok(())
     }
@@ -74,7 +74,7 @@ impl AsyncActor for PingReceiverAsyncActor {
         &mut self,
         _message: Self::Message,
         _progress: &ActorContext<Self::Message>,
-    ) -> Result<(), MessageProcessError> {
+    ) -> Result<(), ActorTermination> {
         self.ping_count += 1;
         Ok(())
     }
@@ -123,7 +123,7 @@ impl AsyncActor for PingerAsyncSenderActor {
         &mut self,
         message: SenderMessage,
         _ctx: &ActorContext<SenderMessage>,
-    ) -> Result<(), MessageProcessError> {
+    ) -> Result<(), ActorTermination> {
         match message {
             SenderMessage::AddPeer(peer) => {
                 self.peers.insert(peer);
@@ -231,7 +231,7 @@ impl AsyncActor for BuggyActor {
         &mut self,
         message: BuggyMessage,
         _ctx: &ActorContext<BuggyMessage>,
-    ) -> Result<(), MessageProcessError> {
+    ) -> Result<(), ActorTermination> {
         match message {
             BuggyMessage::Block => {
                 loop {
@@ -348,7 +348,7 @@ impl AsyncActor for DefaultMessageActor {
         &mut self,
         message: Self::Message,
         _ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), MessageProcessError> {
+    ) -> Result<(), ActorTermination> {
         match message {
             Msg::Default => {
                 self.default_count += 1;
@@ -366,7 +366,7 @@ impl SyncActor for DefaultMessageActor {
         &mut self,
         message: Self::Message,
         _ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), MessageProcessError> {
+    ) -> Result<(), ActorTermination> {
         match message {
             Msg::Default => {
                 self.default_count += 1;
