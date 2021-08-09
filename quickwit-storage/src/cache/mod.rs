@@ -30,6 +30,7 @@ use std::path::{Path, PathBuf};
 
 /// The `Cache` trait is the abstraction used to describe the caching logic
 /// used in front of a storage. See `StorageWithCache`.
+#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Cache: Send + Sync + 'static {
     /// Try to get a slice from the cache.

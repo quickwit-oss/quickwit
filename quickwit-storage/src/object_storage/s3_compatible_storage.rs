@@ -20,7 +20,12 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use super::error::RusotoErrorWrapper;
+use std::fmt::{self, Debug};
+use std::io;
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
 use anyhow::Context;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -28,16 +33,11 @@ use futures::stream;
 use futures::StreamExt;
 use once_cell::sync::OnceCell;
 use regex::Regex;
-use rusoto_core::credential::DefaultCredentialsProvider;
-use std::fmt::{self, Debug};
-use std::io;
-use std::ops::Range;
-use std::path::{Path, PathBuf};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 use tracing::warn;
 
-use crate::retry::{retry, IsRetryable, Retry};
+use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider};
 use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
 use rusoto_s3::{
     AbortMultipartUploadRequest, CompleteMultipartUploadRequest, CompletedMultipartUpload,
@@ -47,10 +47,19 @@ use rusoto_s3::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
+use super::error::RusotoErrorWrapper;
+
 use crate::object_storage::file_slice_stream::FileSliceStream;
 use crate::object_storage::MultiPartPolicy;
+use crate::retry::{retry, IsRetryable, Retry};
 use crate::{PutPayload, Storage, StorageErrorKind};
 use crate::{StorageError, StorageResult};
+
+/// A credential timeout.
+const CREDENTIAL_TIMEOUT: u64 = 5;
+
+/// An timeout for idle sockets being kept-alive.
+const POOL_IDLE_TIMEOUT: u64 = 10;
 
 /// S3 Compatible object storage implementation.
 pub struct S3CompatibleObjectStorage {
@@ -71,12 +80,14 @@ impl fmt::Debug for S3CompatibleObjectStorage {
 }
 
 fn create_s3_client(region: Region) -> anyhow::Result<S3Client> {
-    let credentials_provider = DefaultCredentialsProvider::new()
+    let mut chain_provider = ChainProvider::new();
+    chain_provider.set_timeout(Duration::from_secs(CREDENTIAL_TIMEOUT));
+    let credentials_provider = AutoRefreshingProvider::new(chain_provider)
         .with_context(|| "Failed to fetch credentials for the object storage.")?;
     let mut http_config: HttpConfig = HttpConfig::default();
     // We experience an issue similar to https://github.com/hyperium/hyper/issues/2312.
     // It seems like the setting below solved it.
-    http_config.pool_idle_timeout(std::time::Duration::from_secs(10));
+    http_config.pool_idle_timeout(std::time::Duration::from_secs(POOL_IDLE_TIMEOUT));
     let http_client = HttpClient::new_with_config(http_config)
         .with_context(|| "failed to create request dispatcher")?;
     Ok(S3Client::new_with(

@@ -211,17 +211,16 @@ quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obam
 
 *Description*
 
-Starts a rest server at address `host`:`port` and makes searchable indexes located at `index-uri` and returns the documents matching the query specified with `query`. Optionally connects to peers listed at `peer-seed` using SWIM membership protocol to allow search workload distribution.
+Starts a web server listening on `host`:`port` that exposes the [Quickwit REST API](search-api.md). The `index-uri` option, which accepts a comma-separated list of index URIs, specifies the indexes targeted by the API. The node can optionally join a cluster using the `peer-seed` parameter. This list of comma-separated node addresses is used to discover the remaining peer nodes in the cluster through the use of a gossip protocol (SWIM).
 
 :::note
 
-Behind the scenes, Quickwit need to open the following port for cluster formation and workload distribution:
-- TCP port (default is 8080) for REST API
-- TCP and UDP port + 1 (default is 8081) for cluster membership protocol
-- TCP port + 2 (default is 8082) for gRPC address for the distributed search
+Quickwit services run on three TCP ports ranging from `port` to `port` + 2, and one UDP port (`port` + 1):
+- the web server listens on the first TCP port (default: 8080);
+- the cluster management service uses the second TCP port (default: 8081) and the UDP port with the same number;
+- gRPC services run on the third TCP port (default: 8082).
 
-In this case, if ports are already taken, the serve command will fail.
-
+If any of those ports is already in use when the services start, the command will fail.
 :::
 
 
@@ -229,26 +228,54 @@ In this case, if ports are already taken, the serve command will fail.
 
 ```bash
 quickwit serve
-    --index-uri <list of uris>
+    --index-uri <list of URIs>
     --host <hostname>
     --port <port>
-    --peer-seeds <list of seeds>
+    --peer-seed <list of addresses>
 ```
 
 *Options*
 
-`--index-uri` (string) List of location of target indexes.<br />
-`--host` (string) Hostname the rest server should bind to.<br />
-`--port` (string) Port the REST API server should bind to.<br />
-`--peer-seeds` (string) List of peer socket address (e.g. 192.1.1.3:8080) to connect to form a cluster.<br />
+`--index-uri` (string) Comma-separated list of target index locations.<br />
+`--host` (string) Hostname the web server should bind to.<br />
+`--port` (string) Port the web server should bind to.<br />
+`--peer-seed` (string) Comma-separated list of node addresses (e.g. 10.0.0.1:8080) used as seeds for cluster peer discovery.<br />
 
 
 *Examples*
 
-*Start a local server and for a local index*
+*Serving a local index*
 
 ```bash
-quickwit serve --index-uri file:///path-to-my-indexes/wikipedia
+quickwit serve --index-uri file:///my-indexes/wikipedia
+```
+
+*Serving a remote index*
+
+```bash
+quickwit serve --index-uri s3://my-bucket/nginx-logs
+```
+
+*Serving multiple indexes*
+
+```bash
+quickwit serve --index-uri file:///my-indexes/wikipedia,s3://my-bucket/nginx-logs
+```
+
+*Creating a multi-node cluster*
+
+```bash
+# On host 10.0.0.1
+quickwit serve --index-uri s3:///my-bucket/nginx-logs --peer-seed 10.0.0.2:8080
+
+# On host 10.0.0.2
+quickwit serve --index-uri s3:///my-bucket/nginx-logs --peer-seed 10.0.0.1:8080
+
+# On host 10.0.0.3
+quickwit serve --index-uri s3:///my-bucket/nginx-logs --peer-seed 10.0.0.1:8080,10.0.0.2.8080
+
+# On host 10.0.0.4
+quickwit serve --index-uri s3:///my-bucket/nginx-logs --peer-seed 10.0.0.1:8080,10.0.0.2.8080
 ```
 
 ### Delete
@@ -267,8 +294,8 @@ quickwit delete
 
 *Options*
 
-`--index-uri` (string) Location of the target index.
-`--dry-run` (boolean) Executes the command in dry run mode and displays the list of files subject to be deleted.
+`--index-uri` (string) Location of the target index.<br />
+`--dry-run` (boolean) Executes the command in dry run mode and displays the list of files subject to be deleted.<br />
 
 *Examples*
 
@@ -281,3 +308,58 @@ quickwit delete --index-uri s3://quickwit-indexes/catalog
 ```bash
 quickwit delete --index-uri s3://quickwit-indexes/catalog --dry-run
 ```
+
+### Garbage collect (gc)
+
+*Description*
+
+Garbage collects all dangling files within the index at `index-uri`.
+
+*Synopsis*
+
+```bash
+quickwit gc
+    --index-uri <uri>
+    [--grace-period <duration>]
+    [--dry-run]
+```
+
+:::note
+
+Intermediate files are created while executing Quickwit commands. These intermediate files are always cleaned at the end of each successfully executed command. However, failed or interrupted commands can leave behind intermediate files that need to be removed.
+Also note that using very short grace-period (like seconds) can cause removal of intermediate files being operated on especially when using Quickwit concurently on the same index. In practice you can settle with the default value (1 hour) and only specify a value if you really know what you are doing.
+
+:::
+
+*Options*
+
+`--index-uri` (string) Location of the target index.<br />
+`--grace-period` (string) Threshold period after which intermediate files can be garbage collected. This is an integer followed by one of the letters `s`(second), `m`(minutes), `h`(hours) and `d`(days) as unit, (defaults to `1h`).<br />
+`--dry-run` (boolean) Executes the command in dry run mode and displays the list of files subject to be removed.<br />
+
+*Examples*
+
+*Garbage collecting an index*
+```bash
+quickwit gc --index-uri s3://quickwit-indexes/catalog
+```
+
+*Executing in dry run mode*
+```bash
+quickwit gc --index-uri s3://quickwit-indexes/catalog --dry-run
+```
+
+*Executing with five minutes of grace period*
+```bash
+quickwit gc --index-uri s3://quickwit-indexes/catalog --grace-period 5m
+```
+
+## Environment Variables
+
+### QUICKWIT_ENV
+
+Specifies the nature of the current working environment. Currently, this environment variable is used exclusively for testing purposes, and `LOCAL` is the only supported value.
+
+### QUICKWIT_DISABLE_TELEMETRY
+
+Disables [telemetry](telemetry.md) when set to any non-empty value.

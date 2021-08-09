@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chrono::Utc;
 use tokio::sync::RwLock;
 
 use quickwit_storage::{PutPayload, Storage, StorageErrorKind};
@@ -74,12 +75,22 @@ impl SingleFileMetastore {
     async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
         let index_path = meta_path(index_id);
 
-        let exists = self.storage.exists(&index_path).await.map_err(|err| {
-            MetastoreError::InternalError {
-                message: "Failed to check for existence of index file.".to_string(),
-                cause: anyhow::anyhow!(err),
-            }
-        })?;
+        let exists =
+            self.storage
+                .exists(&index_path)
+                .await
+                .map_err(|storage_err| match storage_err.kind() {
+                    StorageErrorKind::DoesNotExist => MetastoreError::IndexDoesNotExist {
+                        index_id: index_id.to_string(),
+                    },
+                    StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
+                        message: "The request credentials do not allow this operation.".to_string(),
+                    },
+                    _ => MetastoreError::InternalError {
+                        message: "Failed to check index file existence.".to_string(),
+                        cause: anyhow::anyhow!(storage_err),
+                    },
+                })?;
 
         Ok(exists)
     }
@@ -107,8 +118,11 @@ impl SingleFileMetastore {
                 StorageErrorKind::DoesNotExist => MetastoreError::IndexDoesNotExist {
                     index_id: index_id.to_string(),
                 },
+                StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
+                    message: "The request credentials do not allow for this operation.".to_string(),
+                },
                 _ => MetastoreError::InternalError {
-                    message: "Metastore error".to_string(),
+                    message: "Failed to get index files.".to_string(),
                     cause: anyhow::anyhow!(storage_err),
                 },
             })?;
@@ -140,9 +154,14 @@ impl SingleFileMetastore {
         self.storage
             .put(&index_path, PutPayload::from(content))
             .await
-            .map_err(|cause| MetastoreError::InternalError {
-                message: "Failed to put metadata set back into storage.".to_string(),
-                cause: From::from(cause),
+            .map_err(|storage_err| match storage_err.kind() {
+                StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
+                    message: "The request credentials do not allow for this operation.".to_string(),
+                },
+                _ => MetastoreError::InternalError {
+                    message: "Failed to put metadata set back into storage.".to_string(),
+                    cause: anyhow::anyhow!(storage_err),
+                },
             })?;
 
         // Update the internal data if the storage is successfully updated.
@@ -190,9 +209,17 @@ impl Metastore for SingleFileMetastore {
         self.storage
             .delete(&index_path)
             .await
-            .map_err(|cause| MetastoreError::InternalError {
-                message: "Failed to delete metadata set from storage.".to_string(),
-                cause: anyhow::anyhow!(cause),
+            .map_err(|storage_err| match storage_err.kind() {
+                StorageErrorKind::DoesNotExist => MetastoreError::IndexDoesNotExist {
+                    index_id: index_id.to_string(),
+                },
+                StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
+                    message: "The request credentials do not allow for this operation.".to_string(),
+                },
+                _ => MetastoreError::InternalError {
+                    message: "Failed to delete metadata set from storage.".to_string(),
+                    cause: anyhow::anyhow!(storage_err),
+                },
             })?;
 
         // Update the internal data if the storage is successfully updated.
@@ -223,6 +250,7 @@ impl Metastore for SingleFileMetastore {
 
         // Insert a new split metadata as `Staged` state.
         split_metadata.split_state = SplitState::Staged;
+        split_metadata.update_timestamp = Utc::now().timestamp();
         metadata_set
             .splits
             .insert(split_metadata.split_id.to_string(), split_metadata);
@@ -255,6 +283,7 @@ impl Metastore for SingleFileMetastore {
                 SplitState::Staged => {
                     // The split state needs to be updated.
                     split_metadata.split_state = SplitState::Published;
+                    split_metadata.update_timestamp = Utc::now().timestamp();
                 }
                 _ => {
                     return Err(MetastoreError::SplitIsNotStaged {
@@ -286,8 +315,7 @@ impl Metastore for SingleFileMetastore {
         let metadata_set = self.get_index(index_id).await?;
         let splits = metadata_set
             .splits
-            .into_iter()
-            .map(|(_, split_metadata)| split_metadata)
+            .into_values()
             .filter(|split_metadata| {
                 split_metadata.split_state == state && time_range_filter(split_metadata)
             })
@@ -297,11 +325,7 @@ impl Metastore for SingleFileMetastore {
 
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitMetadata>> {
         let metadata_set = self.get_index(index_id).await?;
-        let splits = metadata_set
-            .splits
-            .into_iter()
-            .map(|(_, split_metadata)| split_metadata)
-            .collect();
+        let splits = metadata_set.splits.into_values().collect();
         Ok(splits)
     }
 
@@ -327,6 +351,7 @@ impl Metastore for SingleFileMetastore {
             }
 
             split_metadata.split_state = SplitState::ScheduledForDeletion;
+            split_metadata.update_timestamp = Utc::now().timestamp();
             is_modified = true;
         }
 
@@ -359,7 +384,7 @@ impl Metastore for SingleFileMetastore {
                 }
                 _ => {
                     let message: String = format!(
-                        "This split is not a deletable state: {:?}:{:?}",
+                        "This split is not in a deletable state: {:?}:{:?}",
                         split_id, &split_metadata.split_state
                     );
                     return Err(MetastoreError::Forbidden { message });
@@ -388,11 +413,16 @@ mod tests {
     use std::ops::Range;
     use std::path::Path;
     use std::sync::Arc;
+    use std::time::Duration;
+
+    use chrono::Utc;
+    use tokio::time::sleep;
+
+    use quickwit_index_config::AllFlattenIndexConfig;
+    use quickwit_storage::{MockStorage, StorageErrorKind};
 
     use crate::{IndexMetadata, MetastoreError};
     use crate::{Metastore, SingleFileMetastore, SplitMetadata, SplitState};
-    use quickwit_index_config::AllFlattenIndexConfig;
-    use quickwit_storage::{MockStorage, StorageErrorKind};
 
     #[tokio::test]
     async fn test_single_file_metastore_index_exists() {
@@ -434,7 +464,7 @@ mod tests {
 
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
-                index_uri: "ram://indexes//my-index".to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
@@ -470,7 +500,7 @@ mod tests {
 
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
-                index_uri: "ram://indexes//my-index".to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
@@ -520,7 +550,7 @@ mod tests {
 
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
-                index_uri: "ram://indexes//my-index".to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
             };
 
@@ -559,6 +589,7 @@ mod tests {
             size_in_bytes: 2,
             time_range: Some(Range { start: 0, end: 100 }),
             generation: 3,
+            update_timestamp: Utc::now().timestamp(),
         };
 
         {
@@ -684,6 +715,7 @@ mod tests {
         let index_id = "my-index";
         let split_id_one = "one";
         let split_id_two = "two";
+        let current_timestamp = Utc::now().timestamp();
         let split_metadata_one = SplitMetadata {
             split_id: split_id_one.to_string(),
             split_state: SplitState::Staged,
@@ -691,6 +723,7 @@ mod tests {
             size_in_bytes: 2,
             time_range: Some(Range { start: 0, end: 100 }),
             generation: 3,
+            update_timestamp: current_timestamp,
         };
         let split_metadata_two = SplitMetadata {
             split_id: split_id_two.to_string(),
@@ -702,6 +735,7 @@ mod tests {
                 end: 100,
             }),
             generation: 2,
+            update_timestamp: current_timestamp,
         };
 
         {
@@ -854,6 +888,7 @@ mod tests {
     async fn test_single_file_metastore_list_splits() {
         let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
+        let current_timestamp = Utc::now().timestamp();
 
         {
             let index_metadata = IndexMetadata {
@@ -875,6 +910,7 @@ mod tests {
                 size_in_bytes: 2,
                 time_range: Some(Range { start: 0, end: 100 }),
                 generation: 3,
+                update_timestamp: current_timestamp,
             };
 
             let split_metadata_2 = SplitMetadata {
@@ -887,6 +923,7 @@ mod tests {
                     end: 200,
                 }),
                 generation: 3,
+                update_timestamp: current_timestamp,
             };
 
             let split_metadata_3 = SplitMetadata {
@@ -899,6 +936,7 @@ mod tests {
                     end: 300,
                 }),
                 generation: 3,
+                update_timestamp: current_timestamp,
             };
 
             let split_metadata_4 = SplitMetadata {
@@ -911,6 +949,7 @@ mod tests {
                     end: 400,
                 }),
                 generation: 3,
+                update_timestamp: current_timestamp,
             };
             let split_metadata_5 = SplitMetadata {
                 split_id: "five".to_string(),
@@ -919,6 +958,7 @@ mod tests {
                 size_in_bytes: 2,
                 time_range: None,
                 generation: 3,
+                update_timestamp: current_timestamp,
             };
 
             metastore
@@ -1412,6 +1452,7 @@ mod tests {
             size_in_bytes: 2,
             time_range: Some(Range { start: 0, end: 100 }),
             generation: 3,
+            update_timestamp: Utc::now().timestamp(),
         };
 
         {
@@ -1518,6 +1559,7 @@ mod tests {
             size_in_bytes: 2,
             time_range: Some(Range { start: 0, end: 100 }),
             generation: 3,
+            update_timestamp: Utc::now().timestamp(),
         };
 
         {
@@ -1612,6 +1654,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_single_file_metastore_split_update_timestamp() {
+        let metastore = SingleFileMetastore::for_test();
+        let index_id = "my-index";
+        let split_id = "split-one";
+        let mut current_timestamp = Utc::now().timestamp();
+        let split_metadata = SplitMetadata {
+            split_id: split_id.to_string(),
+            split_state: SplitState::New,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(Range { start: 0, end: 100 }),
+            generation: 3,
+            update_timestamp: current_timestamp,
+        };
+        let index_metadata = IndexMetadata {
+            index_id: index_id.to_string(),
+            index_uri: "ram://indexes/my-index".to_string(),
+            index_config: Box::new(AllFlattenIndexConfig::default()),
+        };
+
+        // Create index
+        metastore.create_index(index_metadata).await.unwrap();
+
+        // wait for 1s, stage split & check `update_timestamp`
+        sleep(Duration::from_secs(1)).await;
+        metastore
+            .stage_split(index_id, split_metadata.clone())
+            .await
+            .unwrap();
+        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
+        assert!(split_meta.update_timestamp > current_timestamp);
+        current_timestamp = split_meta.update_timestamp;
+
+        // wait for 1s, publish split & check `update_timestamp`
+        sleep(Duration::from_secs(1)).await;
+        metastore
+            .publish_splits(index_id, vec![split_id])
+            .await
+            .unwrap();
+        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
+        assert!(split_meta.update_timestamp > current_timestamp);
+        current_timestamp = split_meta.update_timestamp;
+
+        // wait for 1s, mark split as deleted & check `update_timestamp`
+        sleep(Duration::from_secs(1)).await;
+        metastore
+            .mark_splits_as_deleted(index_id, vec![split_id])
+            .await
+            .unwrap();
+        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
+        assert!(split_meta.update_timestamp > current_timestamp);
+    }
+
+    #[tokio::test]
     async fn test_single_file_metastore_storage_failing() {
         // The single file metastore should not update its internal state if the storage fails.
         let mut mock_storage = MockStorage::default();
@@ -1639,6 +1735,7 @@ mod tests {
             size_in_bytes: 2,
             time_range: None,
             generation: 3,
+            update_timestamp: Utc::now().timestamp(),
         };
 
         let index_metadata = IndexMetadata {

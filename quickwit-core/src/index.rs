@@ -20,11 +20,14 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use std::time::Duration;
+
 use futures::StreamExt;
 use quickwit_metastore::{
     IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadata, SplitState,
 };
 use quickwit_storage::StorageUriResolver;
+use tantivy::chrono::Utc;
 use tracing::warn;
 
 use crate::indexing::{remove_split_files_from_storage, FileEntry};
@@ -32,7 +35,7 @@ use crate::indexing::{remove_split_files_from_storage, FileEntry};
 /// Creates an index at `index-path` extracted from `metastore_uri`. The command fails if an index
 /// already exists at `index-path`.
 ///
-/// * `metastore_uri` - The metastore Uri for accessing the metastore.
+/// * `metastore_uri` - The metastore URI for accessing the metastore.
 /// * `index_metadata` - The metadata used to create the target index.
 ///
 pub async fn create_index(
@@ -40,24 +43,9 @@ pub async fn create_index(
     index_metadata: IndexMetadata,
 ) -> anyhow::Result<()> {
     let metastore = MetastoreUriResolver::default()
-        .resolve(&metastore_uri)
+        .resolve(metastore_uri)
         .await?;
     metastore.create_index(index_metadata).await?;
-    Ok(())
-}
-
-/// Searches the index with `index_id` and returns the documents matching the query query.
-/// The offset of the first hit returned and the number of hits returned can be set with the `start-offset`
-/// and max-hits options.
-///
-/// By default, the search fields  are those specified at index creation unless restricted to `target-fields`.
-pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default()
-        .resolve(&metastore_uri)
-        .await?;
-    let _splits = metastore
-        .list_splits(index_id, SplitState::Published, None)
-        .await?;
     Ok(())
 }
 
@@ -65,7 +53,7 @@ pub async fn search_index(metastore_uri: &str, index_id: &str) -> anyhow::Result
 /// This is equivalent to running `rm -rf <index path>` for a local index or
 /// `aws s3 rm --recursive <index path>` for a remote Amazon S3 index.
 ///
-/// * `metastore_uri` - The metastore Uri for accessing the metastore.
+/// * `metastore_uri` - The metastore URI for accessing the metastore.
 /// * `index_id` - The target index Id.
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
 ///
@@ -75,7 +63,7 @@ pub async fn delete_index(
     dry_run: bool,
 ) -> anyhow::Result<Vec<FileEntry>> {
     let metastore = MetastoreUriResolver::default()
-        .resolve(&metastore_uri)
+        .resolve(metastore_uri)
         .await?;
     let storage_resolver = StorageUriResolver::default();
 
@@ -85,17 +73,17 @@ pub async fn delete_index(
         return list_splits_files(all_splits, index_uri, storage_resolver).await;
     }
 
-    // schedule all staged & published splits for delete
-    let mut active_splits = metastore
-        .list_splits(index_id, SplitState::Published, None)
-        .await?;
+    // Schedule staged and published splits for deletion.
     let staged_splits = metastore
         .list_splits(index_id, SplitState::Staged, None)
         .await?;
-    active_splits.extend(staged_splits);
-    let split_ids = active_splits
+    let published_splits = metastore
+        .list_splits(index_id, SplitState::Published, None)
+        .await?;
+    let split_ids = staged_splits
         .iter()
-        .map(|split_meta| split_meta.split_id.as_str())
+        .chain(published_splits.iter())
+        .map(|split_meta| split_meta.split_id.as_ref())
         .collect::<Vec<_>>();
     metastore
         .mark_splits_as_deleted(index_id, split_ids)
@@ -110,24 +98,32 @@ pub async fn delete_index(
 
 /// Detect all dangling splits and associated files from the index and removes them.
 ///
-/// * `metastore_uri` - The metastore Uri for accessing the metastore.
+/// * `metastore_uri` - The metastore URI for accessing the metastore.
 /// * `index_id` - The target index Id.
+/// * `grace_period` -  Threshold period after which a staged split can be garbage collected.
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
 ///
 pub async fn garbage_collect_index(
     metastore_uri: &str,
     index_id: &str,
+    grace_period: Duration,
     dry_run: bool,
 ) -> anyhow::Result<Vec<FileEntry>> {
     let metastore = MetastoreUriResolver::default()
-        .resolve(&metastore_uri)
+        .resolve(metastore_uri)
         .await?;
     let storage_resolver = StorageUriResolver::default();
 
-    //TODO: consider prunning newly staged split as they might be a work in-progress
+    // Prune staged splits that are not older than the `grace_period`
+    let grace_period_timestamp = Utc::now().timestamp() - grace_period.as_secs() as i64;
     let staged_splits = metastore
         .list_splits(index_id, SplitState::Staged, None)
-        .await?;
+        .await?
+        .into_iter()
+        // TODO: Update metastore API and push this filter down.
+        .filter(|split_meta| split_meta.update_timestamp < grace_period_timestamp)
+        .collect::<Vec<_>>();
+
     if dry_run {
         let mut scheduled_for_delete_splits = metastore
             .list_splits(index_id, SplitState::ScheduledForDeletion, None)

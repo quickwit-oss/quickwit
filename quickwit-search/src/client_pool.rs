@@ -21,6 +21,8 @@
 
 pub mod search_client_pool;
 
+use std::{collections::HashSet, net::SocketAddr};
+
 use async_trait::async_trait;
 
 use crate::SearchServiceClient;
@@ -42,8 +44,11 @@ pub struct Job {
 pub trait ClientPool: Send + Sync + 'static {
     /// Assign the given job to the clients.
     /// Returns a list of pair (SocketAddr, Vec<Job>)
+    ///
+    /// When exclude_addresses filters all clients it is ignored.
     async fn assign_jobs(
         &self,
         jobs: Vec<Job>,
+        exclude_addresses: &HashSet<SocketAddr>,
     ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<Job>)>>;
 }

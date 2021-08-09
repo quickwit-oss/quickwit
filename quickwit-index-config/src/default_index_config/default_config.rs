@@ -72,14 +72,14 @@ impl DefaultIndexConfigBuilder {
                 bail!("Duplicated default search field: `{}`", field_name)
             }
             schema
-                .get_field(&field_name)
+                .get_field(field_name)
                 .with_context(|| format!("Unknown default search field: `{}`", field_name))?;
             default_search_field_names.push(field_name.clone());
         }
         // Resolve timestamp field
         if let Some(ref timestamp_field_name) = self.timestamp_field {
             let timestamp_field = schema
-                .get_field(&timestamp_field_name)
+                .get_field(timestamp_field_name)
                 .with_context(|| format!("Unknown timestamp field: `{}`", timestamp_field_name))?;
 
             let timestamp_field_entry = schema.get_field_entry(timestamp_field);

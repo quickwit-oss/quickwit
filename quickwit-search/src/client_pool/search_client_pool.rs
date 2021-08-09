@@ -144,9 +144,12 @@ impl SearchClientPool {
 impl ClientPool for SearchClientPool {
     /// Assign the given job to the clients.
     /// Returns a list of pair (SocketAddr, Vec<Job>)
+    ///
+    /// When exclude_addresses filters all clients it is ignored.
     async fn assign_jobs(
         &self,
         mut jobs: Vec<Job>,
+        mut exclude_addresses: &HashSet<SocketAddr>,
     ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<Job>)>> {
         let mut splits_groups: HashMap<SocketAddr, Vec<Job>> = HashMap::new();
 
@@ -155,12 +158,21 @@ impl ClientPool for SearchClientPool {
         let mut socket_to_client: HashMap<SocketAddr, SearchServiceClient> = Default::default();
 
         {
-            // restricting the lock guard lifetime.
+            // Restricting the lock guard lifetime.
 
             // TODO optimize the case where there are few jobs and many clients.
             let clients = self.clients.read().await;
 
-            for (grpc_addr, client) in clients.iter() {
+            let fallback = HashSet::default();
+            // when exclude_addresses excludes all adresses we discard it
+            if exclude_addresses.len() == clients.len() {
+                exclude_addresses = &fallback;
+            }
+
+            for (grpc_addr, client) in clients
+                .iter()
+                .filter(|(grpc_addr, _)| !exclude_addresses.contains(grpc_addr))
+            {
                 let node = Node::new(*grpc_addr, 0);
                 nodes.push(node);
                 socket_to_client.insert(*grpc_addr, client.clone());
@@ -215,6 +227,7 @@ impl ClientPool for SearchClientPool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::sync::Arc;
     use std::thread;
@@ -238,11 +251,7 @@ mod tests {
 
         let clients = client_pool.clients.read().await;
 
-        let mut addrs: Vec<SocketAddr> = clients
-            .clone()
-            .into_iter()
-            .map(|(addr, _client)| addr)
-            .collect();
+        let mut addrs: Vec<SocketAddr> = clients.clone().into_keys().collect();
         addrs.sort_by_key(|addr| addr.to_string());
         println!("addrs={:?}", addrs);
 
@@ -275,11 +284,7 @@ mod tests {
 
         let clients1 = client_pool1.clients.read().await;
 
-        let mut addrs: Vec<SocketAddr> = clients1
-            .clone()
-            .into_iter()
-            .map(|(addr, _client)| addr)
-            .collect();
+        let mut addrs: Vec<SocketAddr> = clients1.clone().into_keys().collect();
         addrs.sort();
         println!("addrs={:?}", addrs);
 
@@ -330,7 +335,7 @@ mod tests {
             },
         ];
 
-        let assigned_jobs = client_pool.assign_jobs(jobs).await?;
+        let assigned_jobs = client_pool.assign_jobs(jobs, &HashSet::default()).await?;
         println!("assigned_jobs={:?}", assigned_jobs);
 
         let expected = vec![(

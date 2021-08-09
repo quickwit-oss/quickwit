@@ -674,25 +674,25 @@ mod tests {
 
         let mut directory_cache_builder = StaticDirectoryCacheBuilder::default();
         directory_cache_builder
-            .add_file(&one_path, 100)
+            .add_file(one_path, 100)
             .add_bytes(b" happy t", 5);
         directory_cache_builder
-            .add_file(&two_path, 200)
+            .add_file(two_path, 200)
             .add_bytes(b"my name", 0);
-        directory_cache_builder.add_file(&three_path, 300);
+        directory_cache_builder.add_file(three_path, 300);
 
         let mut buffer = Vec::new();
         directory_cache_builder.write(&mut buffer)?;
         let directory_cache = StaticDirectoryCache::open(OwnedBytes::new(buffer))?;
 
-        assert_eq!(directory_cache.get_file_length(&one_path), Some(100));
-        assert_eq!(directory_cache.get_file_length(&two_path), Some(200));
-        assert_eq!(directory_cache.get_file_length(&three_path), Some(300));
-        assert_eq!(directory_cache.get_file_length(&four_path), None);
+        assert_eq!(directory_cache.get_file_length(one_path), Some(100));
+        assert_eq!(directory_cache.get_file_length(two_path), Some(200));
+        assert_eq!(directory_cache.get_file_length(three_path), Some(300));
+        assert_eq!(directory_cache.get_file_length(four_path), None);
 
         assert_eq!(
             directory_cache
-                .get_slice(&one_path)
+                .get_slice(one_path)
                 .try_read_bytes(6..11)
                 .unwrap()
                 .as_ref(),
@@ -700,7 +700,7 @@ mod tests {
         );
         assert_eq!(
             directory_cache
-                .get_slice(&two_path)
+                .get_slice(two_path)
                 .try_read_bytes(3..7)
                 .unwrap()
                 .as_ref(),
