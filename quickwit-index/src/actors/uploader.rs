@@ -120,7 +120,8 @@ async fn put_split_files_to_storage(
             file_size_in_bytes: *file_size_in_bytes,
         });
         let key = PathBuf::from(file_name);
-        let payload = quickwit_storage::PutPayload::from(split.split_scratch_dir.path().join(path));
+        let payload =
+            quickwit_storage::PutPayload::from(split.split_scratch_directory.path().join(path));
         let upload_res_future = async move {
             storage.put(&key, payload).await.with_context(|| {
                 format!(
@@ -198,7 +199,7 @@ impl AsyncActor for Uploader {
         // We send the future to the publisher right away.
         // That way the publisher will process the uploaded split in order as opposed to
         // publishing in the order splits finish their uploading.
-        self.sink.send_async(split_uploaded_rx).await?;
+        ctx.send_message(&self.sink, split_uploaded_rx).await?;
 
         // The permit will be added back manually to the semaphore the task after it is finished.
         let permit_guard = self.concurrent_upload_permits.acquire().await;
@@ -208,7 +209,7 @@ impl AsyncActor for Uploader {
             split.split_id.clone(),
         );
         let metastore = self.metastore.clone();
-        let kill_switch = ctx.kill_switch();
+        let kill_switch = ctx.kill_switch().clone();
         tokio::task::spawn(async move {
             let run_upload_res = run_upload(split, split_storage, metastore).await;
             if run_upload_res.is_err() {
@@ -230,8 +231,11 @@ mod tests {
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::KillSwitch;
     use quickwit_actors::Observation;
+    use quickwit_actors::TestContext;
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
+
+    use crate::models::ScratchDirectory;
 
     use super::*;
 
@@ -253,10 +257,13 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: Arc<dyn Storage> = Arc::new(ram_storage.clone());
         let uploader = Uploader::new(Arc::new(mock_metastore), index_storage.clone(), mailbox);
-        let uploader_handle = uploader.spawn(KillSwitch::default());
-        let scratch_dir = tempfile::tempdir()?;
-        std::fs::write(scratch_dir.path().join("anyfile"), &b"bubu"[..])?;
-        std::fs::write(scratch_dir.path().join("anyfile2"), &b"bubu2"[..])?;
+        let (uploader_mailbox, uploader_handle) = uploader.spawn(KillSwitch::default());
+        let split_scratch_directory = ScratchDirectory::try_new_temp()?;
+        std::fs::write(split_scratch_directory.path().join("anyfile"), &b"bubu"[..])?;
+        std::fs::write(
+            split_scratch_directory.path().join("anyfile2"),
+            &b"bubu2"[..],
+        )?;
         let files_to_upload = vec![
             (PathBuf::from("anyfile"), 4),
             (PathBuf::from("anyfile2"), 5),
@@ -264,19 +271,21 @@ mod tests {
         let segment_ids = vec![SegmentId::from_uuid_string(
             "f45425f4-f67c-417e-9de7-8a8327115d47",
         )?];
-        uploader_handle
-            .mailbox()
-            .send_async(PackagedSplit {
+        let ctx = TestContext;
+        ctx.send_message(
+            &uploader_mailbox,
+            PackagedSplit {
                 split_id: "test-split".to_string(),
                 index_id: "test-index".to_string(),
                 time_range: Some(1_628_203_589i64..=1_628_203_640i64),
                 size_in_bytes: 1_000,
                 files_to_upload,
                 segment_ids,
-                split_scratch_dir: scratch_dir,
+                split_scratch_directory,
                 num_docs: 10,
-            })
-            .await?;
+            },
+        )
+        .await?;
         assert_eq!(
             uploader_handle.process_pending_and_observe().await,
             Observation::Running(())

@@ -1,11 +1,12 @@
 use crate::actor::ActorTermination;
 use crate::actor_handle::ActorHandle;
+use crate::actor_state::ActorState;
 use crate::mailbox::{create_mailbox, Command, Inbox};
-use crate::progress::Progress;
-use crate::{Actor, ActorContext, KillSwitch, ReceptionResult};
+use crate::{Actor, ActorContext, KillSwitch, Mailbox, ReceptionResult};
+use anyhow::Context;
 use async_trait::async_trait;
-use tokio::sync::watch;
-use tracing::debug;
+use tokio::sync::watch::{self, Sender};
+use tracing::{debug, error};
 
 /// An async actor is executed on a regular tokio task.
 ///
@@ -26,37 +27,27 @@ pub trait AsyncActor: Actor + Sized {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination>;
 
-    async fn finalize(&mut self, termination: ActorTermination) -> ActorTermination {
-        termination
+    async fn finalize(
+        &mut self,
+        _termination: &ActorTermination,
+        _ctx: &ActorContext<Self>,
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
 
     #[doc(hidden)]
-    fn spawn(self, kill_switch: KillSwitch) -> ActorHandle<Self::Message, Self::ObservableState> {
+    fn spawn(self, kill_switch: KillSwitch) -> (Mailbox<Self::Message>, ActorHandle<Self>) {
         debug!(actor_name=%self.name(),"spawning-async-actor");
         let (state_tx, state_rx) = watch::channel(self.observable_state());
         let actor_name = self.name();
-        let progress = Progress::default();
         let queue_capacity = self.queue_capacity();
         let (mailbox, inbox) = create_mailbox(actor_name, queue_capacity);
-        let join_handle = tokio::spawn(async_actor_loop(
-            self,
-            inbox,
-            ActorContext {
-                self_mailbox: mailbox.clone(),
-                progress: progress.clone(),
-                kill_switch: kill_switch.clone(),
-                state_tx,
-                is_paused: false,
-            },
-        ));
-        let actor_handle = ActorHandle::new(
-            mailbox.clone(),
-            state_rx,
-            join_handle,
-            progress,
-            kill_switch,
-        );
-        actor_handle
+        let mailbox_clone = mailbox.clone();
+        let ctx = ActorContext::new(mailbox, kill_switch);
+        let ctx_clone = ctx.clone();
+        let join_handle = tokio::spawn(async_actor_loop(self, inbox, ctx, state_tx));
+        let handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
+        (mailbox_clone, handle)
     }
 }
 
@@ -64,27 +55,21 @@ async fn process_msg<A: Actor + AsyncActor>(
     actor: &mut A,
     inbox: &Inbox<A::Message>,
     ctx: &mut ActorContext<A>,
+    state_tx: &Sender<A::ObservableState>,
 ) -> Option<ActorTermination> {
-    if !ctx.kill_switch.is_alive() {
+    if !ctx.kill_switch().is_alive() {
         return Some(ActorTermination::KillSwitch);
     }
-
-    ctx.progress.record_progress();
-    let default_message_opt = actor.default_message().and_then(|default_message| {
-        if ctx.self_mailbox.is_last_mailbox() {
-            None
-        } else {
-            Some(default_message)
-        }
-    });
-    ctx.progress.record_progress();
+    ctx.progress().record_progress();
+    let default_message_opt = actor.default_message();
+    ctx.progress().record_progress();
 
     let reception_result = inbox
-        .try_recv_msg_async(!ctx.is_paused(), default_message_opt)
+        .try_recv_msg(ctx.get_state() == ActorState::Running, default_message_opt)
         .await;
 
-    ctx.progress.record_progress();
-    if !ctx.kill_switch.is_alive() {
+    ctx.progress().record_progress();
+    if !ctx.kill_switch().is_alive() {
         return Some(ActorTermination::KillSwitch);
     }
     match reception_result {
@@ -104,7 +89,7 @@ async fn process_msg<A: Actor + AsyncActor>(
                 }
                 Command::Observe(cb) => {
                     let state = actor.observable_state();
-                    let _ = ctx.state_tx.send(state);
+                    let _ = state_tx.send(state);
                     // We voluntarily ignore the error here. (An error only occurs if the
                     // sender dropped its receiver.)
                     let _ = cb.send(());
@@ -112,11 +97,16 @@ async fn process_msg<A: Actor + AsyncActor>(
                 }
             }
         }
-        ReceptionResult::Message(msg) => actor.process_message(msg, &ctx).await.err(),
+        ReceptionResult::Message(msg) => {
+            debug!(msg=?msg, actor=%actor.name(),"message-received");
+            actor.process_message(msg, &ctx).await.err()
+        }
         ReceptionResult::None => {
-            if ctx.self_mailbox.is_last_mailbox() {
+            if ctx.mailbox().is_last_mailbox() {
+                dbg!("lastmailbox");
                 Some(ActorTermination::Terminated)
             } else {
+                dbg!("not lastmailbox");
                 None
             }
         }
@@ -128,18 +118,25 @@ async fn async_actor_loop<A: AsyncActor>(
     mut actor: A,
     inbox: Inbox<A::Message>,
     mut ctx: ActorContext<A>,
+    state_tx: Sender<A::ObservableState>,
 ) -> ActorTermination {
     loop {
-        debug!(name=%ctx.self_mailbox.actor_instance_name(), "message-loop");
         tokio::task::yield_now().await;
-        let termination_opt = process_msg(&mut actor, &inbox, &mut ctx).await;
+        let termination_opt = process_msg(&mut actor, &inbox, &mut ctx, &state_tx).await;
         if let Some(termination) = termination_opt {
+            ctx.terminate();
             if termination.is_failure() {
-                ctx.kill_switch.kill();
+                ctx.kill_switch().kill();
             }
-            let termination = actor.finalize(termination).await;
+            if let Err(finalize_error) = actor
+                .finalize(&termination, &ctx)
+                .await
+                .with_context(|| format!("Finalization of actor {}", actor.name()))
+            {
+                error!(err=?finalize_error, "finalize_error");
+            }
             let final_state = actor.observable_state();
-            let _ = ctx.state_tx.send(final_state);
+            let _ = state_tx.send(final_state);
             return termination;
         }
     }

@@ -63,7 +63,7 @@ impl AsyncActor for VecSource {
     async fn process_message(
         &mut self,
         _message: Self::Message,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         let line_docs: Vec<String> = self.items[self.next_item_id..]
             .iter()
@@ -78,7 +78,7 @@ impl AsyncActor for VecSource {
             docs: line_docs,
             // checkpoint: Checkpoint::default(),
         };
-        self.sink.send_async(batch).await?;
+        ctx.send_message(&self.sink, batch).await?;
         Ok(())
     }
 }
@@ -101,7 +101,7 @@ mod tests {
             3,
             mailbox,
         );
-        let vec_source_handle = vec_source.spawn(KillSwitch::default());
+        let (_vec_source_mailbox, vec_source_handle) = vec_source.spawn(KillSwitch::default());
         let actor_termination = vec_source_handle.join().await?;
         assert!(matches!(actor_termination, ActorTermination::Terminated));
         let batch = inbox.drain_available_message_for_test();

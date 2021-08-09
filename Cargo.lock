@@ -2719,6 +2719,7 @@ dependencies = [
  "async-trait",
  "flume",
  "futures",
+ "quickwit-common",
  "thiserror",
  "tokio",
  "tracing",

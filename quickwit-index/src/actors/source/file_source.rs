@@ -25,6 +25,7 @@ use quickwit_actors::ActorContext;
 use quickwit_actors::ActorTermination;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
+use tracing::info;
 use std::io;
 use std::path::Path;
 use tokio::fs::File;
@@ -75,7 +76,7 @@ impl AsyncActor for FileSource {
     async fn process_message(
         &mut self,
         _message: Self::Message,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         let limit_num_bytes = self.file_position.num_bytes + BATCH_NUM_BYTES_THRESHOLD;
         let mut reached_eof = false;
@@ -96,9 +97,10 @@ impl AsyncActor for FileSource {
             self.file_position.line_num += 1u64;
         }
         if !raw_doc_batch.docs.is_empty() {
-            self.sink.send_async(raw_doc_batch).await?;
+            ctx.send_message(&self.sink, raw_doc_batch).await?;
         }
         if reached_eof {
+            info!("EOF");
             return Err(ActorTermination::Terminated);
         }
         Ok(())
@@ -118,7 +120,7 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let (mailbox, inbox) = create_test_mailbox();
         let file_source = FileSource::try_new(Path::new("data/test_corpus.json"), mailbox).await?;
-        let file_source_handle = file_source.spawn(KillSwitch::default());
+        let (_file_source_mailbox, file_source_handle) = file_source.spawn(KillSwitch::default());
         let actor_termination = file_source_handle.join().await?;
         assert!(matches!(actor_termination, ActorTermination::Terminated));
         let batch = inbox.drain_available_message_for_test();

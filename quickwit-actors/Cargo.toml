@@ -15,3 +15,4 @@ uuid = {version="0.8", features = ["v4"]}
 futures = "0.3"
 tracing = "0.1"
 thiserror = "1"
+quickwit-common = {path="../quickwit-common", version="0.1"}

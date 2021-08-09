@@ -1,12 +1,13 @@
-use std::any::type_name;
 use std::fmt;
+use std::ops::Deref;
+use std::{any::type_name, sync::Arc};
 use thiserror::Error;
-use tokio::sync::watch;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::{
+    actor_state::{ActorState, AtomicState},
     progress::{Progress, ProtectZoneGuard},
-    KillSwitch, Mailbox, QueueCapacity, SendError,
+    AsyncActor, KillSwitch, Mailbox, QueueCapacity, SendError, SyncActor,
 };
 
 // While the lack of message cannot pause a problem with heartbeating,  sending a message to a saturated channel
@@ -89,14 +90,56 @@ pub trait Actor: Send + Sync + 'static {
 
 // TODO hide all of this public stuff
 pub struct ActorContext<A: Actor> {
-    pub(crate) self_mailbox: Mailbox<A::Message>,
-    pub(crate) progress: Progress,
-    pub(crate) kill_switch: KillSwitch,
-    pub(crate) state_tx: watch::Sender<A::ObservableState>,
-    pub(crate) is_paused: bool,
+    inner: Arc<ActorContextInner<A>>,
+}
+
+impl<A: Actor> Clone for ActorContext<A> {
+    fn clone(&self) -> Self {
+        ActorContext {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<A: Actor> Deref for ActorContext<A> {
+    type Target = ActorContextInner<A>;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner.as_ref()
+    }
+}
+
+pub struct ActorContextInner<A: Actor> {
+    actor_instance_name: String,
+    self_mailbox: Mailbox<A::Message>,
+    progress: Progress,
+    kill_switch: KillSwitch,
+    actor_state: AtomicState,
 }
 
 impl<A: Actor> ActorContext<A> {
+    pub fn new(self_mailbox: Mailbox<A::Message>, kill_switch: KillSwitch) -> Self {
+        let actor_instance_name = self_mailbox.actor_instance_name();
+        ActorContext {
+            inner: ActorContextInner {
+                actor_instance_name,
+                self_mailbox,
+                progress: Progress::default(),
+                kill_switch,
+                actor_state: AtomicState::default(),
+            }
+            .into(),
+        }
+    }
+
+    pub fn mailbox(&self) -> &Mailbox<A::Message> {
+        &self.self_mailbox
+    }
+
+    pub fn actor_instance_name(&self) -> &str {
+        &self.actor_instance_name
+    }
+
     /// This function returns a guard that prevents any supervisor from identifying the
     /// actor has dead.
     /// The protection last as long as the `ProtectZoneGuard` it returns.
@@ -112,10 +155,13 @@ impl<A: Actor> ActorContext<A> {
     /// This should rarely be used.
     /// For instance, when quitting from the process_message function, prefer simply
     /// returning `Error(ActorTermination::Failure(..))`
-    pub fn kill_switch(&self) -> KillSwitch {
-        self.kill_switch.clone()
+    pub fn kill_switch(&self) -> &KillSwitch {
+        &self.kill_switch
     }
 
+    pub(crate) fn progress(&self) -> &Progress {
+        &self.progress
+    }
     /// Record some progress.
     /// This function is only useful when implementing actors that may takes more than
     /// `HEARTBEAT` to process a single message.
@@ -125,15 +171,71 @@ impl<A: Actor> ActorContext<A> {
         self.progress.record_progress();
     }
 
-    pub(crate) fn is_paused(&self) -> bool {
-        self.is_paused
+    pub(crate) fn get_state(&self) -> ActorState {
+        self.actor_state.get_state()
     }
 
     pub(crate) fn pause(&mut self) {
-        self.is_paused = true;
+        self.actor_state.pause();
     }
 
     pub(crate) fn resume(&mut self) {
-        self.is_paused = false;
+        self.actor_state.resume();
+    }
+
+    pub(crate) fn terminate(&mut self) {
+        self.actor_state.terminate();
+    }
+}
+
+impl<A: SyncActor> ActorContext<A> {
+    /// Sends a message to the actor being the mailbox.
+    ///
+    /// This method hides logic to prevent an actor from being identified
+    /// as frozen if the destination actor channel is saturated, and we
+    /// are simply experiencing back pressure.
+    pub fn send_message_blocking<M: fmt::Debug>(
+        &self,
+        mailbox: &Mailbox<M>,
+        msg: M,
+    ) -> Result<(), crate::SendError> {
+        let _guard = self.protect_zone();
+        debug!(from=%self.self_mailbox.actor_instance_name(), send=%mailbox.actor_instance_name(), msg=?msg);
+        mailbox.send_blocking(msg)
+    }
+}
+
+impl<A: AsyncActor> ActorContext<A> {
+    /// `async` version of `send_message`
+    pub async fn send_message<M: fmt::Debug>(
+        &self,
+        mailbox: &Mailbox<M>,
+        msg: M,
+    ) -> Result<(), crate::SendError> {
+        let _guard = self.protect_zone();
+        debug!(from=%self.self_mailbox.actor_instance_name(), send=%mailbox.actor_instance_name(), msg=?msg);
+        mailbox.send_message(msg).await
+    }
+}
+
+pub struct TestContext;
+
+impl TestContext {
+    /// Sends a message to the actor being the mailbox.
+    pub fn send_message_blocking<M>(
+        &self,
+        mailbox: &Mailbox<M>,
+        msg: M,
+    ) -> Result<(), crate::SendError> {
+        mailbox.send_blocking(msg)
+    }
+
+    /// `async` version of `send_message`
+    pub async fn send_message<M>(
+        &self,
+        mailbox: &Mailbox<M>,
+        msg: M,
+    ) -> Result<(), crate::SendError> {
+        mailbox.send_message(msg).await
     }
 }

@@ -18,10 +18,10 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::models::ScratchDirectory;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use tantivy::SegmentId;
-use tempfile::TempDir;
 
 #[derive(Debug)]
 pub struct PackagedSplit {
@@ -32,6 +32,6 @@ pub struct PackagedSplit {
 
     pub files_to_upload: Vec<(PathBuf, u64)>,
     pub segment_ids: Vec<SegmentId>,
-    pub split_scratch_dir: TempDir,
+    pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,
 }
