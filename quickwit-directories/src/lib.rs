@@ -27,7 +27,6 @@ This crate contains all of the building pieces that make quickwit's IO possible.
 - The `HotDirectory` wraps another directory with a static cache.
 - The `CachingDirectory` wraps a Directory with a dynamic cache.
 - The `DebugDirectory` acts as a proxy to another directory to instrument it and record all of its IO.
-- The `BundleStorage` bundles together multiple files into a single file.
 */
 #![warn(missing_docs)]
 

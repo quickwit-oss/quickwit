@@ -30,7 +30,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Debug;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{self, ErrorKind, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -164,18 +164,18 @@ pub struct BundleStorageBuilder {
     current_offset: usize,
     /// The offset in the file where the hotcache begins. This is used to read
     /// the hotcache and footer in a single read.
-    pub hotcache_offset: usize,
+    hotcache_offset: usize,
     /// The footer offset, where the footer begins.
     /// The footer includes the footer metadata as json encoded and the size of the footer in
     /// bytes.
-    pub footer_offset: usize,
+    footer_offset: usize,
     bundle_file: File,
 }
 
 impl BundleStorageBuilder {
-    /// Creates a new CreateBundleStorage, to which files can be added.
+    /// Creates a new BundleStorageBuilder, to which files can be added.
     pub fn new(path: &Path) -> io::Result<Self> {
-        let sink = OpenOptions::new().create(true).append(true).open(path)?;
+        let sink = File::create(path)?;
 
         Ok(BundleStorageBuilder {
             bundle_file: sink,
@@ -212,13 +212,13 @@ impl BundleStorageBuilder {
 
     /// Writes the metadata into the footer.
     ///
-    pub fn finalize(&mut self) -> io::Result<()> {
+    pub fn finalize(mut self) -> io::Result<(usize, usize)> {
         self.footer_offset = self.current_offset;
         let metadata_json = serde_json::to_string(&self.metadata)?;
         self.bundle_file.write_all(metadata_json.as_bytes())?;
         let len = metadata_json.len() as u64;
         BinarySerializable::serialize(&len, &mut self.bundle_file)?;
-        Ok(())
+        Ok((self.footer_offset, self.hotcache_offset))
     }
 }
 #[cfg(test)]
@@ -236,7 +236,7 @@ mod tests {
         let mut create_bundle = BundleStorageBuilder::new(&bundle_file_name)?;
 
         let test_file1_name = temp_dir.join("f1");
-        let test_file2_name = temp_dir.join("f2");
+        let test_file2_name = temp_dir.join(HOTCACHE_FILENAME);
 
         let mut file1 = File::create(&test_file1_name).unwrap();
         file1.write_all(&[123, 76])?;
@@ -246,7 +246,8 @@ mod tests {
 
         create_bundle.add_file(&test_file1_name)?;
         create_bundle.add_file(&test_file2_name)?;
-        create_bundle.finalize()?;
+        let (footer_offset, hotcache_offset) = create_bundle.finalize()?;
+        assert!(footer_offset > hotcache_offset);
 
         let bytes = std::fs::read(&bundle_file_name)?;
 
@@ -262,10 +263,12 @@ mod tests {
         let f1_data = bundle_storage.get_all(Path::new("f1")).await?;
         assert_eq!(f1_data, &vec![123, 76]);
 
-        let f2_data = bundle_storage.get_all(Path::new("f2")).await?;
+        let f2_data = bundle_storage.get_all(Path::new(HOTCACHE_FILENAME)).await?;
         assert_eq!(f2_data, &vec![99, 55, 44]);
 
-        let f2_data = bundle_storage.get_slice(Path::new("f2"), 1..3).await?;
+        let f2_data = bundle_storage
+            .get_slice(Path::new(HOTCACHE_FILENAME), 1..3)
+            .await?;
         assert_eq!(f2_data, &vec![55, 44]);
 
         Ok(())

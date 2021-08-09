@@ -282,7 +282,7 @@ impl Split {
         for path in files_to_upload.iter() {
             create_bundle.add_file(path)?;
         }
-        create_bundle.finalize()?;
+        let (footer_offset, hotcache_offset) = create_bundle.finalize()?;
         //upload bundle
         let file: tokio::fs::File = tokio::fs::File::open(&bundle_path)
             .await
@@ -300,8 +300,8 @@ impl Split {
             )
         })?;
 
-        self.metadata.hotcache_offset = create_bundle.hotcache_offset;
-        self.metadata.bundle_footer_offset = create_bundle.footer_offset;
+        self.metadata.hotcache_offset = hotcache_offset;
+        self.metadata.bundle_footer_offset = footer_offset;
 
         // upload files
         for path in files_to_upload {

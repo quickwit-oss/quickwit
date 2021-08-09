@@ -118,7 +118,7 @@ mod tests {
 
     use super::*;
     use crate::cache::MockCache;
-    use crate::MockStorage;
+    use crate::storage::MockStorage;
 
     #[tokio::test]
     async fn put_in_cache_test() {
