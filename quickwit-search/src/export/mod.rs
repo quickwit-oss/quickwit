@@ -104,3 +104,26 @@ fn serialize_row_binary<TFastValue: FastValue + Display>(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::export::{serialize_csv, serialize_row_binary};
+
+    #[test]
+    fn test_serialize_row_binary() {
+        let mut buffer = Vec::new();
+        serialize_row_binary::<i64>(&[-10i64], &mut buffer).unwrap();
+        assert_eq!(buffer, (-10i64).to_le_bytes());
+
+        let mut buffer = Vec::new();
+        serialize_row_binary::<f64>(&[-10f64], &mut buffer).unwrap();
+        assert_eq!(buffer, (-10f64).to_le_bytes());
+    }
+
+    #[test]
+    fn test_serialize_csv() {
+        let mut buffer = Vec::new();
+        serialize_csv::<i64>(&[-10i64], &mut buffer).unwrap();
+        assert_eq!(buffer, "-10".as_bytes());
+    }
+}
