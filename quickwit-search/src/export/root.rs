@@ -115,3 +115,80 @@ pub async fn root_export(
     info!("Root export completed in {:?}", elapsed);
     Ok(buffer)
 }
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::ops::Range;
+
+    use quickwit_index_config::WikipediaIndexConfig;
+    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
+    use tokio_stream::wrappers::ReceiverStream;
+
+    use crate::{MockSearchService};
+
+    fn mock_split_meta(split_id: &str) -> SplitMetadata {
+        SplitMetadata {
+            split_id: split_id.to_string(),
+            split_state: SplitState::Published,
+            num_records: 10,
+            size_in_bytes: 256,
+            time_range: None,
+            generation: 1,
+            update_timestamp: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_root_export_single_split() -> anyhow::Result<()> {
+        let export_request = quickwit_proto::ExportRequest {
+            index_id: "test-idx".to_string(),
+            query: "test".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            fast_field: "timestamp".to_string(),
+            output_format: "csv".to_string(),
+        };
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata {
+                    index_id: "test-idx".to_string(),
+                    index_uri: "file:///path/to/index/test-idx".to_string(),
+                    index_config: Box::new(WikipediaIndexConfig::new()),
+                })
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
+                Ok(vec![mock_split_meta("split1")])
+            },
+        );
+        let mut mock_search_service = MockSearchService::new();
+        let (result_sender, result_receiver) = tokio::sync::mpsc::channel(10);
+        result_sender.send(Ok(quickwit_proto::LeafExportResult {
+            data: "123".as_bytes().to_vec()
+        })).await?;
+        result_sender.send(Ok(quickwit_proto::LeafExportResult {
+            data: "456".as_bytes().to_vec()
+        })).await?;
+        mock_search_service.expect_leaf_export().return_once(
+            |_leaf_search_req: quickwit_proto::LeafExportRequest| {
+                Ok(ReceiverStream::new(result_receiver))
+            },
+        );
+        // The test will hang on indefinitely if we don't drop the receiver.
+        drop(result_sender);
+        let client_pool =
+            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
+        let export_result = root_export(&export_request, &metastore, &client_pool).await?;
+        assert_eq!(export_result.len(), 6);
+        assert_eq!(export_result, "123456".as_bytes().to_vec());
+        Ok(())
+    }
+}

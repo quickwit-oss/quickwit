@@ -210,7 +210,6 @@ impl SearchService for SearchServiceImpl {
         let index_config = index_metadata.index_config;
         let search_request = SearchRequest::from(export_request.clone());
         let query = index_config.query(&search_request)?;
-        // TODO: works only on i64, this needs to handle common tantivy types.
         let fast_field_to_export = export_request.fast_field.clone();
         let schema = index_config.schema();
         let fast_field = schema
