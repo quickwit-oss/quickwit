@@ -24,6 +24,7 @@ mod indexed_split;
 mod manifest;
 mod packaged_split;
 mod raw_doc_batch;
+mod scratch_directory;
 mod uploaded_split;
 
 pub use checkpoint::Checkpoint;
@@ -32,4 +33,5 @@ pub use indexed_split::IndexedSplit;
 pub use manifest::{Manifest, ManifestEntry};
 pub use packaged_split::PackagedSplit;
 pub use raw_doc_batch::RawDocBatch;
+pub use scratch_directory::ScratchDirectory;
 pub use uploaded_split::UploadedSplit;

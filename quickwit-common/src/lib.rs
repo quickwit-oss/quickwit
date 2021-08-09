@@ -99,5 +99,9 @@ pub fn get_quickwit_env() -> QuickwitEnv {
 pub fn setup_logging_for_tests() {
     use std::sync::Once;
     static INIT: Once = Once::new();
-    INIT.call_once(env_logger::init);
+    INIT.call_once(|| {
+        env_logger::builder()
+            .format_timestamp(None)
+            .init();
+    });
 }

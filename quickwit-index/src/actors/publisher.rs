@@ -84,6 +84,7 @@ impl AsyncActor for Publisher {
 mod tests {
     use super::*;
     use quickwit_actors::KillSwitch;
+    use quickwit_actors::TestContext;
     use quickwit_metastore::MockMetastore;
     use tokio::sync::oneshot;
 
@@ -103,17 +104,16 @@ mod tests {
             .returning(|_, _| Ok(()));
         let publisher = Publisher::new(Arc::new(mock_metastore));
         let kill_switch = KillSwitch::default();
-        let publisher_handle = publisher.spawn(kill_switch);
+        let (publisher_mailbox, publisher_handle) = publisher.spawn(kill_switch);
         let (split_future_tx1, split_future_rx1) = oneshot::channel::<UploadedSplit>();
-        assert!(publisher_handle
-            .mailbox()
-            .send_async(split_future_rx1)
+        let ctx = TestContext;
+        assert!(ctx
+            .send_message(&publisher_mailbox, split_future_rx1)
             .await
             .is_ok());
         let (split_future_tx2, split_future_rx2) = oneshot::channel::<UploadedSplit>();
-        assert!(publisher_handle
-            .mailbox()
-            .send_async(split_future_rx2)
+        assert!(ctx
+            .send_message(&publisher_mailbox, split_future_rx2)
             .await
             .is_ok());
         // note the future is resolved in the inverse of the expected order.

@@ -18,15 +18,14 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
 use std::ops::RangeInclusive;
-use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
+use quickwit_actors::ActorTermination;
 use quickwit_actors::Mailbox;
 use quickwit_actors::QueueCapacity;
 use quickwit_actors::SendError;
@@ -34,34 +33,18 @@ use quickwit_actors::SyncActor;
 use quickwit_index_config::IndexConfig;
 use tantivy::schema::Field;
 use tantivy::Document;
+use tracing::info;
 use tracing::warn;
 
 use crate::models::CommitPolicy;
 use crate::models::IndexedSplit;
 use crate::models::RawDocBatch;
+use crate::models::ScratchDirectory;
 
 #[derive(Clone, Default, Debug)]
 pub struct IndexerCounters {
     pub num_parse_errors: u64,
     pub num_docs: u64,
-}
-
-enum ScratchDirectory {
-    Path(PathBuf),
-    TempDir(tempfile::TempDir),
-}
-
-impl ScratchDirectory {
-    fn try_new_temp() -> io::Result<ScratchDirectory> {
-        let temp_dir = tempfile::tempdir()?;
-        Ok(ScratchDirectory::TempDir(temp_dir))
-    }
-    fn path(&self) -> &Path {
-        match self {
-            ScratchDirectory::Path(path) => path,
-            ScratchDirectory::TempDir(tempdir) => tempdir.path(),
-        }
-    }
 }
 
 pub struct Indexer {
@@ -101,7 +84,7 @@ impl SyncActor for Indexer {
         &mut self,
         batch: RawDocBatch,
         ctx: &ActorContext<Self>,
-    ) -> Result<(), quickwit_actors::ActorTermination> {
+    ) -> Result<(), ActorTermination> {
         let index_config = self.index_config.clone();
         let timestamp_field_opt = self.timestamp_field_opt;
         let commit_policy = self.commit_policy;
@@ -140,9 +123,23 @@ impl SyncActor for Indexer {
         // new message arrives.
         // We do need to implement timeout message in actors to get the right behavior.
         if commit_policy.should_commit(indexed_split.num_docs, indexed_split.start_time) {
-            self.send_to_packager()?;
+            self.send_to_packager(ctx)?;
         }
 
+        Ok(())
+    }
+
+    fn finalize(
+        &mut self,
+        termination: &ActorTermination,
+        ctx: &ActorContext<Self>,
+    ) -> anyhow::Result<()> {
+        info!("finalize");
+        if termination.is_failure() {
+            return Ok(());
+        }
+        self.send_to_packager(ctx)
+            .with_context(|| "Failed to send a last message to packager upon finalize method")?;
         Ok(())
     }
 }
@@ -158,10 +155,11 @@ impl Indexer {
         sink: Mailbox<IndexedSplit>,
     ) -> anyhow::Result<Indexer> {
         let indexing_scratch_directory = if let Some(path) = indexing_directory {
-            ScratchDirectory::Path(path)
+            ScratchDirectory::new_in_path(path)
         } else {
             ScratchDirectory::try_new_temp()?
-        };
+        }
+        .into();
         let time_field_opt = index_config.timestamp_field();
         Ok(Indexer {
             index_id,
@@ -179,7 +177,7 @@ impl Indexer {
         let schema = self.index_config.schema();
         let indexed_split = IndexedSplit::new_in_dir(
             self.index_id.clone(),
-            self.indexing_scratch_directory.path(),
+            &self.indexing_scratch_directory,
             schema,
         )?;
         Ok(indexed_split)
@@ -196,13 +194,13 @@ impl Indexer {
         Ok((current_index_split, &mut self.counters))
     }
 
-    fn send_to_packager(&mut self) -> Result<(), SendError> {
+    fn send_to_packager(&mut self, ctx: &ActorContext<Self>) -> Result<(), SendError> {
         let indexed_split = if let Some(indexed_split) = self.current_split_opt.take() {
             indexed_split
         } else {
             return Ok(());
         };
-        self.sink.send_blocking(indexed_split)?;
+        ctx.send_message_blocking(&self.sink, indexed_split)?;
         Ok(())
     }
 }
@@ -217,6 +215,7 @@ mod tests {
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::KillSwitch;
     use quickwit_actors::SyncActor;
+    use quickwit_actors::TestContext;
 
     use super::Indexer;
 
@@ -236,23 +235,26 @@ mod tests {
             commit_policy,
             mailbox,
         )?;
-        let indexer_handle = indexer.spawn(KillSwitch::default());
-        indexer_handle
-            .mailbox()
-            .send_async(RawDocBatch {
+        let (indexer_mailbox, indexer_handle) = indexer.spawn(KillSwitch::default());
+        let ctx = TestContext;
+        ctx.send_message(
+            &indexer_mailbox,
+            RawDocBatch {
                 docs: vec![
                     "{\"body\": \"happy\"}".to_string(),
                     "{\"body\": \"happy2\"}".to_string(),
                     "{".to_string(),
                 ],
-            })
-            .await?;
-        indexer_handle
-            .mailbox()
-            .send_async(RawDocBatch {
+            },
+        )
+        .await?;
+        ctx.send_message(
+            &indexer_mailbox,
+            RawDocBatch {
                 docs: vec!["{\"body\": \"happy3\"}".to_string()],
-            })
-            .await?;
+            },
+        )
+        .await?;
         let indexer_counters = indexer_handle
             .process_pending_and_observe()
             .await

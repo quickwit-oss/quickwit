@@ -36,6 +36,7 @@ mod observation;
 mod progress;
 mod sync_actor;
 
+mod actor_state;
 #[cfg(test)]
 mod tests;
 
@@ -43,7 +44,7 @@ pub use self::actor::ActorContext;
 pub use self::mailbox::{
     create_mailbox, create_test_mailbox, Mailbox, QueueCapacity, ReceptionResult,
 };
-pub use actor::{Actor, ActorTermination};
+pub use actor::{Actor, ActorTermination, TestContext};
 pub use actor_handle::ActorHandle;
 pub use async_actor::AsyncActor;
 pub use kill_switch::KillSwitch;

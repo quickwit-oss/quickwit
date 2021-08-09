@@ -25,7 +25,8 @@ use std::time::Instant;
 
 use tantivy::merge_policy::NoMergePolicy;
 use tantivy::schema::Schema;
-use tempfile::TempDir;
+
+use crate::models::ScratchDirectory;
 
 const MEM_BUDGET_IN_BYTES: usize = 1_000_000_000;
 
@@ -40,7 +41,18 @@ pub struct IndexedSplit {
 
     pub index: tantivy::Index,
     pub index_writer: tantivy::IndexWriter,
-    pub temp_dir: TempDir,
+    pub split_scratch_directory: ScratchDirectory,
+}
+
+impl fmt::Debug for IndexedSplit {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("IndexedSplit")
+            .field("id", &self.split_id)
+            .field("index", &self.index_id)
+            .field("dir", &self.split_scratch_directory.path())
+            .finish()
+    }
 }
 
 fn new_split_id() -> String {
@@ -48,15 +60,20 @@ fn new_split_id() -> String {
 }
 
 impl IndexedSplit {
-    pub fn new_in_dir(index_id: String, root_path: &Path, schema: Schema) -> anyhow::Result<Self> {
-        // TODO make mem budget configurable.
-        let index = tantivy::Index::create_in_dir(root_path, schema)?;
-        let index_writer = index.writer_with_num_threads(1, MEM_BUDGET_IN_BYTES)?;
+    pub fn new_in_dir(
+        index_id: String,
+        index_scratch_directory: &ScratchDirectory,
+        schema: Schema,
+    ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have ot wait for potentially existing merges,
         // and avoid possible race conditions.
+        let split_scratch_directory = index_scratch_directory.temp_child()?;
+        let index = tantivy::Index::create_in_dir(split_scratch_directory.path(), schema)?;
+        // TODO make mem budget configurable.
+        let index_writer = index.writer_with_num_threads(1, MEM_BUDGET_IN_BYTES)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
-        let temp_dir = tempfile::tempdir_in(root_path)?;
+
         let split_id = new_split_id();
         Ok(IndexedSplit {
             split_id,
@@ -65,21 +82,13 @@ impl IndexedSplit {
             size_in_bytes: 0,
             num_docs: 0,
             start_time: Instant::now(),
-
             index,
             index_writer,
-            temp_dir,
+            split_scratch_directory,
         })
     }
-}
 
-impl fmt::Debug for IndexedSplit {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "IndexedSplit(id={}, path={})",
-            self.split_id,
-            self.temp_dir.path().display()
-        )
+    pub fn path(&self) -> &Path {
+        self.split_scratch_directory.path()
     }
 }
