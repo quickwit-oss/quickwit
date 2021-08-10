@@ -26,3 +26,17 @@ extern crate serde;
 
 pub use cluster::*;
 pub use quickwit::*;
+
+impl From<SearchStreamRequest> for SearchRequest {
+    fn from(item: SearchStreamRequest) -> Self {
+        Self {
+            index_id: item.index_id.clone(),
+            query: item.query.clone(),
+            search_fields: item.search_fields.clone(),
+            start_timestamp: item.start_timestamp,
+            end_timestamp: item.end_timestamp,
+            max_hits: 0,
+            start_offset: 0,
+        }
+    }
+}

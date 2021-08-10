@@ -19,12 +19,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use async_trait::async_trait;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
-use quickwit_proto::search_service_server as grpc;
+use quickwit_proto::{
+    search_service_server as grpc, LeafSearchStreamRequest, LeafSearchStreamResult,
+};
 use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 /// gRPC adapter that wraped SearchService.
 #[derive(Clone)]
@@ -47,7 +49,7 @@ impl grpc::SearchService for GrpcAdapter {
             .0
             .root_search(search_request)
             .await
-            .map_err(convert_error_to_tonic_status)?;
+            .map_err(SearchError::convert_to_tonic_status)?;
         Ok(tonic::Response::new(search_result))
     }
 
@@ -60,7 +62,7 @@ impl grpc::SearchService for GrpcAdapter {
             .0
             .leaf_search(leaf_search_request)
             .await
-            .map_err(convert_error_to_tonic_status)?;
+            .map_err(SearchError::convert_to_tonic_status)?;
         Ok(tonic::Response::new(leaf_search_result))
     }
 
@@ -73,24 +75,22 @@ impl grpc::SearchService for GrpcAdapter {
             .0
             .fetch_docs(fetch_docs_request)
             .await
-            .map_err(convert_error_to_tonic_status)?;
+            .map_err(SearchError::convert_to_tonic_status)?;
         Ok(tonic::Response::new(fetch_docs_result))
     }
-}
 
-fn status_code_for_search_error(search_error: &SearchError) -> tonic::Code {
-    match search_error {
-        SearchError::IndexDoesNotExist { .. } => tonic::Code::NotFound,
-        SearchError::InternalError(_) => tonic::Code::Internal,
-        SearchError::StorageResolverError(_) => tonic::Code::Internal,
-        SearchError::InvalidQuery(_) => tonic::Code::InvalidArgument,
+    type LeafSearchStreamStream =
+        UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>;
+    async fn leaf_search_stream(
+        &self,
+        request: tonic::Request<LeafSearchStreamRequest>,
+    ) -> Result<tonic::Response<Self::LeafSearchStreamStream>, tonic::Status> {
+        let leaf_search_request = request.into_inner();
+        let leaf_search_result = self
+            .0
+            .leaf_search_stream(leaf_search_request)
+            .await
+            .map_err(SearchError::convert_to_tonic_status)?;
+        Ok(tonic::Response::new(leaf_search_result))
     }
-}
-
-/// Convert quickwit search error to tonic status.
-fn convert_error_to_tonic_status(search_error: SearchError) -> tonic::Status {
-    let error_json = serde_json::to_string_pretty(&search_error)
-        .unwrap_or_else(|_| "Failed to serialize error".to_string());
-    let code = status_code_for_search_error(&search_error);
-    tonic::Status::new(code, error_json)
 }

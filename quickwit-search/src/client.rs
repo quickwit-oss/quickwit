@@ -19,11 +19,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use http::Uri;
+use quickwit_proto::LeafSearchStreamResult;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
-
-use http::Uri;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Channel;
 use tonic::transport::Endpoint;
 use tonic::Request;
@@ -118,6 +119,37 @@ impl SearchServiceClient {
                 Ok(tonic_result.into_inner())
             }
             SearchServiceClientImpl::Local(service) => service.leaf_search(request).await,
+        }
+    }
+
+    /// Perform leaf stream.
+    pub async fn leaf_search_stream(
+        &mut self,
+        request: quickwit_proto::LeafSearchStreamRequest,
+    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>> {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Grpc(grpc_client) => {
+                let tonic_request = Request::new(request);
+                let mut results_stream = grpc_client
+                    .leaf_search_stream(tonic_request)
+                    .await
+                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
+                    .into_inner();
+
+                // TODO: returning stream instead of a channel may be better.
+                // But this seems to be difficult. Try it at your own expense.
+                let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
+                while let Some(result) = results_stream
+                    .message()
+                    .await
+                    .map_err(|status| parse_grpc_error(&status))?
+                {
+                    let _ = result_sender.send(Ok(result));
+                }
+
+                Ok(UnboundedReceiverStream::new(result_receiver))
+            }
+            SearchServiceClientImpl::Local(service) => service.leaf_search_stream(request).await,
         }
     }
 
