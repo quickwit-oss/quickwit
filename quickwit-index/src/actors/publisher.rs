@@ -72,7 +72,7 @@ impl AsyncActor for Publisher {
             .await
             .with_context(|| "Upload apparently failed")?; //< splits must be published in order, so one uploaded failing means we should fail entirely.
         self.metastore
-            .publish_splits(&uploaded_split.index_id, vec![&uploaded_split.split_id])
+            .publish_splits(&uploaded_split.index_id, &[&uploaded_split.split_id])
             .await
             .with_context(|| "Failed to publish splits")?;
         self.counters.num_published_splits += 1;

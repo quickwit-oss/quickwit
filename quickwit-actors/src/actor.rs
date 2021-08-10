@@ -28,19 +28,32 @@ pub enum ActorTermination {
     Failure(#[from] anyhow::Error),
     /// The actor terminated, as it identified it reached a state where it
     /// would not send any more message.
-    #[error("Terminated")]
-    Terminated,
+    ///
+    /// It happens either because all of the existing mailbox where dropped and
+    /// the actor message queue was exhausted, or because the actor
+    /// returned `Err(ActorTermination::Finished)` from its `process_msg` function.
+    #[error("Finished")]
+    Finished,
+    /// The actor was terminated due to its kill switch.
     #[error("Actor stopped working as the killswitch was pushed by another actor.")]
     KillSwitch,
 }
 
 impl ActorTermination {
+
+    pub fn is_finished(&self) -> bool {
+        match self {
+            ActorTermination::Finished => true,
+            _ => false
+        }
+    }
+
     pub fn is_failure(&self) -> bool {
         match self {
             ActorTermination::OnDemand => false,
             ActorTermination::DownstreamClosed => true,
             ActorTermination::Failure(_) => true,
-            ActorTermination::Terminated => false,
+            ActorTermination::Finished => false,
             ActorTermination::KillSwitch => false,
         }
     }

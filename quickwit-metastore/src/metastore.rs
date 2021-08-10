@@ -179,7 +179,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
-        split_ids: Vec<&'a str>,
+        split_ids: &[&'a str],
     ) -> MetastoreResult<()>;
 
     /// Lists the splits.
