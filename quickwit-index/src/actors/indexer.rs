@@ -213,15 +213,14 @@ mod tests {
     use crate::models::CommitPolicy;
     use crate::models::RawDocBatch;
     use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::KillSwitch;
-    use quickwit_actors::SyncActor;
-    use quickwit_actors::TestContext;
+    use quickwit_actors::Universe;
 
     use super::Indexer;
 
     #[tokio::test]
     async fn test_indexer() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
         let commit_policy = CommitPolicy {
             timeout: Duration::from_secs(60),
             num_docs_threshold: 3,
@@ -235,26 +234,27 @@ mod tests {
             commit_policy,
             mailbox,
         )?;
-        let (indexer_mailbox, indexer_handle) = indexer.spawn(KillSwitch::default());
-        let ctx = TestContext;
-        ctx.send_message(
-            &indexer_mailbox,
-            RawDocBatch {
-                docs: vec![
-                    "{\"body\": \"happy\"}".to_string(),
-                    "{\"body\": \"happy2\"}".to_string(),
-                    "{".to_string(),
-                ],
-            },
-        )
-        .await?;
-        ctx.send_message(
-            &indexer_mailbox,
-            RawDocBatch {
-                docs: vec!["{\"body\": \"happy3\"}".to_string()],
-            },
-        )
-        .await?;
+        let (indexer_mailbox, indexer_handle) = universe.spawn_sync_actor(indexer);
+        universe
+            .send_message(
+                &indexer_mailbox,
+                RawDocBatch {
+                    docs: vec![
+                        "{\"body\": \"happy\"}".to_string(),
+                        "{\"body\": \"happy2\"}".to_string(),
+                        "{".to_string(),
+                    ],
+                },
+            )
+            .await?;
+        universe
+            .send_message(
+                &indexer_mailbox,
+                RawDocBatch {
+                    docs: vec!["{\"body\": \"happy3\"}".to_string()],
+                },
+            )
+            .await?;
         let indexer_counters = indexer_handle
             .process_pending_and_observe()
             .await

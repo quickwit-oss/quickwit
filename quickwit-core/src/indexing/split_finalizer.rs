@@ -90,7 +90,7 @@ pub async fn finalize_split(
         .collect::<Vec<_>>();
     let num_splits = split_ids.len();
     metastore
-        .publish_splits(index_id.as_str(), split_ids)
+        .publish_splits(index_id.as_str(), &split_ids)
         .await?;
 
     statistics.num_published_splits.add(num_splits);

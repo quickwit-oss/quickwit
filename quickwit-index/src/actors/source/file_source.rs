@@ -25,12 +25,12 @@ use quickwit_actors::ActorContext;
 use quickwit_actors::ActorTermination;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
-use tracing::info;
 use std::io;
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
+use tracing::info;
 
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
@@ -107,26 +107,27 @@ impl AsyncActor for FileSource {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::TestContext;
-    use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::KillSwitch;
-
     use super::*;
+    use quickwit_actors::create_test_mailbox;
+    use quickwit_actors::Universe;
 
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let file_source = FileSource::try_new(Path::new("data/test_corpus.json"), mailbox).await?;
-        let (file_source_mailbox, file_source_handle) = file_source.spawn(KillSwitch::default());
-        let ctx = TestContext;
-        ctx.send_message(&file_source_mailbox, ()).await?;
+        let (file_source_mailbox, file_source_handle) = universe.spawn(file_source);
+        universe.send_message(&file_source_mailbox, ()).await?;
         let (actor_termination, file_position) = file_source_handle.join().await?;
         assert!(actor_termination.is_finished());
-        assert_eq!(file_position, FilePosition {
-            num_bytes: 70,
-            line_num: 4
-        });
+        assert_eq!(
+            file_position,
+            FilePosition {
+                num_bytes: 70,
+                line_num: 4
+            }
+        );
         let batch = inbox.drain_available_message_for_test();
         assert_eq!(batch.len(), 1);
         Ok(())

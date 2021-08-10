@@ -29,27 +29,30 @@ use tokio::time::Duration;
 
 mod actor;
 mod actor_handle;
+mod actor_state;
 mod async_actor;
 mod kill_switch;
 mod mailbox;
 mod observation;
 mod progress;
+mod scheduler;
 mod sync_actor;
-
-mod actor_state;
 #[cfg(test)]
 mod tests;
+mod universe;
 
 pub use self::actor::ActorContext;
 pub use self::mailbox::{
     create_mailbox, create_test_mailbox, Mailbox, QueueCapacity, ReceptionResult,
 };
-pub use actor::{Actor, ActorTermination, TestContext};
+pub use actor::{Actor, ActorTermination};
 pub use actor_handle::ActorHandle;
 pub use async_actor::AsyncActor;
 pub use kill_switch::KillSwitch;
 pub use observation::Observation;
+pub(crate) use scheduler::Scheduler;
 pub use sync_actor::SyncActor;
+pub use universe::Universe;
 
 /// Heartbeat used to verify that actors are progressing.
 ///
@@ -65,7 +68,7 @@ pub fn message_timeout() -> Duration {
 #[derive(Debug)]
 pub enum SendError {
     ChannelClosed,
-    WouldDeadlock
+    WouldDeadlock,
 }
 
 impl<T> From<flume::SendError<T>> for SendError {

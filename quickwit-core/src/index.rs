@@ -86,7 +86,7 @@ pub async fn delete_index(
         .map(|split_meta| split_meta.split_id.as_ref())
         .collect::<Vec<_>>();
     metastore
-        .mark_splits_as_deleted(index_id, split_ids)
+        .mark_splits_as_deleted(index_id, &split_ids)
         .await?;
 
     let file_entries = delete_garbage_files(metastore.as_ref(), index_id, storage_resolver).await?;
@@ -140,7 +140,7 @@ pub async fn garbage_collect_index(
         .map(|split_meta| split_meta.split_id.as_str())
         .collect::<Vec<_>>();
     metastore
-        .mark_splits_as_deleted(index_id, split_ids)
+        .mark_splits_as_deleted(index_id, &split_ids)
         .await?;
 
     let file_entries = delete_garbage_files(metastore.as_ref(), index_id, storage_resolver).await?;
@@ -188,7 +188,7 @@ pub async fn delete_garbage_files(
         .iter()
         .map(|split_meta| split_meta.split_id.as_str())
         .collect::<Vec<_>>();
-    metastore.delete_splits(index_id, split_ids).await?;
+    metastore.delete_splits(index_id, &split_ids).await?;
 
     Ok(file_entries)
 }
