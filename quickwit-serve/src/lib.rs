@@ -23,6 +23,7 @@ mod args;
 mod error;
 mod grpc;
 mod grpc_adapter;
+mod health_check;
 mod rest;
 
 use std::collections::HashMap;
@@ -293,6 +294,7 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
         start_grpc_service(grpc_socket_addr, grpc_search_service, cluster_service_impl);
 
     let rest_server = start_rest_service(args.rest_socket_addr, search_service);
+
     display_help_message(args.rest_socket_addr, &example_index_name)?;
 
     tokio::try_join!(rest_server, grpc_server)?;
