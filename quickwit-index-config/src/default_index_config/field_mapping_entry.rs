@@ -76,6 +76,9 @@ impl FieldMappingEntry {
             FieldMappingType::I64(options, _) => {
                 vec![(field_path, FieldType::I64(options.clone()))]
             }
+            FieldMappingType::U64(options, _) => {
+                vec![(field_path, FieldType::U64(options.clone()))]
+            }
             FieldMappingType::F64(options, _) => {
                 vec![(field_path, FieldType::F64(options.clone()))]
             }
@@ -118,6 +121,9 @@ impl FieldMappingEntry {
             }
             FieldMappingType::I64(options, cardinality) => {
                 self.parse_i64(json_value, options, cardinality)
+            }
+            FieldMappingType::U64(options, cardinality) => {
+                self.parse_u64(json_value, options, cardinality)
             }
             FieldMappingType::F64(options, cardinality) => {
                 self.parse_f64(json_value, options, cardinality)
@@ -201,6 +207,54 @@ impl FieldMappingEntry {
                     return Err(DocParsingError::ValueError(
                         self.name.clone(),
                         format!("expected i64, got '{}'.", value_as_number),
+                    ));
+                }
+            }
+            JsonValue::Null => {
+                vec![]
+            }
+            _ => {
+                return Err(DocParsingError::ValueError(
+                    self.name.clone(),
+                    format!(
+                        "expected json number or array of json numbers, got '{}'.",
+                        json_value
+                    ),
+                ))
+            }
+        };
+        Ok(parsed_values)
+    }
+
+    fn parse_u64(
+        &self,
+        json_value: &JsonValue,
+        options: &IntOptions,
+        cardinality: &Cardinality,
+    ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
+        let parsed_values = match json_value {
+            JsonValue::Array(array) => {
+                if cardinality != &Cardinality::MultiValues {
+                    return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
+                }
+                array
+                    .iter()
+                    .map(|element| self.parse_u64(element, options, cardinality))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect()
+            }
+            JsonValue::Number(value_as_number) => {
+                if let Some(value_as_u64) = value_as_number.as_u64() {
+                    vec![(
+                        FieldPath::new(&self.name),
+                        Value::U64(value_as_u64.to_owned()),
+                    )]
+                } else {
+                    return Err(DocParsingError::ValueError(
+                        self.name.clone(),
+                        format!("expected u64, got '{}'.", value_as_number),
                     ));
                 }
             }
@@ -470,6 +524,7 @@ impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
         let field_type = match value.field_type_str() {
             "text" => value.new_text()?,
             "i64" => value.new_i64()?,
+            "u64" => value.new_u64()?,
             "f64" => value.new_f64()?,
             "date" => value.new_date()?,
             "bytes" => value.new_bytes()?,
@@ -512,6 +567,7 @@ impl From<FieldMappingEntry> for FieldMappingEntryForSerialization {
                 }
             }
             FieldMappingType::I64(options, _)
+            | FieldMappingType::U64(options, _)
             | FieldMappingType::F64(options, _)
             | FieldMappingType::Date(options, _) => {
                 stored = options.is_stored();
@@ -590,6 +646,11 @@ impl FieldMappingEntryForSerialization {
     fn new_i64(&self) -> anyhow::Result<FieldMappingType> {
         let options = self.int_options()?;
         Ok(FieldMappingType::I64(options, self.cardinality()))
+    }
+
+    fn new_u64(&self) -> anyhow::Result<FieldMappingType> {
+        let options = self.int_options()?;
+        Ok(FieldMappingType::U64(options, self.cardinality()))
     }
 
     fn new_f64(&self) -> anyhow::Result<FieldMappingType> {
@@ -999,6 +1060,168 @@ mod tests {
         assert_eq!(parsed_value.len(), 2);
         assert_eq!(parsed_value[0].1, Value::I64(10));
         assert_eq!(parsed_value[1].1, Value::I64(20));
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_u64_field_with_wrong_options() {
+        let cases = vec![
+            (r#"
+            {
+                "name": "my_field_name",
+                "type": "u64",
+                "tokenizer": "basic"
+            }
+            "#,
+            "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are for text field only."
+        ),
+        (
+            r#"
+            {
+                "name": "this is not ok",
+                "type": "i64"
+            }
+            "#,
+            "Invalid field name: `this is not ok`."
+        )
+        ];
+
+        for (json_str, err_str) in cases {
+            let result = serde_json::from_str::<FieldMappingEntry>(json_str);
+            assert!(result.is_err());
+            let error = result.unwrap_err();
+            assert_eq!(error.to_string(), err_str,)
+        }
+    }
+
+    #[test]
+    fn test_deserialize_multivalued_u64_field() -> anyhow::Result<()> {
+        let result = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "array<u64>"
+            }
+            "#,
+        )?;
+
+        match result.mapping_type {
+            FieldMappingType::U64(options, cardinality) => {
+                assert_eq!(options.is_indexed(), true); // default
+                assert_eq!(options.is_fast(), false); // default
+                assert_eq!(options.is_stored(), true); // default
+                assert_eq!(cardinality, Cardinality::MultiValues);
+            }
+            _ => bail!("Wrong type"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_singlevalued_u64_field() -> anyhow::Result<()> {
+        let result = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "u64"
+            }
+            "#,
+        )?;
+
+        match result.mapping_type {
+            FieldMappingType::U64(options, cardinality) => {
+                assert_eq!(options.is_indexed(), true); // default
+                assert_eq!(options.is_fast(), false); // default
+                assert_eq!(options.is_stored(), true); // default
+                assert_eq!(cardinality, Cardinality::SingleValue);
+            }
+            _ => bail!("Wrong type"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_serialize_u64_field() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "u64"
+            }
+            "#,
+        )?;
+        let entry_str = serde_json::to_string(&entry)?;
+        assert_eq!(entry_str, "{\"name\":\"my_field_name\",\"type\":\"u64\",\"stored\":true,\"fast\":false,\"indexed\":true}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_u64() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "u64"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!(10))?;
+        assert_eq!(parsed_value.len(), 1);
+        assert_eq!(parsed_value[0].0.field_name(), "my_field_name".to_owned());
+        assert_eq!(parsed_value[0].1, Value::U64(10));
+
+        let parsed_value = entry.parse(&json!(null));
+        assert!(parsed_value.unwrap().is_empty());
+
+        // Failed parsing
+        let parsed_error = entry.parse(&json!(1.2));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!(-3));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!([1, 2]));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::MultiValuesNotSupported(_))
+        ));
+        let parsed_error = entry.parse(&json!("12"));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!("{}"));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_mutivalued_u64() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "array<u64>"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!([10, 20]))?;
+        assert_eq!(parsed_value.len(), 2);
+        assert_eq!(parsed_value[0].1, Value::U64(10));
+        assert_eq!(parsed_value[1].1, Value::U64(20));
         Ok(())
     }
 

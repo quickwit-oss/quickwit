@@ -32,6 +32,8 @@ pub enum FieldMappingType {
     Text(TextOptions, Cardinality),
     /// Signed 64-bits integers mapping type configuration.
     I64(IntOptions, Cardinality),
+    /// Unsigned 64-bits integers mapping type configuration.
+    U64(IntOptions, Cardinality),
     /// 64-bits floats mapping type configuration.
     F64(IntOptions, Cardinality),
     /// Signed 64-bits Date 64 mapping type configuration,
@@ -47,6 +49,7 @@ impl FieldMappingType {
     pub fn type_with_cardinality(&self) -> String {
         let cardinality = match &self {
             FieldMappingType::I64(_, cardinality)
+            | FieldMappingType::U64(_, cardinality)
             | FieldMappingType::Date(_, cardinality)
             | FieldMappingType::F64(_, cardinality) => cardinality,
             FieldMappingType::Text(_, cardinality) => cardinality,
@@ -64,6 +67,7 @@ impl FieldMappingType {
         match self {
             FieldMappingType::Text(..) => "text",
             FieldMappingType::I64(..) => "i64",
+            FieldMappingType::U64(..) => "u64",
             FieldMappingType::F64(..) => "f64",
             FieldMappingType::Date(..) => "date",
             FieldMappingType::Bytes(..) => "bytes",
