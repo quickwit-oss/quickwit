@@ -92,7 +92,7 @@ Example of a mapping for a text field:
 
 
 #### Numeric types: `i64`, `u64` and `f64` type
-Quickwit handles two numeric types: `i64`, `u64` and `f64`.
+Quickwit handles three numeric types: `i64`, `u64` and `f64`.
 Numeric values can be stored in a fast field (equivalent of `Lucene`'s `DocValues`) which is a column-oriented storage.
 
 Example of a mapping for a i64 field:
