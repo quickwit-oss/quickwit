@@ -148,7 +148,7 @@ impl SearchServiceClient {
                     {
                         // We want to stop doing unnecessary work on the leaves as soon as
                         // there is an issue sending the result.
-                        // Terminating the task will will drop the `result_stream` consequently
+                        // Terminating the task will drop the `result_stream` consequently
                         // canceling the gRPC request.
                         result_sender.send(Ok(result)).map_err(|_| {
                             SearchError::InternalError("Could not send leaf result".into())
