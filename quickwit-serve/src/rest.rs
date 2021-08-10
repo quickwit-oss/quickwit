@@ -556,6 +556,7 @@ mod tests {
             .await;
         println!("{:?}", resp);
         assert_eq!(resp.status(), 200);
+    }
 
     #[tokio::test]
     async fn test_rest_search_stream_api() -> anyhow::Result<()> {
