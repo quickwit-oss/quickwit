@@ -30,13 +30,13 @@ use super::FieldMappingEntry;
 pub enum FieldMappingType {
     /// String mapping type configuration.
     Text(TextOptions, Cardinality),
-    /// Signed 64-bits integers mapping type configuration.
+    /// Signed 64-bit integer mapping type configuration.
     I64(IntOptions, Cardinality),
-    /// Unsigned 64-bits integers mapping type configuration.
+    /// Unsigned 64-bit integer mapping type configuration.
     U64(IntOptions, Cardinality),
-    /// 64-bits floats mapping type configuration.
+    /// 64-bit float mapping type configuration.
     F64(IntOptions, Cardinality),
-    /// Signed 64-bits Date 64 mapping type configuration,
+    /// RFC 3339 date mapping type configuration.
     Date(IntOptions, Cardinality),
     /// Bytes mapping type configuration.
     Bytes(BytesOptions, Cardinality),

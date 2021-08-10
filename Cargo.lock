@@ -2719,6 +2719,7 @@ dependencies = [
  "base64",
  "chrono",
  "dyn-clone",
+ "itertools 0.10.1",
  "matches",
  "mockall 0.9.1",
  "once_cell",
