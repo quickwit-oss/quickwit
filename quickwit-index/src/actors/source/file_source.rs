@@ -1,5 +1,5 @@
 // Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+//  Copyright (C) 2021 Qu num_bytes: (), line_num: ()  num_bytes: (), line_num: ()  num_bytes: (), line_num: () ickwit Inc.
 //
 //  Quickwit is offered under the AGPL v3.0 and as commercial software.
 //  For commercial licensing, contact us at hello@quickwit.io.
@@ -43,8 +43,8 @@ pub struct FileSource {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct FilePosition {
-    num_bytes: u64,
-    line_num: u64,
+    pub num_bytes: u64,
+    pub line_num: u64,
 }
 
 impl Actor for FileSource {
@@ -98,7 +98,7 @@ impl AsyncActor for FileSource {
         }
         if reached_eof {
             info!("EOF");
-            return Err(ActorTermination::Terminated);
+            return Err(ActorTermination::Finished);
         }
         ctx.send_self_message(()).await?;
         Ok(())
@@ -112,7 +112,6 @@ mod tests {
     use quickwit_actors::KillSwitch;
 
     use super::*;
-    use quickwit_actors::ActorTermination;
 
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
@@ -122,8 +121,12 @@ mod tests {
         let (file_source_mailbox, file_source_handle) = file_source.spawn(KillSwitch::default());
         let ctx = TestContext;
         ctx.send_message(&file_source_mailbox, ()).await?;
-        let actor_termination = file_source_handle.join().await?;
-        assert!(matches!(actor_termination, ActorTermination::Terminated));
+        let (actor_termination, file_position) = file_source_handle.join().await?;
+        assert!(actor_termination.is_finished());
+        assert_eq!(file_position, FilePosition {
+            num_bytes: 70,
+            line_num: 4
+        });
         let batch = inbox.drain_available_message_for_test();
         assert_eq!(batch.len(), 1);
         Ok(())

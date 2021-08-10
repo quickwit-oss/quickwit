@@ -69,7 +69,7 @@ impl AsyncActor for VecSource {
             .collect();
         self.next_item_id += line_docs.len();
         if line_docs.is_empty() {
-            return Err(ActorTermination::Terminated);
+            return Err(ActorTermination::Finished);
         }
         let batch = RawDocBatch {
             docs: line_docs,
@@ -86,9 +86,7 @@ mod tests {
     use quickwit_actors::TestContext;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::KillSwitch;
-
     use super::*;
-    use quickwit_actors::ActorTermination;
 
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
@@ -103,8 +101,9 @@ mod tests {
         let (vec_source_mailbox, vec_source_handle) = vec_source.spawn(KillSwitch::default());
         let test_context = TestContext;
         test_context.send_message(&vec_source_mailbox, ()).await?;
-        let actor_termination = vec_source_handle.join().await?;
-        assert!(matches!(actor_termination, ActorTermination::Terminated));
+        let (actor_termination, last_observation) = vec_source_handle.join().await?;
+        assert!(actor_termination.is_finished());
+        assert_eq!(last_observation, 1);
         let batch = inbox.drain_available_message_for_test();
         assert_eq!(batch.len(), 34);
         Ok(())

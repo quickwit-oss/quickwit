@@ -27,10 +27,12 @@ use crate::actors::Packager;
 use crate::actors::Publisher;
 use crate::actors::Uploader;
 use crate::models::CommitPolicy;
+use quickwit_actors::Actor;
 use quickwit_actors::ActorTermination;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::KillSwitch;
 use quickwit_actors::SyncActor;
+use quickwit_actors::TestContext;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 use tracing::info;
@@ -43,7 +45,7 @@ pub async fn spawn_indexing_pipeline(
     index_id: String,
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
-) -> anyhow::Result<ActorTermination> {
+) -> anyhow::Result<(ActorTermination, <Publisher as Actor>::ObservableState)> {
     info!(index_id=%index_id, "start-indexing-pipeline");
     let index_metadata = metastore.index_metadata(&index_id).await?;
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
@@ -55,6 +57,7 @@ pub async fn spawn_indexing_pipeline(
     let (publisher_mailbox, publisher_handler) = publisher.spawn(kill_switch.clone());
     let uploader = Uploader::new(metastore, index_storage, publisher_mailbox);
     let (uploader_mailbox, _uploader_handler) = uploader.spawn(kill_switch.clone());
+    info!(actor_name=%uploader_mailbox.actor_instance_name());
     let packager = Packager::new(uploader_mailbox);
     let (packager_mailbox, _packager_handler) = packager.spawn(kill_switch.clone());
     let indexer = Indexer::try_new(
@@ -69,9 +72,11 @@ pub async fn spawn_indexing_pipeline(
     // TODO the source is hardcoded here.
     let source = FileSource::try_new(Path::new("data/test_corpus.json"), indexer_mailbox).await?;
 
-    let _source = source.spawn(kill_switch.clone());
-    let actor_termination = publisher_handler.join().await?;
-    Ok(actor_termination)
+    let (source_mailbox, _source_handle) = source.spawn(kill_switch.clone());
+    let ctx = TestContext;
+    ctx.send_message(&source_mailbox, ()).await?;
+    let (actor_termination, observation) = publisher_handler.join().await?;
+    Ok((actor_termination, observation))
 }
 
 #[cfg(test)]
@@ -82,7 +87,6 @@ mod tests {
     use quickwit_metastore::MockMetastore;
     use quickwit_metastore::SplitState;
     use std::sync::Arc;
-    use tracing::info;
 
     #[tokio::test]
     async fn test_indexing_pipeline() -> anyhow::Result<()> {
@@ -103,20 +107,25 @@ mod tests {
         metastore
             .expect_stage_split()
             .withf(move |index_id, split_metadata| -> bool {
-                (index_id == "test-index")
-                    && &split_metadata.split_id == "test-split"
-                    && split_metadata.time_range == Some(1628203589..=1628203640)
-                    && split_metadata.split_state == SplitState::New
+                (index_id == "test-index") && split_metadata.split_state == SplitState::New
             })
             .times(1)
             .returning(|_, _| Ok(()));
-        let termination = spawn_indexing_pipeline(
+        metastore
+            .expect_publish_splits()
+            .withf(move |index_id, splits| -> bool {
+                (index_id == "test-index") && splits.len() == 1
+            })
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let (publisher_termination, publisher_counters) = spawn_indexing_pipeline(
             "test-index".to_string(),
             Arc::new(metastore),
             Default::default(),
         )
         .await?;
-        info!(termination=?termination);
+        assert!(publisher_termination.is_finished());
+        assert_eq!(publisher_counters.num_published_splits, 1);
         Ok(())
     }
 }

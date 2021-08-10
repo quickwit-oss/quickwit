@@ -263,11 +263,11 @@ impl Metastore for SingleFileMetastore {
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
-        split_ids: Vec<&'a str>,
+        split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
 
-        for split_id in split_ids {
+        for &split_id in split_ids {
             // Check for the existence of split.
             let mut split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
                 MetastoreError::SplitDoesNotExist {

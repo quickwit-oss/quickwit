@@ -101,12 +101,12 @@ async fn process_msg<A: Actor + AsyncActor>(
         }
         ReceptionResult::None => {
             if ctx.mailbox().is_last_mailbox() {
-                Some(ActorTermination::Terminated)
+                Some(ActorTermination::Finished)
             } else {
                 None
             }
         }
-        ReceptionResult::Disconnect => Some(ActorTermination::Terminated),
+        ReceptionResult::Disconnect => Some(ActorTermination::Finished),
     }
 }
 

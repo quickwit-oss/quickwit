@@ -104,8 +104,10 @@ impl<A: Actor> ActorHandle<A> {
         let _ = rx.await;
     }
 
-    pub async fn join(self) -> Result<ActorTermination, JoinError> {
-        self.join_handle.await
+    pub async fn join(self) -> Result<(ActorTermination, A::ObservableState), JoinError> {
+        let termination = self.join_handle.await?;
+        let observation = self.last_state.borrow().clone();
+        Ok((termination, observation))
     }
 
     /// Observe the current state.

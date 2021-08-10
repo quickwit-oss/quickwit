@@ -60,6 +60,9 @@ pub trait SyncActor: Actor + Sized {
     }
 }
 
+/// Process a given message.
+///
+/// If some `ActorTermination` is returned, the actor will stop permanently.
 fn process_msg<A: Actor + SyncActor>(
     actor: &mut A,
     inbox: &Inbox<A::Message>,
@@ -110,12 +113,12 @@ fn process_msg<A: Actor + SyncActor>(
         }
         ReceptionResult::None => {
             if ctx.mailbox().is_last_mailbox() {
-                Some(ActorTermination::Terminated)
+                Some(ActorTermination::Finished)
             } else {
                 None
             }
         }
-        ReceptionResult::Disconnect => Some(ActorTermination::Terminated),
+        ReceptionResult::Disconnect => Some(ActorTermination::Finished),
     }
 }
 
