@@ -22,8 +22,9 @@ use std::fs;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::TryRecvError;
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::Arc;
+use std::time::Duration;
 
 use artillery_core::epidemic::prelude::{
     ArtilleryMember, ArtilleryMemberEvent, ArtilleryMemberState, Cluster as ArtilleryCluster,
@@ -39,6 +40,8 @@ use crate::error::{ClusterError, ClusterResult};
 
 /// The ID that makes the cluster unique.
 const CLUSTER_ID: &str = "quickwit-cluster";
+
+const CLUSTER_EVENT_TIMEOUT: Duration = Duration::from_millis(200);
 
 /// Reads the key that makes a node unique from the given file.
 /// If the file does not exist, it generates an ID and writes it to the file
@@ -159,7 +162,7 @@ impl Cluster {
         // Start to monitor the cluster events.
         tokio::task::spawn_blocking(move || {
             loop {
-                match task_inner.events.try_recv() {
+                match task_inner.events.recv_timeout(CLUSTER_EVENT_TIMEOUT) {
                     Ok((artillery_members, artillery_member_event)) => {
                         log_artillery_event(artillery_member_event);
                         let updated_memberlist: Vec<Member> = artillery_members
@@ -177,11 +180,11 @@ impl Cluster {
                             break;
                         }
                     }
-                    Err(TryRecvError::Disconnected) => {
+                    Err(RecvTimeoutError::Disconnected) => {
                         debug!("channel disconnected");
                         break;
                     }
-                    Err(TryRecvError::Empty) => {
+                    Err(RecvTimeoutError::Timeout) => {
                         if task_stop.load(Ordering::Relaxed) {
                             debug!("receive a stop signal");
                             break;
