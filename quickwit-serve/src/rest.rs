@@ -25,24 +25,25 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Deserializer};
 use tracing::*;
+use warp::http::header::{HeaderMap, HeaderValue};
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
 use quickwit_search::{SearchResultJson, SearchService, SearchServiceImpl};
 
+use crate::health_check::live_predicate;
+use crate::health_check::make_reply;
+use crate::health_check::ServiceStatus;
 use crate::ApiError;
-use crate::HealthService;
 
 /// Start REST service given a HTTP address and a search service.
 pub async fn start_rest_service(
     rest_addr: SocketAddr,
     search_service: Arc<SearchServiceImpl>,
-    health_service: HealthService,
 ) -> anyhow::Result<()> {
     info!(rest_addr=?rest_addr, "Start REST service.");
-    health_service.ready().await;
-    let rest_routes = health_check_handler(health_service).or(search_handler(search_service));
+    let rest_routes = liveness_check_handler().or(search_handler(search_service));
     warp::serve(rest_routes).run(rest_addr).await;
     Ok(())
 }
@@ -145,11 +146,17 @@ async fn search_endpoint<TSearchService: SearchService>(
     Ok(search_result_json)
 }
 
-/// Health check handler.
-pub fn health_check_handler(
-    health_service: HealthService,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-    warp::path("health").and(health_service.service())
+/// Liveness check handler.
+pub fn liveness_check_handler() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone
+{
+    let mut headers = HeaderMap::new();
+    headers.insert("content-type", HeaderValue::from_static("application/json"));
+
+    let service_status = ServiceStatus::Alive;
+
+    warp::path!("health" / "livez")
+        .map(move || make_reply(live_predicate(service_status), service_status))
+        .with(warp::reply::with::headers(headers))
 }
 
 /// Rest search handler.
@@ -431,24 +438,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_rest_search_api_health_check_livez() {
-        let health_service = HealthService::default();
-        health_service.alive().await;
-        let rest_search_api_filter = health_check_handler(health_service);
+        let rest_search_api_filter = liveness_check_handler();
         let resp = warp::test::request()
             .path("/health/livez")
-            .reply(&rest_search_api_filter)
-            .await;
-        println!("{:?}", resp);
-        assert_eq!(resp.status(), 200);
-    }
-
-    #[tokio::test]
-    async fn test_rest_search_api_health_check_readyz() {
-        let health_service = HealthService::default();
-        health_service.ready().await;
-        let rest_search_api_filter = health_check_handler(health_service);
-        let resp = warp::test::request()
-            .path("/health/readyz")
             .reply(&rest_search_api_filter)
             .await;
         println!("{:?}", resp);
