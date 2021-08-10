@@ -62,7 +62,6 @@ use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
 use crate::root::root_search;
 pub use crate::search_result_json::SearchResultJson;
-pub use crate::search_stream::OutputFormat;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
 /// Compute the SWIM port from the HTTP port.

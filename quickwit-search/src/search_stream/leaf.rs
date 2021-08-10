@@ -21,9 +21,9 @@
 use super::FastFieldCollectorBuilder;
 use crate::leaf::open_index;
 use crate::leaf::warmup;
-use crate::OutputFormat;
 use crate::SearchError;
 use quickwit_proto::LeafSearchStreamResult;
+use quickwit_proto::OutputFormat;
 use quickwit_storage::Storage;
 use std::sync::Arc;
 use tantivy::schema::Type;

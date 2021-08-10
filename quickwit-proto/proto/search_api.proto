@@ -58,7 +58,7 @@ message SearchRequest {
 
   // Fields to search on
   repeated string  search_fields = 3;
-  
+
   // Time filter
   optional int64 start_timestamp = 4;
   optional int64 end_timestamp = 5;
@@ -92,7 +92,7 @@ message SplitSearchError {
   // The searcherror that occured formatted as string.
   string error = 1;
 
-  // Split id that failed. 
+  // Split id that failed.
   string split_id = 2;
 
   // Flag to indicate if the error can be considered a retryable error
@@ -174,6 +174,14 @@ message FetchDocsResult {
 
 // -- Stream -------------------
 
+enum OutputFormat {
+    /// Comma Separated Values format (https://datatracker.ietf.org/doc/html/rfc4180).
+    /// The delimiter is `,`.
+    CSV = 0; //< This will be the default value
+    /// Format data by row in ClickHouse binary format.
+    /// https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
+    CLICK_HOUSE_ROW_BINARY = 1;
+}
 
 message SearchStreamRequest {
   // Index ID
@@ -184,7 +192,7 @@ message SearchStreamRequest {
 
   // Fields to search on
   repeated string  search_fields = 3;
-  
+
   // The time filter is interpreted as a semi-open interval. [start, end)
   optional int64 start_timestamp = 4;
   optional int64 end_timestamp = 5;
@@ -193,7 +201,7 @@ message SearchStreamRequest {
   string fast_field = 6;
 
   // The output format
-  string output_format = 7;
+  OutputFormat output_format = 7;
 }
 
 message LeafSearchStreamRequest {

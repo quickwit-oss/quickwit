@@ -18,11 +18,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use async_trait::async_trait;
-
+use bytes::Bytes;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, SearchRequest,
@@ -30,6 +27,8 @@ use quickwit_proto::{
 };
 use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResult, SearchStreamRequest};
 use quickwit_storage::StorageUriResolver;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
@@ -85,7 +84,7 @@ pub trait SearchService: 'static + Send + Sync {
     async fn root_search_stream(
         &self,
         _request: SearchStreamRequest,
-    ) -> Result<Vec<Vec<u8>>, SearchError>;
+    ) -> Result<Vec<Bytes>, SearchError>;
 
     /// Perform a leaf search on a given set of splits and return a stream.
     async fn leaf_search_stream(
@@ -181,7 +180,7 @@ impl SearchService for SearchServiceImpl {
     async fn root_search_stream(
         &self,
         stream_request: SearchStreamRequest,
-    ) -> Result<Vec<Vec<u8>>, SearchError> {
+    ) -> Result<Vec<Bytes>, SearchError> {
         let metastore = self
             .metastore_router
             .get(&stream_request.index_id)
@@ -234,7 +233,7 @@ impl SearchService for SearchServiceImpl {
             fast_field_collector_builder,
             split_ids,
             storage.clone(),
-            stream_request.output_format.into(),
+            stream_request.output_format(),
         )
         .await;
         Ok(leaf_receiver)

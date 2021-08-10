@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use bytes::Bytes;
 use futures::StreamExt;
 use itertools::Either;
 use itertools::Itertools;
@@ -46,7 +47,7 @@ pub async fn root_search_stream(
     search_stream_request: &SearchStreamRequest,
     metastore: &dyn Metastore,
     client_pool: &Arc<SearchClientPool>,
-) -> Result<Vec<Vec<u8>>, SearchError> {
+) -> Result<Vec<Bytes>, SearchError> {
     let start_instant = tokio::time::Instant::now();
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
@@ -81,34 +82,35 @@ pub async fn root_search_stream(
                     split_ids: split_ids.clone(),
                 })?;
 
-            let mut leaf_bytes = Vec::new();
+            let mut leaf_bytes: Vec<Bytes> = Vec::new();
             while let Some(leaf_result) = receiver.next().await {
                 let leaf_data = leaf_result.map_err(|status| NodeSearchError {
                     search_error: parse_grpc_error(&status),
                     split_ids: split_ids.clone(),
                 })?;
-                leaf_bytes.extend(leaf_data.data);
+                leaf_bytes.push(Bytes::from(leaf_data.data));
             }
-            Result::<Vec<u8>, NodeSearchError>::Ok(leaf_bytes)
+            Result::<Vec<Bytes>, NodeSearchError>::Ok(leaf_bytes)
         });
         handles.push(handle);
     }
 
     let nodes_results = futures::future::try_join_all(handles).await?;
-    let (nodes_bytes, errors): (Vec<_>, Vec<_>) =
+    let (nodes_bytes, errors): (Vec<Vec<Bytes>>, Vec<_>) =
         nodes_results
             .into_iter()
             .partition_map(|result| match result {
                 Ok(bytes) => Either::Left(bytes),
                 Err(error) => Either::Right(error),
             });
+    let overall_bytes: Vec<Bytes> = itertools::concat(nodes_bytes);
     if !errors.is_empty() {
         error!(error=?errors, "Some leaf requests have failed");
         return Err(SearchError::InternalError(format!("{:?}", errors)));
     }
     let elapsed = start_instant.elapsed();
     info!("Root search stream completed in {:?}", elapsed);
-    Ok(nodes_bytes)
+    Ok(overall_bytes)
 }
 
 #[cfg(test)]
@@ -117,11 +119,11 @@ mod tests {
 
     use std::ops::Range;
 
+    use crate::MockSearchService;
     use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
+    use quickwit_proto::OutputFormat;
     use tokio_stream::wrappers::UnboundedReceiverStream;
-
-    use crate::MockSearchService;
 
     fn mock_split_meta(split_id: &str) -> SplitMetadata {
         SplitMetadata {
@@ -144,7 +146,7 @@ mod tests {
             start_timestamp: None,
             end_timestamp: None,
             fast_field: "timestamp".to_string(),
-            output_format: "csv".to_string(),
+            output_format: OutputFormat::Csv as i32,
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -164,10 +166,10 @@ mod tests {
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
-            data: "123".as_bytes().to_vec(),
+            data: b"123".to_vec(),
         }))?;
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
-            data: "456".as_bytes().to_vec(),
+            data: b"456".to_vec(),
         }))?;
         mock_search_service.expect_leaf_search_stream().return_once(
             |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
@@ -178,9 +180,10 @@ mod tests {
         drop(result_sender);
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
-        let result = root_search_stream(&request, &metastore, &client_pool).await?;
-        assert_eq!(result.len(), 1);
-        assert_eq!(result, vec!["123456".as_bytes().to_vec()]);
+        let result: Vec<Bytes> = root_search_stream(&request, &metastore, &client_pool).await?;
+        assert_eq!(result.len(), 2);
+        assert_eq!(&result[0], &b"123"[..]);
+        assert_eq!(&result[1], &b"456"[..]);
         Ok(())
     }
 }

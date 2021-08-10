@@ -1,6 +1,6 @@
 // -- Search -------------------
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchRequest {
@@ -29,7 +29,7 @@ pub struct SearchRequest {
     #[prost(uint64, tag = "7")]
     pub start_offset: u64,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResult {
@@ -47,7 +47,7 @@ pub struct SearchResult {
     #[prost(string, repeated, tag = "4")]
     pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitSearchError {
@@ -61,7 +61,7 @@ pub struct SplitSearchError {
     #[prost(bool, tag = "3")]
     pub retryable_error: bool,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequest {
@@ -74,7 +74,7 @@ pub struct LeafSearchRequest {
     #[prost(string, repeated, tag = "3")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Hit {
@@ -89,7 +89,7 @@ pub struct Hit {
 /// Instead, it holds a record_uri which is enough information to
 /// go and fetch the actual document data, by performing a `get_doc(...)`
 /// request.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartialHit {
@@ -115,7 +115,7 @@ pub struct PartialHit {
     #[prost(uint32, tag = "4")]
     pub doc_id: u32,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchResult {
@@ -133,7 +133,7 @@ pub struct LeafSearchResult {
     #[prost(uint64, tag = "4")]
     pub num_attempted_splits: u64,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsRequest {
@@ -144,7 +144,7 @@ pub struct FetchDocsRequest {
     #[prost(string, tag = "2")]
     pub index_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsResult {
@@ -152,9 +152,7 @@ pub struct FetchDocsResult {
     #[prost(message, repeated, tag = "1")]
     pub hits: ::prost::alloc::vec::Vec<Hit>,
 }
-// -- Stream -------------------
-
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchStreamRequest {
@@ -176,10 +174,10 @@ pub struct SearchStreamRequest {
     #[prost(string, tag = "6")]
     pub fast_field: ::prost::alloc::string::String,
     /// The output format
-    #[prost(string, tag = "7")]
-    pub output_format: ::prost::alloc::string::String,
+    #[prost(enumeration = "OutputFormat", tag = "7")]
+    pub output_format: i32,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchStreamRequest {
@@ -192,13 +190,29 @@ pub struct LeafSearchStreamRequest {
     #[prost(string, repeated, tag = "2")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchStreamResult {
     /// Row of data serialized in bytes.
     #[prost(bytes = "vec", tag = "1")]
     pub data: ::prost::alloc::vec::Vec<u8>,
+}
+// -- Stream -------------------
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum OutputFormat {
+    //// Comma Separated Values format (https://datatracker.ietf.org/doc/html/rfc4180).
+    //// The delimiter is `,`.
+    ///
+    ///< This will be the default value
+    Csv = 0,
+    //// Format data by row in ClickHouse binary format.
+    //// https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
+    ClickHouseRowBinary = 1,
 }
 #[doc = r" Generated client implementations."]
 pub mod search_service_client {

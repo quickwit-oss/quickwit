@@ -23,14 +23,16 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use bytes::Bytes;
 use futures::stream::{self, StreamExt};
+use quickwit_proto::OutputFormat;
 use serde::{Deserialize, Deserializer};
 use tracing::*;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
-use quickwit_search::{OutputFormat, SearchResultJson, SearchService, SearchServiceImpl};
+use quickwit_search::{SearchResultJson, SearchService, SearchServiceImpl};
 
 use crate::ApiError;
 
@@ -201,11 +203,9 @@ pub struct SearchStreamRequestQueryString {
     pub end_timestamp: Option<i64>,
     /// The fast field to extract
     #[serde(default)]
-    #[serde(rename(deserialize = "fastField"))]
     pub fast_field: String,
     /// The output format.
     #[serde(default)]
-    #[serde(rename(deserialize = "outputFormat"))]
     pub output_format: OutputFormat,
 }
 
@@ -221,10 +221,10 @@ async fn search_stream_endpoint<TSearchService: SearchService>(
         start_timestamp: search_request.start_timestamp,
         end_timestamp: search_request.end_timestamp,
         fast_field: search_request.fast_field,
-        output_format: search_request.output_format.to_string(),
+        output_format: search_request.output_format as i32,
     };
     let data = search_service.root_search_stream(request).await?;
-    let stream = stream::iter(data).map(Result::<Vec<u8>, std::io::Error>::Ok);
+    let stream = stream::iter(data).map(Result::<Bytes, std::io::Error>::Ok);
     let body = hyper::Body::wrap_stream(stream);
     Ok(body)
 }
@@ -251,8 +251,8 @@ async fn search_stream<TSearchService: SearchService>(
 ) -> Result<impl warp::Reply, Infallible> {
     info!(index_id=%index_id,request=?request, "search_stream");
     let content_type = match request.output_format {
-        OutputFormat::CHRowBinary => "application/octet-stream",
-        OutputFormat::CSV => "text/csv",
+        OutputFormat::ClickHouseRowBinary => "application/octet-stream",
+        OutputFormat::Csv => "text/csv",
     };
     let reply =
         make_streaming_reply(search_stream_endpoint(index_id, request, &*search_service).await);
@@ -260,12 +260,17 @@ async fn search_stream<TSearchService: SearchService>(
     Ok(reply_with_header)
 }
 
-pub fn search_stream_handler<TSearchService: SearchService>(
-    search_service: Arc<TSearchService>,
-) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+fn search_stream_filter(
+) -> impl Filter<Extract = (String, SearchStreamRequestQueryString), Error = Rejection> + Clone {
     warp::path!("api" / "v1" / String / "search" / "stream")
         .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
+}
+
+pub fn search_stream_handler<TSearchService: SearchService>(
+    search_service: Arc<TSearchService>,
+) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
+    search_stream_filter()
         .and(warp::any().map(move || search_service.clone()))
         .and_then(search_stream)
 }
@@ -528,12 +533,7 @@ mod tests {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
             .expect_root_search_stream()
-            .return_once(|_| {
-                Ok(vec![
-                    "first row\n".to_string().into_bytes(),
-                    "second row".to_string().into_bytes(),
-                ])
-            });
+            .return_once(|_| Ok(vec![Bytes::from("first row\n"), Bytes::from("second row")]));
         let rest_search_stream_api_handler =
             super::search_stream_handler(Arc::new(mock_search_service)).recover(recover_fn);
         let response = warp::test::request()
@@ -546,5 +546,60 @@ mod tests {
         let body = String::from_utf8_lossy(response.body());
         assert_eq!(body, "first row\nsecond row");
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_stream_api_csv() {
+        let (index, req) = warp::test::request()
+            .path(
+                "/api/v1/my-index/search/stream?query=obama&fastField=external_id&outputFormat=csv",
+            )
+            .filter(&super::search_stream_filter())
+            .await
+            .unwrap();
+        assert_eq!(&index, "my-index");
+        assert_eq!(
+            &req,
+            &super::SearchStreamRequestQueryString {
+                query: "obama".to_string(),
+                search_fields: None,
+                start_timestamp: None,
+                end_timestamp: None,
+                fast_field: "external_id".to_string(),
+                output_format: OutputFormat::Csv,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_stream_api_click_house_row_binary() {
+        let (index, req) = warp::test::request()
+            .path("/api/v1/my-index/search/stream?query=obama&fastField=external_id&outputFormat=clickHouseRowBinary")
+            .filter(&super::search_stream_filter())
+            .await
+            .unwrap();
+        assert_eq!(&index, "my-index");
+        assert_eq!(
+            &req,
+            &super::SearchStreamRequestQueryString {
+                query: "obama".to_string(),
+                search_fields: None,
+                start_timestamp: None,
+                end_timestamp: None,
+                fast_field: "external_id".to_string(),
+                output_format: OutputFormat::ClickHouseRowBinary,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_stream_api_error() {
+        let rejection = warp::test::request()
+            .path("/api/v1/my-index/search/stream?query=obama&fastField=external_id&outputFormat=click_house_row_binary")
+            .filter(&super::search_stream_filter())
+            .await
+            .unwrap_err();
+        let parse_error = rejection.find::<serde_qs::Error>().unwrap();
+        assert_eq!(parse_error.to_string(), "failed with reason: unknown variant `click_house_row_binary`, expected `csv` or `clickHouseRowBinary`");
     }
 }
