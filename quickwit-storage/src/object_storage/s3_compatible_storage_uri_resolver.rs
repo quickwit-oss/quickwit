@@ -20,7 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 pub use rusoto_core::Region;
 
@@ -45,7 +45,10 @@ impl S3CompatibleObjectStorageFactory {
 
 impl Default for S3CompatibleObjectStorageFactory {
     fn default() -> Self {
-        S3CompatibleObjectStorageFactory::new(Region::default(), "s3")
+        let client = ec2_instance_metadata::InstanceMetadataClient::new();
+        let region_str = client.get().map(|e| e.region).unwrap_or_default();
+        let region = Region::from_str(region_str).unwrap_or(Region::default());
+        S3CompatibleObjectStorageFactory::new(region, "s3")
     }
 }
 
