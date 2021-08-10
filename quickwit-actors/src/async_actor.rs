@@ -61,11 +61,9 @@ async fn process_msg<A: Actor + AsyncActor>(
         return Some(ActorTermination::KillSwitch);
     }
     ctx.progress().record_progress();
-    let default_message_opt = actor.default_message();
-    ctx.progress().record_progress();
 
     let reception_result = inbox
-        .try_recv_msg(ctx.get_state() == ActorState::Running, default_message_opt)
+        .try_recv_msg(ctx.get_state() == ActorState::Running)
         .await;
 
     ctx.progress().record_progress();
@@ -103,10 +101,8 @@ async fn process_msg<A: Actor + AsyncActor>(
         }
         ReceptionResult::None => {
             if ctx.mailbox().is_last_mailbox() {
-                dbg!("lastmailbox");
                 Some(ActorTermination::Terminated)
             } else {
-                dbg!("not lastmailbox");
                 None
             }
         }

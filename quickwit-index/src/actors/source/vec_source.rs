@@ -42,11 +42,8 @@ impl Actor for VecSource {
     fn observable_state(&self) -> Self::ObservableState {
         self.next_item_id
     }
-
-    fn default_message(&self) -> Option<Self::Message> {
-        Some(())
-    }
 }
+
 impl VecSource {
     pub fn new(items: Vec<String>, batch_num_docs: usize, sink: Mailbox<RawDocBatch>) -> VecSource {
         VecSource {
@@ -79,12 +76,14 @@ impl AsyncActor for VecSource {
             // checkpoint: Checkpoint::default(),
         };
         ctx.send_message(&self.sink, batch).await?;
+        ctx.send_self_message(()).await?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use quickwit_actors::TestContext;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::KillSwitch;
 
@@ -101,7 +100,9 @@ mod tests {
             3,
             mailbox,
         );
-        let (_vec_source_mailbox, vec_source_handle) = vec_source.spawn(KillSwitch::default());
+        let (vec_source_mailbox, vec_source_handle) = vec_source.spawn(KillSwitch::default());
+        let test_context = TestContext;
+        test_context.send_message(&vec_source_mailbox, ()).await?;
         let actor_termination = vec_source_handle.join().await?;
         assert!(matches!(actor_termination, ActorTermination::Terminated));
         let batch = inbox.drain_available_message_for_test();

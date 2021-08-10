@@ -1,3 +1,4 @@
+use crate::TestContext;
 use crate::mailbox::Command;
 use crate::Actor;
 use crate::KillSwitch;
@@ -5,7 +6,6 @@ use crate::{ActorContext, ActorTermination, AsyncActor, Mailbox, Observation, Sy
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::time::Duration;
-use tracing::info;
 
 // An actor that receives ping messages.
 #[derive(Default)]
@@ -27,10 +27,6 @@ impl Actor for PingReceiverSyncActor {
 
     fn observable_state(&self) -> Self::ObservableState {
         self.ping_count
-    }
-
-    fn default_message(&self) -> Option<Self::Message> {
-        None
     }
 }
 
@@ -62,10 +58,6 @@ impl Actor for PingReceiverAsyncActor {
 
     fn observable_state(&self) -> Self::ObservableState {
         self.ping_count
-    }
-
-    fn default_message(&self) -> Option<Self::Message> {
-        None
     }
 }
 
@@ -111,10 +103,6 @@ impl Actor for PingerAsyncSenderActor {
             count: self.count,
             num_peers: self.peers.len(),
         }
-    }
-
-    fn default_message(&self) -> Option<Self::Message> {
-        None
     }
 }
 
@@ -305,18 +293,18 @@ async fn test_pause_async_actor() {
 }
 
 #[derive(Default, Debug, Clone)]
-struct DefaultMessageActor {
+struct LoopingActor {
     pub default_count: usize,
     pub normal_count: usize,
 }
 
 #[derive(Clone, Debug)]
 enum Msg {
-    Default,
+    Looping,
     Normal,
 }
 
-impl Actor for DefaultMessageActor {
+impl Actor for LoopingActor {
     type Message = Msg;
 
     type ObservableState = Self;
@@ -324,21 +312,17 @@ impl Actor for DefaultMessageActor {
     fn observable_state(&self) -> Self::ObservableState {
         self.clone()
     }
-
-    fn default_message(&self) -> Option<Self::Message> {
-        Some(Msg::Default)
-    }
 }
 
 #[async_trait]
-impl AsyncActor for DefaultMessageActor {
+impl AsyncActor for LoopingActor {
     async fn process_message(
         &mut self,
         message: Self::Message,
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         match message {
-            Msg::Default => {
+            Msg::Looping => {
                 self.default_count += 1;
             }
             Msg::Normal => {
@@ -349,15 +333,16 @@ impl AsyncActor for DefaultMessageActor {
     }
 }
 
-impl SyncActor for DefaultMessageActor {
+impl SyncActor for LoopingActor {
     fn process_message(
         &mut self,
         message: Self::Message,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         match message {
-            Msg::Default => {
+            Msg::Looping => {
                 self.default_count += 1;
+                ctx.send_self_message_blocking(Msg::Looping)?;
             }
             Msg::Normal => {
                 self.normal_count += 1;
@@ -368,10 +353,12 @@ impl SyncActor for DefaultMessageActor {
 }
 
 #[tokio::test]
-async fn test_default_message_async() {
-    let actor_with_default_msg = DefaultMessageActor::default();
+async fn test_default_message_async() -> anyhow::Result<()> {
+    let actor_with_default_msg = LoopingActor::default();
     let (actor_with_default_msg_mailbox, actor_with_default_msg_handle) =
         AsyncActor::spawn(actor_with_default_msg, KillSwitch::default());
+    let test_context = TestContext;
+    test_context.send_message(&actor_with_default_msg_mailbox, Msg::Looping).await?;
     assert!(actor_with_default_msg_mailbox
         .send_message(Msg::Normal)
         .await
@@ -385,13 +372,16 @@ async fn test_default_message_async() {
     actor_with_default_msg_handle.finish().await;
     assert_eq!(state.normal_count, 1);
     assert!(state.default_count > 0);
+    Ok(())
 }
 
 #[tokio::test]
-async fn test_default_message_sync() {
-    let actor_with_default_msg = DefaultMessageActor::default();
+async fn test_default_message_sync() -> anyhow::Result<()> {
+    let actor_with_default_msg = LoopingActor::default();
     let (actor_with_default_msg_mailbox, actor_with_default_msg_handle) =
         SyncActor::spawn(actor_with_default_msg, KillSwitch::default());
+    let test_context = TestContext;
+    test_context.send_message(&actor_with_default_msg_mailbox, Msg::Looping).await?;
     assert!(actor_with_default_msg_mailbox
         .send_message(Msg::Normal)
         .await
@@ -405,4 +395,5 @@ async fn test_default_message_sync() {
     actor_with_default_msg_handle.finish().await;
     assert_eq!(state.normal_count, 1);
     assert!(state.default_count > 1);
+    Ok(())
 }

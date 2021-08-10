@@ -71,11 +71,9 @@ fn process_msg<A: Actor + SyncActor>(
     }
 
     ctx.progress().record_progress();
-    let default_message_opt = actor.default_message();
-    ctx.progress().record_progress();
 
     let reception_result =
-        inbox.try_recv_msg_blocking(ctx.get_state() == ActorState::Running, default_message_opt);
+        inbox.try_recv_msg_blocking(ctx.get_state() == ActorState::Running);
 
     ctx.progress().record_progress();
     if !ctx.kill_switch().is_alive() {
