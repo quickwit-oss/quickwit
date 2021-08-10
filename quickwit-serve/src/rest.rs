@@ -554,7 +554,6 @@ mod tests {
             .path("/health/livez")
             .reply(&rest_search_api_filter)
             .await;
-        println!("{:?}", resp);
         assert_eq!(resp.status(), 200);
     }
 
