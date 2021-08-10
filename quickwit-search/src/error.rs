@@ -41,6 +41,25 @@ pub enum SearchError {
     InvalidQuery(String),
 }
 
+impl SearchError {
+    fn convert_to_tonic_status_code(search_error: &SearchError) -> tonic::Code {
+        match search_error {
+            SearchError::IndexDoesNotExist { .. } => tonic::Code::NotFound,
+            SearchError::InternalError(_) => tonic::Code::Internal,
+            SearchError::StorageResolverError(_) => tonic::Code::Internal,
+            SearchError::InvalidQuery(_) => tonic::Code::InvalidArgument,
+        }
+    }
+
+    /// Convert quickwit search error to tonic status.
+    pub fn convert_to_tonic_status(search_error: SearchError) -> tonic::Status {
+        let error_json = serde_json::to_string_pretty(&search_error)
+            .unwrap_or_else(|_| "Failed to serialize error".to_string());
+        let code = SearchError::convert_to_tonic_status_code(&search_error);
+        tonic::Status::new(code, error_json)
+    }
+}
+
 pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
     match serde_json::from_str(grpc_error.message()) {
         Ok(search_error) => search_error,

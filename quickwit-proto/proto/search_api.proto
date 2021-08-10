@@ -42,6 +42,9 @@ service SearchService {
   /// Fetches the documents contents from the document store.
   /// This methods takes `PartialHit`s and returns `Hit`s.
   rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResult);
+
+  // Perform a leaf stream on a given set of splits.
+  rpc LeafSearchStream(LeafSearchStreamRequest) returns (stream LeafSearchStreamResult);
 }
 
 // -- Search -------------------
@@ -89,7 +92,7 @@ message SplitSearchError {
   // The searcherror that occured formatted as string.
   string error = 1;
 
-  // Split id that failed. 
+  // Split id that failed.
   string split_id = 2;
 
   // Flag to indicate if the error can be considered a retryable error
@@ -166,4 +169,53 @@ message FetchDocsRequest {
 message FetchDocsResult {
   // List of complete hits.
   repeated Hit hits = 1;
+}
+
+
+// -- Stream -------------------
+
+enum OutputFormat {
+    /// Comma Separated Values format (https://datatracker.ietf.org/doc/html/rfc4180).
+    /// The delimiter is `,`.
+    CSV = 0; //< This will be the default value
+    /// Format data by row in ClickHouse binary format.
+    /// https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
+    CLICK_HOUSE_ROW_BINARY = 1;
+}
+
+message SearchStreamRequest {
+  // Index ID
+  string index_id = 1;
+
+  // Query
+  string query = 2;
+
+  // Fields to search on
+  repeated string  search_fields = 3;
+
+  // The time filter is interpreted as a semi-open interval. [start, end)
+  optional int64 start_timestamp = 4;
+  optional int64 end_timestamp = 5;
+
+  // Name of the fast field to extract
+  string fast_field = 6;
+
+  // The output format
+  OutputFormat output_format = 7;
+}
+
+message LeafSearchStreamRequest {
+  // Stream request. This is a perfect copy of the original stream request,
+  // that was sent to root.
+  SearchStreamRequest request = 1;
+
+  // Index split ids to apply the query on.
+  // This ids are resolved from the index_uri defined in the stream request.
+  repeated string split_ids = 2;
+}
+
+
+message LeafSearchStreamResult {
+  // Row of data serialized in bytes.
+  bytes data = 1;
 }

@@ -21,6 +21,7 @@
 
 use std::collections::HashMap;
 use std::collections::HashSet;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -52,10 +53,11 @@ fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
     1
 }
 
+// TODO: move it to error.rs.
 #[derive(Debug)]
 pub struct NodeSearchError {
-    search_error: SearchError,
-    split_ids: Vec<String>,
+    pub search_error: SearchError,
+    pub split_ids: Vec<String>,
 }
 
 type SearchResultsByAddr = HashMap<SocketAddr, Result<LeafSearchResult, NodeSearchError>>;
@@ -172,7 +174,7 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
     })
 }
 
-fn job_for_splits(
+pub(crate) fn job_for_splits(
     split_ids: &HashSet<&String>,
     split_metadata_map: &HashMap<String, SplitMetadata>,
 ) -> Vec<Job> {

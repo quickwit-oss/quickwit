@@ -219,6 +219,11 @@ impl SegmentCollector for QuickwitSegmentCollector {
     }
 }
 
+// TODO: seems not very useful, remove it and refactor it.
+pub trait GenericQuickwitCollector: Collector {
+    fn fast_field_names(&self) -> Vec<String>;
+}
+
 /// The quickwit collector is the tantivy Collector used in Quickwit.
 ///
 /// It defines the data that should be accumulated about the documents matching
@@ -240,6 +245,12 @@ impl QuickwitCollector {
         let mut self_clone = self.clone();
         self_clone.split_id = split_id;
         self_clone
+    }
+}
+
+impl GenericQuickwitCollector for QuickwitCollector {
+    fn fast_field_names(&self) -> Vec<String> {
+        self.fast_field_names.clone()
     }
 }
 

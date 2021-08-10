@@ -33,6 +33,7 @@ mod leaf;
 mod rendezvous_hasher;
 mod root;
 mod search_result_json;
+mod search_stream;
 mod service;
 
 ///
@@ -246,7 +247,7 @@ mod tests {
         let test_sandbox =
             TestSandbox::create("single-node-simple", Box::new(WikipediaIndexConfig::new()))
                 .await?;
-        for _ in 0..10 {
+        for _ in 0..10u32 {
             test_sandbox.add_documents(vec![
             json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
             json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle"}),

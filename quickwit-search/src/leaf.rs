@@ -18,6 +18,7 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::collector::GenericQuickwitCollector;
 use crate::{collector::QuickwitCollector, SearchError};
 use anyhow::Context;
 use futures::future::try_join_all;
@@ -54,22 +55,22 @@ pub(crate) async fn open_index(split_storage: Arc<dyn Storage>) -> anyhow::Resul
 ///
 /// The downloaded data depends on the query (which term's posting list is required,
 /// are position required too), and the collector.
-async fn warmup(
+pub(crate) async fn warmup(
     searcher: &Searcher,
     query: &dyn Query,
-    quickwit_collector: &QuickwitCollector,
+    fast_field_names: Vec<String>,
 ) -> anyhow::Result<()> {
     warm_up_terms(searcher, query).await?;
-    warm_up_fastfields(searcher, quickwit_collector).await?;
+    warm_up_fastfields(searcher, fast_field_names).await?;
     Ok(())
 }
 
 async fn warm_up_fastfields(
     searcher: &Searcher,
-    quickwit_collector: &QuickwitCollector,
+    fast_field_names: Vec<String>,
 ) -> anyhow::Result<()> {
     let mut fast_fields = Vec::new();
-    for fast_field_name in quickwit_collector.fast_field_names.iter() {
+    for fast_field_name in fast_field_names.iter() {
         let fast_field = searcher
             .schema()
             .get_field(fast_field_name)
@@ -133,7 +134,7 @@ async fn leaf_search_single_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
-    warmup(&*searcher, query, &quickwit_collector).await?;
+    warmup(&*searcher, query, quickwit_collector.fast_field_names()).await?;
     let leaf_search_result = searcher.search(query, &quickwit_collector)?;
     Ok(leaf_search_result)
 }

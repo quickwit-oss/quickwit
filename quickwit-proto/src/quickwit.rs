@@ -1,6 +1,6 @@
 // -- Search -------------------
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchRequest {
@@ -29,7 +29,7 @@ pub struct SearchRequest {
     #[prost(uint64, tag = "7")]
     pub start_offset: u64,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchResult {
@@ -47,7 +47,7 @@ pub struct SearchResult {
     #[prost(string, repeated, tag = "4")]
     pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitSearchError {
@@ -61,7 +61,7 @@ pub struct SplitSearchError {
     #[prost(bool, tag = "3")]
     pub retryable_error: bool,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequest {
@@ -74,7 +74,7 @@ pub struct LeafSearchRequest {
     #[prost(string, repeated, tag = "3")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Hit {
@@ -89,7 +89,7 @@ pub struct Hit {
 /// Instead, it holds a record_uri which is enough information to
 /// go and fetch the actual document data, by performing a `get_doc(...)`
 /// request.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartialHit {
@@ -115,7 +115,7 @@ pub struct PartialHit {
     #[prost(uint32, tag = "4")]
     pub doc_id: u32,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchResult {
@@ -133,7 +133,7 @@ pub struct LeafSearchResult {
     #[prost(uint64, tag = "4")]
     pub num_attempted_splits: u64,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsRequest {
@@ -144,13 +144,75 @@ pub struct FetchDocsRequest {
     #[prost(string, tag = "2")]
     pub index_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsResult {
     /// List of complete hits.
     #[prost(message, repeated, tag = "1")]
     pub hits: ::prost::alloc::vec::Vec<Hit>,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SearchStreamRequest {
+    /// Index ID
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    /// Query
+    #[prost(string, tag = "2")]
+    pub query: ::prost::alloc::string::String,
+    /// Fields to search on
+    #[prost(string, repeated, tag = "3")]
+    pub search_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The time filter is interpreted as a semi-open interval. [start, end)
+    #[prost(int64, optional, tag = "4")]
+    pub start_timestamp: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "5")]
+    pub end_timestamp: ::core::option::Option<i64>,
+    /// Name of the fast field to extract
+    #[prost(string, tag = "6")]
+    pub fast_field: ::prost::alloc::string::String,
+    /// The output format
+    #[prost(enumeration = "OutputFormat", tag = "7")]
+    pub output_format: i32,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafSearchStreamRequest {
+    /// Stream request. This is a perfect copy of the original stream request,
+    /// that was sent to root.
+    #[prost(message, optional, tag = "1")]
+    pub request: ::core::option::Option<SearchStreamRequest>,
+    /// Index split ids to apply the query on.
+    /// This ids are resolved from the index_uri defined in the stream request.
+    #[prost(string, repeated, tag = "2")]
+    pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafSearchStreamResult {
+    /// Row of data serialized in bytes.
+    #[prost(bytes = "vec", tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<u8>,
+}
+// -- Stream -------------------
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum OutputFormat {
+    //// Comma Separated Values format (https://datatracker.ietf.org/doc/html/rfc4180).
+    //// The delimiter is `,`.
+    ///
+    ///< This will be the default value
+    Csv = 0,
+    //// Format data by row in ClickHouse binary format.
+    //// https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
+    ClickHouseRowBinary = 1,
 }
 #[doc = r" Generated client implementations."]
 pub mod search_service_client {
@@ -241,6 +303,27 @@ pub mod search_service_client {
             let path = http::uri::PathAndQuery::from_static("/quickwit.SearchService/FetchDocs");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        #[doc = " Perform a leaf stream on a given set of splits."]
+        pub async fn leaf_search_stream(
+            &mut self,
+            request: impl tonic::IntoRequest<super::LeafSearchStreamRequest>,
+        ) -> Result<
+            tonic::Response<tonic::codec::Streaming<super::LeafSearchStreamResult>>,
+            tonic::Status,
+        > {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path =
+                http::uri::PathAndQuery::from_static("/quickwit.SearchService/LeafSearchStream");
+            self.inner
+                .server_streaming(request.into_request(), path, codec)
+                .await
+        }
     }
     impl<T: Clone> Clone for SearchServiceClient<T> {
         fn clone(&self) -> Self {
@@ -288,6 +371,16 @@ pub mod search_service_server {
             &self,
             request: tonic::Request<super::FetchDocsRequest>,
         ) -> Result<tonic::Response<super::FetchDocsResult>, tonic::Status>;
+        #[doc = "Server streaming response type for the LeafSearchStream method."]
+        type LeafSearchStreamStream: futures_core::Stream<Item = Result<super::LeafSearchStreamResult, tonic::Status>>
+            + Send
+            + Sync
+            + 'static;
+        #[doc = " Perform a leaf stream on a given set of splits."]
+        async fn leaf_search_stream(
+            &self,
+            request: tonic::Request<super::LeafSearchStreamRequest>,
+        ) -> Result<tonic::Response<Self::LeafSearchStreamStream>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct SearchServiceServer<T: SearchService> {
@@ -410,6 +503,42 @@ pub mod search_service_server {
                             tonic::server::Grpc::new(codec)
                         };
                         let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.SearchService/LeafSearchStream" => {
+                    #[allow(non_camel_case_types)]
+                    struct LeafSearchStreamSvc<T: SearchService>(pub Arc<T>);
+                    impl<T: SearchService>
+                        tonic::server::ServerStreamingService<super::LeafSearchStreamRequest>
+                        for LeafSearchStreamSvc<T>
+                    {
+                        type Response = super::LeafSearchStreamResult;
+                        type ResponseStream = T::LeafSearchStreamStream;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::LeafSearchStreamRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).leaf_search_stream(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1;
+                        let inner = inner.0;
+                        let method = LeafSearchStreamSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

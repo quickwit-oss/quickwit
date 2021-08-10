@@ -18,23 +18,25 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use async_trait::async_trait;
-
+use bytes::Bytes;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, SearchRequest,
     SearchResult,
 };
+use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResult, SearchStreamRequest};
 use quickwit_storage::StorageUriResolver;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
 use crate::fetch_docs;
 use crate::leaf_search;
 use crate::make_collector;
 use crate::root_search;
+use crate::search_stream::{leaf_search_stream, root_search_stream, FastFieldCollectorBuilder};
 use crate::SearchClientPool;
 use crate::SearchError;
 
@@ -77,6 +79,18 @@ pub trait SearchService: 'static + Send + Sync {
     /// Fetches the documents contents from the document store.
     /// This methods takes `PartialHit`s and returns `Hit`s.
     async fn fetch_docs(&self, _request: FetchDocsRequest) -> Result<FetchDocsResult, SearchError>;
+
+    /// Perfomrs a root search returning a receiver for streaming
+    async fn root_search_stream(
+        &self,
+        _request: SearchStreamRequest,
+    ) -> Result<Vec<Bytes>, SearchError>;
+
+    /// Perform a leaf search on a given set of splits and return a stream.
+    async fn leaf_search_stream(
+        &self,
+        _request: LeafSearchStreamRequest,
+    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>>;
 }
 
 impl SearchServiceImpl {
@@ -161,5 +175,67 @@ impl SearchService for SearchServiceImpl {
             fetch_docs(fetch_docs_request.partial_hits, storage.clone()).await?;
 
         Ok(fetch_docs_result)
+    }
+
+    async fn root_search_stream(
+        &self,
+        stream_request: SearchStreamRequest,
+    ) -> Result<Vec<Bytes>, SearchError> {
+        let metastore = self
+            .metastore_router
+            .get(&stream_request.index_id)
+            .cloned()
+            .ok_or_else(|| SearchError::IndexDoesNotExist {
+                index_id: stream_request.index_id.clone(),
+            })?;
+        let data =
+            root_search_stream(&stream_request, metastore.as_ref(), &self.client_pool).await?;
+        Ok(data)
+    }
+
+    async fn leaf_search_stream(
+        &self,
+        leaf_stream_request: LeafSearchStreamRequest,
+    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>> {
+        let stream_request = leaf_stream_request
+            .request
+            .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
+        info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_ids, "leaf_search");
+        let metastore = self
+            .metastore_router
+            .get(&stream_request.index_id)
+            .cloned()
+            .ok_or_else(|| SearchError::IndexDoesNotExist {
+                index_id: stream_request.index_id.clone(),
+            })?;
+        let index_metadata = metastore.index_metadata(&stream_request.index_id).await?;
+        let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let split_ids = leaf_stream_request.split_ids;
+        let index_config = index_metadata.index_config;
+        let search_request = SearchRequest::from(stream_request.clone());
+        let query = index_config.query(&search_request)?;
+        let fast_field_to_extract = stream_request.fast_field.clone();
+        let schema = index_config.schema();
+        let fast_field = schema
+            .get_field(&fast_field_to_extract)
+            .ok_or_else(|| SearchError::InvalidQuery("Fast field does not exist.".to_owned()))?;
+        let fast_field_type = schema.get_field_entry(fast_field).field_type();
+        let fast_field_collector_builder = FastFieldCollectorBuilder::new(
+            fast_field_type.value_type(),
+            stream_request.fast_field.clone(),
+            index_config.timestamp_field_name(),
+            index_config.timestamp_field(),
+            stream_request.start_timestamp,
+            stream_request.end_timestamp,
+        )?;
+        let leaf_receiver = leaf_search_stream(
+            query,
+            fast_field_collector_builder,
+            split_ids,
+            storage.clone(),
+            stream_request.output_format(),
+        )
+        .await;
+        Ok(leaf_receiver)
     }
 }
