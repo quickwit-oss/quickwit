@@ -129,23 +129,33 @@ impl SearchServiceClient {
     ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
-                let tonic_request = Request::new(request);
-                let mut results_stream = grpc_client
-                    .leaf_search_stream(tonic_request)
-                    .await
-                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
-                    .into_inner();
-
-                // TODO: returning stream instead of a channel may be better.
-                // But this seems to be difficult. Try it at your own expense.
+                let mut grpc_client_clone = grpc_client.clone();
                 let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-                while let Some(result) = results_stream
-                    .message()
-                    .await
-                    .map_err(|status| parse_grpc_error(&status))?
-                {
-                    let _ = result_sender.send(Ok(result));
-                }
+                tokio::spawn(async move {
+                    let tonic_request = Request::new(request);
+                    let mut results_stream = grpc_client_clone
+                        .leaf_search_stream(tonic_request)
+                        .await
+                        .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
+                        .into_inner();
+
+                    // TODO: returning stream instead of a channel may be better.
+                    // But this seems to be difficult. Try it at your own expense.
+                    while let Some(result) = results_stream
+                        .message()
+                        .await
+                        .map_err(|status| parse_grpc_error(&status))?
+                    {
+                        // We want to stop doing unnecessary work on the leaves as soon as
+                        // there is an issue sending the result.
+                        // Terminating the task will will drop the `result_stream` consequently
+                        // canceling the gRPC request.
+                        result_sender.send(Ok(result)).map_err(|_| {
+                            SearchError::InternalError("Could not send leaf result".into())
+                        })?;
+                    }
+                    Result::<_, SearchError>::Ok(())
+                });
 
                 Ok(UnboundedReceiverStream::new(result_receiver))
             }
