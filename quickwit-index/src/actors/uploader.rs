@@ -229,9 +229,8 @@ impl AsyncActor for Uploader {
 #[cfg(test)]
 mod tests {
     use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::KillSwitch;
     use quickwit_actors::Observation;
-    use quickwit_actors::TestContext;
+    use quickwit_actors::Universe;
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
 
@@ -242,6 +241,7 @@ mod tests {
     #[tokio::test]
     async fn test_uploader() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
@@ -257,7 +257,7 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: Arc<dyn Storage> = Arc::new(ram_storage.clone());
         let uploader = Uploader::new(Arc::new(mock_metastore), index_storage.clone(), mailbox);
-        let (uploader_mailbox, uploader_handle) = uploader.spawn(KillSwitch::default());
+        let (uploader_mailbox, uploader_handle) = universe.spawn(uploader);
         let split_scratch_directory = ScratchDirectory::try_new_temp()?;
         std::fs::write(split_scratch_directory.path().join("anyfile"), &b"bubu"[..])?;
         std::fs::write(
@@ -271,21 +271,21 @@ mod tests {
         let segment_ids = vec![SegmentId::from_uuid_string(
             "f45425f4-f67c-417e-9de7-8a8327115d47",
         )?];
-        let ctx = TestContext;
-        ctx.send_message(
-            &uploader_mailbox,
-            PackagedSplit {
-                split_id: "test-split".to_string(),
-                index_id: "test-index".to_string(),
-                time_range: Some(1_628_203_589i64..=1_628_203_640i64),
-                size_in_bytes: 1_000,
-                files_to_upload,
-                segment_ids,
-                split_scratch_directory,
-                num_docs: 10,
-            },
-        )
-        .await?;
+        universe
+            .send_message(
+                &uploader_mailbox,
+                PackagedSplit {
+                    split_id: "test-split".to_string(),
+                    index_id: "test-index".to_string(),
+                    time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+                    size_in_bytes: 1_000,
+                    files_to_upload,
+                    segment_ids,
+                    split_scratch_directory,
+                    num_docs: 10,
+                },
+            )
+            .await?;
         assert_eq!(
             uploader_handle.process_pending_and_observe().await,
             Observation::Running(())

@@ -117,7 +117,7 @@ async fn reset_index(
         .map(|split_meta| split_meta.split_id.as_str())
         .collect::<Vec<_>>();
     metastore
-        .mark_splits_as_deleted(index_id, split_ids.clone())
+        .mark_splits_as_deleted(index_id, &split_ids)
         .await?;
 
     let garbage_removal_result = delete_garbage_files(metastore, index_id, storage_resolver).await;
@@ -125,7 +125,7 @@ async fn reset_index(
         warn!(metastore_uri = %metastore.uri(), "All split files could not be removed during garbage collection.");
     }
 
-    metastore.delete_splits(index_id, split_ids).await?;
+    metastore.delete_splits(index_id, &split_ids).await?;
 
     Ok(())
 }

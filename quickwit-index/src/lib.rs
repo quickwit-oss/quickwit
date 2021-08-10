@@ -29,10 +29,7 @@ use crate::actors::Uploader;
 use crate::models::CommitPolicy;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorTermination;
-use quickwit_actors::AsyncActor;
-use quickwit_actors::KillSwitch;
-use quickwit_actors::SyncActor;
-use quickwit_actors::TestContext;
+use quickwit_actors::Universe;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 use tracing::info;
@@ -42,6 +39,7 @@ pub mod models;
 pub(crate) mod semaphore;
 
 pub async fn spawn_indexing_pipeline(
+    universe: &Universe,
     index_id: String,
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
@@ -52,14 +50,13 @@ pub async fn spawn_indexing_pipeline(
 
     // TODO supervisor with respawn, one for all and respawn system.
     // TODO add a supervisition that checks the progress of all of these actors.
-    let kill_switch = KillSwitch::default();
     let publisher = Publisher::new(metastore.clone());
-    let (publisher_mailbox, publisher_handler) = publisher.spawn(kill_switch.clone());
+    let (publisher_mailbox, publisher_handler) = universe.spawn(publisher);
     let uploader = Uploader::new(metastore, index_storage, publisher_mailbox);
-    let (uploader_mailbox, _uploader_handler) = uploader.spawn(kill_switch.clone());
+    let (uploader_mailbox, _uploader_handler) = universe.spawn(uploader);
     info!(actor_name=%uploader_mailbox.actor_instance_name());
     let packager = Packager::new(uploader_mailbox);
-    let (packager_mailbox, _packager_handler) = packager.spawn(kill_switch.clone());
+    let (packager_mailbox, _packager_handler) = universe.spawn_sync_actor(packager);
     let indexer = Indexer::try_new(
         index_id,
         index_metadata.index_config.into(),
@@ -67,14 +64,14 @@ pub async fn spawn_indexing_pipeline(
         CommitPolicy::default(),
         packager_mailbox,
     )?;
-    let (indexer_mailbox, _indexer_handler) = indexer.spawn(kill_switch.clone());
+    let (indexer_mailbox, _indexer_handler) = universe.spawn_sync_actor(indexer);
 
     // TODO the source is hardcoded here.
     let source = FileSource::try_new(Path::new("data/test_corpus.json"), indexer_mailbox).await?;
 
-    let (source_mailbox, _source_handle) = source.spawn(kill_switch.clone());
-    let ctx = TestContext;
-    ctx.send_message(&source_mailbox, ()).await?;
+    let (source_mailbox, _source_handle) = universe.spawn(source);
+    let universe = Universe::new();
+    universe.send_message(&source_mailbox, ()).await?;
     let (actor_termination, observation) = publisher_handler.join().await?;
     Ok((actor_termination, observation))
 }
@@ -83,6 +80,7 @@ pub async fn spawn_indexing_pipeline(
 mod tests {
 
     use super::spawn_indexing_pipeline;
+    use quickwit_actors::Universe;
     use quickwit_metastore::IndexMetadata;
     use quickwit_metastore::MockMetastore;
     use quickwit_metastore::SplitState;
@@ -118,7 +116,9 @@ mod tests {
             })
             .times(1)
             .returning(|_, _| Ok(()));
+        let universe = Universe::new();
         let (publisher_termination, publisher_counters) = spawn_indexing_pipeline(
+            &universe,
             "test-index".to_string(),
             Arc::new(metastore),
             Default::default(),

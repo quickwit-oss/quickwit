@@ -83,13 +83,14 @@ impl AsyncActor for VecSource {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::TestContext;
-    use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::KillSwitch;
     use super::*;
+    use quickwit_actors::create_test_mailbox;
+    use quickwit_actors::Universe;
 
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let vec_source = VecSource::new(
             std::iter::repeat_with(|| "{}".to_string())
@@ -98,12 +99,11 @@ mod tests {
             3,
             mailbox,
         );
-        let (vec_source_mailbox, vec_source_handle) = vec_source.spawn(KillSwitch::default());
-        let test_context = TestContext;
-        test_context.send_message(&vec_source_mailbox, ()).await?;
+        let (vec_source_mailbox, vec_source_handle) = universe.spawn(vec_source);
+        universe.send_message(&vec_source_mailbox, ()).await?;
         let (actor_termination, last_observation) = vec_source_handle.join().await?;
         assert!(actor_termination.is_finished());
-        assert_eq!(last_observation, 1);
+        assert_eq!(last_observation, 100);
         let batch = inbox.drain_available_message_for_test();
         assert_eq!(batch.len(), 34);
         Ok(())

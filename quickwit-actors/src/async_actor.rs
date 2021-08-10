@@ -2,6 +2,7 @@ use crate::actor::ActorTermination;
 use crate::actor_handle::ActorHandle;
 use crate::actor_state::ActorState;
 use crate::mailbox::{create_mailbox, Command, Inbox};
+use crate::scheduler::SchedulerMessage;
 use crate::{Actor, ActorContext, KillSwitch, Mailbox, ReceptionResult};
 use anyhow::Context;
 use async_trait::async_trait;
@@ -14,6 +15,19 @@ use tracing::{debug, error};
 /// Actors doing CPU heavy work should implement `SyncActor` instead.
 #[async_trait]
 pub trait AsyncActor: Actor + Sized {
+    /// Initialize is called before running the actor.
+    ///
+    /// This function is useful for instance to schedule an initial message in a looping
+    /// actor.
+    ///
+    /// It can is treated just as if it was an initial implicit Initial message.
+    /// Returning an ActorTermination will therefore have the same effect as if it
+    /// was in `process_message`. (e.g. the actor will stop, the finalize method will be called.
+    /// the kill switch may be activated etc.)
+    async fn initialize(&mut self, _ctx: &ActorContext<Self>) -> Result<(), ActorTermination> {
+        Ok(())
+    }
+
     /// Processes a message.
     ///
     /// If true is returned, the actors will continue processing messages.
@@ -34,21 +48,24 @@ pub trait AsyncActor: Actor + Sized {
     ) -> anyhow::Result<()> {
         Ok(())
     }
+}
 
-    #[doc(hidden)]
-    fn spawn(self, kill_switch: KillSwitch) -> (Mailbox<Self::Message>, ActorHandle<Self>) {
-        debug!(actor_name=%self.name(),"spawning-async-actor");
-        let (state_tx, state_rx) = watch::channel(self.observable_state());
-        let actor_name = self.name();
-        let queue_capacity = self.queue_capacity();
-        let (mailbox, inbox) = create_mailbox(actor_name, queue_capacity);
-        let mailbox_clone = mailbox.clone();
-        let ctx = ActorContext::new(mailbox, kill_switch);
-        let ctx_clone = ctx.clone();
-        let join_handle = tokio::spawn(async_actor_loop(self, inbox, ctx, state_tx));
-        let handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
-        (mailbox_clone, handle)
-    }
+pub(crate) fn spawn_async_actor<A: AsyncActor>(
+    actor: A,
+    kill_switch: KillSwitch,
+    scheduler_mailbox: Mailbox<SchedulerMessage>,
+) -> (Mailbox<A::Message>, ActorHandle<A>) {
+    debug!(actor_name=%actor.name(),"spawning-async-actor");
+    let (state_tx, state_rx) = watch::channel(actor.observable_state());
+    let actor_name = actor.name();
+    let queue_capacity = actor.queue_capacity();
+    let (mailbox, inbox) = create_mailbox(actor_name, queue_capacity);
+    let mailbox_clone = mailbox.clone();
+    let ctx = ActorContext::new(mailbox, kill_switch, scheduler_mailbox);
+    let ctx_clone = ctx.clone();
+    let join_handle = tokio::spawn(async_actor_loop(actor, inbox, ctx, state_tx));
+    let handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
+    (mailbox_clone, handle)
 }
 
 async fn process_msg<A: Actor + AsyncActor>(
@@ -93,6 +110,10 @@ async fn process_msg<A: Actor + AsyncActor>(
                     let _ = cb.send(());
                     None
                 }
+                Command::ScheduledMessage(msg) => {
+                    debug!(msg=?msg, actor=%actor.name(),"scheduled-message-received");
+                    actor.process_message(msg, &ctx).await.err()
+                }
             }
         }
         ReceptionResult::Message(msg) => {
@@ -116,24 +137,24 @@ async fn async_actor_loop<A: AsyncActor>(
     mut ctx: ActorContext<A>,
     state_tx: Sender<A::ObservableState>,
 ) -> ActorTermination {
-    loop {
+    let mut termination_opt: Option<ActorTermination> = actor.initialize(&ctx).await.err();
+    let termination: ActorTermination = loop {
         tokio::task::yield_now().await;
-        let termination_opt = process_msg(&mut actor, &inbox, &mut ctx, &state_tx).await;
         if let Some(termination) = termination_opt {
-            ctx.terminate();
-            if termination.is_failure() {
-                ctx.kill_switch().kill();
-            }
-            if let Err(finalize_error) = actor
-                .finalize(&termination, &ctx)
-                .await
-                .with_context(|| format!("Finalization of actor {}", actor.name()))
-            {
-                error!(err=?finalize_error, "finalize_error");
-            }
-            let final_state = actor.observable_state();
-            let _ = state_tx.send(final_state);
-            return termination;
+            break termination;
         }
+        termination_opt = process_msg(&mut actor, &inbox, &mut ctx, &state_tx).await;
+    };
+    ctx.terminate(&termination);
+
+    if let Err(finalize_error) = actor
+        .finalize(&termination, &ctx)
+        .await
+        .with_context(|| format!("Finalization of actor {}", actor.name()))
+    {
+        error!(err=?finalize_error, "finalize_error");
     }
+    let final_state = actor.observable_state();
+    let _ = state_tx.send(final_state);
+    termination
 }

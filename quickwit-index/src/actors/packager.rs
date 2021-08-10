@@ -225,9 +225,8 @@ mod tests {
     use std::time::Instant;
 
     use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::KillSwitch;
     use quickwit_actors::Observation;
-    use quickwit_actors::TestContext;
+    use quickwit_actors::Universe;
     use tantivy::doc;
     use tantivy::schema::Schema;
     use tantivy::schema::FAST;
@@ -293,12 +292,14 @@ mod tests {
     #[tokio::test]
     async fn test_packager_no_merge_required() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let packager = Packager::new(mailbox);
-        let (packager_mailbox, packager_handle) = packager.spawn(KillSwitch::default());
+        let (packager_mailbox, packager_handle) = universe.spawn_sync_actor(packager);
         let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]])?;
-        let ctx = TestContext;
-        ctx.send_message(&packager_mailbox, indexed_split).await?;
+        universe
+            .send_message(&packager_mailbox, indexed_split)
+            .await?;
         assert_eq!(
             packager_handle.process_pending_and_observe().await,
             Observation::Running(())
@@ -311,12 +312,14 @@ mod tests {
     #[tokio::test]
     async fn test_packager_merge_required() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let packager = Packager::new(mailbox);
-        let (packager_mailbox, packager_handle) = packager.spawn(KillSwitch::default());
+        let (packager_mailbox, packager_handle) = universe.spawn_sync_actor(packager);
         let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
-        let ctx = TestContext;
-        ctx.send_message(&packager_mailbox, indexed_split).await?;
+        universe
+            .send_message(&packager_mailbox, indexed_split)
+            .await?;
         assert_eq!(
             packager_handle.process_pending_and_observe().await,
             Observation::Running(())

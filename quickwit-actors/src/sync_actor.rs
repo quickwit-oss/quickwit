@@ -5,13 +5,22 @@ use tracing::{debug, error, info};
 use crate::actor::ActorTermination;
 use crate::actor_state::ActorState;
 use crate::mailbox::{create_mailbox, Command, Inbox};
+use crate::scheduler::SchedulerMessage;
 use crate::{Actor, ActorContext, ActorHandle, KillSwitch, Mailbox, ReceptionResult};
 
 /// An sync actor is executed on a tokio blocking task.
 ///
 /// It may block and perform CPU heavy computation.
 /// (See also [`AsyncActor`])
+///
+/// Known pitfalls: Contrary to AsyncActor commands are typically not executed right away.
+/// If both the command and the message channel are exhausted, and a command and N messages arrives,
+/// one message is likely to be executed before the command is.
 pub trait SyncActor: Actor + Sized {
+    fn initialize(&mut self, _ctx: &ActorContext<Self>) -> Result<(), ActorTermination> {
+        Ok(())
+    }
+
     /// Processes a message.
     ///
     /// If true is returned, the actors will continue processing messages.
@@ -38,26 +47,29 @@ pub trait SyncActor: Actor + Sized {
     ) -> anyhow::Result<()> {
         Ok(())
     }
+}
 
-    #[doc(hidden)]
-    fn spawn(self, kill_switch: KillSwitch) -> (Mailbox<Self::Message>, ActorHandle<Self>) {
-        let actor_name = self.name();
-        debug!(actor_name=%actor_name,"spawning-sync-actor");
-        let queue_capacity = self.queue_capacity();
-        let (mailbox, inbox) = create_mailbox(actor_name, queue_capacity);
-        let mailbox_clone = mailbox.clone();
-        let (state_tx, state_rx) = watch::channel(self.observable_state());
-        let ctx = ActorContext::new(mailbox, kill_switch);
-        let ctx_clone = ctx.clone();
-        let join_handle = spawn_blocking::<_, ActorTermination>(move || {
-            let actor_name = self.name();
-            let termination = sync_actor_loop(self, inbox, ctx, state_tx);
-            info!(cause=?termination, actor=%actor_name, "termination");
-            termination
-        });
-        let handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
-        (mailbox_clone, handle)
-    }
+pub(crate) fn spawn_sync_actor<A: SyncActor>(
+    actor: A,
+    kill_switch: KillSwitch,
+    scheduler_mailbox: Mailbox<SchedulerMessage>,
+) -> (Mailbox<A::Message>, ActorHandle<A>) {
+    let actor_name = actor.name();
+    debug!(actor_name=%actor_name,"spawning-sync-actor");
+    let queue_capacity = actor.queue_capacity();
+    let (mailbox, inbox) = create_mailbox(actor_name, queue_capacity);
+    let mailbox_clone = mailbox.clone();
+    let (state_tx, state_rx) = watch::channel(actor.observable_state());
+    let ctx = ActorContext::new(mailbox, kill_switch, scheduler_mailbox);
+    let ctx_clone = ctx.clone();
+    let join_handle = spawn_blocking::<_, ActorTermination>(move || {
+        let actor_name = actor.name();
+        let termination = sync_actor_loop(actor, inbox, ctx, state_tx);
+        info!(cause=?termination, actor=%actor_name, "termination");
+        termination
+    });
+    let handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
+    (mailbox_clone, handle)
 }
 
 /// Process a given message.
@@ -75,8 +87,7 @@ fn process_msg<A: Actor + SyncActor>(
 
     ctx.progress().record_progress();
 
-    let reception_result =
-        inbox.try_recv_msg_blocking(ctx.get_state() == ActorState::Running);
+    let reception_result = inbox.try_recv_msg_blocking(ctx.get_state() == ActorState::Running);
 
     ctx.progress().record_progress();
     if !ctx.kill_switch().is_alive() {
@@ -105,6 +116,10 @@ fn process_msg<A: Actor + SyncActor>(
                     let _ = cb.send(());
                     None
                 }
+                Command::ScheduledMessage(msg) => {
+                    debug!(msg=?msg, actor=%actor.name(),"message-received");
+                    actor.process_message(msg, &ctx).err()
+                }
             }
         }
         ReceptionResult::Message(msg) => {
@@ -128,22 +143,18 @@ fn sync_actor_loop<A: SyncActor>(
     mut ctx: ActorContext<A>,
     state_tx: Sender<A::ObservableState>,
 ) -> ActorTermination {
-    loop {
-        let termination_opt = process_msg(&mut actor, &inbox, &mut ctx, &state_tx);
+    let mut termination_opt: Option<ActorTermination> = actor.initialize(&ctx).err();
+    let termination: ActorTermination = loop {
         if let Some(termination) = termination_opt {
-            ctx.terminate();
-            if termination.is_failure() {
-                error!(actor=?actor.name(), termination=?termination, "actor termination (failure)");
-                ctx.kill_switch().kill();
-            } else {
-                info!(actor=?actor.name(), termination=?termination, "actor termination (not a failure)");
-            }
-            if let Err(error) = actor.finalize(&termination, &ctx) {
-                error!(error=?error, "Finalizing failed");
-            }
-            let final_state = actor.observable_state();
-            let _ = state_tx.send(final_state);
-            return termination;
+            break termination;
         }
+        termination_opt = process_msg(&mut actor, &inbox, &mut ctx, &state_tx);
+    };
+    ctx.terminate(&termination);
+    if let Err(error) = actor.finalize(&termination, &ctx) {
+        error!(error=?error, "Finalizing failed");
     }
+    let final_state = actor.observable_state();
+    let _ = state_tx.send(final_state);
+    termination
 }

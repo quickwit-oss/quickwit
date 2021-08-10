@@ -100,8 +100,6 @@ pub fn setup_logging_for_tests() {
     use std::sync::Once;
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        env_logger::builder()
-            .format_timestamp(None)
-            .init();
+        env_logger::builder().format_timestamp(None).init();
     });
 }

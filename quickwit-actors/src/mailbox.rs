@@ -59,25 +59,28 @@ impl<Message> Deref for Mailbox<Message> {
 
 pub struct Inner<Message> {
     pub(crate) sender: flume::Sender<ActorMessage<Message>>,
-    command_sender: flume::Sender<Command>,
+    command_sender: flume::Sender<Command<Message>>,
     id: Uuid,
     actor_name: String,
 }
 
-pub enum Command {
+pub enum Command<Msg> {
     Pause,
     Stop(oneshot::Sender<()>),
     Start,
     Observe(oneshot::Sender<()>),
+    //< scheduled message go through the command channel as they are prioritory.
+    ScheduledMessage(Msg),
 }
 
-impl fmt::Debug for Command {
+impl<Msg> fmt::Debug for Command<Msg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Command::Pause => write!(f, "Pause"),
             Command::Stop(_) => write!(f, "Stop"),
             Command::Start => write!(f, "Start"),
             Command::Observe(_) => write!(f, "Observe"),
+            Command::ScheduledMessage(_) => write!(f, "ScheduleMsg"),
         }
     }
 }
@@ -127,68 +130,77 @@ impl<Message> Mailbox<Message> {
     /// Send a message to the actor in a blocking fashion.
     /// When possible, prefer using [Self::send()].
     pub(crate) fn send_message_blocking(&self, msg: Message) -> Result<(), SendError> {
-        self.sender
-            .send(ActorMessage::Message(msg))?;
+        self.sender.send(ActorMessage::Message(msg))?;
         Ok(())
     }
 
-    pub fn send_command_blocking(&self, command: Command) -> Result<(), SendError> {
+    pub fn send_command_blocking(&self, command: Command<Message>) -> Result<(), SendError> {
         self.command_sender.send(command)?;
         Ok(())
     }
 
-    pub async fn send_command(&self, command: Command) -> Result<(), SendError> {
-        self.command_sender
-            .send_async(command)
-            .await?;
+    pub async fn send_command(&self, command: Command<Message>) -> Result<(), SendError> {
+        self.command_sender.send_async(command).await?;
         Ok(())
     }
 }
 
 pub struct Inbox<Message> {
     pub rx: flume::Receiver<ActorMessage<Message>>,
-    command_rx: flume::Receiver<Command>,
+    command_rx: flume::Receiver<Command<Message>>,
 }
 
 #[derive(Debug)]
 pub enum ReceptionResult<M> {
-    Command(Command),
+    Command(Command<M>),
     Message(M),
     None,
-    Disconnect,
+    Disconnect, // was disconnect from either the command or the regular mailbox.
 }
 
 impl<Message: fmt::Debug> Inbox<Message> {
-    fn get_command_if_available(&self) -> Option<Command> {
+    fn get_command_if_available(&self) -> Option<ReceptionResult<Message>> {
         match self.command_rx.try_recv() {
-            Ok(command) => Some(command),
-            Err(TryRecvError::Disconnected) => None,
+            Ok(command) => Some(ReceptionResult::Command(command)),
+            Err(TryRecvError::Disconnected) => Some(ReceptionResult::Disconnect),
             Err(TryRecvError::Empty) => None,
         }
     }
 
     pub(crate) async fn try_recv_msg(&self, message_enabled: bool) -> ReceptionResult<Message> {
-        if let Some(command) = self.get_command_if_available() {
-            return ReceptionResult::Command(command);
+        if let Some(command_result) = self.get_command_if_available() {
+            return command_result;
         }
         if !message_enabled {
             return ReceptionResult::None;
         }
-        match tokio::time::timeout(crate::message_timeout(), self.rx.recv_async()).await {
-            Ok(Ok(ActorMessage::Message(msg))) => ReceptionResult::Message(msg),
-            Ok(Ok(ActorMessage::Observe(cb))) => ReceptionResult::Command(Command::Observe(cb)),
-            Ok(Err(_recv_error)) => ReceptionResult::Disconnect,
-            Err(_timeout_error) => ReceptionResult::None,
+        tokio::select! {
+            actor_msg_recv = self.rx.recv_async() => {
+                match actor_msg_recv {
+                    Ok(ActorMessage::Message(msg)) => ReceptionResult::Message(msg),
+                    Ok(ActorMessage::Observe(cb)) => ReceptionResult::Command(Command::Observe(cb)),
+                    Err(_recv_error) => ReceptionResult::Disconnect,
+                }
+            }
+            command_recv = self.command_rx.recv_async() => {
+                match command_recv {
+                    Ok(command) => ReceptionResult::Command(command),
+                    _ => ReceptionResult::None,
+                }
+            }
+            _ = tokio::time::sleep(crate::message_timeout()) => ReceptionResult::None,
         }
     }
 
     pub(crate) fn try_recv_msg_blocking(&self, message_enabled: bool) -> ReceptionResult<Message> {
-        if let Some(command) = self.get_command_if_available() {
-            return ReceptionResult::Command(command);
+        if let Some(command_result) = self.get_command_if_available() {
+            return command_result;
         }
         if !message_enabled {
             return ReceptionResult::None;
         }
+        // BUG: a command could have arrived while we were waiting.
+        // Ideally we would like the command to be executed before the message.
         let msg = self.rx.recv_timeout(crate::message_timeout());
         match msg {
             Ok(ActorMessage::Message(msg)) => ReceptionResult::Message(msg),
