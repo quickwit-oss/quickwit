@@ -56,7 +56,7 @@ Search for documents matching a query in the given index `<index name>`.
 | Variable | Type | Description | Default value |
 |----------|------|-------------|---------------|
 | **query** | `String` | Query text. See the [query language doc](query-language.md) (mandatory) | |
-| **searchFields** | `[String]` | If set, specify the set of fields to operate the search on | |
+| **searchFields** | `[String]` | If set, specify the set of fields the search will performed on | |
 | **startTimestamp** | `i64` | If set, restrict search to documents with a `timestamp >= start_timestamp` | |
 | **endTimestamp** | `i64` | If set, restrict search to documents with a `timestamp < end_timestamp`` | |
 | **startOffset** | `Integer` | Number of documents to skip | `0` |
@@ -79,7 +79,7 @@ Search for documents matching a query in the given index `<index name>`.
 GET api/v1/indexes/<index name>/search/stream
 ```
 
-Export documents matching a search query in the given index `<index name>` in a specified output format.
+Export documents matching a search query in the given index `<index name>`, in a specified output format.
 
 The output format can be one of the following:
  -  [Comma Separated Values](https://datatracker.ietf.org/doc/html/rfc4180)
@@ -98,7 +98,7 @@ The output format can be one of the following:
 |----------|------|-------------|---------------|
 | **query** | `String` | Query text. See the [query language doc](query-language.md) (mandatory) | |
 | **fastField** | `String` | Name of fast field to retrieve from documents (mandatory)| |
-| **searchFields** | `[String]` | If set, specify the set of fields to operate the search on | |
+| **searchFields** | `[String]` | If set, specify the set of fields the search will performed on | |
 | **startTimestamp** | `i64` | If set, restrict search to documents with a `timestamp >= start_timestamp` | |
 | **endTimestamp** | `i64` | If set, restrict search to documents with a `timestamp < end_timestamp`` | |
 | **outputFormat** | `String` | Response output format. `csv` or `clickHouseRowBinary`  | `csv` | |
@@ -106,4 +106,4 @@ The output format can be one of the following:
 
 ### Response
 
-The response a list of fast field values retrieved formatted based on the specified output format. 
+The response is a list of fast field values. The formatting is based on the specified output format. 
