@@ -4,6 +4,7 @@ use std::{any::type_name, sync::Arc};
 use thiserror::Error;
 use tracing::{debug, error};
 
+use crate::actor_handle::ActorMessage;
 use crate::{
     actor_state::{ActorState, AtomicState},
     progress::{Progress, ProtectZoneGuard},
@@ -70,10 +71,6 @@ pub trait Actor: Send + Sync + 'static {
     /// the actor implementation.
     fn name(&self) -> String {
         type_name::<Self>().to_string()
-    }
-
-    fn default_message(&self) -> Option<Self::Message> {
-        None
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
@@ -200,8 +197,23 @@ impl<A: SyncActor> ActorContext<A> {
         msg: M,
     ) -> Result<(), crate::SendError> {
         let _guard = self.protect_zone();
-        debug!(from=%self.self_mailbox.actor_instance_name(), send=%mailbox.actor_instance_name(), msg=?msg);
-        mailbox.send_blocking(msg)
+        debug!(from=%self.self_mailbox.actor_instance_name(), to=%mailbox.actor_instance_name(), msg=?msg, "send");
+        mailbox.send_message_blocking(msg)
+    }
+
+    /// Sends a message to itself.
+    /// Since it is very easy to deadlock an actor, the behavior is quite
+    /// different from `send_message_blocking`.
+    ///
+    /// The method not
+    pub fn send_self_message_blocking(
+        &self,
+        msg: A::Message,
+    ) -> Result<(), crate::SendError> {
+        debug!(self=%self.self_mailbox.actor_instance_name(), msg=?msg, "self_send");
+        self.self_mailbox.sender.try_send(ActorMessage::Message(msg))
+            .map_err(|_| crate::SendError::WouldDeadlock)?;
+        Ok(())
     }
 }
 
@@ -216,6 +228,15 @@ impl<A: AsyncActor> ActorContext<A> {
         debug!(from=%self.self_mailbox.actor_instance_name(), send=%mailbox.actor_instance_name(), msg=?msg);
         mailbox.send_message(msg).await
     }
+
+    /// `async` version of `send_self_message`
+    pub async fn send_self_message(
+        &self,
+        msg: A::Message,
+    ) -> Result<(), crate::SendError> {
+        debug!(self=%self.self_mailbox.actor_instance_name(), msg=?msg, "self_send");
+        self.self_mailbox.send_message(msg).await
+    }
 }
 
 pub struct TestContext;
@@ -227,7 +248,7 @@ impl TestContext {
         mailbox: &Mailbox<M>,
         msg: M,
     ) -> Result<(), crate::SendError> {
-        mailbox.send_blocking(msg)
+        mailbox.send_message_blocking(msg)
     }
 
     /// `async` version of `send_message`

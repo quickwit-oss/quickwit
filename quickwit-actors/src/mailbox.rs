@@ -60,7 +60,7 @@ impl<Message> Deref for Mailbox<Message> {
 }
 
 pub struct Inner<Message> {
-    sender: flume::Sender<ActorMessage<Message>>,
+    pub(crate) sender: flume::Sender<ActorMessage<Message>>,
     command_sender: flume::Sender<Command>,
     id: Uuid,
     actor_name: String,
@@ -113,7 +113,8 @@ impl<Message> Mailbox<Message> {
         &self,
         msg: ActorMessage<Message>,
     ) -> Result<(), SendError> {
-        self.sender.send_async(msg).await.map_err(|_| SendError)
+        self.sender.send_async(msg).await?;
+        Ok(())
     }
 
     /// Send a message to the actor synchronously.
@@ -127,21 +128,22 @@ impl<Message> Mailbox<Message> {
 
     /// Send a message to the actor in a blocking fashion.
     /// When possible, prefer using [Self::send()].
-    pub(crate) fn send_blocking(&self, msg: Message) -> Result<(), SendError> {
+    pub(crate) fn send_message_blocking(&self, msg: Message) -> Result<(), SendError> {
         self.sender
-            .send(ActorMessage::Message(msg))
-            .map_err(|_e| SendError)
+            .send(ActorMessage::Message(msg))?;
+        Ok(())
     }
 
     pub fn send_command_blocking(&self, command: Command) -> Result<(), SendError> {
-        self.command_sender.send(command).map_err(|_e| SendError)
+        self.command_sender.send(command)?;
+        Ok(())
     }
 
     pub async fn send_command(&self, command: Command) -> Result<(), SendError> {
         self.command_sender
             .send_async(command)
-            .await
-            .map_err(|_e| SendError)
+            .await?;
+        Ok(())
     }
 }
 
@@ -167,66 +169,34 @@ impl<Message: fmt::Debug> Inbox<Message> {
         }
     }
 
-    pub(crate) async fn try_recv_msg(
-        &self,
-        message_enabled: bool,
-        default_message_opt: Option<Message>,
-    ) -> ReceptionResult<Message> {
+    pub(crate) async fn try_recv_msg(&self, message_enabled: bool) -> ReceptionResult<Message> {
         if let Some(command) = self.get_command_if_available() {
             return ReceptionResult::Command(command);
         }
         if !message_enabled {
             return ReceptionResult::None;
         }
-        if let Some(default_message) = default_message_opt {
-            match self.rx.try_recv() {
-                Ok(ActorMessage::Message(msg)) => ReceptionResult::Message(msg),
-                Ok(ActorMessage::Observe(cb)) => ReceptionResult::Command(Command::Observe(cb)),
-                Err(TryRecvError::Empty) => ReceptionResult::Message(default_message),
-                Err(TryRecvError::Disconnected) => ReceptionResult::Disconnect,
-            }
-        } else {
-            match tokio::time::timeout(crate::message_timeout(), self.rx.recv_async()).await {
-                Ok(Ok(ActorMessage::Message(msg))) => ReceptionResult::Message(msg),
-                Ok(Ok(ActorMessage::Observe(cb))) => ReceptionResult::Command(Command::Observe(cb)),
-                Ok(Err(_recv_error)) => ReceptionResult::Disconnect,
-                Err(_timeout_error) => ReceptionResult::None,
-            }
+        match tokio::time::timeout(crate::message_timeout(), self.rx.recv_async()).await {
+            Ok(Ok(ActorMessage::Message(msg))) => ReceptionResult::Message(msg),
+            Ok(Ok(ActorMessage::Observe(cb))) => ReceptionResult::Command(Command::Observe(cb)),
+            Ok(Err(_recv_error)) => ReceptionResult::Disconnect,
+            Err(_timeout_error) => ReceptionResult::None,
         }
     }
 
-    pub(crate) fn try_recv_msg_blocking(
-        &self,
-        message_enabled: bool,
-        default_message_opt: Option<Message>, //< TODO this is not looking good...
-                                              // We don't want to force message to be cloned and therefore we passed the message
-                                              // by value.
-                                              // We should probably leave it to the called to replace the message.
-                                              //
-                                              // The problem is that in presence of a message, we do not want to wait either.
-                                              // A refactoring might be tricky, but is necessary.
-    ) -> ReceptionResult<Message> {
+    pub(crate) fn try_recv_msg_blocking(&self, message_enabled: bool) -> ReceptionResult<Message> {
         if let Some(command) = self.get_command_if_available() {
             return ReceptionResult::Command(command);
         }
         if !message_enabled {
             return ReceptionResult::None;
         }
-        if let Some(default_message) = default_message_opt {
-            match self.rx.try_recv() {
-                Ok(ActorMessage::Message(msg)) => ReceptionResult::Message(msg),
-                Ok(ActorMessage::Observe(cb)) => ReceptionResult::Command(Command::Observe(cb)),
-                Err(TryRecvError::Empty) => ReceptionResult::Message(default_message),
-                Err(TryRecvError::Disconnected) => ReceptionResult::Disconnect,
-            }
-        } else {
-            let msg = self.rx.recv_timeout(crate::message_timeout());
-            match msg {
-                Ok(ActorMessage::Message(msg)) => ReceptionResult::Message(msg),
-                Ok(ActorMessage::Observe(cb)) => ReceptionResult::Command(Command::Observe(cb)),
-                Err(RecvTimeoutError::Disconnected) => ReceptionResult::Disconnect,
-                Err(RecvTimeoutError::Timeout) => ReceptionResult::None,
-            }
+        let msg = self.rx.recv_timeout(crate::message_timeout());
+        match msg {
+            Ok(ActorMessage::Message(msg)) => ReceptionResult::Message(msg),
+            Ok(ActorMessage::Observe(cb)) => ReceptionResult::Command(Command::Observe(cb)),
+            Err(RecvTimeoutError::Disconnected) => ReceptionResult::Disconnect,
+            Err(RecvTimeoutError::Timeout) => ReceptionResult::None,
         }
     }
 

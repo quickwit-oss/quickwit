@@ -63,7 +63,16 @@ pub fn message_timeout() -> Duration {
 
 /// Error returned when a message is sent to an actor that is detected as terminated.
 #[derive(Debug)]
-pub struct SendError;
+pub enum SendError {
+    ChannelClosed,
+    WouldDeadlock
+}
+
+impl<T> From<flume::SendError<T>> for SendError {
+    fn from(_send_error: flume::SendError<T>) -> Self {
+        SendError::ChannelClosed
+    }
+}
 
 impl Display for SendError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

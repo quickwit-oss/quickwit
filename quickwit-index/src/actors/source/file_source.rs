@@ -55,11 +55,8 @@ impl Actor for FileSource {
     fn observable_state(&self) -> Self::ObservableState {
         self.file_position
     }
-
-    fn default_message(&self) -> Option<Self::Message> {
-        Some(())
-    }
 }
+
 impl FileSource {
     pub async fn try_new(path: &Path, sink: Mailbox<RawDocBatch>) -> io::Result<FileSource> {
         let file = File::open(path).await?;
@@ -103,12 +100,14 @@ impl AsyncActor for FileSource {
             info!("EOF");
             return Err(ActorTermination::Terminated);
         }
+        ctx.send_self_message(()).await?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use quickwit_actors::TestContext;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::KillSwitch;
 
@@ -120,7 +119,9 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let (mailbox, inbox) = create_test_mailbox();
         let file_source = FileSource::try_new(Path::new("data/test_corpus.json"), mailbox).await?;
-        let (_file_source_mailbox, file_source_handle) = file_source.spawn(KillSwitch::default());
+        let (file_source_mailbox, file_source_handle) = file_source.spawn(KillSwitch::default());
+        let ctx = TestContext;
+        ctx.send_message(&file_source_mailbox, ()).await?;
         let actor_termination = file_source_handle.join().await?;
         assert!(matches!(actor_termination, ActorTermination::Terminated));
         let batch = inbox.drain_available_message_for_test();
