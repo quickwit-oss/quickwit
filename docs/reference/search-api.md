@@ -98,7 +98,7 @@ The output format can be one of the following:
 | Variable | Type | Description | Default value |
 |----------|------|-------------|---------------|
 | **query** | `String` | Query text. See the [query language doc](query-language.md) (mandatory) | |
-| **fastField** | `String` | Name of a field to retrieve from documents. This field must be marked as "fast" in the config. (mandatory)| |
+| **fastField** | `String` | Name of a field to retrieve from documents. This field must be marked as "fast" in the index config. (mandatory)| |
 | **searchFields** | `[String]` | If set, specify the set of fields the search will be performed on | |
 | **startTimestamp** | `i64` | If set, restrict search to documents with a `timestamp >= start_timestamp` | |
 | **endTimestamp** | `i64` | If set, restrict search to documents with a `timestamp < end_timestamp`` | |
