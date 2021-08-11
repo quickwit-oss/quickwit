@@ -453,7 +453,7 @@ mod tests {
             error,
             DocParsingError::ValueError(
                 "body".to_owned(),
-                "expected json string, got '1'.".to_owned()
+                "Expected JSON string, got '1'.".to_owned()
             )
         );
         Ok(())
