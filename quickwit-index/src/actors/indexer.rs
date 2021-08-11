@@ -38,6 +38,7 @@ use tracing::warn;
 
 use crate::models::CommitPolicy;
 use crate::models::IndexedSplit;
+use crate::models::IndexerMessage;
 use crate::models::RawDocBatch;
 use crate::models::ScratchDirectory;
 
@@ -45,22 +46,101 @@ use crate::models::ScratchDirectory;
 pub struct IndexerCounters {
     pub num_parse_errors: u64,
     pub num_docs: u64,
+    pub num_docs_in_split: u64,
 }
 
-pub struct Indexer {
+struct ImmutableState {
     index_id: String,
     index_config: Arc<dyn IndexConfig>,
     commit_policy: CommitPolicy, //< TODO should move into the index config.
     // splits index writer will write in TempDir within this directory
     indexing_scratch_directory: ScratchDirectory,
-    sink: Mailbox<IndexedSplit>,
-    current_split_opt: Option<IndexedSplit>,
-    counters: IndexerCounters,
     timestamp_field_opt: Option<Field>,
 }
 
+impl ImmutableState {
+    fn create_indexed_split(&self) -> anyhow::Result<IndexedSplit> {
+        let schema = self.index_config.schema();
+        let indexed_split = IndexedSplit::new_in_dir(
+            self.index_id.clone(),
+            &self.indexing_scratch_directory,
+            schema,
+        )?;
+        Ok(indexed_split)
+    }
+
+    /// Returns the current_indexed_split. If this is the first message, then
+    /// the indexed_split does not exist yet.
+    ///
+    /// This function will then create it, and can hence return an Error.
+    fn get_or_create_current_indexed_split<'a>(
+        &self,
+        current_split_opt: &'a mut Option<IndexedSplit>,
+        ctx: &ActorContext<Indexer>,
+    ) -> anyhow::Result<&'a mut IndexedSplit> {
+        if current_split_opt.is_none() {
+            let new_indexed_split = self.create_indexed_split()?;
+            let commit_timeout = IndexerMessage::CommitTimeout {
+                split_id: new_indexed_split.split_id.clone(),
+            };
+            ctx.schedule_self_msg_blocking(self.commit_policy.timeout, commit_timeout);
+            *current_split_opt = Some(new_indexed_split);
+        }
+        let current_index_split = current_split_opt.as_mut().with_context(|| {
+            "No index writer available. Please report: this should never happen."
+        })?;
+        Ok(current_index_split)
+    }
+
+    fn parse_doc(&self, doc_json: &str, counters: &mut IndexerCounters) -> Option<Document> {
+        let doc_parsing_result = self.index_config.doc_from_json(&doc_json);
+        match doc_parsing_result {
+            Ok(doc) => Some(doc),
+            Err(doc_parsing_error) => {
+                // TODO we should at least keep track of the number of parse error.
+                warn!(err=?doc_parsing_error);
+                counters.num_parse_errors += 1;
+                None
+            }
+        }
+    }
+
+    fn process_batch(
+        &self,
+        batch: RawDocBatch,
+        current_split_opt: &mut Option<IndexedSplit>,
+        counters: &mut IndexerCounters,
+        ctx: &ActorContext<Indexer>,
+    ) -> Result<(), ActorTermination> {
+        let indexed_split = self.get_or_create_current_indexed_split(current_split_opt, ctx)?;
+        for doc_json in batch.docs {
+            indexed_split.size_in_bytes += doc_json.len() as u64;
+            let doc = if let Some(doc) = self.parse_doc(&doc_json, counters) {
+                doc
+            } else {
+                continue;
+            };
+            if let Some(timestamp) = extract_timestamp_if_any(&doc, self.timestamp_field_opt) {
+                record_timestamp(timestamp, &mut indexed_split.time_range);
+            }
+            indexed_split.index_writer.add_document(doc);
+            counters.num_docs += 1;
+            indexed_split.num_docs += 1;
+        }
+        counters.num_docs_in_split = indexed_split.num_docs;
+        Ok(())
+    }
+}
+
+pub struct Indexer {
+    immutable_state: ImmutableState,
+    sink: Mailbox<IndexedSplit>,
+    current_split_opt: Option<IndexedSplit>,
+    counters: IndexerCounters,
+}
+
 impl Actor for Indexer {
-    type Message = RawDocBatch;
+    type Message = IndexerMessage;
 
     type ObservableState = IndexerCounters;
 
@@ -73,59 +153,56 @@ impl Actor for Indexer {
     }
 }
 
-fn extract_timestamp(doc: &Document, timestamp_field_opt: Option<Field>) -> Option<i64> {
+fn extract_timestamp_if_any(doc: &Document, timestamp_field_opt: Option<Field>) -> Option<i64> {
     let timestamp_field = timestamp_field_opt?;
     let timestamp_value = doc.get_first(timestamp_field)?;
     timestamp_value.i64_value()
 }
 
+fn record_timestamp(timestamp: i64, time_range: &mut Option<RangeInclusive<i64>>) {
+    let new_timestamp_range = match time_range.as_ref() {
+        Some(range) => {
+            RangeInclusive::new(timestamp.min(*range.start()), timestamp.max(*range.end()))
+        }
+        None => RangeInclusive::new(timestamp, timestamp),
+    };
+    *time_range = Some(new_timestamp_range);
+}
+
 impl SyncActor for Indexer {
     fn process_message(
         &mut self,
-        batch: RawDocBatch,
+        indexer_message: IndexerMessage,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
-        let index_config = self.index_config.clone();
-        let timestamp_field_opt = self.timestamp_field_opt;
-        let commit_policy = self.commit_policy;
-        let (indexed_split, counts) = self.indexed_split()?;
-        for doc_json in batch.docs {
-            // One batch might take a long time to process. Let's register progress
-            // after each doc.
-            ctx.record_progress();
-            indexed_split.size_in_bytes += doc_json.len() as u64;
-            let doc_parsing_result = index_config.doc_from_json(&doc_json);
-            let doc = match doc_parsing_result {
-                Ok(doc) => doc,
-                Err(doc_parsing_error) => {
-                    // TODO we should at least keep track of the number of parse error.
-                    warn!(err=?doc_parsing_error);
-                    counts.num_parse_errors += 1;
-                    continue;
+        match indexer_message {
+            IndexerMessage::Batch(batch) => {
+                self.immutable_state.process_batch(
+                    batch,
+                    &mut self.current_split_opt,
+                    &mut self.counters,
+                    ctx,
+                )?;
+                if self.counters.num_docs_in_split
+                    >= self.immutable_state.commit_policy.num_docs_threshold
+                {
+                    self.send_to_packager(CommitTrigger::NumDocsLimit, ctx)?;
                 }
-            };
-            if let Some(timestamp) = extract_timestamp(&doc, timestamp_field_opt) {
-                let new_timestamp_range = match indexed_split.time_range.as_ref() {
-                    Some(range) => RangeInclusive::new(
-                        timestamp.min(*range.start()),
-                        timestamp.max(*range.end()),
-                    ),
-                    None => RangeInclusive::new(timestamp, timestamp),
-                };
-                indexed_split.time_range = Some(new_timestamp_range);
             }
-            indexed_split.index_writer.add_document(doc);
-            counts.num_docs += 1;
-            indexed_split.num_docs += 1;
+            IndexerMessage::CommitTimeout { split_id } => {
+                if let Some(split) = self.current_split_opt.as_ref() {
+                    // This is a timeout for a different split.
+                    // We can ignore it.
+                    if split.split_id != split_id {
+                        return Ok(());
+                    }
+                }
+                self.send_to_packager(CommitTrigger::Timeout, ctx)?;
+            }
+            IndexerMessage::EndOfSource => {
+                return Err(ActorTermination::Finished);
+            }
         }
-
-        // TODO this approach of deadline is not correct, as it never triggers if no need
-        // new message arrives.
-        // We do need to implement timeout message in actors to get the right behavior.
-        if commit_policy.should_commit(indexed_split.num_docs, indexed_split.start_time) {
-            self.send_to_packager(ctx)?;
-        }
-
         Ok(())
     }
 
@@ -138,10 +215,17 @@ impl SyncActor for Indexer {
         if termination.is_failure() {
             return Ok(());
         }
-        self.send_to_packager(ctx)
+        self.send_to_packager(CommitTrigger::NoMoreDocs, ctx)
             .with_context(|| "Failed to send a last message to packager upon finalize method")?;
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CommitTrigger {
+    Timeout,
+    NoMoreDocs,
+    NumDocsLimit,
 }
 
 impl Indexer {
@@ -160,46 +244,33 @@ impl Indexer {
             ScratchDirectory::try_new_temp()?
         }
         .into();
-        let time_field_opt = index_config.timestamp_field();
+        let timestamp_field_opt = index_config.timestamp_field();
         Ok(Indexer {
-            index_id,
-            index_config,
+            immutable_state: ImmutableState {
+                index_id,
+                index_config,
+                indexing_scratch_directory,
+                commit_policy,
+                timestamp_field_opt,
+            },
             sink,
             counters: IndexerCounters::default(),
             current_split_opt: None,
-            indexing_scratch_directory,
-            timestamp_field_opt: time_field_opt,
-            commit_policy,
         })
     }
 
-    fn create_indexed_split(&self) -> anyhow::Result<IndexedSplit> {
-        let schema = self.index_config.schema();
-        let indexed_split = IndexedSplit::new_in_dir(
-            self.index_id.clone(),
-            &self.indexing_scratch_directory,
-            schema,
-        )?;
-        Ok(indexed_split)
-    }
-
-    fn indexed_split(&mut self) -> anyhow::Result<(&mut IndexedSplit, &mut IndexerCounters)> {
-        if self.current_split_opt.is_none() {
-            let new_indexed_split = self.create_indexed_split()?;
-            self.current_split_opt = Some(new_indexed_split);
-        }
-        let current_index_split = self.current_split_opt.as_mut().with_context(|| {
-            "No index writer available. Please report: this should never happen."
-        })?;
-        Ok((current_index_split, &mut self.counters))
-    }
-
-    fn send_to_packager(&mut self, ctx: &ActorContext<Self>) -> Result<(), SendError> {
+    /// Extract the indexed split and send it to the Packager.
+    fn send_to_packager(
+        &mut self,
+        commit_trigger: CommitTrigger,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), SendError> {
         let indexed_split = if let Some(indexed_split) = self.current_split_opt.take() {
             indexed_split
         } else {
             return Ok(());
         };
+        info!(commit_trigger=?commit_trigger, index=?indexed_split.index_id, split=?indexed_split.split_id,"send-to-packager");
         ctx.send_message_blocking(&self.sink, indexed_split)?;
         Ok(())
     }
@@ -207,15 +278,37 @@ impl Indexer {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::RangeInclusive;
     use std::sync::Arc;
     use std::time::Duration;
 
+    use crate::actors::indexer::record_timestamp;
     use crate::models::CommitPolicy;
     use crate::models::RawDocBatch;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::Universe;
 
     use super::Indexer;
+
+    #[test]
+    fn test_record_timestamp() {
+        let mut time_range = None;
+        record_timestamp(1628664679, &mut time_range);
+        assert_eq!(
+            time_range,
+            Some(RangeInclusive::new(1628664679, 1628664679))
+        );
+        record_timestamp(1628664112, &mut time_range);
+        assert_eq!(
+            time_range,
+            Some(RangeInclusive::new(1628664112, 1628664679))
+        );
+        record_timestamp(1628665112, &mut time_range);
+        assert_eq!(
+            time_range,
+            Some(RangeInclusive::new(1628664112, 1628665112))
+        )
+    }
 
     #[tokio::test]
     async fn test_indexer() -> anyhow::Result<()> {
@@ -234,7 +327,7 @@ mod tests {
             commit_policy,
             mailbox,
         )?;
-        let (indexer_mailbox, indexer_handle) = universe.spawn_sync_actor(indexer);
+        let (indexer_mailbox, indexer_handle) = universe.spawn_sync_actor::<Indexer>(indexer);
         universe
             .send_message(
                 &indexer_mailbox,
@@ -244,7 +337,8 @@ mod tests {
                         "{\"body\": \"happy2\"}".to_string(),
                         "{".to_string(),
                     ],
-                },
+                }
+                .into(),
             )
             .await?;
         universe
@@ -252,7 +346,8 @@ mod tests {
                 &indexer_mailbox,
                 RawDocBatch {
                     docs: vec!["{\"body\": \"happy3\"}".to_string()],
-                },
+                }
+                .into(),
             )
             .await?;
         let indexer_counters = indexer_handle

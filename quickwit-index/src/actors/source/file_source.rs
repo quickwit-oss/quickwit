@@ -18,6 +18,7 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::models::IndexerMessage;
 use crate::models::RawDocBatch;
 use async_trait::async_trait;
 use quickwit_actors::Actor;
@@ -38,7 +39,7 @@ const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
 pub struct FileSource {
     file_position: FilePosition,
     file: BufReader<File>,
-    sink: Mailbox<RawDocBatch>,
+    sink: Mailbox<IndexerMessage>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -58,7 +59,7 @@ impl Actor for FileSource {
 }
 
 impl FileSource {
-    pub async fn try_new(path: &Path, sink: Mailbox<RawDocBatch>) -> io::Result<FileSource> {
+    pub async fn try_new(path: &Path, sink: Mailbox<IndexerMessage>) -> io::Result<FileSource> {
         let file = File::open(path).await?;
         Ok(FileSource {
             file_position: FilePosition::default(),
@@ -94,10 +95,11 @@ impl AsyncActor for FileSource {
             self.file_position.line_num += 1u64;
         }
         if !raw_doc_batch.docs.is_empty() {
-            ctx.send_message(&self.sink, raw_doc_batch).await?;
+            ctx.send_message(&self.sink, raw_doc_batch.into()).await?;
         }
         if reached_eof {
             info!("EOF");
+            ctx.send_message(&self.sink, IndexerMessage::EndOfSource).await?;
             return Err(ActorTermination::Finished);
         }
         ctx.send_self_message(()).await?;
@@ -129,7 +131,8 @@ mod tests {
             }
         );
         let batch = inbox.drain_available_message_for_test();
-        assert_eq!(batch.len(), 1);
+        assert!(matches!(batch[1], IndexerMessage::EndOfSource));
+        assert_eq!(batch.len(), 2);
         Ok(())
     }
 }

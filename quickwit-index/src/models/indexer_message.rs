@@ -18,22 +18,17 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-const DEFAULT_COMMIT_TIMEOUT: Duration = Duration::from_secs(60);
-const DEFAULT_NUM_DOCS_COMMIT_THRESHOLD: u64 = 10_000_000;
+use crate::models::RawDocBatch;
 
-use std::time::Duration;
-
-#[derive(Clone, Copy, Debug)]
-pub struct CommitPolicy {
-    pub timeout: Duration,
-    pub num_docs_threshold: u64,
+#[derive(Debug)]
+pub enum IndexerMessage {
+    Batch(RawDocBatch),
+    CommitTimeout { split_id: String },
+    EndOfSource,
 }
 
-impl Default for CommitPolicy {
-    fn default() -> Self {
-        CommitPolicy {
-            timeout: DEFAULT_COMMIT_TIMEOUT,
-            num_docs_threshold: DEFAULT_NUM_DOCS_COMMIT_THRESHOLD,
-        }
+impl From<RawDocBatch> for IndexerMessage {
+    fn from(batch: RawDocBatch) -> Self {
+        IndexerMessage::Batch(batch)
     }
 }

@@ -200,6 +200,7 @@ impl Scheduler {
                 .await;
             // We leave 100ms for actors to process their messages. A callback on process would not work here,
             // as callbacks might create extra messages in turn.
+            // A good way could be to wait for the overall actors in the universe to be idle.
             tokio::time::sleep(Duration::from_millis(100)).await;
             let _ = ctx
                 .send_self_message(SchedulerMessage::SimulateAdvanceTime {
