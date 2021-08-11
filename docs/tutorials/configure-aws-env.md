@@ -1,12 +1,12 @@
 ---
-title: Set up your AWS S3 environment 
+title: Set up your AWS S3 environment
 sidebar_position: 3
 ---
 
-To let Quickwit access your AWS S3 buckets and form a cluster, you need two things: first setup your credentials 
+To let Quickwit access your AWS S3 buckets and form a cluster, you need two things: first setup your credentials
 and region and then set up network rules so that instances can communicate between them.
 
-## Credentials and region
+## Credentials
 To let Quickwit store your indexes on AWS S3, you need to define three environment variables:
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
@@ -14,6 +14,16 @@ To let Quickwit store your indexes on AWS S3, you need to define three environme
 
 You can also have these variables defined in a `~/.aws/credentials` and `~/.aws/config` files.
 
+# Region
+
+Quickwit will attempt to different method to sniff the Amazon S3 Region that it should use.
+In order of prority, it will attempt to read it from:
+- `AWS_DEFAULT_REGION` environment variable
+- `AWS_REGION` environment variable
+- ec2 instance metadata
+- a config file defined in the `AWS_CONFIG_FILE` env variable
+- a config file located at `~/.aws/config`
+- fallback to us-east-1.
 
 ## Network
 Cluster membership and search workload distribution need UDP and TCP communication between instances. You need to authorize UDP and TCP on relevant ports between them to make it work: by default, TCP port 8080 is used by the webserver, TCP and UDP 8081 ports (8080 + 1) are used by the cluster membership protocol, and TCP port 8082 (8080 + 2) is used for gRPC communication.
@@ -34,7 +44,7 @@ Command failed: Another error occured. `Metastore error`. Cause: `StorageError(k
 
 :::note
 
-AWS will try different options to find the credentials; this resolution may take up to 30 seconds before failing, especially when AWS is not configured. 
+AWS will try different options to find the credentials; this resolution may take up to 30 seconds before failing, especially when AWS is not configured.
 
 :::
 
