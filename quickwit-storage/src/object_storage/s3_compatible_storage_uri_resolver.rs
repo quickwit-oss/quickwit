@@ -29,9 +29,9 @@ use crate::{S3CompatibleObjectStorage, StorageFactory};
 
 /// S3 Object storage Uri Resolver
 ///
-/// The default implementation uses s3 as a protocol, and detects the region using the
-/// `AWS_DEFAULT_REGION` or `AWS_REGION` environment variable. If it is malformed,
-/// it will fall back to `Region::UsEast1`.
+/// The default implementation uses s3 as a protocol, and detects the region trying to us
+/// sequencially `AWS_DEFAULT_REGION` environment variable, `AWS_REGION` environment variable,
+/// region from ec2 instance metadata and lastly to default value `Region::UsEast1`.
 pub struct S3CompatibleObjectStorageFactory {
     region: Region,
     protocol: &'static str,
@@ -61,12 +61,10 @@ fn region_from_ec2_instance() -> Option<Region> {
     Region::from_str(instance_metadata.region).ok()
 }
 
-/// We use different means in sequence to identify the region that should be used.
+/// Sniff default region using different means in sequence to identify the one that should be used.
 /// - `AWS_DEFAULT_REGION` environment variable
 /// - `AWS_REGION` environment variable
-/// - ec2 instance metadata
-/// - a config file defined in the `AWS_CONFIG_FILE` env variable
-/// - a config file located at `~/.aws/config`.
+/// - region from ec2 instance metadata
 /// - fallback to us-east-1
 fn sniff_default_region() -> Region {
     region_from_env_variable()

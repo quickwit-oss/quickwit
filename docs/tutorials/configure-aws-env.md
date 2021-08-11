@@ -44,7 +44,7 @@ Command failed: Another error occured. `Metastore error`. Cause: `StorageError(k
 
 :::note
 
-AWS will try different options to find the credentials; this resolution may take up to 30 seconds before failing, especially when AWS is not configured.
+AWS will try different options to find the credentials; this resolution may take up to 5 seconds before failing, especially when AWS is not configured.
 
 :::
 
