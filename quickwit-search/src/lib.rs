@@ -158,7 +158,6 @@ pub async fn single_node_search(
         .map(|split_meta| split_meta.split_id.clone())
         .collect();
     let index_config = index_metadata.index_config;
-    //let query = index_config.query(search_request)?;
     let collector = make_collector(index_config.as_ref(), search_request);
     let leaf_search_result = leaf_search(
         index_config,
