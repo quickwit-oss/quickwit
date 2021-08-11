@@ -80,11 +80,18 @@ Search for documents matching a query in the given index `<index name>`.
 GET api/v1/indexes/<index name>/search/stream
 ```
 
-Streams documents matching a search query in the given index `<index name>`, in a specified output format.
+Streams field values from **ALL** documents matching a search query in the given index `<index name>`, in a specified output format.
 
 The output format can be one of the following:
  -  [CSV](https://datatracker.ietf.org/doc/html/rfc4180)
  -  [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary)
+
+:::note
+
+The endpoint will return 10 million values if 10 million documents match the query. This is expected, this endpoint is made to support queries matching millions of document and return field values in a reasonable response time.
+
+:::
+
 
 #### Path variable
 
