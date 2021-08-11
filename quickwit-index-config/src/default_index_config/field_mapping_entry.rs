@@ -22,6 +22,7 @@
 
 use anyhow::bail;
 use chrono::{FixedOffset, Utc};
+use itertools::process_results;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use std::convert::TryFrom;
@@ -37,8 +38,8 @@ use crate::default_index_config::is_valid_field_mapping_name;
 use super::default_as_true;
 use super::FieldMappingType;
 
-/// A `FieldMappingEntry` defines how a field is indexed, stored
-/// and how it is mapped from a json document to the related index fields.
+/// A `FieldMappingEntry` defines how a field is indexed, stored,
+/// and mapped from a JSON document to the related index fields.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(
     try_from = "FieldMappingEntryForSerialization",
@@ -64,7 +65,7 @@ impl FieldMappingEntry {
         }
     }
 
-    /// Return field entries that must be added to the schema.
+    /// Returns the field entries that must be added to the schema.
     // TODO: can be more efficient to pass a collector in argument (a schema builder)
     // on which we add entry fields.
     pub fn field_entries(&self) -> anyhow::Result<Vec<(FieldPath, FieldType)>> {
@@ -76,6 +77,9 @@ impl FieldMappingEntry {
             FieldMappingType::I64(options, _) => {
                 vec![(field_path, FieldType::I64(options.clone()))]
             }
+            FieldMappingType::U64(options, _) => {
+                vec![(field_path, FieldType::U64(options.clone()))]
+            }
             FieldMappingType::F64(options, _) => {
                 vec![(field_path, FieldType::F64(options.clone()))]
             }
@@ -85,14 +89,14 @@ impl FieldMappingEntry {
             FieldMappingType::Bytes(options, _) => {
                 vec![(field_path, FieldType::Bytes(options.clone()))]
             }
-            FieldMappingType::Object(field_mappings) => field_mappings
-                .iter()
-                .map(|mapping_entry| mapping_entry.field_entries())
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .flatten()
-                .map(|(path, entry)| (path.with_parent(&self.name), entry))
-                .collect(),
+            FieldMappingType::Object(field_mappings) => process_results(
+                field_mappings.iter().map(|entry| entry.field_entries()),
+                |iter| {
+                    iter.flatten()
+                        .map(|(path, entry)| (path.with_parent(&self.name), entry))
+                        .collect()
+                },
+            )?,
         };
         Ok(results)
     }
@@ -118,6 +122,9 @@ impl FieldMappingEntry {
             }
             FieldMappingType::I64(options, cardinality) => {
                 self.parse_i64(json_value, options, cardinality)
+            }
+            FieldMappingType::U64(options, cardinality) => {
+                self.parse_u64(json_value, options, cardinality)
             }
             FieldMappingType::F64(options, cardinality) => {
                 self.parse_f64(json_value, options, cardinality)
@@ -145,13 +152,12 @@ impl FieldMappingEntry {
                 if cardinality != &Cardinality::MultiValues {
                     return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
                 }
-                array
-                    .iter()
-                    .map(|element| self.parse_text(element, options, cardinality))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect()
+                process_results(
+                    array
+                        .iter()
+                        .map(|element| self.parse_text(element, options, cardinality)),
+                    |iter| iter.flatten().collect(),
+                )?
             }
             JsonValue::String(value_as_str) => {
                 vec![(
@@ -165,7 +171,7 @@ impl FieldMappingEntry {
             _ => {
                 return Err(DocParsingError::ValueError(
                     self.name.clone(),
-                    format!("expected json string, got '{}'.", json_value),
+                    format!("Expected JSON string, got '{}'.", json_value),
                 ));
             }
         };
@@ -183,13 +189,12 @@ impl FieldMappingEntry {
                 if cardinality != &Cardinality::MultiValues {
                     return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
                 }
-                array
-                    .iter()
-                    .map(|element| self.parse_i64(element, options, cardinality))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect()
+                process_results(
+                    array
+                        .iter()
+                        .map(|element| self.parse_i64(element, options, cardinality)),
+                    |iter| iter.flatten().collect(),
+                )?
             }
             JsonValue::Number(value_as_number) => {
                 if let Some(value_as_i64) = value_as_number.as_i64() {
@@ -200,7 +205,7 @@ impl FieldMappingEntry {
                 } else {
                     return Err(DocParsingError::ValueError(
                         self.name.clone(),
-                        format!("expected i64, got '{}'.", value_as_number),
+                        format!("Expected i64, got '{}'.", value_as_number),
                     ));
                 }
             }
@@ -211,7 +216,54 @@ impl FieldMappingEntry {
                 return Err(DocParsingError::ValueError(
                     self.name.clone(),
                     format!(
-                        "expected json number or array of json numbers, got '{}'.",
+                        "Expected JSON number or array of JSON numbers, got '{}'.",
+                        json_value
+                    ),
+                ))
+            }
+        };
+        Ok(parsed_values)
+    }
+
+    fn parse_u64(
+        &self,
+        json_value: &JsonValue,
+        options: &IntOptions,
+        cardinality: &Cardinality,
+    ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
+        let parsed_values = match json_value {
+            JsonValue::Array(array) => {
+                if cardinality != &Cardinality::MultiValues {
+                    return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
+                }
+                process_results(
+                    array
+                        .iter()
+                        .map(|element| self.parse_u64(element, options, cardinality)),
+                    |iter| iter.flatten().collect(),
+                )?
+            }
+            JsonValue::Number(value_as_number) => {
+                if let Some(value_as_u64) = value_as_number.as_u64() {
+                    vec![(
+                        FieldPath::new(&self.name),
+                        Value::U64(value_as_u64.to_owned()),
+                    )]
+                } else {
+                    return Err(DocParsingError::ValueError(
+                        self.name.clone(),
+                        format!("Expected u64, got '{}'.", value_as_number),
+                    ));
+                }
+            }
+            JsonValue::Null => {
+                vec![]
+            }
+            _ => {
+                return Err(DocParsingError::ValueError(
+                    self.name.clone(),
+                    format!(
+                        "Expected JSON number or array of JSON numbers, got '{}'.",
                         json_value
                     ),
                 ))
@@ -231,13 +283,12 @@ impl FieldMappingEntry {
                 if cardinality != &Cardinality::MultiValues {
                     return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
                 }
-                array
-                    .iter()
-                    .map(|element| self.parse_f64(element, options, cardinality))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect()
+                process_results(
+                    array
+                        .iter()
+                        .map(|element| self.parse_f64(element, options, cardinality)),
+                    |iter| iter.flatten().collect(),
+                )?
             }
             JsonValue::Number(value_as_number) => {
                 if let Some(value_as_f64) = value_as_number.as_f64() {
@@ -249,7 +300,7 @@ impl FieldMappingEntry {
                     return Err(DocParsingError::ValueError(
                         self.name.clone(),
                         format!(
-                            "expected f64, got inconvertible json number '{}'.",
+                            "Expected f64, got inconvertible JSON number '{}'.",
                             value_as_number
                         ),
                     ));
@@ -262,7 +313,7 @@ impl FieldMappingEntry {
                 return Err(DocParsingError::ValueError(
                     self.name.clone(),
                     format!(
-                        "expected json number or array of json numbers, got '{}'.",
+                        "Expected JSON number or array of JSON numbers, got '{}'.",
                         json_value
                     ),
                 ))
@@ -282,23 +333,19 @@ impl FieldMappingEntry {
                 if cardinality != &Cardinality::MultiValues {
                     return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
                 }
-                array
-                    .iter()
-                    .map(|element| self.parse_date(element, options, cardinality))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect()
+                process_results(
+                    array
+                        .iter()
+                        .map(|element| self.parse_date(element, options, cardinality)),
+                    |iter| iter.flatten().collect(),
+                )?
             }
             JsonValue::String(value_as_str) => {
                 let dt_with_fixed_tz: chrono::DateTime<FixedOffset> =
                     chrono::DateTime::parse_from_rfc3339(value_as_str).map_err(|err| {
                         DocParsingError::ValueError(
                             self.name.clone(),
-                            format!(
-                                "expected date in rfc3339 format, got '{}'. {:?}",
-                                value_as_str, err
-                            ),
+                            format!("Expected RFC 3339 date, got '{}'. {:?}", value_as_str, err),
                         )
                     })?;
                 vec![(
@@ -312,10 +359,7 @@ impl FieldMappingEntry {
             _ => {
                 return Err(DocParsingError::ValueError(
                     self.name.clone(),
-                    format!(
-                        "expected date as a string in rfc3339 format, got '{}'.",
-                        json_value
-                    ),
+                    format!("Expected RFC 3339 date, got '{}'.", json_value),
                 ))
             }
         };
@@ -333,13 +377,12 @@ impl FieldMappingEntry {
                 if cardinality != &Cardinality::MultiValues {
                     return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
                 }
-                array
-                    .iter()
-                    .map(|element| self.parse_bytes(element, options, cardinality))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect()
+                process_results(
+                    array
+                        .iter()
+                        .map(|element| self.parse_bytes(element, options, cardinality)),
+                    |iter| iter.flatten().collect(),
+                )?
             }
             JsonValue::String(value_as_str) => {
                 let value = base64::decode(value_as_str)
@@ -347,7 +390,7 @@ impl FieldMappingEntry {
                     .map_err(|_| {
                         DocParsingError::ValueError(
                             self.name.clone(),
-                            format!("expected base64 string, got '{}'", value_as_str),
+                            format!("Expected Base64 string, got '{}'", value_as_str),
                         )
                     })?;
                 vec![(FieldPath::new(&self.name), value)]
@@ -376,30 +419,23 @@ impl FieldMappingEntry {
                 // the field mappings as they must be all multivalued.
                 return Err(DocParsingError::MultiValuesNotSupported(self.name.clone()));
             }
-            JsonValue::Object(object) => {
+            JsonValue::Object(object) => process_results(
                 entries
                     .iter()
-                    .map(|entry| {
-                        if let Some(child) = object.get(&entry.name) {
-                            entry.parse(child)
-                        } else {
-                            // Ignore missing keys
-                            Ok(vec![])
-                        }
-                    })
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .flatten()
-                    .map(|(path, entry)| (path.with_parent(&self.name), entry))
-                    .collect()
-            }
+                    .flat_map(|entry| object.get(&entry.name).map(|child| entry.parse(child))),
+                |iter| {
+                    iter.flatten()
+                        .map(|(path, entry)| (path.with_parent(&self.name), entry))
+                        .collect()
+                },
+            )?,
             JsonValue::Null => {
                 vec![]
             }
             _ => {
                 return Err(DocParsingError::ValueError(
                     self.name.clone(),
-                    format!("expected an json object, got '{}'.", json_value),
+                    format!("Expected JSON object, got '{}'.", json_value),
                 ))
             }
         };
@@ -470,6 +506,7 @@ impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
         let field_type = match value.field_type_str() {
             "text" => value.new_text()?,
             "i64" => value.new_i64()?,
+            "u64" => value.new_u64()?,
             "f64" => value.new_f64()?,
             "date" => value.new_date()?,
             "bytes" => value.new_bytes()?,
@@ -512,6 +549,7 @@ impl From<FieldMappingEntry> for FieldMappingEntryForSerialization {
                 }
             }
             FieldMappingType::I64(options, _)
+            | FieldMappingType::U64(options, _)
             | FieldMappingType::F64(options, _)
             | FieldMappingType::Date(options, _) => {
                 stored = options.is_stored();
@@ -590,6 +628,11 @@ impl FieldMappingEntryForSerialization {
     fn new_i64(&self) -> anyhow::Result<FieldMappingType> {
         let options = self.int_options()?;
         Ok(FieldMappingType::I64(options, self.cardinality()))
+    }
+
+    fn new_u64(&self) -> anyhow::Result<FieldMappingType> {
+        let options = self.int_options()?;
+        Ok(FieldMappingType::U64(options, self.cardinality()))
     }
 
     fn new_f64(&self) -> anyhow::Result<FieldMappingType> {
@@ -999,6 +1042,168 @@ mod tests {
         assert_eq!(parsed_value.len(), 2);
         assert_eq!(parsed_value[0].1, Value::I64(10));
         assert_eq!(parsed_value[1].1, Value::I64(20));
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_u64_field_with_wrong_options() {
+        let cases = vec![
+            (r#"
+            {
+                "name": "my_field_name",
+                "type": "u64",
+                "tokenizer": "basic"
+            }
+            "#,
+            "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are for text field only."
+        ),
+        (
+            r#"
+            {
+                "name": "this is not ok",
+                "type": "i64"
+            }
+            "#,
+            "Invalid field name: `this is not ok`."
+        )
+        ];
+
+        for (json_str, err_str) in cases {
+            let result = serde_json::from_str::<FieldMappingEntry>(json_str);
+            assert!(result.is_err());
+            let error = result.unwrap_err();
+            assert_eq!(error.to_string(), err_str,)
+        }
+    }
+
+    #[test]
+    fn test_deserialize_multivalued_u64_field() -> anyhow::Result<()> {
+        let result = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "array<u64>"
+            }
+            "#,
+        )?;
+
+        match result.mapping_type {
+            FieldMappingType::U64(options, cardinality) => {
+                assert_eq!(options.is_indexed(), true); // default
+                assert_eq!(options.is_fast(), false); // default
+                assert_eq!(options.is_stored(), true); // default
+                assert_eq!(cardinality, Cardinality::MultiValues);
+            }
+            _ => bail!("Wrong type"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_singlevalued_u64_field() -> anyhow::Result<()> {
+        let result = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "u64"
+            }
+            "#,
+        )?;
+
+        match result.mapping_type {
+            FieldMappingType::U64(options, cardinality) => {
+                assert_eq!(options.is_indexed(), true); // default
+                assert_eq!(options.is_fast(), false); // default
+                assert_eq!(options.is_stored(), true); // default
+                assert_eq!(cardinality, Cardinality::SingleValue);
+            }
+            _ => bail!("Wrong type"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_serialize_u64_field() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "u64"
+            }
+            "#,
+        )?;
+        let entry_str = serde_json::to_string(&entry)?;
+        assert_eq!(entry_str, "{\"name\":\"my_field_name\",\"type\":\"u64\",\"stored\":true,\"fast\":false,\"indexed\":true}");
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_u64() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "u64"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!(10))?;
+        assert_eq!(parsed_value.len(), 1);
+        assert_eq!(parsed_value[0].0.field_name(), "my_field_name".to_owned());
+        assert_eq!(parsed_value[0].1, Value::U64(10));
+
+        let parsed_value = entry.parse(&json!(null));
+        assert!(parsed_value.unwrap().is_empty());
+
+        // Failed parsing
+        let parsed_error = entry.parse(&json!(1.2));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!(-3));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!([1, 2]));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::MultiValuesNotSupported(_))
+        ));
+        let parsed_error = entry.parse(&json!("12"));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        let parsed_error = entry.parse(&json!("{}"));
+        assert!(matches!(
+            parsed_error,
+            Err(DocParsingError::ValueError(_, _))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_mutivalued_u64() -> anyhow::Result<()> {
+        let entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "my_field_name",
+                "type": "array<u64>"
+            }
+            "#,
+        )?;
+
+        // Successful parsing
+        let parsed_value = entry.parse(&json!([10, 20]))?;
+        assert_eq!(parsed_value.len(), 2);
+        assert_eq!(parsed_value[0].1, Value::U64(10));
+        assert_eq!(parsed_value[1].1, Value::U64(20));
         Ok(())
     }
 

@@ -47,7 +47,7 @@ This config can be expressed as a json file given to the `new` Quickwit command.
 
 ## Field types
 Each field has a type which indicates the kind of data it contains such as integer on 64 bits or text.
-Quickwit supports the following raw types `text`, `i64`, `f64`, `date` and `bytes` and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to have a look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
+Quickwit supports the following raw types `text`, `i64`, `u64`, `f64`, `date` and `bytes` and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to have a look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
 
 
 ### Raw types
@@ -91,8 +91,8 @@ Example of a mapping for a text field:
 | `position`    |  Records the document id, the term frequency and the positions of occurences  |
 
 
-#### Numeric types: `i64` and `f64` type
-Quickwit handles two numeric types: `i64` and `f64`.
+#### Numeric types: `i64`, `u64` and `f64` type
+Quickwit handles three numeric types: `i64`, `u64` and `f64`.
 Numeric values can be stored in a fast field (equivalent of `Lucene`'s `DocValues`) which is a column-oriented storage.
 
 Example of a mapping for a i64 field:
@@ -106,7 +106,7 @@ Example of a mapping for a i64 field:
 }
 ```
 
-**Parameters for i64 and f64 field**
+**Parameters for i64, u64 and f64 field**
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
