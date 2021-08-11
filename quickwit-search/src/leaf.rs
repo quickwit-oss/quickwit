@@ -24,7 +24,8 @@ use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory, HOTCACHE_FILENAME};
-use quickwit_proto::{LeafSearchResult, SplitSearchError};
+use quickwit_index_config::IndexConfig;
+use quickwit_proto::{LeafSearchResult, SearchRequest, SplitSearchError};
 use quickwit_storage::Storage;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -123,19 +124,34 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
 
 /// Apply a leaf search on a single split.
 async fn leaf_search_single_split(
-    query: &dyn Query,
+    index_config: Box<dyn IndexConfig>,
+    search_request: &SearchRequest,
     quickwit_collector: QuickwitCollector,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchResult> {
     let index = open_index(storage).await?;
+    let split_schema = index.schema();
+    let collector_with_timestamp =
+        if let Some(timestamp_field) = index_config.timestamp_field(&split_schema) {
+            quickwit_collector.for_timestamp_field(timestamp_field)
+        } else {
+            quickwit_collector
+        };
+    let query = index_config.query(split_schema, search_request)?;
+
     let reader = index
         .reader_builder()
         .num_searchers(1)
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
-    warmup(&*searcher, query, quickwit_collector.fast_field_names()).await?;
-    let leaf_search_result = searcher.search(query, &quickwit_collector)?;
+    warmup(
+        &*searcher,
+        &query,
+        collector_with_timestamp.fast_field_names(),
+    )
+    .await?;
+    let leaf_search_result = searcher.search(&query, &collector_with_timestamp)?;
     Ok(leaf_search_result)
 }
 
@@ -145,7 +161,8 @@ async fn leaf_search_single_split(
 /// The root will be in charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
 pub async fn leaf_search(
-    query: &dyn Query,
+    index_config: Box<dyn IndexConfig>,
+    request: &SearchRequest,
     collector: QuickwitCollector,
     split_ids: &[String],
     storage: Arc<dyn Storage>,
@@ -156,10 +173,16 @@ pub async fn leaf_search(
             let split_storage: Arc<dyn Storage> =
                 quickwit_storage::add_prefix_to_storage(storage.clone(), split_id);
             let collector_for_split = collector.for_split(split_id.clone());
+            let index_config_clone = index_config.clone();
             async move {
-                leaf_search_single_split(query, collector_for_split, split_storage)
-                    .await
-                    .map_err(|err| (split_id.to_string(), err))
+                leaf_search_single_split(
+                    index_config_clone,
+                    request,
+                    collector_for_split,
+                    split_storage,
+                )
+                .await
+                .map_err(|err| (split_id.to_string(), err))
             }
         })
         .collect();

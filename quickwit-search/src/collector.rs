@@ -246,6 +246,12 @@ impl QuickwitCollector {
         self_clone.split_id = split_id;
         self_clone
     }
+
+    pub fn for_timestamp_field(&self, timestamp_field: Field) -> Self {
+        let mut self_clone = self.clone();
+        self_clone.timestamp_field_opt = Some(timestamp_field);
+        self_clone
+    }
 }
 
 impl GenericQuickwitCollector for QuickwitCollector {
@@ -385,7 +391,7 @@ pub fn make_collector(
         max_hits: search_request.max_hits as usize,
         sort_by: index_config.default_sort_by(),
         fast_field_names: extract_fast_field_names(index_config),
-        timestamp_field_opt: index_config.timestamp_field(),
+        timestamp_field_opt: None,
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,
     }

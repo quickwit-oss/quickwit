@@ -22,12 +22,15 @@ use super::FastFieldCollectorBuilder;
 use crate::leaf::open_index;
 use crate::leaf::warmup;
 use crate::SearchError;
+use quickwit_index_config::IndexConfig;
 use quickwit_proto::LeafSearchStreamResult;
 use quickwit_proto::OutputFormat;
+use quickwit_proto::SearchRequest;
+use quickwit_proto::SearchStreamRequest;
 use quickwit_storage::Storage;
 use std::sync::Arc;
 use tantivy::schema::Type;
-use tantivy::{query::Query, ReloadPolicy};
+use tantivy::ReloadPolicy;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 /// `leaf` step of search stream.
@@ -38,7 +41,8 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 // to tonic::Status as tonic::Status is required by the stream result
 // signature defined by proto generated code.
 pub async fn leaf_search_stream(
-    query: Box<dyn Query>,
+    index_config: Box<dyn IndexConfig>,
+    request: &SearchStreamRequest,
     fast_field_collector_builder: FastFieldCollectorBuilder,
     split_ids: Vec<String>,
     storage: Arc<dyn Storage>,
@@ -49,11 +53,13 @@ pub async fn leaf_search_stream(
         let split_storage: Arc<dyn Storage> =
             quickwit_storage::add_prefix_to_storage(storage.clone(), split_id.clone());
         let collector_for_split = fast_field_collector_builder.clone();
-        let query_clone = query.box_clone();
+        let index_config_clone = index_config.clone();
         let result_sender_clone = result_sender.clone();
+        let request_clone = request.clone();
         tokio::spawn(async move {
             let leaf_split_result = leaf_search_stream_single_split(
-                query_clone,
+                index_config_clone,
+                &request_clone,
                 collector_for_split,
                 split_storage,
                 output_format,
@@ -74,12 +80,23 @@ pub async fn leaf_search_stream(
 
 /// Apply a leaf search on a single split.
 async fn leaf_search_stream_single_split(
-    query: Box<dyn Query>,
-    fast_field_collector_builder: FastFieldCollectorBuilder,
+    index_config: Box<dyn IndexConfig>,
+    stream_request: &SearchStreamRequest,
+    collector_builder: FastFieldCollectorBuilder,
     storage: Arc<dyn Storage>,
     output_format: OutputFormat,
 ) -> crate::Result<LeafSearchStreamResult> {
     let index = open_index(storage).await?;
+    let split_schema = index.schema();
+    let collector_builder_with_timestamp =
+        if let Some(timestamp_field) = index_config.timestamp_field(&split_schema) {
+            collector_builder.for_timestamp_field(timestamp_field)
+        } else {
+            collector_builder
+        };
+    let search_request = SearchRequest::from(stream_request.clone());
+    let query = index_config.query(split_schema, &search_request)?;
+
     let reader = index
         .reader_builder()
         .num_searchers(1)
@@ -89,13 +106,13 @@ async fn leaf_search_stream_single_split(
     warmup(
         &*searcher,
         query.as_ref(),
-        fast_field_collector_builder.fast_field_to_warm(),
+        collector_builder_with_timestamp.fast_field_to_warm(),
     )
     .await?;
     let mut buffer = Vec::new();
-    match fast_field_collector_builder.value_type() {
+    match collector_builder_with_timestamp.value_type() {
         Type::I64 => {
-            let fast_field_collector = fast_field_collector_builder.build_i64();
+            let fast_field_collector = collector_builder_with_timestamp.build_i64();
             let fast_field_values = searcher.search(query.as_ref(), &fast_field_collector)?;
             super::serialize::<i64>(&fast_field_values, &mut buffer, output_format).map_err(
                 |_| {
@@ -106,7 +123,7 @@ async fn leaf_search_stream_single_split(
             )?;
         }
         Type::U64 => {
-            let fast_field_collector = fast_field_collector_builder.build_u64();
+            let fast_field_collector = collector_builder_with_timestamp.build_u64();
             let fast_field_values = searcher.search(query.as_ref(), &fast_field_collector)?;
             super::serialize::<u64>(&fast_field_values, &mut buffer, output_format).map_err(
                 |_| {

@@ -78,9 +78,13 @@ impl IndexConfig for AllFlattenIndexConfig {
         Ok(document)
     }
 
-    fn query(&self, request: &SearchRequest) -> Result<Box<dyn Query>, QueryParserError> {
+    fn query(
+        &self,
+        schema: Schema,
+        request: &SearchRequest,
+    ) -> Result<Box<dyn Query>, QueryParserError> {
         let default_search_field_names = vec![SOURCE_FIELD_NAME.to_string()];
-        build_query(self.schema(), request, &default_search_field_names)
+        build_query(schema, request, &default_search_field_names)
     }
 
     fn schema(&self) -> Schema {

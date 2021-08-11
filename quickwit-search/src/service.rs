@@ -147,11 +147,16 @@ impl SearchService for SearchServiceImpl {
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let split_ids = leaf_search_request.split_ids;
         let index_config = index_metadata.index_config;
-        let query = index_config.query(&search_request)?;
         let collector = make_collector(index_config.as_ref(), &search_request);
 
-        let leaf_search_result =
-            leaf_search(query.as_ref(), collector, &split_ids[..], storage.clone()).await?;
+        let leaf_search_result = leaf_search(
+            index_config,
+            &search_request,
+            collector,
+            &split_ids[..],
+            storage.clone(),
+        )
+        .await?;
 
         Ok(leaf_search_result)
     }
@@ -212,8 +217,6 @@ impl SearchService for SearchServiceImpl {
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let split_ids = leaf_stream_request.split_ids;
         let index_config = index_metadata.index_config;
-        let search_request = SearchRequest::from(stream_request.clone());
-        let query = index_config.query(&search_request)?;
         let fast_field_to_extract = stream_request.fast_field.clone();
         let schema = index_config.schema();
         let fast_field = schema
@@ -224,12 +227,12 @@ impl SearchService for SearchServiceImpl {
             fast_field_type.value_type(),
             stream_request.fast_field.clone(),
             index_config.timestamp_field_name(),
-            index_config.timestamp_field(),
             stream_request.start_timestamp,
             stream_request.end_timestamp,
         )?;
         let leaf_receiver = leaf_search_stream(
-            query,
+            index_config,
+            &stream_request,
             fast_field_collector_builder,
             split_ids,
             storage.clone(),
