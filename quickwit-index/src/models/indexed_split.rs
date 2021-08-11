@@ -36,6 +36,9 @@ pub struct IndexedSplit {
     pub time_range: Option<RangeInclusive<i64>>,
 
     pub num_docs: u64,
+    // Sum of the size of the document that were sent to the indexed.
+    // This includes both documents that are valid or documents that are
+    // invalid.
     pub size_in_bytes: u64,
     pub start_time: Instant,
 
@@ -73,7 +76,6 @@ impl IndexedSplit {
         // TODO make mem budget configurable.
         let index_writer = index.writer_with_num_threads(1, MEM_BUDGET_IN_BYTES)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
-
         let split_id = new_split_id();
         Ok(IndexedSplit {
             split_id,
