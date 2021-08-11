@@ -20,17 +20,18 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
+use ec2_instance_metadata::{InstanceMetadata, InstanceMetadataClient};
 pub use rusoto_core::Region;
 
 use crate::{S3CompatibleObjectStorage, StorageFactory};
 
 /// S3 Object storage Uri Resolver
 ///
-/// The default implementation uses s3 as a protocol, and detects the region using the
-/// `AWS_DEFAULT_REGION` or `AWS_REGION` environment variable. If it is malformed,
-/// it will fall back to `Region::UsEast1`.
+/// The default implementation uses s3 as a protocol, and detects the region trying to us
+/// sequencially `AWS_DEFAULT_REGION` environment variable, `AWS_REGION` environment variable,
+/// region from ec2 instance metadata and lastly to default value `Region::UsEast1`.
 pub struct S3CompatibleObjectStorageFactory {
     region: Region,
     protocol: &'static str,
@@ -43,9 +44,37 @@ impl S3CompatibleObjectStorageFactory {
     }
 }
 
+fn region_from_env_variable() -> Option<Region> {
+    let region_str_from_env = std::env::var("AWS_DEFAULT_REGION")
+        .or_else(|_| std::env::var("AWS_REGION"))
+        .ok()?;
+    Region::from_str(&region_str_from_env).ok()
+}
+
+// Sniffes the EC2 region from the EC2 instance API.
+//
+// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html
+fn region_from_ec2_instance() -> Option<Region> {
+    let instance_metadata_client: InstanceMetadataClient =
+        ec2_instance_metadata::InstanceMetadataClient::new();
+    let instance_metadata: InstanceMetadata = instance_metadata_client.get().ok()?;
+    Region::from_str(instance_metadata.region).ok()
+}
+
+/// Sniff default region using different means in sequence to identify the one that should be used.
+/// - `AWS_DEFAULT_REGION` environment variable
+/// - `AWS_REGION` environment variable
+/// - region from ec2 instance metadata
+/// - fallback to us-east-1
+fn sniff_default_region() -> Region {
+    region_from_env_variable()
+        .or_else(region_from_ec2_instance)
+        .unwrap_or_default()
+}
+
 impl Default for S3CompatibleObjectStorageFactory {
     fn default() -> Self {
-        S3CompatibleObjectStorageFactory::new(Region::default(), "s3")
+        S3CompatibleObjectStorageFactory::new(sniff_default_region(), "s3")
     }
 }
 
