@@ -56,16 +56,17 @@ Search for documents matching a query in the given index `<index name>`.
 | Variable | Type | Description | Default value |
 |----------|------|-------------|---------------|
 | **query** | `String` | Query text. See the [query language doc](query-language.md) (mandatory) | |
-| **searchFields** | `[String]` | If set, specify the set of fields the search will performed on | |
+| **searchFields** | `[String]` | If set, specify the set of fields the search will be performed on | |
 | **startTimestamp** | `i64` | If set, restrict search to documents with a `timestamp >= start_timestamp` | |
 | **endTimestamp** | `i64` | If set, restrict search to documents with a `timestamp < end_timestamp`` | |
 | **startOffset** | `Integer` | Number of documents to skip | `0` |
 | **maxHits** | `Integer` | Maximum number of hits to return (by default 20) | `20` |
+| **format** | `String` | Response output format. `json` or `pretyjson`  | `pretyjson` |
 
 
 ### Response
 
-| field                | Description                    |    type    |
+| Field                | Description                    |    Type    |
 | -------------------- | ------------------------------ | :--------: |
 | **hits**             | Results of the query           | `[hit]` |
 | **numHits**         | Total number of matches        |  `number`  |
@@ -73,17 +74,17 @@ Search for documents matching a query in the given index `<index name>`.
 
 
 
-### Export search from an index
+### Search stream in an index
 
 ```
 GET api/v1/indexes/<index name>/search/stream
 ```
 
-Export documents matching a search query in the given index `<index name>`, in a specified output format.
+Streams documents matching a search query in the given index `<index name>`, in a specified output format.
 
 The output format can be one of the following:
- -  [Comma Separated Values](https://datatracker.ietf.org/doc/html/rfc4180)
- -  [ClickHouse Row Binary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary)
+ -  [CSV](https://datatracker.ietf.org/doc/html/rfc4180)
+ -  [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary)
 
 #### Path variable
 
@@ -97,13 +98,13 @@ The output format can be one of the following:
 | Variable | Type | Description | Default value |
 |----------|------|-------------|---------------|
 | **query** | `String` | Query text. See the [query language doc](query-language.md) (mandatory) | |
-| **fastField** | `String` | Name of fast field to retrieve from documents (mandatory)| |
-| **searchFields** | `[String]` | If set, specify the set of fields the search will performed on | |
+| **fastField** | `String` | Name of a field to retrieve from documents. This field must be marked as "fast" in the config. (mandatory)| |
+| **searchFields** | `[String]` | If set, specify the set of fields the search will be performed on | |
 | **startTimestamp** | `i64` | If set, restrict search to documents with a `timestamp >= start_timestamp` | |
 | **endTimestamp** | `i64` | If set, restrict search to documents with a `timestamp < end_timestamp`` | |
-| **outputFormat** | `String` | Response output format. `csv` or `clickHouseRowBinary`  | `csv` | |
+| **outputFormat** | `String` | Response output format. `csv` or `clickHouseRowBinary`  | `csv` |
 
 
 ### Response
 
-The response is a list of fast field values. The formatting is based on the specified output format. 
+The response is a list of all the field values from documents matching the query. The field must be marked as "fast" in the index config for this to work. The formatting is based on the specified output format. 
