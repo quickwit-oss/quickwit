@@ -18,7 +18,7 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::collector::{make_merge_collector, make_split_collector, GenericQuickwitCollector};
+use crate::collector::{make_collector_for_split, make_merge_collector, GenericQuickwitCollector};
 use crate::SearchError;
 use anyhow::Context;
 use futures::future::try_join_all;
@@ -131,7 +131,7 @@ async fn leaf_search_single_split(
 ) -> crate::Result<LeafSearchResult> {
     let index = open_index(storage).await?;
     let split_schema = index.schema();
-    let quickwit_collector = make_split_collector(
+    let quickwit_collector = make_collector_for_split(
         split_id,
         index_config.as_ref(),
         search_request,

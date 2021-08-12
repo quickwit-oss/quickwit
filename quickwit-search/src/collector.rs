@@ -368,7 +368,7 @@ fn extract_fast_field_names(index_config: &dyn IndexConfig) -> Vec<String> {
 }
 
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
-pub fn make_split_collector(
+pub fn make_collector_for_split(
     split_id: String,
     index_config: &dyn IndexConfig,
     search_request: &SearchRequest,

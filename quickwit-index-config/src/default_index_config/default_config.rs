@@ -226,10 +226,10 @@ impl IndexConfig for DefaultIndexConfig {
 
     fn query(
         &self,
-        schema: Schema,
+        split_schema: Schema,
         request: &SearchRequest,
     ) -> Result<Box<dyn Query>, QueryParserError> {
-        build_query(schema, request, &self.default_search_field_names)
+        build_query(split_schema, request, &self.default_search_field_names)
     }
 
     fn schema(&self) -> Schema {
