@@ -106,4 +106,54 @@ impl ScratchDirectory {
     }
 }
 
-// TODO add unit tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem;
+
+    #[test]
+    fn test_scratch_directory() -> io::Result<()> {
+        let pa = ScratchDirectory::try_new_temp()?;
+        let pa_path = pa.path().to_path_buf();
+        let kid = pa.temp_child()?;
+        let kid_path = kid.path().to_path_buf();
+        mem::drop(pa);
+        assert!(pa_path.exists());
+        assert!(kid_path.exists());
+        mem::drop(kid);
+        assert!(!pa_path.exists());
+        assert!(!kid_path.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn test_scratch_directory_remove_content() -> io::Result<()> {
+        let pa = ScratchDirectory::try_new_temp()?;
+        let pa_path = pa.path().to_path_buf();
+        std::fs::write(pa.path().join("hello.txt"), b"hello")?;
+        assert!(pa_path.exists());
+        mem::drop(pa);
+        assert!(!pa_path.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn test_scratch_directory_in_path() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let tempdir_path = tempdir.path().to_path_buf();
+        assert!(tempdir_path.exists());
+        let pa = ScratchDirectory::new_in_path(tempdir_path.clone());
+        assert_eq!(pa.path(), tempdir.path());
+        assert!(tempdir.path().exists());
+        let child = pa.temp_child()?;
+        let child_path = child.path().to_path_buf();
+        assert!(child_path.exists());
+        mem::drop(child);
+        assert!(!child_path.exists());
+        mem::drop(pa);
+        assert!(!child_path.exists());
+        mem::drop(tempdir);
+        assert!(!tempdir_path.exists());
+        Ok(())
+    }
+}
