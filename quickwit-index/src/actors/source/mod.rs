@@ -22,3 +22,4 @@ mod file_source;
 mod vec_source;
 
 pub use file_source::FileSource;
+pub use vec_source::VecSource;

@@ -37,12 +37,12 @@ use tantivy::SegmentMeta;
 use tracing::info;
 
 pub struct Packager {
-    sink: Mailbox<PackagedSplit>,
+    uploader_mailbox: Mailbox<PackagedSplit>,
 }
 
 impl Packager {
-    pub fn new(sink: Mailbox<PackagedSplit>) -> Self {
-        Packager { sink }
+    pub fn new(uploader_mailbox: Mailbox<PackagedSplit>) -> Self {
+        Packager { uploader_mailbox }
     }
 }
 
@@ -51,6 +51,7 @@ impl Actor for Packager {
 
     type ObservableState = ();
 
+    #[allow(clippy::unused_unit)]
     fn observable_state(&self) -> Self::ObservableState {
         ()
     }
@@ -183,14 +184,13 @@ fn create_packaged_split(
         .iter()
         .map(|segment_meta| segment_meta.id())
         .collect();
-    let files_to_upload =
-        list_files_to_upload(&segment_metas[..], split.split_scratch_directory.path())
-            .with_context(|| {
-                format!(
-                    "Failed to identify files for upload in packaging for split `{}`.",
-                    split.split_id
-                )
-            })?;
+    let files_to_upload = list_files_to_upload(segment_metas, split.split_scratch_directory.path())
+        .with_context(|| {
+            format!(
+                "Failed to identify files for upload in packaging for split `{}`.",
+                split.split_id
+            )
+        })?;
     let packaged_split = PackagedSplit {
         index_id: split.index_id.clone(),
         split_id: split.split_id.to_string(),
@@ -209,12 +209,12 @@ impl SyncActor for Packager {
         &mut self,
         mut split: IndexedSplit,
         ctx: &ActorContext<Self>,
-    ) -> Result<(), quickwit_actors::ActorTermination> {
-        commit_split(&mut split, &ctx)?;
-        let segment_metas = merge_segments_if_required(&mut split, &ctx)?;
+    ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        commit_split(&mut split, ctx)?;
+        let segment_metas = merge_segments_if_required(&mut split, ctx)?;
         build_hotcache(split.split_scratch_directory.path())?;
         let packaged_split = create_packaged_split(&segment_metas[..], split)?;
-        ctx.send_message_blocking(&self.sink, packaged_split)?;
+        ctx.send_message_blocking(&self.uploader_mailbox, packaged_split)?;
         Ok(())
     }
 }
@@ -302,7 +302,7 @@ mod tests {
             .await?;
         assert_eq!(
             packager_handle.process_pending_and_observe().await.obs_type,
-            ObservationType::Success
+            ObservationType::Alive
         );
         let packaged_splits = inbox.drain_available_message_for_test();
         assert_eq!(packaged_splits.len(), 1);
@@ -322,7 +322,7 @@ mod tests {
             .await?;
         assert_eq!(
             packager_handle.process_pending_and_observe().await.obs_type,
-            ObservationType::Success
+            ObservationType::Alive
         );
         let packaged_splits = inbox.drain_available_message_for_test();
         assert_eq!(packaged_splits.len(), 1);

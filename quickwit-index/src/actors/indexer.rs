@@ -25,7 +25,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
-use quickwit_actors::ActorTermination;
+use quickwit_actors::ActorExitStatus;
 use quickwit_actors::Mailbox;
 use quickwit_actors::QueueCapacity;
 use quickwit_actors::SendError;
@@ -93,7 +93,7 @@ impl ImmutableState {
     }
 
     fn parse_doc(&self, doc_json: &str, counters: &mut IndexerCounters) -> Option<Document> {
-        let doc_parsing_result = self.index_config.doc_from_json(&doc_json);
+        let doc_parsing_result = self.index_config.doc_from_json(doc_json);
         match doc_parsing_result {
             Ok(doc) => Some(doc),
             Err(doc_parsing_error) => {
@@ -111,7 +111,7 @@ impl ImmutableState {
         current_split_opt: &mut Option<IndexedSplit>,
         counters: &mut IndexerCounters,
         ctx: &ActorContext<Indexer>,
-    ) -> Result<(), ActorTermination> {
+    ) -> Result<(), ActorExitStatus> {
         let indexed_split = self.get_or_create_current_indexed_split(current_split_opt, ctx)?;
         for doc_json in batch.docs {
             indexed_split.size_in_bytes += doc_json.len() as u64;
@@ -134,7 +134,7 @@ impl ImmutableState {
 
 pub struct Indexer {
     immutable_state: ImmutableState,
-    sink: Mailbox<IndexedSplit>,
+    packager_mailbox: Mailbox<IndexedSplit>,
     current_split_opt: Option<IndexedSplit>,
     counters: IndexerCounters,
 }
@@ -174,7 +174,7 @@ impl SyncActor for Indexer {
         &mut self,
         indexer_message: IndexerMessage,
         ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorTermination> {
+    ) -> Result<(), ActorExitStatus> {
         match indexer_message {
             IndexerMessage::Batch(batch) => {
                 self.immutable_state.process_batch(
@@ -200,7 +200,7 @@ impl SyncActor for Indexer {
                 self.send_to_packager(CommitTrigger::Timeout, ctx)?;
             }
             IndexerMessage::EndOfSource => {
-                return Err(ActorTermination::Finished);
+                return Err(ActorExitStatus::Success);
             }
         }
         Ok(())
@@ -208,7 +208,7 @@ impl SyncActor for Indexer {
 
     fn finalize(
         &mut self,
-        termination: &ActorTermination,
+        termination: &ActorExitStatus,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         info!("finalize");
@@ -236,14 +236,13 @@ impl Indexer {
         index_config: Arc<dyn IndexConfig>,
         indexing_directory: Option<PathBuf>, //< if None, we create a tempdirectory.
         commit_policy: CommitPolicy,
-        sink: Mailbox<IndexedSplit>,
+        packager_mailbox: Mailbox<IndexedSplit>,
     ) -> anyhow::Result<Indexer> {
         let indexing_scratch_directory = if let Some(path) = indexing_directory {
             ScratchDirectory::new_in_path(path)
         } else {
             ScratchDirectory::try_new_temp()?
-        }
-        .into();
+        };
         let timestamp_field_opt = index_config.timestamp_field();
         Ok(Indexer {
             immutable_state: ImmutableState {
@@ -253,7 +252,7 @@ impl Indexer {
                 commit_policy,
                 timestamp_field_opt,
             },
-            sink,
+            packager_mailbox,
             counters: IndexerCounters::default(),
             current_split_opt: None,
         })
@@ -271,7 +270,7 @@ impl Indexer {
             return Ok(());
         };
         info!(commit_trigger=?commit_trigger, index=?indexed_split.index_id, split=?indexed_split.split_id,"send-to-packager");
-        ctx.send_message_blocking(&self.sink, indexed_split)?;
+        ctx.send_message_blocking(&self.packager_mailbox, indexed_split)?;
         Ok(())
     }
 }

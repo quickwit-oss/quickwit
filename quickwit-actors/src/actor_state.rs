@@ -26,7 +26,7 @@ use std::sync::atomic::Ordering;
 pub enum ActorState {
     Running = 0,
     Paused = 1,
-    Terminated = 2,
+    Exit = 2,
 }
 
 impl From<u32> for ActorState {
@@ -34,7 +34,7 @@ impl From<u32> for ActorState {
         match actor_state_u32 {
             0 => ActorState::Running,
             1 => ActorState::Paused,
-            2 => ActorState::Terminated,
+            2 => ActorState::Exit,
             _ => {
                 panic!(
                     "Found forbidden u32 value for ActorState `{}`. This should never happen.",
@@ -78,9 +78,8 @@ impl AtomicState {
         );
     }
 
-    pub fn terminate(&self) {
-        self.0
-            .store(ActorState::Terminated as u32, Ordering::Release);
+    pub fn exit(&self) {
+        self.0.store(ActorState::Exit as u32, Ordering::Release);
     }
 
     pub fn get_state(&self) -> ActorState {
@@ -95,7 +94,7 @@ mod tests {
     enum Operation {
         Pause,
         Resume,
-        Terminate,
+        Quit,
     }
 
     impl Operation {
@@ -105,7 +104,7 @@ mod tests {
                     state.pause();
                 }
                 Operation::Resume => state.resume(),
-                Operation::Terminate => state.terminate(),
+                Operation::Quit => state.exit(),
             }
         }
     }
@@ -120,34 +119,14 @@ mod tests {
     fn test_atomic_state_from_running() {
         test_transition(ActorState::Running, Operation::Pause, ActorState::Paused);
         test_transition(ActorState::Running, Operation::Resume, ActorState::Running);
-        test_transition(
-            ActorState::Running,
-            Operation::Terminate,
-            ActorState::Terminated,
-        );
+        test_transition(ActorState::Running, Operation::Quit, ActorState::Exit);
 
         test_transition(ActorState::Paused, Operation::Pause, ActorState::Paused);
         test_transition(ActorState::Paused, Operation::Resume, ActorState::Running);
-        test_transition(
-            ActorState::Paused,
-            Operation::Terminate,
-            ActorState::Terminated,
-        );
+        test_transition(ActorState::Paused, Operation::Quit, ActorState::Exit);
 
-        test_transition(
-            ActorState::Terminated,
-            Operation::Pause,
-            ActorState::Terminated,
-        );
-        test_transition(
-            ActorState::Terminated,
-            Operation::Resume,
-            ActorState::Terminated,
-        );
-        test_transition(
-            ActorState::Terminated,
-            Operation::Terminate,
-            ActorState::Terminated,
-        );
+        test_transition(ActorState::Exit, Operation::Pause, ActorState::Exit);
+        test_transition(ActorState::Exit, Operation::Resume, ActorState::Exit);
+        test_transition(ActorState::Exit, Operation::Quit, ActorState::Exit);
     }
 }

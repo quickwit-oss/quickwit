@@ -1,5 +1,3 @@
-use crate::models::Checkpoint;
-
 // Quickwit
 //  Copyright (C) 2021 Quickwit Inc.
 //

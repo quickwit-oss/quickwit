@@ -23,7 +23,7 @@ use crate::models::RawDocBatch;
 use async_trait::async_trait;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
-use quickwit_actors::ActorTermination;
+use quickwit_actors::ActorExitStatus;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
 use std::io;
@@ -75,7 +75,7 @@ impl AsyncActor for FileSource {
         &mut self,
         _message: Self::Message,
         ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorTermination> {
+    ) -> Result<(), ActorExitStatus> {
         let limit_num_bytes = self.file_position.num_bytes + BATCH_NUM_BYTES_THRESHOLD;
         let mut reached_eof = false;
         let mut raw_doc_batch = RawDocBatch::default();
@@ -85,7 +85,7 @@ impl AsyncActor for FileSource {
                 .file
                 .read_line(&mut doc_line)
                 .await
-                .map_err(|io_err: io::Error| ActorTermination::Failure(anyhow::anyhow!(io_err)))?;
+                .map_err(|io_err: io::Error| ActorExitStatus::Failure(anyhow::anyhow!(io_err)))?;
             if num_bytes == 0 {
                 reached_eof = true;
                 break;
@@ -101,7 +101,7 @@ impl AsyncActor for FileSource {
             info!("EOF");
             ctx.send_message(&self.sink, IndexerMessage::EndOfSource)
                 .await?;
-            return Err(ActorTermination::Finished);
+            return Err(ActorExitStatus::Success);
         }
         ctx.send_self_message(()).await?;
         Ok(())
@@ -122,8 +122,8 @@ mod tests {
         let file_source = FileSource::try_new(Path::new("data/test_corpus.json"), mailbox).await?;
         let (file_source_mailbox, file_source_handle) = universe.spawn(file_source);
         universe.send_message(&file_source_mailbox, ()).await?;
-        let (actor_termination, file_position) = file_source_handle.join().await?;
-        assert!(actor_termination.is_finished());
+        let (actor_termination, file_position) = file_source_handle.join().await;
+        assert!(actor_termination.is_success());
         assert_eq!(
             file_position,
             FilePosition {

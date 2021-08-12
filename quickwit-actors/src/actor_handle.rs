@@ -1,23 +1,39 @@
+/*
+ * Copyright (C) 2021 Quickwit Inc.
+ *
+ * Quickwit is offered under the AGPL v3.0 and as commercial software.
+ * For commercial licensing, contact us at hello@quickwit.io.
+ *
+ * AGPL:
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 use crate::actor_state::ActorState;
 use crate::channel_with_priority::Priority;
 use crate::mailbox::Command;
 use crate::observation::ObservationType;
-use crate::{Actor, ActorContext, ActorTermination, Observation};
+use crate::{Actor, ActorContext, ActorExitStatus, Observation};
 use std::fmt;
 use tokio::sync::{oneshot, watch};
-use tokio::task::{JoinError, JoinHandle};
+use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tracing::error;
 
 /// An Actor Handle serves as an address to communicate with an actor.
-///
-/// It is lightweight to clone it.
-/// If all actor handles are dropped, the actor does not die right away.
-/// It will process all of the message in its mailbox before being terminated.
 pub struct ActorHandle<A: Actor> {
     actor_context: ActorContext<A>,
     last_state: watch::Receiver<A::ObservableState>,
-    join_handle: JoinHandle<ActorTermination>,
+    join_handle: JoinHandle<ActorExitStatus>,
 }
 
 impl<A: Actor> fmt::Debug for ActorHandle<A> {
@@ -32,7 +48,7 @@ impl<A: Actor> fmt::Debug for ActorHandle<A> {
 impl<A: Actor> ActorHandle<A> {
     pub(crate) fn new(
         last_state: watch::Receiver<A::ObservableState>,
-        join_handle: JoinHandle<ActorTermination>,
+        join_handle: JoinHandle<ActorExitStatus>,
         ctx: ActorContext<A>,
     ) -> Self {
         let mut interval = tokio::time::interval(crate::HEARTBEAT);
@@ -42,8 +58,8 @@ impl<A: Actor> ActorHandle<A> {
             interval.tick().await;
             while ctx.kill_switch().is_alive() {
                 interval.tick().await;
-                if !ctx.progress().harvest_changes() {
-                    if ctx.get_state() == ActorState::Terminated {
+                if !ctx.progress().registered_activity_since_last_call() {
+                    if ctx.get_state() == ActorState::Exit {
                         return;
                     }
                     error!(actor=%ctx.actor_instance_id(), "actor-timeout");
@@ -69,7 +85,6 @@ impl<A: Actor> ActorHandle<A> {
     /// prefer using the `.observe()` method.
     ///
     /// This method timeout if reaching the end of the message takes more than an HEARTBEAT.
-    /// Hence, it is only useful or unit tests.
     pub async fn process_pending_and_observe(&self) -> Observation<A::ObservableState> {
         let (tx, rx) = oneshot::channel();
         if self
@@ -86,34 +101,42 @@ impl<A: Actor> ActorHandle<A> {
         let observable_state_res = tokio::time::timeout(crate::HEARTBEAT, rx).await;
         let state = self.last_observation();
         let obs_type = match observable_state_res {
-            Ok(Ok(_)) => ObservationType::Success,
-            Ok(Err(_)) => ObservationType::LastStateAfterActorTerminated,
+            Ok(Ok(_)) => ObservationType::Alive,
+            Ok(Err(_)) => ObservationType::PostMortem,
             Err(_) => ObservationType::Timeout,
         };
         Observation { obs_type, state }
     }
 
-    /// Terminates the actor, regardless of whether there are pending messages or not.
-    pub async fn finish(&self) {
+    /// Gracefully quit the actor, regardless of whether there are pending messages or not.
+    /// Its finalize function will be called.
+    pub async fn quit(&self) {
         let (tx, rx) = oneshot::channel();
         let _ = self
             .actor_context
             .mailbox()
-            .send_command(Command::Terminate(tx))
+            .send_command(Command::Quit(tx))
             .await;
         let _ = rx.await;
     }
 
-    pub async fn join(self) -> Result<(ActorTermination, A::ObservableState), JoinError> {
-        let termination = self.join_handle.await?;
+    /// Waits until the actor exits.
+    pub async fn join(self) -> (ActorExitStatus, A::ObservableState) {
+        let exit_status = self.join_handle.await.unwrap_or_else(|join_err| {
+            if join_err.is_panic() {
+                ActorExitStatus::Panicked
+            } else {
+                ActorExitStatus::Killed
+            }
+        });
         let observation = self.last_state.borrow().clone();
-        Ok((termination, observation))
+        (exit_status, observation)
     }
 
     /// Observe the current state.
     ///
-    /// If a message is currently being processed, the observation will be
-    /// after its processing has finished.
+    /// The observation will be scheduled as a command message, therefore it will be executed
+    /// after the current active message and the current command queue have been processed.
     pub async fn observe(&self) -> Observation<A::ObservableState> {
         let (tx, rx) = oneshot::channel();
         if self
@@ -128,8 +151,8 @@ impl<A: Actor> ActorHandle<A> {
         let observable_state_or_timeout = timeout(crate::HEARTBEAT, rx).await;
         let state = self.last_observation();
         let obs_type = match observable_state_or_timeout {
-            Ok(Ok(())) => ObservationType::Success,
-            Ok(Err(_)) => ObservationType::LastStateAfterActorTerminated,
+            Ok(Ok(())) => ObservationType::Alive,
+            Ok(Err(_)) => ObservationType::PostMortem,
             Err(_) => ObservationType::Timeout,
         };
         Observation { obs_type, state }

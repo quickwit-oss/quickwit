@@ -1,8 +1,28 @@
+/*
+ * Copyright (C) 2021 Quickwit Inc.
+ *
+ * Quickwit is offered under the AGPL v3.0 and as commercial software.
+ * For commercial licensing, contact us at hello@quickwit.io.
+ *
+ * AGPL:
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 use crate::mailbox::Command;
 use crate::observation::ObservationType;
 use crate::Actor;
 use crate::Universe;
-use crate::{ActorContext, ActorTermination, AsyncActor, Mailbox, Observation, SyncActor};
+use crate::{ActorContext, ActorExitStatus, AsyncActor, Mailbox, Observation, SyncActor};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -35,7 +55,7 @@ impl SyncActor for PingReceiverSyncActor {
         &mut self,
         _message: Self::Message,
         _ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorTermination> {
+    ) -> Result<(), ActorExitStatus> {
         self.ping_count += 1;
         Ok(())
     }
@@ -67,7 +87,7 @@ impl AsyncActor for PingReceiverAsyncActor {
         &mut self,
         _message: Self::Message,
         _progress: &ActorContext<Self>,
-    ) -> Result<(), ActorTermination> {
+    ) -> Result<(), ActorExitStatus> {
         self.ping_count += 1;
         Ok(())
     }
@@ -112,7 +132,7 @@ impl AsyncActor for PingerAsyncSenderActor {
         &mut self,
         message: SenderMessage,
         _ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorTermination> {
+    ) -> Result<(), ActorExitStatus> {
         match message {
             SenderMessage::AddPeer(peer) => {
                 self.peers.insert(peer);
@@ -139,7 +159,7 @@ async fn test_ping_actor() {
     assert_eq!(
         ping_recv_handle.observe().await,
         Observation {
-            obs_type: ObservationType::Success,
+            obs_type: ObservationType::Alive,
             state: 0
         }
     );
@@ -156,7 +176,7 @@ async fn test_ping_actor() {
     assert_eq!(
         ping_sender_handle.process_pending_and_observe().await,
         Observation {
-            obs_type: ObservationType::Success,
+            obs_type: ObservationType::Alive,
             state: SenderState {
                 num_peers: 1,
                 count: 1
@@ -174,7 +194,7 @@ async fn test_ping_actor() {
     assert_eq!(
         ping_sender_handle.process_pending_and_observe().await,
         Observation {
-            obs_type: ObservationType::Success,
+            obs_type: ObservationType::Alive,
             state: SenderState {
                 num_peers: 1,
                 count: 3
@@ -184,7 +204,7 @@ async fn test_ping_actor() {
     assert_eq!(
         ping_recv_handle.process_pending_and_observe().await,
         Observation {
-            obs_type: ObservationType::Success,
+            obs_type: ObservationType::Alive,
             state: 2
         }
     );
@@ -192,14 +212,14 @@ async fn test_ping_actor() {
     assert_eq!(
         ping_recv_handle.process_pending_and_observe().await,
         Observation {
-            obs_type: ObservationType::LastStateAfterActorTerminated,
+            obs_type: ObservationType::PostMortem,
             state: 2,
         }
     );
     assert_eq!(
         ping_sender_handle.process_pending_and_observe().await,
         Observation {
-            obs_type: ObservationType::LastStateAfterActorTerminated,
+            obs_type: ObservationType::PostMortem,
             state: SenderState {
                 num_peers: 1,
                 count: 3
@@ -239,7 +259,7 @@ impl AsyncActor for BuggyActor {
         &mut self,
         message: BuggyMessage,
         ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorTermination> {
+    ) -> Result<(), ActorExitStatus> {
         match message {
             BuggyMessage::Block => {
                 while ctx.kill_switch().is_alive() {
@@ -260,7 +280,7 @@ async fn test_timeouting_actor() {
     let buggy_mailbox = buggy_mailbox;
     assert_eq!(
         buggy_handle.observe().await.obs_type,
-        ObservationType::Success
+        ObservationType::Alive
     );
     assert!(buggy_mailbox
         .send_message(BuggyMessage::DoNothing)
@@ -268,7 +288,7 @@ async fn test_timeouting_actor() {
         .is_ok());
     assert_eq!(
         buggy_handle.observe().await.obs_type,
-        ObservationType::Success
+        ObservationType::Alive
     );
     assert!(buggy_mailbox
         .send_message(BuggyMessage::Block)
@@ -285,7 +305,7 @@ async fn test_timeouting_actor() {
     tokio::time::sleep(crate::HEARTBEAT).await;
     assert_eq!(
         buggy_handle.observe().await.obs_type,
-        ObservationType::LastStateAfterActorTerminated
+        ObservationType::PostMortem
     );
 }
 
@@ -355,7 +375,7 @@ impl AsyncActor for LoopingActor {
         &mut self,
         message: Self::Message,
         _ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorTermination> {
+    ) -> Result<(), ActorExitStatus> {
         match message {
             Msg::Looping => {
                 self.default_count += 1;
@@ -373,7 +393,7 @@ impl SyncActor for LoopingActor {
         &mut self,
         message: Self::Message,
         ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorTermination> {
+    ) -> Result<(), ActorExitStatus> {
         match message {
             Msg::Looping => {
                 self.default_count += 1;
@@ -405,7 +425,7 @@ async fn test_default_message_async() -> anyhow::Result<()> {
         .process_pending_and_observe()
         .await
         .state;
-    actor_with_default_msg_handle.finish().await;
+    actor_with_default_msg_handle.quit().await;
     assert_eq!(state.normal_count, 1);
     assert!(state.default_count > 0);
     Ok(())
@@ -430,7 +450,7 @@ async fn test_default_message_sync() -> anyhow::Result<()> {
         .process_pending_and_observe()
         .await
         .state;
-    actor_with_default_msg_handle.finish().await;
+    actor_with_default_msg_handle.quit().await;
     assert_eq!(state.normal_count, 1);
     assert!(state.default_count > 1);
     Ok(())

@@ -137,7 +137,7 @@ impl AsyncActor for Scheduler {
         &mut self,
         message: SchedulerMessage,
         ctx: &crate::ActorContext<Self>,
-    ) -> Result<(), crate::ActorTermination> {
+    ) -> Result<(), crate::ActorExitStatus> {
         match message {
             SchedulerMessage::ScheduleEvent { timeout, callback } => {
                 self.process_schedule_event(timeout, callback, ctx).await;
@@ -328,7 +328,7 @@ mod tests {
             }
         );
         assert!(cb_called.load(Ordering::SeqCst));
-        scheduler_handler.finish().await;
+        scheduler_handler.quit().await;
     }
 
     #[tokio::test]
@@ -414,6 +414,6 @@ mod tests {
                 num_pending_events: 0
             }
         );
-        scheduler_handler.finish().await;
+        scheduler_handler.quit().await;
     }
 }
