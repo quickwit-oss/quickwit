@@ -292,7 +292,8 @@ impl Indexer {
         } else {
             ScratchDirectory::try_new_temp()?
         };
-        let timestamp_field_opt = index_config.timestamp_field();
+        let schema = index_config.schema();
+        let timestamp_field_opt = index_config.timestamp_field(&schema);
         Ok(Indexer {
             immutable_state: ImmutableState {
                 index_id,
