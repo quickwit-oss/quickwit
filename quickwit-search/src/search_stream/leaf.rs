@@ -45,7 +45,6 @@ pub async fn leaf_search_stream(
     request: &SearchStreamRequest,
     split_ids: Vec<String>,
     storage: Arc<dyn Storage>,
-    output_format: OutputFormat,
 ) -> UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>> {
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
     for split_id in split_ids {
@@ -55,14 +54,10 @@ pub async fn leaf_search_stream(
         let result_sender_clone = result_sender.clone();
         let request_clone = request.clone();
         tokio::spawn(async move {
-            let leaf_split_result = leaf_search_stream_single_split(
-                index_config_clone,
-                &request_clone,
-                split_storage,
-                output_format,
-            )
-            .await
-            .map_err(SearchError::convert_to_tonic_status);
+            let leaf_split_result =
+                leaf_search_stream_single_split(index_config_clone, &request_clone, split_storage)
+                    .await
+                    .map_err(SearchError::convert_to_tonic_status);
             result_sender_clone.send(leaf_split_result).map_err(|_| {
                 SearchError::InternalError(format!(
                     "Unable to send leaf export result for split `{}`",
@@ -80,7 +75,6 @@ async fn leaf_search_stream_single_split(
     index_config: Box<dyn IndexConfig>,
     stream_request: &SearchStreamRequest,
     storage: Arc<dyn Storage>,
-    output_format: OutputFormat,
 ) -> crate::Result<LeafSearchStreamResult> {
     let index = open_index(storage).await?;
     let split_schema = index.schema();
@@ -103,6 +97,9 @@ async fn leaf_search_stream_single_split(
         stream_request.end_timestamp,
     )?;
 
+    let output_format = OutputFormat::from_i32(stream_request.output_format).ok_or_else(|| {
+        SearchError::InternalError("Invalid output format specified.".to_string())
+    })?;
     let search_request = SearchRequest::from(stream_request.clone());
     let query = index_config.query(split_schema, &search_request)?;
 

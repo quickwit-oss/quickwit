@@ -214,14 +214,8 @@ impl SearchService for SearchServiceImpl {
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let split_ids = leaf_stream_request.split_ids;
         let index_config = index_metadata.index_config;
-        let leaf_receiver = leaf_search_stream(
-            index_config,
-            &stream_request,
-            split_ids,
-            storage.clone(),
-            stream_request.output_format(),
-        )
-        .await;
+        let leaf_receiver =
+            leaf_search_stream(index_config, &stream_request, split_ids, storage.clone()).await;
         Ok(leaf_receiver)
     }
 }
