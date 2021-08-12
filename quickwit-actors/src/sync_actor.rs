@@ -4,9 +4,9 @@ use tracing::{debug, error, info};
 
 use crate::actor::ActorTermination;
 use crate::actor_state::ActorState;
-use crate::mailbox::{create_mailbox, Command, Inbox};
+use crate::mailbox::{create_mailbox, Command, Inbox, ReceptionResult};
 use crate::scheduler::SchedulerMessage;
-use crate::{Actor, ActorContext, ActorHandle, KillSwitch, Mailbox, ReceptionResult};
+use crate::{Actor, ActorContext, ActorHandle, KillSwitch, Mailbox};
 
 /// An sync actor is executed on a tokio blocking task.
 ///

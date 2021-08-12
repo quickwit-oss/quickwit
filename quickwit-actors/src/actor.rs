@@ -84,16 +84,14 @@ pub trait Actor: Send + Sync + 'static {
     fn name(&self) -> String {
         type_name::<Self>().to_string()
     }
-/// Actor mailbox queue capacity. It is set when the actor is spawned.
+    /// Actor mailbox queue capacity. It is set when the actor is spawned.
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Unbounded
     }
 
     /// Extracts an observable state. Useful for unit test, and admin UI.
     ///
-    /// This function should return fast, but it is not called after receiving
-    /// single message. Snapshotting happens when the actor is terminated, or
-    /// in an on demand fashion by calling `ActorHandle::observe()`.
+    /// This function should return fast.
     fn observable_state(&self) -> Self::ObservableState;
 }
 
@@ -174,6 +172,7 @@ impl<A: Actor> ActorContext<A> {
     pub(crate) fn progress(&self) -> &Progress {
         &self.progress
     }
+
     /// Records some progress.
     /// This function is only useful when implementing actors that may take more than
     /// `HEARTBEAT` to process a single message.
@@ -220,13 +219,16 @@ impl<A: SyncActor> ActorContext<A> {
     }
 
     /// Sends a message to itself.
+    ///
     /// Since it is very easy to deadlock an actor, the behavior is quite
     /// different from `send_message_blocking`.
     ///
-    /// The method not
+    /// If the message queue does not have the capacity to accept the message,
+    /// instead of blocking forever, we return an error right away.
     pub fn send_self_message_blocking(&self, msg: A::Message) -> Result<(), crate::SendError> {
         debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
         self.self_mailbox
+            .inner
             .tx
             .try_send(ActorMessage::Message(msg))
             .map_err(|_| crate::SendError::WouldDeadlock)?;

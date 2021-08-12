@@ -30,11 +30,17 @@ pub enum ActorState {
 }
 
 impl From<u32> for ActorState {
-    fn from(actor_u32: u32) -> Self {
-        match actor_u32 {
+    fn from(actor_state_u32: u32) -> Self {
+        match actor_state_u32 {
             0 => ActorState::Running,
             1 => ActorState::Paused,
-            _ => ActorState::Terminated,
+            2 => ActorState::Terminated,
+            _ => {
+                panic!(
+                    "Found forbidden u32 value for ActorState `{}`. This should never happen.",
+                    actor_state_u32
+                );
+            }
         }
     }
 }

@@ -1,9 +1,10 @@
 use crate::actor::ActorTermination;
 use crate::actor_handle::ActorHandle;
 use crate::actor_state::ActorState;
+use crate::mailbox::ReceptionResult;
 use crate::mailbox::{create_mailbox, Command, Inbox};
 use crate::scheduler::SchedulerMessage;
-use crate::{Actor, ActorContext, KillSwitch, Mailbox, ReceptionResult};
+use crate::{Actor, ActorContext, KillSwitch, Mailbox};
 use anyhow::Context;
 use async_trait::async_trait;
 use tokio::sync::watch::{self, Sender};

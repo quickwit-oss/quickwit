@@ -3,20 +3,16 @@ use crate::mailbox::Command;
 use crate::observation::ObservationType;
 use crate::{Actor, ActorContext, ActorTermination, Observation};
 use std::fmt;
-/// An Actor Handle serves as an address to communicate with an actor.
-///
-/// It is lightweight to clone it.
-/// If all actor handles are dropped, the actor does not die right away.
-/// It will process all of the message in its mailbox before being terminated.
-///
-/// Because `ActorHandle`'s generic types are Message and Observable, as opposed
-/// to the actor type, `ActorHandle` are interchangeable.
-/// It makes it possible to plug different implementations, have actor proxy etc.
 use tokio::sync::{oneshot, watch};
 use tokio::task::{JoinError, JoinHandle};
 use tokio::time::timeout;
 use tracing::error;
 
+/// An Actor Handle serves as an address to communicate with an actor.
+///
+/// It is lightweight to clone it.
+/// If all actor handles are dropped, the actor does not die right away.
+/// It will process all of the message in its mailbox before being terminated.
 pub struct ActorHandle<A: Actor> {
     actor_context: ActorContext<A>,
     last_state: watch::Receiver<A::ObservableState>,
@@ -84,7 +80,7 @@ impl<A: Actor> ActorHandle<A> {
         {
             error!("Failed to send message");
         }
-        // TODO The timeout is required here. If the actor fails, the inbox is properly dropped but the send channel might actually
+        // The timeout is required here. If the actor fails, its inbox is properly dropped but the send channel might actually
         // prevent the onechannel Receiver from being dropped.
         let observable_state_res = tokio::time::timeout(crate::HEARTBEAT, rx).await;
         let state = self.last_observation();
@@ -133,12 +129,7 @@ impl<A: Actor> ActorHandle<A> {
         let obs_type = match observable_state_or_timeout {
             Ok(Ok(())) => ObservationType::Success,
             Ok(Err(_)) => ObservationType::LastStateAfterActorTerminated,
-            Err(_) => ObservationType::Timeout, // if self.actor_context.kill_switch().is_alive() {
-                                                //     Observation::Timeout(state)
-                                                // } else {
-                                                //     self.join_handle.abort();
-                                                //     ObservationType::LastStateAfterActorTerminated
-                                                // }
+            Err(_) => ObservationType::Timeout,
         };
         Observation { obs_type, state }
     }
