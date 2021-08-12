@@ -41,6 +41,7 @@ impl<A: Actor> ActorHandle<A> {
         let actor_instance_name = ctx.actor_instance_name().to_string();
         let ctx_clone = ctx.clone();
         tokio::task::spawn(async move {
+            // TODO have proper supervision.
             interval.tick().await;
             while ctx.kill_switch().is_alive() {
                 interval.tick().await;
@@ -99,7 +100,7 @@ impl<A: Actor> ActorHandle<A> {
         let _ = self
             .actor_context
             .mailbox()
-            .send_command(Command::Stop(tx))
+            .send_command(Command::Terminate(tx))
             .await;
         let _ = rx.await;
     }

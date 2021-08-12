@@ -233,7 +233,7 @@ impl<A: SyncActor> ActorContext<A> {
     pub fn send_self_message_blocking(&self, msg: A::Message) -> Result<(), crate::SendError> {
         debug!(self=%self.self_mailbox.actor_instance_name(), msg=?msg, "self_send");
         self.self_mailbox
-            .sender
+            .tx
             .try_send(ActorMessage::Message(msg))
             .map_err(|_| crate::SendError::WouldDeadlock)?;
         Ok(())
@@ -241,7 +241,7 @@ impl<A: SyncActor> ActorContext<A> {
 
     pub fn schedule_self_msg_blocking(&self, after_duration: Duration, msg: A::Message) {
         let self_mailbox = self.inner.self_mailbox.clone();
-        let cmd_schedule_msg = Command::ScheduledMessage(msg);
+        let cmd_schedule_msg = Command::HighPriorityMessage(msg);
         let scheduler_msg = SchedulerMessage::ScheduleEvent {
             timeout: after_duration,
             callback: Callback(Box::pin(async move {
@@ -272,7 +272,7 @@ impl<A: AsyncActor> ActorContext<A> {
 
     pub async fn schedule_self_msg(&self, after_duration: Duration, msg: A::Message) {
         let self_mailbox = self.inner.self_mailbox.clone();
-        let cmd_schedule_msg = Command::ScheduledMessage(msg);
+        let cmd_schedule_msg = Command::HighPriorityMessage(msg);
         let callback = Callback(Box::pin(async move {
             let _ = self_mailbox.send_command(cmd_schedule_msg).await;
         }));
