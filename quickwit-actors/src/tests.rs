@@ -246,6 +246,9 @@ async fn test_timeouting_actor() {
         .send_message(BuggyMessage::Block)
         .await
         .is_ok());
+    // We sleep here to make sure the block message is not executed after the observe command
+    // due to priority rules.
+    tokio::time::sleep(Duration::from_millis(10)).await;
     assert_eq!(buggy_handle.observe().await, Observation::Timeout(()));
     tokio::time::sleep(crate::HEARTBEAT).await;
     tokio::time::sleep(crate::HEARTBEAT).await;
@@ -267,7 +270,7 @@ async fn test_pause_sync_actor() {
     assert!(first_state < 1000);
     let second_state = *ping_handle.observe().await.state();
     assert_eq!(first_state, second_state);
-    assert!(ping_mailbox.send_command(Command::Start).await.is_ok());
+    assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
     let end_state = *ping_handle.process_pending_and_observe().await.state();
     assert_eq!(end_state, 1000);
 }
@@ -285,7 +288,7 @@ async fn test_pause_async_actor() {
     assert!(first_state < 1000);
     let second_state = *ping_handle.observe().await.state();
     assert_eq!(first_state, second_state);
-    assert!(ping_mailbox.send_command(Command::Start).await.is_ok());
+    assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
     let end_state = *ping_handle.process_pending_and_observe().await.state();
     assert_eq!(end_state, 1000);
 }

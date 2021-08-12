@@ -99,7 +99,8 @@ impl AsyncActor for FileSource {
         }
         if reached_eof {
             info!("EOF");
-            ctx.send_message(&self.sink, IndexerMessage::EndOfSource).await?;
+            ctx.send_message(&self.sink, IndexerMessage::EndOfSource)
+                .await?;
             return Err(ActorTermination::Finished);
         }
         ctx.send_self_message(()).await?;

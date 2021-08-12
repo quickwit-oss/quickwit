@@ -77,7 +77,7 @@ pub(crate) fn spawn_sync_actor<A: SyncActor>(
 /// If some `ActorTermination` is returned, the actor will stop permanently.
 fn process_msg<A: Actor + SyncActor>(
     actor: &mut A,
-    inbox: &Inbox<A::Message>,
+    inbox: &mut Inbox<A::Message>,
     ctx: &mut ActorContext<A>,
     state_tx: &Sender<A::ObservableState>,
 ) -> Option<ActorTermination> {
@@ -100,11 +100,11 @@ fn process_msg<A: Actor + SyncActor>(
                     ctx.pause();
                     None
                 }
-                Command::Stop(cb) => {
+                Command::Terminate(cb) => {
                     let _ = cb.send(());
                     Some(ActorTermination::OnDemand)
                 }
-                Command::Start => {
+                Command::Resume => {
                     ctx.resume();
                     None
                 }
@@ -116,7 +116,7 @@ fn process_msg<A: Actor + SyncActor>(
                     let _ = cb.send(());
                     None
                 }
-                Command::ScheduledMessage(msg) => {
+                Command::HighPriorityMessage(msg) => {
                     debug!(msg=?msg, actor=%actor.name(),"message-received");
                     actor.process_message(msg, &ctx).err()
                 }
@@ -126,7 +126,7 @@ fn process_msg<A: Actor + SyncActor>(
             debug!(msg=?msg, actor=%actor.name(),"message-received");
             actor.process_message(msg, &ctx).err()
         }
-        ReceptionResult::None => {
+        ReceptionResult::Timeout => {
             if ctx.mailbox().is_last_mailbox() {
                 Some(ActorTermination::Finished)
             } else {
@@ -139,7 +139,7 @@ fn process_msg<A: Actor + SyncActor>(
 
 fn sync_actor_loop<A: SyncActor>(
     mut actor: A,
-    inbox: Inbox<A::Message>,
+    mut inbox: Inbox<A::Message>,
     mut ctx: ActorContext<A>,
     state_tx: Sender<A::ObservableState>,
 ) -> ActorTermination {
@@ -148,7 +148,7 @@ fn sync_actor_loop<A: SyncActor>(
         if let Some(termination) = termination_opt {
             break termination;
         }
-        termination_opt = process_msg(&mut actor, &inbox, &mut ctx, &state_tx);
+        termination_opt = process_msg(&mut actor, &mut inbox, &mut ctx, &state_tx);
     };
     ctx.terminate(&termination);
     if let Err(error) = actor.finalize(&termination, &ctx) {
