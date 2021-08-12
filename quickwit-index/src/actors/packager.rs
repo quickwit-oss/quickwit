@@ -198,7 +198,7 @@ fn create_packaged_split(
         num_docs,
         segment_ids,
         time_range: split.time_range.clone(),
-        size_in_bytes: split.size_in_bytes,
+        size_in_bytes: split.docs_size_in_bytes,
         files_to_upload,
     };
     Ok(packaged_split)
@@ -280,7 +280,7 @@ mod tests {
             index_id: "test-index".to_string(),
             time_range: timerange_opt,
             num_docs,
-            size_in_bytes: num_docs * 15, //< bogus number
+            docs_size_in_bytes: num_docs * 15, //< bogus number
             start_time: Instant::now(),
             index,
             index_writer,
