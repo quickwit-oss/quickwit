@@ -87,7 +87,7 @@ pub(crate) struct Inner<Message> {
 /// They are similar to UNIX signals.
 ///
 /// They are treated with a higher priority than regular actor messages.
-pub enum Command {
+pub(crate) enum Command {
     /// Temporarily pauses the actor. A paused actor only checks
     /// on its command channel and still shows "progress". It appears as
     /// healthy to the supervisor.
@@ -204,7 +204,7 @@ impl<Message> Mailbox<Message> {
         self.send_with_priority_blocking(CommandOrMessage::Message(msg), Priority::Low)
     }
 
-    pub async fn send_command(&self, command: Command) -> Result<(), SendError> {
+    pub(crate) async fn send_command(&self, command: Command) -> Result<(), SendError> {
         self.send_with_priority(command.into(), Priority::High)
             .await
     }

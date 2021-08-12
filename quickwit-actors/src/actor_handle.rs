@@ -102,6 +102,36 @@ impl<A: Actor> ActorHandle<A> {
         self.wait_for_observable_state_callback(rx).await
     }
 
+    /// Pauses the actor. The actor will stop processing the message, but its
+    /// work can be resumed by calling the method `.resume()`.
+    pub async fn pause(&self) {
+        let _ = self
+            .actor_context
+            .mailbox()
+            .send_command(Command::Pause)
+            .await;
+    }
+
+    /// Resumes a paused actor.
+    pub async fn resume(&self) {
+        let _ = self
+            .actor_context
+            .mailbox()
+            .send_command(Command::Resume)
+            .await;
+    }
+
+    /// Kills the actor. Its finalize function will still be called.
+    pub async fn kill(&self) {
+        let (tx, rx) = oneshot::channel();
+        let _ = self
+            .actor_context
+            .mailbox()
+            .send_command(Command::Kill(tx))
+            .await;
+        let _ = rx.await;
+    }
+
     /// Gracefully quit the actor, regardless of whether there are pending messages or not.
     /// Its finalize function will be called.
     pub async fn quit(&self) {
