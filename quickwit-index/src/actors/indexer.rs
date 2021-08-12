@@ -32,6 +32,7 @@ use quickwit_actors::SendError;
 use quickwit_actors::SyncActor;
 use quickwit_index_config::IndexConfig;
 use tantivy::schema::Field;
+use tantivy::schema::Value;
 use tantivy::Document;
 use tracing::info;
 use tracing::warn;
@@ -44,9 +45,25 @@ use crate::models::ScratchDirectory;
 
 #[derive(Clone, Default, Debug)]
 pub struct IndexerCounters {
+    /// Overall number of documents received, partitionned
+    /// into 3 categories:
+    /// - number docs that did not parse correctly.
+    /// - number docs missing a timestamp (if the index has no timestamp,
+    /// then this counter is 0)
+    /// - number of valid docs.
     pub num_parse_errors: u64,
-    pub num_docs: u64,
+    pub num_missing_timestamp: u64,
+    pub num_valid_docs: u64,
+
+    /// Number of (valid) documents in the current split.
+    /// This value is used to trigger commit and for observation.
     pub num_docs_in_split: u64,
+
+    /// Number of bytes that went through the indexer
+    /// during its entire lifetime.
+    ///
+    /// Includes both valid and invalid documents.
+    pub overall_num_bytes: u64,
 }
 
 struct ImmutableState {
@@ -56,6 +73,15 @@ struct ImmutableState {
     // splits index writer will write in TempDir within this directory
     indexing_scratch_directory: ScratchDirectory,
     timestamp_field_opt: Option<Field>,
+}
+
+enum PrepareDocumentOutcome {
+    ParsingError,
+    MissingTimestamp,
+    Document {
+        document: Document,
+        timestamp_opt: Option<i64>,
+    },
 }
 
 impl ImmutableState {
@@ -92,16 +118,37 @@ impl ImmutableState {
         Ok(current_index_split)
     }
 
-    fn parse_doc(&self, doc_json: &str, counters: &mut IndexerCounters) -> Option<Document> {
+    fn prepare_document(&self, doc_json: &str) -> PrepareDocumentOutcome {
+        // Parse the document
         let doc_parsing_result = self.index_config.doc_from_json(doc_json);
-        match doc_parsing_result {
-            Ok(doc) => Some(doc),
+        let document = match doc_parsing_result {
+            Ok(doc) => doc,
             Err(doc_parsing_error) => {
-                // TODO we should at least keep track of the number of parse error.
                 warn!(err=?doc_parsing_error);
-                counters.num_parse_errors += 1;
-                None
+                return PrepareDocumentOutcome::ParsingError;
             }
+        };
+        // Extract timestamp if necessary
+        let timestamp_field = if let Some(timestamp_field) = self.timestamp_field_opt {
+            timestamp_field
+        } else {
+            // No need to check the timestamp, there are no timestamp.
+            return PrepareDocumentOutcome::Document {
+                document,
+                timestamp_opt: None,
+            };
+        };
+        let timestamp_opt = document
+            .get_first(timestamp_field)
+            .and_then(Value::i64_value);
+        let timestamp = if let Some(timestamp) = timestamp_opt {
+            timestamp
+        } else {
+            return PrepareDocumentOutcome::MissingTimestamp;
+        };
+        PrepareDocumentOutcome::Document {
+            document,
+            timestamp_opt: Some(timestamp),
         }
     }
 
@@ -114,20 +161,28 @@ impl ImmutableState {
     ) -> Result<(), ActorExitStatus> {
         let indexed_split = self.get_or_create_current_indexed_split(current_split_opt, ctx)?;
         for doc_json in batch.docs {
-            indexed_split.size_in_bytes += doc_json.len() as u64;
-            let doc = if let Some(doc) = self.parse_doc(&doc_json, counters) {
-                doc
-            } else {
-                continue;
-            };
-            if let Some(timestamp) = extract_timestamp_if_any(&doc, self.timestamp_field_opt) {
-                record_timestamp(timestamp, &mut indexed_split.time_range);
+            counters.overall_num_bytes += doc_json.len() as u64;
+            indexed_split.docs_size_in_bytes += doc_json.len() as u64;
+            match self.prepare_document(&doc_json) {
+                PrepareDocumentOutcome::ParsingError => {
+                    counters.num_parse_errors += 1;
+                }
+                PrepareDocumentOutcome::MissingTimestamp => {
+                    counters.num_missing_timestamp += 1;
+                }
+                PrepareDocumentOutcome::Document {
+                    document,
+                    timestamp_opt,
+                } => {
+                    counters.num_docs_in_split += 1;
+                    counters.num_valid_docs += 1;
+                    if let Some(timestamp) = timestamp_opt {
+                        record_timestamp(timestamp, &mut indexed_split.time_range);
+                    }
+                    indexed_split.index_writer.add_document(document);
+                }
             }
-            indexed_split.index_writer.add_document(doc);
-            counters.num_docs += 1;
-            indexed_split.num_docs += 1;
         }
-        counters.num_docs_in_split = indexed_split.num_docs;
         Ok(())
     }
 }
@@ -151,12 +206,6 @@ impl Actor for Indexer {
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Bounded(10)
     }
-}
-
-fn extract_timestamp_if_any(doc: &Document, timestamp_field_opt: Option<Field>) -> Option<i64> {
-    let timestamp_field = timestamp_field_opt?;
-    let timestamp_value = doc.get_first(timestamp_field)?;
-    timestamp_value.i64_value()
 }
 
 fn record_timestamp(timestamp: i64, time_range: &mut Option<RangeInclusive<i64>>) {
@@ -350,7 +399,7 @@ mod tests {
             )
             .await?;
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
-        assert_eq!(indexer_counters.num_docs, 3);
+        assert_eq!(indexer_counters.num_valid_docs, 3);
         assert_eq!(indexer_counters.num_parse_errors, 1);
         let output_messages = inbox.drain_available_message_for_test();
         assert_eq!(output_messages.len(), 1);

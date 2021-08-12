@@ -35,11 +35,15 @@ pub struct IndexedSplit {
     pub index_id: String,
     pub time_range: Option<RangeInclusive<i64>>,
 
+    /// Number of valid documents in the split.
     pub num_docs: u64,
+
     // Sum of the size of the document that were sent to the indexed.
     // This includes both documents that are valid or documents that are
     // invalid.
-    pub size_in_bytes: u64,
+    pub docs_size_in_bytes: u64,
+
+    /// Instant of the instant of the first document in the split.
     pub start_time: Instant,
 
     pub index: tantivy::Index,
@@ -81,7 +85,7 @@ impl IndexedSplit {
             split_id,
             index_id,
             time_range: None,
-            size_in_bytes: 0,
+            docs_size_in_bytes: 0,
             num_docs: 0,
             start_time: Instant::now(),
             index,
