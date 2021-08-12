@@ -28,7 +28,7 @@ use crate::actors::Publisher;
 use crate::actors::Uploader;
 use crate::models::CommitPolicy;
 use quickwit_actors::Actor;
-use quickwit_actors::ActorTermination;
+use quickwit_actors::ActorExitStatus;
 use quickwit_actors::Universe;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
@@ -43,7 +43,7 @@ pub async fn spawn_indexing_pipeline(
     index_id: String,
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
-) -> anyhow::Result<(ActorTermination, <Publisher as Actor>::ObservableState)> {
+) -> anyhow::Result<(ActorExitStatus, <Publisher as Actor>::ObservableState)> {
     info!(index_id=%index_id, "start-indexing-pipeline");
     let index_metadata = metastore.index_metadata(&index_id).await?;
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
@@ -72,7 +72,7 @@ pub async fn spawn_indexing_pipeline(
     let (source_mailbox, _source_handle) = universe.spawn(source);
     let universe = Universe::new();
     universe.send_message(&source_mailbox, ()).await?;
-    let (actor_termination, observation) = publisher_handler.join().await?;
+    let (actor_termination, observation) = publisher_handler.join().await;
     Ok((actor_termination, observation))
 }
 
@@ -124,7 +124,7 @@ mod tests {
             Default::default(),
         )
         .await?;
-        assert!(publisher_termination.is_finished());
+        assert!(publisher_termination.is_success());
         assert_eq!(publisher_counters.num_published_splits, 1);
         Ok(())
     }

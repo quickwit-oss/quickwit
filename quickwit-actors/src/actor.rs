@@ -1,3 +1,23 @@
+//  Quickwit
+//  Copyright (C) 2021 Quickwit Inc.
+//
+//  Quickwit is offered under the AGPL v3.0 and as commercial software.
+//  For commercial licensing, contact us at hello@quickwit.io.
+//
+//  AGPL:
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Affero General Public License as
+//  published by the Free Software Foundation, either version 3 of the
+//  License, or (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU Affero General Public License for more details.
+//
+//  You should have received a copy of the GNU Affero General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 use std::fmt;
 use std::ops::Deref;
 use std::time::Duration;
@@ -11,56 +31,90 @@ use crate::mailbox::{Command, CommandOrMessage};
 use crate::scheduler::{Callback, SchedulerMessage};
 use crate::{
     actor_state::{ActorState, AtomicState},
-    progress::{Progress, ProtectZoneGuard},
+    progress::{Progress, ProtectedZoneGuard},
     AsyncActor, KillSwitch, Mailbox, QueueCapacity, SendError, SyncActor,
 };
 
+/// The actor exit status represents the outcome of the execution of an actor,
+/// after the end of the execution.
+///
+/// It is in many ways, similar to the exit status code of a program.
 #[derive(Error, Debug)]
-pub enum ActorTermination {
-    /// The actor was stopped upon reception of a Command.
-    #[error("On Demand")]
-    OnDemand,
+pub enum ActorExitStatus {
+    /// The actor successfully exited.
+    ///
+    /// It happens either because:
+    /// - all of the existing mailboxes were dropped and the actor message queue was exhausted.
+    /// No new message could ever arrive to the actor. (This exit is triggered by the framework.)
+    /// or
+    /// - the actor `process_message` method returned `Err(ExitStatusCode::Success)`.
+    /// (This exit is triggered by the actor implementer.)
+    ///
+    /// (This is equivalent to exit status code 0.)
+    /// Note this is not really an error.
+    #[error("Success")]
+    Success,
+
+    /// The actor was asked to gracefully shutdown.
+    ///
+    /// (Semantically equivalent to exit status code 130, triggered by SIGINT aka Ctrl-C, or SIGQUIT)
+    #[error("Quit")]
+    Quit,
+
     /// The actor tried to send a message to a dowstream actor and failed.
     /// The logic ruled that the actor should be killed.
-    #[error("Downstream actor closed connection")]
+    ///
+    /// (Semantically equivalent to exit status code 141, triggered by SIGPIPE)
+    #[error("Downstream actor exited.")]
     DownstreamClosed,
-    /// An unexpected error occured.
+
+    /// The actor was killed.
+    ///
+    /// It can happen because:
+    /// - it received `Command::Kill`.
+    /// - its kill switch was activated.
+    ///
+    /// (Semantically equivalent to exit status code 137, triggered by SIGKILL)
+    #[error("Killed")]
+    Killed,
+
+    /// An unexpected error happened while processing a message.
     #[error("Failure")]
     Failure(#[from] anyhow::Error),
-    /// The actor has reached a state where it will no longer send messages and terminated.
-    ///
-    /// It happens either because all of the existing mailboxes were dropped and
-    /// the actor message queue was exhausted, or because the actor
-    /// returned `Err(ActorTermination::Finished)` from its `process_msg` function.
-    #[error("Finished")]
-    Finished,
-    /// The actor was terminated due to its kill switch.
-    #[error("Actor stopped working as the killswitch was pushed by another actor.")]
-    KillSwitch,
+
+    /// The thread or the task executing the actor loop panicked.
+    #[error("Panicked")]
+    Panicked,
 }
 
-impl ActorTermination {
-    pub fn is_finished(&self) -> bool {
-        match self {
-            ActorTermination::Finished => true,
-            _ => false,
-        }
+impl ActorExitStatus {
+    pub fn is_success(&self) -> bool {
+        matches!(self, ActorExitStatus::Success)
     }
 
+    /// If an actor exits with a failure, its kill switch
+    /// will be activated, and all other actors under the same
+    /// kill switch will be killed.
+    ///
+    /// The semantic limit between a failure and not a failure here,
+    /// is that a failure is an unexpected exit.
+    /// It is not a success, and it was not triggered by an actual
+    /// command or the kill switch.
     pub fn is_failure(&self) -> bool {
         match self {
-            ActorTermination::OnDemand => false,
-            ActorTermination::DownstreamClosed => true,
-            ActorTermination::Failure(_) => true,
-            ActorTermination::Finished => false,
-            ActorTermination::KillSwitch => false,
+            ActorExitStatus::DownstreamClosed => true,
+            ActorExitStatus::Failure(_) => true,
+            ActorExitStatus::Panicked => true,
+            ActorExitStatus::Success => false,
+            ActorExitStatus::Quit => false,
+            ActorExitStatus::Killed => false,
         }
     }
 }
 
-impl From<SendError> for ActorTermination {
+impl From<SendError> for ActorExitStatus {
     fn from(_: SendError) -> Self {
-        ActorTermination::DownstreamClosed
+        ActorExitStatus::DownstreamClosed
     }
 }
 
@@ -85,7 +139,7 @@ pub trait Actor: Send + Sync + 'static {
     fn name(&self) -> String {
         type_name::<Self>().to_string()
     }
-    /// Actor mailbox queue capacity. It is set when the actor is spawned.
+    /// The Actor's incoming mailbox queue capacity. It is set when the actor is spawned.
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Unbounded
     }
@@ -148,7 +202,7 @@ impl<A: Actor> ActorContext<A> {
     }
 
     pub fn actor_instance_id(&self) -> &str {
-        &self.mailbox().actor_instance_id()
+        self.mailbox().actor_instance_id()
     }
 
     /// This function returns a guard that prevents any supervisor from identifying the
@@ -158,14 +212,15 @@ impl<A: Actor> ActorContext<A> {
     /// In an ideal world, you should never need to call this function.
     /// It is only useful in some corner like, like a calling a long blocking
     /// from an external library that you trust.
-    pub fn protect_zone(&self) -> ProtectZoneGuard {
+    pub fn protect_zone(&self) -> ProtectedZoneGuard {
         self.progress.protect_zone()
     }
 
     /// Gets a copy of the actor kill switch.
     /// This should rarely be used.
+    ///
     /// For instance, when quitting from the process_message function, prefer simply
-    /// returning `Error(ActorTermination::Failure(..))`
+    /// returning `Error(ActorExitStatus::Failure(..))`
     pub fn kill_switch(&self) -> &KillSwitch {
         &self.kill_switch
     }
@@ -195,11 +250,12 @@ impl<A: Actor> ActorContext<A> {
         self.actor_state.resume();
     }
 
-    pub(crate) fn terminate(&mut self, termination: &ActorTermination) {
-        if termination.is_failure() {
+    pub(crate) fn exit(&mut self, exit_status: &ActorExitStatus) {
+        if exit_status.is_failure() {
+            error!(actor=%self.actor_instance_id(), exit_status=%exit_status, "Failure");
             self.kill_switch().kill();
         }
-        self.actor_state.terminate();
+        self.actor_state.exit();
     }
 }
 
@@ -290,15 +346,19 @@ pub(crate) fn process_command<A: Actor>(
     command: Command,
     ctx: &mut ActorContext<A>,
     state_tx: &Sender<A::ObservableState>,
-) -> Option<ActorTermination> {
+) -> Option<ActorExitStatus> {
     match command {
         Command::Pause => {
             ctx.pause();
             None
         }
-        Command::Terminate(cb) => {
+        Command::Quit(cb) => {
             let _ = cb.send(());
-            Some(ActorTermination::OnDemand)
+            Some(ActorExitStatus::Quit)
+        }
+        Command::Kill(cb) => {
+            let _ = cb.send(());
+            Some(ActorExitStatus::Killed)
         }
         Command::Resume => {
             ctx.resume();

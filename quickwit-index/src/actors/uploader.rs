@@ -31,7 +31,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
-use quickwit_actors::ActorTermination;
+use quickwit_actors::ActorExitStatus;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
 use quickwit_actors::QueueCapacity;
@@ -50,7 +50,7 @@ pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 3;
 pub struct Uploader {
     metastore: Arc<dyn Metastore>,
     index_storage: Arc<dyn Storage>,
-    sink: Mailbox<Receiver<UploadedSplit>>,
+    publisher_mailbox: Mailbox<Receiver<UploadedSplit>>,
     concurrent_upload_permits: Semaphore,
 }
 
@@ -58,12 +58,12 @@ impl Uploader {
     pub fn new(
         metastore: Arc<dyn Metastore>,
         index_storage: Arc<dyn Storage>,
-        sink: Mailbox<Receiver<UploadedSplit>>,
+        publisher_mailbox: Mailbox<Receiver<UploadedSplit>>,
     ) -> Uploader {
         Uploader {
             metastore,
             index_storage,
-            sink,
+            publisher_mailbox,
             concurrent_upload_permits: Semaphore::new(MAX_CONCURRENT_SPLIT_UPLOAD),
         }
     }
@@ -74,6 +74,7 @@ impl Actor for Uploader {
 
     type ObservableState = ();
 
+    #[allow(clippy::unused_unit)]
     fn observable_state(&self) -> Self::ObservableState {
         ()
     }
@@ -193,13 +194,13 @@ impl AsyncActor for Uploader {
         &mut self,
         split: PackagedSplit,
         ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorTermination> {
+    ) -> Result<(), ActorExitStatus> {
         let (split_uploaded_tx, split_uploaded_rx) = tokio::sync::oneshot::channel();
 
         // We send the future to the publisher right away.
         // That way the publisher will process the uploaded split in order as opposed to
         // publishing in the order splits finish their uploading.
-        ctx.send_message(&self.sink, split_uploaded_rx).await?;
+        ctx.send_message(&self.publisher_mailbox, split_uploaded_rx).await?;
 
         // The permit will be added back manually to the semaphore the task after it is finished.
         let permit_guard = self.concurrent_upload_permits.acquire().await;
@@ -288,7 +289,7 @@ mod tests {
             .await?;
         assert_eq!(
             uploader_handle.process_pending_and_observe().await.obs_type,
-            ObservationType::Success
+            ObservationType::Alive
         );
         let publish_futures = inbox.drain_available_message_for_test();
         assert_eq!(publish_futures.len(), 1);

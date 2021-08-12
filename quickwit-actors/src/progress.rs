@@ -52,6 +52,7 @@ enum ProgressState {
     ProtectedZone(u32),
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<u32> for ProgressState {
     fn into(self) -> u32 {
         match self {
@@ -84,7 +85,7 @@ impl Progress {
             .fetch_max(ProgressState::Updated.into(), Ordering::Relaxed);
     }
 
-    pub fn protect_zone(&self) -> ProtectZoneGuard {
+    pub fn protect_zone(&self) -> ProtectedZoneGuard {
         loop {
             let previous_state: ProgressState = self.0.load(Ordering::SeqCst).into();
             let new_state = match previous_state {
@@ -101,7 +102,7 @@ impl Progress {
                 )
                 .is_ok()
             {
-                return ProtectZoneGuard(self.0.clone());
+                return ProtectedZoneGuard(self.0.clone());
             }
         }
     }
@@ -111,7 +112,7 @@ impl Progress {
     /// - Updated -> NoUpdate, returns true
     /// - NoUpdate -> Updated, returns true
     /// - ProtectedZone -> ProtectedZone, returns true
-    pub fn harvest_changes(&self) -> bool {
+    pub fn registered_activity_since_last_call(&self) -> bool {
         let previous_state: ProgressState = self
             .0
             .compare_exchange(
@@ -126,9 +127,9 @@ impl Progress {
     }
 }
 
-pub struct ProtectZoneGuard(Arc<AtomicU32>);
+pub struct ProtectedZoneGuard(Arc<AtomicU32>);
 
-impl Drop for ProtectZoneGuard {
+impl Drop for ProtectedZoneGuard {
     fn drop(&mut self) {
         let previous_state: ProgressState = self.0.fetch_sub(1, Ordering::SeqCst).into();
         assert!(matches!(previous_state, ProgressState::ProtectedZone(_)));
@@ -142,42 +143,42 @@ mod tests {
     #[test]
     fn test_progress() {
         let progress = Progress::default();
-        assert!(progress.harvest_changes());
+        assert!(progress.registered_activity_since_last_call());
         progress.record_progress();
-        assert!(progress.harvest_changes());
-        assert!(!progress.harvest_changes());
+        assert!(progress.registered_activity_since_last_call());
+        assert!(!progress.registered_activity_since_last_call());
     }
 
     #[test]
     fn test_progress_protect_zone() {
         let progress = Progress::default();
-        assert!(progress.harvest_changes());
+        assert!(progress.registered_activity_since_last_call());
         progress.record_progress();
-        assert!(progress.harvest_changes());
+        assert!(progress.registered_activity_since_last_call());
         {
             let _protect_guard = progress.protect_zone();
-            assert!(progress.harvest_changes());
-            assert!(progress.harvest_changes());
+            assert!(progress.registered_activity_since_last_call());
+            assert!(progress.registered_activity_since_last_call());
         }
-        assert!(progress.harvest_changes());
-        assert!(!progress.harvest_changes());
+        assert!(progress.registered_activity_since_last_call());
+        assert!(!progress.registered_activity_since_last_call());
     }
 
     #[test]
     fn test_progress_several_protect_zone() {
         let progress = Progress::default();
-        assert!(progress.harvest_changes());
+        assert!(progress.registered_activity_since_last_call());
         progress.record_progress();
-        assert!(progress.harvest_changes());
+        assert!(progress.registered_activity_since_last_call());
         let first_protect_guard = progress.protect_zone();
         let second_protect_guard = progress.protect_zone();
-        assert!(progress.harvest_changes());
-        assert!(progress.harvest_changes());
+        assert!(progress.registered_activity_since_last_call());
+        assert!(progress.registered_activity_since_last_call());
         std::mem::drop(first_protect_guard);
-        assert!(progress.harvest_changes());
-        assert!(progress.harvest_changes());
+        assert!(progress.registered_activity_since_last_call());
+        assert!(progress.registered_activity_since_last_call());
         std::mem::drop(second_protect_guard);
-        assert!(progress.harvest_changes());
-        assert!(!progress.harvest_changes());
+        assert!(progress.registered_activity_since_last_call());
+        assert!(!progress.registered_activity_since_last_call());
     }
 }

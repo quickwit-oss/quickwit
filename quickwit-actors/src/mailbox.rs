@@ -34,6 +34,8 @@ use crate::SendError;
 /// A mailbox is the object that makes it possible to send a message
 /// to an actor.
 ///
+/// It is lightweight to clone.
+///
 /// The actor holds its `Inbox` counterpart.
 ///
 /// The mailbox can accept:
@@ -42,6 +44,9 @@ use crate::SendError;
 /// - Commands (See [`Command`]). Commands have a higher priority than messages:
 /// whenever a command is available, it is guaranteed to be processed
 /// as soon as possible regardless of the presence of pending regular messages.
+///
+/// If all mailboxes are dropped, the actor will process all of the pending messages
+/// and gracefully exit with `ActorExitStatus::Success`.
 pub struct Mailbox<Message> {
     pub(crate) inner: Arc<Inner<Message>>,
 }
@@ -77,19 +82,24 @@ pub(crate) struct Inner<Message> {
 }
 
 /// Commands are messages that can be send to control the behavior of an actor.
-/// They are treated with in priority, before any regular actor message.
+///
+/// They are similar to UNIX signals.
+///
+/// They are treated with a higher priority than regular actor messages.
 pub enum Command {
     /// Temporarily pauses the actor. A paused actor only checks
     /// on its command channel and still shows "progress". It appears as
     /// healthy to the supervisor.
+    ///
+    /// Semantically, it is similar to SIGSTOP.
     Pause,
+
     /// Resume a paused actor. If the actor was not paused this command
     /// has no effects.
+    ///
+    /// Semantically, it is similar to SIGCONT.
     Resume,
-    /// Asks the actor to gracefully stop working.
-    /// The actor will stop processing messages and call its finalize function.
-    /// The actor termination is then `ActorTermination::OnDemand`.
-    Terminate(oneshot::Sender<()>),
+
     /// Asks the actor to update its ObservableState.
     /// Since it is a command, it will be treated with a higher priority than
     /// a normal message.
@@ -101,15 +111,37 @@ pub enum Command {
     /// The observation is then available using the `ActorHander::last_observation()`
     /// method.
     Observe(oneshot::Sender<()>),
+
+    /// Asks the actor to gracefully shutdown.
+    ///
+    /// The actor will stop processing messages and its finalize function will
+    /// be called.
+    ///
+    /// The exit status is then `ActorExitStatus::Quit`.
+    ///
+    /// This is the equivalent of sending SIGINT/Ctrl-C to a process.
+    Quit(oneshot::Sender<()>),
+
+    /// Kill the actor. The behavior is the same as if an actor detected that its kill switch
+    /// was pushed.
+    ///
+    /// It is similar to Quit, except the `ActorExitState` is different.
+    ///
+    /// It can have important side effect, as the actor `.finalize` method
+    /// may have different behavior depending on the exit state.
+    ///
+    /// This is the equivalent of sending SIGKILL to a process.
+    Kill(oneshot::Sender<()>),
 }
 
 impl fmt::Debug for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Command::Pause => write!(f, "Pause"),
-            Command::Terminate(_) => write!(f, "Stop"),
-            Command::Resume => write!(f, "Start"),
+            Command::Resume => write!(f, "Resume"),
             Command::Observe(_) => write!(f, "Observe"),
+            Command::Quit(_) => write!(f, "Quit"),
+            Command::Kill(_) => todo!(),
         }
     }
 }
@@ -155,7 +187,7 @@ impl<Message> Mailbox<Message> {
         self.inner.tx.send_blocking(cmd_or_msg, priority)
     }
 
-    /// SendError is returned if the user is already terminated.
+    /// SendError is returned if the actor has already exited.
     ///
     /// (See also [Self::send_blocking()])
     pub(crate) async fn send_message(&self, msg: Message) -> Result<(), SendError> {

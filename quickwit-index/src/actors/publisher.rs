@@ -67,7 +67,7 @@ impl AsyncActor for Publisher {
         &mut self,
         uploaded_split_future: Receiver<UploadedSplit>,
         _ctx: &ActorContext<Self>,
-    ) -> Result<(), quickwit_actors::ActorTermination> {
+    ) -> Result<(), quickwit_actors::ActorExitStatus> {
         let uploaded_split = uploaded_split_future
             .await
             .with_context(|| "Upload apparently failed")?; //< splits must be published in order, so one uploaded failing means we should fail entirely.

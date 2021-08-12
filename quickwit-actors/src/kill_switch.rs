@@ -1,8 +1,4 @@
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-
-// Quickwit
+//  Quickwit
 //  Copyright (C) 2021 Quickwit Inc.
 //
 //  Quickwit is offered under the AGPL v3.0 and as commercial software.
@@ -21,6 +17,10 @@ use std::sync::Arc;
 //
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct KillSwitch {
@@ -43,6 +43,10 @@ impl KillSwitch {
     pub fn is_alive(&self) -> bool {
         self.alive.load(Ordering::Relaxed)
     }
+
+    pub fn is_dead(&self) -> bool {
+        !self.is_alive()
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -51,10 +55,13 @@ mod tests {
     #[test]
     fn test_kill_switch() {
         let kill_switch = KillSwitch::default();
-        assert_eq!(kill_switch.is_alive(), true);
+        assert!(kill_switch.is_alive());
+        assert!(!kill_switch.is_dead());
         kill_switch.kill();
-        assert_eq!(kill_switch.is_alive(), false);
+        assert!(!kill_switch.is_alive());
+        assert!(kill_switch.is_dead());
         kill_switch.kill();
-        assert_eq!(kill_switch.is_alive(), false);
+        assert!(!kill_switch.is_alive());
+        assert!(kill_switch.is_dead());
     }
 }

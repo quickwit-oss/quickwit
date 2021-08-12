@@ -1,3 +1,23 @@
+//  Quickwit
+//  Copyright (C) 2021 Quickwit Inc.
+//
+//  Quickwit is offered under the AGPL v3.0 and as commercial software.
+//  For commercial licensing, contact us at hello@quickwit.io.
+//
+//  AGPL:
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Affero General Public License as
+//  published by the Free Software Foundation, either version 3 of the
+//  License, or (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU Affero General Public License for more details.
+//
+//  You should have received a copy of the GNU Affero General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 /*!
 quickwit-actors is a simplified actor framework for quickwit.
 
@@ -6,22 +26,8 @@ It solves the following problem:
 - make these task observable
 - make these task modular and testable
 - detect when some task is stuck and does not progress anymore
-- offers a killswitch
-
-Actors are organized under a Kill switch. If one actor of the group is terminated,
-all of them get terminated.
-
-Actors are also passed a progress object. If an actor does not record some progress
-within one HEARTBEAT, the actor and all the actors under his kill switch will be terminated.
-Consuming one message count as a progress of course, but implementors can manually
-record some progress if they are processing a large messsage.
-
-# Example
 
 */
-
-// TODO handle the case where an actor gracefully finished its work.
-// In this case, the kill switch should not be triggered even if there is no progress.
 
 use tokio::time::Duration;
 mod actor;
@@ -42,7 +48,7 @@ mod universe;
 pub use self::actor::ActorContext;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
 pub use self::mailbox::{create_mailbox, create_test_mailbox, Mailbox};
-pub use actor::{Actor, ActorTermination};
+pub use actor::{Actor, ActorExitStatus};
 pub use actor_handle::ActorHandle;
 pub use async_actor::AsyncActor;
 pub use kill_switch::KillSwitch;
@@ -54,7 +60,8 @@ pub use universe::Universe;
 /// Heartbeat used to verify that actors are progressing.
 ///
 /// If an actor does not advertise a progress within an interval of duration `HEARTBEAT`,
-/// the killswith is hit, and all of the actors in this generation are killed.
+/// its supervisor will consider it as blocked and will proceed to kill it, as well
+/// as all of the actors.
 pub const HEARTBEAT: Duration = Duration::from_secs(1);
 
 pub fn message_timeout() -> Duration {

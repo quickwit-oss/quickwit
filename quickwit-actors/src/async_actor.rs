@@ -1,4 +1,24 @@
-use crate::actor::{process_command, ActorTermination};
+//  Quickwit
+//  Copyright (C) 2021 Quickwit Inc.
+//
+//  Quickwit is offered under the AGPL v3.0 and as commercial software.
+//  For commercial licensing, contact us at hello@quickwit.io.
+//
+//  AGPL:
+//  This program is free software: you can redistribute it and/or modify
+//  it under the terms of the GNU Affero General Public License as
+//  published by the Free Software Foundation, either version 3 of the
+//  License, or (at your option) any later version.
+//
+//  This program is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU Affero General Public License for more details.
+//
+//  You should have received a copy of the GNU Affero General Public License
+//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+use crate::actor::{process_command, ActorExitStatus};
 use crate::actor_handle::ActorHandle;
 use crate::actor_state::ActorState;
 use crate::mailbox::{create_mailbox, CommandOrMessage, Inbox};
@@ -21,29 +41,36 @@ pub trait AsyncActor: Actor + Sized {
     /// actor.
     ///
     /// It can be compared just to an implicit Initial message.
-    /// Returning an ActorTermination will therefore have the same effect as if it
-    /// was in `process_message`. (e.g. the actor will stop, the finalize method will be called.
+    ///
+    /// Returning an ActorExitStatus will therefore have the same effect as if it
+    /// was in `process_message` (e.g. the actor will stop, the finalize method will be called.
     /// the kill switch may be activated etc.)
-    async fn initialize(&mut self, _ctx: &ActorContext<Self>) -> Result<(), ActorTermination> {
+    async fn initialize(&mut self, _ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         Ok(())
     }
 
     /// Processes a message.
     ///
-    /// If true is returned, the actors will continue processing messages.
-    /// If false is returned, the actor will terminate "gracefully".
-    ///
-    /// If Err is returned, the actor will be killed, as well as all of the actor
-    /// under the same kill switch.
+    /// If an exit status is returned as an error, the actor will exit.
+    /// It will stop processing more message, the finalize method will be called,
+    /// and its exit status will be the one defined in the error.
     async fn process_message(
         &mut self,
         message: Self::Message,
         ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorTermination>;
+    ) -> Result<(), ActorExitStatus>;
 
+    /// Hook  that can be set up to define what should happen upon actor exit.
+    /// This hook is called only once.
+    ///
+    /// It is always called regardless of the reason why the actor exited.
+    /// The exit status is passed as an argument to make it possible to act conditionnally
+    /// upon it.
+    ///
+    /// It is recommended to do as little work as possible on a killed actor.
     async fn finalize(
         &mut self,
-        _termination: &ActorTermination,
+        _exit_status: &ActorExitStatus,
         _ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         Ok(())
@@ -73,9 +100,9 @@ async fn process_msg<A: Actor + AsyncActor>(
     inbox: &mut Inbox<A::Message>,
     ctx: &mut ActorContext<A>,
     state_tx: &Sender<A::ObservableState>,
-) -> Option<ActorTermination> {
-    if !ctx.kill_switch().is_alive() {
-        return Some(ActorTermination::KillSwitch);
+) -> Option<ActorExitStatus> {
+    if ctx.kill_switch().is_dead() {
+        return Some(ActorExitStatus::Killed);
     }
     ctx.progress().record_progress();
 
@@ -84,22 +111,22 @@ async fn process_msg<A: Actor + AsyncActor>(
         .await;
 
     ctx.progress().record_progress();
-    if !ctx.kill_switch().is_alive() {
-        return Some(ActorTermination::KillSwitch);
+    if ctx.kill_switch().is_dead() {
+        return Some(ActorExitStatus::Killed);
     }
 
     match command_or_msg_recv_res {
         Ok(CommandOrMessage::Command(cmd)) => process_command(actor, cmd, ctx, state_tx),
         Ok(CommandOrMessage::Message(msg)) => {
             debug!(msg=?msg, actor=%actor.name(),"message-received");
-            actor.process_message(msg, &ctx).await.err()
+            actor.process_message(msg, ctx).await.err()
         }
-        Err(RecvError::Disconnected) => Some(ActorTermination::Finished),
+        Err(RecvError::Disconnected) => Some(ActorExitStatus::Success),
         Err(RecvError::Timeout) => {
             if ctx.mailbox().is_last_mailbox() {
                 // No one will be able to send us more messages.
-                // We can terminate the actor.
-                Some(ActorTermination::Finished)
+                // We can exit the actor.
+                Some(ActorExitStatus::Success)
             } else {
                 None
             }
@@ -112,19 +139,19 @@ async fn async_actor_loop<A: AsyncActor>(
     mut inbox: Inbox<A::Message>,
     mut ctx: ActorContext<A>,
     state_tx: Sender<A::ObservableState>,
-) -> ActorTermination {
-    let mut termination_opt: Option<ActorTermination> = actor.initialize(&ctx).await.err();
-    let termination: ActorTermination = loop {
+) -> ActorExitStatus {
+    let mut exit_status_opt: Option<ActorExitStatus> = actor.initialize(&ctx).await.err();
+    let exit_status: ActorExitStatus = loop {
         tokio::task::yield_now().await;
-        if let Some(termination) = termination_opt {
-            break termination;
+        if let Some(exit_status) = exit_status_opt {
+            break exit_status;
         }
-        termination_opt = process_msg(&mut actor, &mut inbox, &mut ctx, &state_tx).await;
+        exit_status_opt = process_msg(&mut actor, &mut inbox, &mut ctx, &state_tx).await;
     };
-    ctx.terminate(&termination);
+    ctx.exit(&exit_status);
 
     if let Err(finalize_error) = actor
-        .finalize(&termination, &ctx)
+        .finalize(&exit_status, &ctx)
         .await
         .with_context(|| format!("Finalization of actor {}", actor.name()))
     {
@@ -132,5 +159,5 @@ async fn async_actor_loop<A: AsyncActor>(
     }
     let final_state = actor.observable_state();
     let _ = state_tx.send(final_state);
-    termination
+    exit_status
 }

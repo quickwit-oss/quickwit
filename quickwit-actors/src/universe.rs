@@ -45,6 +45,7 @@ pub struct Universe {
 
 impl Universe {
     /// Creates a new universe.
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Universe {
         let scheduler = Scheduler::default();
         let kill_switch = KillSwitch::default();
@@ -124,7 +125,7 @@ mod tests {
 
     use crate::Actor;
     use crate::ActorContext;
-    use crate::ActorTermination;
+    use crate::ActorExitStatus;
     use crate::AsyncActor;
     use crate::Universe;
 
@@ -145,7 +146,7 @@ mod tests {
 
     #[async_trait]
     impl AsyncActor for ActorWithSchedule {
-        async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorTermination> {
+        async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
             self.process_message((), ctx).await
         }
 
@@ -153,7 +154,7 @@ mod tests {
             &mut self,
             _: (),
             ctx: &ActorContext<Self>,
-        ) -> Result<(), ActorTermination> {
+        ) -> Result<(), ActorExitStatus> {
             self.count += 1;
             dbg!("process message");
             ctx.schedule_self_msg(Duration::from_secs(60), ()).await;

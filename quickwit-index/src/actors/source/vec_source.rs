@@ -18,12 +18,11 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::models::Checkpoint;
 use crate::models::RawDocBatch;
 use async_trait::async_trait;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
-use quickwit_actors::ActorTermination;
+use quickwit_actors::ActorExitStatus;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
 
@@ -61,7 +60,7 @@ impl AsyncActor for VecSource {
         &mut self,
         _message: Self::Message,
         ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorTermination> {
+    ) -> Result<(), ActorExitStatus> {
         let line_docs: Vec<String> = self.items[self.next_item_id..]
             .iter()
             .take(self.batch_num_docs)
@@ -69,7 +68,7 @@ impl AsyncActor for VecSource {
             .collect();
         self.next_item_id += line_docs.len();
         if line_docs.is_empty() {
-            return Err(ActorTermination::Finished);
+            return Err(ActorExitStatus::Success);
         }
         let batch = RawDocBatch {
             docs: line_docs,
@@ -101,8 +100,8 @@ mod tests {
         );
         let (vec_source_mailbox, vec_source_handle) = universe.spawn(vec_source);
         universe.send_message(&vec_source_mailbox, ()).await?;
-        let (actor_termination, last_observation) = vec_source_handle.join().await?;
-        assert!(actor_termination.is_finished());
+        let (actor_termination, last_observation) = vec_source_handle.join().await;
+        assert!(actor_termination.is_success());
         assert_eq!(last_observation, 100);
         let batch = inbox.drain_available_message_for_test();
         assert_eq!(batch.len(), 34);
