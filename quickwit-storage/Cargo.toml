@@ -24,6 +24,7 @@ thiserror = '1'
 rand = '0.8'
 lru = "0.6"
 serde = { version = "1.0", features = ["derive"] }
+ec2_instance_metadata = "0.3"
 
 [dependencies.rusoto_core]
 version = '0.46'
