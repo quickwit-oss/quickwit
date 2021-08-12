@@ -21,12 +21,14 @@
 use std::fmt;
 use std::sync::Arc;
 
-use flume::RecvTimeoutError;
-use flume::TryRecvError;
 use std::hash::Hash;
 use tokio::sync::oneshot;
 
-use crate::actor_handle::ActorMessage;
+use crate::channel_with_priority::Priority;
+use crate::channel_with_priority::Receiver;
+use crate::channel_with_priority::Sender;
+use crate::QueueCapacity;
+use crate::RecvError;
 use crate::SendError;
 
 /// A mailbox is the object that makes it possible to send a message
@@ -58,15 +60,25 @@ impl<Message> Mailbox<Message> {
     }
 }
 
+pub(crate) enum CommandOrMessage<Message> {
+    Message(Message),
+    Command(Command),
+}
+
+impl<Message> From<Command> for CommandOrMessage<Message> {
+    fn from(cmd: Command) -> Self {
+        CommandOrMessage::Command(cmd)
+    }
+}
+
 pub(crate) struct Inner<Message> {
-    pub(crate) tx: flume::Sender<ActorMessage<Message>>,
-    command_tx: flume::Sender<Command<Message>>,
+    pub(crate) tx: Sender<CommandOrMessage<Message>>,
     instance_id: String,
 }
 
 /// Commands are messages that can be send to control the behavior of an actor.
 /// They are treated with in priority, before any regular actor message.
-pub enum Command<Message> {
+pub enum Command {
     /// Temporarily pauses the actor. A paused actor only checks
     /// on its command channel and still shows "progress". It appears as
     /// healthy to the supervisor.
@@ -89,21 +101,15 @@ pub enum Command<Message> {
     /// The observation is then available using the `ActorHander::last_observation()`
     /// method.
     Observe(oneshot::Sender<()>),
-    /// It is possible to use the command channel to send regular message
-    /// needing to be processed with a high priority.
-    /// Internally, this is used by the scheduled message, to make sure that
-    /// the message arrive as soon as possible after their timeout has expired.
-    HighPriorityMessage(Message),
 }
 
-impl<Message> fmt::Debug for Command<Message> {
+impl fmt::Debug for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Command::Pause => write!(f, "Pause"),
             Command::Terminate(_) => write!(f, "Stop"),
             Command::Resume => write!(f, "Start"),
             Command::Observe(_) => write!(f, "Observe"),
-            Command::HighPriorityMessage(_) => write!(f, "ScheduleMsg"),
         }
     }
 }
@@ -133,152 +139,76 @@ impl<Message> Mailbox<Message> {
         &self.inner.instance_id
     }
 
-    pub(crate) async fn send_actor_message(
+    pub(crate) async fn send_with_priority(
         &self,
-        msg: ActorMessage<Message>,
+        cmd_or_msg: CommandOrMessage<Message>,
+        priority: Priority,
     ) -> Result<(), SendError> {
-        self.inner.tx.send_async(msg).await?;
-        Ok(())
+        self.inner.tx.send(cmd_or_msg, priority).await
     }
 
-    /// Send a message to the actor synchronously.
-    ///
+    pub(crate) fn send_with_priority_blocking(
+        &self,
+        cmd_or_msg: CommandOrMessage<Message>,
+        priority: Priority,
+    ) -> Result<(), SendError> {
+        self.inner.tx.send_blocking(cmd_or_msg, priority)
+    }
+
     /// SendError is returned if the user is already terminated.
     ///
     /// (See also [Self::send_blocking()])
     pub(crate) async fn send_message(&self, msg: Message) -> Result<(), SendError> {
-        self.send_actor_message(ActorMessage::Message(msg)).await
+        self.send_with_priority(CommandOrMessage::Message(msg), Priority::Low)
+            .await
     }
 
     /// Send a message to the actor in a blocking fashion.
     /// When possible, prefer using [Self::send()].
     pub(crate) fn send_message_blocking(&self, msg: Message) -> Result<(), SendError> {
-        self.inner.tx.send(ActorMessage::Message(msg))?;
-        Ok(())
+        self.send_with_priority_blocking(CommandOrMessage::Message(msg), Priority::Low)
     }
 
-    pub fn send_command_blocking(&self, command: Command<Message>) -> Result<(), SendError> {
-        self.inner.command_tx.send(command)?;
-        Ok(())
+    pub async fn send_command(&self, command: Command) -> Result<(), SendError> {
+        self.send_with_priority(command.into(), Priority::High)
+            .await
     }
 
-    pub async fn send_command(&self, command: Command<Message>) -> Result<(), SendError> {
-        self.inner.command_tx.send_async(command).await?;
-        Ok(())
+    pub fn try_send_message(&self, message: Message) -> Result<(), SendError> {
+        self.inner
+            .tx
+            .try_send(CommandOrMessage::Message(message), Priority::Low)
     }
 }
 
 pub struct Inbox<Message> {
-    pub rx: flume::Receiver<ActorMessage<Message>>,
-    command_rx: flume::Receiver<Command<Message>>,
-    // This channel is only used to make sure that no disconnection can happen
-    // on the command channel.
-    // It simplifies the reception code.
-    _command_tx: flume::Sender<Command<Message>>,
-    // This channel is here due to make it possible to properly emulate the priority channel even on a blocking actor.
-    pending: Option<ReceptionResult<Message>>,
-}
-
-#[derive(Debug)]
-pub(crate) enum ReceptionResult<M> {
-    Command(Command<M>), // A command was received.
-    Message(M),          //< A message was received.
-    Timeout, //< No message was available. The timeout used is define by `crate::message_timeout()`
-    Disconnect, //< Was disconnect from either the regular mailbox. Deconnection is not detected if the actor is paused.
+    rx: Receiver<CommandOrMessage<Message>>,
 }
 
 impl<Message: fmt::Debug> Inbox<Message> {
-    fn get_command_if_available(&self) -> Option<ReceptionResult<Message>> {
-        match self.command_rx.try_recv() {
-            Ok(command) => Some(ReceptionResult::Command(command)),
-            Err(TryRecvError::Disconnected) => {
-                unreachable!(
-                    "This can never happen, as the command channel is owned by the Inbox."
-                );
-            }
-            Err(TryRecvError::Empty) => None,
-        }
-    }
-
-    /// Receive the first message that comes from (in that order):
-    /// - the high priority command queue
-    /// - the message queue.
-    ///
-    /// No message is returned as long as there are commands available.
-    ///
-
-    pub(crate) async fn try_recv_msg(&mut self, message_enabled: bool) -> ReceptionResult<Message> {
-        if let Some(command_result) = self.get_command_if_available() {
-            return command_result;
-        }
-        if !message_enabled {
-            return ReceptionResult::Timeout;
-        }
-        if let Some(pending) = self.pending.take() {
-            return pending;
-        }
-        tokio::select! {
-            command_recv = self.command_rx.recv_async() => {
-                match command_recv {
-                    Ok(command) => ReceptionResult::Command(command),
-                    _ => ReceptionResult::Timeout,
-                }
-            }
-            actor_msg_recv = self.rx.recv_async() => {
-                let msg_recv_result: ReceptionResult<Message> = match actor_msg_recv {
-                    Ok(ActorMessage::Message(msg)) => ReceptionResult::Message(msg),
-                    Ok(ActorMessage::Observe(cb)) => ReceptionResult::Command(Command::Observe(cb)),
-                    Err(_recv_error) => ReceptionResult::Disconnect,
-                };
-                if let Some(command_result) = self.get_command_if_available() {
-                    self.pending = Some(msg_recv_result);
-                    command_result
-                } else {
-                    msg_recv_result
-                }
-            }
-            _ = tokio::time::sleep(crate::message_timeout()) => ReceptionResult::Timeout,
-        }
-    }
-
-    /// Same as `.try_recv_msg` but blocking.
-    pub(crate) fn try_recv_msg_blocking(
+    pub(crate) async fn recv_timeout(
         &mut self,
         message_enabled: bool,
-    ) -> ReceptionResult<Message> {
-        // The code below has extra complexity in order to emulate the fact that our command queue has
-        // a higher priority.
-        //
-        // The original logic goes like this. If there is a command, we return it.
-        // If there isn't then we recv from the message channel with a timeout. However, while we
-        // were blocking, a command could have arrived.
-        //
-        // For this reason, we then recheck for the command channel and return the available
-        // command if any.
-        // The message that we popped up from the queue is put in a pending slot
-        // that will be returned on the first subsequent round that does not have any command available.
-        if let Some(command_result) = self.get_command_if_available() {
-            return command_result;
+    ) -> Result<CommandOrMessage<Message>, RecvError> {
+        if message_enabled {
+            self.rx.recv_timeout(crate::message_timeout()).await
+        } else {
+            self.rx
+                .recv_high_priority_timeout(crate::message_timeout())
+                .await
         }
-        if !message_enabled {
-            return ReceptionResult::Timeout;
+    }
+
+    pub(crate) fn recv_timeout_blocking(
+        &mut self,
+        message_enabled: bool,
+    ) -> Result<CommandOrMessage<Message>, RecvError> {
+        if message_enabled {
+            self.rx.recv_timeout_blocking(crate::message_timeout())
+        } else {
+            self.rx
+                .recv_high_priority_timeout_blocking(crate::message_timeout())
         }
-        if let Some(pending_msg) = self.pending.take() {
-            return pending_msg;
-        }
-        let msg = self.rx.recv_timeout(crate::message_timeout());
-        let reception_result = match msg {
-            Ok(ActorMessage::Message(msg)) => ReceptionResult::Message(msg),
-            Ok(ActorMessage::Observe(cb)) => ReceptionResult::Command(Command::Observe(cb)),
-            Err(RecvTimeoutError::Disconnected) => ReceptionResult::Disconnect,
-            Err(RecvTimeoutError::Timeout) => ReceptionResult::Timeout,
-        };
-        if let Some(command_result) = self.get_command_if_available() {
-            // There is a pending command. We shelf the message and return the command instead.
-            self.pending = Some(reception_result);
-            return command_result;
-        }
-        reception_result
     }
 
     /// Destroys the inbox and returns the list of pending messages.
@@ -287,32 +217,14 @@ impl<Message: fmt::Debug> Inbox<Message> {
     /// Warning this iterator might never be exhausted if there is a living
     /// mailbox associated to it.
     pub fn drain_available_message_for_test(&self) -> Vec<Message> {
-        let mut messages = Vec::new();
-        loop {
-            match self.rx.try_recv() {
-                Ok(ActorMessage::Message(msg)) => messages.push(msg),
-                Ok(ActorMessage::Observe(_)) => {}
-                Err(_) => {
-                    break;
-                }
-            }
-        }
-        messages
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum QueueCapacity {
-    Bounded(usize),
-    Unbounded,
-}
-
-impl QueueCapacity {
-    fn create_channel<M>(&self) -> (flume::Sender<M>, flume::Receiver<M>) {
-        match *self {
-            QueueCapacity::Bounded(cap) => flume::bounded(cap),
-            QueueCapacity::Unbounded => flume::unbounded(),
-        }
+        self.rx
+            .drain_low_priority()
+            .into_iter()
+            .flat_map(|command_or_message| match command_or_message {
+                CommandOrMessage::Message(msg) => Some(msg),
+                CommandOrMessage::Command(_) => None,
+            })
+            .collect()
     }
 }
 
@@ -320,210 +232,17 @@ pub fn create_mailbox<M>(
     actor_name: String,
     queue_capacity: QueueCapacity,
 ) -> (Mailbox<M>, Inbox<M>) {
-    let (tx, rx) = queue_capacity.create_channel();
-    let (command_tx, command_rx) = QueueCapacity::Unbounded.create_channel();
+    let (tx, rx) = crate::channel_with_priority::channel(queue_capacity);
     let mailbox = Mailbox {
         inner: Arc::new(Inner {
             tx,
-            command_tx: command_tx.clone(),
             instance_id: quickwit_common::new_coolid(&actor_name),
         }),
     };
-    let inbox = Inbox {
-        rx,
-        command_rx,
-        pending: None,
-        _command_tx: command_tx,
-    };
+    let inbox = Inbox { rx };
     (mailbox, inbox)
 }
 
 pub fn create_test_mailbox<M>() -> (Mailbox<M>, Inbox<M>) {
     create_mailbox("test-mailbox".to_string(), QueueCapacity::Unbounded)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-    use std::time::Instant;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test_try_recv_prority() -> anyhow::Result<()> {
-        let (mailbox, mut inbox) = create_test_mailbox::<usize>();
-        mailbox.send_message(1).await?;
-        mailbox.send_command(Command::Resume).await?;
-        assert!(matches!(
-            inbox.try_recv_msg(true).await,
-            ReceptionResult::Command(Command::Resume)
-        ));
-        assert!(matches!(
-            inbox.try_recv_msg(true).await,
-            ReceptionResult::Message(1)
-        ));
-        assert!(matches!(
-            inbox.try_recv_msg(true).await,
-            ReceptionResult::Timeout
-        ));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_try_recv_ignore_messages() -> anyhow::Result<()> {
-        let (mailbox, mut inbox) = create_test_mailbox::<usize>();
-        mailbox.send_message(1).await?;
-        assert!(matches!(
-            inbox.try_recv_msg(false).await,
-            ReceptionResult::Timeout
-        ));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_try_recv_ignore_messages_disconnection() -> anyhow::Result<()> {
-        let (_mailbox, mut inbox) = create_test_mailbox::<usize>();
-        assert!(matches!(
-            inbox.try_recv_msg(false).await,
-            ReceptionResult::Timeout
-        ));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_try_recv_disconnect() -> anyhow::Result<()> {
-        let (mailbox, mut inbox) = create_test_mailbox::<usize>();
-        std::mem::drop(mailbox);
-        assert!(matches!(
-            inbox.try_recv_msg(true).await,
-            ReceptionResult::Disconnect
-        ));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_try_recv_simple_timeout() -> anyhow::Result<()> {
-        let (_mailbox, mut inbox) = create_test_mailbox::<usize>();
-        let start_time = Instant::now();
-        assert!(matches!(
-            inbox.try_recv_msg(true).await,
-            ReceptionResult::Timeout
-        ));
-        let elapsed = start_time.elapsed();
-        assert!(elapsed < crate::HEARTBEAT);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_try_recv_prority_corner_case() -> anyhow::Result<()> {
-        let (mailbox, mut inbox) = create_test_mailbox::<usize>();
-        tokio::task::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            mailbox.send_command(Command::Resume).await?;
-            mailbox.send_message(1).await?;
-            Result::<(), SendError>::Ok(())
-        });
-        assert!(matches!(
-            inbox.try_recv_msg(true).await,
-            ReceptionResult::Command(Command::Resume)
-        ));
-        assert!(matches!(
-            inbox.try_recv_msg(true).await,
-            ReceptionResult::Message(1)
-        ));
-        assert!(matches!(
-            inbox.try_recv_msg(true).await,
-            ReceptionResult::Disconnect
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_try_recv_prority_blocking() -> anyhow::Result<()> {
-        let (mailbox, mut inbox) = create_test_mailbox::<usize>();
-        mailbox.send_message_blocking(1)?;
-        mailbox.send_command_blocking(Command::Resume)?;
-        assert!(matches!(
-            inbox.try_recv_msg_blocking(true),
-            ReceptionResult::Command(Command::Resume)
-        ));
-        assert!(matches!(
-            inbox.try_recv_msg_blocking(true),
-            ReceptionResult::Message(1)
-        ));
-        assert!(matches!(
-            inbox.try_recv_msg_blocking(true),
-            ReceptionResult::Timeout
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_try_recv_ignore_messages_blocking() -> anyhow::Result<()> {
-        let (mailbox, mut inbox) = create_test_mailbox::<usize>();
-        mailbox.send_message_blocking(1)?;
-        assert!(matches!(
-            inbox.try_recv_msg_blocking(false),
-            ReceptionResult::Timeout
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_try_recv_ignore_messages_disconnection_blocking() -> anyhow::Result<()> {
-        let (_mailbox, mut inbox) = create_test_mailbox::<usize>();
-        assert!(matches!(
-            inbox.try_recv_msg_blocking(false),
-            ReceptionResult::Timeout
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_try_recv_disconnect_blocking() -> anyhow::Result<()> {
-        let (mailbox, mut inbox) = create_test_mailbox::<usize>();
-        std::mem::drop(mailbox);
-        assert!(matches!(
-            inbox.try_recv_msg_blocking(true),
-            ReceptionResult::Disconnect
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_try_recv_simple_timeout_blocking() -> anyhow::Result<()> {
-        let (_mailbox, mut inbox) = create_test_mailbox::<usize>();
-        let start_time = Instant::now();
-        assert!(matches!(
-            inbox.try_recv_msg_blocking(true),
-            ReceptionResult::Timeout
-        ));
-        let elapsed = start_time.elapsed();
-        assert!(elapsed < crate::HEARTBEAT);
-        Ok(())
-    }
-
-    #[test]
-    fn test_try_recv_prority_corner_case_blocking() -> anyhow::Result<()> {
-        let (mailbox, mut inbox) = create_test_mailbox::<usize>();
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(10));
-            mailbox.send_command_blocking(Command::Resume)?;
-            mailbox.send_message_blocking(1)?;
-            Result::<(), SendError>::Ok(())
-        });
-        assert!(matches!(
-            inbox.try_recv_msg_blocking(true),
-            ReceptionResult::Command(Command::Resume)
-        ));
-        assert!(matches!(
-            inbox.try_recv_msg_blocking(true),
-            ReceptionResult::Message(1)
-        ));
-        assert!(matches!(
-            inbox.try_recv_msg_blocking(true),
-            ReceptionResult::Disconnect
-        ));
-        Ok(())
-    }
 }

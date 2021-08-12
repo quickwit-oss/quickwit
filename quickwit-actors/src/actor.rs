@@ -3,10 +3,11 @@ use std::ops::Deref;
 use std::time::Duration;
 use std::{any::type_name, sync::Arc};
 use thiserror::Error;
+use tokio::sync::watch::Sender;
 use tracing::{debug, error};
 
-use crate::actor_handle::ActorMessage;
-use crate::mailbox::Command;
+use crate::channel_with_priority::Priority;
+use crate::mailbox::{Command, CommandOrMessage};
 use crate::scheduler::{Callback, SchedulerMessage};
 use crate::{
     actor_state::{ActorState, AtomicState},
@@ -227,21 +228,22 @@ impl<A: SyncActor> ActorContext<A> {
     /// instead of blocking forever, we return an error right away.
     pub fn send_self_message_blocking(&self, msg: A::Message) -> Result<(), crate::SendError> {
         debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
-        self.self_mailbox
-            .inner
-            .tx
-            .try_send(ActorMessage::Message(msg))
-            .map_err(|_| crate::SendError::WouldDeadlock)?;
-        Ok(())
+        let send_res = self.self_mailbox.try_send_message(msg);
+        if let Err(crate::SendError::Full) = &send_res {
+            error!(self=%self.self_mailbox.actor_instance_id(),
+                   "Attempted to send self message while the channel was full. This would have triggered a deadlock");
+        }
+        send_res
     }
 
     pub fn schedule_self_msg_blocking(&self, after_duration: Duration, msg: A::Message) {
         let self_mailbox = self.inner.self_mailbox.clone();
-        let cmd_schedule_msg = Command::HighPriorityMessage(msg);
         let scheduler_msg = SchedulerMessage::ScheduleEvent {
             timeout: after_duration,
             callback: Callback(Box::pin(async move {
-                let _ = self_mailbox.send_command(cmd_schedule_msg).await;
+                let _ = self_mailbox
+                    .send_with_priority(CommandOrMessage::Message(msg), Priority::High)
+                    .await;
             })),
         };
         let _ = self.send_message_blocking(&self.inner.scheduler_mailbox, scheduler_msg);
@@ -268,9 +270,10 @@ impl<A: AsyncActor> ActorContext<A> {
 
     pub async fn schedule_self_msg(&self, after_duration: Duration, msg: A::Message) {
         let self_mailbox = self.inner.self_mailbox.clone();
-        let cmd_schedule_msg = Command::HighPriorityMessage(msg);
         let callback = Callback(Box::pin(async move {
-            let _ = self_mailbox.send_command(cmd_schedule_msg).await;
+            let _ = self_mailbox
+                .send_with_priority(CommandOrMessage::Message(msg), Priority::High)
+                .await;
         }));
         let scheduler_msg = SchedulerMessage::ScheduleEvent {
             timeout: after_duration,
@@ -279,5 +282,35 @@ impl<A: AsyncActor> ActorContext<A> {
         let _ = self
             .send_message(&self.inner.scheduler_mailbox, scheduler_msg)
             .await;
+    }
+}
+
+pub(crate) fn process_command<A: Actor>(
+    actor: &mut A,
+    command: Command,
+    ctx: &mut ActorContext<A>,
+    state_tx: &Sender<A::ObservableState>,
+) -> Option<ActorTermination> {
+    match command {
+        Command::Pause => {
+            ctx.pause();
+            None
+        }
+        Command::Terminate(cb) => {
+            let _ = cb.send(());
+            Some(ActorTermination::OnDemand)
+        }
+        Command::Resume => {
+            ctx.resume();
+            None
+        }
+        Command::Observe(cb) => {
+            let state = actor.observable_state();
+            let _ = state_tx.send(state);
+            // We voluntarily ignore the error here. (An error only occurs if the
+            // sender dropped its receiver.)
+            let _ = cb.send(());
+            None
+        }
     }
 }

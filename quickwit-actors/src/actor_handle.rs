@@ -1,4 +1,5 @@
 use crate::actor_state::ActorState;
+use crate::channel_with_priority::Priority;
 use crate::mailbox::Command;
 use crate::observation::ObservationType;
 use crate::{Actor, ActorContext, ActorTermination, Observation};
@@ -74,7 +75,7 @@ impl<A: Actor> ActorHandle<A> {
         if self
             .actor_context
             .mailbox()
-            .send_actor_message(ActorMessage::Observe(tx))
+            .send_with_priority(Command::Observe(tx).into(), Priority::Low)
             .await
             .is_err()
         {
@@ -136,23 +137,5 @@ impl<A: Actor> ActorHandle<A> {
 
     pub fn last_observation(&self) -> A::ObservableState {
         self.last_state.borrow().clone()
-    }
-}
-
-pub enum ActorMessage<Message> {
-    Message(Message),
-    Observe(oneshot::Sender<()>),
-}
-
-impl<Message: fmt::Debug> fmt::Debug for ActorMessage<Message> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Message(msg) => {
-                write!(f, "Message({:?})", msg)
-            }
-            Self::Observe(_) => {
-                write!(f, "Observe")
-            }
-        }
     }
 }
