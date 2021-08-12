@@ -70,18 +70,34 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     /// Returns the document built from a json string.
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError>;
     /// Returns the schema.
+    ///
+    /// Considering schema evolution, splits within an index can have different schema
+    /// over time. The schema returned here represents the most up-to-date schema of the index.
     fn schema(&self) -> Schema;
+
     /// Returns the query.
-    fn query(&self, request: &SearchRequest) -> Result<Box<dyn Query>, QueryParserError>;
+    ///
+    /// Considering schema evolution, splits within an index can have different schema
+    /// over time. So `split_schema` is the schema of the split the query is targeting.
+    fn query(
+        &self,
+        split_schema: Schema,
+        request: &SearchRequest,
+    ) -> Result<Box<dyn Query>, QueryParserError>;
+
     /// Returns the default sort
     fn default_sort_by(&self) -> SortBy {
         SortBy::DocId
     }
+
     /// Returns the timestamp field.
-    fn timestamp_field(&self) -> Option<Field> {
+    /// Considering schema evolution, splits within an index can have different schema
+    /// over time. So `split_schema` is the schema of the split being operated on.
+    fn timestamp_field(&self, split_schema: &Schema) -> Option<Field> {
         self.timestamp_field_name()
-            .and_then(|field_name| self.schema().get_field(&field_name))
+            .and_then(|field_name| split_schema.get_field(&field_name))
     }
+
     /// Returns the timestamp field name.
     fn timestamp_field_name(&self) -> Option<String> {
         None

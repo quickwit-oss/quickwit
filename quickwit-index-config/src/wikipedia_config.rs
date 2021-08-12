@@ -79,9 +79,13 @@ impl IndexConfig for WikipediaIndexConfig {
             .map_err(DocParsingError::from)
     }
 
-    fn query(&self, request: &SearchRequest) -> Result<Box<dyn Query>, QueryParserError> {
-        let default_search_field_names = vec!["body".to_string(), "title".to_string()];
-        build_query(self.schema(), request, &default_search_field_names)
+    fn query(
+        &self,
+        split_schema: Schema,
+        request: &SearchRequest,
+    ) -> Result<Box<dyn Query>, QueryParserError> {
+        let default_search_field_names = &["body".to_string(), "title".to_string()];
+        build_query(split_schema, request, default_search_field_names)
     }
 
     fn schema(&self) -> Schema {

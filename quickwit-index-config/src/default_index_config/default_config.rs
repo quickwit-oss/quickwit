@@ -224,8 +224,12 @@ impl IndexConfig for DefaultIndexConfig {
         Ok(document)
     }
 
-    fn query(&self, request: &SearchRequest) -> Result<Box<dyn Query>, QueryParserError> {
-        build_query(self.schema(), request, &self.default_search_field_names)
+    fn query(
+        &self,
+        split_schema: Schema,
+        request: &SearchRequest,
+    ) -> Result<Box<dyn Query>, QueryParserError> {
+        build_query(split_schema, request, &self.default_search_field_names)
     }
 
     fn schema(&self) -> Schema {

@@ -56,7 +56,6 @@ use quickwit_storage::StorageUriResolver;
 pub use crate::client::SearchServiceClient;
 pub use crate::client_pool::search_client_pool::SearchClientPool;
 pub use crate::client_pool::ClientPool;
-use crate::collector::make_collector;
 pub use crate::error::SearchError;
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
@@ -158,12 +157,14 @@ pub async fn single_node_search(
         .map(|split_meta| split_meta.split_id.clone())
         .collect();
     let index_config = index_metadata.index_config;
-    let query = index_config.query(search_request)?;
-    let collector = make_collector(index_config.as_ref(), search_request);
-    let leaf_search_result =
-        leaf_search(query.as_ref(), collector, &split_ids[..], storage.clone())
-            .await
-            .with_context(|| "leaf_search")?;
+    let leaf_search_result = leaf_search(
+        index_config,
+        search_request,
+        &split_ids[..],
+        storage.clone(),
+    )
+    .await
+    .with_context(|| "leaf_search")?;
     let fetch_docs_result = fetch_docs(leaf_search_result.partial_hits, storage)
         .await
         .with_context(|| "fetch_request")?;
