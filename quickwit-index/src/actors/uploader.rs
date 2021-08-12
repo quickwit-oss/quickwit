@@ -200,7 +200,8 @@ impl AsyncActor for Uploader {
         // We send the future to the publisher right away.
         // That way the publisher will process the uploaded split in order as opposed to
         // publishing in the order splits finish their uploading.
-        ctx.send_message(&self.publisher_mailbox, split_uploaded_rx).await?;
+        ctx.send_message(&self.publisher_mailbox, split_uploaded_rx)
+            .await?;
 
         // The permit will be added back manually to the semaphore the task after it is finished.
         let permit_guard = self.concurrent_upload_permits.acquire().await;
