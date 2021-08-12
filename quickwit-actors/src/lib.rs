@@ -49,7 +49,7 @@ pub use actor::{Actor, ActorTermination};
 pub use actor_handle::ActorHandle;
 pub use async_actor::AsyncActor;
 pub use kill_switch::KillSwitch;
-pub use observation::Observation;
+pub use observation::{Observation, ObservationType};
 pub(crate) use scheduler::Scheduler;
 pub use sync_actor::SyncActor;
 pub use universe::Universe;

@@ -225,7 +225,7 @@ mod tests {
     use std::time::Instant;
 
     use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::Observation;
+    use quickwit_actors::ObservationType;
     use quickwit_actors::Universe;
     use tantivy::doc;
     use tantivy::schema::Schema;
@@ -301,8 +301,8 @@ mod tests {
             .send_message(&packager_mailbox, indexed_split)
             .await?;
         assert_eq!(
-            packager_handle.process_pending_and_observe().await,
-            Observation::Running(())
+            packager_handle.process_pending_and_observe().await.obs_type,
+            ObservationType::Success
         );
         let packaged_splits = inbox.drain_available_message_for_test();
         assert_eq!(packaged_splits.len(), 1);
@@ -321,8 +321,8 @@ mod tests {
             .send_message(&packager_mailbox, indexed_split)
             .await?;
         assert_eq!(
-            packager_handle.process_pending_and_observe().await,
-            Observation::Running(())
+            packager_handle.process_pending_and_observe().await.obs_type,
+            ObservationType::Success
         );
         let packaged_splits = inbox.drain_available_message_for_test();
         assert_eq!(packaged_splits.len(), 1);
