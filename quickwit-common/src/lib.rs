@@ -19,10 +19,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-use std::net::{SocketAddr, ToSocketAddrs};
+mod coolid;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
+use std::net::{SocketAddr, ToSocketAddrs};
+
+pub use coolid::new_coolid;
 
 /// For the moment, the only metastore available is the
 /// a one file per index store, located on the same storage as the

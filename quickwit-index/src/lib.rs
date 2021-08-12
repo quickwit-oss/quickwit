@@ -54,7 +54,7 @@ pub async fn spawn_indexing_pipeline(
     let (publisher_mailbox, publisher_handler) = universe.spawn(publisher);
     let uploader = Uploader::new(metastore, index_storage, publisher_mailbox);
     let (uploader_mailbox, _uploader_handler) = universe.spawn(uploader);
-    info!(actor_name=%uploader_mailbox.actor_instance_name());
+    info!(actor_name=%uploader_mailbox.actor_instance_id());
     let packager = Packager::new(uploader_mailbox);
     let (packager_mailbox, _packager_handler) = universe.spawn_sync_actor(packager);
     let indexer = Indexer::try_new(

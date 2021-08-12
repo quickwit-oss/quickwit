@@ -27,7 +27,7 @@ impl<A: Actor> fmt::Debug for ActorHandle<A> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("ActorHandle")
-            .field("name", &self.actor_context.actor_instance_name())
+            .field("name", &self.actor_context.actor_instance_id())
             .finish()
     }
 }
@@ -39,7 +39,6 @@ impl<A: Actor> ActorHandle<A> {
         ctx: ActorContext<A>,
     ) -> Self {
         let mut interval = tokio::time::interval(crate::HEARTBEAT);
-        let actor_instance_name = ctx.actor_instance_name().to_string();
         let ctx_clone = ctx.clone();
         tokio::task::spawn(async move {
             // TODO have proper supervision.
@@ -50,7 +49,7 @@ impl<A: Actor> ActorHandle<A> {
                     if ctx.get_state() == ActorState::Terminated {
                         return;
                     }
-                    error!(actor=%actor_instance_name, "actor-timeout");
+                    error!(actor=%ctx.actor_instance_id(), "actor-timeout");
                     ctx.kill_switch().kill();
                     // TODO abort async tasks?
                     return;

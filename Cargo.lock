@@ -2783,6 +2783,7 @@ dependencies = [
  "anyhow",
  "env_logger",
  "once_cell",
+ "rand 0.8.4",
  "regex",
 ]
 
