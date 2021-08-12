@@ -11,7 +11,7 @@ use std::fmt;
 ///
 /// Because `ActorHandle`'s generic types are Message and Observable, as opposed
 /// to the actor type, `ActorHandle` are interchangeable.
-/// It makes it possible to plug different implementations, have actor proxy etc.use std::fmt;
+/// It makes it possible to plug different implementations, have actor proxy etc.
 use tokio::sync::{oneshot, watch};
 use tokio::task::{JoinError, JoinHandle};
 use tokio::time::timeout;
@@ -64,7 +64,7 @@ impl<A: Actor> ActorHandle<A> {
         }
     }
 
-    /// Process all of the pending message, and returns a snapshot of
+    /// Process all of the pending messages, and returns a snapshot of
     /// the observable state of the actor after this.
     ///
     /// This method is mostly useful for tests.
@@ -88,7 +88,7 @@ impl<A: Actor> ActorHandle<A> {
         // TODO The timeout is required here. If the actor fails, the inbox is properly dropped but the send channel might actually
         // prevent the onechannel Receiver from being dropped.
         let observable_state_res = tokio::time::timeout(crate::HEARTBEAT, rx).await;
-        let state = self.last_state.borrow().clone();
+        let state = self.last_observation();
         let obs_type = match observable_state_res {
             Ok(Ok(_)) => ObservationType::Success,
             Ok(Err(_)) => ObservationType::LastStateAfterActorTerminated,
@@ -130,7 +130,7 @@ impl<A: Actor> ActorHandle<A> {
             error!("Failed to send message");
         }
         let observable_state_or_timeout = timeout(crate::HEARTBEAT, rx).await;
-        let state = self.last_state.borrow().clone();
+        let state = self.last_observation();
         let obs_type = match observable_state_or_timeout {
             Ok(Ok(())) => ObservationType::Success,
             Ok(Err(_)) => ObservationType::LastStateAfterActorTerminated,

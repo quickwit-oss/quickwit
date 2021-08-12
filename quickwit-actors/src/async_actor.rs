@@ -12,7 +12,7 @@ use tracing::{debug, error};
 /// An async actor is executed on a regular tokio task.
 ///
 /// It can make async calls, but it should not block.
-/// Actors doing CPU heavy work should implement `SyncActor` instead.
+/// Actors doing CPU-heavy work should implement `SyncActor` instead.
 #[async_trait]
 pub trait AsyncActor: Actor + Sized {
     /// Initialize is called before running the actor.
@@ -20,7 +20,7 @@ pub trait AsyncActor: Actor + Sized {
     /// This function is useful for instance to schedule an initial message in a looping
     /// actor.
     ///
-    /// It can is treated just as if it was an initial implicit Initial message.
+    /// It can be compared just to an implicit Initial message.
     /// Returning an ActorTermination will therefore have the same effect as if it
     /// was in `process_message`. (e.g. the actor will stop, the finalize method will be called.
     /// the kill switch may be activated etc.)

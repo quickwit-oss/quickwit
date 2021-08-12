@@ -14,7 +14,7 @@ use crate::{
     AsyncActor, KillSwitch, Mailbox, QueueCapacity, SendError, SyncActor,
 };
 
-// While the lack of message cannot pause a problem with heartbeating,  sending a message to a saturated channel
+// While the absence of messages cannot cause a problem with heartbeating, sending a message to a saturated channel
 // can be interpreted as a blocked actor.
 
 #[derive(Error, Debug)]
@@ -26,13 +26,13 @@ pub enum ActorTermination {
     /// The logic ruled that the actor should be killed.
     #[error("Downstream actor closed connection")]
     DownstreamClosed,
-    /// Some unexpected error happened.
+    /// An unexpected error occured.
     #[error("Failure")]
     Failure(#[from] anyhow::Error),
     /// The actor terminated, as it identified it reached a state where it
     /// would not send any more message.
     ///
-    /// It happens either because all of the existing mailbox where dropped and
+    /// It happens either because all of the existing mailboxes were dropped and
     /// the actor message queue was exhausted, or because the actor
     /// returned `Err(ActorTermination::Finished)` from its `process_msg` function.
     #[error("Finished")]
@@ -67,13 +67,14 @@ impl From<SendError> for ActorTermination {
     }
 }
 
-/// An actor has an internal state and processes a stream of message.
+/// An actor has an internal state and processes a stream of messages.
+/// Each actor has a mailbox where the messages are enqueued before being processed.
 ///
 /// While processing a message, the actor typically
-/// - Update its state
-/// - emit one or more message to other actors.
+/// - update its state;
+/// - emits one or more messages to other actors.
 ///
-/// Actors exists in two flavor:
+/// Actors exist in two flavors:
 /// - async actors, are executed in event thread in tokio runtime.
 /// - sync actors, executed on the blocking thread pool of tokio runtime.
 pub trait Actor: Send + Sync + 'static {
@@ -87,7 +88,7 @@ pub trait Actor: Send + Sync + 'static {
     fn name(&self) -> String {
         type_name::<Self>().to_string()
     }
-
+/// Actor mailbox queue capacity. It is set when the actor is spawned. 
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Unbounded
     }
@@ -159,8 +160,8 @@ impl<A: Actor> ActorContext<A> {
     }
 
     /// This function returns a guard that prevents any supervisor from identifying the
-    /// actor has dead.
-    /// The protection last as long as the `ProtectZoneGuard` it returns.
+    /// actor as dead.
+    /// The protection ends when the `ProtectZoneGuard` is dropped.
     ///
     /// In an ideal world, you should never need to call this function.
     /// It is only useful in some corner like, like a calling a long blocking
@@ -169,7 +170,7 @@ impl<A: Actor> ActorContext<A> {
         self.progress.protect_zone()
     }
 
-    /// Get a copy of the actor kill switch.
+    /// Gets a copy of the actor kill switch.
     /// This should rarely be used.
     /// For instance, when quitting from the process_message function, prefer simply
     /// returning `Error(ActorTermination::Failure(..))`
@@ -180,8 +181,8 @@ impl<A: Actor> ActorContext<A> {
     pub(crate) fn progress(&self) -> &Progress {
         &self.progress
     }
-    /// Record some progress.
-    /// This function is only useful when implementing actors that may takes more than
+    /// Records some progress.
+    /// This function is only useful when implementing actors that may take more than
     /// `HEARTBEAT` to process a single message.
     /// In that case, you can call this function in the middle of the process_message method
     /// to prevent the actor from being identified as blocked or dead.
@@ -210,7 +211,7 @@ impl<A: Actor> ActorContext<A> {
 }
 
 impl<A: SyncActor> ActorContext<A> {
-    /// Sends a message to the actor being the mailbox.
+    /// Sends a message in the actor's mailbox.
     ///
     /// This method hides logic to prevent an actor from being identified
     /// as frozen if the destination actor channel is saturated, and we
