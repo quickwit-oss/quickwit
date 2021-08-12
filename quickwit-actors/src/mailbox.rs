@@ -60,7 +60,7 @@ impl<Message> Deref for Mailbox<Message> {
 pub struct Inner<Message> {
     pub(crate) tx: flume::Sender<ActorMessage<Message>>,
     command_tx: flume::Sender<Command<Message>>,
-    id: Uuid,
+    instance_id: String,
     actor_name: String,
 }
 
@@ -108,27 +108,27 @@ impl<Msg> fmt::Debug for Command<Msg> {
 
 impl<Message: fmt::Debug> fmt::Debug for Mailbox<Message> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Mailbox({})", self.actor_instance_name())
+        write!(f, "Mailbox({})", self.actor_instance_id())
     }
 }
 
 impl<Message> Hash for Mailbox<Message> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state)
+        self.instance_id.hash(state)
     }
 }
 
 impl<Message> PartialEq for Mailbox<Message> {
     fn eq(&self, other: &Self) -> bool {
-        self.id.eq(&other.id)
+        self.instance_id.eq(&other.instance_id)
     }
 }
 
 impl<Message> Eq for Mailbox<Message> {}
 
 impl<Message> Mailbox<Message> {
-    pub fn actor_instance_name(&self) -> String {
-        format!("{}:{}", self.actor_name, self.id)
+    pub fn actor_instance_id(&self) -> &str {
+        &self.instance_id
     }
 
     pub(crate) async fn send_actor_message(
@@ -324,7 +324,7 @@ pub fn create_mailbox<M>(
         inner: Arc::new(Inner {
             tx,
             command_tx: command_tx.clone(),
-            id: Uuid::new_v4(),
+            instance_id: quickwit_common::new_coolid(&actor_name),
             actor_name,
         }),
     };

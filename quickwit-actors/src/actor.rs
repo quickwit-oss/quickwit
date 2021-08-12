@@ -14,9 +14,6 @@ use crate::{
     AsyncActor, KillSwitch, Mailbox, QueueCapacity, SendError, SyncActor,
 };
 
-// While the absence of messages cannot cause a problem with heartbeating, sending a message to a saturated channel
-// can be interpreted as a blocked actor.
-
 #[derive(Error, Debug)]
 pub enum ActorTermination {
     /// The actor was stopped upon reception of a Command.
@@ -29,8 +26,7 @@ pub enum ActorTermination {
     /// An unexpected error occured.
     #[error("Failure")]
     Failure(#[from] anyhow::Error),
-    /// The actor terminated, as it identified it reached a state where it
-    /// would not send any more message.
+    /// The actor has reached a state where it will no longer send messages and terminated.
     ///
     /// It happens either because all of the existing mailboxes were dropped and
     /// the actor message queue was exhausted, or because the actor
@@ -88,7 +84,7 @@ pub trait Actor: Send + Sync + 'static {
     fn name(&self) -> String {
         type_name::<Self>().to_string()
     }
-/// Actor mailbox queue capacity. It is set when the actor is spawned. 
+/// Actor mailbox queue capacity. It is set when the actor is spawned.
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Unbounded
     }
@@ -123,7 +119,6 @@ impl<A: Actor> Deref for ActorContext<A> {
 }
 
 pub struct ActorContextInner<A: Actor> {
-    actor_instance_name: String,
     self_mailbox: Mailbox<A::Message>,
     progress: Progress,
     kill_switch: KillSwitch,
@@ -137,10 +132,8 @@ impl<A: Actor> ActorContext<A> {
         kill_switch: KillSwitch,
         scheduler_mailbox: Mailbox<SchedulerMessage>,
     ) -> Self {
-        let actor_instance_name = self_mailbox.actor_instance_name();
         ActorContext {
             inner: ActorContextInner {
-                actor_instance_name,
                 self_mailbox,
                 progress: Progress::default(),
                 kill_switch,
@@ -155,8 +148,8 @@ impl<A: Actor> ActorContext<A> {
         &self.self_mailbox
     }
 
-    pub fn actor_instance_name(&self) -> &str {
-        &self.actor_instance_name
+    pub fn actor_instance_id(&self) -> &str {
+        &self.mailbox().actor_instance_id()
     }
 
     /// This function returns a guard that prevents any supervisor from identifying the
@@ -222,7 +215,7 @@ impl<A: SyncActor> ActorContext<A> {
         msg: M,
     ) -> Result<(), crate::SendError> {
         let _guard = self.protect_zone();
-        debug!(from=%self.self_mailbox.actor_instance_name(), to=%mailbox.actor_instance_name(), msg=?msg, "send");
+        debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), msg=?msg, "send");
         mailbox.send_message_blocking(msg)
     }
 
@@ -232,7 +225,7 @@ impl<A: SyncActor> ActorContext<A> {
     ///
     /// The method not
     pub fn send_self_message_blocking(&self, msg: A::Message) -> Result<(), crate::SendError> {
-        debug!(self=%self.self_mailbox.actor_instance_name(), msg=?msg, "self_send");
+        debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
         self.self_mailbox
             .tx
             .try_send(ActorMessage::Message(msg))
@@ -261,13 +254,13 @@ impl<A: AsyncActor> ActorContext<A> {
         msg: M,
     ) -> Result<(), crate::SendError> {
         let _guard = self.protect_zone();
-        debug!(from=%self.self_mailbox.actor_instance_name(), send=%mailbox.actor_instance_name(), msg=?msg);
+        debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg);
         mailbox.send_message(msg).await
     }
 
     /// `async` version of `send_self_message`
     pub async fn send_self_message(&self, msg: A::Message) -> Result<(), crate::SendError> {
-        debug!(self=%self.self_mailbox.actor_instance_name(), msg=?msg, "self_send");
+        debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
         self.self_mailbox.send_message(msg).await
     }
 
