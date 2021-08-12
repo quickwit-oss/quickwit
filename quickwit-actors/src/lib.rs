@@ -23,14 +23,12 @@ record some progress if they are processing a large messsage.
 // TODO handle the case where an actor gracefully finished its work.
 // In this case, the kill switch should not be triggered even if there is no progress.
 
-use std::{error::Error, fmt::Display};
-
 use tokio::time::Duration;
-
 mod actor;
 mod actor_handle;
 mod actor_state;
 mod async_actor;
+pub(crate) mod channel_with_priority;
 mod kill_switch;
 mod mailbox;
 mod observation;
@@ -42,7 +40,8 @@ mod tests;
 mod universe;
 
 pub use self::actor::ActorContext;
-pub use self::mailbox::{create_mailbox, create_test_mailbox, Mailbox, QueueCapacity};
+pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
+pub use self::mailbox::{create_mailbox, create_test_mailbox, Mailbox};
 pub use actor::{Actor, ActorTermination};
 pub use actor_handle::ActorHandle;
 pub use async_actor::AsyncActor;
@@ -61,24 +60,3 @@ pub const HEARTBEAT: Duration = Duration::from_secs(1);
 pub fn message_timeout() -> Duration {
     HEARTBEAT.mul_f32(0.2f32)
 }
-
-/// Error returned when a message is sent to an actor that is detected as terminated.
-#[derive(Debug)]
-pub enum SendError {
-    ChannelClosed,
-    WouldDeadlock,
-}
-
-impl<T> From<flume::SendError<T>> for SendError {
-    fn from(_send_error: flume::SendError<T>) -> Self {
-        SendError::ChannelClosed
-    }
-}
-
-impl Display for SendError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl Error for SendError {}

@@ -1,10 +1,9 @@
-use crate::actor::ActorTermination;
+use crate::actor::{process_command, ActorTermination};
 use crate::actor_handle::ActorHandle;
 use crate::actor_state::ActorState;
-use crate::mailbox::ReceptionResult;
-use crate::mailbox::{create_mailbox, Command, Inbox};
+use crate::mailbox::{create_mailbox, CommandOrMessage, Inbox};
 use crate::scheduler::SchedulerMessage;
-use crate::{Actor, ActorContext, KillSwitch, Mailbox};
+use crate::{Actor, ActorContext, KillSwitch, Mailbox, RecvError};
 use anyhow::Context;
 use async_trait::async_trait;
 use tokio::sync::watch::{self, Sender};
@@ -80,55 +79,31 @@ async fn process_msg<A: Actor + AsyncActor>(
     }
     ctx.progress().record_progress();
 
-    let reception_result = inbox
-        .try_recv_msg(ctx.get_state() == ActorState::Running)
+    let command_or_msg_recv_res = inbox
+        .recv_timeout(ctx.get_state() == ActorState::Running)
         .await;
 
     ctx.progress().record_progress();
     if !ctx.kill_switch().is_alive() {
         return Some(ActorTermination::KillSwitch);
     }
-    match reception_result {
-        ReceptionResult::Command(cmd) => {
-            match cmd {
-                Command::Pause => {
-                    ctx.pause();
-                    None
-                }
-                Command::Terminate(cb) => {
-                    let _ = cb.send(());
-                    Some(ActorTermination::OnDemand)
-                }
-                Command::Resume => {
-                    ctx.resume();
-                    None
-                }
-                Command::Observe(cb) => {
-                    let state = actor.observable_state();
-                    let _ = state_tx.send(state);
-                    // We voluntarily ignore the error here. (An error only occurs if the
-                    // sender dropped its receiver.)
-                    let _ = cb.send(());
-                    None
-                }
-                Command::HighPriorityMessage(msg) => {
-                    debug!(msg=?msg, actor=%actor.name(),"scheduled-message-received");
-                    actor.process_message(msg, &ctx).await.err()
-                }
-            }
-        }
-        ReceptionResult::Message(msg) => {
+
+    match command_or_msg_recv_res {
+        Ok(CommandOrMessage::Command(cmd)) => process_command(actor, cmd, ctx, state_tx),
+        Ok(CommandOrMessage::Message(msg)) => {
             debug!(msg=?msg, actor=%actor.name(),"message-received");
             actor.process_message(msg, &ctx).await.err()
         }
-        ReceptionResult::Timeout => {
+        Err(RecvError::Disconnected) => Some(ActorTermination::Finished),
+        Err(RecvError::Timeout) => {
             if ctx.mailbox().is_last_mailbox() {
+                // No one will be able to send us more messages.
+                // We can terminate the actor.
                 Some(ActorTermination::Finished)
             } else {
                 None
             }
         }
-        ReceptionResult::Disconnect => Some(ActorTermination::Finished),
     }
 }
 
