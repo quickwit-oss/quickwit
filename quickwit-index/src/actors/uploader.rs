@@ -229,7 +229,7 @@ impl AsyncActor for Uploader {
 #[cfg(test)]
 mod tests {
     use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::Observation;
+    use quickwit_actors::ObservationType;
     use quickwit_actors::Universe;
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
@@ -287,8 +287,8 @@ mod tests {
             )
             .await?;
         assert_eq!(
-            uploader_handle.process_pending_and_observe().await,
-            Observation::Running(())
+            uploader_handle.process_pending_and_observe().await.obs_type,
+            ObservationType::Success
         );
         let publish_futures = inbox.drain_available_message_for_test();
         assert_eq!(publish_futures.len(), 1);

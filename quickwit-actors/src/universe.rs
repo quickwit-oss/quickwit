@@ -167,10 +167,10 @@ mod tests {
         let universe = Universe::new();
         let actor_with_schedule = ActorWithSchedule::default();
         let (_maibox, handler) = universe.spawn(actor_with_schedule);
-        let count_after_initialization = handler.process_pending_and_observe().await.into_inner();
+        let count_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(count_after_initialization, 1);
         universe.simulate_time_shift(Duration::from_secs(200)).await;
-        let count_after_advance_time = handler.process_pending_and_observe().await.into_inner();
+        let count_after_advance_time = handler.process_pending_and_observe().await.state;
         // Note the count is 2 here and not 1 + 3  = 4.
         // See comment on `universe.simulate_advance_time`.
         assert_eq!(count_after_advance_time, 4);

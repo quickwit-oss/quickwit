@@ -1,48 +1,27 @@
 use std::fmt;
 
-/// Object returned by [ActorHandle::observe()].
-//
-// TODO It should be a struct with a kind enum rather than a rich enum
 #[derive(Debug)]
-pub enum Observation<ObservableState> {
+pub struct Observation<ObservableState> {
+    pub obs_type: ObservationType,
+    pub state: ObservableState,
+}
+
+// Describes the actual outcome of observation.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ObservationType {
     /// The actor is alive and was able to snapshot its state within `HEARTBEAT`
-    Running(ObservableState),
+    Success,
     /// The actor is terminated. The post-mortem state was snapshotted and is joined.
-    Terminated(ObservableState),
+    LastStateAfterActorTerminated,
     /// Timeout is returned if an observation could not be made with HEARTBEAT, because
     /// the actor had too much work. In that case, in a best effort fashion, the
     /// last observed state is returned.
-    Timeout(ObservableState),
-}
-
-impl<ObservableState> Observation<ObservableState> {
-    pub fn into_inner(self) -> ObservableState {
-        match self {
-            Observation::Running(obs) => obs,
-            Observation::Terminated(obs) => obs,
-            Observation::Timeout(obs) => obs,
-        }
-    }
-}
-
-impl<ObservableState: fmt::Debug> Observation<ObservableState> {
-    pub fn state(&self) -> &ObservableState {
-        match self {
-            Observation::Running(state) => state,
-            Observation::Terminated(state) => state,
-            Observation::Timeout(state) => state,
-        }
-    }
+    Timeout,
 }
 
 impl<State: fmt::Debug + PartialEq> PartialEq for Observation<State> {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Observation::Running(left), Observation::Running(right)) => left.eq(right),
-            (Observation::Terminated(left), Observation::Terminated(right)) => left.eq(right),
-            (Observation::Timeout(left), Observation::Timeout(right)) => left.eq(right),
-            _ => false,
-        }
+        self.obs_type.eq(&other.obs_type) && self.state.eq(&other.state)
     }
 }
 

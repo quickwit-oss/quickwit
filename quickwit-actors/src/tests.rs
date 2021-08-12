@@ -1,4 +1,5 @@
 use crate::mailbox::Command;
+use crate::observation::ObservationType;
 use crate::Actor;
 use crate::Universe;
 use crate::{ActorContext, ActorTermination, AsyncActor, Mailbox, Observation, SyncActor};
@@ -135,7 +136,13 @@ async fn test_ping_actor() {
         universe.spawn_sync_actor(PingReceiverSyncActor::default());
     let (ping_sender_mailbox, ping_sender_handle) =
         universe.spawn(PingerAsyncSenderActor::default());
-    assert_eq!(ping_recv_handle.observe().await, Observation::Running(0));
+    assert_eq!(
+        ping_recv_handle.observe().await,
+        Observation {
+            obs_type: ObservationType::Success,
+            state: 0
+        }
+    );
     // No peers. This one will have no impact.
     let ping_recv_mailbox = ping_recv_mailbox.clone();
     assert!(ping_sender_mailbox
@@ -148,10 +155,13 @@ async fn test_ping_actor() {
         .is_ok());
     assert_eq!(
         ping_sender_handle.process_pending_and_observe().await,
-        Observation::Running(SenderState {
-            num_peers: 1,
-            count: 1
-        })
+        Observation {
+            obs_type: ObservationType::Success,
+            state: SenderState {
+                num_peers: 1,
+                count: 1
+            }
+        }
     );
     assert!(ping_sender_mailbox
         .send_message(SenderMessage::Ping)
@@ -163,26 +173,38 @@ async fn test_ping_actor() {
         .is_ok());
     assert_eq!(
         ping_sender_handle.process_pending_and_observe().await,
-        Observation::Running(SenderState {
-            num_peers: 1,
-            count: 3
-        })
+        Observation {
+            obs_type: ObservationType::Success,
+            state: SenderState {
+                num_peers: 1,
+                count: 3
+            }
+        }
     );
     assert_eq!(
         ping_recv_handle.process_pending_and_observe().await,
-        Observation::Running(2)
+        Observation {
+            obs_type: ObservationType::Success,
+            state: 2
+        }
     );
     universe.kill();
     assert_eq!(
         ping_recv_handle.process_pending_and_observe().await,
-        Observation::Terminated(2)
+        Observation {
+            obs_type: ObservationType::LastStateAfterActorTerminated,
+            state: 2,
+        }
     );
     assert_eq!(
         ping_sender_handle.process_pending_and_observe().await,
-        Observation::Terminated(SenderState {
-            num_peers: 1,
-            count: 3
-        })
+        Observation {
+            obs_type: ObservationType::LastStateAfterActorTerminated,
+            state: SenderState {
+                num_peers: 1,
+                count: 3
+            }
+        }
     );
     assert!(ping_sender_mailbox
         .send_message(SenderMessage::Ping)
@@ -216,13 +238,13 @@ impl AsyncActor for BuggyActor {
     async fn process_message(
         &mut self,
         message: BuggyMessage,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorTermination> {
         match message {
             BuggyMessage::Block => {
-                loop {
+                while ctx.kill_switch().is_alive() {
                     // we could keep the actor alive by calling `progress.record_progress()` here.
-                    tokio::time::sleep(tokio::time::Duration::from_secs(3_600)).await;
+                    tokio::task::yield_now().await;
                 }
             }
             BuggyMessage::DoNothing => {}
@@ -236,12 +258,18 @@ async fn test_timeouting_actor() {
     let universe = Universe::new();
     let (buggy_mailbox, buggy_handle) = universe.spawn(BuggyActor);
     let buggy_mailbox = buggy_mailbox;
-    assert_eq!(buggy_handle.observe().await, Observation::Running(()));
+    assert_eq!(
+        buggy_handle.observe().await.obs_type,
+        ObservationType::Success
+    );
     assert!(buggy_mailbox
         .send_message(BuggyMessage::DoNothing)
         .await
         .is_ok());
-    assert_eq!(buggy_handle.observe().await, Observation::Running(()));
+    assert_eq!(
+        buggy_handle.observe().await.obs_type,
+        ObservationType::Success
+    );
     assert!(buggy_mailbox
         .send_message(BuggyMessage::Block)
         .await
@@ -249,10 +277,16 @@ async fn test_timeouting_actor() {
     // We sleep here to make sure the block message is not executed after the observe command
     // due to priority rules.
     tokio::time::sleep(Duration::from_millis(10)).await;
-    assert_eq!(buggy_handle.observe().await, Observation::Timeout(()));
+    assert_eq!(
+        buggy_handle.observe().await.obs_type,
+        ObservationType::Timeout
+    );
     tokio::time::sleep(crate::HEARTBEAT).await;
     tokio::time::sleep(crate::HEARTBEAT).await;
-    assert_eq!(buggy_handle.observe().await, Observation::Terminated(()));
+    assert_eq!(
+        buggy_handle.observe().await.obs_type,
+        ObservationType::LastStateAfterActorTerminated
+    );
 }
 
 #[tokio::test]
@@ -266,12 +300,12 @@ async fn test_pause_sync_actor() {
     }
     // Commands should be processed before message.
     assert!(ping_mailbox.send_command(Command::Pause).await.is_ok());
-    let first_state = *ping_handle.observe().await.state();
+    let first_state = ping_handle.observe().await.state;
     assert!(first_state < 1000);
-    let second_state = *ping_handle.observe().await.state();
+    let second_state = ping_handle.observe().await.state;
     assert_eq!(first_state, second_state);
     assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
-    let end_state = *ping_handle.process_pending_and_observe().await.state();
+    let end_state = ping_handle.process_pending_and_observe().await.state;
     assert_eq!(end_state, 1000);
 }
 
@@ -284,12 +318,12 @@ async fn test_pause_async_actor() {
         assert!(ping_mailbox.send_message(Ping).await.is_ok());
     }
     assert!(ping_mailbox.send_command(Command::Pause).await.is_ok());
-    let first_state = *ping_handle.observe().await.state();
+    let first_state = ping_handle.observe().await.state;
     assert!(first_state < 1000);
-    let second_state = *ping_handle.observe().await.state();
+    let second_state = ping_handle.observe().await.state;
     assert_eq!(first_state, second_state);
     assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
-    let end_state = *ping_handle.process_pending_and_observe().await.state();
+    let end_state = ping_handle.process_pending_and_observe().await.state;
     assert_eq!(end_state, 1000);
 }
 
@@ -370,8 +404,7 @@ async fn test_default_message_async() -> anyhow::Result<()> {
     let state = actor_with_default_msg_handle
         .process_pending_and_observe()
         .await
-        .state()
-        .clone();
+        .state;
     actor_with_default_msg_handle.finish().await;
     assert_eq!(state.normal_count, 1);
     assert!(state.default_count > 0);
@@ -396,8 +429,7 @@ async fn test_default_message_sync() -> anyhow::Result<()> {
     let state = actor_with_default_msg_handle
         .process_pending_and_observe()
         .await
-        .state()
-        .clone();
+        .state;
     actor_with_default_msg_handle.finish().await;
     assert_eq!(state.normal_count, 1);
     assert!(state.default_count > 1);

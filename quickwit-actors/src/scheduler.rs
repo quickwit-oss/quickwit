@@ -318,10 +318,8 @@ mod tests {
             )
             .await
             .unwrap();
-        let scheduler_counters: SchedulerCounters = scheduler_handler
-            .process_pending_and_observe()
-            .await
-            .into_inner();
+        let scheduler_counters: SchedulerCounters =
+            scheduler_handler.process_pending_and_observe().await.state;
         assert_eq!(
             scheduler_counters,
             SchedulerCounters {
@@ -360,10 +358,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let scheduler_counters = scheduler_handler
-            .process_pending_and_observe()
-            .await
-            .into_inner();
+        let scheduler_counters = scheduler_handler.process_pending_and_observe().await.state;
         assert_eq!(
             scheduler_counters,
             SchedulerCounters {
@@ -374,10 +369,7 @@ mod tests {
         assert!(!cb_called1.load(Ordering::SeqCst));
         assert!(!cb_called2.load(Ordering::SeqCst));
         tokio::time::sleep(Duration::from_millis(10)).await;
-        let scheduler_counters = scheduler_handler
-            .process_pending_and_observe()
-            .await
-            .into_inner();
+        let scheduler_counters = scheduler_handler.process_pending_and_observe().await.state;
         assert_eq!(
             scheduler_counters,
             SchedulerCounters {
@@ -411,10 +403,8 @@ mod tests {
             )
             .await
             .unwrap();
-        let scheduler_counters: SchedulerCounters = scheduler_handler
-            .process_pending_and_observe()
-            .await
-            .into_inner();
+        let scheduler_counters: SchedulerCounters =
+            scheduler_handler.process_pending_and_observe().await.state;
         assert!(cb_called1.load(Ordering::SeqCst));
         assert!(cb_called2.load(Ordering::SeqCst));
         assert_eq!(
