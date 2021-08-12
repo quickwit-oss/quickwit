@@ -40,8 +40,8 @@ use quickwit_proto::{
 };
 
 use crate::client_pool::Job;
+use crate::collector::make_merge_collector;
 use crate::list_relevant_splits;
-use crate::make_collector;
 use crate::ClientPool;
 use crate::SearchClientPool;
 use crate::SearchError;
@@ -312,10 +312,6 @@ pub async fn root_search(
         }
     }
 
-    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let index_config = index_metadata.index_config;
-    let collector = make_collector(index_config.as_ref(), search_request);
-
     // Find the sum of the number of hits and merge multiple partial hits into a single partial hits.
     let mut leaf_search_results = Vec::new();
     for (_addr, leaf_search_response) in result_per_node_addr.into_iter() {
@@ -331,11 +327,13 @@ pub async fn root_search(
         }
     }
 
-    let leaf_search_result = spawn_blocking(move || collector.merge_fruits(leaf_search_results))
-        .await?
-        .map_err(|merge_error: TantivyError| {
-            crate::SearchError::InternalError(format!("{}", merge_error))
-        })?;
+    let merge_collector = make_merge_collector(search_request);
+    let leaf_search_result =
+        spawn_blocking(move || merge_collector.merge_fruits(leaf_search_results))
+            .await?
+            .map_err(|merge_error: TantivyError| {
+                crate::SearchError::InternalError(format!("{}", merge_error))
+            })?;
     debug!(leaf_search_result=?leaf_search_result, "Merged leaf search result.");
 
     if !leaf_search_result.failed_splits.is_empty() {

@@ -18,8 +18,8 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::collector::GenericQuickwitCollector;
-use crate::{collector::QuickwitCollector, SearchError};
+use crate::collector::{make_merge_collector, make_split_collector, GenericQuickwitCollector};
+use crate::SearchError;
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
@@ -124,19 +124,19 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
 
 /// Apply a leaf search on a single split.
 async fn leaf_search_single_split(
+    split_id: String,
     index_config: Box<dyn IndexConfig>,
     search_request: &SearchRequest,
-    quickwit_collector: QuickwitCollector,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchResult> {
     let index = open_index(storage).await?;
     let split_schema = index.schema();
-    let collector_with_timestamp =
-        if let Some(timestamp_field) = index_config.timestamp_field(&split_schema) {
-            quickwit_collector.for_timestamp_field(timestamp_field)
-        } else {
-            quickwit_collector
-        };
+    let quickwit_collector = make_split_collector(
+        split_id,
+        index_config.as_ref(),
+        search_request,
+        &split_schema,
+    );
     let query = index_config.query(split_schema, search_request)?;
 
     let reader = index
@@ -145,13 +145,8 @@ async fn leaf_search_single_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
-    warmup(
-        &*searcher,
-        &query,
-        collector_with_timestamp.fast_field_names(),
-    )
-    .await?;
-    let leaf_search_result = searcher.search(&query, &collector_with_timestamp)?;
+    warmup(&*searcher, &query, quickwit_collector.fast_field_names()).await?;
+    let leaf_search_result = searcher.search(&query, &quickwit_collector)?;
     Ok(leaf_search_result)
 }
 
@@ -163,7 +158,6 @@ async fn leaf_search_single_split(
 pub async fn leaf_search(
     index_config: Box<dyn IndexConfig>,
     request: &SearchRequest,
-    collector: QuickwitCollector,
     split_ids: &[String],
     storage: Arc<dyn Storage>,
 ) -> Result<LeafSearchResult, SearchError> {
@@ -172,13 +166,12 @@ pub async fn leaf_search(
         .map(|split_id| {
             let split_storage: Arc<dyn Storage> =
                 quickwit_storage::add_prefix_to_storage(storage.clone(), split_id);
-            let collector_for_split = collector.for_split(split_id.clone());
             let index_config_clone = index_config.clone();
             async move {
                 leaf_search_single_split(
+                    split_id.clone(),
                     index_config_clone,
                     request,
-                    collector_for_split,
                     split_storage,
                 )
                 .await
@@ -196,9 +189,11 @@ pub async fn leaf_search(
                 Err(err) => Either::Right(err),
             });
 
-    let mut merged_search_results = spawn_blocking(move || collector.merge_fruits(search_results))
-        .await
-        .with_context(|| "Merging search on split results failed")??;
+    let merge_collector = make_merge_collector(request);
+    let mut merged_search_results =
+        spawn_blocking(move || merge_collector.merge_fruits(search_results))
+            .await
+            .with_context(|| "Merging search on split results failed")??;
 
     merged_search_results
         .failed_splits

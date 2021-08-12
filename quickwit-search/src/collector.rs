@@ -21,6 +21,7 @@
 use itertools::Itertools;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use tantivy::schema::Schema;
 
 use quickwit_index_config::IndexConfig;
 use quickwit_index_config::SortBy;
@@ -240,20 +241,6 @@ pub struct QuickwitCollector {
     pub end_timestamp_opt: Option<i64>,
 }
 
-impl QuickwitCollector {
-    pub fn for_split(&self, split_id: String) -> Self {
-        let mut self_clone = self.clone();
-        self_clone.split_id = split_id;
-        self_clone
-    }
-
-    pub fn for_timestamp_field(&self, timestamp_field: Field) -> Self {
-        let mut self_clone = self.clone();
-        self_clone.timestamp_field_opt = Some(timestamp_field);
-        self_clone
-    }
-}
-
 impl GenericQuickwitCollector for QuickwitCollector {
     fn fast_field_names(&self) -> Vec<String> {
         self.fast_field_names.clone()
@@ -381,16 +368,35 @@ fn extract_fast_field_names(index_config: &dyn IndexConfig) -> Vec<String> {
 }
 
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
-pub fn make_collector(
+pub fn make_split_collector(
+    split_id: String,
     index_config: &dyn IndexConfig,
     search_request: &SearchRequest,
+    split_schema: &Schema,
 ) -> QuickwitCollector {
     QuickwitCollector {
-        split_id: String::new(),
+        split_id,
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by: index_config.default_sort_by(),
         fast_field_names: extract_fast_field_names(index_config),
+        timestamp_field_opt: index_config.timestamp_field(split_schema),
+        start_timestamp_opt: search_request.start_timestamp,
+        end_timestamp_opt: search_request.end_timestamp,
+    }
+}
+
+/// Builds a QuickwitCollector that's only useful for merging fruits.
+///
+/// This collector only needs `start_offset` & `max_hit` so the other attributes
+/// can be set to default.
+pub fn make_merge_collector(search_request: &SearchRequest) -> QuickwitCollector {
+    QuickwitCollector {
+        split_id: String::default(),
+        start_offset: search_request.start_offset as usize,
+        max_hits: search_request.max_hits as usize,
+        sort_by: SortBy::DocId,
+        fast_field_names: vec![],
         timestamp_field_opt: None,
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,

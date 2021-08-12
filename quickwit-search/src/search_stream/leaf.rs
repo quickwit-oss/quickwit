@@ -43,7 +43,6 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 pub async fn leaf_search_stream(
     index_config: Box<dyn IndexConfig>,
     request: &SearchStreamRequest,
-    fast_field_collector_builder: FastFieldCollectorBuilder,
     split_ids: Vec<String>,
     storage: Arc<dyn Storage>,
     output_format: OutputFormat,
@@ -52,7 +51,6 @@ pub async fn leaf_search_stream(
     for split_id in split_ids {
         let split_storage: Arc<dyn Storage> =
             quickwit_storage::add_prefix_to_storage(storage.clone(), split_id.clone());
-        let collector_for_split = fast_field_collector_builder.clone();
         let index_config_clone = index_config.clone();
         let result_sender_clone = result_sender.clone();
         let request_clone = request.clone();
@@ -60,7 +58,6 @@ pub async fn leaf_search_stream(
             let leaf_split_result = leaf_search_stream_single_split(
                 index_config_clone,
                 &request_clone,
-                collector_for_split,
                 split_storage,
                 output_format,
             )
@@ -82,18 +79,30 @@ pub async fn leaf_search_stream(
 async fn leaf_search_stream_single_split(
     index_config: Box<dyn IndexConfig>,
     stream_request: &SearchStreamRequest,
-    collector_builder: FastFieldCollectorBuilder,
     storage: Arc<dyn Storage>,
     output_format: OutputFormat,
 ) -> crate::Result<LeafSearchStreamResult> {
     let index = open_index(storage).await?;
     let split_schema = index.schema();
-    let collector_builder_with_timestamp =
-        if let Some(timestamp_field) = index_config.timestamp_field(&split_schema) {
-            collector_builder.for_timestamp_field(timestamp_field)
-        } else {
-            collector_builder
-        };
+    let fast_field_to_extract = stream_request.fast_field.clone();
+    let fast_field = split_schema
+        .get_field(&fast_field_to_extract)
+        .ok_or_else(|| {
+            SearchError::InvalidQuery(format!(
+                "Fast field `{}` does not exist.",
+                fast_field_to_extract
+            ))
+        })?;
+    let fast_field_type = split_schema.get_field_entry(fast_field).field_type();
+    let fast_field_collector_builder = FastFieldCollectorBuilder::new(
+        fast_field_type.value_type(),
+        stream_request.fast_field.clone(),
+        index_config.timestamp_field_name(),
+        index_config.timestamp_field(&split_schema),
+        stream_request.start_timestamp,
+        stream_request.end_timestamp,
+    )?;
+
     let search_request = SearchRequest::from(stream_request.clone());
     let query = index_config.query(split_schema, &search_request)?;
 
@@ -106,13 +115,13 @@ async fn leaf_search_stream_single_split(
     warmup(
         &*searcher,
         query.as_ref(),
-        collector_builder_with_timestamp.fast_field_to_warm(),
+        fast_field_collector_builder.fast_field_to_warm(),
     )
     .await?;
     let mut buffer = Vec::new();
-    match collector_builder_with_timestamp.value_type() {
+    match fast_field_collector_builder.value_type() {
         Type::I64 => {
-            let fast_field_collector = collector_builder_with_timestamp.build_i64();
+            let fast_field_collector = fast_field_collector_builder.build_i64();
             let fast_field_values = searcher.search(query.as_ref(), &fast_field_collector)?;
             super::serialize::<i64>(&fast_field_values, &mut buffer, output_format).map_err(
                 |_| {
@@ -123,7 +132,7 @@ async fn leaf_search_stream_single_split(
             )?;
         }
         Type::U64 => {
-            let fast_field_collector = collector_builder_with_timestamp.build_u64();
+            let fast_field_collector = fast_field_collector_builder.build_u64();
             let fast_field_values = searcher.search(query.as_ref(), &fast_field_collector)?;
             super::serialize::<u64>(&fast_field_values, &mut buffer, output_format).map_err(
                 |_| {

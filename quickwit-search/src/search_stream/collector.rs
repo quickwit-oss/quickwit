@@ -140,6 +140,7 @@ impl FastFieldCollectorBuilder {
         fast_field_value_type: Type,
         fast_field_name: String,
         timestamp_field_name: Option<String>,
+        timestamp_field: Option<Field>,
         start_timestamp: Option<i64>,
         end_timestamp: Option<i64>,
     ) -> crate::Result<Self> {
@@ -156,16 +157,10 @@ impl FastFieldCollectorBuilder {
             fast_field_value_type,
             fast_field_name,
             timestamp_field_name,
-            timestamp_field: None,
+            timestamp_field,
             start_timestamp,
             end_timestamp,
         })
-    }
-
-    pub fn for_timestamp_field(&self, timestamp_field: Field) -> Self {
-        let mut self_clone = self.clone();
-        self_clone.timestamp_field = Some(timestamp_field);
-        self_clone
     }
 
     pub fn value_type(&self) -> Type {
