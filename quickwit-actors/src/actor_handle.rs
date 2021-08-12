@@ -23,6 +23,7 @@ use crate::channel_with_priority::Priority;
 use crate::mailbox::Command;
 use crate::observation::ObservationType;
 use crate::{Actor, ActorContext, ActorExitStatus, Observation};
+use std::any::Any;
 use std::fmt;
 use tokio::sync::{oneshot, watch};
 use tokio::task::JoinHandle;
@@ -98,14 +99,7 @@ impl<A: Actor> ActorHandle<A> {
         }
         // The timeout is required here. If the actor fails, its inbox is properly dropped but the send channel might actually
         // prevent the onechannel Receiver from being dropped.
-        let observable_state_res = tokio::time::timeout(crate::HEARTBEAT, rx).await;
-        let state = self.last_observation();
-        let obs_type = match observable_state_res {
-            Ok(Ok(_)) => ObservationType::Alive,
-            Ok(Err(_)) => ObservationType::PostMortem,
-            Err(_) => ObservationType::Timeout,
-        };
-        Observation { obs_type, state }
+        self.wait_for_observable_state_callback(rx).await
     }
 
     /// Gracefully quit the actor, regardless of whether there are pending messages or not.
@@ -148,17 +142,36 @@ impl<A: Actor> ActorHandle<A> {
         {
             error!("Failed to send message");
         }
-        let observable_state_or_timeout = timeout(crate::HEARTBEAT, rx).await;
-        let state = self.last_observation();
-        let obs_type = match observable_state_or_timeout {
-            Ok(Ok(())) => ObservationType::Alive,
-            Ok(Err(_)) => ObservationType::PostMortem,
-            Err(_) => ObservationType::Timeout,
-        };
-        Observation { obs_type, state }
+        self.wait_for_observable_state_callback(rx).await
     }
 
     pub fn last_observation(&self) -> A::ObservableState {
         self.last_state.borrow().clone()
+    }
+
+    async fn wait_for_observable_state_callback(
+        &self,
+        rx: oneshot::Receiver<Box<dyn Any + Send>>,
+    ) -> Observation<A::ObservableState> {
+        let observable_state_or_timeout = timeout(crate::HEARTBEAT, rx).await;
+        match observable_state_or_timeout {
+            Ok(Ok(observable_state_any)) => {
+                let state: A::ObservableState = *observable_state_any
+                    .downcast()
+                    .expect("The type is guaranteed logically by the ActorHandle.");
+                let obs_type = ObservationType::Alive;
+                Observation { obs_type, state }
+            }
+            Ok(Err(_)) => {
+                let state = self.last_observation();
+                let obs_type = ObservationType::PostMortem;
+                Observation { obs_type, state }
+            }
+            Err(_) => {
+                let state = self.last_observation();
+                let obs_type = ObservationType::Timeout;
+                Observation { obs_type, state }
+            }
+        }
     }
 }

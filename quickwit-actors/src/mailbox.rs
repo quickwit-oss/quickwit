@@ -18,6 +18,7 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::any::Any;
 use std::fmt;
 use std::sync::Arc;
 
@@ -110,7 +111,9 @@ pub enum Command {
     ///
     /// The observation is then available using the `ActorHander::last_observation()`
     /// method.
-    Observe(oneshot::Sender<()>),
+    // We use a `Box<dyn Any>` here to avoid adding an observablestate generic
+    // parameter to the mailbox.
+    Observe(oneshot::Sender<Box<dyn Any + Send>>),
 
     /// Asks the actor to gracefully shutdown.
     ///

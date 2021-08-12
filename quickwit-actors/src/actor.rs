@@ -366,10 +366,10 @@ pub(crate) fn process_command<A: Actor>(
         }
         Command::Observe(cb) => {
             let state = actor.observable_state();
-            let _ = state_tx.send(state);
+            let _ = state_tx.send(state.clone());
             // We voluntarily ignore the error here. (An error only occurs if the
             // sender dropped its receiver.)
-            let _ = cb.send(());
+            let _ = cb.send(Box::new(state));
             None
         }
     }
