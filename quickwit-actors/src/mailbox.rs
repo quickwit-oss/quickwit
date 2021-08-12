@@ -19,20 +19,29 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
-use std::ops::Deref;
 use std::sync::Arc;
 
 use flume::RecvTimeoutError;
 use flume::TryRecvError;
 use std::hash::Hash;
 use tokio::sync::oneshot;
-use uuid::Uuid;
 
 use crate::actor_handle::ActorMessage;
 use crate::SendError;
 
+/// A mailbox is the object that makes it possible to send a message
+/// to an actor.
+///
+/// The actor holds its `Inbox` counterpart.
+///
+/// The mailbox can accept:
+/// - regular message. Their type depend on the actor and is defined when
+/// implementing the actor trait.  (See [`Actor::Message`])
+/// - Commands (See [`Command`]). Commands have a higher priority than messages:
+/// whenever a command is available, it is guaranteed to be processed
+/// as soon as possible regardless of the presence of pending regular messages.
 pub struct Mailbox<Message> {
-    inner: Arc<Inner<Message>>,
+    pub(crate) inner: Arc<Inner<Message>>,
 }
 
 impl<Message> Clone for Mailbox<Message> {
@@ -49,22 +58,15 @@ impl<Message> Mailbox<Message> {
     }
 }
 
-impl<Message> Deref for Mailbox<Message> {
-    type Target = Inner<Message>;
-
-    fn deref(&self) -> &Self::Target {
-        self.inner.as_ref()
-    }
-}
-
-pub struct Inner<Message> {
+pub(crate) struct Inner<Message> {
     pub(crate) tx: flume::Sender<ActorMessage<Message>>,
     command_tx: flume::Sender<Command<Message>>,
     instance_id: String,
-    actor_name: String,
 }
 
-pub enum Command<Msg> {
+/// Commands are messages that can be send to control the behavior of an actor.
+/// They are treated with in priority, before any regular actor message.
+pub enum Command<Message> {
     /// Temporarily pauses the actor. A paused actor only checks
     /// on its command channel and still shows "progress". It appears as
     /// healthy to the supervisor.
@@ -91,10 +93,10 @@ pub enum Command<Msg> {
     /// needing to be processed with a high priority.
     /// Internally, this is used by the scheduled message, to make sure that
     /// the message arrive as soon as possible after their timeout has expired.
-    HighPriorityMessage(Msg),
+    HighPriorityMessage(Message),
 }
 
-impl<Msg> fmt::Debug for Command<Msg> {
+impl<Message> fmt::Debug for Command<Message> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Command::Pause => write!(f, "Pause"),
@@ -114,13 +116,13 @@ impl<Message: fmt::Debug> fmt::Debug for Mailbox<Message> {
 
 impl<Message> Hash for Mailbox<Message> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.instance_id.hash(state)
+        self.inner.instance_id.hash(state)
     }
 }
 
 impl<Message> PartialEq for Mailbox<Message> {
     fn eq(&self, other: &Self) -> bool {
-        self.instance_id.eq(&other.instance_id)
+        self.inner.instance_id.eq(&other.inner.instance_id)
     }
 }
 
@@ -128,14 +130,14 @@ impl<Message> Eq for Mailbox<Message> {}
 
 impl<Message> Mailbox<Message> {
     pub fn actor_instance_id(&self) -> &str {
-        &self.instance_id
+        &self.inner.instance_id
     }
 
     pub(crate) async fn send_actor_message(
         &self,
         msg: ActorMessage<Message>,
     ) -> Result<(), SendError> {
-        self.tx.send_async(msg).await?;
+        self.inner.tx.send_async(msg).await?;
         Ok(())
     }
 
@@ -151,17 +153,17 @@ impl<Message> Mailbox<Message> {
     /// Send a message to the actor in a blocking fashion.
     /// When possible, prefer using [Self::send()].
     pub(crate) fn send_message_blocking(&self, msg: Message) -> Result<(), SendError> {
-        self.tx.send(ActorMessage::Message(msg))?;
+        self.inner.tx.send(ActorMessage::Message(msg))?;
         Ok(())
     }
 
     pub fn send_command_blocking(&self, command: Command<Message>) -> Result<(), SendError> {
-        self.command_tx.send(command)?;
+        self.inner.command_tx.send(command)?;
         Ok(())
     }
 
     pub async fn send_command(&self, command: Command<Message>) -> Result<(), SendError> {
-        self.command_tx.send_async(command).await?;
+        self.inner.command_tx.send_async(command).await?;
         Ok(())
     }
 }
@@ -178,7 +180,7 @@ pub struct Inbox<Message> {
 }
 
 #[derive(Debug)]
-pub enum ReceptionResult<M> {
+pub(crate) enum ReceptionResult<M> {
     Command(Command<M>), // A command was received.
     Message(M),          //< A message was received.
     Timeout, //< No message was available. The timeout used is define by `crate::message_timeout()`
@@ -325,7 +327,6 @@ pub fn create_mailbox<M>(
             tx,
             command_tx: command_tx.clone(),
             instance_id: quickwit_common::new_coolid(&actor_name),
-            actor_name,
         }),
     };
     let inbox = Inbox {
