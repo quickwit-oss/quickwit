@@ -338,7 +338,7 @@ pub async fn remove_split_files_from_storage(
     split_uri: &str,
     storage_resolver: StorageUriResolver,
     dry_run: bool,
-) -> anyhow::Result<Vec<FileEntry>> {
+) -> anyhow::Result<()> {
     info!(split_uri =% split_uri, "delete-split");
     let storage = storage_resolver.resolve(split_uri)?;
 
@@ -348,7 +348,7 @@ pub async fn remove_split_files_from_storage(
     // - split was staged but failed to upload.
     // - operation canceled by the user right in the middle.
     if !storage.exists(manifest_file).await? {
-        return Ok(vec![]);
+        return Ok(());
     }
     let data = storage.get_all(manifest_file).await?;
     let manifest: Manifest = serde_json::from_slice(&data)?;
@@ -377,7 +377,7 @@ pub async fn remove_split_files_from_storage(
         file_size_in_bytes: data.len() as u64,
     });
 
-    Ok(file_entries)
+    Ok(())
 }
 
 #[cfg(test)]

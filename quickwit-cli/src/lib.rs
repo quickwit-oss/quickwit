@@ -302,11 +302,11 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         }
 
         println!(
-            "The following files will be removed along with the index at `{}`",
+            "The following splits will be removed along with the index at `{}`",
             args.index_uri
         );
         for file_entry in affected_files {
-            println!(" - {}", file_entry.file_name);
+            println!(" - {}", file_entry.split_id);
         }
         return Ok(());
     }
@@ -326,25 +326,22 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
 
     let (metastore_uri, index_id) =
         extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let deleted_files =
+    let deleted_splits =
         garbage_collect_index(metastore_uri, index_id, args.grace_period, args.dry_run).await?;
-    if deleted_files.is_empty() {
-        println!("No dangling files to garbage collect.");
+    if deleted_splits.is_empty() {
+        println!("No dangling splits to garbage collect.");
         return Ok(());
     }
 
     if args.dry_run {
-        println!("The following files will be garbage collected.");
-        for file_entry in deleted_files {
-            println!(" - {}", file_entry.file_name);
+        println!("The following splits will be garbage collected.");
+        for file_entry in deleted_splits {
+            println!(" - {}", file_entry.split_id);
         }
         return Ok(());
     }
 
-    let deleted_bytes: u64 = deleted_files
-        .iter()
-        .map(|entry| entry.file_size_in_bytes)
-        .sum();
+    let deleted_bytes: usize = deleted_splits.iter().map(|entry| entry.size_in_bytes).sum();
     println!(
         "{}MB of storage garbage collected.",
         deleted_bytes / 1_000_000

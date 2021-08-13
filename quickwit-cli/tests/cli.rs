@@ -201,10 +201,8 @@ fn test_cmd_delete_index_dry_run() -> Result<()> {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "The following files will be removed",
-        ))
-        .stdout(predicate::str::contains("/hotcache"))
-        .stdout(predicate::str::contains("/.manifest"));
+            "The following splits will be removed",
+        ));
 
     Ok(())
 }
@@ -223,7 +221,7 @@ fn test_cmd_delete() -> Result<()> {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "No dangling files to garbage collect",
+            "No dangling splits to garbage collect",
         ));
 
     make_command(format!("delete --index-uri {} ", test_env.index_uri).as_str())
@@ -254,7 +252,7 @@ async fn test_cmd_garbage_collect() -> Result<()> {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "No dangling files to garbage collect",
+            "No dangling splits to garbage collect",
         ));
 
     let split_path = test_env
@@ -276,10 +274,8 @@ async fn test_cmd_garbage_collect() -> Result<()> {
     .assert()
     .success()
     .stdout(predicate::str::contains(
-        "The following files will be garbage collected.",
-    ))
-    .stdout(predicate::str::contains("/hotcache"))
-    .stdout(predicate::str::contains("/.manifest"));
+        "The following splits will be garbage collected.",
+    ));
     assert_eq!(split_path.exists(), true);
 
     make_command(format!("gc --index-uri {} --grace-period 10m", test_env.index_uri).as_str())
@@ -322,7 +318,7 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "No dangling files to garbage collect",
+            "No dangling splits to garbage collect",
         ));
 
     let split_path = test_env
@@ -346,7 +342,7 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "No dangling files to garbage collect",
+            "No dangling splits to garbage collect",
         ));
     assert_eq!(split_path.exists(), true);
 
@@ -362,10 +358,8 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     .assert()
     .success()
     .stdout(predicate::str::contains(
-        "The following files will be garbage collected.",
-    ))
-    .stdout(predicate::str::contains("/hotcache"))
-    .stdout(predicate::str::contains("/.manifest"));
+        "The following splits will be garbage collected.",
+    ));
     assert_eq!(split_path.exists(), true);
 
     make_command(format!("gc --index-uri {} --grace-period 2s", test_env.index_uri).as_str())
@@ -404,14 +398,14 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "No dangling files to garbage collect",
+            "No dangling splits to garbage collect",
         ));
 
     make_command(format!("delete --index-uri {} --dry-run", test_env.index_uri).as_str())
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "The following files will be removed",
+            "The following splits will be removed",
         ))
         .stdout(predicate::str::contains("/hotcache"))
         .stdout(predicate::str::contains("/.manifest"));

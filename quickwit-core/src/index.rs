@@ -61,7 +61,7 @@ pub async fn delete_index(
     metastore_uri: &str,
     index_id: &str,
     dry_run: bool,
-) -> anyhow::Result<Vec<FileEntry>> {
+) -> anyhow::Result<Vec<SplitMetadata>> {
     let metastore = MetastoreUriResolver::default()
         .resolve(metastore_uri)
         .await?;
@@ -69,8 +69,7 @@ pub async fn delete_index(
 
     if dry_run {
         let all_splits = metastore.list_all_splits(index_id).await?;
-        let index_uri = metastore.index_metadata(index_id).await?.index_uri;
-        return list_splits_files(all_splits, index_uri, storage_resolver).await;
+        return Ok(all_splits);
     }
 
     // Schedule staged and published splits for deletion.
@@ -89,11 +88,11 @@ pub async fn delete_index(
         .mark_splits_as_deleted(index_id, &split_ids)
         .await?;
 
-    let file_entries = delete_garbage_files(metastore.as_ref(), index_id, storage_resolver).await?;
+    let splits = delete_garbage_files(metastore.as_ref(), index_id, storage_resolver).await?;
     //TODO: discuss & fix possible data race
     metastore.delete_index(index_id).await?;
 
-    Ok(file_entries)
+    Ok(splits)
 }
 
 /// Detect all dangling splits and associated files from the index and removes them.
@@ -108,7 +107,7 @@ pub async fn garbage_collect_index(
     index_id: &str,
     grace_period: Duration,
     dry_run: bool,
-) -> anyhow::Result<Vec<FileEntry>> {
+) -> anyhow::Result<Vec<SplitMetadata>> {
     let metastore = MetastoreUriResolver::default()
         .resolve(metastore_uri)
         .await?;
@@ -131,7 +130,7 @@ pub async fn garbage_collect_index(
 
         let index_uri = metastore.index_metadata(index_id).await?.index_uri;
         scheduled_for_delete_splits.extend(staged_splits);
-        return list_splits_files(scheduled_for_delete_splits, index_uri, storage_resolver).await;
+        return Ok(scheduled_for_delete_splits);
     }
 
     // schedule all staged splits for delete
@@ -143,8 +142,8 @@ pub async fn garbage_collect_index(
         .mark_splits_as_deleted(index_id, &split_ids)
         .await?;
 
-    let file_entries = delete_garbage_files(metastore.as_ref(), index_id, storage_resolver).await?;
-    Ok(file_entries)
+    let splits = delete_garbage_files(metastore.as_ref(), index_id, storage_resolver).await?;
+    Ok(splits)
 }
 
 /// Get the list of files logically deleted from the index and removes them from the storage.
@@ -158,7 +157,7 @@ pub async fn delete_garbage_files(
     metastore: &dyn Metastore,
     index_id: &str,
     storage_resolver: StorageUriResolver,
-) -> anyhow::Result<Vec<FileEntry>> {
+) -> anyhow::Result<Vec<SplitMetadata>> {
     let splits_to_delete = metastore
         .list_splits(index_id, SplitState::ScheduledForDeletion, None)
         .await?;
@@ -175,13 +174,11 @@ pub async fn delete_garbage_files(
         })
         .buffer_unordered(crate::indexing::MAX_CONCURRENT_SPLIT_TASKS);
 
-    let mut file_entries = vec![];
     while let Some(delete_result) = delete_stream.next().await {
         let deleted_files = delete_result.map_err(|error| {
             warn!("Some split files were not deleted.");
             error
         })?;
-        file_entries.extend(deleted_files);
     }
 
     let split_ids = splits_to_delete
@@ -190,29 +187,5 @@ pub async fn delete_garbage_files(
         .collect::<Vec<_>>();
     metastore.delete_splits(index_id, &split_ids).await?;
 
-    Ok(file_entries)
-}
-
-/// list the files for a list of split.
-async fn list_splits_files(
-    splits: Vec<SplitMetadata>,
-    index_uri: String,
-    storage_resolver: StorageUriResolver,
-) -> anyhow::Result<Vec<FileEntry>> {
-    let mut list_stream = tokio_stream::iter(splits)
-        .map(|split_meta| {
-            let moved_storage_resolver = storage_resolver.clone();
-            let split_uri = format!("{}/{}", index_uri, split_meta.split_id);
-            async move {
-                remove_split_files_from_storage(&split_uri, moved_storage_resolver, true).await
-            }
-        })
-        .buffer_unordered(crate::indexing::MAX_CONCURRENT_SPLIT_TASKS);
-
-    let mut file_entries = vec![];
-    while let Some(list_result) = list_stream.next().await {
-        file_entries.extend(list_result?);
-    }
-
-    Ok(file_entries)
+    Ok(splits_to_delete)
 }
