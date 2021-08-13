@@ -43,7 +43,7 @@ use crate::models::IndexerMessage;
 use crate::models::RawDocBatch;
 use crate::models::ScratchDirectory;
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Eq, PartialEq)]
 pub struct IndexerCounters {
     /// Overall number of documents received, partitionned
     /// into 3 categories:
@@ -102,9 +102,11 @@ impl ImmutableState {
     fn get_or_create_current_indexed_split<'a>(
         &self,
         current_split_opt: &'a mut Option<IndexedSplit>,
+        counters: &mut IndexerCounters,
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {
         if current_split_opt.is_none() {
+            counters.num_docs_in_split = 0;
             let new_indexed_split = self.create_indexed_split()?;
             let commit_timeout = IndexerMessage::CommitTimeout {
                 split_id: new_indexed_split.split_id.clone(),
@@ -159,7 +161,8 @@ impl ImmutableState {
         counters: &mut IndexerCounters,
         ctx: &ActorContext<Indexer>,
     ) -> Result<(), ActorExitStatus> {
-        let indexed_split = self.get_or_create_current_indexed_split(current_split_opt, ctx)?;
+        let indexed_split =
+            self.get_or_create_current_indexed_split(current_split_opt, counters, ctx)?;
         for doc_json in batch.docs {
             counters.overall_num_bytes += doc_json.len() as u64;
             indexed_split.docs_size_in_bytes += doc_json.len() as u64;
@@ -176,6 +179,7 @@ impl ImmutableState {
                 } => {
                     counters.num_docs_in_split += 1;
                     counters.num_valid_docs += 1;
+                    indexed_split.num_docs += 1;
                     if let Some(timestamp) = timestamp_opt {
                         record_timestamp(timestamp, &mut indexed_split.time_range);
                     }
@@ -332,6 +336,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::actors::indexer::record_timestamp;
+    use crate::actors::indexer::IndexerCounters;
     use crate::models::CommitPolicy;
     use crate::models::RawDocBatch;
     use quickwit_actors::create_test_mailbox;
@@ -382,9 +387,10 @@ mod tests {
                 &indexer_mailbox,
                 RawDocBatch {
                     docs: vec![
-                        "{\"body\": \"happy\"}".to_string(),
-                        "{\"body\": \"happy2\"}".to_string(),
-                        "{".to_string(),
+                        r#"{"body": "happy"}"#.to_string(), // missing timestamp
+                        r#"{"body": "happy", "timestamp": 1628837062}"#.to_string(), // ok
+                        r#"{"body": "happy2", "timestamp": 1628837062}"#.to_string(), // ok
+                        "{".to_string(),                    // invalid json
                     ],
                 }
                 .into(),
@@ -394,14 +400,22 @@ mod tests {
             .send_message(
                 &indexer_mailbox,
                 RawDocBatch {
-                    docs: vec!["{\"body\": \"happy3\"}".to_string()],
+                    docs: vec![r#"{"body": "happy3", "timestamp": 1628837062}"#.to_string()], // ok
                 }
                 .into(),
             )
             .await?;
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
-        assert_eq!(indexer_counters.num_valid_docs, 3);
-        assert_eq!(indexer_counters.num_parse_errors, 1);
+        assert_eq!(
+            indexer_counters,
+            IndexerCounters {
+                num_parse_errors: 1,
+                num_missing_timestamp: 1,
+                num_valid_docs: 3,
+                num_docs_in_split: 3,
+                overall_num_bytes: 146,
+            }
+        );
         let output_messages = inbox.drain_available_message_for_test();
         assert_eq!(output_messages.len(), 1);
         assert_eq!(output_messages[0].num_docs, 3);
