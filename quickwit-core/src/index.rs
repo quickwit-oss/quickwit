@@ -175,7 +175,7 @@ pub async fn delete_garbage_files(
         .buffer_unordered(crate::indexing::MAX_CONCURRENT_SPLIT_TASKS);
 
     while let Some(delete_result) = delete_stream.next().await {
-        let deleted_files = delete_result.map_err(|error| {
+        delete_result.map_err(|error| {
             warn!("Some split files were not deleted.");
             error
         })?;

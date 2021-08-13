@@ -342,7 +342,8 @@ pub async fn remove_split_files_from_storage(
     info!(split_uri =% split_uri, "delete-split");
     let storage = storage_resolver.resolve(split_uri)?;
 
-    let manifest_file = Path::new(".manifest");
+    let manifest_file = Path::new(BUNDLE_FILENAME);
+    //let manifest_file = Path::new(".manifest");
     // Removing a non-existing split is considered ok.
     // A split can be listed by the metastore when it doesn't in fact exist on disk for some reasons:
     // - split was staged but failed to upload.
@@ -350,32 +351,12 @@ pub async fn remove_split_files_from_storage(
     if !storage.exists(manifest_file).await? {
         return Ok(());
     }
-    let data = storage.get_all(manifest_file).await?;
-    let manifest: Manifest = serde_json::from_slice(&data)?;
 
     if !dry_run {
-        let mut delete_file_futures: Vec<_> = manifest
-            .files
-            .iter()
-            .map(|entry| storage.delete(Path::new(&entry.file_name)))
-            .collect();
-        delete_file_futures.push(storage.delete(manifest_file));
-
-        futures::future::try_join_all(delete_file_futures).await?;
+        let manifest_file2 = Path::new(".manifest");
+        storage.delete(manifest_file).await?;
+        storage.delete(manifest_file2).await?;
     }
-
-    let mut file_entries: Vec<_> = manifest
-        .files
-        .iter()
-        .map(|entry| FileEntry {
-            file_name: format!("{}/{}", split_uri, entry.file_name),
-            file_size_in_bytes: entry.file_size_in_bytes,
-        })
-        .collect();
-    file_entries.push(FileEntry {
-        file_name: format!("{}/{}", split_uri, ".manifest"),
-        file_size_in_bytes: data.len() as u64,
-    });
 
     Ok(())
 }
