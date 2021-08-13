@@ -79,7 +79,7 @@ pub enum ActorExitStatus {
     Killed,
 
     /// An unexpected error happened while processing a message.
-    #[error("Failure")]
+    #[error("Failure(cause={0:?})")]
     Failure(#[from] anyhow::Error),
 
     /// The thread or the task executing the actor loop panicked.
@@ -233,7 +233,7 @@ impl<A: Actor> ActorContext<A> {
 
     pub(crate) fn exit(&mut self, exit_status: &ActorExitStatus) {
         if should_activate_kill_switch(exit_status) {
-            error!(actor=%self.actor_instance_id(), exit_status=%exit_status, "Failure");
+            error!(actor=%self.actor_instance_id(), exit_status=?exit_status, "exit activating-kill-switch");
             self.kill_switch().kill();
         }
         self.actor_state.exit();

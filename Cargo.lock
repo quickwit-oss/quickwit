@@ -2854,6 +2854,7 @@ dependencies = [
  "serde_json",
  "tantivy",
  "tempfile",
+ "thiserror",
  "tokio",
  "tracing",
  "ulid",
@@ -2896,6 +2897,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

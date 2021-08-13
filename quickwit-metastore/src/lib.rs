@@ -26,6 +26,7 @@
 - single file metastore
 etc.
 */
+pub mod checkpoint;
 mod error;
 mod metastore;
 mod metastore_resolver;

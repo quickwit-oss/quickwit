@@ -388,6 +388,7 @@ pub async fn remove_split_files_from_storage(
 mod tests {
     use super::*;
     use quickwit_index_config::AllFlattenIndexConfig;
+    use quickwit_metastore::checkpoint::Checkpoint;
     use quickwit_metastore::IndexMetadata;
     use quickwit_metastore::MockMetastore;
     use tantivy::{
@@ -416,6 +417,7 @@ mod tests {
                     index_id: index_id.to_string(),
                     index_uri: index_uri.to_string(),
                     index_config: Box::new(AllFlattenIndexConfig::new()),
+                    checkpoint: Checkpoint::default(),
                 })
             });
         mock_metastore
@@ -489,6 +491,7 @@ mod tests {
                     index_id: index_id.to_string(),
                     index_uri: index_uri.to_string(),
                     index_config: Box::new(AllFlattenIndexConfig::new()),
+                    checkpoint: Checkpoint::default(),
                 })
             });
 

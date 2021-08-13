@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use crate::indexing::split::Split;
 use futures::StreamExt;
+use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::Metastore;
 use tokio::sync::mpsc::Receiver;
 use tokio_stream::wrappers::ReceiverStream;
@@ -90,7 +91,7 @@ pub async fn finalize_split(
         .collect::<Vec<_>>();
     let num_splits = split_ids.len();
     metastore
-        .publish_splits(index_id.as_str(), &split_ids)
+        .publish_splits(index_id.as_str(), &split_ids, CheckpointDelta::default())
         .await?;
 
     statistics.num_published_splits.add(num_splits);

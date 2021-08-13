@@ -31,6 +31,7 @@ use tokio::sync::RwLock;
 
 use quickwit_storage::{PutPayload, Storage, StorageErrorKind};
 
+use crate::checkpoint::CheckpointDelta;
 use crate::{
     IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreResult, SplitMetadata,
     SplitState,
@@ -264,8 +265,13 @@ impl Metastore for SingleFileMetastore {
         &self,
         index_id: &str,
         split_ids: &[&'a str],
+        checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
+        metadata_set
+            .index
+            .checkpoint
+            .try_apply_delta(checkpoint_delta)?;
 
         for &split_id in split_ids {
             // Check for the existence of split.
@@ -421,6 +427,7 @@ mod tests {
     use quickwit_index_config::AllFlattenIndexConfig;
     use quickwit_storage::{MockStorage, StorageErrorKind};
 
+    use crate::checkpoint::{Checkpoint, CheckpointDelta};
     use crate::{IndexMetadata, MetastoreError};
     use crate::{Metastore, SingleFileMetastore, SplitMetadata, SplitState};
 
@@ -439,6 +446,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
+                checkpoint: Checkpoint::default(),
             };
 
             // Create index
@@ -466,6 +474,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
+                checkpoint: Checkpoint::default(),
             };
 
             // Create index
@@ -502,6 +511,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
+                checkpoint: Checkpoint::default(),
             };
 
             // Create index
@@ -552,6 +562,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
+                checkpoint: Checkpoint::default(),
             };
 
             // Create index
@@ -602,6 +613,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
+                checkpoint: Checkpoint::default(),
             };
 
             // Create index
@@ -745,6 +757,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
+                checkpoint: Checkpoint::default(),
             };
 
             // Create index
@@ -763,7 +776,7 @@ mod tests {
 
             // publish split
             metastore
-                .publish_splits(index_id, &[split_id_one])
+                .publish_splits(index_id, &[split_id_one], CheckpointDelta::from(1..10))
                 .await
                 .unwrap();
         }
@@ -784,10 +797,14 @@ mod tests {
 
         {
             // publish published split
-            metastore
-                .publish_splits(index_id, &[split_id_one])
+            let publish_error = metastore
+                .publish_splits(index_id, &[split_id_one], CheckpointDelta::from(1..10))
                 .await
-                .unwrap();
+                .unwrap_err();
+            assert!(matches!(
+                publish_error,
+                MetastoreError::IncompatibleCheckpointDelta(_)
+            ));
 
             // publish non-staged split
             metastore
@@ -795,7 +812,7 @@ mod tests {
                 .await
                 .unwrap();
             let metastore_error = metastore
-                .publish_splits(index_id, &[split_id_one]) // publish
+                .publish_splits(index_id, &[split_id_one], CheckpointDelta::from(10..12)) // publish
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -805,7 +822,11 @@ mod tests {
 
             // publish non-existent index
             let metastore_error = metastore
-                .publish_splits("non-existent-index", &[split_id_one])
+                .publish_splits(
+                    "non-existent-index",
+                    &[split_id_one],
+                    CheckpointDelta::from(0..5),
+                )
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -815,7 +836,11 @@ mod tests {
 
             // publish non-existent split
             let metastore_error = metastore
-                .publish_splits(index_id, &["non-existent-split"])
+                .publish_splits(
+                    index_id,
+                    &["non-existent-split"],
+                    CheckpointDelta::from(10..15),
+                )
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -827,7 +852,11 @@ mod tests {
         {
             // publish one non-staged split and one non-existent split
             let metastore_error = metastore
-                .publish_splits(index_id, &[split_id_one, split_id_two])
+                .publish_splits(
+                    index_id,
+                    &[split_id_one, split_id_two],
+                    CheckpointDelta::from(10..15),
+                )
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -841,7 +870,11 @@ mod tests {
                 .await
                 .unwrap();
             let metastore_error = metastore
-                .publish_splits(index_id, &[split_id_one, split_id_two])
+                .publish_splits(
+                    index_id,
+                    &[split_id_one, split_id_two],
+                    CheckpointDelta::from(10..15),
+                )
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -855,7 +888,11 @@ mod tests {
                 .await
                 .unwrap();
             let metastore_error = metastore
-                .publish_splits(index_id, &[split_id_one, split_id_two])
+                .publish_splits(
+                    index_id,
+                    &[split_id_one, split_id_two],
+                    CheckpointDelta::from(10..15),
+                )
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -869,15 +906,26 @@ mod tests {
                 .await
                 .unwrap();
             metastore
-                .publish_splits(index_id, &[split_id_one, split_id_two])
+                .publish_splits(
+                    index_id,
+                    &[split_id_one, split_id_two],
+                    CheckpointDelta::from(10..15),
+                )
                 .await
                 .unwrap();
 
             //publishe two published splits
-            metastore
-                .publish_splits(index_id, &[split_id_one, split_id_two])
-                .await
-                .unwrap();
+            assert!(matches!(
+                metastore
+                    .publish_splits(
+                        index_id,
+                        &[split_id_one, split_id_two],
+                        CheckpointDelta::from(10..15)
+                    )
+                    .await
+                    .unwrap_err(),
+                MetastoreError::IncompatibleCheckpointDelta(_)
+            ));
         }
     }
 
@@ -892,6 +940,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
+                checkpoint: Checkpoint::default(),
             };
 
             // create index
@@ -1453,6 +1502,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
+                checkpoint: Checkpoint::default(),
             };
 
             // Create index
@@ -1471,7 +1521,7 @@ mod tests {
 
             // publish split
             metastore
-                .publish_splits(index_id, &[split_id])
+                .publish_splits(index_id, &[split_id], CheckpointDelta::from(0..1))
                 .await
                 .unwrap();
 
@@ -1559,6 +1609,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Box::new(AllFlattenIndexConfig::default()),
+                checkpoint: Checkpoint::default(),
             };
 
             // Create index
@@ -1576,7 +1627,7 @@ mod tests {
 
             // publish split
             metastore
-                .publish_splits(index_id, &[split_id])
+                .publish_splits(index_id, &[split_id], CheckpointDelta::from(0..1))
                 .await
                 .unwrap();
 
@@ -1660,6 +1711,7 @@ mod tests {
             index_id: index_id.to_string(),
             index_uri: "ram://indexes/my-index".to_string(),
             index_config: Box::new(AllFlattenIndexConfig::default()),
+            checkpoint: Checkpoint::default(),
         };
 
         // Create index
@@ -1678,7 +1730,7 @@ mod tests {
         // wait for 1s, publish split & check `update_timestamp`
         sleep(Duration::from_secs(1)).await;
         metastore
-            .publish_splits(index_id, &[split_id])
+            .publish_splits(index_id, &[split_id], CheckpointDelta::from(0..1))
             .await
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
@@ -1730,6 +1782,7 @@ mod tests {
             index_id: index_id.to_string(),
             index_uri: "ram://my-indexes/my-index".to_string(),
             index_config: Box::new(AllFlattenIndexConfig::default()),
+            checkpoint: Checkpoint::default(),
         };
 
         // create index
@@ -1742,7 +1795,9 @@ mod tests {
             .unwrap();
 
         // publish split fails
-        let err = metastore.publish_splits(index_id, &[split_id]).await;
+        let err = metastore
+            .publish_splits(index_id, &[split_id], CheckpointDelta::from(0..1))
+            .await;
         assert!(err.is_err());
 
         // empty

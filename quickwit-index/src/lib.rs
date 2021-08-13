@@ -97,6 +97,7 @@ mod tests {
                     index_id: "test-index".to_string(),
                     index_uri: "ram://test-index".to_string(),
                     index_config: Box::new(quickwit_index_config::default_config_for_tests()),
+                    checkpoint: Default::default(),
                 };
                 Ok(index_metadata)
             });
@@ -109,11 +110,14 @@ mod tests {
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
-            .withf(move |index_id, splits| -> bool {
-                (index_id == "test-index") && splits.len() == 1
+            .withf(move |index_id, splits, checkpoint_delta| -> bool {
+                index_id == "test-index"
+                    && splits.len() == 1
+                    && format!("{:?}", checkpoint_delta)
+                        .ends_with(":(00000000000000000000..00000000000000000070])")
             })
             .times(1)
-            .returning(|_, _| Ok(()));
+            .returning(|_, _, _| Ok(()));
         let universe = Universe::new();
         let (publisher_termination, publisher_counters) = spawn_indexing_pipeline(
             &universe,

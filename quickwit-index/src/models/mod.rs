@@ -18,7 +18,6 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-mod checkpoint;
 mod commit_policy;
 mod indexed_split;
 mod indexer_message;
@@ -28,7 +27,6 @@ mod raw_doc_batch;
 mod scratch_directory;
 mod uploaded_split;
 
-pub use checkpoint::Checkpoint;
 pub use commit_policy::CommitPolicy;
 pub use indexed_split::IndexedSplit;
 pub use indexer_message::IndexerMessage;
