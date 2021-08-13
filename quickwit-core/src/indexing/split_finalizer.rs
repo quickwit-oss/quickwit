@@ -35,7 +35,7 @@ use super::IndexingStatistics;
 pub const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 
 /// Finilizes a split by performing the following actions
-/// - Commit the split
+/// - Commit the split (commit tantivy segments)
 /// - Merge all segments of the splits
 /// - Stage the split
 /// - Upload all split artifacts
@@ -74,23 +74,19 @@ pub async fn finalize_split(
         })
         .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
 
-    let mut split_ids = vec![];
+    let mut split_metadatas = vec![];
     while let Some(finalize_result) = finalize_stream.next().await {
         let split = finalize_result.map_err(|error| {
             warn!("Some splits were not finalised.");
             error
         })?;
-        split_ids.push(split.id.to_string());
+        split_metadatas.push(split.metadata);
     }
 
     // publish all splits atomically
-    let split_ids = split_ids
-        .iter()
-        .map(|split_id| split_id.as_str())
-        .collect::<Vec<_>>();
-    let num_splits = split_ids.len();
+    let num_splits = split_metadatas.len();
     metastore
-        .publish_splits(index_id.as_str(), &split_ids)
+        .publish_splits(index_id.as_str(), split_metadatas)
         .await?;
 
     statistics.num_published_splits.add(num_splits);

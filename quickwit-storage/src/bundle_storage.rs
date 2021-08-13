@@ -47,19 +47,19 @@ pub const BUNDLE_FILENAME: &str = "bundle";
 pub struct BundleStorage {
     storage: Arc<dyn Storage>,
     bundle_file_name: PathBuf,
-    metadata: BundleStorageMetadata,
+    metadata: BundleStorageFileOffsets,
 }
 
 impl BundleStorage {
     /// Creates a new BundleStorage.
     ///
-    /// The provided data must include the footer_bytes at the end of the slice, but it can have more.
+    /// The provided data must include the footer_bytes at the end of the slice, but it can have more up front.
     pub fn new(
         storage: Arc<dyn Storage>,
         bundle_file_name: PathBuf,
         meta_data: &[u8],
     ) -> io::Result<Self> {
-        let metadata = BundleStorageMetadata::open(meta_data)?;
+        let metadata = BundleStorageFileOffsets::open(meta_data)?;
         Ok(BundleStorage {
             storage,
             bundle_file_name,
@@ -69,11 +69,11 @@ impl BundleStorage {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-struct BundleStorageMetadata {
+struct BundleStorageFileOffsets {
     pub(crate) files: HashMap<PathBuf, Range<usize>>,
 }
 
-impl BundleStorageMetadata {
+impl BundleStorageFileOffsets {
     fn open(data: &[u8]) -> io::Result<Self> {
         let footer_size: u64 = BinarySerializable::deserialize(&mut &data[data.len() - 8..])?;
 
@@ -160,16 +160,24 @@ fn unsupported_operation(path: &Path) -> StorageError {
 /// BundleStorage bundles together multiple files into a single file
 /// with some metadata
 pub struct BundleStorageBuilder {
-    metadata: BundleStorageMetadata,
+    metadata: BundleStorageFileOffsets,
     current_offset: usize,
     /// The offset in the file where the hotcache begins. This is used to read
     /// the hotcache and footer in a single read.
     hotcache_offset: usize,
-    /// The footer offset, where the footer begins.
-    /// The footer includes the footer metadata as json encoded and the size of the footer in
-    /// bytes.
-    footer_offset: usize,
     bundle_file: File,
+}
+
+/// Contains hotcache and footer offset.
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct BundleStorageOffsets {
+    /// The offset in the file where the hotcache begins. This is used to read
+    /// the hotcache and footer in a single read.
+    pub hotcache_offset_start: usize,
+    /// start and end (not inclusive) of the footer offsets.
+    pub footer_offsets: Range<usize>,
+    /// The total size of the bundle.
+    pub bundle_file_size: usize,
 }
 
 impl BundleStorageBuilder {
@@ -181,7 +189,6 @@ impl BundleStorageBuilder {
             bundle_file: sink,
             current_offset: 0,
             hotcache_offset: 0,
-            footer_offset: 0,
             metadata: Default::default(),
         })
     }
@@ -212,13 +219,24 @@ impl BundleStorageBuilder {
 
     /// Writes the metadata into the footer.
     ///
-    pub fn finalize(mut self) -> io::Result<(usize, usize)> {
-        self.footer_offset = self.current_offset;
+    pub fn finalize(mut self) -> io::Result<BundleStorageOffsets> {
+        // The footer offset, where the footer begins.
+        // The footer includes the footer metadata as json encoded and the size of the footer in
+        // bytes.
+        let footer_offset_start = self.current_offset;
         let metadata_json = serde_json::to_string(&self.metadata)?;
         self.bundle_file.write_all(metadata_json.as_bytes())?;
-        let len = metadata_json.len() as u64;
-        BinarySerializable::serialize(&len, &mut self.bundle_file)?;
-        Ok((self.footer_offset, self.hotcache_offset))
+        self.current_offset += metadata_json.as_bytes().len();
+        let meta_data_json_len = metadata_json.len() as u64;
+        BinarySerializable::serialize(&meta_data_json_len, &mut self.bundle_file)?;
+        self.current_offset += 8;
+        let footer_offset_end = self.current_offset;
+        let offsets = BundleStorageOffsets {
+            hotcache_offset_start: self.hotcache_offset,
+            footer_offsets: footer_offset_start..footer_offset_end,
+            bundle_file_size: self.current_offset,
+        };
+        Ok(offsets)
     }
 }
 #[cfg(test)]
@@ -246,12 +264,12 @@ mod tests {
 
         create_bundle.add_file(&test_file1_name)?;
         create_bundle.add_file(&test_file2_name)?;
-        let (footer_offset, hotcache_offset) = create_bundle.finalize()?;
-        assert!(footer_offset > hotcache_offset);
+        let offsets = create_bundle.finalize()?;
+        assert!(offsets.footer_offsets.start > offsets.hotcache_offset_start);
 
         let bytes = std::fs::read(&bundle_file_name)?;
 
-        let metadata = BundleStorageMetadata::open(&bytes).unwrap();
+        let metadata = BundleStorageFileOffsets::open(&bytes).unwrap();
 
         let path_root = format!("file://{}", temp_dir.to_string_lossy());
         let file_storage = LocalFileStorage::from_uri(&path_root)?;

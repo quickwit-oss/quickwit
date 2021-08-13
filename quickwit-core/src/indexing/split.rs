@@ -282,7 +282,8 @@ impl Split {
         for path in files_to_upload.iter() {
             create_bundle.add_file(path)?;
         }
-        let (footer_offset, hotcache_offset) = create_bundle.finalize()?;
+        let bundle_offsets = create_bundle.finalize()?;
+        self.metadata.bundle_offsets = bundle_offsets;
         //upload bundle
         let file: tokio::fs::File = tokio::fs::File::open(&bundle_path)
             .await
@@ -300,9 +301,6 @@ impl Split {
             )
         })?;
 
-        self.metadata.hotcache_offset = hotcache_offset;
-        self.metadata.bundle_footer_offset = footer_offset;
-
         // upload files
         for path in files_to_upload {
             let file: tokio::fs::File = tokio::fs::File::open(&path)
@@ -318,25 +316,25 @@ impl Split {
             };
 
             manifest.push(&file_name, metadata.len());
-            let key = PathBuf::from(file_name);
-            let payload = quickwit_storage::PutPayload::from(path.clone());
-            let storage = self.storage.clone();
-            let index_uri = self.index_uri.to_string();
-            let upload_res_future = async move {
-                storage.put(&key, payload).await.with_context(|| {
-                    format!(
-                        "Failed uploading key {} in bucket {}",
-                        key.display(),
-                        index_uri
-                    )
-                })?;
-                Result::<(), anyhow::Error>::Ok(())
-            };
+            //let key = PathBuf::from(file_name);
+            //let payload = quickwit_storage::PutPayload::from(path.clone());
+            //let storage = self.storage.clone();
+            //let index_uri = self.index_uri.to_string();
+            //let upload_res_future = async move {
+            //storage.put(&key, payload).await.with_context(|| {
+            //format!(
+            //"Failed uploading key {} in bucket {}",
+            //key.display(),
+            //index_uri
+            //)
+            //})?;
+            //Result::<(), anyhow::Error>::Ok(())
+            //};
 
-            upload_res_futures.push(upload_res_future);
+            //upload_res_futures.push(upload_res_future);
         }
 
-        futures::future::try_join_all(upload_res_futures).await?;
+        //futures::future::try_join_all(upload_res_futures).await?;
 
         let manifest_body = manifest.to_json()?.into_bytes();
         let manifest_path = PathBuf::from(".manifest");

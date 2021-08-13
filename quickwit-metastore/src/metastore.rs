@@ -29,6 +29,7 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use chrono::Utc;
 use quickwit_index_config::IndexConfig;
+use quickwit_storage::BundleStorageOffsets;
 use serde::{Deserialize, Serialize};
 
 use crate::MetastoreResult;
@@ -63,11 +64,8 @@ pub struct SplitMetadata {
     /// JSON payloads.
     pub size_in_bytes: u64,
 
-    /// hotcache offset in the single file bundle.
-    /// This is used to read the hotcache and footer in a single read.
-    pub hotcache_offset: usize,
-    /// footer offset in the single file bundle.
-    pub bundle_footer_offset: usize,
+    /// The bundle offsets. Used for single read of hotcache and bundle footer.
+    pub bundle_offsets: BundleStorageOffsets,
 
     /// If a timestamp field is available, the min / max timestamp in the split.
     pub time_range: Option<RangeInclusive<i64>>,
@@ -90,8 +88,7 @@ impl SplitMetadata {
             split_state: SplitState::New,
             num_records: 0,
             size_in_bytes: 0,
-            hotcache_offset: 0,
-            bundle_footer_offset: 0,
+            bundle_offsets: BundleStorageOffsets::default(),
             time_range: None,
             generation: 0,
             update_timestamp: Utc::now().timestamp(),
@@ -190,10 +187,10 @@ pub trait Metastore: Send + Sync + 'static {
     /// At this point, the split files are assumed to have already been uploaded.
     /// If the split is already published, this API call returns a success.
     /// An error will occur if you specify an index or split that does not exist in the storage.
-    async fn publish_splits<'a>(
+    async fn publish_splits(
         &self,
         index_id: &str,
-        split_ids: &[&'a str],
+        split_metadata: Vec<SplitMetadata>,
     ) -> MetastoreResult<()>;
 
     /// Lists the splits.

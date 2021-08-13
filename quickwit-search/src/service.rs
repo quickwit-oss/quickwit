@@ -20,6 +20,7 @@
  */
 use async_trait::async_trait;
 use bytes::Bytes;
+use itertools::Itertools;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, SearchRequest,
@@ -143,22 +144,21 @@ impl SearchService for SearchServiceImpl {
                 index_id: search_request.index_id.clone(),
             })?;
         let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-        //let split_meta_data = metastore
-        //.list_split_ids(
-        //&search_request.index_id,
-        //quickwit_metastore::SplitState::Published,
-        //None,
-        //&leaf_search_request.split_ids,
-        //)
-        //.await?;
+        let split_meta_data = metastore
+            .list_split_ids(
+                &search_request.index_id,
+                quickwit_metastore::SplitState::Published,
+                None,
+                &leaf_search_request.split_ids,
+            )
+            .await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
-        let split_ids = leaf_search_request.split_ids;
         let index_config = index_metadata.index_config;
 
         let leaf_search_result = leaf_search(
             index_config,
             &search_request,
-            &split_ids[..],
+            &split_meta_data[..],
             storage.clone(),
         )
         .await?;
@@ -181,8 +181,25 @@ impl SearchService for SearchServiceImpl {
         let index_metadata = metastore.index_metadata(&index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
 
-        let fetch_docs_result =
-            fetch_docs(fetch_docs_request.partial_hits, storage.clone()).await?;
+        let split_ids = fetch_docs_request
+            .partial_hits
+            .iter()
+            .map(|hit| hit.split_id.to_string())
+            .collect_vec();
+        let split_metadata = metastore
+            .list_split_ids(
+                &index_id,
+                quickwit_metastore::SplitState::Published,
+                None,
+                &split_ids[..],
+            )
+            .await?;
+        let fetch_docs_result = fetch_docs(
+            fetch_docs_request.partial_hits,
+            storage.clone(),
+            &split_metadata,
+        )
+        .await?;
 
         Ok(fetch_docs_result)
     }

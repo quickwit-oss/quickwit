@@ -260,20 +260,22 @@ impl Metastore for SingleFileMetastore {
         Ok(())
     }
 
-    async fn publish_splits<'a>(
+    async fn publish_splits(
         &self,
         index_id: &str,
-        split_ids: &[&'a str],
+        split_metadatas: Vec<SplitMetadata>,
     ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
 
-        for &split_id in split_ids {
+        for split_metadata_new in split_metadatas {
+            let split_id = &split_metadata_new.split_id;
             // Check for the existence of split.
             let mut split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
                 MetastoreError::SplitDoesNotExist {
                     split_id: split_id.to_string(),
                 }
             })?;
+            split_metadata.bundle_offsets = split_metadata_new.bundle_offsets;
 
             match split_metadata.split_state {
                 SplitState::Published => {
@@ -737,6 +739,19 @@ mod tests {
             update_timestamp: current_timestamp,
             ..Default::default()
         };
+        let split_metadata_nonexistent = SplitMetadata {
+            split_id: "itdoesnotexist".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 5,
+            size_in_bytes: 6,
+            time_range: Some(Range {
+                start: 30,
+                end: 100,
+            }),
+            generation: 2,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        };
 
         {
             // Check for the existence of index.
@@ -766,7 +781,7 @@ mod tests {
 
             // publish split
             metastore
-                .publish_splits(index_id, &[split_id_one])
+                .publish_splits(index_id, vec![split_metadata_one.clone()])
                 .await
                 .unwrap();
         }
@@ -788,7 +803,7 @@ mod tests {
         {
             // publish published split
             metastore
-                .publish_splits(index_id, &[split_id_one])
+                .publish_splits(index_id, vec![split_metadata_one.clone()])
                 .await
                 .unwrap();
 
@@ -798,7 +813,7 @@ mod tests {
                 .await
                 .unwrap();
             let metastore_error = metastore
-                .publish_splits(index_id, &[split_id_one]) // publish
+                .publish_splits(index_id, vec![split_metadata_one.clone()]) // publish
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -808,7 +823,7 @@ mod tests {
 
             // publish non-existent index
             let metastore_error = metastore
-                .publish_splits("non-existent-index", &[split_id_one])
+                .publish_splits("non-existent-index", vec![split_metadata_one.clone()])
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -818,7 +833,7 @@ mod tests {
 
             // publish non-existent split
             let metastore_error = metastore
-                .publish_splits(index_id, &["non-existent-split"])
+                .publish_splits(index_id, vec![split_metadata_nonexistent])
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -830,7 +845,10 @@ mod tests {
         {
             // publish one non-staged split and one non-existent split
             let metastore_error = metastore
-                .publish_splits(index_id, &[split_id_one, split_id_two])
+                .publish_splits(
+                    index_id,
+                    vec![split_metadata_one.clone(), split_metadata_two.clone()],
+                )
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -844,7 +862,10 @@ mod tests {
                 .await
                 .unwrap();
             let metastore_error = metastore
-                .publish_splits(index_id, &[split_id_one, split_id_two])
+                .publish_splits(
+                    index_id,
+                    vec![split_metadata_one.clone(), split_metadata_two.clone()],
+                )
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -858,7 +879,10 @@ mod tests {
                 .await
                 .unwrap();
             let metastore_error = metastore
-                .publish_splits(index_id, &[split_id_one, split_id_two])
+                .publish_splits(
+                    index_id,
+                    vec![split_metadata_one.clone(), split_metadata_two.clone()],
+                )
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -872,13 +896,19 @@ mod tests {
                 .await
                 .unwrap();
             metastore
-                .publish_splits(index_id, &[split_id_one, split_id_two])
+                .publish_splits(
+                    index_id,
+                    vec![split_metadata_one.clone(), split_metadata_two.clone()],
+                )
                 .await
                 .unwrap();
 
             //publishe two published splits
             metastore
-                .publish_splits(index_id, &[split_id_one, split_id_two])
+                .publish_splits(
+                    index_id,
+                    vec![split_metadata_one.clone(), split_metadata_two.clone()],
+                )
                 .await
                 .unwrap();
         }
@@ -1480,7 +1510,7 @@ mod tests {
 
             // publish split
             metastore
-                .publish_splits(index_id, &[split_id])
+                .publish_splits(index_id, vec![split_id])
                 .await
                 .unwrap();
 
@@ -1586,7 +1616,7 @@ mod tests {
 
             // publish split
             metastore
-                .publish_splits(index_id, &[split_id])
+                .publish_splits(index_id, vec![split_metadata])
                 .await
                 .unwrap();
 
@@ -1689,7 +1719,7 @@ mod tests {
         // wait for 1s, publish split & check `update_timestamp`
         sleep(Duration::from_secs(1)).await;
         metastore
-            .publish_splits(index_id, &[split_id])
+            .publish_splits(index_id, vec![split_metadata])
             .await
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
@@ -1749,12 +1779,14 @@ mod tests {
 
         // stage split
         metastore
-            .stage_split(index_id, split_metadata)
+            .stage_split(index_id, split_metadata.clone())
             .await
             .unwrap();
 
         // publish split fails
-        let err = metastore.publish_splits(index_id, &[split_id]).await;
+        let err = metastore
+            .publish_splits(index_id, vec![split_metadata.clone()])
+            .await;
         assert!(err.is_err());
 
         // empty
