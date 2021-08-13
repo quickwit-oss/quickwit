@@ -94,12 +94,12 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
-            .withf(|index_id, split_ids| index_id == "index" && &split_ids[..] == &["split1"])
+            .withf(|index_id, split_ids| index_id == "index" && split_ids[..] == ["split1"])
             .times(1)
             .returning(|_, _| Ok(()));
         mock_metastore
             .expect_publish_splits()
-            .withf(|index_id, split_ids| index_id == "index" && &split_ids[..] == &["split2"])
+            .withf(|index_id, split_ids| index_id == "index" && split_ids[..] == ["split2"])
             .times(1)
             .returning(|_, _| Ok(()));
         let publisher = Publisher::new(Arc::new(mock_metastore));

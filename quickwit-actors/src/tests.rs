@@ -248,9 +248,7 @@ impl Actor for BuggyActor {
         "BuggyActor".to_string()
     }
 
-    fn observable_state(&self) -> Self::ObservableState {
-        ()
-    }
+    fn observable_state(&self) {}
 }
 
 #[async_trait]

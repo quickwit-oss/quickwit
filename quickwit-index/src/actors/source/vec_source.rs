@@ -25,6 +25,18 @@ use quickwit_actors::ActorContext;
 use quickwit_actors::ActorExitStatus;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
+use std::fmt;
+
+/// This private token prevents external actors from creating the Loop message.
+struct PrivateToken;
+
+pub struct Loop(PrivateToken);
+
+impl fmt::Debug for Loop {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Debug")
+    }
+}
 
 pub struct VecSource {
     next_item_id: usize,
@@ -34,7 +46,7 @@ pub struct VecSource {
 }
 
 impl Actor for VecSource {
-    type Message = ();
+    type Message = Loop;
 
     type ObservableState = usize;
 
@@ -56,6 +68,11 @@ impl VecSource {
 
 #[async_trait]
 impl AsyncActor for VecSource {
+    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        // Kick starts the source.
+        self.process_message(Loop(PrivateToken), ctx).await
+    }
+
     async fn process_message(
         &mut self,
         _message: Self::Message,
@@ -75,7 +92,8 @@ impl AsyncActor for VecSource {
             // checkpoint: Checkpoint::default(),
         };
         ctx.send_message(&self.sink, batch).await?;
-        ctx.send_self_message(()).await?;
+        // Loops
+        ctx.send_self_message(Loop(PrivateToken)).await?;
         Ok(())
     }
 }
@@ -98,8 +116,7 @@ mod tests {
             3,
             mailbox,
         );
-        let (vec_source_mailbox, vec_source_handle) = universe.spawn(vec_source);
-        universe.send_message(&vec_source_mailbox, ()).await?;
+        let (_vec_source_mailbox, vec_source_handle) = universe.spawn(vec_source);
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, 100);

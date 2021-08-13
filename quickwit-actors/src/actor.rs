@@ -352,14 +352,8 @@ pub(crate) fn process_command<A: Actor>(
             ctx.pause();
             None
         }
-        Command::Quit(cb) => {
-            let _ = cb.send(());
-            Some(ActorExitStatus::Quit)
-        }
-        Command::Kill(cb) => {
-            let _ = cb.send(());
-            Some(ActorExitStatus::Killed)
-        }
+        Command::Quit => Some(ActorExitStatus::Quit),
+        Command::Kill => Some(ActorExitStatus::Killed),
         Command::Resume => {
             ctx.resume();
             None

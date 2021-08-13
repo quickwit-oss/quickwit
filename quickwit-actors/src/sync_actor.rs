@@ -108,8 +108,12 @@ fn process_msg<A: Actor + SyncActor>(
 
     ctx.progress().record_progress();
 
-    let command_or_msg_recv_res =
-        inbox.recv_timeout_blocking(ctx.get_state() == ActorState::Running);
+    let command_or_msg_recv_res = if ctx.get_state() == ActorState::Running {
+        inbox.recv_timeout_blocking()
+    } else {
+        // The actor is paused. We only process command and scheduled message.
+        inbox.recv_timeout_cmd_and_scheduled_msg_only_blocking()
+    };
 
     ctx.progress().record_progress();
     if ctx.kill_switch().is_dead() {
