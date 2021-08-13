@@ -45,7 +45,7 @@ impl TestSandbox {
     /// Creates a new test environment.
     pub async fn create(
         index_id: &str,
-        index_config: Box<dyn IndexConfig>,
+        index_config: Arc<dyn IndexConfig>,
     ) -> anyhow::Result<Self> {
         let metastore_uri = "ram://quickwit-test-indices";
         let index_metadata = IndexMetadata {
@@ -111,12 +111,14 @@ impl TestSandbox {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::TestSandbox;
     use quickwit_index_config::WikipediaIndexConfig;
 
     #[tokio::test]
     async fn test_test_sandbox() -> anyhow::Result<()> {
-        let index_config = Box::new(WikipediaIndexConfig::new());
+        let index_config = Arc::new(WikipediaIndexConfig::new());
         let test_index_builder = TestSandbox::create("test_index", index_config).await?;
         let statistics = test_index_builder.add_documents(vec![
             serde_json::json!({"title": "Hurricane Fay", "body": "...", "url": "http://hurricane-fay"}),

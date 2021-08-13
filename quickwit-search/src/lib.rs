@@ -179,6 +179,8 @@ pub async fn single_node_search(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use assert_json_diff::assert_json_include;
     use quickwit_core::TestSandbox;
     use quickwit_index_config::{DefaultIndexConfigBuilder, WikipediaIndexConfig};
@@ -190,7 +192,7 @@ mod tests {
     async fn test_single_node_simple() -> anyhow::Result<()> {
         let index_name = "single-node-simple";
         let test_sandbox =
-            TestSandbox::create("single-node-simple", Box::new(WikipediaIndexConfig::new()))
+            TestSandbox::create("single-node-simple", Arc::new(WikipediaIndexConfig::new()))
                 .await?;
         let docs = vec![
             json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
@@ -246,7 +248,7 @@ mod tests {
     async fn test_single_node_several_splits() -> anyhow::Result<()> {
         let index_name = "single-node-simple";
         let test_sandbox =
-            TestSandbox::create("single-node-simple", Box::new(WikipediaIndexConfig::new()))
+            TestSandbox::create("single-node-simple", Arc::new(WikipediaIndexConfig::new()))
                 .await?;
         for _ in 0..10u32 {
             test_sandbox.add_documents(vec![
@@ -302,7 +304,7 @@ mod tests {
             serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
         let index_name = "single-node-simple";
         let test_sandbox =
-            TestSandbox::create("single-node-simple", Box::new(index_config)).await?;
+            TestSandbox::create("single-node-simple", Arc::new(index_config)).await?;
 
         let mut docs = vec![];
         for i in 0..30 {

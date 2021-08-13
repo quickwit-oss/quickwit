@@ -59,7 +59,7 @@ pub async fn spawn_indexing_pipeline(
     let (packager_mailbox, _packager_handler) = universe.spawn_sync_actor(packager);
     let indexer = Indexer::try_new(
         index_id,
-        index_metadata.index_config.into(),
+        index_metadata.index_config,
         None,
         CommitPolicy::default(),
         packager_mailbox,
@@ -96,7 +96,7 @@ mod tests {
                 let index_metadata = IndexMetadata {
                     index_id: "test-index".to_string(),
                     index_uri: "ram://test-index".to_string(),
-                    index_config: Box::new(quickwit_index_config::default_config_for_tests()),
+                    index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
                 };
                 Ok(index_metadata)
             });
