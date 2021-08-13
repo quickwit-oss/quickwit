@@ -35,6 +35,7 @@ mod root;
 mod search_result_json;
 mod search_stream;
 mod service;
+mod query_runner;
 
 ///
 /// Refer to this as `crate::Result<T>`.
