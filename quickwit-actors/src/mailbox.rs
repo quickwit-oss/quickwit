@@ -89,8 +89,10 @@ pub(crate) struct Inner<Message> {
 /// They are treated with a higher priority than regular actor messages.
 pub(crate) enum Command {
     /// Temporarily pauses the actor. A paused actor only checks
-    /// on its command channel and still shows "progress". It appears as
+    /// on its high priority channel and still shows "progress". It appears as
     /// healthy to the supervisor.
+    ///
+    /// Scheduled message are still processed.
     ///
     /// Semantically, it is similar to SIGSTOP.
     Pause,
@@ -123,7 +125,7 @@ pub(crate) enum Command {
     /// The exit status is then `ActorExitStatus::Quit`.
     ///
     /// This is the equivalent of sending SIGINT/Ctrl-C to a process.
-    Quit(oneshot::Sender<()>),
+    Quit,
 
     /// Kill the actor. The behavior is the same as if an actor detected that its kill switch
     /// was pushed.
@@ -134,7 +136,7 @@ pub(crate) enum Command {
     /// may have different behavior depending on the exit state.
     ///
     /// This is the equivalent of sending SIGKILL to a process.
-    Kill(oneshot::Sender<()>),
+    Kill,
 }
 
 impl fmt::Debug for Command {
@@ -143,8 +145,8 @@ impl fmt::Debug for Command {
             Command::Pause => write!(f, "Pause"),
             Command::Resume => write!(f, "Resume"),
             Command::Observe(_) => write!(f, "Observe"),
-            Command::Quit(_) => write!(f, "Quit"),
-            Command::Kill(_) => todo!(),
+            Command::Quit => write!(f, "Quit"),
+            Command::Kill => todo!(),
         }
     }
 }
@@ -221,29 +223,27 @@ pub struct Inbox<Message> {
 }
 
 impl<Message: fmt::Debug> Inbox<Message> {
-    pub(crate) async fn recv_timeout(
-        &mut self,
-        message_enabled: bool,
-    ) -> Result<CommandOrMessage<Message>, RecvError> {
-        if message_enabled {
-            self.rx.recv_timeout(crate::message_timeout()).await
-        } else {
-            self.rx
-                .recv_high_priority_timeout(crate::message_timeout())
-                .await
-        }
+    pub(crate) async fn recv_timeout(&mut self) -> Result<CommandOrMessage<Message>, RecvError> {
+        self.rx.recv_timeout(crate::message_timeout()).await
     }
 
-    pub(crate) fn recv_timeout_blocking(
+    pub(crate) async fn recv_timeout_cmd_and_scheduled_msg_only(
         &mut self,
-        message_enabled: bool,
     ) -> Result<CommandOrMessage<Message>, RecvError> {
-        if message_enabled {
-            self.rx.recv_timeout_blocking(crate::message_timeout())
-        } else {
-            self.rx
-                .recv_high_priority_timeout_blocking(crate::message_timeout())
-        }
+        self.rx
+            .recv_high_priority_timeout(crate::message_timeout())
+            .await
+    }
+
+    pub(crate) fn recv_timeout_blocking(&mut self) -> Result<CommandOrMessage<Message>, RecvError> {
+        self.rx.recv_timeout_blocking(crate::message_timeout())
+    }
+
+    pub(crate) fn recv_timeout_cmd_and_scheduled_msg_only_blocking(
+        &mut self,
+    ) -> Result<CommandOrMessage<Message>, RecvError> {
+        self.rx
+            .recv_high_priority_timeout_blocking(crate::message_timeout())
     }
 
     /// Destroys the inbox and returns the list of pending messages.

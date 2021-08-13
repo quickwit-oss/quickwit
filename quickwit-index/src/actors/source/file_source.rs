@@ -26,6 +26,7 @@ use quickwit_actors::ActorContext;
 use quickwit_actors::ActorExitStatus;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
+use std::fmt;
 use std::io;
 use std::path::Path;
 use tokio::fs::File;
@@ -35,6 +36,16 @@ use tracing::info;
 
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
+
+/// This private token prevents external actors from creating the Loop message.
+struct PrivateToken;
+pub struct Loop(PrivateToken);
+
+impl fmt::Debug for Loop {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Debug")
+    }
+}
 
 pub struct FileSource {
     file_position: FilePosition,
@@ -49,7 +60,7 @@ pub struct FilePosition {
 }
 
 impl Actor for FileSource {
-    type Message = ();
+    type Message = Loop;
 
     type ObservableState = FilePosition;
 
@@ -71,6 +82,11 @@ impl FileSource {
 
 #[async_trait]
 impl AsyncActor for FileSource {
+    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        // Kick starts the source.
+        self.process_message(Loop(PrivateToken), ctx).await
+    }
+
     async fn process_message(
         &mut self,
         _message: Self::Message,
@@ -103,7 +119,7 @@ impl AsyncActor for FileSource {
                 .await?;
             return Err(ActorExitStatus::Success);
         }
-        ctx.send_self_message(()).await?;
+        ctx.send_self_message(Loop(PrivateToken)).await?;
         Ok(())
     }
 }
@@ -120,8 +136,7 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let file_source = FileSource::try_new(Path::new("data/test_corpus.json"), mailbox).await?;
-        let (file_source_mailbox, file_source_handle) = universe.spawn(file_source);
-        universe.send_message(&file_source_mailbox, ()).await?;
+        let (_file_source_mailbox, file_source_handle) = universe.spawn(file_source);
         let (actor_termination, file_position) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(

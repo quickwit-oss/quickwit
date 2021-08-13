@@ -122,29 +122,38 @@ impl<A: Actor> ActorHandle<A> {
     }
 
     /// Kills the actor. Its finalize function will still be called.
-    pub async fn kill(&self) {
-        let (tx, rx) = oneshot::channel();
+    ///
+    /// This function also actionnates the actor kill switch.
+    ///
+    /// The other difference with quit is the exit status. It is important,
+    /// as the finalize logic may behave differently depending on the exit status.
+    pub async fn kill(self) -> (ActorExitStatus, A::ObservableState) {
+        self.actor_context.kill_switch().kill();
         let _ = self
             .actor_context
             .mailbox()
-            .send_command(Command::Kill(tx))
+            .send_command(Command::Kill)
             .await;
-        let _ = rx.await;
+        self.join().await
     }
 
     /// Gracefully quit the actor, regardless of whether there are pending messages or not.
     /// Its finalize function will be called.
-    pub async fn quit(&self) {
-        let (tx, rx) = oneshot::channel();
+    ///
+    /// The kill switch is not actionated.
+    ///
+    /// The other difference with kill is the exit status. It is important,
+    /// as the finalize logic may behave differently depending on the exit status.
+    pub async fn quit(self) -> (ActorExitStatus, A::ObservableState) {
         let _ = self
             .actor_context
             .mailbox()
-            .send_command(Command::Quit(tx))
+            .send_command(Command::Quit)
             .await;
-        let _ = rx.await;
+        self.join().await
     }
 
-    /// Waits until the actor exits.
+    /// Waits until the actor exits by itself. This is the equivalent of `Thread::join`.
     pub async fn join(self) -> (ActorExitStatus, A::ObservableState) {
         let exit_status = self.join_handle.await.unwrap_or_else(|join_err| {
             if join_err.is_panic() {

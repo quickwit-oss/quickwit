@@ -69,9 +69,7 @@ pub async fn spawn_indexing_pipeline(
     // TODO the source is hardcoded here.
     let source = FileSource::try_new(Path::new("data/test_corpus.json"), indexer_mailbox).await?;
 
-    let (source_mailbox, _source_handle) = universe.spawn(source);
-    let universe = Universe::new();
-    universe.send_message(&source_mailbox, ()).await?;
+    let (_source_mailbox, _source_handle) = universe.spawn(source);
     let (actor_termination, observation) = publisher_handler.join().await;
     Ok((actor_termination, observation))
 }
