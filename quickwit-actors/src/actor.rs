@@ -91,25 +91,6 @@ impl ActorExitStatus {
     pub fn is_success(&self) -> bool {
         matches!(self, ActorExitStatus::Success)
     }
-
-    /// If an actor exits with a failure, its kill switch
-    /// will be activated, and all other actors under the same
-    /// kill switch will be killed.
-    ///
-    /// The semantic limit between a failure and not a failure here,
-    /// is that a failure is an unexpected exit.
-    /// It is not a success, and it was not triggered by an actual
-    /// command or the kill switch.
-    pub fn is_failure(&self) -> bool {
-        match self {
-            ActorExitStatus::DownstreamClosed => true,
-            ActorExitStatus::Failure(_) => true,
-            ActorExitStatus::Panicked => true,
-            ActorExitStatus::Success => false,
-            ActorExitStatus::Quit => false,
-            ActorExitStatus::Killed => false,
-        }
-    }
 }
 
 impl From<SendError> for ActorExitStatus {
@@ -251,11 +232,25 @@ impl<A: Actor> ActorContext<A> {
     }
 
     pub(crate) fn exit(&mut self, exit_status: &ActorExitStatus) {
-        if exit_status.is_failure() {
+        if should_activate_kill_switch(exit_status) {
             error!(actor=%self.actor_instance_id(), exit_status=%exit_status, "Failure");
             self.kill_switch().kill();
         }
         self.actor_state.exit();
+    }
+}
+
+/// If an actor exits in an unexpected manner, its kill
+/// switch will be activated, and all other actors under the same
+/// kill switch will be killed.
+fn should_activate_kill_switch(exit_status: &ActorExitStatus) -> bool {
+    match exit_status {
+        ActorExitStatus::DownstreamClosed => true,
+        ActorExitStatus::Failure(_) => true,
+        ActorExitStatus::Panicked => true,
+        ActorExitStatus::Success => false,
+        ActorExitStatus::Quit => false,
+        ActorExitStatus::Killed => false,
     }
 }
 

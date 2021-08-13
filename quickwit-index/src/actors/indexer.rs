@@ -55,15 +55,15 @@ pub struct IndexerCounters {
     pub num_missing_timestamp: u64,
     pub num_valid_docs: u64,
 
-    /// Number of (valid) documents in the current split.
-    /// This value is used to trigger commit and for observation.
-    pub num_docs_in_split: u64,
-
     /// Number of bytes that went through the indexer
     /// during its entire lifetime.
     ///
     /// Includes both valid and invalid documents.
     pub overall_num_bytes: u64,
+
+    /// Number of (valid) documents in the current split.
+    /// This value is used to trigger commit and for observation.
+    pub num_docs_in_split: u64,
 }
 
 struct ImmutableState {
@@ -102,11 +102,9 @@ impl ImmutableState {
     fn get_or_create_current_indexed_split<'a>(
         &self,
         current_split_opt: &'a mut Option<IndexedSplit>,
-        counters: &mut IndexerCounters,
         ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {
         if current_split_opt.is_none() {
-            counters.num_docs_in_split = 0;
             let new_indexed_split = self.create_indexed_split()?;
             let commit_timeout = IndexerMessage::CommitTimeout {
                 split_id: new_indexed_split.split_id.clone(),
@@ -161,8 +159,7 @@ impl ImmutableState {
         counters: &mut IndexerCounters,
         ctx: &ActorContext<Indexer>,
     ) -> Result<(), ActorExitStatus> {
-        let indexed_split =
-            self.get_or_create_current_indexed_split(current_split_opt, counters, ctx)?;
+        let indexed_split = self.get_or_create_current_indexed_split(current_split_opt, ctx)?;
         for doc_json in batch.docs {
             counters.overall_num_bytes += doc_json.len() as u64;
             indexed_split.docs_size_in_bytes += doc_json.len() as u64;
@@ -261,15 +258,22 @@ impl SyncActor for Indexer {
 
     fn finalize(
         &mut self,
-        termination: &ActorExitStatus,
+        exit_status: &ActorExitStatus,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         info!("finalize");
-        if termination.is_failure() {
-            return Ok(());
+        match exit_status {
+            ActorExitStatus::DownstreamClosed
+            | ActorExitStatus::Killed
+            | ActorExitStatus::Failure(_)
+            | ActorExitStatus::Panicked => return Ok(()),
+            ActorExitStatus::Quit | ActorExitStatus::Success => {
+                self.send_to_packager(CommitTrigger::NoMoreDocs, ctx)
+                    .with_context(|| {
+                        "Failed to send a last message to packager upon finalize method"
+                    })?;
+            }
         }
-        self.send_to_packager(CommitTrigger::NoMoreDocs, ctx)
-            .with_context(|| "Failed to send a last message to packager upon finalize method")?;
         Ok(())
     }
 }
@@ -323,6 +327,7 @@ impl Indexer {
         } else {
             return Ok(());
         };
+        self.counters.num_docs_in_split = 0;
         info!(commit_trigger=?commit_trigger, index=?indexed_split.index_id, split=?indexed_split.split_id,"send-to-packager");
         ctx.send_message_blocking(&self.packager_mailbox, indexed_split)?;
         Ok(())
@@ -331,13 +336,13 @@ impl Indexer {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::RangeInclusive;
     use std::sync::Arc;
     use std::time::Duration;
 
     use crate::actors::indexer::record_timestamp;
     use crate::actors::indexer::IndexerCounters;
     use crate::models::CommitPolicy;
+    use crate::models::IndexerMessage;
     use crate::models::RawDocBatch;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::Universe;
@@ -348,24 +353,15 @@ mod tests {
     fn test_record_timestamp() {
         let mut time_range = None;
         record_timestamp(1628664679, &mut time_range);
-        assert_eq!(
-            time_range,
-            Some(RangeInclusive::new(1628664679, 1628664679))
-        );
+        assert_eq!(time_range, Some(1628664679..=1628664679));
         record_timestamp(1628664112, &mut time_range);
-        assert_eq!(
-            time_range,
-            Some(RangeInclusive::new(1628664112, 1628664679))
-        );
+        assert_eq!(time_range, Some(1628664112..=1628664679));
         record_timestamp(1628665112, &mut time_range);
-        assert_eq!(
-            time_range,
-            Some(RangeInclusive::new(1628664112, 1628665112))
-        )
+        assert_eq!(time_range, Some(1628664112..=1628665112))
     }
 
     #[tokio::test]
-    async fn test_indexer() -> anyhow::Result<()> {
+    async fn test_indexer_counters() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let commit_policy = CommitPolicy {
@@ -396,6 +392,17 @@ mod tests {
                 .into(),
             )
             .await?;
+        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(
+            indexer_counters,
+            IndexerCounters {
+                num_parse_errors: 1,
+                num_missing_timestamp: 1,
+                num_valid_docs: 2,
+                num_docs_in_split: 2, //< we have not reached the commit limit yet.
+                overall_num_bytes: 103,
+            }
+        );
         universe
             .send_message(
                 &indexer_mailbox,
@@ -412,13 +419,114 @@ mod tests {
                 num_parse_errors: 1,
                 num_missing_timestamp: 1,
                 num_valid_docs: 3,
-                num_docs_in_split: 3,
+                num_docs_in_split: 0, //< the num docs in split counter has been reset.
                 overall_num_bytes: 146,
             }
         );
         let output_messages = inbox.drain_available_message_for_test();
         assert_eq!(output_messages.len(), 1);
         assert_eq!(output_messages[0].num_docs, 3);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexer_timeout() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let commit_policy = CommitPolicy {
+            timeout: Duration::from_secs(60),
+            num_docs_threshold: 10_000,
+        };
+        let (mailbox, inbox) = create_test_mailbox();
+        let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
+        let indexer = Indexer::try_new(
+            "test-index".to_string(),
+            index_config,
+            None,
+            commit_policy,
+            mailbox,
+        )?;
+        let (indexer_mailbox, indexer_handle) = universe.spawn_sync_actor::<Indexer>(indexer);
+        universe
+            .send_message(
+                &indexer_mailbox,
+                RawDocBatch {
+                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062}"#.to_string()],
+                }
+                .into(),
+            )
+            .await?;
+        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(
+            indexer_counters,
+            IndexerCounters {
+                num_parse_errors: 0,
+                num_missing_timestamp: 0,
+                num_valid_docs: 1,
+                num_docs_in_split: 1,
+                overall_num_bytes: 42,
+            }
+        );
+        universe.simulate_time_shift(Duration::from_secs(61)).await;
+        let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(
+            indexer_counters,
+            IndexerCounters {
+                num_parse_errors: 0,
+                num_missing_timestamp: 0,
+                num_valid_docs: 1,
+                num_docs_in_split: 0,
+                overall_num_bytes: 42,
+            }
+        );
+        let output_messages = inbox.drain_available_message_for_test();
+        assert_eq!(output_messages.len(), 1);
+        assert_eq!(output_messages[0].num_docs, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexer_eof() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let commit_policy = CommitPolicy::default();
+        let (mailbox, inbox) = create_test_mailbox();
+        let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
+        let indexer = Indexer::try_new(
+            "test-index".to_string(),
+            index_config,
+            None,
+            commit_policy,
+            mailbox,
+        )?;
+        let (indexer_mailbox, indexer_handle) = universe.spawn_sync_actor::<Indexer>(indexer);
+        universe
+            .send_message(
+                &indexer_mailbox,
+                RawDocBatch {
+                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062}"#.to_string()],
+                }
+                .into(),
+            )
+            .await?;
+        universe
+            .send_message(&indexer_mailbox, IndexerMessage::EndOfSource)
+            .await?;
+        let (exit_status, indexer_counters) = indexer_handle.join().await;
+        assert!(exit_status.is_success());
+        assert_eq!(
+            indexer_counters,
+            IndexerCounters {
+                num_parse_errors: 0,
+                num_missing_timestamp: 0,
+                num_valid_docs: 1,
+                num_docs_in_split: 0,
+                overall_num_bytes: 42,
+            }
+        );
+        let output_messages = inbox.drain_available_message_for_test();
+        assert_eq!(output_messages.len(), 1);
+        assert_eq!(output_messages[0].num_docs, 1);
         Ok(())
     }
 }
