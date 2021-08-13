@@ -21,6 +21,7 @@
 use crate::actor::{process_command, ActorExitStatus};
 use crate::actor_handle::ActorHandle;
 use crate::actor_state::ActorState;
+use crate::actor_with_state_tx::ActorWithStateTx;
 use crate::mailbox::{create_mailbox, CommandOrMessage, Inbox};
 use crate::scheduler::SchedulerMessage;
 use crate::{Actor, ActorContext, KillSwitch, Mailbox, RecvError};
@@ -135,29 +136,40 @@ async fn process_msg<A: Actor + AsyncActor>(
 }
 
 async fn async_actor_loop<A: AsyncActor>(
-    mut actor: A,
+    actor: A,
     mut inbox: Inbox<A::Message>,
     mut ctx: ActorContext<A>,
     state_tx: Sender<A::ObservableState>,
 ) -> ActorExitStatus {
-    let mut exit_status_opt: Option<ActorExitStatus> = actor.initialize(&ctx).await.err();
+    // We rely on this object internally to fetch a post-mortem state,
+    // even in case of a panic.
+    let mut actor_with_state_tx = ActorWithStateTx { actor, state_tx };
+
+    let mut exit_status_opt: Option<ActorExitStatus> =
+        actor_with_state_tx.actor.initialize(&ctx).await.err();
+
     let exit_status: ActorExitStatus = loop {
         tokio::task::yield_now().await;
         if let Some(exit_status) = exit_status_opt {
             break exit_status;
         }
-        exit_status_opt = process_msg(&mut actor, &mut inbox, &mut ctx, &state_tx).await;
+        exit_status_opt = process_msg(
+            &mut actor_with_state_tx.actor,
+            &mut inbox,
+            &mut ctx,
+            &actor_with_state_tx.state_tx,
+        )
+        .await;
     };
     ctx.exit(&exit_status);
 
-    if let Err(finalize_error) = actor
+    if let Err(finalize_error) = actor_with_state_tx
+        .actor
         .finalize(&exit_status, &ctx)
         .await
-        .with_context(|| format!("Finalization of actor {}", actor.name()))
+        .with_context(|| format!("Finalization of actor {}", actor_with_state_tx.actor.name()))
     {
         error!(err=?finalize_error, "finalize_error");
     }
-    let final_state = actor.observable_state();
-    let _ = state_tx.send(final_state);
     exit_status
 }

@@ -235,10 +235,7 @@ mod tests {
             _ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
-            if self.count == 2 {
-                panic!("Oops");
-            }
-            Ok(())
+            panic!("Oops");
         }
     }
 
@@ -250,10 +247,7 @@ mod tests {
             _ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
-            if self.count == 2 {
-                panic!("Oops");
-            }
-            Ok(())
+            panic!("Oops");
         }
     }
 
@@ -277,10 +271,7 @@ mod tests {
             _ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
-            if self.count == 2 {
-                return Err(ActorExitStatus::DownstreamClosed);
-            }
-            Ok(())
+            Err(ActorExitStatus::DownstreamClosed)
         }
     }
 
@@ -292,10 +283,7 @@ mod tests {
             _ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
-            if self.count == 2 {
-                return Err(ActorExitStatus::DownstreamClosed);
-            }
-            Ok(())
+            Err(ActorExitStatus::DownstreamClosed)
         }
     }
 
@@ -303,8 +291,6 @@ mod tests {
     async fn test_panic_in_async_actor() -> anyhow::Result<()> {
         let universe = Universe::new();
         let (mailbox, handle) = universe.spawn(PanickingActor::default());
-        universe.send_message(&mailbox, ()).await?;
-        assert_eq!(handle.process_pending_and_observe().await.state, 1);
         universe.send_message(&mailbox, ()).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Panicked));
@@ -317,11 +303,9 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, handle) = universe.spawn_sync_actor(PanickingActor::default());
         universe.send_message(&mailbox, ()).await?;
-        assert_eq!(handle.process_pending_and_observe().await.state, 1);
-        universe.send_message(&mailbox, ()).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Panicked));
-        assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.
+        assert!(matches!(count, 1));
         Ok(())
     }
 
@@ -330,11 +314,9 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, handle) = universe.spawn(ExitActor::default());
         universe.send_message(&mailbox, ()).await?;
-        assert_eq!(handle.process_pending_and_observe().await.state, 1);
-        universe.send_message(&mailbox, ()).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));
-        assert!(matches!(count, 2)); //< Upon panick we cannot get a post mortem state.
+        assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.
         Ok(())
     }
 
@@ -343,11 +325,9 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, handle) = universe.spawn_sync_actor(ExitActor::default());
         universe.send_message(&mailbox, ()).await?;
-        assert_eq!(handle.process_pending_and_observe().await.state, 1);
-        universe.send_message(&mailbox, ()).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));
-        assert!(matches!(count, 2));
+        assert!(matches!(count, 1));
         Ok(())
     }
 }
