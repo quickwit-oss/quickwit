@@ -33,6 +33,7 @@ use tokio::time::Duration;
 mod actor;
 mod actor_handle;
 mod actor_state;
+mod actor_with_state_tx;
 mod async_actor;
 pub(crate) mod channel_with_priority;
 mod kill_switch;

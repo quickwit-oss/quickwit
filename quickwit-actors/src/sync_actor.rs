@@ -24,6 +24,7 @@ use tracing::{debug, error, info};
 
 use crate::actor::{process_command, ActorExitStatus};
 use crate::actor_state::ActorState;
+use crate::actor_with_state_tx::ActorWithStateTx;
 use crate::mailbox::{create_mailbox, CommandOrMessage, Inbox};
 use crate::scheduler::SchedulerMessage;
 use crate::{Actor, ActorContext, ActorHandle, KillSwitch, Mailbox, RecvError};
@@ -132,23 +133,32 @@ fn process_msg<A: Actor + SyncActor>(
 }
 
 fn sync_actor_loop<A: SyncActor>(
-    mut actor: A,
+    actor: A,
     mut inbox: Inbox<A::Message>,
     mut ctx: ActorContext<A>,
     state_tx: Sender<A::ObservableState>,
 ) -> ActorExitStatus {
-    let mut exit_status_opt: Option<ActorExitStatus> = actor.initialize(&ctx).err();
+    // We rely on this object internally to fetch a post-mortem state,
+    // even in case of a panic.
+    let mut actor_with_state_tx = ActorWithStateTx { actor, state_tx };
+
+    let mut exit_status_opt: Option<ActorExitStatus> =
+        actor_with_state_tx.actor.initialize(&ctx).err();
+
     let exit_status: ActorExitStatus = loop {
         if let Some(exit_status) = exit_status_opt {
             break exit_status;
         }
-        exit_status_opt = process_msg(&mut actor, &mut inbox, &mut ctx, &state_tx);
+        exit_status_opt = process_msg(
+            &mut actor_with_state_tx.actor,
+            &mut inbox,
+            &mut ctx,
+            &actor_with_state_tx.state_tx,
+        );
     };
     ctx.exit(&exit_status);
-    if let Err(error) = actor.finalize(&exit_status, &ctx) {
+    if let Err(error) = actor_with_state_tx.actor.finalize(&exit_status, &ctx) {
         error!(error=?error, "Finalizing failed");
     }
-    let final_state = actor.observable_state();
-    let _ = state_tx.send(final_state);
     exit_status
 }
