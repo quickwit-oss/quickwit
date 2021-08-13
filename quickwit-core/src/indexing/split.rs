@@ -278,7 +278,7 @@ impl Split {
         // create bundle
         let bundle_path = self.split_scratch_dir.path().join(BUNDLE_FILENAME);
         let mut create_bundle = BundleStorageBuilder::new(&bundle_path)?;
-        let mut upload_res_futures = vec![];
+        //let mut upload_res_futures = vec![];
         for path in files_to_upload.iter() {
             create_bundle.add_file(path)?;
         }
@@ -300,41 +300,6 @@ impl Split {
                 self.index_uri
             )
         })?;
-
-        // upload files
-        for path in files_to_upload {
-            let file: tokio::fs::File = tokio::fs::File::open(&path)
-                .await
-                .with_context(|| format!("Failed to get metadata for {:?}", &path))?;
-            let metadata = file.metadata().await?;
-            let file_name = match path.file_name() {
-                Some(fname) => fname.to_string_lossy().to_string(),
-                _ => {
-                    warn!(path = %path.display(), "Could not extract path as string");
-                    continue;
-                }
-            };
-
-            manifest.push(&file_name, metadata.len());
-            //let key = PathBuf::from(file_name);
-            //let payload = quickwit_storage::PutPayload::from(path.clone());
-            //let storage = self.storage.clone();
-            //let index_uri = self.index_uri.to_string();
-            //let upload_res_future = async move {
-            //storage.put(&key, payload).await.with_context(|| {
-            //format!(
-            //"Failed uploading key {} in bucket {}",
-            //key.display(),
-            //index_uri
-            //)
-            //})?;
-            //Result::<(), anyhow::Error>::Ok(())
-            //};
-
-            //upload_res_futures.push(upload_res_future);
-        }
-
-        //futures::future::try_join_all(upload_res_futures).await?;
 
         let manifest_body = manifest.to_json()?.into_bytes();
         let manifest_path = PathBuf::from(".manifest");
