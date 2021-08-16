@@ -41,7 +41,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 // to tonic::Status as tonic::Status is required by the stream result
 // signature defined by proto generated code.
 pub async fn leaf_search_stream(
-    index_config: Box<dyn IndexConfig>,
+    index_config: Arc<dyn IndexConfig>,
     request: &SearchStreamRequest,
     split_ids: Vec<String>,
     storage: Arc<dyn Storage>,
@@ -72,7 +72,7 @@ pub async fn leaf_search_stream(
 
 /// Apply a leaf search on a single split.
 async fn leaf_search_stream_single_split(
-    index_config: Box<dyn IndexConfig>,
+    index_config: Arc<dyn IndexConfig>,
     stream_request: &SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResult> {

@@ -69,6 +69,8 @@ const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "http
 {"body": "biz", "title": "modern", "url": "https://wiki.com?id=13"}
 "#;
 
+const AWS_DEFAULT_REGION_ENV: &str = "AWS_DEFAULT_REGION";
+
 /// Creates a quickwit-cli command with provided list of arguments.
 pub fn make_command(arguments: &str) -> Command {
     let mut cmd = Command::cargo_bin(PACKAGE_BIN_NAME).unwrap();
@@ -76,6 +78,7 @@ pub fn make_command(arguments: &str) -> Command {
         quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
         "disable-for-tests",
     )
+    .env(AWS_DEFAULT_REGION_ENV, "us-east-1")
     .args(arguments.split_whitespace());
     cmd
 }
@@ -88,6 +91,7 @@ pub fn spawn_command(arguments: &str) -> io::Result<Child> {
             quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
             "disable-for-tests",
         )
+        .env(AWS_DEFAULT_REGION_ENV, "us-east-1")
         .stdout(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()

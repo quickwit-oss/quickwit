@@ -125,7 +125,7 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
 /// Apply a leaf search on a single split.
 async fn leaf_search_single_split(
     split_id: String,
-    index_config: Box<dyn IndexConfig>,
+    index_config: Arc<dyn IndexConfig>,
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchResult> {
@@ -156,7 +156,7 @@ async fn leaf_search_single_split(
 /// The root will be in charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
 pub async fn leaf_search(
-    index_config: Box<dyn IndexConfig>,
+    index_config: Arc<dyn IndexConfig>,
     request: &SearchRequest,
     split_ids: &[String],
     storage: Arc<dyn Storage>,

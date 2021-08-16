@@ -496,7 +496,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: "test-idx".to_string(),
                     index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Box::new(WikipediaIndexConfig::new()),
+                    index_config: Arc::new(WikipediaIndexConfig::new()),
                 })
             });
         metastore.expect_list_splits().returning(
@@ -560,7 +560,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: "test-idx".to_string(),
                     index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Box::new(WikipediaIndexConfig::new()),
+                    index_config: Arc::new(WikipediaIndexConfig::new()),
                 })
             });
         metastore.expect_list_splits().returning(
@@ -647,7 +647,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: "test-idx".to_string(),
                     index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Box::new(WikipediaIndexConfig::new()),
+                    index_config: Arc::new(WikipediaIndexConfig::new()),
                 })
             });
         metastore.expect_list_splits().returning(
@@ -757,7 +757,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: "test-idx".to_string(),
                     index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Box::new(WikipediaIndexConfig::new()),
+                    index_config: Arc::new(WikipediaIndexConfig::new()),
                 })
             });
         metastore.expect_list_splits().returning(
@@ -885,7 +885,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: "test-idx".to_string(),
                     index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Box::new(WikipediaIndexConfig::new()),
+                    index_config: Arc::new(WikipediaIndexConfig::new()),
                 })
             });
         metastore.expect_list_splits().returning(
@@ -968,7 +968,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: "test-idx".to_string(),
                     index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Box::new(WikipediaIndexConfig::new()),
+                    index_config: Arc::new(WikipediaIndexConfig::new()),
                 })
             });
         metastore.expect_list_splits().returning(
@@ -1028,7 +1028,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: "test-idx".to_string(),
                     index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Box::new(WikipediaIndexConfig::new()),
+                    index_config: Arc::new(WikipediaIndexConfig::new()),
                 })
             });
         metastore.expect_list_splits().returning(
@@ -1090,7 +1090,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: "test-idx".to_string(),
                     index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Box::new(WikipediaIndexConfig::new()),
+                    index_config: Arc::new(WikipediaIndexConfig::new()),
                 })
             });
         metastore.expect_list_splits().returning(
@@ -1185,7 +1185,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: "test-idx".to_string(),
                     index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Box::new(WikipediaIndexConfig::new()),
+                    index_config: Arc::new(WikipediaIndexConfig::new()),
                 })
             });
         metastore.expect_list_splits().returning(

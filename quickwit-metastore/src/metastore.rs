@@ -22,9 +22,9 @@
 
 pub mod single_file_metastore;
 
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::{Range, RangeInclusive};
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -42,7 +42,7 @@ pub struct IndexMetadata {
     /// split files.
     pub index_uri: String,
     /// The config used for this index.
-    pub index_config: Box<dyn IndexConfig>, //< TODO it would be good to make this an Arc.
+    pub index_config: Arc<dyn IndexConfig>,
 }
 
 /// A split metadata carries all meta data about a split.
