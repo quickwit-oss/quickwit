@@ -409,20 +409,9 @@ impl Metastore for SingleFileMetastore {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-    use std::ops::{Range, RangeInclusive};
-    use std::path::Path;
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    use chrono::Utc;
-    use tokio::time::sleep;
-
     use quickwit_index_config::AllFlattenIndexConfig;
-    use quickwit_storage::{MockStorage, StorageErrorKind};
 
-    use crate::{IndexMetadata, MetastoreError};
-    use crate::{Metastore, SingleFileMetastore, SplitMetadata, SplitState};
+    use crate::{IndexMetadata, Metastore, MetastoreError, SingleFileMetastore};
 
     #[tokio::test]
     async fn test_single_file_metastore_index_exists() {
