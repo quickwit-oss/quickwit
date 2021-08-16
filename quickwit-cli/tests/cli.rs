@@ -342,9 +342,7 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     metastore.stage_split(index_id, split_meta).await?;
     assert_eq!(split_path.exists(), true);
 
-    //TODO reduce all timing by (-6s) when [quickwit/issues/384]
-    // is resolved properly
-    make_command(format!("gc --index-uri {} --grace-period 8s", test_env.index_uri).as_str())
+    make_command(format!("gc --index-uri {} --grace-period 2s", test_env.index_uri).as_str())
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -353,10 +351,10 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     assert_eq!(split_path.exists(), true);
 
     // wait for grace period
-    sleep(Duration::from_secs(11)).await;
+    sleep(Duration::from_secs(3)).await;
     make_command(
         format!(
-            "gc --index-uri {} --dry-run --grace-period 8s",
+            "gc --index-uri {} --dry-run --grace-period 2s",
             test_env.index_uri
         )
         .as_str(),
