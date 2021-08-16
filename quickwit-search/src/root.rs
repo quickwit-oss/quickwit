@@ -451,7 +451,6 @@ mod tests {
                 hotcache_offset_start: 1234,
                 bundle_file_size: 9001,
             },
-            ..Default::default()
         }
     }
 
