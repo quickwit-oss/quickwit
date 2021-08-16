@@ -192,12 +192,13 @@ fn create_packaged_split(
             )
         })?;
     let packaged_split = PackagedSplit {
-        index_id: split.index_id.clone(),
+        index_id: split.index_id,
         split_id: split.split_id.to_string(),
+        checkpoint_delta: split.checkpoint_delta,
         split_scratch_directory: split.split_scratch_directory,
         num_docs,
         segment_ids,
-        time_range: split.time_range.clone(),
+        time_range: split.time_range,
         size_in_bytes: split.docs_size_in_bytes,
         files_to_upload,
     };
@@ -227,6 +228,7 @@ mod tests {
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::ObservationType;
     use quickwit_actors::Universe;
+    use quickwit_metastore::checkpoint::CheckpointDelta;
     use tantivy::doc;
     use tantivy::schema::Schema;
     use tantivy::schema::FAST;
@@ -269,9 +271,7 @@ mod tests {
                 )
             }
         }
-        // We don't emit the last segment, that's the job of the packager.
-        // In reality, the indexer does not commit at all, but it may emit segments
-        // if its memory budget is reached before the commit policy triggers.
+        // We don't commit, that's the job of the packager.
         //
         // TODO: In the future we would like that kind of segment flush to emit a new split,
         // but this will require work on tantivy.
@@ -285,6 +285,7 @@ mod tests {
             index,
             index_writer,
             split_scratch_directory,
+            checkpoint_delta: CheckpointDelta::from(10..20),
         };
         Ok(indexed_split)
     }

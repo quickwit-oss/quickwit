@@ -31,6 +31,7 @@ use chrono::Utc;
 use quickwit_index_config::IndexConfig;
 use serde::{Deserialize, Serialize};
 
+use crate::checkpoint::{Checkpoint, CheckpointDelta};
 use crate::MetastoreResult;
 
 /// An index metadata carries all meta data about an index.
@@ -43,6 +44,8 @@ pub struct IndexMetadata {
     pub index_uri: String,
     /// The config used for this index.
     pub index_config: Arc<dyn IndexConfig>,
+    /// Checkpoint relative to a source. It express up to where documents have been indexed.
+    pub checkpoint: Checkpoint,
 }
 
 /// A split metadata carries all meta data about a split.
@@ -180,6 +183,7 @@ pub trait Metastore: Send + Sync + 'static {
         &self,
         index_id: &str,
         split_ids: &[&'a str],
+        checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()>;
 
     /// Lists the splits.

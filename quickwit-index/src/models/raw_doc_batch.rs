@@ -16,10 +16,11 @@
 //  GNU Affero General Public License for more details.
 //
 //  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+use quickwit_metastore::checkpoint::CheckpointDelta;
 
 #[derive(Default, Debug, Clone)]
 pub struct RawDocBatch {
     pub docs: Vec<String>,
-    // pub checkpoint: Checkpoint,
+    pub checkpoint_delta: CheckpointDelta,
 }

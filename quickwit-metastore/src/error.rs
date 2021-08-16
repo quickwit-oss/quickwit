@@ -24,6 +24,8 @@ use std::io;
 
 use thiserror::Error;
 
+use crate::checkpoint::IncompatibleCheckpoint;
+
 /// Metastore error kinds.
 #[derive(Debug, Error)]
 pub enum MetastoreError {
@@ -84,6 +86,10 @@ pub enum MetastoreError {
         /// Split that should have been staged.
         split_id: String,
     },
+
+    /// The index is actually
+    #[error("Publish checkpoint cannot be applied: {0:?}.")]
+    IncompatibleCheckpointDelta(#[from] IncompatibleCheckpoint),
 }
 
 /// Generic Result type for metastore operations.

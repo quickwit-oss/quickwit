@@ -25,6 +25,7 @@ use quickwit_actors::ActorContext;
 use quickwit_actors::ActorExitStatus;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
+use quickwit_metastore::checkpoint::CheckpointDelta;
 use std::fmt;
 
 /// This private token prevents external actors from creating the Loop message.
@@ -83,13 +84,16 @@ impl AsyncActor for VecSource {
             .take(self.batch_num_docs)
             .cloned()
             .collect();
+        let start_item_id = self.next_item_id as u64;
         self.next_item_id += line_docs.len();
+        let end_item_id = self.next_item_id as u64;
+        let checkpoint_delta = CheckpointDelta::from(start_item_id..end_item_id);
         if line_docs.is_empty() {
             return Err(ActorExitStatus::Success);
         }
         let batch = RawDocBatch {
             docs: line_docs,
-            // checkpoint: Checkpoint::default(),
+            checkpoint_delta,
         };
         ctx.send_message(&self.sink, batch).await?;
         // Loops

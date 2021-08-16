@@ -23,6 +23,7 @@ use std::ops::RangeInclusive;
 use std::path::Path;
 use std::time::Instant;
 
+use quickwit_metastore::checkpoint::CheckpointDelta;
 use tantivy::merge_policy::NoMergePolicy;
 use tantivy::schema::Schema;
 
@@ -45,6 +46,8 @@ pub struct IndexedSplit {
 
     /// Instant of the instant of the first document in the split.
     pub start_time: Instant,
+
+    pub checkpoint_delta: CheckpointDelta,
 
     pub index: tantivy::Index,
     pub index_writer: tantivy::IndexWriter,
@@ -91,6 +94,7 @@ impl IndexedSplit {
             index,
             index_writer,
             split_scratch_directory,
+            checkpoint_delta: CheckpointDelta::default(),
         })
     }
 
