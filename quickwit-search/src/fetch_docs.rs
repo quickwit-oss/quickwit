@@ -34,6 +34,7 @@ use tantivy::ReloadPolicy;
 use crate::leaf::open_index;
 use crate::GlobalDocAddress;
 
+#[allow(clippy::needless_lifetimes)]
 /// Given a list of global doc address, fetch all of the documents and
 /// returns them as a hashmap.
 async fn fetch_docs_to_map<'a>(
@@ -128,6 +129,7 @@ async fn get_searcher_for_split(
     Ok(reader)
 }
 
+#[allow(clippy::needless_lifetimes)]
 /// Fetching docs from a specific split.
 async fn fetch_docs_in_split<'a>(
     global_doc_addrs: Vec<GlobalDocAddress<'a>>,
