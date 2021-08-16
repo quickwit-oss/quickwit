@@ -45,7 +45,6 @@ use tempfile::TempDir;
 use tracing::info;
 use uuid::Uuid;
 
-use super::manifest::ManifestEntry;
 use super::IndexDataParams;
 
 pub const MAX_DOC_PER_SPLIT: usize = if cfg!(test) { 100 } else { 5_000_000 };
@@ -322,9 +321,6 @@ impl Split {
         Ok(manifest)
     }
 }
-/// [`FileEntry`] is an alias of [`ManifestEntry`] for
-/// holding the full path & size of a file.
-pub type FileEntry = ManifestEntry;
 
 /// Removes all files contained within a single split from storage at `split_uri`.
 /// This function only cares about cleaning up files without any concern for the metastore.
