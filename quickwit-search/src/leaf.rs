@@ -197,10 +197,10 @@ async fn leaf_search_single_split(
 pub async fn leaf_search(
     index_config: Arc<dyn IndexConfig>,
     request: &SearchRequest,
-    split_ids: &[SplitMetadata],
+    splits: &[SplitMetadata],
     storage: Arc<dyn Storage>,
 ) -> Result<LeafSearchResult, SearchError> {
-    let leaf_search_single_split_futures: Vec<_> = split_ids
+    let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
         .map(|split| {
             let split_storage: Arc<dyn Storage> = quickwit_storage::add_prefix_to_storage(

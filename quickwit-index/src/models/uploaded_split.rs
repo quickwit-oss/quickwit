@@ -23,5 +23,5 @@ use quickwit_metastore::SplitMetadata;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UploadedSplit {
     pub index_id: String,
-    pub split_id: SplitMetadata,
+    pub split: SplitMetadata,
 }

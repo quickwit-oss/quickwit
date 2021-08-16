@@ -185,7 +185,7 @@ async fn run_upload(
     put_split_files_to_storage(&split, split_metadata.clone(), &*split_storage).await?;
     Ok(UploadedSplit {
         index_id: split.index_id.clone(),
-        split_id: split_metadata,
+        split: split_metadata,
     })
 }
 
@@ -297,7 +297,7 @@ mod tests {
         assert_eq!(publish_futures.len(), 1);
         let publish_future = publish_futures.into_iter().next().unwrap();
         let uploaded_split = publish_future.await?;
-        assert_eq!(&uploaded_split.split_id.split_id, "test-split");
+        assert_eq!(&uploaded_split.split.split_id, "test-split");
         let mut files = ram_storage.list_files().await;
         files.sort();
         assert_eq!(

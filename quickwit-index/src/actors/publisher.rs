@@ -72,7 +72,7 @@ impl AsyncActor for Publisher {
             .await
             .with_context(|| "Upload apparently failed")?; //< splits must be published in order, so one uploaded failing means we should fail entirely.
         self.metastore
-            .publish_splits(&uploaded_split.index_id, vec![uploaded_split.split_id])
+            .publish_splits(&uploaded_split.index_id, vec![uploaded_split.split])
             .await
             .with_context(|| "Failed to publish splits")?;
         self.counters.num_published_splits += 1;
@@ -118,7 +118,7 @@ mod tests {
         assert!(split_future_tx2
             .send(UploadedSplit {
                 index_id: "index".to_string(),
-                split_id: SplitMetadata {
+                split: SplitMetadata {
                     split_id: "split2".to_string(),
                     ..Default::default()
                 },
@@ -127,7 +127,7 @@ mod tests {
         assert!(split_future_tx1
             .send(UploadedSplit {
                 index_id: "index".to_string(),
-                split_id: SplitMetadata {
+                split: SplitMetadata {
                     split_id: "split1".to_string(),
                     ..Default::default()
                 },
