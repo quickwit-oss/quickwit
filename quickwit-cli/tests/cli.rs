@@ -406,9 +406,7 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
         .success()
         .stdout(predicate::str::contains(
             "The following splits will be removed",
-        ))
-        .stdout(predicate::str::contains("/hotcache"))
-        .stdout(predicate::str::contains("/.manifest"));
+        ));
 
     make_command(format!("delete --index-uri {} ", test_env.index_uri).as_str())
         .assert()

@@ -63,11 +63,11 @@ pub async fn finalize_split(
                 split.stage().await?;
                 moved_statistics.num_staged_splits.inc();
 
-                let manifest = split.upload().await?;
+                let split_size_in_bytes = split.upload().await?;
                 moved_statistics.num_uploaded_splits.inc();
                 moved_statistics
                     .total_size_splits
-                    .add(manifest.split_size_in_bytes as usize);
+                    .add(split_size_in_bytes as usize);
 
                 anyhow::Result::<Split>::Ok(split)
             }

@@ -66,11 +66,49 @@ impl BundleStorage {
             metadata,
         })
     }
+
+    /// Return the file statistics for the files that have been added.
+    pub fn file_statistics(&self) -> FileStatistics {
+        self.metadata.file_statistics()
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct BundleStorageFileOffsets {
     pub(crate) files: HashMap<PathBuf, Range<usize>>,
+}
+
+impl BundleStorageFileOffsets {
+    pub fn file_statistics(&self) -> FileStatistics {
+        let mut file_statistics = FileStatistics::default();
+        file_statistics.min_file_size_in_bytes = self
+            .files
+            .values()
+            .map(|range| range.end - range.start)
+            .min()
+            .unwrap_or(0) as u64;
+        file_statistics.max_file_size_in_bytes = self
+            .files
+            .values()
+            .map(|range| range.end - range.start)
+            .max()
+            .unwrap_or(0) as u64;
+        file_statistics.avg_file_size_in_bytes = self
+            .files
+            .values()
+            .map(|range| range.end - range.start)
+            .sum::<usize>() as u64
+            / self.files.len() as u64;
+
+        file_statistics
+    }
+}
+
+#[derive(Default)]
+pub struct FileStatistics {
+    pub min_file_size_in_bytes: u64,
+    pub max_file_size_in_bytes: u64,
+    pub avg_file_size_in_bytes: u64,
 }
 
 impl BundleStorageFileOffsets {
@@ -193,6 +231,11 @@ impl BundleStorageBuilder {
         })
     }
 
+    /// Return the file statistics for the files that have been added.
+    pub fn file_statistics(&self) -> FileStatistics {
+        self.metadata.file_statistics()
+    }
+
     /// Appends a file to the bundle file.
     ///
     /// The hotcache needs to be the last file that is added, in order to be able to read
@@ -301,6 +344,31 @@ mod tests {
             .get_slice(Path::new(HOTCACHE_FILENAME), 1..3)
             .await?;
         assert_eq!(f2_data, &vec![55, 44]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn bundlestorage_test_empty() -> anyhow::Result<()> {
+        let temp_dir = temp_dir();
+        let bundle_file_name = temp_dir.join("asdf");
+        let create_bundle = BundleStorageBuilder::new(&bundle_file_name)?;
+
+        create_bundle.finalize()?;
+
+        let bytes = std::fs::read(&bundle_file_name)?;
+
+        let metadata = BundleStorageFileOffsets::open(&bytes).unwrap();
+
+        let path_root = format!("file://{}", temp_dir.to_string_lossy());
+        let file_storage = LocalFileStorage::from_uri(&path_root)?;
+        let bundle_storage = BundleStorage {
+            metadata,
+            bundle_file_name,
+            storage: Arc::new(file_storage),
+        };
+
+        assert_eq!(bundle_storage.exists(Path::new("blub")).await?, false);
 
         Ok(())
     }

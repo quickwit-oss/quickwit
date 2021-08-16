@@ -32,7 +32,7 @@ use quickwit_metastore::Metastore;
 use quickwit_metastore::SplitMetadata;
 use quickwit_storage::BundleStorageBuilder;
 use quickwit_storage::BUNDLE_FILENAME;
-use quickwit_storage::{PutPayload, Storage, StorageUriResolver};
+use quickwit_storage::{Storage, StorageUriResolver};
 use std::sync::Arc;
 use std::time::Instant;
 use std::{path::PathBuf, usize};
@@ -237,14 +237,16 @@ impl Split {
     }
 
     /// Upload all split artifacts using the storage.
-    pub async fn upload(&mut self) -> anyhow::Result<Manifest> {
+    ///
+    /// Returns the size of the split.
+    pub async fn upload(&mut self) -> anyhow::Result<usize> {
         info!("upload-split");
         let start = Instant::now();
 
         let mut manifest = Manifest::new(self.metadata.clone());
         manifest.segments = self.index.searchable_segment_ids()?;
 
-        let mut files_to_upload: Vec<PathBuf> = self
+        let mut files_to_bundle: Vec<PathBuf> = self
             .index
             .searchable_segment_metas()?
             .into_iter()
@@ -259,13 +261,13 @@ impl Split {
             })
             .map(|relative_filepath| self.split_scratch_dir.path().join(relative_filepath))
             .collect();
-        files_to_upload.push(self.split_scratch_dir.path().join("meta.json"));
+        files_to_bundle.push(self.split_scratch_dir.path().join("meta.json"));
 
-        files_to_upload.push(self.split_scratch_dir.path().join("hotcache"));
+        files_to_bundle.push(self.split_scratch_dir.path().join("hotcache"));
 
         // IMPORTANT: hotcache needs to be the last file in the list
         assert!(
-            files_to_upload
+            files_to_bundle
                 .last()
                 .unwrap()
                 .file_name()
@@ -277,19 +279,20 @@ impl Split {
         // create bundle
         let bundle_path = self.split_scratch_dir.path().join(BUNDLE_FILENAME);
         let mut create_bundle = BundleStorageBuilder::new(&bundle_path)?;
-        //let mut upload_res_futures = vec![];
-        for path in files_to_upload.iter() {
+
+        let manifest_body = manifest.to_json()?.into_bytes();
+        let manifest_path = PathBuf::from(".manifest");
+        create_bundle.add_file_from_read(&*manifest_body, manifest_path)?;
+
+        for path in files_to_bundle.iter() {
             create_bundle.add_file(path)?;
         }
+
+        let file_statistics = create_bundle.file_statistics();
         let bundle_offsets = create_bundle.finalize()?;
-        self.metadata.bundle_offsets = bundle_offsets;
+        self.metadata.bundle_offsets = bundle_offsets.clone();
         //upload bundle
-        let file: tokio::fs::File = tokio::fs::File::open(&bundle_path)
-            .await
-            .with_context(|| format!("Failed to get metadata for {:?}", &bundle_path))?;
-        let metadata = file.metadata().await?;
         let file_name = "bundle";
-        manifest.push(file_name, metadata.len());
         let key = PathBuf::from(file_name);
         let payload = quickwit_storage::PutPayload::from(bundle_path.clone());
         self.storage.put(&key, payload).await.with_context(|| {
@@ -300,25 +303,18 @@ impl Split {
             )
         })?;
 
-        let manifest_body = manifest.to_json()?.into_bytes();
-        let manifest_path = PathBuf::from(".manifest");
-        self.storage
-            .put(&manifest_path, PutPayload::from(manifest_body))
-            .await?;
-
         let elapsed_secs = start.elapsed().as_secs();
-        let file_statistics = manifest.file_statistics();
         info!(
             min_file_size_in_bytes = %file_statistics.min_file_size_in_bytes,
             max_file_size_in_bytes = %file_statistics.max_file_size_in_bytes,
             avg_file_size_in_bytes = %file_statistics.avg_file_size_in_bytes,
-            split_size_in_megabytes = %manifest.split_size_in_bytes / 1000,
+            split_size_in_megabytes = %bundle_offsets.bundle_file_size / 1000,
             elapsed_secs = %elapsed_secs,
-            throughput_mb_s = %manifest.split_size_in_bytes / 1000 / elapsed_secs.max(1),
+            throughput_mb_s = %bundle_offsets.bundle_file_size as u64 / 1000 / elapsed_secs.max(1),
             "Uploaded split to storage"
         );
 
-        Ok(manifest)
+        Ok(bundle_offsets.bundle_file_size)
     }
 }
 
@@ -338,20 +334,18 @@ pub async fn remove_split_files_from_storage(
     info!(split_uri =% split_uri, "delete-split");
     let storage = storage_resolver.resolve(split_uri)?;
 
-    let manifest_file = Path::new(BUNDLE_FILENAME);
+    let bundle_file = Path::new(BUNDLE_FILENAME);
     //let manifest_file = Path::new(".manifest");
     // Removing a non-existing split is considered ok.
     // A split can be listed by the metastore when it doesn't in fact exist on disk for some reasons:
     // - split was staged but failed to upload.
     // - operation canceled by the user right in the middle.
-    if !storage.exists(manifest_file).await? {
+    if !storage.exists(bundle_file).await? {
         return Ok(());
     }
 
     if !dry_run {
-        let manifest_file2 = Path::new(".manifest");
-        storage.delete(manifest_file).await?;
-        storage.delete(manifest_file2).await?;
+        storage.delete(bundle_file).await?;
     }
 
     Ok(())
