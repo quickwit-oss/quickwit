@@ -152,25 +152,11 @@ pub async fn single_node_search(
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
     let split_metas = list_relevant_splits(search_request, metastore).await?;
-    let split_ids: Vec<String> = split_metas
-        .iter()
-        .map(|split_meta| split_meta.split_id.clone())
-        .collect();
-    let split_meta_data = metastore
-        .list_split_ids(
-            &search_request.index_id,
-            quickwit_metastore::SplitState::Published,
-            None,
-            &split_ids,
-        )
-        .await?;
     let index_config = index_metadata.index_config;
-    let query = index_config.query(search_request)?;
-    let collector = make_collector(index_config.as_ref(), search_request);
     let leaf_search_result = leaf_search(
-        query.as_ref(),
-        collector,
-        &split_ids[..],
+        index_config,
+        search_request,
+        &split_metas[..],
         storage.clone(),
     )
     .await

@@ -1,3 +1,5 @@
+use quickwit_metastore::SplitMetadata;
+
 // Quickwit
 //  Copyright (C) 2021 Quickwit Inc.
 //
@@ -21,5 +23,5 @@
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UploadedSplit {
     pub index_id: String,
-    pub split_id: String,
+    pub split_id: SplitMetadata,
 }

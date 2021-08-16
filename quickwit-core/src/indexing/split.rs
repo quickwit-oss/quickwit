@@ -42,7 +42,7 @@ use tantivy::SegmentId;
 use tantivy::SegmentMeta;
 use tantivy::{directory::MmapDirectory, merge_policy::NoMergePolicy, schema::Schema, Document};
 use tempfile::TempDir;
-use tracing::{info, warn};
+use tracing::info;
 use uuid::Uuid;
 
 use super::manifest::ManifestEntry;

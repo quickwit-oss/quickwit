@@ -169,6 +169,7 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadata {
         generation: 0,
         split_state: SplitState::New,
         update_timestamp: Utc::now().timestamp(),
+        bundle_offsets: Default::default(),
     }
 }
 
@@ -181,10 +182,10 @@ async fn run_upload(
     metastore
         .stage_split(&split.index_id, split_metadata.clone())
         .await?;
-    put_split_files_to_storage(&split, split_metadata, &*split_storage).await?;
+    put_split_files_to_storage(&split, split_metadata.clone(), &*split_storage).await?;
     Ok(UploadedSplit {
         index_id: split.index_id.clone(),
-        split_id: split.split_id,
+        split_id: split_metadata,
     })
 }
 
@@ -296,13 +297,7 @@ mod tests {
         assert_eq!(publish_futures.len(), 1);
         let publish_future = publish_futures.into_iter().next().unwrap();
         let uploaded_split = publish_future.await?;
-        assert_eq!(
-            &uploaded_split,
-            &UploadedSplit {
-                index_id: "test-index".to_string(),
-                split_id: "test-split".to_string()
-            }
-        );
+        assert_eq!(&uploaded_split.split_id.split_id, "test-split");
         let mut files = ram_storage.list_files().await;
         files.sort();
         assert_eq!(

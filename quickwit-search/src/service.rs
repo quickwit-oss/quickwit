@@ -238,9 +238,22 @@ impl SearchService for SearchServiceImpl {
         let index_metadata = metastore.index_metadata(&stream_request.index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let split_ids = leaf_stream_request.split_ids;
+        let split_meta_data = metastore
+            .list_split_ids(
+                &index_metadata.index_id,
+                quickwit_metastore::SplitState::Published,
+                None,
+                &split_ids,
+            )
+            .await?;
         let index_config = index_metadata.index_config;
-        let leaf_receiver =
-            leaf_search_stream(index_config, &stream_request, split_ids, storage.clone()).await;
+        let leaf_receiver = leaf_search_stream(
+            index_config,
+            &stream_request,
+            &split_meta_data,
+            storage.clone(),
+        )
+        .await;
         Ok(leaf_receiver)
     }
 }

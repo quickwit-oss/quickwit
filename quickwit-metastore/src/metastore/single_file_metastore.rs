@@ -744,10 +744,7 @@ mod tests {
             split_state: SplitState::Staged,
             num_records: 5,
             size_in_bytes: 6,
-            time_range: Some(Range {
-                start: 30,
-                end: 100,
-            }),
+            time_range: Some(30..=100),
             generation: 2,
             update_timestamp: current_timestamp,
             ..Default::default()
@@ -1510,7 +1507,7 @@ mod tests {
 
             // publish split
             metastore
-                .publish_splits(index_id, vec![split_id])
+                .publish_splits(index_id, vec![split_metadata])
                 .await
                 .unwrap();
 

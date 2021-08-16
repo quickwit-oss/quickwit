@@ -123,6 +123,7 @@ mod tests {
     use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::OutputFormat;
+    use quickwit_storage::BundleStorageOffsets;
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
     fn mock_split_meta(split_id: &str) -> SplitMetadata {
@@ -134,6 +135,11 @@ mod tests {
             time_range: None,
             generation: 1,
             update_timestamp: 0,
+            bundle_offsets: BundleStorageOffsets {
+                footer_offsets: 700..800,
+                hotcache_offset_start: 1234,
+                bundle_file_size: 9001,
+            },
         }
     }
 

@@ -30,7 +30,7 @@ use quickwit_storage::StorageUriResolver;
 use tantivy::chrono::Utc;
 use tracing::warn;
 
-use crate::indexing::{remove_split_files_from_storage, FileEntry};
+use crate::indexing::remove_split_files_from_storage;
 
 /// Creates an index at `index-path` extracted from `metastore_uri`. The command fails if an index
 /// already exists at `index-path`.
@@ -128,7 +128,6 @@ pub async fn garbage_collect_index(
             .list_splits(index_id, SplitState::ScheduledForDeletion, None)
             .await?;
 
-        let index_uri = metastore.index_metadata(index_id).await?.index_uri;
         scheduled_for_delete_splits.extend(staged_splits);
         return Ok(scheduled_for_delete_splits);
     }

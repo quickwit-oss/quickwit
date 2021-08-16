@@ -47,7 +47,7 @@ pub struct IndexMetadata {
 }
 
 /// A split metadata carries all meta data about a split.
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
 pub struct SplitMetadata {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -97,7 +97,7 @@ impl SplitMetadata {
 }
 
 /// A split state.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SplitState {
     /// The split is newly created.
     New,

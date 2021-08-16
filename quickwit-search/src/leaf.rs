@@ -24,8 +24,8 @@ use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_metastore::SplitMetadata;
 use quickwit_index_config::IndexConfig;
+use quickwit_metastore::SplitMetadata;
 use quickwit_proto::{LeafSearchResult, SearchRequest, SplitSearchError};
 use quickwit_storage::{BundleStorage, Storage, BUNDLE_FILENAME};
 use std::collections::BTreeMap;
@@ -163,7 +163,6 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
 
 /// Apply a leaf search on a single split.
 async fn leaf_search_single_split(
-    split_id: String,
     index_config: Arc<dyn IndexConfig>,
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
@@ -172,7 +171,7 @@ async fn leaf_search_single_split(
     let index = open_index(storage, split_metadata).await?;
     let split_schema = index.schema();
     let quickwit_collector = make_collector_for_split(
-        split_id,
+        split_metadata.split_id.to_string(),
         index_config.as_ref(),
         search_request,
         &split_schema,
@@ -210,12 +209,7 @@ pub async fn leaf_search(
             );
             let index_config_clone = index_config.clone();
             async move {
-                leaf_search_single_split(
-			split_id.clone(), 
-			index_config_clone, 
-			request, 
-			split_storage
-		)
+                leaf_search_single_split(index_config_clone, request, split_storage, split)
                     .await
                     .map_err(|err| (split.split_id.to_string(), err))
             }

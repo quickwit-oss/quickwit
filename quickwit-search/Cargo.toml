@@ -16,7 +16,6 @@ anyhow = '1'
 async-trait = "0.1"
 base64 = '0.13'
 futures = '0.3'
-bytes = '1'
 http = "0.2"
 mockall = "0.9"
 itertools = '0.10'
