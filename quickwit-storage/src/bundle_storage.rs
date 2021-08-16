@@ -31,7 +31,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Debug;
 use std::fs::File;
-use std::io::{self, ErrorKind, Write};
+use std::io::{self, ErrorKind, Read, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -197,15 +197,12 @@ impl BundleStorageBuilder {
     ///
     /// The hotcache needs to be the last file that is added, in order to be able to read
     /// the hotcache and the metadata in one continous read.
-    pub fn add_file(&mut self, path: &Path) -> io::Result<()> {
-        let mut file = File::open(path)?;
-        let bytes_written = io::copy(&mut file, &mut self.bundle_file)? as usize;
-        let file_name = PathBuf::from(path.file_name().ok_or_else(|| {
-            io::Error::new(
-                ErrorKind::InvalidInput,
-                format!("could not extract file_name from path {:?}", path),
-            )
-        })?);
+    pub fn add_file_from_read<R: Read>(
+        &mut self,
+        mut read: R,
+        file_name: PathBuf,
+    ) -> io::Result<()> {
+        let bytes_written = io::copy(&mut read, &mut self.bundle_file)? as usize;
         if file_name.to_string_lossy() == HOTCACHE_FILENAME {
             self.hotcache_offset = self.current_offset;
         }
@@ -214,6 +211,22 @@ impl BundleStorageBuilder {
             self.current_offset..self.current_offset + bytes_written,
         );
         self.current_offset += bytes_written;
+        Ok(())
+    }
+
+    /// Appends a file to the bundle file.
+    ///
+    /// The hotcache needs to be the last file that is added, in order to be able to read
+    /// the hotcache and the metadata in one continous read.
+    pub fn add_file(&mut self, path: &Path) -> io::Result<()> {
+        let file = File::open(path)?;
+        let file_name = PathBuf::from(path.file_name().ok_or_else(|| {
+            io::Error::new(
+                ErrorKind::InvalidInput,
+                format!("could not extract file_name from path {:?}", path),
+            )
+        })?);
+        self.add_file_from_read(file, file_name)?;
         Ok(())
     }
 
