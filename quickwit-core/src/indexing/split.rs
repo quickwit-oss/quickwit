@@ -415,7 +415,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: index_id.to_string(),
                     index_uri: index_uri.to_string(),
-                    index_config: Box::new(AllFlattenIndexConfig::new()),
+                    index_config: Arc::new(AllFlattenIndexConfig::new()),
                 })
             });
         mock_metastore
@@ -488,7 +488,7 @@ mod tests {
                 Ok(IndexMetadata {
                     index_id: index_id.to_string(),
                     index_uri: index_uri.to_string(),
-                    index_config: Box::new(AllFlattenIndexConfig::new()),
+                    index_config: Arc::new(AllFlattenIndexConfig::new()),
                 })
             });
 

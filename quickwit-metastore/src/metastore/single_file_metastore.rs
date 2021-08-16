@@ -438,7 +438,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Box::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -465,7 +465,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Box::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -501,7 +501,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Box::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -551,7 +551,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Box::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -601,7 +601,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Box::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -744,7 +744,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Box::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -891,7 +891,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Box::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(AllFlattenIndexConfig::default()),
             };
 
             // create index
@@ -1452,7 +1452,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Box::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -1558,7 +1558,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Box::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(AllFlattenIndexConfig::default()),
             };
 
             // Create index
@@ -1659,7 +1659,7 @@ mod tests {
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
             index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Box::new(AllFlattenIndexConfig::default()),
+            index_config: Arc::new(AllFlattenIndexConfig::default()),
         };
 
         // Create index
@@ -1729,7 +1729,7 @@ mod tests {
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
             index_uri: "ram://my-indexes/my-index".to_string(),
-            index_config: Box::new(AllFlattenIndexConfig::default()),
+            index_config: Arc::new(AllFlattenIndexConfig::default()),
         };
 
         // create index
