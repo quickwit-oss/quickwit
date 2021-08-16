@@ -104,10 +104,14 @@ impl BundleStorageFileOffsets {
     }
 }
 
-#[derive(Default)]
+/// Contains file size statistics.
+#[derive(Default, Debug, Clone)]
 pub struct FileStatistics {
+    /// the min_file_size_in_bytesf
     pub min_file_size_in_bytes: u64,
+    /// the max_file_size_in_bytesf
     pub max_file_size_in_bytes: u64,
+    /// the avg_file_size_in_bytesf
     pub avg_file_size_in_bytes: u64,
 }
 
