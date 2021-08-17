@@ -25,28 +25,29 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use futures::stream::{self, StreamExt};
-use quickwit_proto::OutputFormat;
 use serde::{Deserialize, Deserializer};
 use tracing::*;
-use warp::http::header::{HeaderMap, HeaderValue};
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
+use quickwit_cluster::service::ClusterServiceImpl;
+use quickwit_proto::OutputFormat;
 use quickwit_search::{SearchResultJson, SearchService, SearchServiceImpl};
 
-use crate::health_check::live_predicate;
-use crate::health_check::make_reply;
-use crate::health_check::ServiceStatus;
+use crate::http_handler::cluster::cluster_handler;
+use crate::http_handler::health_check::liveness_check_handler;
 use crate::ApiError;
 
 /// Start REST service given a HTTP address and a search service.
 pub async fn start_rest_service(
     rest_addr: SocketAddr,
     search_service: Arc<SearchServiceImpl>,
+    cluster_service: Arc<ClusterServiceImpl>,
 ) -> anyhow::Result<()> {
     info!(rest_addr=?rest_addr, "Start REST service.");
     let rest_routes = liveness_check_handler()
+        .or(cluster_handler(cluster_service))
         .or(search_handler(search_service.clone()))
         .or(search_stream_handler(search_service))
         .recover(recover_fn);
@@ -89,7 +90,7 @@ impl Format {
         }
     }
 
-    fn make_reply<T: serde::Serialize>(self, result: Result<T, ApiError>) -> impl Reply {
+    pub fn make_reply<T: serde::Serialize>(self, result: Result<T, ApiError>) -> impl Reply {
         let status_code: StatusCode;
         let body_json = match result {
             Ok(success) => {
@@ -159,19 +160,6 @@ async fn search_endpoint<TSearchService: SearchService>(
     let search_result = search_service.root_search(search_request).await?;
     let search_result_json = SearchResultJson::from(search_result);
     Ok(search_result_json)
-}
-
-/// Liveness check handler.
-pub fn liveness_check_handler() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone
-{
-    let mut headers = HeaderMap::new();
-    headers.insert("content-type", HeaderValue::from_static("application/json"));
-
-    let service_status = ServiceStatus::Alive;
-
-    warp::path!("health" / "livez")
-        .map(move || make_reply(live_predicate(service_status), service_status))
-        .with(warp::reply::with::headers(headers))
 }
 
 fn search_filter(
@@ -545,16 +533,6 @@ mod tests {
             400
         );
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_rest_search_api_health_check_livez() {
-        let rest_search_api_filter = liveness_check_handler();
-        let resp = warp::test::request()
-            .path("/health/livez")
-            .reply(&rest_search_api_filter)
-            .await;
-        assert_eq!(resp.status(), 200);
     }
 
     #[tokio::test]

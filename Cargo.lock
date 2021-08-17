@@ -2766,6 +2766,8 @@ dependencies = [
  "artillery-core",
  "async-trait",
  "quickwit-proto",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
