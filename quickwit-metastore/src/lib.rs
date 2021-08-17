@@ -37,3 +37,6 @@ pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};
 
 #[cfg(feature = "testsuite")]
 pub use metastore::MockMetastore;
+
+#[cfg(test)]
+mod tests;
