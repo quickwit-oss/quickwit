@@ -63,7 +63,7 @@ pub use universe::Universe;
 /// If an actor does not advertise a progress within an interval of duration `HEARTBEAT`,
 /// its supervisor will consider it as blocked and will proceed to kill it, as well
 /// as all of the actors all the actors that share the killswitch.
-pub const HEARTBEAT: Duration = Duration::from_secs(1);
+pub const HEARTBEAT: Duration = Duration::from_secs(2);
 
 pub fn message_timeout() -> Duration {
     HEARTBEAT.mul_f32(0.2f32)
