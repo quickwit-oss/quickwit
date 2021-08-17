@@ -13,6 +13,7 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
+quickwit-common = {path="../quickwit-common"}
 quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
 quickwit-metastore = { version = "0.1.0", path = "../quickwit-metastore" }
 quickwit-directories = { version = "0.1.0", path = "../quickwit-directories" }
