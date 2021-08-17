@@ -23,7 +23,7 @@ mod args;
 mod error;
 mod grpc;
 mod grpc_adapter;
-mod health_check;
+mod http_handler;
 mod rest;
 
 use std::collections::HashMap;
@@ -55,7 +55,8 @@ use quickwit_telemetry::payload::{ServeEvent, TelemetryEvent};
 pub use crate::args::ServeArgs;
 pub use crate::error::ApiError;
 use crate::grpc::start_grpc_service;
-use crate::grpc_adapter::GrpcAdapter;
+use crate::grpc_adapter::cluster_adapter::GrpcClusterAdapter;
+use crate::grpc_adapter::search_adapter::GrpcSearchAdapter;
 use crate::rest::start_rest_service;
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
@@ -292,14 +293,15 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
         client_pool,
     ));
 
-    let cluster_service_impl = ClusterServiceImpl::new(cluster.clone());
+    let cluster_service = Arc::new(ClusterServiceImpl::new(cluster.clone()));
 
     let grpc_socket_addr = http_addr_to_grpc_addr(args.rest_socket_addr);
-    let grpc_search_service = GrpcAdapter::from(search_service.clone());
+    let grpc_search_service = GrpcSearchAdapter::from(search_service.clone());
+    let grpc_cluster_service = GrpcClusterAdapter::from(cluster_service.clone());
     let grpc_server =
-        start_grpc_service(grpc_socket_addr, grpc_search_service, cluster_service_impl);
+        start_grpc_service(grpc_socket_addr, grpc_search_service, grpc_cluster_service);
 
-    let rest_server = start_rest_service(args.rest_socket_addr, search_service);
+    let rest_server = start_rest_service(args.rest_socket_addr, search_service, cluster_service);
 
     display_help_message(args.rest_socket_addr, &example_index_name)?;
 

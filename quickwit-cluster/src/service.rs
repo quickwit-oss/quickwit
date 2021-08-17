@@ -20,12 +20,12 @@
 
 use std::sync::Arc;
 
-use tonic::{Request, Response, Status};
+use async_trait::async_trait;
 
-use quickwit_proto::cluster_service_server::ClusterService;
 use quickwit_proto::{LeaveRequest, LeaveResult, Member as PMember, MembersRequest, MembersResult};
 
 use crate::cluster::{Cluster, Member};
+use crate::error::ClusterError;
 
 /// Convert the member state to the protobuf one.
 impl From<Member> for PMember {
@@ -36,6 +36,12 @@ impl From<Member> for PMember {
             is_self: member.is_self,
         }
     }
+}
+
+#[async_trait]
+pub trait ClusterService: 'static + Send + Sync {
+    async fn members(&self, request: MembersRequest) -> Result<MembersResult, ClusterError>;
+    async fn leave(&self, request: LeaveRequest) -> Result<LeaveResult, ClusterError>;
 }
 
 /// Cluster service implementation.
@@ -55,10 +61,7 @@ impl ClusterServiceImpl {
 #[tonic::async_trait]
 impl ClusterService for ClusterServiceImpl {
     /// This is the API to get the list of cluster members.
-    async fn members(
-        &self,
-        _request: Request<MembersRequest>,
-    ) -> Result<Response<MembersResult>, Status> {
+    async fn members(&self, _request: MembersRequest) -> Result<MembersResult, ClusterError> {
         let members = self
             .cluster
             .members()
@@ -66,17 +69,14 @@ impl ClusterService for ClusterServiceImpl {
             .map(PMember::from)
             .collect();
 
-        Ok(Response::new(MembersResult { members }))
+        Ok(MembersResult { members })
     }
 
     /// This is the API to leave the member from the cluster.
-    async fn leave(
-        &self,
-        _request: Request<LeaveRequest>,
-    ) -> Result<Response<LeaveResult>, Status> {
+    async fn leave(&self, _request: LeaveRequest) -> Result<LeaveResult, ClusterError> {
         self.cluster.leave();
 
-        Ok(Response::new(LeaveResult {}))
+        Ok(LeaveResult {})
     }
 }
 
