@@ -23,7 +23,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::models::Manifest;
-use crate::models::ManifestEntry;
 use crate::models::PackagedSplit;
 use crate::models::UploadedSplit;
 use crate::semaphore::Semaphore;
@@ -40,6 +39,7 @@ use quickwit_metastore::SplitMetadata;
 use quickwit_metastore::SplitState;
 use quickwit_storage::PutPayload;
 use quickwit_storage::Storage;
+use quickwit_storage::BUNDLE_FILENAME;
 use tantivy::chrono::Utc;
 use tantivy::SegmentId;
 use tokio::sync::oneshot::Receiver;
@@ -84,17 +84,9 @@ impl Actor for Uploader {
     }
 }
 
-fn create_manifest(
-    files: Vec<ManifestEntry>,
-    segments: Vec<SegmentId>,
-    split_metadata: SplitMetadata,
-) -> Manifest {
-    let split_size_in_bytes = files.iter().map(|file| file.file_size_in_bytes).sum();
+fn create_manifest(segments: Vec<SegmentId>, split_metadata: SplitMetadata) -> Manifest {
     Manifest {
         split_metadata,
-        split_size_in_bytes,
-        num_files: files.len() as u64,
-        files,
         segments,
     }
 }
@@ -105,38 +97,26 @@ async fn put_split_files_to_storage(
     split_metadata: SplitMetadata,
     storage: &dyn Storage,
 ) -> anyhow::Result<Manifest> {
-    info!("upload-split");
+    let bundle_path = split.split_scratch_directory.path().join(BUNDLE_FILENAME);
+    info!("upload-split-bundle {:?} ", bundle_path);
     let start = Instant::now();
 
     let mut upload_res_futures = vec![];
-    let mut manifest_entries = Vec::new();
-    for (path, file_size_in_bytes) in &split.files_to_upload {
-        let file_name = path
-            .file_name()
-            .and_then(|filename| filename.to_str())
-            .map(|filename| filename.to_string())
-            .with_context(|| format!("Failed to extract filename from path {}", path.display()))?;
-        manifest_entries.push(ManifestEntry {
-            file_name: file_name.to_string(),
-            file_size_in_bytes: *file_size_in_bytes,
-        });
-        let key = PathBuf::from(file_name);
-        let payload =
-            quickwit_storage::PutPayload::from(split.split_scratch_directory.path().join(path));
-        let upload_res_future = async move {
-            storage.put(&key, payload).await.with_context(|| {
-                format!(
-                    "Failed uploading key {} in bucket {}",
-                    key.display(),
-                    storage.uri()
-                )
-            })?;
-            Result::<(), anyhow::Error>::Ok(())
-        };
-        upload_res_futures.push(upload_res_future);
-    }
+    let key = PathBuf::from(BUNDLE_FILENAME);
+    let payload = quickwit_storage::PutPayload::from(bundle_path);
+    let upload_res_future = async move {
+        storage.put(&key, payload).await.with_context(|| {
+            format!(
+                "Failed uploading key {} in bucket {}",
+                key.display(),
+                storage.uri()
+            )
+        })?;
+        Result::<(), anyhow::Error>::Ok(())
+    };
+    upload_res_futures.push(upload_res_future);
 
-    let manifest = create_manifest(manifest_entries, split.segment_ids.clone(), split_metadata);
+    let manifest = create_manifest(split.segment_ids.clone(), split_metadata);
     futures::future::try_join_all(upload_res_futures).await?;
 
     let manifest_body = manifest.to_json()?.into_bytes();
@@ -146,14 +126,14 @@ async fn put_split_files_to_storage(
         .await?;
 
     let elapsed_secs = start.elapsed().as_secs();
-    let file_statistics = manifest.file_statistics();
+    let file_statistics = split.file_statistics.clone();
     info!(
         min_file_size_in_bytes = %file_statistics.min_file_size_in_bytes,
         max_file_size_in_bytes = %file_statistics.max_file_size_in_bytes,
         avg_file_size_in_bytes = %file_statistics.avg_file_size_in_bytes,
-        split_size_in_megabytes = %manifest.split_size_in_bytes / 1000,
+        split_size_in_megabytes = %split.bundle_offsets.bundle_file_size / 1000,
         elapsed_secs = %elapsed_secs,
-        throughput_mb_s = %manifest.split_size_in_bytes / 1000 / elapsed_secs.max(1),
+        throughput_mb_s = %split.bundle_offsets.bundle_file_size as u64  / 1000 / elapsed_secs.max(1),
         "Uploaded split to storage"
     );
 
@@ -169,6 +149,7 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadata {
         generation: 0,
         split_state: SplitState::New,
         update_timestamp: Utc::now().timestamp(),
+        bundle_offsets: Default::default(),
     }
 }
 
@@ -181,10 +162,10 @@ async fn run_upload(
     metastore
         .stage_split(&split.index_id, split_metadata.clone())
         .await?;
-    put_split_files_to_storage(&split, split_metadata, &*split_storage).await?;
+    put_split_files_to_storage(&split, split_metadata.clone(), &*split_storage).await?;
     Ok(UploadedSplit {
         index_id: split.index_id,
-        split_id: split.split_id,
+        split: split_metadata,
         checkpoint_delta: split.checkpoint_delta,
     })
 }
@@ -237,6 +218,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use quickwit_metastore::MockMetastore;
+    use quickwit_storage::BundleStorageOffsets;
     use quickwit_storage::RamStorage;
 
     use super::*;
@@ -262,15 +244,14 @@ mod tests {
         let uploader = Uploader::new(Arc::new(mock_metastore), index_storage.clone(), mailbox);
         let (uploader_mailbox, uploader_handle) = universe.spawn(uploader);
         let split_scratch_directory = ScratchDirectory::try_new_temp()?;
-        std::fs::write(split_scratch_directory.path().join("anyfile"), &b"bubu"[..])?;
+        std::fs::write(
+            split_scratch_directory.path().join(BUNDLE_FILENAME),
+            &b"bubu"[..],
+        )?;
         std::fs::write(
             split_scratch_directory.path().join("anyfile2"),
             &b"bubu2"[..],
         )?;
-        let files_to_upload = vec![
-            (PathBuf::from("anyfile"), 4),
-            (PathBuf::from("anyfile2"), 5),
-        ];
         let segment_ids = vec![SegmentId::from_uuid_string(
             "f45425f4-f67c-417e-9de7-8a8327115d47",
         )?];
@@ -283,7 +264,12 @@ mod tests {
                     checkpoint_delta: CheckpointDelta::from(3..15),
                     time_range: Some(1_628_203_589i64..=1_628_203_640i64),
                     size_in_bytes: 1_000,
-                    files_to_upload,
+                    bundle_offsets: BundleStorageOffsets {
+                        footer_offsets: 400..500,
+                        hotcache_offset_start: 300,
+                        bundle_file_size: 500,
+                    },
+                    file_statistics: Default::default(),
                     segment_ids,
                     split_scratch_directory,
                     num_docs: 10,
@@ -312,8 +298,7 @@ mod tests {
             &files,
             &[
                 PathBuf::from("test-split/.manifest"),
-                PathBuf::from("test-split/anyfile"),
-                PathBuf::from("test-split/anyfile2"),
+                PathBuf::from("test-split/bundle"),
             ]
         );
         Ok(())

@@ -250,7 +250,7 @@ impl BundleStorageBuilder {
         file_name: PathBuf,
     ) -> io::Result<()> {
         let bytes_written = io::copy(&mut read, &mut self.bundle_file)? as usize;
-        if file_name.to_string_lossy() == HOTCACHE_FILENAME {
+        if &file_name == Path::new(HOTCACHE_FILENAME) {
             self.hotcache_offset = self.current_offset;
         }
         self.metadata.files.insert(
