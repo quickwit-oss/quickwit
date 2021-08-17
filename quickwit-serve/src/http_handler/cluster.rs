@@ -22,7 +22,7 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use warp::Filter;
 use warp::Rejection;
 
@@ -40,23 +40,6 @@ pub struct MembersRequestQueryString {
     /// The output format.
     #[serde(default)]
     pub format: Format,
-}
-
-/// SearchResultsJson represents the result returned by the rest search API
-/// and is meant to be serialized into Json.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MembersResultJson {
-    /// List of avairable members.
-    pub members: Vec<quickwit_proto::Member>,
-}
-
-impl From<quickwit_proto::MembersResult> for MembersResultJson {
-    fn from(members_result: quickwit_proto::MembersResult) -> Self {
-        MembersResultJson {
-            members: members_result.members,
-        }
-    }
 }
 
 /// cluster handler.
