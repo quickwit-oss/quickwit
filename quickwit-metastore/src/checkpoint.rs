@@ -187,14 +187,18 @@ impl Checkpoint {
 
     /// Try and apply a delta.
     ///
-    /// `strict_mode` controls whether we accept a delta that does not chain perfectly with the
-    /// current position.
+    /// We accept a delta as long as it comes after the current checkpoint,
+    /// for all partitions.
     ///
-    ///    |    Checkpoint & Delta       | Outcome                     |
-    ///    |-----------------------------|-----------------------------|
-    ///    | ]?..a] ]a..c]               | Compatible                  |
-    ///    | ]..a] ]b..c] with a' > a    | Compatible                  |
-    ///    | ]..b]    ]a..c] with a' > a | Incompatible                |
+    /// We accept a delta that is not perfected chained after a checkpoint,
+    /// as gaps may happen. For instance, assuming a Kafka source, if the indexing
+    /// pipeline is down for more than the retention period.
+    ///
+    ///    |    Checkpoint & Delta        | Outcome                     |
+    ///    |------------------------------|-----------------------------|
+    ///    | (?..a] (b..c] with a = b     | Compatible                  |
+    ///    |  (..a] (b..c] with b > a     | Compatible                  |
+    ///    |  (..a] (b..c]  with b < a    | Incompatible                |
     ///
     /// If the delta is compatible, returns an error without modifying the original checkpoint.
     pub fn try_apply_delta(
