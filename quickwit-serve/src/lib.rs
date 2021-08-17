@@ -191,7 +191,7 @@ impl Default for QuickwitCache {
 impl QuickwitCache {
     fn get_relevant_cache(&self, path: &Path) -> Option<&dyn Cache> {
         for (suffix, cache) in &self.router {
-            if path.ends_with(suffix) {
+            if path.to_string_lossy().ends_with(suffix) {
                 return Some(cache.as_ref());
             }
         }
