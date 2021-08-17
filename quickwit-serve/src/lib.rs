@@ -179,10 +179,16 @@ pub struct QuickwitCache {
 impl Default for QuickwitCache {
     fn default() -> Self {
         QuickwitCache {
-            router: vec![(
-                HOTCACHE_FILENAME,
-                Arc::new(SimpleCache::with_capacity_in_bytes(HOTCACHE_CACHE_CAPACITY)),
-            )],
+            router: vec![
+                (
+                    HOTCACHE_FILENAME,
+                    Arc::new(SimpleCache::with_capacity_in_bytes(HOTCACHE_CACHE_CAPACITY))
+                ),
+                (
+                    ".fast",
+                    Arc::new(SimpleCache::with_capacity_in_bytes(2_000_000_000)),
+                ),
+            ],
         }
     }
 }
