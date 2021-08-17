@@ -2926,6 +2926,7 @@ dependencies = [
  "hyper",
  "itertools 0.10.1",
  "mockall 0.9.1",
+ "num_cpus",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-core",

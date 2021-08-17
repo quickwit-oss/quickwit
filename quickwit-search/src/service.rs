@@ -29,6 +29,7 @@ use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResult, SearchStre
 use quickwit_storage::StorageUriResolver;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
@@ -45,6 +46,7 @@ pub struct SearchServiceImpl {
     metastore_router: HashMap<String, Arc<dyn Metastore>>,
     storage_resolver: StorageUriResolver,
     client_pool: Arc<SearchClientPool>,
+    permits: Arc<Semaphore>,
 }
 
 /// Trait representing a search service.
@@ -99,10 +101,14 @@ impl SearchServiceImpl {
         storage_resolver: StorageUriResolver,
         client_pool: Arc<SearchClientPool>,
     ) -> Self {
+        // Intuition always leave a core free to complete the root_search and heandle incoming
+        // requests.
+        let permits = Arc::new(Semaphore::const_new(num_cpus::get() - 1));
         SearchServiceImpl {
             metastore_router,
             storage_resolver,
             client_pool,
+            permits,
         }
     }
 }
@@ -134,6 +140,7 @@ impl SearchService for SearchServiceImpl {
         let search_request = leaf_search_request
             .search_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
+        let _permit = self.permits.acquire().await?;
         info!(index=?search_request.index_id, splits=?leaf_search_request.split_ids, "leaf_search");
         let metastore = self
             .metastore_router

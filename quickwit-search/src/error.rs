@@ -21,7 +21,7 @@
 use serde::{Deserialize, Serialize};
 use tantivy::TantivyError;
 use thiserror::Error;
-use tokio::task::JoinError;
+use tokio::{sync::AcquireError, task::JoinError};
 
 use quickwit_index_config::QueryParserError;
 use quickwit_metastore::MetastoreError;
@@ -35,6 +35,8 @@ pub enum SearchError {
     IndexDoesNotExist { index_id: String },
     #[error("Internal error: `{0}`.")]
     InternalError(String),
+    #[error("Ressources exhausted: `{0}`.")]
+    RessourcesExhausted(String),
     #[error("Storage not found: `{0}`)")]
     StorageResolverError(#[from] StorageResolverError),
     #[error("Invalid query: {0}")]
@@ -48,6 +50,7 @@ impl SearchError {
             SearchError::InternalError(_) => tonic::Code::Internal,
             SearchError::StorageResolverError(_) => tonic::Code::Internal,
             SearchError::InvalidQuery(_) => tonic::Code::InvalidArgument,
+            SearchError::RessourcesExhausted(_) => tonic::Code::ResourceExhausted,
         }
     }
 
@@ -99,5 +102,13 @@ impl From<MetastoreError> for SearchError {
 impl From<JoinError> for SearchError {
     fn from(join_error: JoinError) -> SearchError {
         SearchError::InternalError(format!("Spawned task in root join failed: {}", join_error))
+    }
+}
+
+impl From<AcquireError> for SearchError {
+    fn from(_: AcquireError) -> SearchError {
+        SearchError::RessourcesExhausted(String::from(
+            "could not acquire ressource to complete leaf search",
+        ))
     }
 }

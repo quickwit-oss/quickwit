@@ -27,6 +27,7 @@ serde = { version = "1.0", features = ["derive"] }
 hyper = { version = "0.14", features = ["stream", "server", "http1", "http2", "tcp", "client"] }
 bytes = "1"
 quickwit-common = {path="../quickwit-common"}
+num_cpus = "1.13.0"
 
 [dependencies.tantivy]
 git = 'https://github.com/quickwit-inc/tantivy'

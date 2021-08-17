@@ -51,6 +51,7 @@ impl ApiError {
                 SearchError::InternalError(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
                 SearchError::StorageResolverError(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
                 SearchError::InvalidQuery(_) => http::StatusCode::BAD_REQUEST,
+                SearchError::RessourcesExhausted(_) => http::StatusCode::TOO_MANY_REQUESTS,
             },
             ApiError::ClusterError(_cluster_error) => http::StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::InvalidArgument(_err) => StatusCode::BAD_REQUEST,
