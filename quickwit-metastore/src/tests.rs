@@ -22,6 +22,7 @@
 
 use std::collections::HashSet;
 use std::ops::{Range, RangeInclusive};
+use std::sync::Arc;
 
 use chrono::Utc;
 use tokio::time::{sleep, Duration};
@@ -35,7 +36,7 @@ pub async fn test_metastore_create_index(metastore: &dyn Metastore) {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
-        index_config: Box::new(AllFlattenIndexConfig::default()),
+        index_config: Arc::new(AllFlattenIndexConfig::default()),
     };
 
     // Create an index
@@ -62,7 +63,7 @@ pub async fn test_metastore_delete_index(metastore: &dyn Metastore) {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
-        index_config: Box::new(AllFlattenIndexConfig::default()),
+        index_config: Arc::new(AllFlattenIndexConfig::default()),
     };
 
     // Delete a non-existent index
@@ -90,7 +91,7 @@ pub async fn test_metastore_index_metadata(metastore: &dyn Metastore) {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
-        index_config: Box::new(AllFlattenIndexConfig::default()),
+        index_config: Arc::new(AllFlattenIndexConfig::default()),
     };
 
     // Get a non-existent index metadata
@@ -119,7 +120,7 @@ pub async fn test_metastore_stage_split(metastore: &dyn Metastore) {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
-        index_config: Box::new(AllFlattenIndexConfig::default()),
+        index_config: Arc::new(AllFlattenIndexConfig::default()),
     };
 
     let split_id = "one";
@@ -169,7 +170,7 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
-        index_config: Box::new(AllFlattenIndexConfig::default()),
+        index_config: Arc::new(AllFlattenIndexConfig::default()),
     };
 
     let split_id_1 = "one";
@@ -511,7 +512,7 @@ pub async fn test_metastore_mark_splits_as_deleted(metastore: &dyn Metastore) {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
-        index_config: Box::new(AllFlattenIndexConfig::default()),
+        index_config: Arc::new(AllFlattenIndexConfig::default()),
     };
 
     let split_id_1 = "one";
@@ -584,7 +585,7 @@ pub async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
-        index_config: Box::new(AllFlattenIndexConfig::default()),
+        index_config: Arc::new(AllFlattenIndexConfig::default()),
     };
 
     let split_id_1 = "one";
@@ -702,8 +703,8 @@ pub async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
         let result = metastore
             .delete_splits(index_id, &[split_id_1])
             .await
-            .unwrap();
-        assert!(matches!(result, ()));
+            .unwrap_err();
+            assert!(matches!(result, MetastoreError::Forbidden { .. }));
 
         let result = metastore.delete_index(index_id).await.unwrap();
         assert!(matches!(result, ()));
@@ -717,7 +718,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
-        index_config: Box::new(AllFlattenIndexConfig::default()),
+        index_config: Arc::new(AllFlattenIndexConfig::default()),
     };
 
     let split_id_1 = "one";
@@ -841,7 +842,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
-        index_config: Box::new(AllFlattenIndexConfig::default()),
+        index_config: Arc::new(AllFlattenIndexConfig::default()),
     };
 
     let split_id_1 = "one";
@@ -1341,7 +1342,7 @@ pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
-        index_config: Box::new(AllFlattenIndexConfig::default()),
+        index_config: Arc::new(AllFlattenIndexConfig::default()),
     };
 
     let split_id = "one";
@@ -1398,7 +1399,7 @@ pub async fn test_metastore_storage_failing(metastore: &dyn Metastore) {
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
         index_uri: "ram://my-indexes/my-index".to_string(),
-        index_config: Box::new(AllFlattenIndexConfig::default()),
+        index_config: Arc::new(AllFlattenIndexConfig::default()),
     };
 
     let split_id = "one";
