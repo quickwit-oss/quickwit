@@ -75,10 +75,10 @@ pub async fn delete_index(
 
     // Schedule staged and published splits for deletion.
     let staged_splits = metastore
-        .list_splits(index_id, SplitState::Staged, None)
+        .list_splits(index_id, SplitState::Staged, None, None)
         .await?;
     let published_splits = metastore
-        .list_splits(index_id, SplitState::Published, None)
+        .list_splits(index_id, SplitState::Published, None, None)
         .await?;
     let split_ids = staged_splits
         .iter()
@@ -117,7 +117,7 @@ pub async fn garbage_collect_index(
     // Prune staged splits that are not older than the `grace_period`
     let grace_period_timestamp = Utc::now().timestamp() - grace_period.as_secs() as i64;
     let staged_splits = metastore
-        .list_splits(index_id, SplitState::Staged, None)
+        .list_splits(index_id, SplitState::Staged, None, None)
         .await?
         .into_iter()
         // TODO: Update metastore API and push this filter down.
@@ -126,7 +126,7 @@ pub async fn garbage_collect_index(
 
     if dry_run {
         let mut scheduled_for_delete_splits = metastore
-            .list_splits(index_id, SplitState::ScheduledForDeletion, None)
+            .list_splits(index_id, SplitState::ScheduledForDeletion, None, None)
             .await?;
 
         let index_uri = metastore.index_metadata(index_id).await?.index_uri;
@@ -160,7 +160,7 @@ pub async fn delete_garbage_files(
     storage_resolver: StorageUriResolver,
 ) -> anyhow::Result<Vec<FileEntry>> {
     let splits_to_delete = metastore
-        .list_splits(index_id, SplitState::ScheduledForDeletion, None)
+        .list_splits(index_id, SplitState::ScheduledForDeletion, None, None)
         .await?;
 
     let index_uri = metastore.index_metadata(index_id).await?.index_uri;

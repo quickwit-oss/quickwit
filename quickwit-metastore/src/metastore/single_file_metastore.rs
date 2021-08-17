@@ -301,6 +301,7 @@ impl Metastore for SingleFileMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
+        tag_opt: Option<String>,
     ) -> MetastoreResult<Vec<SplitMetadata>> {
         let time_range_filter = |split_metadata: &SplitMetadata| match (
             time_range_opt.as_ref(),
@@ -312,12 +313,19 @@ impl Metastore for SingleFileMetastore {
             _ => true, // Return `true` if `time_range` is omitted or the split has no time range.
         };
 
+        let tag_filter = |split_metadata: &SplitMetadata| match tag_opt.as_ref() {
+            Some(tag) => split_metadata.tags.contains(tag),
+            _ => true,
+        };
+
         let metadata_set = self.get_index(index_id).await?;
         let splits = metadata_set
             .splits
             .into_values()
             .filter(|split_metadata| {
-                split_metadata.split_state == state && time_range_filter(split_metadata)
+                split_metadata.split_state == state
+                    && time_range_filter(split_metadata)
+                    && tag_filter(split_metadata)
             })
             .collect();
         Ok(splits)
@@ -590,6 +598,7 @@ mod tests {
             time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: Utc::now().timestamp(),
+            tags: vec!["foo".to_string(), "bar".to_string()],
         };
 
         {
@@ -724,6 +733,7 @@ mod tests {
             time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: current_timestamp,
+            tags: vec!["foo".to_string(), "bar".to_string()],
         };
         let split_metadata_two = SplitMetadata {
             split_id: split_id_two.to_string(),
@@ -733,6 +743,7 @@ mod tests {
             time_range: Some(RangeInclusive::new(30, 99)),
             generation: 2,
             update_timestamp: current_timestamp,
+            tags: vec!["foo".to_string(), "bar".to_string()],
         };
 
         {
@@ -908,6 +919,7 @@ mod tests {
                 time_range: Some(RangeInclusive::new(0, 99)),
                 generation: 3,
                 update_timestamp: current_timestamp,
+                tags: vec!["foo".to_string(), "bar".to_string()],
             };
 
             let split_metadata_2 = SplitMetadata {
@@ -918,6 +930,7 @@ mod tests {
                 time_range: Some(RangeInclusive::new(100, 199)),
                 generation: 3,
                 update_timestamp: current_timestamp,
+                tags: vec!["bar".to_string()],
             };
 
             let split_metadata_3 = SplitMetadata {
@@ -928,6 +941,7 @@ mod tests {
                 time_range: Some(RangeInclusive::new(200, 299)),
                 generation: 3,
                 update_timestamp: current_timestamp,
+                tags: vec!["foo".to_string()],
             };
 
             let split_metadata_4 = SplitMetadata {
@@ -938,6 +952,7 @@ mod tests {
                 time_range: Some(RangeInclusive::new(300, 399)),
                 generation: 3,
                 update_timestamp: current_timestamp,
+                tags: vec!["foo".to_string()],
             };
             let split_metadata_5 = SplitMetadata {
                 split_id: "five".to_string(),
@@ -947,6 +962,7 @@ mod tests {
                 time_range: None,
                 generation: 3,
                 update_timestamp: current_timestamp,
+                tags: vec!["bar".to_string(), "baz".to_string()],
             };
 
             metastore
@@ -977,8 +993,9 @@ mod tests {
                 start: 0i64,
                 end: 99i64,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, time_range_opt)
+                .list_splits(index_id, SplitState::Staged, time_range_opt, tag)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -998,8 +1015,9 @@ mod tests {
                 start: 200,
                 end: i64::MAX,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, time_range_opt)
+                .list_splits(index_id, SplitState::Staged, time_range_opt, tag)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1019,8 +1037,9 @@ mod tests {
                 start: i64::MIN,
                 end: 200,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, time_range_opt)
+                .list_splits(index_id, SplitState::Staged, time_range_opt, tag)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1037,8 +1056,9 @@ mod tests {
         {
             // list
             let range = Some(Range { start: 0, end: 100 });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1055,8 +1075,9 @@ mod tests {
         {
             // list
             let range = Some(Range { start: 0, end: 101 });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1073,8 +1094,9 @@ mod tests {
         {
             // list
             let range = Some(Range { start: 0, end: 199 });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1091,8 +1113,9 @@ mod tests {
         {
             // list
             let range = Some(Range { start: 0, end: 200 });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1109,8 +1132,9 @@ mod tests {
         {
             // list
             let range = Some(Range { start: 0, end: 201 });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1127,8 +1151,9 @@ mod tests {
         {
             // list
             let range = Some(Range { start: 0, end: 299 });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1145,8 +1170,9 @@ mod tests {
         {
             // list
             let range = Some(Range { start: 0, end: 300 });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1163,8 +1189,9 @@ mod tests {
         {
             // list
             let range = Some(Range { start: 0, end: 301 });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1184,8 +1211,9 @@ mod tests {
                 start: 301,
                 end: 400,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1205,8 +1233,9 @@ mod tests {
                 start: 300,
                 end: 400,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1226,8 +1255,9 @@ mod tests {
                 start: 299,
                 end: 400,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1247,8 +1277,9 @@ mod tests {
                 start: 201,
                 end: 400,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1268,8 +1299,9 @@ mod tests {
                 start: 200,
                 end: 400,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1289,8 +1321,9 @@ mod tests {
                 start: 199,
                 end: 400,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1310,8 +1343,9 @@ mod tests {
                 start: 101,
                 end: 400,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1331,8 +1365,9 @@ mod tests {
                 start: 101,
                 end: 400,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1352,8 +1387,9 @@ mod tests {
                 start: 100,
                 end: 400,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1373,8 +1409,9 @@ mod tests {
                 start: 99,
                 end: 400,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1394,8 +1431,9 @@ mod tests {
                 start: 1000,
                 end: 1100,
             });
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1412,8 +1450,9 @@ mod tests {
         {
             // list
             let range = None;
+            let tag = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range)
+                .list_splits(index_id, SplitState::Staged, range, tag)
                 .await
                 .unwrap();
             let mut split_id_vec = Vec::new();
@@ -1424,6 +1463,25 @@ mod tests {
             assert_eq!(split_id_vec.contains(&"two".to_string()), true);
             assert_eq!(split_id_vec.contains(&"three".to_string()), true);
             assert_eq!(split_id_vec.contains(&"four".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"five".to_string()), true);
+        }
+
+        {
+            // list
+            let range = None;
+            let tag = Some("bar".to_string());
+            let splits = metastore
+                .list_splits(index_id, SplitState::Staged, range, tag)
+                .await
+                .unwrap();
+            let mut split_id_vec = Vec::new();
+            for split_metadata in splits {
+                split_id_vec.push(split_metadata.split_id);
+            }
+            assert_eq!(split_id_vec.contains(&"one".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"two".to_string()), true);
+            assert_eq!(split_id_vec.contains(&"three".to_string()), false);
+            assert_eq!(split_id_vec.contains(&"four".to_string()), false);
             assert_eq!(split_id_vec.contains(&"five".to_string()), true);
         }
     }
@@ -1441,6 +1499,7 @@ mod tests {
             time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: Utc::now().timestamp(),
+            tags: vec!["foo".to_string()],
         };
 
         {
@@ -1548,6 +1607,7 @@ mod tests {
             time_range: Some(RangeInclusive::new(0, 100)),
             generation: 3,
             update_timestamp: Utc::now().timestamp(),
+            tags: vec!["foo".to_string()],
         };
 
         {
@@ -1655,6 +1715,7 @@ mod tests {
             time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: current_timestamp,
+            tags: vec!["foo".to_string()],
         };
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
@@ -1724,6 +1785,7 @@ mod tests {
             time_range: None,
             generation: 3,
             update_timestamp: Utc::now().timestamp(),
+            tags: vec!["foo".to_string()],
         };
 
         let index_metadata = IndexMetadata {
@@ -1747,14 +1809,14 @@ mod tests {
 
         // empty
         let split = metastore
-            .list_splits(index_id, SplitState::Published, None)
+            .list_splits(index_id, SplitState::Published, None, None)
             .await
             .unwrap();
         assert!(split.is_empty());
 
         // not empty
         let split = metastore
-            .list_splits(index_id, SplitState::Staged, None)
+            .list_splits(index_id, SplitState::Staged, None, None)
             .await
             .unwrap();
         assert!(!split.is_empty());

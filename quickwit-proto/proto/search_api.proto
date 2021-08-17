@@ -72,6 +72,9 @@ message SearchRequest {
   // E.g.
   // The results with rank [start_offset..start_offset + max_hits) are returned.
   uint64 start_offset = 7;
+
+  // Split tag filter  
+  optional string tag = 8;
 }
 
 message SearchResult {
@@ -202,6 +205,9 @@ message SearchStreamRequest {
 
   // The output format
   OutputFormat output_format = 7;
+
+  // Split tag filter  
+  optional string tag = 8;
 }
 
 message LeafSearchStreamRequest {
