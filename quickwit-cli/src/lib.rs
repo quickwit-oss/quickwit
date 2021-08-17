@@ -67,7 +67,7 @@ const THROUGHPUT_WINDOW_SIZE: usize = 5;
 #[derive(Debug)]
 pub struct CreateIndexArgs {
     index_uri: String,
-    index_config: Box<dyn IndexConfig>,
+    index_config: Arc<dyn IndexConfig>,
     overwrite: bool,
 }
 impl PartialEq for CreateIndexArgs {
@@ -88,7 +88,7 @@ impl CreateIndexArgs {
         let reader = std::io::BufReader::new(json_file);
         let strip_comment_reader = StripComments::new(reader);
         let builder: DefaultIndexConfigBuilder = serde_json::from_reader(strip_comment_reader)?;
-        let index_config = Box::new(builder.build()?) as Box<dyn IndexConfig>;
+        let index_config = Arc::new(builder.build()?) as Arc<dyn IndexConfig>;
 
         Ok(Self {
             index_uri,
