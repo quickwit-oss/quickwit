@@ -23,8 +23,10 @@ use std::fmt;
 
 use serde::Serialize;
 use serde_json::json;
+use warp::http::header::{HeaderMap, HeaderValue};
 use warp::hyper::StatusCode;
 use warp::reply::with_status;
+use warp::{Filter, Rejection};
 
 /// A service status.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -37,6 +39,19 @@ impl fmt::Display for ServiceStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
     }
+}
+
+/// Liveness check handler.
+pub fn liveness_check_handler() -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone
+{
+    let mut headers = HeaderMap::new();
+    headers.insert("content-type", HeaderValue::from_static("application/json"));
+
+    let service_status = ServiceStatus::Alive;
+
+    warp::path!("health" / "livez")
+        .map(move || make_reply(live_predicate(service_status), service_status))
+        .with(warp::reply::with::headers(headers))
 }
 
 /// Make an HTTP response based on the given service status.
@@ -63,4 +78,14 @@ pub fn make_reply(ok: bool, service_status: ServiceStatus) -> impl warp::Reply {
 /// Check if the service is alive.
 pub fn live_predicate(service_status: ServiceStatus) -> bool {
     matches!(service_status, ServiceStatus::Alive)
+}
+
+#[tokio::test]
+async fn test_rest_search_api_health_check_livez() {
+    let rest_search_api_filter = liveness_check_handler();
+    let resp = warp::test::request()
+        .path("/health/livez")
+        .reply(&rest_search_api_filter)
+        .await;
+    assert_eq!(resp.status(), 200);
 }

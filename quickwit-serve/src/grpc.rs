@@ -27,14 +27,14 @@ use tracing::*;
 use quickwit_proto::cluster_service_server::ClusterServiceServer;
 use quickwit_proto::search_service_server::SearchServiceServer;
 
-use crate::ClusterServiceImpl;
-use crate::GrpcAdapter;
+use crate::grpc_adapter::cluster_adapter::GrpcClusterAdapter;
+use crate::grpc_adapter::search_adapter::GrpcSearchAdapter;
 
 /// Start gRPC service given a gRPC address and a search service and cluster service.
 pub async fn start_grpc_service(
     grpc_addr: SocketAddr,
-    search_service: GrpcAdapter,
-    cluster_service: ClusterServiceImpl,
+    search_service: GrpcSearchAdapter,
+    cluster_service: GrpcClusterAdapter,
 ) -> anyhow::Result<()> {
     info!(grpc_addr=?grpc_addr, "Start gRPC service.");
     Server::builder()

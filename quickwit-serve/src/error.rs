@@ -24,6 +24,7 @@ use thiserror::Error;
 use warp::http;
 use warp::hyper::StatusCode;
 
+use quickwit_cluster::error::ClusterError;
 use quickwit_search::SearchError;
 
 #[derive(Debug, Error)]
@@ -36,6 +37,8 @@ pub enum ApiError {
     // silly wrapping.
     #[error("Search error. {0}.")]
     SearchError(#[from] SearchError),
+    #[error("Cluster error. {0}.")]
+    ClusterError(#[from] ClusterError),
     #[error("Route not found")]
     NotFound,
 }
@@ -49,6 +52,7 @@ impl ApiError {
                 SearchError::StorageResolverError(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
                 SearchError::InvalidQuery(_) => http::StatusCode::BAD_REQUEST,
             },
+            ApiError::ClusterError(_cluster_error) => http::StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::InvalidArgument(_err) => StatusCode::BAD_REQUEST,
             ApiError::NotFound => http::StatusCode::NOT_FOUND,
         }

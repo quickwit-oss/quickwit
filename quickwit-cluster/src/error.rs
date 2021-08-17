@@ -18,47 +18,60 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
-
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Cluster error kinds.
-#[derive(Debug, Error)]
+#[derive(Error, Debug, Serialize, Deserialize)]
 pub enum ClusterError {
     /// Create cluster error.
-    #[error("Failed to create cluster. Cause `{cause}`")]
+    #[error("Failed to create cluster: `{message}`")]
     CreateClusterError {
-        /// Root cause.
-        #[source]
-        cause: anyhow::Error,
+        /// Message.
+        message: String,
     },
 
     /// Port binding error.
-    #[error("Failed to bind UDP port :{port} for the gossip membership algorithm. Cause: {cause}")]
+    #[error("Failed to bind UDP port `{port}` for the gossip membership algorithm: `{message}`")]
     UDPPortBindingError {
         /// Port number.
         port: u16,
 
-        /// Root cause.
-        #[source]
-        cause: io::Error,
+        /// Message.
+        message: String,
     },
 
     /// Read host key error.
-    #[error("Failed to read host key. Cause: `{cause}`")]
+    #[error("Failed to read host key: `{message}`")]
     ReadHostKeyError {
-        /// Root cause.
-        #[source]
-        cause: anyhow::Error,
+        /// Message.
+        message: String,
     },
 
     /// Write host key error.
-    #[error("Failed to write host key. Cause: `{cause}`")]
+    #[error("Failed to write host key: `{message}`")]
     WriteHostKeyError {
-        /// Root cause.
-        #[source]
-        cause: anyhow::Error,
+        /// Message.
+        message: String,
     },
+}
+
+impl ClusterError {
+    fn convert_to_tonic_status_code(cluster_error: &ClusterError) -> tonic::Code {
+        match cluster_error {
+            ClusterError::CreateClusterError { .. } => tonic::Code::Internal,
+            ClusterError::UDPPortBindingError { .. } => tonic::Code::PermissionDenied,
+            ClusterError::ReadHostKeyError { .. } => tonic::Code::Internal,
+            ClusterError::WriteHostKeyError { .. } => tonic::Code::Internal,
+        }
+    }
+
+    pub fn convert_to_tonic_status(cluster_error: ClusterError) -> tonic::Status {
+        let error_json = serde_json::to_string_pretty(&cluster_error)
+            .unwrap_or_else(|_| "Failed to serialize error".to_string());
+        let code = ClusterError::convert_to_tonic_status_code(&cluster_error);
+        tonic::Status::new(code, error_json)
+    }
 }
 
 /// Generic Result type for cluster operations.

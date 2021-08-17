@@ -52,11 +52,11 @@ pub fn read_host_key(host_key_path: &Path) -> ClusterResult<Uuid> {
     if host_key_path.exists() {
         let host_key_contents =
             fs::read(host_key_path).map_err(|err| ClusterError::ReadHostKeyError {
-                cause: anyhow::anyhow!(err),
+                message: err.to_string(),
             })?;
         host_key = Uuid::from_slice(host_key_contents.as_slice()).map_err(|err| {
             ClusterError::ReadHostKeyError {
-                cause: anyhow::anyhow!(err),
+                message: err.to_string(),
             }
         })?;
         info!(host_key=?host_key, host_key_path=?host_key_path, "Read existing host key.");
@@ -64,14 +64,14 @@ pub fn read_host_key(host_key_path: &Path) -> ClusterResult<Uuid> {
         if let Some(dir) = host_key_path.parent() {
             if !dir.exists() {
                 fs::create_dir_all(dir).map_err(|err| ClusterError::WriteHostKeyError {
-                    cause: anyhow::anyhow!(err),
+                    message: err.to_string(),
                 })?;
             }
         }
         host_key = Uuid::new_v4();
         fs::write(host_key_path, host_key.as_bytes()).map_err(|err| {
             ClusterError::WriteHostKeyError {
-                cause: anyhow::anyhow!(err),
+                message: err.to_string(),
             }
         })?;
         info!(host_key=?host_key, host_key_path=?host_key_path, "Create new host key.");
@@ -126,10 +126,10 @@ impl Cluster {
             ArtilleryCluster::new_cluster(host_key, config).map_err(|err| match err {
                 ArtilleryError::Io(io_err) => ClusterError::UDPPortBindingError {
                     port: listen_addr.port(),
-                    cause: io_err,
+                    message: io_err.to_string(),
                 },
                 _ => ClusterError::CreateClusterError {
-                    cause: anyhow::anyhow!(err),
+                    message: err.to_string(),
                 },
             })?;
 
