@@ -704,7 +704,7 @@ pub async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
             .delete_splits(index_id, &[split_id_1])
             .await
             .unwrap_err();
-            assert!(matches!(result, MetastoreError::Forbidden { .. }));
+        assert!(matches!(result, MetastoreError::Forbidden { .. }));
 
         let result = metastore.delete_index(index_id).await.unwrap();
         assert!(matches!(result, ()));
