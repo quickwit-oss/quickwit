@@ -29,7 +29,6 @@ use quickwit_proto::{
 };
 use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
 
-/// gRPC adapter that wraped SearchService.
 #[derive(Clone)]
 pub struct GrpcSearchAdapter(Arc<dyn SearchService>);
 

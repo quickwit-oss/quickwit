@@ -22,16 +22,42 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use warp::hyper::header::CONTENT_TYPE;
-use warp::hyper::StatusCode;
-use warp::reply;
+use serde::{Deserialize, Serialize};
 use warp::Filter;
 use warp::Rejection;
-use warp::Reply;
 
 use quickwit_cluster::service::ClusterService;
 
+use crate::rest::Format;
 use crate::ApiError;
+
+/// This struct represents the QueryString passed to
+/// the rest API.
+#[derive(Deserialize, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
+pub struct MembersRequestQueryString {
+    /// The output format.
+    #[serde(default)]
+    pub format: Format,
+}
+
+/// SearchResultsJson represents the result returned by the rest search API
+/// and is meant to be serialized into Json.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MembersResultJson {
+    /// List of avairable members.
+    pub members: Vec<quickwit_proto::Member>,
+}
+
+impl From<quickwit_proto::MembersResult> for MembersResultJson {
+    fn from(members_result: quickwit_proto::MembersResult) -> Self {
+        MembersResultJson {
+            members: members_result.members,
+        }
+    }
+}
 
 /// cluster handler.
 pub fn cluster_handler<TClusterService: ClusterService>(
@@ -42,14 +68,20 @@ pub fn cluster_handler<TClusterService: ClusterService>(
         .and_then(members)
 }
 
-fn members_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
-    warp::path!("cluster" / "members").and(warp::get())
+fn members_filter() -> impl Filter<Extract = (MembersRequestQueryString,), Error = Rejection> + Clone
+{
+    warp::path!("cluster" / "members")
+        .and(warp::get())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
 async fn members<TClusterService: ClusterService>(
+    request: MembersRequestQueryString,
     cluster_service: Arc<TClusterService>,
 ) -> Result<impl warp::Reply, Infallible> {
-    Ok(make_reply(members_endpoint(&*cluster_service).await))
+    Ok(request
+        .format
+        .make_reply(members_endpoint(&*cluster_service).await))
 }
 
 async fn members_endpoint<TClusterService: ClusterService>(
@@ -58,24 +90,4 @@ async fn members_endpoint<TClusterService: ClusterService>(
     let members_request = quickwit_proto::MembersRequest {};
     let members_result = cluster_service.members(members_request).await?;
     Ok(members_result)
-}
-
-fn make_reply<T: serde::Serialize>(result: Result<T, ApiError>) -> impl Reply {
-    let status_code: StatusCode;
-    let body_json = match result {
-        Ok(success) => {
-            status_code = StatusCode::OK;
-            serde_json::to_string(&success)
-        }
-        Err(err) => {
-            status_code = err.http_status_code();
-            serde_json::to_string(&err)
-        }
-    }
-    .unwrap_or_else(|_| {
-        tracing::error!("Error: the response serialization failed.");
-        "Error: Failed to serialize response.".to_string()
-    });
-    let reply_with_header = reply::with_header(body_json, CONTENT_TYPE, "application/json");
-    reply::with_status(reply_with_header, status_code)
 }

@@ -27,7 +27,6 @@ use quickwit_cluster::error::ClusterError;
 use quickwit_cluster::service::{ClusterService, ClusterServiceImpl};
 use quickwit_proto::cluster_service_server as grpc;
 
-/// gRPC adapter that wraped SearchService.
 #[derive(Clone)]
 pub struct GrpcClusterAdapter(Arc<dyn ClusterService>);
 

@@ -90,7 +90,7 @@ impl Format {
         }
     }
 
-    fn make_reply<T: serde::Serialize>(self, result: Result<T, ApiError>) -> impl Reply {
+    pub fn make_reply<T: serde::Serialize>(self, result: Result<T, ApiError>) -> impl Reply {
         let status_code: StatusCode;
         let body_json = match result {
             Ok(success) => {
