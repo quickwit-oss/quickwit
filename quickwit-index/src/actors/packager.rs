@@ -31,10 +31,13 @@ use quickwit_actors::QueueCapacity;
 use quickwit_actors::SyncActor;
 use quickwit_common::HOTCACHE_FILENAME;
 use quickwit_directories::write_hotcache;
+use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::SplitState;
 use quickwit_storage::BundleStorageBuilder;
 use quickwit_storage::BundleStorageOffsets;
 use quickwit_storage::FileStatistics;
 use quickwit_storage::BUNDLE_FILENAME;
+use tantivy::chrono::Utc;
 use tantivy::SegmentId;
 use tantivy::SegmentMeta;
 use tracing::{debug, info};
@@ -124,6 +127,9 @@ fn create_file_bundle(
         }
     }
 
+    // create manifest
+    create_split_metadata(split, bundle_offsets);
+
     // create bundle
     let bundle_path = scratch_dir.join(BUNDLE_FILENAME);
     debug!("Creating Bundle {:?}", bundle_path,);
@@ -212,6 +218,22 @@ fn create_packaged_split(
         file_statistics,
     };
     Ok(packaged_split)
+}
+
+fn create_split_metadata(
+    split: &IndexedSplit,
+    bundle_offsets: BundleStorageOffsets,
+) -> SplitMetadata {
+    SplitMetadata {
+        split_id: split.split_id.clone(),
+        num_records: split.num_docs as usize,
+        time_range: split.time_range.clone(),
+        size_in_bytes: bundle_offsets.bundle_file_size as u64,
+        generation: 0,
+        split_state: SplitState::New,
+        update_timestamp: Utc::now().timestamp(),
+        bundle_offsets,
+    }
 }
 
 impl SyncActor for Packager {
