@@ -409,8 +409,13 @@ impl Metastore for SingleFileMetastore {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_index_config::AllFlattenIndexConfig;
+    use std::path::Path;
+    use std::sync::Arc;
 
+    use quickwit_index_config::AllFlattenIndexConfig;
+    use quickwit_storage::{MockStorage, StorageErrorKind};
+
+    use crate::tests::*;
     use crate::{IndexMetadata, Metastore, MetastoreError, SingleFileMetastore};
 
     #[tokio::test]

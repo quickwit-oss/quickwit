@@ -30,97 +30,7 @@ use quickwit_index_config::AllFlattenIndexConfig;
 
 use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 
-mod single_file_metastore_test {
-    use std::path::Path;
-    use std::sync::Arc;
-
-    use quickwit_storage::{MockStorage, StorageErrorKind};
-
-    use crate::SingleFileMetastore;
-
-    #[tokio::test]
-    async fn test_single_file_metastore_create_index() {
-        let metastore = SingleFileMetastore::for_test();
-        super::test_metastore_create_index(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_delete_index() {
-        let metastore = SingleFileMetastore::for_test();
-        super::test_metastore_delete_index(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_index_metadata() {
-        let metastore = SingleFileMetastore::for_test();
-        super::test_metastore_index_metadata(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_stage_split() {
-        let metastore = SingleFileMetastore::for_test();
-        super::test_metastore_stage_split(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_publish_splits() {
-        let metastore = SingleFileMetastore::for_test();
-        super::test_metastore_publish_splits(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_mark_splits_as_deleted() {
-        let metastore = SingleFileMetastore::for_test();
-        super::test_metastore_mark_splits_as_deleted(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_delete_splits() {
-        let metastore = SingleFileMetastore::for_test();
-        super::test_metastore_delete_splits(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_list_all_splits() {
-        let metastore = SingleFileMetastore::for_test();
-        super::test_metastore_list_all_splits(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_list_splits() {
-        let metastore = SingleFileMetastore::for_test();
-        super::test_metastore_list_splits(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_split_update_timestamp() {
-        let metastore = SingleFileMetastore::for_test();
-        super::test_metastore_split_update_timestamp(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_storage_failing() {
-        // The single file metastore should not update its internal state if the storage fails.
-        let mut mock_storage = MockStorage::default();
-
-        mock_storage // remove this if we end up changing the semantics of create.
-            .expect_exists()
-            .returning(|_| Ok(false));
-        mock_storage.expect_put().times(2).returning(|uri, _| {
-            assert_eq!(uri, Path::new("my-index/quickwit.json"));
-            Ok(())
-        });
-        mock_storage.expect_put().times(1).returning(|_uri, _| {
-            Err(StorageErrorKind::Io
-                .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
-        });
-
-        let metastore = SingleFileMetastore::new(Arc::new(mock_storage));
-        super::test_metastore_storage_failing(&metastore).await;
-    }
-}
-
-async fn test_metastore_create_index(metastore: &dyn Metastore) {
+pub async fn test_metastore_create_index(metastore: &dyn Metastore) {
     let index_id = "my-index";
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
@@ -147,7 +57,7 @@ async fn test_metastore_create_index(metastore: &dyn Metastore) {
     assert!(matches!(result, ()));
 }
 
-async fn test_metastore_delete_index(metastore: &dyn Metastore) {
+pub async fn test_metastore_delete_index(metastore: &dyn Metastore) {
     let index_id = "my-index";
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
@@ -175,7 +85,7 @@ async fn test_metastore_delete_index(metastore: &dyn Metastore) {
 }
 
 #[allow(unused_variables)]
-async fn test_metastore_index_metadata(metastore: &dyn Metastore) {
+pub async fn test_metastore_index_metadata(metastore: &dyn Metastore) {
     let index_id = "my-index";
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
@@ -202,7 +112,7 @@ async fn test_metastore_index_metadata(metastore: &dyn Metastore) {
     assert!(matches!(result, index_metadata));
 }
 
-async fn test_metastore_stage_split(metastore: &dyn Metastore) {
+pub async fn test_metastore_stage_split(metastore: &dyn Metastore) {
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -252,7 +162,7 @@ async fn test_metastore_stage_split(metastore: &dyn Metastore) {
     assert!(matches!(result, MetastoreError::InternalError { .. }));
 }
 
-async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
+pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -594,7 +504,7 @@ async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
     }
 }
 
-async fn test_metastore_mark_splits_as_deleted(metastore: &dyn Metastore) {
+pub async fn test_metastore_mark_splits_as_deleted(metastore: &dyn Metastore) {
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -667,7 +577,7 @@ async fn test_metastore_mark_splits_as_deleted(metastore: &dyn Metastore) {
     }
 }
 
-async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
+pub async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -800,7 +710,7 @@ async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
     }
 }
 
-async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
+pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -924,7 +834,7 @@ async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
     }
 }
 
-async fn test_metastore_list_splits(metastore: &dyn Metastore) {
+pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -1424,7 +1334,7 @@ async fn test_metastore_list_splits(metastore: &dyn Metastore) {
     }
 }
 
-async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
+pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
     let mut current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -1481,7 +1391,7 @@ async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
     assert!(split_meta.update_timestamp > current_timestamp);
 }
 
-async fn test_metastore_storage_failing(metastore: &dyn Metastore) {
+pub async fn test_metastore_storage_failing(metastore: &dyn Metastore) {
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
