@@ -360,6 +360,26 @@ mod tests {
         assert!(&single_node_result.hits[0].json.contains("t:19"));
         assert!(&single_node_result.hits[18].json.contains("t:1"));
 
+        // filter on tag, should not return any hit since no split is tagged
+        let search_request = SearchRequest {
+            index_id: index_name.to_string(),
+            query: "info".to_string(),
+            search_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 25,
+            start_offset: 0,
+            tag: Some("foo".to_string()),
+        };
+        let single_node_result = single_node_search(
+            &search_request,
+            &*test_sandbox.metastore(),
+            test_sandbox.storage_uri_resolver(),
+        )
+        .await?;
+        assert_eq!(single_node_result.num_hits, 0);
+        assert_eq!(single_node_result.hits.len(), 0);
+
         Ok(())
     }
 }

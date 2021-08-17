@@ -73,7 +73,7 @@ impl IndexedSplit {
         schema: Schema,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
-        // The benefit is that we don't have ot wait for potentially existing merges,
+        // The benefit is that we don't have to wait for potentially existing merges,
         // and avoid possible race conditions.
         let split_scratch_directory = index_scratch_directory.temp_child()?;
         let index = tantivy::Index::create_in_dir(split_scratch_directory.path(), schema)?;

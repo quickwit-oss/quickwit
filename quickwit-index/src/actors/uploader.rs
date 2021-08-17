@@ -169,8 +169,8 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadata {
         generation: 0,
         split_state: SplitState::New,
         update_timestamp: Utc::now().timestamp(),
-        // TODO:evan: discuss if `PackagedSplit` should contain relevant
-        //  tags to add necessary attributes
+        // TODO: discuss about where to get the tags, `PackagedSplit`, `IndexedSplit`,
+        // is it part of the doc?
         tags: vec![],
     }
 }
