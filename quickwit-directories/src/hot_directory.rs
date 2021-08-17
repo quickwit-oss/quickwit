@@ -39,9 +39,6 @@ use tantivy::{AsyncIoResult, Directory, Index, IndexReader, ReloadPolicy};
 use crate::caching_directory::BytesWrapper;
 use crate::{CachingDirectory, DebugProxyDirectory};
 
-/// Filenames used for hotcache files.
-pub const HOTCACHE_FILENAME: &str = "hotcache";
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct SliceCacheIndexEntry {
     start: usize, //< legacy. We keep this instead of range due to existing indices.
