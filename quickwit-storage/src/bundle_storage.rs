@@ -313,7 +313,7 @@ mod tests {
     #[tokio::test]
     async fn bundlestorage_test() -> anyhow::Result<()> {
         let temp_dir = temp_dir();
-        let bundle_file_name = temp_dir.join("asdf");
+        let bundle_file_name = temp_dir.join("bundle1");
         let mut create_bundle = BundleStorageBuilder::new(&bundle_file_name)?;
 
         let test_file1_name = temp_dir.join("f1");
@@ -358,7 +358,7 @@ mod tests {
     #[tokio::test]
     async fn bundlestorage_test_empty() -> anyhow::Result<()> {
         let temp_dir = temp_dir();
-        let bundle_file_name = temp_dir.join("asdf");
+        let bundle_file_name = temp_dir.join("bundle2");
         let create_bundle = BundleStorageBuilder::new(&bundle_file_name)?;
 
         create_bundle.finalize()?;
