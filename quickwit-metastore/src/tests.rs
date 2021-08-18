@@ -886,7 +886,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(200, 299)),
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec!["foo".to_string()],
+        tags: vec!["foo".to_string(), "baz".to_string()],
     };
 
     let split_metadata_4 = SplitMetadata {
@@ -908,13 +908,13 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         time_range: None,
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec!["bar".to_string(), "baz".to_string()],
+        tags: vec!["baz".to_string(), "biz".to_string()],
     };
 
     // List all splits on a non-existent index
     {
         let result = metastore
-            .list_splits("non-existent-index", SplitState::Staged, None, None)
+            .list_splits("non-existent-index", SplitState::Staged, None, &[])
             .await
             .unwrap_err();
         assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
@@ -963,7 +963,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 99i64,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, time_range_opt, None)
+            .list_splits(index_id, SplitState::Staged, time_range_opt, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -981,7 +981,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: i64::MAX,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, time_range_opt, None)
+            .list_splits(index_id, SplitState::Staged, time_range_opt, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -999,7 +999,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 200,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, time_range_opt, None)
+            .list_splits(index_id, SplitState::Staged, time_range_opt, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1014,7 +1014,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
 
         let range = Some(Range { start: 0, end: 100 });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1029,7 +1029,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
 
         let range = Some(Range { start: 0, end: 101 });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1044,7 +1044,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
 
         let range = Some(Range { start: 0, end: 199 });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1059,7 +1059,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
 
         let range = Some(Range { start: 0, end: 200 });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1074,7 +1074,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
 
         let range = Some(Range { start: 0, end: 201 });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1089,7 +1089,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
 
         let range = Some(Range { start: 0, end: 299 });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1104,7 +1104,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
 
         let range = Some(Range { start: 0, end: 300 });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1119,7 +1119,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
 
         let range = Some(Range { start: 0, end: 301 });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1137,7 +1137,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 400,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1155,7 +1155,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 400,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1173,7 +1173,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 400,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1191,7 +1191,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 400,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1209,7 +1209,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 400,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1227,7 +1227,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 400,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1245,7 +1245,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 400,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1263,7 +1263,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 400,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1281,7 +1281,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 400,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1299,7 +1299,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 400,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1317,7 +1317,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             end: 1100,
         });
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1332,7 +1332,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
 
         let range = None;
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, None)
+            .list_splits(index_id, SplitState::Staged, range, &[])
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1346,9 +1346,9 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         assert_eq!(split_ids.contains("five"), true);
 
         let range = None;
-        let tag = Some("bar".to_string());
+        let tags = vec!["bar".to_string(), "baz".to_string()];
         let splits = metastore
-            .list_splits(index_id, SplitState::Staged, range, tag)
+            .list_splits(index_id, SplitState::Staged, range, &tags)
             .await
             .unwrap();
         let split_ids: HashSet<String> = splits
@@ -1357,7 +1357,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             .collect();
         assert_eq!(split_ids.contains(&"one".to_string()), true);
         assert_eq!(split_ids.contains(&"two".to_string()), true);
-        assert_eq!(split_ids.contains(&"three".to_string()), false);
+        assert_eq!(split_ids.contains(&"three".to_string()), true);
         assert_eq!(split_ids.contains(&"four".to_string()), false);
         assert_eq!(split_ids.contains(&"five".to_string()), true);
 
@@ -1464,14 +1464,14 @@ pub async fn test_metastore_storage_failing(metastore: &dyn Metastore) {
 
     // empty
     let split = metastore
-        .list_splits(index_id, SplitState::Published, None, None)
+        .list_splits(index_id, SplitState::Published, None, &[])
         .await
         .unwrap();
     assert!(split.is_empty());
 
     // not empty
     let split = metastore
-        .list_splits(index_id, SplitState::Staged, None, None)
+        .list_splits(index_id, SplitState::Staged, None, &[])
         .await
         .unwrap();
     assert!(!split.is_empty());

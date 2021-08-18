@@ -487,7 +487,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -505,7 +505,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tag: Option<String>| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
         let mut mock_search_service = MockSearchService::new();
@@ -553,7 +553,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -571,7 +571,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tag: Option<String>| {
+             _tags: &[String]| {
                 Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
             },
         );
@@ -644,7 +644,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -662,7 +662,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tag: Option<String>| {
+             _tags: &[String]| {
                 Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
             },
         );
@@ -758,7 +758,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -776,7 +776,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tag: Option<String>| {
+             _tags: &[String]| {
                 Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
             },
         );
@@ -890,7 +890,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -908,7 +908,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tag: Option<String>| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
         let mut first_call = true;
@@ -975,7 +975,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -993,7 +993,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tag: Option<String>| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
         let mut mock_search_service1 = MockSearchService::new();
@@ -1037,7 +1037,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -1055,7 +1055,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tag: Option<String>| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
         let mut mock_search_service1 = MockSearchService::new();
@@ -1101,7 +1101,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -1119,7 +1119,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tag: Option<String>| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
         // service1 - broken node
@@ -1198,7 +1198,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -1216,7 +1216,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tag: Option<String>| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
         // service1 - working node

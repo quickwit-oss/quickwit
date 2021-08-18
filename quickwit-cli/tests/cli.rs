@@ -181,6 +181,50 @@ fn test_cmd_index() -> Result<()> {
 }
 
 #[test]
+fn test_cmd_search() -> Result<()> {
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
+
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["logs"].as_path(),
+    );
+
+    make_command(
+        format!(
+            "search --index-uri {} --query level:info",
+            test_env.index_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::function(|output: &[u8]| {
+        let result: Value = serde_json::from_slice(output).unwrap();
+        result["numHits"] == Value::Number(Number::from(2i64))
+    }));
+
+    // search with tags
+    make_command(
+        format!(
+            "search --index-uri {} --query level:info --tags city:paris device:rpi",
+            test_env.index_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::function(|output: &[u8]| {
+        let result: Value = serde_json::from_slice(output).unwrap();
+        result["numHits"] == Value::Number(Number::from(0i64))
+    }));
+
+    // TODO add another case when we have mechanism for tagging splits
+
+    Ok(())
+}
+
+#[test]
 fn test_cmd_delete_index_dry_run() -> Result<()> {
     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);

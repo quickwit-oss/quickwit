@@ -29,8 +29,8 @@ pub struct SearchRequest {
     #[prost(uint64, tag = "7")]
     pub start_offset: u64,
     /// Split tag filter  
-    #[prost(string, optional, tag = "8")]
-    pub tag: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag = "8")]
+    pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -180,8 +180,8 @@ pub struct SearchStreamRequest {
     #[prost(enumeration = "OutputFormat", tag = "7")]
     pub output_format: i32,
     /// Split tag filter  
-    #[prost(string, optional, tag = "8")]
-    pub tag: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag = "8")]
+    pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

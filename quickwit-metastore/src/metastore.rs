@@ -195,7 +195,7 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
         split_state: SplitState,
         time_range: Option<Range<i64>>,
-        tag: Option<String>,
+        tags: &[String],
     ) -> MetastoreResult<Vec<SplitMetadata>>;
 
     /// Lists the splits without filtering.

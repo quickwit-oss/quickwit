@@ -74,7 +74,7 @@ message SearchRequest {
   uint64 start_offset = 7;
 
   // Split tag filter  
-  optional string tag = 8;
+  repeated string tags = 8;
 }
 
 message SearchResult {
@@ -207,7 +207,7 @@ message SearchStreamRequest {
   OutputFormat output_format = 7;
 
   // Split tag filter  
-  optional string tag = 8;
+  repeated string tags = 8;
 }
 
 message LeafSearchStreamRequest {

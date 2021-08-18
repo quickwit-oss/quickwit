@@ -142,7 +142,9 @@ pub struct SearchRequestQueryString {
     #[serde(default)]
     pub format: Format,
     /// The tag filter.
-    pub tag: Option<String>,
+    #[serde(default)]
+    #[serde(deserialize_with = "from_simple_list")]
+    pub tags: Option<Vec<String>>,
 }
 
 async fn search_endpoint<TSearchService: SearchService>(
@@ -158,7 +160,7 @@ async fn search_endpoint<TSearchService: SearchService>(
         end_timestamp: search_request.end_timestamp,
         max_hits: search_request.max_hits,
         start_offset: search_request.start_offset,
-        tag: search_request.tag,
+        tags: search_request.tags.unwrap_or_default(),
     };
     let search_result = search_service.root_search(search_request).await?;
     let search_result_json = SearchResultJson::from(search_result);
@@ -218,7 +220,9 @@ pub struct SearchStreamRequestQueryString {
     #[serde(default)]
     pub output_format: OutputFormat,
     /// The tag filter.
-    pub tag: Option<String>,
+    #[serde(default)]
+    #[serde(deserialize_with = "from_simple_list")]
+    pub tags: Option<Vec<String>>,
 }
 
 async fn search_stream_endpoint<TSearchService: SearchService>(
@@ -234,7 +238,7 @@ async fn search_stream_endpoint<TSearchService: SearchService>(
         end_timestamp: search_request.end_timestamp,
         fast_field: search_request.fast_field,
         output_format: search_request.output_format as i32,
-        tag: search_request.tag,
+        tags: search_request.tags.unwrap_or_default(),
     };
     let data = search_service.root_search_stream(request).await?;
     let stream = stream::iter(data).map(Result::<Bytes, std::io::Error>::Ok);
@@ -362,7 +366,7 @@ mod tests {
                 max_hits: 10,
                 start_offset: 22,
                 format: Format::default(),
-                tag: None,
+                tags: None,
             }
         );
     }
@@ -386,7 +390,7 @@ mod tests {
                 max_hits: 20,
                 start_offset: 0,
                 format: Format::default(),
-                tag: None,
+                tags: None,
             }
         );
     }
@@ -410,7 +414,7 @@ mod tests {
                 start_offset: 0,
                 format: Format::Json,
                 search_fields: None,
-                tag: None,
+                tags: None,
             }
         );
     }
@@ -427,7 +431,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `tag`."
+            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `tags`."
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
@@ -583,7 +587,7 @@ mod tests {
                 end_timestamp: None,
                 fast_field: "external_id".to_string(),
                 output_format: OutputFormat::Csv,
-                tag: None,
+                tags: None,
             }
         );
     }
@@ -605,7 +609,7 @@ mod tests {
                 end_timestamp: None,
                 fast_field: "external_id".to_string(),
                 output_format: OutputFormat::ClickHouseRowBinary,
-                tag: Some("english".to_string()),
+                tags: Some(vec!["english".to_string()]),
             }
         );
     }

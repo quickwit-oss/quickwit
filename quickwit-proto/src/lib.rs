@@ -30,14 +30,14 @@ pub use quickwit::*;
 impl From<SearchStreamRequest> for SearchRequest {
     fn from(item: SearchStreamRequest) -> Self {
         Self {
-            index_id: item.index_id.clone(),
-            query: item.query.clone(),
-            search_fields: item.search_fields.clone(),
+            index_id: item.index_id,
+            query: item.query,
+            search_fields: item.search_fields,
             start_timestamp: item.start_timestamp,
             end_timestamp: item.end_timestamp,
             max_hits: 0,
             start_offset: 0,
-            tag: item.tag,
+            tags: item.tags,
         }
     }
 }

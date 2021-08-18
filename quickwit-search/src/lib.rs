@@ -131,13 +131,12 @@ async fn list_relevant_splits(
     metastore: &dyn Metastore,
 ) -> MetastoreResult<Vec<SplitMetadata>> {
     let time_range_opt = extract_time_range(search_request);
-    let tag_opt = search_request.tag.clone();
     let split_metas = metastore
         .list_splits(
             &search_request.index_id,
             SplitState::Published,
             time_range_opt,
-            tag_opt,
+            &search_request.tags,
         )
         .await?;
     Ok(split_metas)
@@ -209,7 +208,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 2,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -267,7 +266,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 6,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -325,7 +324,7 @@ mod tests {
             end_timestamp: Some(20),
             max_hits: 15,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -347,7 +346,7 @@ mod tests {
             end_timestamp: Some(20),
             max_hits: 25,
             start_offset: 0,
-            tag: None,
+            tags: vec![],
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -369,7 +368,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 25,
             start_offset: 0,
-            tag: Some("foo".to_string()),
+            tags: vec!["foo".to_string()],
         };
         let single_node_result = single_node_search(
             &search_request,
