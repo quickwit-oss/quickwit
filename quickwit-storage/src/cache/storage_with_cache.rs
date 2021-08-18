@@ -24,7 +24,7 @@ use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::cache::Cache;
+use crate::Cache;
 use crate::{PutPayload, Storage, StorageFactory, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
@@ -117,7 +117,7 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use crate::cache::MockCache;
+    use crate::MockCache;
     use crate::MockStorage;
 
     #[tokio::test]
