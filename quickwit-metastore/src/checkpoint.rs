@@ -71,6 +71,9 @@ impl From<u64> for PartitionId {
 /// For instance, for u64 a 0-left-padded decimal representation
 /// can be used. Alternatively a base64 representation of their
 /// Big Endian representation can be used.
+///
+/// The empty string can be used to represent the beginning of the source,
+/// if no position makes sense. It can be built via `Position::default()`.
 #[derive(Debug, Default, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Position(pub Arc<String>);
 
@@ -196,7 +199,7 @@ impl Checkpoint {
     ///
     ///    |    Checkpoint & Delta        | Outcome                     |
     ///    |------------------------------|-----------------------------|
-    ///    | (?..a] (b..c] with a = b     | Compatible                  |
+    ///    |  (..a] (b..c] with a = b     | Compatible                  |
     ///    |  (..a] (b..c] with b > a     | Compatible                  |
     ///    |  (..a] (b..c]  with b < a    | Incompatible                |
     ///

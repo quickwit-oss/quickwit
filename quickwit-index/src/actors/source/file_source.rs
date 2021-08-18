@@ -51,7 +51,7 @@ impl fmt::Debug for Loop {
     }
 }
 
-#[derive(Default, Clone, Debug, Eq, PartialEq)] //< TODO default should never be used I think? From<Checkpoint> is what we want.
+#[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct FileSourceCounters {
     pub previous_offset: u64,
     pub current_offset: u64,
@@ -105,6 +105,7 @@ impl AsyncActor for FileSource {
         _message: Self::Message,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        // We collect batches of documents before sending them to the indexer.
         let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_THRESHOLD;
         let mut reached_eof = false;
         let mut docs = Vec::new();
