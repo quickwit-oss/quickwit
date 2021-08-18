@@ -34,6 +34,7 @@ use quickwit_actors::ActorExitStatus;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
 use quickwit_actors::QueueCapacity;
+use quickwit_metastore::BundleAndSplitMetadata;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::SplitMetadata;
 use quickwit_metastore::SplitState;
@@ -143,15 +144,18 @@ async fn put_split_files_to_storage(
     Ok(manifest)
 }
 
-fn create_split_metadata(split: &PackagedSplit) -> SplitMetadata {
-    SplitMetadata {
-        split_id: split.split_id.clone(),
-        num_records: split.num_docs as usize,
-        time_range: split.time_range.clone(),
-        size_in_bytes: split.size_in_bytes,
-        generation: 0,
-        split_state: SplitState::New,
-        update_timestamp: Utc::now().timestamp(),
+fn create_split_metadata(split: &PackagedSplit) -> BundleAndSplitMetadata {
+    BundleAndSplitMetadata {
+        split_metadata: SplitMetadata {
+            split_id: split.split_id.clone(),
+            num_records: split.num_docs as usize,
+            time_range: split.time_range.clone(),
+            size_in_bytes: split.size_in_bytes,
+            generation: 0,
+            split_state: SplitState::New,
+            update_timestamp: Utc::now().timestamp(),
+            bundle_offsets: split.bundle_offsets.clone(),
+        },
         bundle_offsets: split.bundle_offsets.clone(),
     }
 }
@@ -161,14 +165,14 @@ async fn run_upload(
     split_storage: Arc<dyn Storage>,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<UploadedSplit> {
-    let split_metadata = create_split_metadata(&split);
+    let metadata = create_split_metadata(&split);
     metastore
-        .stage_split(&split.index_id, split_metadata.clone())
+        .stage_split(&split.index_id, metadata.clone())
         .await?;
-    put_split_files_to_storage(&split, split_metadata.clone(), &*split_storage).await?;
+    put_split_files_to_storage(&split, metadata.split_metadata.clone(), &*split_storage).await?;
     Ok(UploadedSplit {
         index_id: split.index_id,
-        split: split_metadata,
+        metadata,
         checkpoint_delta: split.checkpoint_delta,
     })
 }
@@ -234,11 +238,11 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_stage_split()
-            .withf(move |index_id, split_metadata| -> bool {
+            .withf(move |index_id, metadata| -> bool {
                 (index_id == "test-index")
-                    && &split_metadata.split_id == "test-split"
-                    && split_metadata.time_range == Some(1628203589..=1628203640)
-                    && split_metadata.split_state == SplitState::New
+                    && &metadata.split_metadata.split_id == "test-split"
+                    && metadata.split_metadata.time_range == Some(1628203589..=1628203640)
+                    && metadata.split_metadata.split_state == SplitState::New
             })
             .times(1)
             .returning(|_, _| Ok(()));
@@ -287,7 +291,10 @@ mod tests {
         assert_eq!(publish_futures.len(), 1);
         let publish_future = publish_futures.into_iter().next().unwrap();
         let uploaded_split = publish_future.await?;
-        assert_eq!(uploaded_split.split.split_id, "test-split".to_string());
+        assert_eq!(
+            uploaded_split.metadata.split_metadata.split_id,
+            "test-split".to_string()
+        );
         assert_eq!(
             uploaded_split.checkpoint_delta,
             CheckpointDelta::from(3..15),

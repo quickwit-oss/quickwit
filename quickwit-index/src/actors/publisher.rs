@@ -74,7 +74,7 @@ impl AsyncActor for Publisher {
         self.metastore
             .publish_splits(
                 &uploaded_split.index_id,
-                &[&uploaded_split.split.split_id],
+                &[&uploaded_split.metadata.split_metadata.split_id],
                 uploaded_split.checkpoint_delta,
             )
             .await
@@ -89,7 +89,7 @@ mod tests {
     use super::*;
     use quickwit_actors::Universe;
     use quickwit_metastore::checkpoint::CheckpointDelta;
-    use quickwit_metastore::{MockMetastore, SplitMetadata};
+    use quickwit_metastore::{BundleAndSplitMetadata, MockMetastore, SplitMetadata};
     use tokio::sync::oneshot;
 
     #[tokio::test]
@@ -131,9 +131,12 @@ mod tests {
         assert!(split_future_tx2
             .send(UploadedSplit {
                 index_id: "index".to_string(),
-                split: SplitMetadata {
-                    split_id: "split2".to_string(),
-                    ..Default::default()
+                metadata: BundleAndSplitMetadata {
+                    split_metadata: SplitMetadata {
+                        split_id: "split2".to_string(),
+                        ..Default::default()
+                    },
+                    bundle_offsets: Default::default()
                 },
                 checkpoint_delta: CheckpointDelta::from(3..7),
             })
@@ -141,9 +144,12 @@ mod tests {
         assert!(split_future_tx1
             .send(UploadedSplit {
                 index_id: "index".to_string(),
-                split: SplitMetadata {
-                    split_id: "split1".to_string(),
-                    ..Default::default()
+                metadata: BundleAndSplitMetadata {
+                    split_metadata: SplitMetadata {
+                        split_id: "split1".to_string(),
+                        ..Default::default()
+                    },
+                    bundle_offsets: Default::default()
                 },
                 checkpoint_delta: CheckpointDelta::from(1..3),
             })

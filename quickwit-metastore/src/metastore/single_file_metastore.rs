@@ -33,8 +33,8 @@ use quickwit_storage::{PutPayload, Storage, StorageErrorKind};
 
 use crate::checkpoint::CheckpointDelta;
 use crate::{
-    IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreResult, SplitMetadata,
-    SplitState,
+    BundleAndSplitMetadata, IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreResult,
+    SplitMetadata, SplitState,
 };
 
 /// Metadata file managed by [`SingleFileMetastore`].
@@ -233,28 +233,31 @@ impl Metastore for SingleFileMetastore {
     async fn stage_split(
         &self,
         index_id: &str,
-        mut split_metadata: SplitMetadata,
+        mut metadata: BundleAndSplitMetadata,
     ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
 
         // Check whether the split exists.
         // If the split exists, return an error to prevent the split from being registered.
-        if metadata_set.splits.contains_key(&split_metadata.split_id) {
+        if metadata_set
+            .splits
+            .contains_key(&metadata.split_metadata.split_id)
+        {
             return Err(MetastoreError::InternalError {
                 message: format!(
                     "Try to stage split that already exists ({})",
-                    split_metadata.split_id
+                    metadata.split_metadata.split_id
                 ),
                 cause: anyhow::anyhow!(""),
             });
         }
 
         // Insert a new split metadata as `Staged` state.
-        split_metadata.split_state = SplitState::Staged;
-        split_metadata.update_timestamp = Utc::now().timestamp();
+        metadata.split_metadata.split_state = SplitState::Staged;
+        metadata.split_metadata.update_timestamp = Utc::now().timestamp();
         metadata_set
             .splits
-            .insert(split_metadata.split_id.to_string(), split_metadata);
+            .insert(metadata.split_metadata.split_id.to_string(), metadata);
 
         self.put_index(metadata_set).await?;
 
@@ -275,21 +278,21 @@ impl Metastore for SingleFileMetastore {
 
         for &split_id in split_ids {
             // Check for the existence of split.
-            let mut split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
+            let mut metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
                 MetastoreError::SplitDoesNotExist {
                     split_id: split_id.to_string(),
                 }
             })?;
 
-            match split_metadata.split_state {
+            match metadata.split_metadata.split_state {
                 SplitState::Published => {
                     // Split is already published. This is fine, we just skip it.
                     continue;
                 }
                 SplitState::Staged => {
                     // The split state needs to be updated.
-                    split_metadata.split_state = SplitState::Published;
-                    split_metadata.update_timestamp = Utc::now().timestamp();
+                    metadata.split_metadata.split_state = SplitState::Published;
+                    metadata.split_metadata.update_timestamp = Utc::now().timestamp();
                 }
                 _ => {
                     return Err(MetastoreError::SplitIsNotStaged {
@@ -307,7 +310,7 @@ impl Metastore for SingleFileMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-    ) -> MetastoreResult<Vec<SplitMetadata>> {
+    ) -> MetastoreResult<Vec<BundleAndSplitMetadata>> {
         let time_range_filter = |split_metadata: &SplitMetadata| match (
             time_range_opt.as_ref(),
             split_metadata.time_range.as_ref(),
@@ -322,14 +325,18 @@ impl Metastore for SingleFileMetastore {
         let splits = metadata_set
             .splits
             .into_values()
-            .filter(|split_metadata| {
-                split_metadata.split_state == state && time_range_filter(split_metadata)
+            .filter(|metadata| {
+                metadata.split_metadata.split_state == state
+                    && time_range_filter(&metadata.split_metadata)
             })
             .collect();
         Ok(splits)
     }
 
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitMetadata>> {
+    async fn list_all_splits(
+        &self,
+        index_id: &str,
+    ) -> MetastoreResult<Vec<BundleAndSplitMetadata>> {
         let metadata_set = self.get_index(index_id).await?;
         let splits = metadata_set.splits.into_values().collect();
         Ok(splits)
@@ -345,19 +352,19 @@ impl Metastore for SingleFileMetastore {
         let mut is_modified = false;
         for &split_id in split_ids {
             // Check for the existence of split.
-            let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
+            let metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
                 MetastoreError::SplitDoesNotExist {
                     split_id: split_id.to_string(),
                 }
             })?;
 
-            if split_metadata.split_state == SplitState::ScheduledForDeletion {
+            if metadata.split_metadata.split_state == SplitState::ScheduledForDeletion {
                 // If the split is already scheduled for deletion, this API call returns success.
                 continue;
             }
 
-            split_metadata.split_state = SplitState::ScheduledForDeletion;
-            split_metadata.update_timestamp = Utc::now().timestamp();
+            metadata.split_metadata.split_state = SplitState::ScheduledForDeletion;
+            metadata.split_metadata.update_timestamp = Utc::now().timestamp();
             is_modified = true;
         }
 
@@ -377,13 +384,13 @@ impl Metastore for SingleFileMetastore {
 
         for &split_id in split_ids {
             // Check for the existence of split.
-            let split_metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
+            let metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
                 MetastoreError::SplitDoesNotExist {
                     split_id: split_id.to_string(),
                 }
             })?;
 
-            match split_metadata.split_state {
+            match metadata.split_metadata.split_state {
                 SplitState::ScheduledForDeletion | SplitState::Staged => {
                     // Only `ScheduledForDeletion` and `Staged` can be deleted
                     metadata_set.splits.remove(split_id);
@@ -391,7 +398,7 @@ impl Metastore for SingleFileMetastore {
                 _ => {
                     let message: String = format!(
                         "This split is not in a deletable state: {:?}:{:?}",
-                        split_id, &split_metadata.split_state
+                        split_id, &metadata.split_metadata.split_state
                     );
                     return Err(MetastoreError::Forbidden { message });
                 }
