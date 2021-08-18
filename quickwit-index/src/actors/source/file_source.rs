@@ -95,7 +95,7 @@ impl FileSource {
 
 #[async_trait]
 impl AsyncActor for FileSource {
-    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+    async fn initialize(&mut self, ctx: &ActorContext<Loop>) -> Result<(), ActorExitStatus> {
         // Kick starts the source.
         self.process_message(Loop(PrivateToken), ctx).await
     }
@@ -103,7 +103,7 @@ impl AsyncActor for FileSource {
     async fn process_message(
         &mut self,
         _message: Self::Message,
-        ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Loop>,
     ) -> Result<(), ActorExitStatus> {
         // We collect batches of documents before sending them to the indexer.
         let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_THRESHOLD;

@@ -146,14 +146,17 @@ mod tests {
 
     #[async_trait]
     impl AsyncActor for ActorWithSchedule {
-        async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        async fn initialize(
+            &mut self,
+            ctx: &ActorContext<Self::Message>,
+        ) -> Result<(), ActorExitStatus> {
             self.process_message((), ctx).await
         }
 
         async fn process_message(
             &mut self,
             _: (),
-            ctx: &ActorContext<Self>,
+            ctx: &ActorContext<Self::Message>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
             dbg!("process message");

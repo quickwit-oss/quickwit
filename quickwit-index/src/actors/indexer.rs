@@ -102,7 +102,7 @@ impl IndexerState {
     fn get_or_create_current_indexed_split<'a>(
         &self,
         current_split_opt: &'a mut Option<IndexedSplit>,
-        ctx: &ActorContext<Indexer>,
+        ctx: &ActorContext<IndexerMessage>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {
         if current_split_opt.is_none() {
             let new_indexed_split = self.create_indexed_split()?;
@@ -157,7 +157,7 @@ impl IndexerState {
         batch: RawDocBatch,
         current_split_opt: &mut Option<IndexedSplit>,
         counters: &mut IndexerCounters,
-        ctx: &ActorContext<Indexer>,
+        ctx: &ActorContext<IndexerMessage>,
     ) -> Result<(), ActorExitStatus> {
         let indexed_split = self.get_or_create_current_indexed_split(current_split_opt, ctx)?;
         indexed_split
@@ -227,7 +227,7 @@ impl SyncActor for Indexer {
     fn process_message(
         &mut self,
         indexer_message: IndexerMessage,
-        ctx: &ActorContext<Self>,
+        ctx: &ActorContext<IndexerMessage>,
     ) -> Result<(), ActorExitStatus> {
         match indexer_message {
             IndexerMessage::Batch(batch) => {
@@ -263,7 +263,7 @@ impl SyncActor for Indexer {
     fn finalize(
         &mut self,
         exit_status: &ActorExitStatus,
-        ctx: &ActorContext<Self>,
+        ctx: &ActorContext<IndexerMessage>,
     ) -> anyhow::Result<()> {
         info!("finalize");
         match exit_status {
@@ -321,7 +321,7 @@ impl Indexer {
     fn send_to_packager(
         &mut self,
         commit_trigger: CommitTrigger,
-        ctx: &ActorContext<Self>,
+        ctx: &ActorContext<IndexerMessage>,
     ) -> Result<(), SendError> {
         let indexed_split = if let Some(indexed_split) = self.current_split_opt.take() {
             indexed_split
