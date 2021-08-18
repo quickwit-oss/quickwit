@@ -595,7 +595,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_search_stream_api_click_house_row_binary() {
         let (index, req) = warp::test::request()
-            .path("/api/v1/my-index/search/stream?query=obama&fastField=external_id&outputFormat=clickHouseRowBinary&tag=english")
+            .path("/api/v1/my-index/search/stream?query=obama&fastField=external_id&outputFormat=clickHouseRowBinary&tags=lang:english")
             .filter(&super::search_stream_filter())
             .await
             .unwrap();
@@ -609,7 +609,7 @@ mod tests {
                 end_timestamp: None,
                 fast_field: "external_id".to_string(),
                 output_format: OutputFormat::ClickHouseRowBinary,
-                tags: Some(vec!["english".to_string()]),
+                tags: Some(vec!["lang:english".to_string()]),
             }
         );
     }
