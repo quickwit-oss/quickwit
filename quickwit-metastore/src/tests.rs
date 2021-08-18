@@ -137,6 +137,7 @@ pub async fn test_metastore_stage_split(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     // Stage a split on a non-existent index
@@ -188,6 +189,7 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     let split_id_2 = "two";
@@ -199,6 +201,7 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(30, 99)),
         generation: 2,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     // Publish a split on a non-existent index
@@ -573,6 +576,7 @@ pub async fn test_metastore_mark_splits_as_deleted(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     // Mark a split as deleted on a non-existent index
@@ -647,6 +651,7 @@ pub async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     // Delete a split as deleted on a non-existent index
@@ -781,6 +786,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     let split_metadata_2 = SplitMetadata {
@@ -791,6 +797,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(100, 199)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     let split_metadata_3 = SplitMetadata {
@@ -801,6 +808,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(200, 299)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     let split_metadata_4 = SplitMetadata {
@@ -811,6 +819,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(300, 399)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     let split_metadata_5 = SplitMetadata {
@@ -821,6 +830,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         time_range: None,
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     // List all splits on a non-existent index
@@ -906,6 +916,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     let split_metadata_2 = SplitMetadata {
@@ -916,6 +927,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(100, 199)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     let split_metadata_3 = SplitMetadata {
@@ -926,6 +938,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(200, 299)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     let split_metadata_4 = SplitMetadata {
@@ -936,6 +949,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(300, 399)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     let split_metadata_5 = SplitMetadata {
@@ -946,6 +960,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         time_range: None,
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     // List all splits on a non-existent index
@@ -1407,6 +1422,7 @@ pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     // Create an index
@@ -1465,6 +1481,7 @@ pub async fn test_metastore_storage_failing(metastore: &dyn Metastore) {
         time_range: None,
         generation: 3,
         update_timestamp: current_timestamp,
+        ..Default::default()
     };
 
     // create index

@@ -29,11 +29,14 @@ to different storage:
 - distributed filesystems.
 etc.
 
+- The `BundleStorage` bundles together multiple files into a single file.
+
 */
 mod cache;
 mod storage;
 pub use self::storage::{PutPayload, Storage};
 
+mod bundle_storage;
 mod error;
 mod local_file_storage;
 mod object_storage;
@@ -42,6 +45,9 @@ mod ram_storage;
 mod retry;
 mod storage_resolver;
 
+pub use self::bundle_storage::{
+    BundleStorage, BundleStorageBuilder, BundleStorageOffsets, FileStatistics, BUNDLE_FILENAME,
+};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,

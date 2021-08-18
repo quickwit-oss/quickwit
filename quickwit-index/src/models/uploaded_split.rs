@@ -19,10 +19,11 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_metastore::checkpoint::CheckpointDelta;
+use quickwit_metastore::SplitMetadata;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UploadedSplit {
     pub index_id: String,
-    pub split_id: String,
+    pub split: SplitMetadata,
     pub checkpoint_delta: CheckpointDelta,
 }
