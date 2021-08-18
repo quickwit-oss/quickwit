@@ -1457,7 +1457,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
             .unwrap();
         let split_ids: HashSet<String> = splits
             .into_iter()
-            .map(|split_metadata| split_metadata.split_id)
+            .map(|meta| meta.split_metadata.split_id)
             .collect();
         assert_eq!(split_ids.contains(&"one".to_string()), true);
         assert_eq!(split_ids.contains(&"two".to_string()), true);
