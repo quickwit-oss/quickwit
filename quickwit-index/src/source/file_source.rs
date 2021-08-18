@@ -20,18 +20,17 @@
 
 use crate::models::IndexerMessage;
 use crate::models::RawDocBatch;
+use crate::source::Source;
+use crate::source::SourceContext;
+use crate::source::TypedSourceFactory;
 use async_trait::async_trait;
-use quickwit_actors::Actor;
-use quickwit_actors::ActorContext;
 use quickwit_actors::ActorExitStatus;
-use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
 use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_metastore::checkpoint::Position;
-use std::fmt;
+use serde::{Deserialize, Serialize};
 use std::io;
-use std::path::Path;
 use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
@@ -41,17 +40,7 @@ use tracing::info;
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
 
-/// This private token prevents external actors from creating the Loop message.
-struct PrivateToken;
-pub struct Loop(PrivateToken);
-
-impl fmt::Debug for Loop {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Debug")
-    }
-}
-
-#[derive(Default, Clone, Debug, Eq, PartialEq)]
+#[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FileSourceCounters {
     pub previous_offset: u64,
     pub current_offset: u64,
@@ -59,10 +48,9 @@ pub struct FileSourceCounters {
 }
 
 pub struct FileSource {
-    filepath: PathBuf,
+    params: FileSourceParams,
     counters: FileSourceCounters,
     file: BufReader<File>,
-    sink: Mailbox<IndexerMessage>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -70,40 +58,12 @@ pub struct FilePosition {
     pub num_bytes: u64,
 }
 
-impl Actor for FileSource {
-    type Message = Loop;
-
-    type ObservableState = FileSourceCounters;
-
-    fn observable_state(&self) -> Self::ObservableState {
-        self.counters.clone()
-    }
-}
-
-impl FileSource {
-    pub async fn try_new(path: &Path, sink: Mailbox<IndexerMessage>) -> io::Result<FileSource> {
-        let filepath = std::fs::canonicalize(path)?;
-        let file = File::open(path).await?;
-        Ok(FileSource {
-            counters: FileSourceCounters::default(),
-            file: BufReader::new(file),
-            sink,
-            filepath,
-        })
-    }
-}
-
 #[async_trait]
-impl AsyncActor for FileSource {
-    async fn initialize(&mut self, ctx: &ActorContext<Loop>) -> Result<(), ActorExitStatus> {
-        // Kick starts the source.
-        self.process_message(Loop(PrivateToken), ctx).await
-    }
-
-    async fn process_message(
+impl Source for FileSource {
+    async fn emit_batches(
         &mut self,
-        _message: Self::Message,
-        ctx: &ActorContext<Loop>,
+        batch_sink: &Mailbox<IndexerMessage>,
+        ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         // We collect batches of documents before sending them to the indexer.
         let limit_num_bytes = self.counters.previous_offset + BATCH_NUM_BYTES_THRESHOLD;
@@ -127,7 +87,7 @@ impl AsyncActor for FileSource {
         if !docs.is_empty() {
             let mut checkpoint_delta = CheckpointDelta::default();
             checkpoint_delta.add_partition(
-                PartitionId::from(self.filepath.to_string_lossy().to_string()),
+                PartitionId::from(self.params.filepath.to_string_lossy().to_string()),
                 Position::from(self.counters.previous_offset),
                 Position::from(self.counters.current_offset),
             );
@@ -136,16 +96,49 @@ impl AsyncActor for FileSource {
                 checkpoint_delta,
             };
             self.counters.previous_offset = self.counters.current_offset;
-            ctx.send_message(&self.sink, raw_doc_batch.into()).await?;
+            ctx.send_message(batch_sink, raw_doc_batch.into()).await?;
         }
         if reached_eof {
             info!("EOF");
-            ctx.send_message(&self.sink, IndexerMessage::EndOfSource)
+            ctx.send_message(batch_sink, IndexerMessage::EndOfSource)
                 .await?;
             return Err(ActorExitStatus::Success);
         }
-        ctx.send_self_message(Loop(PrivateToken)).await?;
         Ok(())
+    }
+
+    fn observable_state(&self) -> serde_json::Value {
+        serde_json::to_value(&self.counters).unwrap()
+    }
+}
+
+// TODO handle log directories.
+#[derive(Serialize, Deserialize)]
+pub struct FileSourceParams {
+    pub filepath: PathBuf,
+}
+
+pub struct FileSourceFactory;
+
+#[async_trait]
+impl TypedSourceFactory for FileSourceFactory {
+    type Source = FileSource;
+
+    type Params = FileSourceParams;
+
+    // TODO handle checkpoint for files.
+    async fn typed_create_source(
+        mut params: FileSourceParams,
+        _checkpoint: quickwit_metastore::checkpoint::Checkpoint,
+    ) -> anyhow::Result<FileSource> {
+        params.filepath = std::fs::canonicalize(params.filepath)?;
+        let file = File::open(&params.filepath).await?;
+        let file_source = FileSource {
+            counters: FileSourceCounters::default(),
+            file: BufReader::new(file),
+            params,
+        };
+        Ok(file_source)
     }
 }
 
@@ -153,26 +146,37 @@ impl AsyncActor for FileSource {
 mod tests {
     use std::io::Write;
 
+    use crate::source::SourceActor;
+
     use super::*;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::Universe;
+    use quickwit_metastore::checkpoint::Checkpoint;
 
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-        let file_source = FileSource::try_new(Path::new("data/test_corpus.json"), mailbox).await?;
-        let (_file_source_mailbox, file_source_handle) = universe.spawn(file_source);
+        let params = FileSourceParams {
+            filepath: PathBuf::from("data/test_corpus.json"),
+        };
+        let file_source =
+            FileSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
+        let file_source_actor = SourceActor {
+            source: Box::new(file_source),
+            batch_sink: mailbox,
+        };
+        let (_file_source_mailbox, file_source_handle) = universe.spawn(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(
             counters,
-            FileSourceCounters {
-                previous_offset: 70u64,
-                current_offset: 70u64,
-                num_lines_processed: 4
-            }
+            serde_json::json!({
+                "previous_offset": 70u64,
+                "current_offset": 70u64,
+                "num_lines_processed": 4
+            })
         );
         let batch = inbox.drain_available_message_for_test();
         assert!(matches!(batch[1], IndexerMessage::EndOfSource));
@@ -193,17 +197,24 @@ mod tests {
             temp_file.write_all("\n".as_bytes())?;
         }
         temp_file.flush()?;
-        let file_source = FileSource::try_new(&temp_path, mailbox).await?;
-        let (_file_source_mailbox, file_source_handle) = universe.spawn(file_source);
+        let params = FileSourceParams {
+            filepath: temp_path.as_path().to_path_buf(),
+        };
+        let source = FileSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
+        let file_source_actor = SourceActor {
+            source: Box::new(source),
+            batch_sink: mailbox,
+        };
+        let (_file_source_mailbox, file_source_handle) = universe.spawn(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(
             counters,
-            FileSourceCounters {
-                previous_offset: 700_000u64,
-                current_offset: 700_000u64,
-                num_lines_processed: 20_000
-            }
+            serde_json::json!({
+                "previous_offset": 700_000u64,
+                "current_offset": 700_000u64,
+                "num_lines_processed": 20_000
+            })
         );
         let indexer_msgs = inbox.drain_available_message_for_test();
         assert_eq!(indexer_msgs.len(), 3);

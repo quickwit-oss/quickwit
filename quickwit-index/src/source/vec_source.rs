@@ -18,70 +18,55 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::models::IndexerMessage;
 use crate::models::RawDocBatch;
+use crate::source::Source;
+use crate::source::SourceContext;
+use crate::source::TypedSourceFactory;
 use async_trait::async_trait;
-use quickwit_actors::Actor;
-use quickwit_actors::ActorContext;
 use quickwit_actors::ActorExitStatus;
-use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
+use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::checkpoint::CheckpointDelta;
-use std::fmt;
+use serde::{Deserialize, Serialize};
 
-/// This private token prevents external actors from creating the Loop message.
-struct PrivateToken;
-
-pub struct Loop(PrivateToken);
-
-impl fmt::Debug for Loop {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Debug")
-    }
+#[derive(Deserialize, Serialize)]
+pub struct VecSourceParams {
+    items: Vec<String>,
+    batch_num_docs: usize,
 }
 
 pub struct VecSource {
     next_item_id: usize,
-    items: Vec<String>,
-    batch_num_docs: usize,
-    sink: Mailbox<RawDocBatch>,
+    params: VecSourceParams,
 }
+pub struct VecSourceFactory;
 
-impl Actor for VecSource {
-    type Message = Loop;
-
-    type ObservableState = usize;
-
-    fn observable_state(&self) -> Self::ObservableState {
-        self.next_item_id
-    }
-}
-
-impl VecSource {
-    pub fn new(items: Vec<String>, batch_num_docs: usize, sink: Mailbox<RawDocBatch>) -> VecSource {
-        VecSource {
+#[async_trait]
+impl TypedSourceFactory for VecSourceFactory {
+    type Source = VecSource;
+    type Params = VecSourceParams;
+    async fn typed_create_source(
+        params: VecSourceParams,
+        _checkpoint: Checkpoint,
+    ) -> anyhow::Result<Self::Source> {
+        Ok(VecSource {
             next_item_id: 0,
-            items,
-            batch_num_docs,
-            sink,
-        }
+            params,
+        })
     }
 }
 
 #[async_trait]
-impl AsyncActor for VecSource {
-    async fn initialize(&mut self, ctx: &ActorContext<Loop>) -> Result<(), ActorExitStatus> {
-        // Kick starts the source.
-        self.process_message(Loop(PrivateToken), ctx).await
-    }
-
-    async fn process_message(
+impl Source for VecSource {
+    async fn emit_batches(
         &mut self,
-        _message: Self::Message,
-        ctx: &ActorContext<Loop>,
+        batch_sink: &Mailbox<IndexerMessage>,
+        ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        let line_docs: Vec<String> = self.items[self.next_item_id..]
+        let line_docs: Vec<String> = self.params.items[self.next_item_id..]
             .iter()
-            .take(self.batch_num_docs)
+            .take(self.params.batch_num_docs)
             .cloned()
             .collect();
         let start_item_id = self.next_item_id as u64;
@@ -95,35 +80,49 @@ impl AsyncActor for VecSource {
             docs: line_docs,
             checkpoint_delta,
         };
-        ctx.send_message(&self.sink, batch).await?;
-        // Loops
-        ctx.send_self_message(Loop(PrivateToken)).await?;
+        ctx.send_message(batch_sink, IndexerMessage::from(batch))
+            .await?;
         Ok(())
+    }
+
+    fn observable_state(&self) -> serde_json::Value {
+        serde_json::json!({
+            "next_item_id": self.next_item_id
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::source::SourceActor;
+
     use super::*;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::Universe;
+    use serde_json::json;
 
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-        let vec_source = VecSource::new(
-            std::iter::repeat_with(|| "{}".to_string())
-                .take(100)
-                .collect(),
-            3,
-            mailbox,
-        );
-        let (_vec_source_mailbox, vec_source_handle) = universe.spawn(vec_source);
+        let items = std::iter::repeat_with(|| "{}".to_string())
+            .take(100)
+            .collect();
+        let params = VecSourceParams {
+            items,
+            batch_num_docs: 3,
+        };
+        let vec_source =
+            VecSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
+        let vec_source_actor = SourceActor {
+            source: Box::new(vec_source),
+            batch_sink: mailbox,
+        };
+        let (_vec_source_mailbox, vec_source_handle) = universe.spawn(vec_source_actor);
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
-        assert_eq!(last_observation, 100);
+        assert_eq!(last_observation, json!({"next_item_id": 100}));
         let batch = inbox.drain_available_message_for_test();
         assert_eq!(batch.len(), 34);
         Ok(())
