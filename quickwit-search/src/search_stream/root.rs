@@ -121,8 +121,9 @@ mod tests {
 
     use crate::MockSearchService;
     use quickwit_index_config::WikipediaIndexConfig;
-    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
+    use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::OutputFormat;
+    use quickwit_storage::BundleStorageOffsets;
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
     fn mock_split_meta(split_id: &str) -> SplitMetadata {
@@ -135,6 +136,11 @@ mod tests {
             generation: 1,
             update_timestamp: 0,
             tags: vec![],
+            bundle_offsets: BundleStorageOffsets {
+                footer_offsets: 700..800,
+                hotcache_offset_start: 1234,
+                bundle_file_size: 9001,
+            },
         }
     }
 
@@ -158,6 +164,7 @@ mod tests {
                     index_id: "test-idx".to_string(),
                     index_uri: "file:///path/to/index/test-idx".to_string(),
                     index_config: Arc::new(WikipediaIndexConfig::new()),
+                    checkpoint: Checkpoint::default(),
                 })
             });
         metastore.expect_list_splits().returning(

@@ -132,6 +132,7 @@ mod tests {
                     index_id: index_id.to_string(),
                     index_uri: index_uri.to_string(),
                     index_config: Arc::new(AllFlattenIndexConfig::new()),
+                    checkpoint: Default::default(),
                 })
             });
         let metastore = Arc::new(mock_metastore);

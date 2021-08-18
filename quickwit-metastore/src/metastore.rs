@@ -29,8 +29,10 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use chrono::Utc;
 use quickwit_index_config::IndexConfig;
+use quickwit_storage::BundleStorageOffsets;
 use serde::{Deserialize, Serialize};
 
+use crate::checkpoint::{Checkpoint, CheckpointDelta};
 use crate::MetastoreResult;
 
 /// An index metadata carries all meta data about an index.
@@ -43,10 +45,12 @@ pub struct IndexMetadata {
     pub index_uri: String,
     /// The config used for this index.
     pub index_config: Arc<dyn IndexConfig>,
+    /// Checkpoint relative to a source. It express up to where documents have been indexed.
+    pub checkpoint: Checkpoint,
 }
 
 /// A split metadata carries all meta data about a split.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
 pub struct SplitMetadata {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -62,6 +66,9 @@ pub struct SplitMetadata {
     /// Note this is not the split file size. It is the size of the original
     /// JSON payloads.
     pub size_in_bytes: u64,
+
+    /// The bundle offsets. Used for single read of hotcache and bundle footer.
+    pub bundle_offsets: BundleStorageOffsets,
 
     /// If a timestamp field is available, the min / max timestamp in the split.
     pub time_range: Option<RangeInclusive<i64>>,
@@ -87,6 +94,7 @@ impl SplitMetadata {
             split_state: SplitState::New,
             num_records: 0,
             size_in_bytes: 0,
+            bundle_offsets: BundleStorageOffsets::default(),
             time_range: None,
             generation: 0,
             update_timestamp: Utc::now().timestamp(),
@@ -96,7 +104,7 @@ impl SplitMetadata {
 }
 
 /// A split state.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SplitState {
     /// The split is newly created.
     New,
@@ -109,6 +117,12 @@ pub enum SplitState {
 
     /// The split is scheduled for deletion.
     ScheduledForDeletion,
+}
+
+impl Default for SplitState {
+    fn default() -> Self {
+        Self::New
+    }
 }
 
 /// A MetadataSet carries an index metadata and its split metadata.
@@ -184,6 +198,7 @@ pub trait Metastore: Send + Sync + 'static {
         &self,
         index_id: &str,
         split_ids: &[&'a str],
+        checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()>;
 
     /// Lists the splits.

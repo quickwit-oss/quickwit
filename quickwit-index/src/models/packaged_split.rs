@@ -19,18 +19,22 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::models::ScratchDirectory;
+use quickwit_metastore::checkpoint::CheckpointDelta;
+use quickwit_storage::{BundleStorageOffsets, FileStatistics};
 use std::ops::RangeInclusive;
-use std::path::PathBuf;
 use tantivy::SegmentId;
 
 #[derive(Debug)]
 pub struct PackagedSplit {
     pub split_id: String,
     pub index_id: String,
+    pub checkpoint_delta: CheckpointDelta,
     pub time_range: Option<RangeInclusive<i64>>,
     pub size_in_bytes: u64,
 
-    pub files_to_upload: Vec<(PathBuf, u64)>,
+    pub bundle_offsets: BundleStorageOffsets,
+    pub file_statistics: FileStatistics,
+
     pub segment_ids: Vec<SegmentId>,
     pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,

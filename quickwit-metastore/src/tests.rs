@@ -29,6 +29,7 @@ use tokio::time::{sleep, Duration};
 
 use quickwit_index_config::AllFlattenIndexConfig;
 
+use crate::checkpoint::{Checkpoint, CheckpointDelta};
 use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 
 pub async fn test_metastore_create_index(metastore: &dyn Metastore) {
@@ -37,6 +38,7 @@ pub async fn test_metastore_create_index(metastore: &dyn Metastore) {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
         index_config: Arc::new(AllFlattenIndexConfig::default()),
+        checkpoint: Checkpoint::default(),
     };
 
     // Create an index
@@ -64,6 +66,7 @@ pub async fn test_metastore_delete_index(metastore: &dyn Metastore) {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
         index_config: Arc::new(AllFlattenIndexConfig::default()),
+        checkpoint: Checkpoint::default(),
     };
 
     // Delete a non-existent index
@@ -92,6 +95,7 @@ pub async fn test_metastore_index_metadata(metastore: &dyn Metastore) {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
         index_config: Arc::new(AllFlattenIndexConfig::default()),
+        checkpoint: Checkpoint::default(),
     };
 
     // Get a non-existent index metadata
@@ -121,6 +125,7 @@ pub async fn test_metastore_stage_split(metastore: &dyn Metastore) {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
         index_config: Arc::new(AllFlattenIndexConfig::default()),
+        checkpoint: Checkpoint::default(),
     };
 
     let split_id = "one";
@@ -132,7 +137,7 @@ pub async fn test_metastore_stage_split(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec![],
+        ..Default::default()
     };
 
     // Stage a split on a non-existent index
@@ -172,6 +177,7 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
         index_config: Arc::new(AllFlattenIndexConfig::default()),
+        checkpoint: Checkpoint::default(),
     };
 
     let split_id_1 = "one";
@@ -183,7 +189,7 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec![],
+        ..Default::default()
     };
 
     let split_id_2 = "two";
@@ -195,13 +201,17 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(30, 99)),
         generation: 2,
         update_timestamp: current_timestamp,
-        tags: vec![],
+        ..Default::default()
     };
 
     // Publish a split on a non-existent index
     {
         let result = metastore
-            .publish_splits("non-existent-index", &["non-existent-split"])
+            .publish_splits(
+                "non-existent-index",
+                &["non-existent-split"],
+                CheckpointDelta::from(1..10),
+            )
             .await
             .unwrap_err();
         assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
@@ -216,7 +226,11 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &["non-existent-split"])
+            .publish_splits(
+                index_id,
+                &["non-existent-split"],
+                CheckpointDelta::default(),
+            )
             .await
             .unwrap_err();
         assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
@@ -240,7 +254,7 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1])
+            .publish_splits(index_id, &[split_id_1], CheckpointDelta::default())
             .await
             .unwrap();
         assert!(matches!(result, ()));
@@ -264,16 +278,19 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1])
+            .publish_splits(index_id, &[split_id_1], CheckpointDelta::from(1..12))
             .await
             .unwrap();
         assert!(matches!(result, ()));
 
-        let result = metastore
-            .publish_splits(index_id, &[split_id_1])
+        let publish_error = metastore
+            .publish_splits(index_id, &[split_id_1], CheckpointDelta::from(1..12))
             .await
-            .unwrap();
-        assert!(matches!(result, ()));
+            .unwrap_err();
+        assert!(matches!(
+            publish_error,
+            MetastoreError::IncompatibleCheckpointDelta(_)
+        ));
 
         let result = metastore.delete_index(index_id).await.unwrap();
         assert!(matches!(result, ()));
@@ -294,7 +311,7 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1])
+            .publish_splits(index_id, &[split_id_1], CheckpointDelta::from(12..15))
             .await
             .unwrap();
         assert!(matches!(result, ()));
@@ -306,7 +323,7 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1])
+            .publish_splits(index_id, &[split_id_1], CheckpointDelta::from(15..18))
             .await
             .unwrap_err();
         assert!(matches!(result, MetastoreError::SplitIsNotStaged { .. }));
@@ -330,7 +347,11 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1, "non-existent-split"])
+            .publish_splits(
+                index_id,
+                &[split_id_1, "non-existent-split"],
+                CheckpointDelta::from(15..18),
+            )
             .await
             .unwrap_err();
         assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
@@ -354,13 +375,17 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1])
+            .publish_splits(index_id, &[split_id_1], CheckpointDelta::from(15..18))
             .await
             .unwrap();
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1, "non-existent-split"])
+            .publish_splits(
+                index_id,
+                &[split_id_1, "non-existent-split"],
+                CheckpointDelta::from(18..24),
+            )
             .await
             .unwrap_err();
         assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
@@ -384,7 +409,7 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1])
+            .publish_splits(index_id, &[split_id_1], CheckpointDelta::from(18..24))
             .await
             .unwrap();
         assert!(matches!(result, ()));
@@ -396,7 +421,11 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1, "non-existent-split"])
+            .publish_splits(
+                index_id,
+                &[split_id_1, "non-existent-split"],
+                CheckpointDelta::from(24..26),
+            )
             .await
             .unwrap_err();
         assert!(matches!(result, MetastoreError::SplitIsNotStaged { .. }));
@@ -426,7 +455,11 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1, split_id_2])
+            .publish_splits(
+                index_id,
+                &[split_id_1, split_id_2],
+                CheckpointDelta::from(24..26),
+            )
             .await
             .unwrap();
         assert!(matches!(result, ()));
@@ -456,13 +489,17 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_2])
+            .publish_splits(index_id, &[split_id_2], CheckpointDelta::from(26..28))
             .await
             .unwrap();
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1, split_id_2])
+            .publish_splits(
+                index_id,
+                &[split_id_1, split_id_2],
+                CheckpointDelta::from(28..30),
+            )
             .await
             .unwrap();
         assert!(matches!(result, ()));
@@ -492,16 +529,27 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1, split_id_2])
+            .publish_splits(
+                index_id,
+                &[split_id_1, split_id_2],
+                CheckpointDelta::from(30..31),
+            )
             .await
             .unwrap();
         assert!(matches!(result, ()));
 
-        let result = metastore
-            .publish_splits(index_id, &[split_id_1, split_id_2])
+        let publish_error = metastore
+            .publish_splits(
+                index_id,
+                &[split_id_1, split_id_2],
+                CheckpointDelta::from(30..31),
+            )
             .await
-            .unwrap();
-        assert!(matches!(result, ()));
+            .unwrap_err();
+        assert!(matches!(
+            publish_error,
+            MetastoreError::IncompatibleCheckpointDelta(_)
+        ));
 
         let result = metastore.delete_index(index_id).await.unwrap();
         assert!(matches!(result, ()));
@@ -516,6 +564,7 @@ pub async fn test_metastore_mark_splits_as_deleted(metastore: &dyn Metastore) {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
         index_config: Arc::new(AllFlattenIndexConfig::default()),
+        checkpoint: Checkpoint::default(),
     };
 
     let split_id_1 = "one";
@@ -527,7 +576,7 @@ pub async fn test_metastore_mark_splits_as_deleted(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec![],
+        ..Default::default()
     };
 
     // Mark a split as deleted on a non-existent index
@@ -590,6 +639,7 @@ pub async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
         index_config: Arc::new(AllFlattenIndexConfig::default()),
+        checkpoint: Checkpoint::default(),
     };
 
     let split_id_1 = "one";
@@ -601,7 +651,7 @@ pub async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec![],
+        ..Default::default()
     };
 
     // Delete a split as deleted on a non-existent index
@@ -700,7 +750,7 @@ pub async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
         assert!(matches!(result, ()));
 
         let result = metastore
-            .publish_splits(index_id, &[split_id_1])
+            .publish_splits(index_id, &[split_id_1], CheckpointDelta::from(0..5))
             .await
             .unwrap();
         assert!(matches!(result, ()));
@@ -724,6 +774,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
         index_config: Arc::new(AllFlattenIndexConfig::default()),
+        checkpoint: Checkpoint::default(),
     };
 
     let split_id_1 = "one";
@@ -735,7 +786,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec![],
+        ..Default::default()
     };
 
     let split_metadata_2 = SplitMetadata {
@@ -746,7 +797,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(100, 199)),
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec![],
+        ..Default::default()
     };
 
     let split_metadata_3 = SplitMetadata {
@@ -757,7 +808,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(200, 299)),
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec![],
+        ..Default::default()
     };
 
     let split_metadata_4 = SplitMetadata {
@@ -768,7 +819,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(300, 399)),
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec![],
+        ..Default::default()
     };
 
     let split_metadata_5 = SplitMetadata {
@@ -779,7 +830,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         time_range: None,
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec![],
+        ..Default::default()
     };
 
     // List all splits on a non-existent index
@@ -853,6 +904,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
         index_config: Arc::new(AllFlattenIndexConfig::default()),
+        checkpoint: Checkpoint::default(),
     };
 
     let split_id_1 = "one";
@@ -865,6 +917,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         generation: 3,
         update_timestamp: current_timestamp,
         tags: vec!["foo".to_string(), "bar".to_string()],
+        ..Default::default()
     };
 
     let split_metadata_2 = SplitMetadata {
@@ -876,6 +929,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         generation: 3,
         update_timestamp: current_timestamp,
         tags: vec!["bar".to_string()],
+        ..Default::default()
     };
 
     let split_metadata_3 = SplitMetadata {
@@ -887,6 +941,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         generation: 3,
         update_timestamp: current_timestamp,
         tags: vec!["foo".to_string(), "baz".to_string()],
+        ..Default::default()
     };
 
     let split_metadata_4 = SplitMetadata {
@@ -898,6 +953,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         generation: 3,
         update_timestamp: current_timestamp,
         tags: vec!["foo".to_string()],
+        ..Default::default()
     };
 
     let split_metadata_5 = SplitMetadata {
@@ -909,6 +965,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         generation: 3,
         update_timestamp: current_timestamp,
         tags: vec!["baz".to_string(), "biz".to_string()],
+        ..Default::default()
     };
 
     // List all splits on a non-existent index
@@ -1374,6 +1431,7 @@ pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
         index_id: index_id.to_string(),
         index_uri: "ram://indexes/my-index".to_string(),
         index_config: Arc::new(AllFlattenIndexConfig::default()),
+        checkpoint: Checkpoint::default(),
     };
 
     let split_id = "one";
@@ -1385,7 +1443,7 @@ pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
         time_range: Some(RangeInclusive::new(0, 99)),
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec![],
+        ..Default::default()
     };
 
     // Create an index
@@ -1407,7 +1465,7 @@ pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
     // wait for 1s, publish split & check `update_timestamp`
     sleep(Duration::from_secs(1)).await;
     metastore
-        .publish_splits(index_id, &[split_id])
+        .publish_splits(index_id, &[split_id], CheckpointDelta::from(0..5))
         .await
         .unwrap();
     let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
@@ -1432,6 +1490,7 @@ pub async fn test_metastore_storage_failing(metastore: &dyn Metastore) {
         index_id: index_id.to_string(),
         index_uri: "ram://my-indexes/my-index".to_string(),
         index_config: Arc::new(AllFlattenIndexConfig::default()),
+        checkpoint: Checkpoint::default(),
     };
 
     let split_id = "one";
@@ -1443,7 +1502,7 @@ pub async fn test_metastore_storage_failing(metastore: &dyn Metastore) {
         time_range: None,
         generation: 3,
         update_timestamp: current_timestamp,
-        tags: vec![],
+        ..Default::default()
     };
 
     // create index
@@ -1457,7 +1516,7 @@ pub async fn test_metastore_storage_failing(metastore: &dyn Metastore) {
 
     // publish split fails
     let result = metastore
-        .publish_splits(index_id, &[split_id])
+        .publish_splits(index_id, &[split_id], CheckpointDelta::default())
         .await
         .unwrap_err();
     assert!(matches!(result, MetastoreError::InternalError { .. }));

@@ -20,7 +20,6 @@
 
 use std::io;
 use std::path::Path;
-use std::path::PathBuf;
 
 use crate::models::IndexedSplit;
 use crate::models::PackagedSplit;
@@ -32,9 +31,13 @@ use quickwit_actors::QueueCapacity;
 use quickwit_actors::SyncActor;
 use quickwit_common::HOTCACHE_FILENAME;
 use quickwit_directories::write_hotcache;
+use quickwit_storage::BundleStorageBuilder;
+use quickwit_storage::BundleStorageOffsets;
+use quickwit_storage::FileStatistics;
+use quickwit_storage::BUNDLE_FILENAME;
 use tantivy::SegmentId;
 use tantivy::SegmentMeta;
-use tracing::info;
+use tracing::{debug, info};
 
 pub struct Packager {
     uploader_mailbox: Mailbox<PackagedSplit>,
@@ -81,7 +84,7 @@ fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
 /// It consists in several sequentials phases mixing both
 /// CPU and IO, the longest once being the serialization of
 /// the inverted index. This phase is CPU bound.
-fn commit_split(split: &mut IndexedSplit, ctx: &ActorContext<Packager>) -> anyhow::Result<()> {
+fn commit_split(split: &mut IndexedSplit, ctx: &ActorContext<IndexedSplit>) -> anyhow::Result<()> {
     info!(index=%split.index_id, split=?split, "commit-split");
     let _protected_zone_guard = ctx.protect_zone();
     split
@@ -91,10 +94,10 @@ fn commit_split(split: &mut IndexedSplit, ctx: &ActorContext<Packager>) -> anyho
     Ok(())
 }
 
-fn list_files_to_upload(
+fn create_file_bundle(
     segment_metas: &[SegmentMeta],
     scratch_dir: &Path,
-) -> anyhow::Result<Vec<(PathBuf, u64)>> {
+) -> anyhow::Result<(BundleStorageOffsets, FileStatistics)> {
     let mut files_to_upload = Vec::new();
     // list the segment files
     for segment_meta in segment_metas {
@@ -120,6 +123,13 @@ fn list_files_to_upload(
             }
         }
     }
+
+    // create bundle
+    let bundle_path = scratch_dir.join(BUNDLE_FILENAME);
+    debug!("Creating Bundle {:?}", bundle_path,);
+
+    let mut create_bundle = BundleStorageBuilder::new(&bundle_path)?;
+
     // We also need the meta.json file and the hotcache. Contrary to segment files,
     // we return an error here if they are missing.
     for relative_path in [Path::new("meta.json"), Path::new(HOTCACHE_FILENAME)]
@@ -127,15 +137,12 @@ fn list_files_to_upload(
         .cloned()
     {
         let filepath = scratch_dir.join(&relative_path);
-        let metadata = std::fs::metadata(&filepath).with_context(|| {
-            format!(
-                "Failed to read metadata of mandatory file `{}`.",
-                relative_path.display(),
-            )
-        })?;
-        files_to_upload.push((filepath, metadata.len()));
+        create_bundle.add_file(&filepath)?;
     }
-    Ok(files_to_upload)
+    let file_statistics = create_bundle.file_statistics();
+
+    let bundle_storage_offsets = create_bundle.finalize()?;
+    Ok((bundle_storage_offsets, file_statistics))
 }
 
 /// If necessary, merge all segments and returns a PackagedSplit.
@@ -144,7 +151,7 @@ fn list_files_to_upload(
 /// which potentially olds a lot of RAM.
 fn merge_segments_if_required(
     split: &mut IndexedSplit,
-    ctx: &ActorContext<Packager>,
+    ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<Vec<SegmentMeta>> {
     info!("merge-segments-if-required");
     let segment_metas_before_merge = split.index.searchable_segment_metas()?;
@@ -184,22 +191,26 @@ fn create_packaged_split(
         .iter()
         .map(|segment_meta| segment_meta.id())
         .collect();
-    let files_to_upload = list_files_to_upload(segment_metas, split.split_scratch_directory.path())
-        .with_context(|| {
-            format!(
-                "Failed to identify files for upload in packaging for split `{}`.",
-                split.split_id
-            )
-        })?;
+    let (bundle_offsets, file_statistics) =
+        create_file_bundle(segment_metas, split.split_scratch_directory.path()).with_context(
+            || {
+                format!(
+                    "Failed to identify files for upload in packaging for split `{}`.",
+                    split.split_id
+                )
+            },
+        )?;
     let packaged_split = PackagedSplit {
-        index_id: split.index_id.clone(),
+        index_id: split.index_id,
         split_id: split.split_id.to_string(),
+        checkpoint_delta: split.checkpoint_delta,
         split_scratch_directory: split.split_scratch_directory,
         num_docs,
         segment_ids,
-        time_range: split.time_range.clone(),
+        time_range: split.time_range,
         size_in_bytes: split.docs_size_in_bytes,
-        files_to_upload,
+        bundle_offsets,
+        file_statistics,
     };
     Ok(packaged_split)
 }
@@ -208,7 +219,7 @@ impl SyncActor for Packager {
     fn process_message(
         &mut self,
         mut split: IndexedSplit,
-        ctx: &ActorContext<Self>,
+        ctx: &ActorContext<IndexedSplit>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
@@ -227,6 +238,7 @@ mod tests {
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::ObservationType;
     use quickwit_actors::Universe;
+    use quickwit_metastore::checkpoint::CheckpointDelta;
     use tantivy::doc;
     use tantivy::schema::Schema;
     use tantivy::schema::FAST;
@@ -269,9 +281,7 @@ mod tests {
                 )
             }
         }
-        // We don't emit the last segment, that's the job of the packager.
-        // In reality, the indexer does not commit at all, but it may emit segments
-        // if its memory budget is reached before the commit policy triggers.
+        // We don't commit, that's the job of the packager.
         //
         // TODO: In the future we would like that kind of segment flush to emit a new split,
         // but this will require work on tantivy.
@@ -285,6 +295,7 @@ mod tests {
             index,
             index_writer,
             split_scratch_directory,
+            checkpoint_delta: CheckpointDelta::from(10..20),
         };
         Ok(indexed_split)
     }

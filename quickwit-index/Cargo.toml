@@ -19,7 +19,7 @@ tokio = { version = "1", features = ["sync"] }
 tracing = "0.1"
 anyhow = "1"
 async-trait = "0.1"
-quickwit-common = {path="../quickwit-common"}
+quickwit-common = {path = "../quickwit-common" }
 quickwit-actors = {path = "../quickwit-actors" }
 quickwit-metastore = {path = "../quickwit-metastore" }
 quickwit-index-config = {path = "../quickwit-index-config", features=["testsuite"]}
@@ -28,6 +28,7 @@ tempfile = "3.2"
 flume = "0.10"
 serde = "1"
 serde_json = "1"
+thiserror = "1"
 
 [dev-dependencies]
 quickwit-metastore = {path = "../quickwit-metastore", features=["testsuite"]}

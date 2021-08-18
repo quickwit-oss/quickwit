@@ -66,13 +66,17 @@ impl AsyncActor for Publisher {
     async fn process_message(
         &mut self,
         uploaded_split_future: Receiver<UploadedSplit>,
-        _ctx: &ActorContext<Self>,
+        _ctx: &ActorContext<Receiver<UploadedSplit>>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         let uploaded_split = uploaded_split_future
             .await
             .with_context(|| "Upload apparently failed")?; //< splits must be published in order, so one uploaded failing means we should fail entirely.
         self.metastore
-            .publish_splits(&uploaded_split.index_id, &[&uploaded_split.split_id])
+            .publish_splits(
+                &uploaded_split.index_id,
+                &[&uploaded_split.split.split_id],
+                uploaded_split.checkpoint_delta,
+            )
             .await
             .with_context(|| "Failed to publish splits")?;
         self.counters.num_published_splits += 1;
@@ -84,7 +88,8 @@ impl AsyncActor for Publisher {
 mod tests {
     use super::*;
     use quickwit_actors::Universe;
-    use quickwit_metastore::MockMetastore;
+    use quickwit_metastore::checkpoint::CheckpointDelta;
+    use quickwit_metastore::{MockMetastore, SplitMetadata};
     use tokio::sync::oneshot;
 
     #[tokio::test]
@@ -94,14 +99,22 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
-            .withf(|index_id, split_ids| index_id == "index" && split_ids[..] == ["split1"])
+            .withf(|index_id, split_ids, checkpoint_delta| {
+                index_id == "index"
+                    && split_ids[..] == ["split1"]
+                    && checkpoint_delta == &CheckpointDelta::from(1..3)
+            })
             .times(1)
-            .returning(|_, _| Ok(()));
+            .returning(|_, _, _| Ok(()));
         mock_metastore
             .expect_publish_splits()
-            .withf(|index_id, split_ids| index_id == "index" && split_ids[..] == ["split2"])
+            .withf(|index_id, split_ids, checkpoint_delta| {
+                index_id == "index"
+                    && split_ids[..] == ["split2"]
+                    && checkpoint_delta == &CheckpointDelta::from(3..7)
+            })
             .times(1)
-            .returning(|_, _| Ok(()));
+            .returning(|_, _, _| Ok(()));
         let publisher = Publisher::new(Arc::new(mock_metastore));
         let (publisher_mailbox, publisher_handle) = universe.spawn(publisher);
         let (split_future_tx1, split_future_rx1) = oneshot::channel::<UploadedSplit>();
@@ -118,13 +131,21 @@ mod tests {
         assert!(split_future_tx2
             .send(UploadedSplit {
                 index_id: "index".to_string(),
-                split_id: "split2".to_string(),
+                split: SplitMetadata {
+                    split_id: "split2".to_string(),
+                    ..Default::default()
+                },
+                checkpoint_delta: CheckpointDelta::from(3..7),
             })
             .is_ok());
         assert!(split_future_tx1
             .send(UploadedSplit {
                 index_id: "index".to_string(),
-                split_id: "split1".to_string(),
+                split: SplitMetadata {
+                    split_id: "split1".to_string(),
+                    ..Default::default()
+                },
+                checkpoint_delta: CheckpointDelta::from(1..3),
             })
             .is_ok());
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;

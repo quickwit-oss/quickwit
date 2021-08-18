@@ -54,7 +54,7 @@ impl SyncActor for PingReceiverSyncActor {
     fn process_message(
         &mut self,
         _message: Self::Message,
-        _ctx: &ActorContext<Self>,
+        _ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
         self.ping_count += 1;
         Ok(())
@@ -86,7 +86,7 @@ impl AsyncActor for PingReceiverAsyncActor {
     async fn process_message(
         &mut self,
         _message: Self::Message,
-        _progress: &ActorContext<Self>,
+        _progress: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
         self.ping_count += 1;
         Ok(())
@@ -131,7 +131,7 @@ impl AsyncActor for PingerAsyncSenderActor {
     async fn process_message(
         &mut self,
         message: SenderMessage,
-        _ctx: &ActorContext<Self>,
+        _ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
         match message {
             SenderMessage::AddPeer(peer) => {
@@ -256,7 +256,7 @@ impl AsyncActor for BuggyActor {
     async fn process_message(
         &mut self,
         message: BuggyMessage,
-        ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
         match message {
             BuggyMessage::Block => {
@@ -372,7 +372,7 @@ impl AsyncActor for LoopingActor {
     async fn process_message(
         &mut self,
         message: Self::Message,
-        _ctx: &ActorContext<Self>,
+        _ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
         match message {
             Msg::Looping => {
@@ -390,7 +390,7 @@ impl SyncActor for LoopingActor {
     fn process_message(
         &mut self,
         message: Self::Message,
-        ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
         match message {
             Msg::Looping => {

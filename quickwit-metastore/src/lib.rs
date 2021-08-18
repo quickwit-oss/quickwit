@@ -26,6 +26,9 @@
 - single file metastore
 etc.
 */
+
+#[allow(missing_docs)]
+pub mod checkpoint;
 mod error;
 mod metastore;
 mod metastore_resolver;
