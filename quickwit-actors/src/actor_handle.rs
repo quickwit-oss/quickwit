@@ -32,7 +32,7 @@ use tracing::error;
 
 /// An Actor Handle serves as an address to communicate with an actor.
 pub struct ActorHandle<A: Actor> {
-    actor_context: ActorContext<A>,
+    actor_context: ActorContext<A::Message>,
     last_state: watch::Receiver<A::ObservableState>,
     join_handle: JoinHandle<ActorExitStatus>,
 }
@@ -50,7 +50,7 @@ impl<A: Actor> ActorHandle<A> {
     pub(crate) fn new(
         last_state: watch::Receiver<A::ObservableState>,
         join_handle: JoinHandle<ActorExitStatus>,
-        ctx: ActorContext<A>,
+        ctx: ActorContext<A::Message>,
     ) -> Self {
         let mut interval = tokio::time::interval(crate::HEARTBEAT);
         let ctx_clone = ctx.clone();
@@ -241,7 +241,7 @@ mod tests {
         fn process_message(
             &mut self,
             _message: Self::Message,
-            _ctx: &ActorContext<Self>,
+            _ctx: &ActorContext<Self::Message>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
             panic!("Oops");
@@ -253,7 +253,7 @@ mod tests {
         async fn process_message(
             &mut self,
             _message: Self::Message,
-            _ctx: &ActorContext<Self>,
+            _ctx: &ActorContext<Self::Message>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
             panic!("Oops");
@@ -277,7 +277,7 @@ mod tests {
         fn process_message(
             &mut self,
             _message: Self::Message,
-            _ctx: &ActorContext<Self>,
+            _ctx: &ActorContext<Self::Message>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
             Err(ActorExitStatus::DownstreamClosed)
@@ -289,7 +289,7 @@ mod tests {
         async fn process_message(
             &mut self,
             _message: Self::Message,
-            _ctx: &ActorContext<Self>,
+            _ctx: &ActorContext<Self::Message>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
             Err(ActorExitStatus::DownstreamClosed)
