@@ -66,7 +66,7 @@ pub struct IndexerCounters {
     pub num_docs_in_split: u64,
 }
 
-struct ImmutableState {
+struct IndexerState {
     index_id: String,
     index_config: Arc<dyn IndexConfig>,
     commit_policy: CommitPolicy, //< TODO should move into the index config.
@@ -84,7 +84,7 @@ enum PrepareDocumentOutcome {
     },
 }
 
-impl ImmutableState {
+impl IndexerState {
     fn create_indexed_split(&self) -> anyhow::Result<IndexedSplit> {
         let schema = self.index_config.schema();
         let indexed_split = IndexedSplit::new_in_dir(
@@ -160,6 +160,10 @@ impl ImmutableState {
         ctx: &ActorContext<Indexer>,
     ) -> Result<(), ActorExitStatus> {
         let indexed_split = self.get_or_create_current_indexed_split(current_split_opt, ctx)?;
+        indexed_split
+            .checkpoint_delta
+            .add(batch.checkpoint_delta)
+            .with_context(|| "Batch delta does not follow indexer checkpoint")?;
         for doc_json in batch.docs {
             counters.overall_num_bytes += doc_json.len() as u64;
             indexed_split.docs_size_in_bytes += doc_json.len() as u64;
@@ -189,7 +193,7 @@ impl ImmutableState {
 }
 
 pub struct Indexer {
-    immutable_state: ImmutableState,
+    indexer_state: IndexerState,
     packager_mailbox: Mailbox<IndexedSplit>,
     current_split_opt: Option<IndexedSplit>,
     counters: IndexerCounters,
@@ -227,14 +231,14 @@ impl SyncActor for Indexer {
     ) -> Result<(), ActorExitStatus> {
         match indexer_message {
             IndexerMessage::Batch(batch) => {
-                self.immutable_state.process_batch(
+                self.indexer_state.process_batch(
                     batch,
                     &mut self.current_split_opt,
                     &mut self.counters,
                     ctx,
                 )?;
                 if self.counters.num_docs_in_split
-                    >= self.immutable_state.commit_policy.num_docs_threshold
+                    >= self.indexer_state.commit_policy.num_docs_threshold
                 {
                     self.send_to_packager(CommitTrigger::NumDocsLimit, ctx)?;
                 }
@@ -268,10 +272,7 @@ impl SyncActor for Indexer {
             | ActorExitStatus::Failure(_)
             | ActorExitStatus::Panicked => return Ok(()),
             ActorExitStatus::Quit | ActorExitStatus::Success => {
-                self.send_to_packager(CommitTrigger::NoMoreDocs, ctx)
-                    .with_context(|| {
-                        "Failed to send a last message to packager upon finalize method"
-                    })?;
+                self.send_to_packager(CommitTrigger::NoMoreDocs, ctx)?;
             }
         }
         Ok(())
@@ -303,7 +304,7 @@ impl Indexer {
         let schema = index_config.schema();
         let timestamp_field_opt = index_config.timestamp_field(&schema);
         Ok(Indexer {
-            immutable_state: ImmutableState {
+            indexer_state: IndexerState {
                 index_id,
                 index_config,
                 indexing_scratch_directory,
@@ -346,6 +347,7 @@ mod tests {
     use crate::models::RawDocBatch;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::Universe;
+    use quickwit_metastore::checkpoint::CheckpointDelta;
 
     use super::Indexer;
 
@@ -361,7 +363,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_indexer_counters() -> anyhow::Result<()> {
+    async fn test_indexer_simple() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let commit_policy = CommitPolicy {
@@ -388,6 +390,7 @@ mod tests {
                         r#"{"body": "happy2", "timestamp": 1628837062}"#.to_string(), // ok
                         "{".to_string(),                    // invalid json
                     ],
+                    checkpoint_delta: CheckpointDelta::from(0..4),
                 }
                 .into(),
             )
@@ -407,7 +410,8 @@ mod tests {
             .send_message(
                 &indexer_mailbox,
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy3", "timestamp": 1628837062}"#.to_string()], // ok
+                    docs: vec![r#"{"body": "happy3", "timestamp": 1628837062}"#.to_string()],
+                    checkpoint_delta: CheckpointDelta::from(4..5),
                 }
                 .into(),
             )
@@ -452,6 +456,7 @@ mod tests {
                 &indexer_mailbox,
                 RawDocBatch {
                     docs: vec![r#"{"body": "happy", "timestamp": 1628837062}"#.to_string()],
+                    checkpoint_delta: CheckpointDelta::from(0..1),
                 }
                 .into(),
             )
@@ -505,6 +510,7 @@ mod tests {
                 &indexer_mailbox,
                 RawDocBatch {
                     docs: vec![r#"{"body": "happy", "timestamp": 1628837062}"#.to_string()],
+                    checkpoint_delta: CheckpointDelta::from(0..1),
                 }
                 .into(),
             )

@@ -183,8 +183,9 @@ async fn run_upload(
         .await?;
     put_split_files_to_storage(&split, split_metadata, &*split_storage).await?;
     Ok(UploadedSplit {
-        index_id: split.index_id.clone(),
+        index_id: split.index_id,
         split_id: split.split_id,
+        checkpoint_delta: split.checkpoint_delta,
     })
 }
 
@@ -230,13 +231,13 @@ impl AsyncActor for Uploader {
 
 #[cfg(test)]
 mod tests {
+    use crate::models::ScratchDirectory;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::ObservationType;
     use quickwit_actors::Universe;
+    use quickwit_metastore::checkpoint::CheckpointDelta;
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
-
-    use crate::models::ScratchDirectory;
 
     use super::*;
 
@@ -279,6 +280,7 @@ mod tests {
                 PackagedSplit {
                     split_id: "test-split".to_string(),
                     index_id: "test-index".to_string(),
+                    checkpoint_delta: CheckpointDelta::from(3..15),
                     time_range: Some(1_628_203_589i64..=1_628_203_640i64),
                     size_in_bytes: 1_000,
                     files_to_upload,
@@ -300,7 +302,8 @@ mod tests {
             &uploaded_split,
             &UploadedSplit {
                 index_id: "test-index".to_string(),
-                split_id: "test-split".to_string()
+                split_id: "test-split".to_string(),
+                checkpoint_delta: CheckpointDelta::from(3..15),
             }
         );
         let mut files = ram_storage.list_files().await;
