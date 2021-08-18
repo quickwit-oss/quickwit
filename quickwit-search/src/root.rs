@@ -212,7 +212,7 @@ pub async fn root_search(
     // Create a hash map of SplitMetadata with split id as a key.
     let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
         .into_iter()
-        .map(|split_metadata| (split_metadata.split_id.clone(), split_metadata))
+        .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata.split_metadata))
         .collect();
 
     // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
@@ -434,22 +434,25 @@ mod tests {
     use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::SplitSearchError;
     use quickwit_storage::BundleStorageOffsets;
-
+    use quickwit_metastore::BundleAndSplitMetadata;
     use crate::{MockSearchService, SearchResultJson};
 
-    fn mock_split_meta(split_id: &str) -> SplitMetadata {
-        SplitMetadata {
-            split_id: split_id.to_string(),
-            split_state: SplitState::Published,
-            num_records: 10,
-            size_in_bytes: 256,
-            time_range: None,
-            generation: 1,
-            update_timestamp: 0,
-            bundle_offsets: BundleStorageOffsets {
-                footer_offsets: 400..500,
-                hotcache_offset_start: 1234,
-                bundle_file_size: 9001,
+    fn mock_split_meta(split_id: &str) -> BundleAndSplitMetadata {
+        BundleAndSplitMetadata {
+            bundle_offsets: Default::default(),
+            split_metadata: SplitMetadata {
+                split_id: split_id.to_string(),
+                split_state: SplitState::Published,
+                num_records: 10,
+                size_in_bytes: 256,
+                time_range: None,
+                generation: 1,
+                update_timestamp: 0,
+                bundle_offsets: BundleStorageOffsets {
+                    footer_offsets: 700..800,
+                    hotcache_offset_start: 1234,
+                    bundle_file_size: 9001,
+                },
             },
         }
     }

@@ -213,7 +213,7 @@ pub struct BundleStorageBuilder {
     bundle_file: File,
 }
 
-/// Contains hotcache and footer offset.
+/// Contains hotcache and footer offset used for single reads of hotcache and footer.
 #[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
 pub struct BundleStorageOffsets {
     /// The offset in the file where the hotcache begins. This is used to read
