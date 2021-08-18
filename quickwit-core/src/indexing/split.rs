@@ -75,6 +75,8 @@ pub struct Split {
     pub metastore: Arc<dyn Metastore>,
     /// The timestamp field
     pub timestamp_field: Option<Field>,
+    /// The field to extract tags from.
+    pub tag_fields: Vec<Field>,
 }
 
 impl fmt::Debug for Split {
@@ -111,6 +113,7 @@ impl Split {
         metastore: Arc<dyn Metastore>,
         schema: Schema,
         timestamp_field: Option<Field>,
+        tag_fields: Vec<Field>,
     ) -> anyhow::Result<Self> {
         let id = Uuid::new_v4();
         let split_scratch_dir = Box::new(tempfile::tempdir_in(params.temp_dir.path())?);
@@ -141,12 +144,13 @@ impl Split {
             storage,
             metastore,
             timestamp_field,
+            tag_fields,
         })
     }
 
     /// Add document to the index split.
-    pub fn add_document(&mut self, doc: Document) -> anyhow::Result<()> {
-        self.update_metadata(&doc)?;
+    pub fn add_document(&mut self, doc: Document, doc_size: usize) -> anyhow::Result<()> {
+        self.update_metadata(&doc, doc_size)?;
         self.index_writer
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing index writer."))?
@@ -154,8 +158,13 @@ impl Split {
         Ok(())
     }
 
+    /// Increment document parse errors.
+    pub fn add_parse_error(&mut self) {
+        self.num_parsing_errors += 1;
+    }
+
     /// Update the split metadata (num_records, time_range) based on incomming document.
-    fn update_metadata(&mut self, doc: &Document) -> anyhow::Result<()> {
+    fn update_metadata(&mut self, doc: &Document, doc_size: usize) -> anyhow::Result<()> {
         if let Some(timestamp_field) = self.timestamp_field {
             let split_time_range =
                 self.metadata.time_range.as_mut().with_context(|| {
@@ -171,6 +180,17 @@ impl Split {
                 );
             }
         };
+
+        for tag_field in self.tag_fields {
+            if let Some(tag_value) = doc.get_first(tag_field)
+            .and_then(|field_value| field_value.text())
+            .map(|value| String::from(value)) {
+                //Thinking tags should be a HashSet
+                self.metadata.tags.push(tag_value);
+            }
+        }
+
+        self.metadata.size_in_bytes += doc_size as u64;
         self.metadata.num_records += 1;
         Ok(())
     }
@@ -438,11 +458,12 @@ mod tests {
             metastore,
             schema,
             None,
+            vec![],
         )
         .await?;
 
         for _ in 0..20 {
-            split.add_document(Document::default())?;
+            split.add_document(Document::default(), 0)?;
         }
         assert_eq!(split.metadata.num_records, 20);
         assert_eq!(split.metadata.time_range, None);
@@ -450,7 +471,7 @@ mod tests {
         assert!(!split.has_enough_docs());
 
         for _ in 0..90 {
-            split.add_document(Document::default())?;
+            split.add_document(Document::default(), 0)?;
         }
         assert_eq!(split.metadata.num_records, 110);
         assert_eq!(split.metadata.time_range, None);
@@ -505,6 +526,7 @@ mod tests {
             metastore,
             schema.clone(),
             Some(timestamp),
+            vec![],
         )
         .await;
         assert!(split_result.is_ok());
@@ -519,7 +541,7 @@ mod tests {
         ];
 
         for doc in docs {
-            split.add_document(schema.parse_document(doc)?)?;
+            split.add_document(schema.parse_document(doc)?, doc.as_bytes().len())?;
         }
 
         assert_eq!(split.metadata.num_records, 5);

@@ -23,6 +23,7 @@
 use crate::DocParsingError;
 use dyn_clone::clone_trait_object;
 use dyn_clone::DynClone;
+use itertools::Itertools;
 use quickwit_proto::SearchRequest;
 use std::fmt::Debug;
 use tantivy::query::Query;
@@ -102,6 +103,21 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     fn timestamp_field_name(&self) -> Option<String> {
         None
     }
+
+    /// Returns the tag field names
+    fn tag_field_names(&self) -> Vec<String> {
+        vec![]
+    }
+
+    /// Returns the tag fields
+    fn tag_fields(&self, split_schema: &Schema) -> Vec<Field> {
+        self.tag_field_names().iter()
+            .map(|field_name| split_schema.get_field(&field_name))
+            .filter(|field_opt| field_opt.is_some())
+            .map(|field_opt| field_opt.unwrap())
+            .collect_vec()
+    }
+
 }
 
 clone_trait_object!(IndexConfig);
