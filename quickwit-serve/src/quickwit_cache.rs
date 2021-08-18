@@ -61,7 +61,7 @@ impl QuickwitCache {
     }
 
     pub fn add_route(&mut self, path_suffix: &'static str, route_cache: Arc<dyn Cache>) {
-        self.router.push((path_suffix, route_cache.into()));
+        self.router.push((path_suffix, route_cache));
     }
 
     fn get_relevant_cache(&self, path: &Path) -> Option<&dyn Cache> {
