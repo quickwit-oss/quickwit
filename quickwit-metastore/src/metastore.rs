@@ -29,6 +29,7 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use chrono::Utc;
 use quickwit_index_config::IndexConfig;
+use quickwit_storage::BundleStorageOffsets;
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};
@@ -48,8 +49,17 @@ pub struct IndexMetadata {
     pub checkpoint: Checkpoint,
 }
 
+/// Carries split and bundle offsets for single read metadata.
+#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
+pub struct BundleAndSplitMetadata {
+    /// A split metadata carries all meta data about a split.
+    pub split_metadata: SplitMetadata,
+    /// Contains hotcache and footer offset used for single reads of hotcache and footer.
+    pub bundle_offsets: BundleStorageOffsets,
+}
+
 /// A split metadata carries all meta data about a split.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
 pub struct SplitMetadata {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -65,6 +75,9 @@ pub struct SplitMetadata {
     /// Note this is not the split file size. It is the size of the original
     /// JSON payloads.
     pub size_in_bytes: u64,
+
+    /// The bundle offsets. Used for single read of hotcache and bundle footer.
+    pub bundle_offsets: BundleStorageOffsets,
 
     /// If a timestamp field is available, the min / max timestamp in the split.
     pub time_range: Option<RangeInclusive<i64>>,
@@ -87,6 +100,7 @@ impl SplitMetadata {
             split_state: SplitState::New,
             num_records: 0,
             size_in_bytes: 0,
+            bundle_offsets: BundleStorageOffsets::default(),
             time_range: None,
             generation: 0,
             update_timestamp: Utc::now().timestamp(),
@@ -95,7 +109,7 @@ impl SplitMetadata {
 }
 
 /// A split state.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SplitState {
     /// The split is newly created.
     New,
@@ -110,13 +124,19 @@ pub enum SplitState {
     ScheduledForDeletion,
 }
 
+impl Default for SplitState {
+    fn default() -> Self {
+        Self::New
+    }
+}
+
 /// A MetadataSet carries an index metadata and its split metadata.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetadataSet {
     /// Metadata specific to the index.
     pub index: IndexMetadata,
     /// List of splits belonging to the index.
-    pub splits: HashMap<String, SplitMetadata>,
+    pub splits: HashMap<String, BundleAndSplitMetadata>,
 }
 
 /// Metastore meant to manage Quickwit's indexes and their splits.
@@ -171,7 +191,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn stage_split(
         &self,
         index_id: &str,
-        split_metadata: SplitMetadata,
+        split_metadata: BundleAndSplitMetadata,
     ) -> MetastoreResult<()>;
 
     /// Publishes a list splits.
@@ -195,11 +215,12 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
         split_state: SplitState,
         time_range: Option<Range<i64>>,
-    ) -> MetastoreResult<Vec<SplitMetadata>>;
+    ) -> MetastoreResult<Vec<BundleAndSplitMetadata>>;
 
     /// Lists the splits without filtering.
     /// Returns a list of all splits currently known to the metastore regardless of their state.
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitMetadata>>;
+    async fn list_all_splits(&self, index_id: &str)
+        -> MetastoreResult<Vec<BundleAndSplitMetadata>>;
 
     /// Marks a list of splits as deleted.
     /// This API will change the state to `ScheduledForDeletion` so that it is not referenced by the client.

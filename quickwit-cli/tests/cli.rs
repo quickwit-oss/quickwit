@@ -259,10 +259,10 @@ async fn test_cmd_garbage_collect() -> Result<()> {
 
     let split_path = test_env
         .local_directory_path
-        .join(splits[0].split_id.as_str());
+        .join(splits[0].split_metadata.split_id.as_str());
     assert_eq!(split_path.exists(), true);
 
-    let split_ids = vec![splits[0].split_id.as_str()];
+    let split_ids = vec![splits[0].split_metadata.split_id.as_str()];
     metastore
         .mark_splits_as_deleted(index_id, &split_ids)
         .await?;
@@ -327,19 +327,19 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
 
     let split_path = test_env
         .local_directory_path
-        .join(splits[0].split_id.as_str());
+        .join(splits[0].split_metadata.split_id.as_str());
     assert_eq!(split_path.exists(), true);
 
     // The following steps help turn an existing published split into a staged one
     // without deleting the files.
-    let split_ids = vec![splits[0].split_id.as_str()];
+    let split_ids = vec![splits[0].split_metadata.split_id.as_str()];
     metastore
         .mark_splits_as_deleted(index_id, &split_ids)
         .await?;
     metastore.delete_splits(index_id, &split_ids).await?;
-    let mut split_meta = splits[0].clone();
-    split_meta.split_state = SplitState::New;
-    metastore.stage_split(index_id, split_meta).await?;
+    let mut meta = splits[0].clone();
+    meta.split_metadata.split_state = SplitState::New;
+    metastore.stage_split(index_id, meta).await?;
     assert_eq!(split_path.exists(), true);
 
     make_command(format!("gc --index-uri {} --grace-period 2s", test_env.index_uri).as_str())

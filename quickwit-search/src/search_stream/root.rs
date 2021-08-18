@@ -55,7 +55,12 @@ pub async fn root_search_stream(
     let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
     let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
         .into_iter()
-        .map(|split_metadata| (split_metadata.split_id.clone(), split_metadata))
+        .map(|metadata| {
+            (
+                metadata.split_metadata.split_id.clone(),
+                metadata.split_metadata,
+            )
+        })
         .collect();
     let leaf_search_jobs: Vec<Job> =
         job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
@@ -121,19 +126,30 @@ mod tests {
 
     use crate::MockSearchService;
     use quickwit_index_config::WikipediaIndexConfig;
-    use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
+    use quickwit_metastore::{
+        checkpoint::Checkpoint, BundleAndSplitMetadata, IndexMetadata, MockMetastore, SplitState,
+    };
     use quickwit_proto::OutputFormat;
+    use quickwit_storage::BundleStorageOffsets;
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
-    fn mock_split_meta(split_id: &str) -> SplitMetadata {
-        SplitMetadata {
-            split_id: split_id.to_string(),
-            split_state: SplitState::Published,
-            num_records: 10,
-            size_in_bytes: 256,
-            time_range: None,
-            generation: 1,
-            update_timestamp: 0,
+    fn mock_split_meta(split_id: &str) -> BundleAndSplitMetadata {
+        BundleAndSplitMetadata {
+            bundle_offsets: Default::default(),
+            split_metadata: SplitMetadata {
+                split_id: split_id.to_string(),
+                split_state: SplitState::Published,
+                num_records: 10,
+                size_in_bytes: 256,
+                time_range: None,
+                generation: 1,
+                update_timestamp: 0,
+                bundle_offsets: BundleStorageOffsets {
+                    footer_offsets: 700..800,
+                    hotcache_offset_start: 1234,
+                    bundle_file_size: 9001,
+                },
+            },
         }
     }
 

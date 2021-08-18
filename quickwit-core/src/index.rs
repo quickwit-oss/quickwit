@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use quickwit_metastore::{
-    IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadata, SplitState,
+    BundleAndSplitMetadata, IndexMetadata, Metastore, MetastoreUriResolver, SplitState,
 };
 use quickwit_storage::StorageUriResolver;
 use tantivy::chrono::Utc;
@@ -83,7 +83,7 @@ pub async fn delete_index(
     let split_ids = staged_splits
         .iter()
         .chain(published_splits.iter())
-        .map(|split_meta| split_meta.split_id.as_ref())
+        .map(|meta| meta.split_metadata.split_id.as_ref())
         .collect::<Vec<_>>();
     metastore
         .mark_splits_as_deleted(index_id, &split_ids)
@@ -121,7 +121,7 @@ pub async fn garbage_collect_index(
         .await?
         .into_iter()
         // TODO: Update metastore API and push this filter down.
-        .filter(|split_meta| split_meta.update_timestamp < grace_period_timestamp)
+        .filter(|meta| meta.split_metadata.update_timestamp < grace_period_timestamp)
         .collect::<Vec<_>>();
 
     if dry_run {
@@ -137,7 +137,7 @@ pub async fn garbage_collect_index(
     // schedule all staged splits for delete
     let split_ids = staged_splits
         .iter()
-        .map(|split_meta| split_meta.split_id.as_str())
+        .map(|meta| meta.split_metadata.split_id.as_str())
         .collect::<Vec<_>>();
     metastore
         .mark_splits_as_deleted(index_id, &split_ids)
@@ -166,9 +166,9 @@ pub async fn delete_garbage_files(
     let index_uri = metastore.index_metadata(index_id).await?.index_uri;
 
     let mut delete_stream = tokio_stream::iter(splits_to_delete.clone())
-        .map(|split_meta| {
+        .map(|meta| {
             let moved_storage_resolver = storage_resolver.clone();
-            let split_uri = format!("{}/{}", index_uri, split_meta.split_id);
+            let split_uri = format!("{}/{}", index_uri, meta.split_metadata.split_id);
             async move {
                 remove_split_files_from_storage(&split_uri, moved_storage_resolver, false).await
             }
@@ -186,7 +186,7 @@ pub async fn delete_garbage_files(
 
     let split_ids = splits_to_delete
         .iter()
-        .map(|split_meta| split_meta.split_id.as_str())
+        .map(|meta| meta.split_metadata.split_id.as_str())
         .collect::<Vec<_>>();
     metastore.delete_splits(index_id, &split_ids).await?;
 
@@ -195,14 +195,14 @@ pub async fn delete_garbage_files(
 
 /// list the files for a list of split.
 async fn list_splits_files(
-    splits: Vec<SplitMetadata>,
+    splits: Vec<BundleAndSplitMetadata>,
     index_uri: String,
     storage_resolver: StorageUriResolver,
 ) -> anyhow::Result<Vec<FileEntry>> {
     let mut list_stream = tokio_stream::iter(splits)
-        .map(|split_meta| {
+        .map(|meta| {
             let moved_storage_resolver = storage_resolver.clone();
-            let split_uri = format!("{}/{}", index_uri, split_meta.split_id);
+            let split_uri = format!("{}/{}", index_uri, meta.split_metadata.split_id);
             async move {
                 remove_split_files_from_storage(&split_uri, moved_storage_resolver, true).await
             }

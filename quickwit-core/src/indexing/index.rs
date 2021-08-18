@@ -114,7 +114,7 @@ async fn reset_index(
     let splits = metastore.list_all_splits(index_id).await?;
     let split_ids = splits
         .iter()
-        .map(|split_meta| split_meta.split_id.as_str())
+        .map(|meta| meta.split_metadata.split_id.as_str())
         .collect::<Vec<_>>();
     metastore
         .mark_splits_as_deleted(index_id, &split_ids)
