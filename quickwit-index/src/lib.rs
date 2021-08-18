@@ -103,8 +103,8 @@ mod tests {
             });
         metastore
             .expect_stage_split()
-            .withf(move |index_id, split_metadata| -> bool {
-                (index_id == "test-index") && split_metadata.split_state == SplitState::New
+            .withf(move |index_id, metadata| -> bool {
+                (index_id == "test-index") && metadata.split_metadata.split_state == SplitState::New
             })
             .times(1)
             .returning(|_, _| Ok(()));

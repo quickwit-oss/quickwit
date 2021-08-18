@@ -48,7 +48,7 @@ use anyhow::Context;
 use tantivy::DocAddress;
 
 use quickwit_metastore::SplitState;
-use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadata};
+use quickwit_metastore::{BundleAndSplitMetadata, Metastore, MetastoreResult};
 use quickwit_proto::SearchRequest;
 use quickwit_proto::{PartialHit, SearchResult};
 use quickwit_storage::StorageUriResolver;
@@ -61,7 +61,8 @@ use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
 use crate::root::root_search;
 pub use crate::search_result_json::SearchResultJson;
-pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
+pub use crate::service::MockSearchService;
+pub use crate::service::{SearchService, SearchServiceImpl};
 
 /// Compute the SWIM port from the HTTP port.
 /// Add 1 to the HTTP port to get the SWIM port.
@@ -129,7 +130,7 @@ fn extract_time_range(search_request: &SearchRequest) -> Option<Range<i64>> {
 async fn list_relevant_splits(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
-) -> MetastoreResult<Vec<SplitMetadata>> {
+) -> MetastoreResult<Vec<BundleAndSplitMetadata>> {
     let time_range_opt = extract_time_range(search_request);
     let split_metas = metastore
         .list_splits(
@@ -152,10 +153,10 @@ pub async fn single_node_search(
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
-    let split_metas = list_relevant_splits(search_request, metastore).await?;
-    let split_ids: Vec<String> = split_metas
+    let metas = list_relevant_splits(search_request, metastore).await?;
+    let split_ids: Vec<String> = metas
         .iter()
-        .map(|split_meta| split_meta.split_id.clone())
+        .map(|meta| meta.split_metadata.split_id.clone())
         .collect();
     let index_config = index_metadata.index_config;
     let leaf_search_result = leaf_search(

@@ -49,6 +49,15 @@ pub struct IndexMetadata {
     pub checkpoint: Checkpoint,
 }
 
+/// Carries split and bundle offsets for single read metadata.
+#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
+pub struct BundleAndSplitMetadata {
+    /// A split metadata carries all meta data about a split.
+    pub split_metadata: SplitMetadata,
+    /// Contains hotcache and footer offset used for single reads of hotcache and footer.
+    pub bundle_offsets: BundleStorageOffsets,
+}
+
 /// A split metadata carries all meta data about a split.
 #[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
 pub struct SplitMetadata {
@@ -131,7 +140,7 @@ pub struct MetadataSet {
     /// Metadata specific to the index.
     pub index: IndexMetadata,
     /// List of splits belonging to the index.
-    pub splits: HashMap<String, SplitMetadata>,
+    pub splits: HashMap<String, BundleAndSplitMetadata>,
 }
 
 /// Metastore meant to manage Quickwit's indexes and their splits.
@@ -186,7 +195,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn stage_split(
         &self,
         index_id: &str,
-        split_metadata: SplitMetadata,
+        split_metadata: BundleAndSplitMetadata,
     ) -> MetastoreResult<()>;
 
     /// Publishes a list splits.
@@ -211,11 +220,12 @@ pub trait Metastore: Send + Sync + 'static {
         split_state: SplitState,
         time_range: Option<Range<i64>>,
         tags: &[String],
-    ) -> MetastoreResult<Vec<SplitMetadata>>;
+    ) -> MetastoreResult<Vec<BundleAndSplitMetadata>>;
 
     /// Lists the splits without filtering.
     /// Returns a list of all splits currently known to the metastore regardless of their state.
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitMetadata>>;
+    async fn list_all_splits(&self, index_id: &str)
+        -> MetastoreResult<Vec<BundleAndSplitMetadata>>;
 
     /// Marks a list of splits as deleted.
     /// This API will change the state to `ScheduledForDeletion` so that it is not referenced by the client.
