@@ -80,27 +80,30 @@ struct BundleStorageFileOffsets {
 
 impl BundleStorageFileOffsets {
     pub fn file_statistics(&self) -> FileStatistics {
-        let mut file_statistics = FileStatistics::default();
-        file_statistics.min_file_size_in_bytes = self
+        let min_file_size_in_bytes = self
             .files
             .values()
             .map(|range| range.end - range.start)
             .min()
             .unwrap_or(0) as u64;
-        file_statistics.max_file_size_in_bytes = self
+        let max_file_size_in_bytes = self
             .files
             .values()
             .map(|range| range.end - range.start)
             .max()
             .unwrap_or(0) as u64;
-        file_statistics.avg_file_size_in_bytes = self
+        let avg_file_size_in_bytes = self
             .files
             .values()
             .map(|range| range.end - range.start)
             .sum::<usize>() as u64
             / self.files.len() as u64;
 
-        file_statistics
+        FileStatistics {
+            min_file_size_in_bytes,
+            max_file_size_in_bytes,
+            avg_file_size_in_bytes,
+        }
     }
 }
 
@@ -250,7 +253,7 @@ impl BundleStorageBuilder {
         file_name: PathBuf,
     ) -> io::Result<()> {
         let bytes_written = io::copy(&mut read, &mut self.bundle_file)? as usize;
-        if &file_name == Path::new(HOTCACHE_FILENAME) {
+        if file_name == Path::new(HOTCACHE_FILENAME) {
             self.hotcache_offset = self.current_offset;
         }
         self.metadata.files.insert(
