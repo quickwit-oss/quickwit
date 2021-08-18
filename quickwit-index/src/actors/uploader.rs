@@ -126,14 +126,17 @@ async fn put_split_files_to_storage(
         .await?;
 
     let elapsed_secs = start.elapsed().as_secs();
+    let elapsed_ms = start.elapsed().as_millis();
     let file_statistics = split.file_statistics.clone();
+    let split_size_in_megabytes = split.bundle_offsets.bundle_file_size / 1000000;
+    let throughput_mb_s = split_size_in_megabytes as f32 / (elapsed_ms as f32 / 1000.0);
     info!(
         min_file_size_in_bytes = %file_statistics.min_file_size_in_bytes,
         max_file_size_in_bytes = %file_statistics.max_file_size_in_bytes,
         avg_file_size_in_bytes = %file_statistics.avg_file_size_in_bytes,
-        split_size_in_megabytes = %split.bundle_offsets.bundle_file_size / 1000,
+        split_size_in_megabytes = %split_size_in_megabytes,
         elapsed_secs = %elapsed_secs,
-        throughput_mb_s = %split.bundle_offsets.bundle_file_size as u64  / 1000 / elapsed_secs.max(1),
+        throughput_mb_s = %throughput_mb_s,
         "Uploaded split to storage"
     );
 
@@ -149,7 +152,7 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadata {
         generation: 0,
         split_state: SplitState::New,
         update_timestamp: Utc::now().timestamp(),
-        bundle_offsets: Default::default(),
+        bundle_offsets: split.bundle_offsets.clone(),
     }
 }
 
@@ -284,13 +287,10 @@ mod tests {
         assert_eq!(publish_futures.len(), 1);
         let publish_future = publish_futures.into_iter().next().unwrap();
         let uploaded_split = publish_future.await?;
+        assert_eq!(uploaded_split.split.split_id, "test-split".to_string());
         assert_eq!(
-            &uploaded_split,
-            &UploadedSplit {
-                index_id: "test-index".to_string(),
-                split_id: "test-split".to_string(),
-                checkpoint_delta: CheckpointDelta::from(3..15),
-            }
+            uploaded_split.checkpoint_delta,
+            CheckpointDelta::from(3..15),
         );
         let mut files = ram_storage.list_files().await;
         files.sort();
