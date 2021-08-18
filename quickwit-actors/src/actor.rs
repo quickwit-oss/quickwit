@@ -32,7 +32,7 @@ use crate::scheduler::{Callback, SchedulerMessage};
 use crate::{
     actor_state::{ActorState, AtomicState},
     progress::{Progress, ProtectedZoneGuard},
-    AsyncActor, KillSwitch, Mailbox, QueueCapacity, SendError, SyncActor,
+    KillSwitch, Mailbox, QueueCapacity, SendError,
 };
 
 /// The actor exit status represents the outcome of the execution of an actor,
@@ -132,11 +132,11 @@ pub trait Actor: Send + Sync + 'static {
 }
 
 // TODO hide all of this public stuff
-pub struct ActorContext<A: Actor> {
-    inner: Arc<ActorContextInner<A>>,
+pub struct ActorContext<Message> {
+    inner: Arc<ActorContextInner<Message>>,
 }
 
-impl<A: Actor> Clone for ActorContext<A> {
+impl<Message> Clone for ActorContext<Message> {
     fn clone(&self) -> Self {
         ActorContext {
             inner: self.inner.clone(),
@@ -144,25 +144,25 @@ impl<A: Actor> Clone for ActorContext<A> {
     }
 }
 
-impl<A: Actor> Deref for ActorContext<A> {
-    type Target = ActorContextInner<A>;
+impl<Message> Deref for ActorContext<Message> {
+    type Target = ActorContextInner<Message>;
 
     fn deref(&self) -> &Self::Target {
         self.inner.as_ref()
     }
 }
 
-pub struct ActorContextInner<A: Actor> {
-    self_mailbox: Mailbox<A::Message>,
+pub struct ActorContextInner<Message> {
+    self_mailbox: Mailbox<Message>,
     progress: Progress,
     kill_switch: KillSwitch,
     scheduler_mailbox: Mailbox<SchedulerMessage>,
     actor_state: AtomicState,
 }
 
-impl<A: Actor> ActorContext<A> {
+impl<Message> ActorContext<Message> {
     pub(crate) fn new(
-        self_mailbox: Mailbox<A::Message>,
+        self_mailbox: Mailbox<Message>,
         kill_switch: KillSwitch,
         scheduler_mailbox: Mailbox<SchedulerMessage>,
     ) -> Self {
@@ -178,7 +178,7 @@ impl<A: Actor> ActorContext<A> {
         }
     }
 
-    pub fn mailbox(&self) -> &Mailbox<A::Message> {
+    pub fn mailbox(&self) -> &Mailbox<Message> {
         &self.self_mailbox
     }
 
@@ -254,7 +254,7 @@ fn should_activate_kill_switch(exit_status: &ActorExitStatus) -> bool {
     }
 }
 
-impl<A: SyncActor> ActorContext<A> {
+impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
     /// Sends a message in the actor's mailbox.
     ///
     /// This method hides logic to prevent an actor from being identified
@@ -277,7 +277,7 @@ impl<A: SyncActor> ActorContext<A> {
     ///
     /// If the message queue does not have the capacity to accept the message,
     /// instead of blocking forever, we return an error right away.
-    pub fn send_self_message_blocking(&self, msg: A::Message) -> Result<(), crate::SendError> {
+    pub fn send_self_message_blocking(&self, msg: Message) -> Result<(), crate::SendError> {
         debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
         let send_res = self.self_mailbox.try_send_message(msg);
         if let Err(crate::SendError::Full) = &send_res {
@@ -287,7 +287,7 @@ impl<A: SyncActor> ActorContext<A> {
         send_res
     }
 
-    pub fn schedule_self_msg_blocking(&self, after_duration: Duration, msg: A::Message) {
+    pub fn schedule_self_msg_blocking(&self, after_duration: Duration, msg: Message) {
         let self_mailbox = self.inner.self_mailbox.clone();
         let scheduler_msg = SchedulerMessage::ScheduleEvent {
             timeout: after_duration,
@@ -301,7 +301,7 @@ impl<A: SyncActor> ActorContext<A> {
     }
 }
 
-impl<A: AsyncActor> ActorContext<A> {
+impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
     /// `async` version of `send_message`
     pub async fn send_message<M: fmt::Debug>(
         &self,
@@ -314,12 +314,12 @@ impl<A: AsyncActor> ActorContext<A> {
     }
 
     /// `async` version of `send_self_message`
-    pub async fn send_self_message(&self, msg: A::Message) -> Result<(), crate::SendError> {
+    pub async fn send_self_message(&self, msg: Message) -> Result<(), crate::SendError> {
         debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
         self.self_mailbox.send_message(msg).await
     }
 
-    pub async fn schedule_self_msg(&self, after_duration: Duration, msg: A::Message) {
+    pub async fn schedule_self_msg(&self, after_duration: Duration, msg: Message) {
         let self_mailbox = self.inner.self_mailbox.clone();
         let callback = Callback(Box::pin(async move {
             let _ = self_mailbox
@@ -339,7 +339,7 @@ impl<A: AsyncActor> ActorContext<A> {
 pub(crate) fn process_command<A: Actor>(
     actor: &mut A,
     command: Command,
-    ctx: &mut ActorContext<A>,
+    ctx: &mut ActorContext<A::Message>,
     state_tx: &Sender<A::ObservableState>,
 ) -> Option<ActorExitStatus> {
     match command {

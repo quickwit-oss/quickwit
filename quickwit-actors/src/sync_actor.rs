@@ -38,7 +38,7 @@ use crate::{Actor, ActorContext, ActorHandle, KillSwitch, Mailbox, RecvError};
 /// If both the command and the message channel are exhausted, and a command and N messages arrives,
 /// one message is likely to be executed before the command is.
 pub trait SyncActor: Actor + Sized {
-    fn initialize(&mut self, _ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+    fn initialize(&mut self, _ctx: &ActorContext<Self::Message>) -> Result<(), ActorExitStatus> {
         Ok(())
     }
 
@@ -50,7 +50,7 @@ pub trait SyncActor: Actor + Sized {
     fn process_message(
         &mut self,
         message: Self::Message,
-        ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus>;
 
     /// Hook that can be set up to define what should happen upon actor exit.
@@ -64,7 +64,7 @@ pub trait SyncActor: Actor + Sized {
     fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
-        _ctx: &ActorContext<Self>,
+        _ctx: &ActorContext<Self::Message>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -99,7 +99,7 @@ pub(crate) fn spawn_sync_actor<A: SyncActor>(
 fn process_msg<A: Actor + SyncActor>(
     actor: &mut A,
     inbox: &mut Inbox<A::Message>,
-    ctx: &mut ActorContext<A>,
+    ctx: &mut ActorContext<A::Message>,
     state_tx: &Sender<A::ObservableState>,
 ) -> Option<ActorExitStatus> {
     if ctx.kill_switch().is_dead() {
@@ -139,7 +139,7 @@ fn process_msg<A: Actor + SyncActor>(
 fn sync_actor_loop<A: SyncActor>(
     actor: A,
     mut inbox: Inbox<A::Message>,
-    mut ctx: ActorContext<A>,
+    mut ctx: ActorContext<A::Message>,
     state_tx: Sender<A::ObservableState>,
 ) -> ActorExitStatus {
     // We rely on this object internally to fetch a post-mortem state,

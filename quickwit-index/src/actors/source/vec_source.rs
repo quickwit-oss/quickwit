@@ -69,7 +69,7 @@ impl VecSource {
 
 #[async_trait]
 impl AsyncActor for VecSource {
-    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+    async fn initialize(&mut self, ctx: &ActorContext<Loop>) -> Result<(), ActorExitStatus> {
         // Kick starts the source.
         self.process_message(Loop(PrivateToken), ctx).await
     }
@@ -77,7 +77,7 @@ impl AsyncActor for VecSource {
     async fn process_message(
         &mut self,
         _message: Self::Message,
-        ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Loop>,
     ) -> Result<(), ActorExitStatus> {
         let line_docs: Vec<String> = self.items[self.next_item_id..]
             .iter()

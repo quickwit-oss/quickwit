@@ -81,7 +81,7 @@ fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
 /// It consists in several sequentials phases mixing both
 /// CPU and IO, the longest once being the serialization of
 /// the inverted index. This phase is CPU bound.
-fn commit_split(split: &mut IndexedSplit, ctx: &ActorContext<Packager>) -> anyhow::Result<()> {
+fn commit_split(split: &mut IndexedSplit, ctx: &ActorContext<IndexedSplit>) -> anyhow::Result<()> {
     info!(index=%split.index_id, split=?split, "commit-split");
     let _protected_zone_guard = ctx.protect_zone();
     split
@@ -144,7 +144,7 @@ fn list_files_to_upload(
 /// which potentially olds a lot of RAM.
 fn merge_segments_if_required(
     split: &mut IndexedSplit,
-    ctx: &ActorContext<Packager>,
+    ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<Vec<SegmentMeta>> {
     info!("merge-segments-if-required");
     let segment_metas_before_merge = split.index.searchable_segment_metas()?;
@@ -209,7 +209,7 @@ impl SyncActor for Packager {
     fn process_message(
         &mut self,
         mut split: IndexedSplit,
-        ctx: &ActorContext<Self>,
+        ctx: &ActorContext<IndexedSplit>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;

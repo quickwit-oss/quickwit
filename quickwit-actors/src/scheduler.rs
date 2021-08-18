@@ -136,7 +136,7 @@ impl AsyncActor for Scheduler {
     async fn process_message(
         &mut self,
         message: SchedulerMessage,
-        ctx: &crate::ActorContext<Self>,
+        ctx: &crate::ActorContext<SchedulerMessage>,
     ) -> Result<(), crate::ActorExitStatus> {
         match message {
             SchedulerMessage::ScheduleEvent { timeout, callback } => {
@@ -153,7 +153,7 @@ impl AsyncActor for Scheduler {
 }
 
 impl Scheduler {
-    async fn process_timeout(&mut self, ctx: &ActorContext<Self>) {
+    async fn process_timeout(&mut self, ctx: &ActorContext<SchedulerMessage>) {
         let now = self.simulated_now();
         while let Some(next_evt) = self.find_next_event_before_now(now) {
             next_evt.0.await;
@@ -165,7 +165,7 @@ impl Scheduler {
         &mut self,
         timeout: Duration,
         callback: Callback,
-        ctx: &ActorContext<Self>,
+        ctx: &ActorContext<SchedulerMessage>,
     ) {
         let new_evt_deadline = self.simulated_now() + timeout;
         let current_next_deadline = self.future_events.peek().map(|evt| evt.0.deadline);
@@ -183,7 +183,7 @@ impl Scheduler {
         &mut self,
         time_shift: TimeShift,
         tx: Sender<()>,
-        ctx: &ActorContext<Self>,
+        ctx: &ActorContext<SchedulerMessage>,
     ) {
         let now = self.simulated_now();
         let deadline = match time_shift {
@@ -214,7 +214,11 @@ impl Scheduler {
         }
     }
 
-    async fn advance_by_duration(&mut self, time_shift: Duration, ctx: &ActorContext<Self>) {
+    async fn advance_by_duration(
+        &mut self,
+        time_shift: Duration,
+        ctx: &ActorContext<SchedulerMessage>,
+    ) {
         info!(time_shift=?time_shift, "advance-time");
         self.simulated_time_shift += time_shift;
         self.process_timeout(ctx).await;
@@ -246,7 +250,7 @@ impl Scheduler {
         }
     }
 
-    fn schedule_next_timeout(&mut self, ctx: &ActorContext<Self>) {
+    fn schedule_next_timeout(&mut self, ctx: &ActorContext<SchedulerMessage>) {
         let simulated_now = self.simulated_now();
         let next_deadline_opt = self.future_events.peek().map(|evt| evt.0.deadline);
         let timeout = if let Some(next_deadline) = next_deadline_opt {
