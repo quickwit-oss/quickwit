@@ -24,6 +24,6 @@ use quickwit_metastore::BundleAndSplitMetadata;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UploadedSplit {
     pub index_id: String,
-    pub split: BundleAndSplitMetadata,
+    pub metadata: BundleAndSplitMetadata,
     pub checkpoint_delta: CheckpointDelta,
 }

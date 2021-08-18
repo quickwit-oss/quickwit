@@ -172,7 +172,7 @@ async fn run_upload(
     put_split_files_to_storage(&split, metadata.split_metadata.clone(), &*split_storage).await?;
     Ok(UploadedSplit {
         index_id: split.index_id,
-        split: metadata,
+        metadata,
         checkpoint_delta: split.checkpoint_delta,
     })
 }
@@ -292,7 +292,7 @@ mod tests {
         let publish_future = publish_futures.into_iter().next().unwrap();
         let uploaded_split = publish_future.await?;
         assert_eq!(
-            uploaded_split.split.split_metadata.split_id,
+            uploaded_split.metadata.split_metadata.split_id,
             "test-split".to_string()
         );
         assert_eq!(

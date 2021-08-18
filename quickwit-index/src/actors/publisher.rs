@@ -74,7 +74,7 @@ impl AsyncActor for Publisher {
         self.metastore
             .publish_splits(
                 &uploaded_split.index_id,
-                &[&uploaded_split.split.split_metadata.split_id],
+                &[&uploaded_split.metadata.split_metadata.split_id],
                 uploaded_split.checkpoint_delta,
             )
             .await
@@ -131,7 +131,7 @@ mod tests {
         assert!(split_future_tx2
             .send(UploadedSplit {
                 index_id: "index".to_string(),
-                split: BundleAndSplitMetadata {
+                metadata: BundleAndSplitMetadata {
                     split_metadata: SplitMetadata {
                         split_id: "split2".to_string(),
                         ..Default::default()
@@ -144,7 +144,7 @@ mod tests {
         assert!(split_future_tx1
             .send(UploadedSplit {
                 index_id: "index".to_string(),
-                split: BundleAndSplitMetadata {
+                metadata: BundleAndSplitMetadata {
                     split_metadata: SplitMetadata {
                         split_id: "split1".to_string(),
                         ..Default::default()
