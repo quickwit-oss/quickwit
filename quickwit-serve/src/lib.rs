@@ -24,31 +24,28 @@ mod error;
 mod grpc;
 mod grpc_adapter;
 mod http_handler;
+mod quickwit_cache;
 mod rest;
 
+use quickwit_cache::QuickwitCache;
 use std::collections::HashMap;
 use std::io::Write;
 use std::net::SocketAddr;
-use std::ops::Range;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context;
-use async_trait::async_trait;
-use bytes::Bytes;
 use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use tracing::debug;
 
 use quickwit_cluster::cluster::{read_host_key, Cluster};
 use quickwit_cluster::service::ClusterServiceImpl;
-use quickwit_common::HOTCACHE_FILENAME;
 use quickwit_metastore::{Metastore, MetastoreUriResolver};
 use quickwit_search::{
     http_addr_to_grpc_addr, http_addr_to_swim_addr, SearchClientPool, SearchServiceImpl,
 };
 use quickwit_storage::{
-    localstack_region, Cache, LocalFileStorageFactory, S3CompatibleObjectStorageFactory,
-    SliceCache, StorageUriResolver, StorageWithCacheFactory,
+    localstack_region, LocalFileStorageFactory, S3CompatibleObjectStorageFactory,
+    StorageUriResolver, StorageWithCacheFactory,
 };
 use quickwit_telemetry::payload::{ServeEvent, TelemetryEvent};
 
@@ -57,13 +54,8 @@ pub use crate::error::ApiError;
 use crate::grpc::start_grpc_service;
 use crate::grpc_adapter::cluster_adapter::GrpcClusterAdapter;
 use crate::grpc_adapter::search_adapter::GrpcSearchAdapter;
+
 use crate::rest::start_rest_service;
-
-const FULL_SLICE: Range<usize> = 0..usize::MAX;
-
-/// Hotcache cache capacity is hardcoded to 500 MB.
-/// Once the capacity is reached, a LRU strategy is used.
-const HOTCACHE_CACHE_CAPACITY: usize = 500_000_000;
 
 async fn get_from_cache_or_create_metastore(
     metastore_cache: &mut HashMap<String, Arc<dyn Metastore>>,
@@ -128,104 +120,6 @@ fn display_help_message(
     stdout.set_color(&ColorSpec::new())?;
     // TODO add link to the documentation of the query language.
     Ok(())
-}
-
-/// The Quickwit cache logic is very simple for the moment.
-///
-/// It stores hotcache files using an LRU cache.
-///
-/// HACK! We use `0..usize::MAX` to signify the "entire file".
-/// TODO fixme
-struct SimpleCache {
-    slice_cache: SliceCache,
-}
-
-impl SimpleCache {
-    fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
-        SimpleCache {
-            slice_cache: SliceCache::with_capacity_in_bytes(capacity_in_bytes),
-        }
-    }
-}
-
-#[async_trait]
-impl Cache for SimpleCache {
-    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<Bytes> {
-        if let Some(bytes) = self.get_all(path).await {
-            return Some(bytes.slice(byte_range.clone()));
-        }
-        if let Some(bytes) = self.slice_cache.get(path, byte_range) {
-            return Some(bytes);
-        }
-        None
-    }
-
-    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: Bytes) {
-        self.slice_cache.put(path, byte_range, bytes);
-    }
-
-    async fn get_all(&self, path: &Path) -> Option<Bytes> {
-        self.slice_cache.get(path, FULL_SLICE.clone())
-    }
-
-    async fn put_all(&self, path: PathBuf, bytes: Bytes) {
-        self.slice_cache.put(path, FULL_SLICE.clone(), bytes);
-    }
-}
-
-pub struct QuickwitCache {
-    router: Vec<(&'static str, Arc<dyn Cache>)>,
-}
-
-impl Default for QuickwitCache {
-    fn default() -> Self {
-        QuickwitCache {
-            router: vec![(
-                HOTCACHE_FILENAME,
-                Arc::new(SimpleCache::with_capacity_in_bytes(HOTCACHE_CACHE_CAPACITY)),
-            )],
-        }
-    }
-}
-
-impl QuickwitCache {
-    fn get_relevant_cache(&self, path: &Path) -> Option<&dyn Cache> {
-        for (suffix, cache) in &self.router {
-            if path.to_string_lossy().ends_with(suffix) {
-                return Some(cache.as_ref());
-            }
-        }
-        None
-    }
-}
-
-#[async_trait]
-impl Cache for QuickwitCache {
-    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<Bytes> {
-        if let Some(cache) = self.get_relevant_cache(path) {
-            return cache.get(path, byte_range).await;
-        }
-        None
-    }
-
-    async fn get_all(&self, path: &Path) -> Option<Bytes> {
-        if let Some(cache) = self.get_relevant_cache(path) {
-            return cache.get_all(path).await;
-        }
-        None
-    }
-
-    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: Bytes) {
-        if let Some(cache) = self.get_relevant_cache(&path) {
-            cache.put(path, byte_range, bytes).await;
-        }
-    }
-
-    async fn put_all(&self, path: PathBuf, bytes: Bytes) {
-        if let Some(cache) = self.get_relevant_cache(&path) {
-            cache.put(path, FULL_SLICE, bytes).await;
-        }
-    }
 }
 
 /// Builds a storage uri resolver that handles

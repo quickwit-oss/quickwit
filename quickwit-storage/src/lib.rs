@@ -53,6 +53,8 @@ pub use crate::cache::{Cache, SliceCache, StorageWithCacheFactory};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 #[cfg(feature = "testsuite")]
+pub use self::cache::MockCache;
+#[cfg(feature = "testsuite")]
 pub use self::storage::MockStorage;
 #[cfg(feature = "testsuite")]
 pub use self::storage_resolver::MockStorageFactory;
