@@ -31,6 +31,7 @@ use tokio::sync::RwLock;
 
 use quickwit_storage::{PutPayload, Storage, StorageErrorKind};
 
+use crate::checkpoint::CheckpointDelta;
 use crate::{
     IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreResult, SplitMetadata,
     SplitState,
@@ -264,8 +265,13 @@ impl Metastore for SingleFileMetastore {
         &self,
         index_id: &str,
         split_ids: &[&'a str],
+        checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
+        metadata_set
+            .index
+            .checkpoint
+            .try_apply_delta(checkpoint_delta)?;
 
         for &split_id in split_ids {
             // Check for the existence of split.
@@ -415,6 +421,7 @@ mod tests {
     use quickwit_index_config::AllFlattenIndexConfig;
     use quickwit_storage::{MockStorage, StorageErrorKind};
 
+    use crate::checkpoint::Checkpoint;
     use crate::tests::*;
     use crate::{IndexMetadata, Metastore, MetastoreError, SingleFileMetastore};
 
@@ -433,6 +440,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Arc::new(AllFlattenIndexConfig::default()),
+                checkpoint: Checkpoint::default(),
             };
 
             // Create index
@@ -460,6 +468,7 @@ mod tests {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
                 index_config: Arc::new(AllFlattenIndexConfig::default()),
+                checkpoint: Checkpoint::default(),
             };
 
             // Create index

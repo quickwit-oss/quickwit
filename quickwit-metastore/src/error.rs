@@ -27,68 +27,40 @@ use thiserror::Error;
 use crate::checkpoint::IncompatibleCheckpoint;
 
 /// Metastore error kinds.
+#[allow(missing_docs)]
 #[derive(Debug, Error)]
 pub enum MetastoreError {
-    /// The target index already exists (Returned when creating a new index).
     #[error("Index `{index_id}` already exists.")]
-    IndexAlreadyExists {
-        /// The `index_id` of the index that failed to be created because another index
-        /// with the same id already exists.
-        index_id: String,
-    },
+    IndexAlreadyExists { index_id: String },
 
-    /// Forbidden error.
     #[error("Access forbidden: `{message}`.")]
-    Forbidden {
-        /// Error Message
-        message: String,
-    },
+    Forbidden { message: String },
 
-    /// The target index does not exist.
     #[error("Index `{index_id}` does not exist.")]
-    IndexDoesNotExist {
-        /// Index Id that was request (but is missing).
-        index_id: String,
-    },
+    IndexDoesNotExist { index_id: String },
 
     /// Any generic internal error.
     /// The message can be helpful to users, but the detail of the error
     /// are judged uncoverable and not useful for error handling.
     #[error("Internal error: `{message}` Cause: `{cause}`.")]
     InternalError {
-        /// Error Message
         message: String,
-        /// Root cause
         cause: anyhow::Error,
     },
 
-    /// Invalid manifest.
     #[error("Failed to deserialize index metadata: `{cause}`")]
-    InvalidManifest {
-        /// Serde error
-        cause: serde_json::Error,
-    },
+    InvalidManifest { cause: serde_json::Error },
 
-    /// Io error.
     #[error("IOError `{0}`")]
     Io(io::Error),
 
-    /// The target split does not exist.
     #[error("Split `{split_id}` does not exist.")]
-    SplitDoesNotExist {
-        /// missing split id.
-        split_id: String,
-    },
+    SplitDoesNotExist { split_id: String },
 
-    /// The target split is not staged.
     #[error("Split `{split_id}` is not staged.")]
-    SplitIsNotStaged {
-        /// Split that should have been staged.
-        split_id: String,
-    },
+    SplitIsNotStaged { split_id: String },
 
-    /// The index is actually
-    #[error("Publish checkpoint cannot be applied: {0:?}.")]
+    #[error("Publish checkpoint delta overlaps with the current checkpoint: {0:?}.")]
     IncompatibleCheckpointDelta(#[from] IncompatibleCheckpoint),
 }
 

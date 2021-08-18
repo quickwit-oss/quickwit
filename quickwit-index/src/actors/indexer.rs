@@ -272,10 +272,7 @@ impl SyncActor for Indexer {
             | ActorExitStatus::Failure(_)
             | ActorExitStatus::Panicked => return Ok(()),
             ActorExitStatus::Quit | ActorExitStatus::Success => {
-                self.send_to_packager(CommitTrigger::NoMoreDocs, ctx)
-                    .with_context(|| {
-                        "Failed to send a last message to packager upon finalize method"
-                    })?;
+                self.send_to_packager(CommitTrigger::NoMoreDocs, ctx)?;
             }
         }
         Ok(())
