@@ -30,7 +30,9 @@ use tokio::time::{sleep, Duration};
 use quickwit_index_config::AllFlattenIndexConfig;
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};
-use crate::{IndexMetadata, Metastore, MetastoreError, BundleAndSplitMetadata, SplitMetadata, SplitState};
+use crate::{
+    BundleAndSplitMetadata, IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState,
+};
 
 pub async fn test_metastore_create_index(metastore: &dyn Metastore) {
     let index_id = "my-index";
@@ -129,16 +131,19 @@ pub async fn test_metastore_stage_split(metastore: &dyn Metastore) {
     };
 
     let split_id = "one";
-    let split_metadata = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: split_id.to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(0, 99)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: split_id.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
     // Stage a split on a non-existent index
     let result = metastore
@@ -181,28 +186,34 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
     };
 
     let split_id_1 = "one";
-    let split_metadata_1 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: split_id_1.to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(0, 99)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_1 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: split_id_1.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
     let split_id_2 = "two";
-    let split_metadata_2 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: split_id_2.to_string(),
-        split_state: SplitState::Staged,
-        num_records: 5,
-        size_in_bytes: 6,
-        time_range: Some(RangeInclusive::new(30, 99)),
-        generation: 2,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_2 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: split_id_2.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 5,
+            size_in_bytes: 6,
+            time_range: Some(RangeInclusive::new(30, 99)),
+            generation: 2,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
     // Publish a split on a non-existent index
     {
@@ -568,16 +579,19 @@ pub async fn test_metastore_mark_splits_as_deleted(metastore: &dyn Metastore) {
     };
 
     let split_id_1 = "one";
-    let split_metadata_1 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: split_id_1.to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(0, 99)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_1 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: split_id_1.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
     // Mark a split as deleted on a non-existent index
     {
@@ -643,16 +657,19 @@ pub async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
     };
 
     let split_id_1 = "one";
-    let split_metadata_1 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: split_id_1.to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(0, 99)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_1 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: split_id_1.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
     // Delete a split as deleted on a non-existent index
     {
@@ -778,60 +795,75 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
     };
 
     let split_id_1 = "one";
-    let split_metadata_1 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: split_id_1.to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(0, 99)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_1 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: split_id_1.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
-    let split_metadata_2 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: "two".to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(100, 199)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_2 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: "two".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(100, 199)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
-    let split_metadata_3 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: "three".to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(200, 299)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_3 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: "three".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(200, 299)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
-    let split_metadata_4 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: "four".to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(300, 399)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_4 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: "four".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(300, 399)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
-    let split_metadata_5 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: "five".to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: None,
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_5 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: "five".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: None,
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
     // List all splits on a non-existent index
     {
@@ -908,60 +940,75 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
     };
 
     let split_id_1 = "one";
-    let split_metadata_1 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: split_id_1.to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(0, 99)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_1 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: split_id_1.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
-    let split_metadata_2 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: "two".to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(100, 199)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_2 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: "two".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(100, 199)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
-    let split_metadata_3 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: "three".to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(200, 299)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_3 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: "three".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(200, 299)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
-    let split_metadata_4 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: "four".to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(300, 399)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_4 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: "four".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(300, 399)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
-    let split_metadata_5 = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: "five".to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: None,
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata_5 = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: "five".to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: None,
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
     // List all splits on a non-existent index
     {
@@ -1414,16 +1461,19 @@ pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
     };
 
     let split_id = "one";
-    let split_metadata = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: split_id.to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: Some(RangeInclusive::new(0, 99)),
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: split_id.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
     // Create an index
     metastore
@@ -1437,7 +1487,9 @@ pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
         .stage_split(index_id, split_metadata.clone())
         .await
         .unwrap();
-    let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone().split_metadata;
+    let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0]
+        .clone()
+        .split_metadata;
     assert!(split_meta.update_timestamp > current_timestamp);
     current_timestamp = split_meta.update_timestamp;
 
@@ -1447,7 +1499,9 @@ pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
         .publish_splits(index_id, &[split_id], CheckpointDelta::from(0..5))
         .await
         .unwrap();
-    let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone().split_metadata;
+    let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0]
+        .clone()
+        .split_metadata;
     assert!(split_meta.update_timestamp > current_timestamp);
     current_timestamp = split_meta.update_timestamp;
 
@@ -1457,7 +1511,9 @@ pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
         .mark_splits_as_deleted(index_id, &[split_id])
         .await
         .unwrap();
-    let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone().split_metadata;
+    let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0]
+        .clone()
+        .split_metadata;
     assert!(split_meta.update_timestamp > current_timestamp);
 }
 
@@ -1473,16 +1529,19 @@ pub async fn test_metastore_storage_failing(metastore: &dyn Metastore) {
     };
 
     let split_id = "one";
-    let split_metadata = BundleAndSplitMetadata { bundle_offsets: Default::default(), split_metadata: SplitMetadata {
-        split_id: split_id.to_string(),
-        split_state: SplitState::Staged,
-        num_records: 1,
-        size_in_bytes: 2,
-        time_range: None,
-        generation: 3,
-        update_timestamp: current_timestamp,
-        ..Default::default()
-    }};
+    let split_metadata = BundleAndSplitMetadata {
+        bundle_offsets: Default::default(),
+        split_metadata: SplitMetadata {
+            split_id: split_id.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: None,
+            generation: 3,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
 
     // create index
     metastore.create_index(index_metadata).await.unwrap();

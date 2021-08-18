@@ -33,8 +33,8 @@ use quickwit_storage::{PutPayload, Storage, StorageErrorKind};
 
 use crate::checkpoint::CheckpointDelta;
 use crate::{
-    IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreResult, SplitMetadata, BundleAndSplitMetadata,
-    SplitState,
+    BundleAndSplitMetadata, IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreResult,
+    SplitMetadata, SplitState,
 };
 
 /// Metadata file managed by [`SingleFileMetastore`].
@@ -239,7 +239,10 @@ impl Metastore for SingleFileMetastore {
 
         // Check whether the split exists.
         // If the split exists, return an error to prevent the split from being registered.
-        if metadata_set.splits.contains_key(&metadata.split_metadata.split_id) {
+        if metadata_set
+            .splits
+            .contains_key(&metadata.split_metadata.split_id)
+        {
             return Err(MetastoreError::InternalError {
                 message: format!(
                     "Try to stage split that already exists ({})",
@@ -323,13 +326,17 @@ impl Metastore for SingleFileMetastore {
             .splits
             .into_values()
             .filter(|metadata| {
-                metadata.split_metadata.split_state == state && time_range_filter(&metadata.split_metadata)
+                metadata.split_metadata.split_state == state
+                    && time_range_filter(&metadata.split_metadata)
             })
             .collect();
         Ok(splits)
     }
 
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<BundleAndSplitMetadata>> {
+    async fn list_all_splits(
+        &self,
+        index_id: &str,
+    ) -> MetastoreResult<Vec<BundleAndSplitMetadata>> {
         let metadata_set = self.get_index(index_id).await?;
         let splits = metadata_set.splits.into_values().collect();
         Ok(splits)

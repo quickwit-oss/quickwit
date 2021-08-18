@@ -212,7 +212,12 @@ pub async fn root_search(
     // Create a hash map of SplitMetadata with split id as a key.
     let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
         .into_iter()
-        .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata.split_metadata))
+        .map(|metadata| {
+            (
+                metadata.split_metadata.split_id.clone(),
+                metadata.split_metadata,
+            )
+        })
         .collect();
 
     // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
@@ -430,12 +435,12 @@ mod tests {
 
     use std::ops::Range;
 
+    use crate::{MockSearchService, SearchResultJson};
     use quickwit_index_config::WikipediaIndexConfig;
+    use quickwit_metastore::BundleAndSplitMetadata;
     use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::SplitSearchError;
     use quickwit_storage::BundleStorageOffsets;
-    use quickwit_metastore::BundleAndSplitMetadata;
-    use crate::{MockSearchService, SearchResultJson};
 
     fn mock_split_meta(split_id: &str) -> BundleAndSplitMetadata {
         BundleAndSplitMetadata {

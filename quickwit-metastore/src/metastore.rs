@@ -219,7 +219,8 @@ pub trait Metastore: Send + Sync + 'static {
 
     /// Lists the splits without filtering.
     /// Returns a list of all splits currently known to the metastore regardless of their state.
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<BundleAndSplitMetadata>>;
+    async fn list_all_splits(&self, index_id: &str)
+        -> MetastoreResult<Vec<BundleAndSplitMetadata>>;
 
     /// Marks a list of splits as deleted.
     /// This API will change the state to `ScheduledForDeletion` so that it is not referenced by the client.

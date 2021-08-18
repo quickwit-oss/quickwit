@@ -35,7 +35,9 @@ mod metastore_resolver;
 
 pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
 pub use metastore::single_file_metastore::SingleFileMetastore;
-pub use metastore::{IndexMetadata, MetadataSet, Metastore, SplitMetadata, BundleAndSplitMetadata, SplitState};
+pub use metastore::{
+    BundleAndSplitMetadata, IndexMetadata, MetadataSet, Metastore, SplitMetadata, SplitState,
+};
 pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};
 
 #[cfg(feature = "testsuite")]

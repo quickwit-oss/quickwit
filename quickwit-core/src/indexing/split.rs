@@ -230,13 +230,11 @@ impl Split {
 
     /// Stage a split in the metastore.
     pub async fn stage(&self) -> anyhow::Result<String> {
-        let metadata = BundleAndSplitMetadata{
+        let metadata = BundleAndSplitMetadata {
             split_metadata: self.metadata.clone(),
             bundle_offsets: Default::default(),
         };
-        self.metastore
-            .stage_split(&self.index_id, metadata)
-            .await?;
+        self.metastore.stage_split(&self.index_id, metadata).await?;
         Ok(self.id.to_string())
     }
 
