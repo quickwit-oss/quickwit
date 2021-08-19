@@ -135,6 +135,7 @@ mod tests {
         {
             "type": "default",
             "default_search_fields": [],
+            "tag_fields": [],
             "field_mappings": []
         }"#;
 

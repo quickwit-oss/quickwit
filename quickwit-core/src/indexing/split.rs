@@ -75,8 +75,6 @@ pub struct Split {
     pub metastore: Arc<dyn Metastore>,
     /// The timestamp field
     pub timestamp_field: Option<Field>,
-    // The field to extract tags from.
-    //pub tag_fields: Vec<Field>,
 }
 
 impl fmt::Debug for Split {
@@ -113,7 +111,6 @@ impl Split {
         metastore: Arc<dyn Metastore>,
         schema: Schema,
         timestamp_field: Option<Field>,
-        //tag_fields: Vec<Field>,
     ) -> anyhow::Result<Self> {
         let id = Uuid::new_v4();
         let split_scratch_dir = Box::new(tempfile::tempdir_in(params.temp_dir.path())?);
@@ -144,7 +141,6 @@ impl Split {
             storage,
             metastore,
             timestamp_field,
-            //tag_fields,
         })
     }
 
@@ -163,7 +159,7 @@ impl Split {
         self.num_parsing_errors += 1;
     }
 
-    /// Update the split metadata (num_records, time_range) based on incomming document.
+    /// Update the split metadata (num_records, size_in_bytes, time_range) based on incomming document.
     fn update_metadata(&mut self, doc: &Document, doc_size: usize) -> anyhow::Result<()> {
         if let Some(timestamp_field) = self.timestamp_field {
             let split_time_range =
@@ -180,15 +176,6 @@ impl Split {
                 );
             }
         };
-
-        // for tag_field in self.tag_fields {
-        //     if let Some(tag_value) = doc.get_first(tag_field)
-        //     .and_then(|field_value| field_value.text())
-        //     .map(|value| String::from(value)) {
-        //         //Thinking tags should be a HashSet
-        //         self.metadata.tags.push(tag_value);
-        //     }
-        // }
 
         self.metadata.size_in_bytes += doc_size as u64;
         self.metadata.num_records += 1;
@@ -264,6 +251,11 @@ impl Split {
         Ok(manifest)
     }
 
+    /// Extracts tags from the split.
+    ///
+    /// Tags are constructed by combining field name and terms of the field in the form `field_name:term`.
+    /// For example: a split containing the terms [tokio, london, paris] for a field named `city`,
+    /// the list of extracted tags will be: [city:tokio, city:london, city:paris]  
     pub async fn extract_tags(&mut self, tag_fields: Vec<(String, Field)>) -> anyhow::Result<()> {
         let index_reader = self.index.reader()?;
         for reader in index_reader.searcher().segment_readers() {

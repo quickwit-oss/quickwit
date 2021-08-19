@@ -98,6 +98,7 @@ impl DefaultIndexConfigBuilder {
         }
 
         // Resolve tag fields
+        const RAW_TOKENIZER: &str = "raw";
         for tag_field_name in self.tag_fields.iter() {
             let tag_field = schema
                 .get_field(tag_field_name)
@@ -105,9 +106,9 @@ impl DefaultIndexConfigBuilder {
 
             let tag_field_entry = schema.get_field_entry(tag_field);
             if let FieldType::Str(options) = tag_field_entry.field_type() {
-                if let Some(indexing_opt) = options.get_indexing_options() {
-                    if indexing_opt.tokenizer() != "raw" {
-                        bail!("Tag field `{}` must not be tokenized, please set `tokenizer` attribute to `raw`.", tag_field_name)
+                if let Some(field_indexing) = options.get_indexing_options() {
+                    if field_indexing.tokenizer() != RAW_TOKENIZER {
+                        bail!("Tag field `{}` must not be tokenized, please set its `tokenizer` attribute to `{}`.", tag_field_name, RAW_TOKENIZER)
                     }
                 } else {
                     bail!("Tag field `{}` must be indexed.", tag_field_name)
@@ -442,6 +443,7 @@ mod tests {
             "type": "default",
             "default_search_fields": [],
             "timestamp_field": "timestamp",
+            "tag_fields": [],
             "field_mappings": [
                 {
                     "name": "timestamp",
@@ -461,6 +463,7 @@ mod tests {
             "type": "default",
             "default_search_fields": [],
             "timestamp_field": "timestamp",
+            "tag_fields": [],
             "field_mappings": [
                 {
                     "name": "timestamp",
@@ -481,6 +484,7 @@ mod tests {
         let index_config = r#"{
             "type": "default",
             "default_search_fields": [],
+            "tag_fields": [],
             "field_mappings": [
                 {
                     "name": "_source",

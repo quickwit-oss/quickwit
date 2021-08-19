@@ -292,6 +292,7 @@ mod tests {
         let index_config = r#"{
             "default_search_fields": ["body"],
             "timestamp_field": "ts",
+            "tag_fields": [],
             "field_mappings": [
                 {
                     "name": "body",

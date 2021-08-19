@@ -169,6 +169,11 @@ fn merge_segments_if_required(
     Ok(segment_metas_after_merge)
 }
 
+/// Extracts tags from the split.
+///
+/// Tags are constructed by combining field name and terms of the field in the form `field_name:term`.
+/// For example: a split containing the terms [tokio, london, paris] for a field named `city`,
+/// the list of extracted tags will be: [city:tokio, city:london, city:paris]  
 fn extract_tags(split: &mut IndexedSplit) -> anyhow::Result<Vec<String>> {
     info!("extract-tags");
     let mut tags = vec![];
