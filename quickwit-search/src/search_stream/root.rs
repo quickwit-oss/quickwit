@@ -127,14 +127,14 @@ mod tests {
     use crate::MockSearchService;
     use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_metastore::{
-        checkpoint::Checkpoint, BundleAndSplitMetadata, IndexMetadata, MockMetastore, SplitState,
+        checkpoint::Checkpoint, SplitMetadataAndFooterOffsets, IndexMetadata, MockMetastore, SplitState,
     };
     use quickwit_proto::OutputFormat;
     use quickwit_storage::BundleStorageOffsets;
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
-    fn mock_split_meta(split_id: &str) -> BundleAndSplitMetadata {
-        BundleAndSplitMetadata {
+    fn mock_split_meta(split_id: &str) -> SplitMetadataAndFooterOffsets {
+        SplitMetadataAndFooterOffsets {
             bundle_offsets: Default::default(),
             split_metadata: SplitMetadata {
                 split_id: split_id.to_string(),

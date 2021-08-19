@@ -33,7 +33,7 @@ use quickwit_storage::{PutPayload, Storage, StorageErrorKind};
 
 use crate::checkpoint::CheckpointDelta;
 use crate::{
-    BundleAndSplitMetadata, IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreResult,
+    SplitMetadataAndFooterOffsets, IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreResult,
     SplitMetadata, SplitState,
 };
 
@@ -233,7 +233,7 @@ impl Metastore for SingleFileMetastore {
     async fn stage_split(
         &self,
         index_id: &str,
-        mut metadata: BundleAndSplitMetadata,
+        mut metadata: SplitMetadataAndFooterOffsets,
     ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
 
@@ -311,7 +311,7 @@ impl Metastore for SingleFileMetastore {
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
         tags: &[String],
-    ) -> MetastoreResult<Vec<BundleAndSplitMetadata>> {
+    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
         let time_range_filter = |split_metadata: &SplitMetadata| match (
             time_range_opt.as_ref(),
             split_metadata.time_range.as_ref(),
@@ -350,7 +350,7 @@ impl Metastore for SingleFileMetastore {
     async fn list_all_splits(
         &self,
         index_id: &str,
-    ) -> MetastoreResult<Vec<BundleAndSplitMetadata>> {
+    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
         let metadata_set = self.get_index(index_id).await?;
         let splits = metadata_set.splits.into_values().collect();
         Ok(splits)

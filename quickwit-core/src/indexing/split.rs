@@ -28,7 +28,7 @@ use crate::indexing::manifest::Manifest;
 use anyhow::{self, Context};
 use quickwit_common::HOTCACHE_FILENAME;
 use quickwit_directories::write_hotcache;
-use quickwit_metastore::BundleAndSplitMetadata;
+use quickwit_metastore::SplitMetadataAndFooterOffsets;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageUriResolver};
@@ -230,7 +230,7 @@ impl Split {
 
     /// Stage a split in the metastore.
     pub async fn stage(&self) -> anyhow::Result<String> {
-        let metadata = BundleAndSplitMetadata {
+        let metadata = SplitMetadataAndFooterOffsets {
             split_metadata: self.metadata.clone(),
             bundle_offsets: Default::default(),
         };

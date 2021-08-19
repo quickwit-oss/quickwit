@@ -48,7 +48,7 @@ use anyhow::Context;
 use tantivy::DocAddress;
 
 use quickwit_metastore::SplitState;
-use quickwit_metastore::{BundleAndSplitMetadata, Metastore, MetastoreResult};
+use quickwit_metastore::{SplitMetadataAndFooterOffsets, Metastore, MetastoreResult};
 use quickwit_proto::SearchRequest;
 use quickwit_proto::{PartialHit, SearchResult};
 use quickwit_storage::StorageUriResolver;
@@ -130,7 +130,7 @@ fn extract_time_range(search_request: &SearchRequest) -> Option<Range<i64>> {
 async fn list_relevant_splits(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
-) -> MetastoreResult<Vec<BundleAndSplitMetadata>> {
+) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
     let time_range_opt = extract_time_range(search_request);
     let split_metas = metastore
         .list_splits(

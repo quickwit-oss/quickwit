@@ -34,7 +34,7 @@ use quickwit_actors::ActorExitStatus;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
 use quickwit_actors::QueueCapacity;
-use quickwit_metastore::BundleAndSplitMetadata;
+use quickwit_metastore::SplitMetadataAndFooterOffsets;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::SplitMetadata;
 use quickwit_metastore::SplitState;
@@ -144,8 +144,8 @@ async fn put_split_files_to_storage(
     Ok(manifest)
 }
 
-fn create_split_metadata(split: &PackagedSplit) -> BundleAndSplitMetadata {
-    BundleAndSplitMetadata {
+fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets {
+    SplitMetadataAndFooterOffsets {
         split_metadata: SplitMetadata {
             split_id: split.split_id.clone(),
             num_records: split.num_docs as usize,

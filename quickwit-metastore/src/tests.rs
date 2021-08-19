@@ -31,7 +31,7 @@ use quickwit_index_config::AllFlattenIndexConfig;
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};
 use crate::{
-    BundleAndSplitMetadata, IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState,
+    SplitMetadataAndFooterOffsets, IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState,
 };
 
 pub async fn test_metastore_create_index(metastore: &dyn Metastore) {
@@ -131,7 +131,7 @@ pub async fn test_metastore_stage_split(metastore: &dyn Metastore) {
     };
 
     let split_id = "one";
-    let split_metadata = BundleAndSplitMetadata {
+    let split_metadata = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: split_id.to_string(),
@@ -186,7 +186,7 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
     };
 
     let split_id_1 = "one";
-    let split_metadata_1 = BundleAndSplitMetadata {
+    let split_metadata_1 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: split_id_1.to_string(),
@@ -201,7 +201,7 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
     };
 
     let split_id_2 = "two";
-    let split_metadata_2 = BundleAndSplitMetadata {
+    let split_metadata_2 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: split_id_2.to_string(),
@@ -579,7 +579,7 @@ pub async fn test_metastore_mark_splits_as_deleted(metastore: &dyn Metastore) {
     };
 
     let split_id_1 = "one";
-    let split_metadata_1 = BundleAndSplitMetadata {
+    let split_metadata_1 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: split_id_1.to_string(),
@@ -657,7 +657,7 @@ pub async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
     };
 
     let split_id_1 = "one";
-    let split_metadata_1 = BundleAndSplitMetadata {
+    let split_metadata_1 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: split_id_1.to_string(),
@@ -795,7 +795,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
     };
 
     let split_id_1 = "one";
-    let split_metadata_1 = BundleAndSplitMetadata {
+    let split_metadata_1 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: split_id_1.to_string(),
@@ -809,7 +809,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         },
     };
 
-    let split_metadata_2 = BundleAndSplitMetadata {
+    let split_metadata_2 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: "two".to_string(),
@@ -823,7 +823,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         },
     };
 
-    let split_metadata_3 = BundleAndSplitMetadata {
+    let split_metadata_3 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: "three".to_string(),
@@ -837,7 +837,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         },
     };
 
-    let split_metadata_4 = BundleAndSplitMetadata {
+    let split_metadata_4 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: "four".to_string(),
@@ -851,7 +851,7 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
         },
     };
 
-    let split_metadata_5 = BundleAndSplitMetadata {
+    let split_metadata_5 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: "five".to_string(),
@@ -940,7 +940,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
     };
 
     let split_id_1 = "one";
-    let split_metadata_1 = BundleAndSplitMetadata {
+    let split_metadata_1 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: split_id_1.to_string(),
@@ -955,7 +955,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         },
     };
 
-    let split_metadata_2 = BundleAndSplitMetadata {
+    let split_metadata_2 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: "two".to_string(),
@@ -970,7 +970,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         },
     };
 
-    let split_metadata_3 = BundleAndSplitMetadata {
+    let split_metadata_3 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: "three".to_string(),
@@ -985,7 +985,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         },
     };
 
-    let split_metadata_4 = BundleAndSplitMetadata {
+    let split_metadata_4 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: "four".to_string(),
@@ -1000,7 +1000,7 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
         },
     };
 
-    let split_metadata_5 = BundleAndSplitMetadata {
+    let split_metadata_5 = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: "five".to_string(),
@@ -1482,7 +1482,7 @@ pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
     };
 
     let split_id = "one";
-    let split_metadata = BundleAndSplitMetadata {
+    let split_metadata = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: split_id.to_string(),
@@ -1550,7 +1550,7 @@ pub async fn test_metastore_storage_failing(metastore: &dyn Metastore) {
     };
 
     let split_id = "one";
-    let split_metadata = BundleAndSplitMetadata {
+    let split_metadata = SplitMetadataAndFooterOffsets {
         bundle_offsets: Default::default(),
         split_metadata: SplitMetadata {
             split_id: split_id.to_string(),
