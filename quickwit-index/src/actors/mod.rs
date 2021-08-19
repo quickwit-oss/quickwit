@@ -21,7 +21,6 @@
 mod indexer;
 mod packager;
 mod publisher;
-pub mod source;
 mod uploader;
 
 pub use self::indexer::Indexer;
