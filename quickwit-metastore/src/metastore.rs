@@ -90,6 +90,9 @@ pub struct SplitMetadata {
 
     /// Timestamp for tracking when the split state was last modified.
     pub update_timestamp: i64,
+
+    /// A list of tags for categorizing and searching group of splits.
+    pub tags: Vec<String>,
 }
 
 impl SplitMetadata {
@@ -104,6 +107,7 @@ impl SplitMetadata {
             time_range: None,
             generation: 0,
             update_timestamp: Utc::now().timestamp(),
+            tags: vec![],
         }
     }
 }
@@ -207,7 +211,7 @@ pub trait Metastore: Send + Sync + 'static {
     ) -> MetastoreResult<()>;
 
     /// Lists the splits.
-    /// Returns a list of splits that intersects the given `time_range` and `split_state`.
+    /// Returns a list of splits that intersects the given `time_range`, `split_state` and `tag`.
     /// Regardless of the time range filter, if a split has no timestamp it is always returned.
     /// An error will occur if an index that does not exist in the storage is specified.
     async fn list_splits(
@@ -215,6 +219,7 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
         split_state: SplitState,
         time_range: Option<Range<i64>>,
+        tags: &[String],
     ) -> MetastoreResult<Vec<BundleAndSplitMetadata>>;
 
     /// Lists the splits without filtering.

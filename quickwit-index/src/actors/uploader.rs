@@ -154,6 +154,7 @@ fn create_split_metadata(split: &PackagedSplit) -> BundleAndSplitMetadata {
             generation: 0,
             split_state: SplitState::New,
             update_timestamp: Utc::now().timestamp(),
+            tags: vec![], // TODO: handle tags collection and attaching to split
             bundle_offsets: split.bundle_offsets.clone(),
         },
         bundle_offsets: split.bundle_offsets.clone(),
