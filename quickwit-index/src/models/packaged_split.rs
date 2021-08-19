@@ -21,7 +21,6 @@
 use crate::models::ScratchDirectory;
 use quickwit_metastore::checkpoint::CheckpointDelta;
 use std::ops::{Range, RangeInclusive};
-use std::ops::RangeInclusive;
 use tantivy::SegmentId;
 
 #[derive(Debug)]

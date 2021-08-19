@@ -33,8 +33,8 @@ use quickwit_storage::{PutPayload, Storage, StorageErrorKind};
 
 use crate::checkpoint::CheckpointDelta;
 use crate::{
-    SplitMetadataAndFooterOffsets, IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreResult,
-    SplitMetadata, SplitState,
+    IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreResult, SplitMetadata,
+    SplitMetadataAndFooterOffsets, SplitState,
 };
 
 /// Metadata file managed by [`SingleFileMetastore`].

@@ -33,9 +33,9 @@ use quickwit_actors::ActorExitStatus;
 use quickwit_actors::AsyncActor;
 use quickwit_actors::Mailbox;
 use quickwit_actors::QueueCapacity;
-use quickwit_metastore::SplitMetadataAndFooterOffsets;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::SplitMetadataAndFooterOffsets;
 use quickwit_metastore::SplitState;
 use quickwit_storage::PutPayload;
 use quickwit_storage::Storage;
@@ -92,27 +92,20 @@ async fn put_split_file_to_storage(
     let key = PathBuf::from(format!("{}.split", &split.split_id));
 
     let start = Instant::now();
-    let mut upload_res_futures = vec![];
 
     info!(bundle_path=%bundle_path.display(), split_id=%split.split_id, "upload-split-bundle");
     let payload = PutPayload::from(bundle_path);
-    let upload_res_future = async move {
-        storage.put(&key, payload).await.with_context(|| {
-            format!(
-                "Failed uploading key {} in bucket {}",
-                key.display(),
-                storage.uri()
-            )
-        })?;
-        Result::<(), anyhow::Error>::Ok(())
-    };
-    upload_res_futures.push(upload_res_future);
-
-    futures::future::try_join_all(upload_res_futures).await?;
+    storage.put(&key, payload).await.with_context(|| {
+        format!(
+            "Failed uploading key {} in bucket {}",
+            key.display(),
+            storage.uri()
+        )
+    })?;
 
     let elapsed_ms = start.elapsed().as_millis();
-    let split_size_in_megabytes = split.footer_offsets.end / 1000000;
-    let throughput_mb_s = split_size_in_megabytes as f32 / (elapsed_ms as f32 / 1000.0);
+    let split_size_in_megabytes = split.footer_offsets.end / 1_000_000;
+    let throughput_mb_s = split_size_in_megabytes as f32 / (elapsed_ms as f32 / 1_000.0f32);
     info!(
         split_size_in_megabytes = %split_size_in_megabytes,
         elapsed_ms = %elapsed_ms,
@@ -139,10 +132,10 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets
     }
 }
 
-async fn run_upload(
+async fn stage_and_upload_split(
     split: PackagedSplit,
-    index_storage: Arc<dyn Storage>,
-    metastore: Arc<dyn Metastore>,
+    index_storage: &dyn Storage,
+    metastore: &dyn Metastore,
 ) -> anyhow::Result<UploadedSplit> {
     let metadata = create_split_metadata(&split);
     metastore
@@ -171,25 +164,18 @@ impl AsyncActor for Uploader {
         ctx.send_message(&self.publisher_mailbox, split_uploaded_rx)
             .await?;
 
-        // The permit will be added back manually to the semaphore the task after it is finished.
-        let permit_guard = self.concurrent_upload_permits.acquire().await;
+        {
+            // The permit will be added back manually to the semaphore the task after it is finished.
+            let _permit_guard = self.concurrent_upload_permits.acquire().await;
 
-        let metastore = self.metastore.clone();
-        let kill_switch = ctx.kill_switch().clone();
-        let index_storage = self.index_storage.clone();
+            let uploaded_split =
+                stage_and_upload_split(split, &*self.index_storage, &*self.metastore).await?;
 
-        tokio::task::spawn(async move {
-            let run_upload_res = run_upload(split, index_storage, metastore).await;
-            if run_upload_res.is_err() {
-                kill_switch.kill();
-            }
-            let uploaded_split = run_upload_res?;
-            if split_uploaded_tx.send(uploaded_split).is_err() {
-                kill_switch.kill();
-            }
-            std::mem::drop(permit_guard); //< we explicitely drop the permit to allow for another upload to happen here.
-            Result::<(), anyhow::Error>::Ok(())
-        });
+            split_uploaded_tx
+                .send(uploaded_split)
+                .map_err(|_| ActorExitStatus::DownstreamClosed)?;
+        }
+
         Ok(())
     }
 }
@@ -248,7 +234,7 @@ mod tests {
                     checkpoint_delta: CheckpointDelta::from(3..15),
                     time_range: Some(1_628_203_589i64..=1_628_203_640i64),
                     size_in_bytes: 1_000,
-                    footer_offsets: (1000..2000),
+                    footer_offsets: 1000..2000,
                     segment_ids,
                     split_scratch_directory,
                     num_docs: 10,

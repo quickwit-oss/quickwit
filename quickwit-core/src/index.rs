@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use quickwit_metastore::{
-    SplitMetadataAndFooterOffsets, IndexMetadata, Metastore, MetastoreUriResolver, SplitState,
+    IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadataAndFooterOffsets, SplitState,
 };
 use quickwit_storage::StorageUriResolver;
 use tantivy::chrono::Utc;

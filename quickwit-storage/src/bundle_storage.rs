@@ -24,10 +24,10 @@ use crate::Storage;
 use crate::{StorageError, StorageResult};
 use async_trait::async_trait;
 use bytes::Bytes;
-use quickwit_common::HOTCACHE_FILENAME;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::fmt;
 use std::fmt::Debug;
 use std::fs::File;
@@ -35,8 +35,9 @@ use std::io::{self, ErrorKind, Read, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tantivy::common::BinarySerializable;
+use tantivy::common::CountingWriter;
 use tantivy::HasLen;
+use thiserror::Error;
 use tracing::error;
 
 /// Filename used for the bundle.
@@ -46,7 +47,7 @@ pub const BUNDLE_FILENAME: &str = "bundle";
 /// with some metadata
 pub struct BundleStorage {
     storage: Arc<dyn Storage>,
-    bundle_file_name: PathBuf,
+    bundle_filepath: PathBuf,
     metadata: BundleStorageFileOffsets,
 }
 
@@ -56,16 +57,24 @@ impl BundleStorage {
     /// The provided data must include the footer_bytes at the end of the slice, but it can have more up front.
     pub fn new(
         storage: Arc<dyn Storage>,
-        bundle_file_name: PathBuf,
+        bundle_filepath: PathBuf,
         meta_data: &[u8],
-    ) -> io::Result<Self> {
+    ) -> Result<Self, CorruptedData> {
         let metadata = BundleStorageFileOffsets::open(meta_data)?;
         Ok(BundleStorage {
             storage,
-            bundle_file_name,
+            bundle_filepath,
             metadata,
         })
     }
+}
+
+#[derive(Debug, Error)]
+#[error("CorruptedData. error: {error:?}")]
+pub struct CorruptedData {
+    #[from]
+    #[source]
+    pub error: serde_json::Error,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -74,19 +83,21 @@ struct BundleStorageFileOffsets {
 }
 
 impl BundleStorageFileOffsets {
-    fn open(data: &[u8]) -> io::Result<Self> {
-        let footer_size: u64 = BinarySerializable::deserialize(&mut &data[data.len() - 8..])?;
-
-        let footer_slice = &data[data.len() - 8 - footer_size as usize..data.len() - 8];
-        serde_json::from_slice(footer_slice)
-            .map_err(|err| io::Error::new(ErrorKind::InvalidData, err))
+    fn open(data: &[u8]) -> Result<Self, CorruptedData> {
+        let (body_and_footer, footer_num_bytes_data) = data.split_at(data.len() - 8);
+        let footer_num_bytes: u64 = u64::from_le_bytes(footer_num_bytes_data.try_into().unwrap());
+        let footer_slice = &body_and_footer[body_and_footer.len() - footer_num_bytes as usize..];
+        let bundle_storage_file_offsets = serde_json::from_slice(footer_slice)?;
+        Ok(bundle_storage_file_offsets)
     }
+
     fn get(&self, path: &Path) -> StorageResult<Range<usize>> {
         self.files
             .get(path)
             .cloned()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "not found in metadata").into())
     }
+
     fn exists(&self, path: &Path) -> bool {
         self.files.contains_key(path)
     }
@@ -107,7 +118,7 @@ impl Storage for BundleStorage {
         let new_range =
             file_offsets.start as usize + range.start..file_offsets.start as usize + range.end;
         self.storage
-            .get_slice(&self.bundle_file_name, new_range)
+            .get_slice(&self.bundle_filepath, new_range)
             .await
     }
 
@@ -115,7 +126,7 @@ impl Storage for BundleStorage {
         let file_offsets = self.metadata.get(path)?;
         self.storage
             .get_slice(
-                &self.bundle_file_name,
+                &self.bundle_filepath,
                 file_offsets.start as usize..file_offsets.end as usize,
             )
             .await
@@ -146,7 +157,7 @@ impl fmt::Debug for BundleStorage {
         write!(
             f,
             "BundleStorage({:?}, files={:?})",
-            &self.bundle_file_name, self.metadata
+            &self.bundle_filepath, self.metadata
         )
     }
 }
@@ -159,21 +170,17 @@ fn unsupported_operation(path: &Path) -> StorageError {
 
 /// BundleStorage bundles together multiple files into a single file
 /// with some metadata
-pub struct BundleStorageBuilder {
+pub struct BundleStorageBuilder<W> {
     metadata: BundleStorageFileOffsets,
-    current_offset: usize,
-    bundle_file: File,
+    counting_writer: CountingWriter<W>,
 }
 
-
-impl BundleStorageBuilder {
+impl<W: io::Write> BundleStorageBuilder<W> {
     /// Creates a new BundleStorageBuilder, to which files can be added.
-    pub fn new(path: &Path) -> io::Result<Self> {
-        let sink = File::create(path)?;
-
+    pub fn new(wrt: W) -> io::Result<Self> {
+        let counting_writer = CountingWriter::wrap(wrt);
         Ok(BundleStorageBuilder {
-            bundle_file: sink,
-            current_offset: 0,
+            counting_writer,
             metadata: Default::default(),
         })
     }
@@ -187,12 +194,12 @@ impl BundleStorageBuilder {
         mut read: R,
         file_name: PathBuf,
     ) -> io::Result<()> {
-        let bytes_written = io::copy(&mut read, &mut self.bundle_file)? as usize;
-        self.metadata.files.insert(
-            file_name,
-            self.current_offset..self.current_offset + bytes_written,
-        );
-        self.current_offset += bytes_written;
+        let start_offset = self.counting_writer.written_bytes() as usize;
+        io::copy(&mut read, &mut self.counting_writer)?;
+        let end_offset = self.counting_writer.written_bytes() as usize;
+        self.metadata
+            .files
+            .insert(file_name, start_offset..end_offset);
         Ok(())
     }
 
@@ -218,88 +225,79 @@ impl BundleStorageBuilder {
         // The footer offset, where the footer begins.
         // The footer includes the footer metadata as json encoded and the size of the footer in
         // bytes.
-        let file_offsets_metadata_start = self.current_offset;
+        let file_offsets_metadata_start = self.counting_writer.written_bytes();
         let metadata_json = serde_json::to_string(&self.metadata)?;
-        self.bundle_file.write_all(metadata_json.as_bytes())?;
-        self.current_offset += metadata_json.as_bytes().len();
-        let meta_data_json_len = metadata_json.len() as u64;
-        BinarySerializable::serialize(&meta_data_json_len, &mut self.bundle_file)?;
-        self.current_offset += 8;
-        let footer_offset_end = self.current_offset;
-        Ok(file_offsets_metadata_start..self.current_offset)
+        self.counting_writer.write_all(metadata_json.as_bytes())?;
+        let metadata_json_len = metadata_json.len() as u64;
+        self.counting_writer
+            .write_all(&metadata_json_len.to_le_bytes())?;
+        let file_offsets_metadata_end = self.counting_writer.written_bytes();
+        Ok(file_offsets_metadata_start..file_offsets_metadata_end)
     }
 }
+
 #[cfg(test)]
 mod tests {
-    use std::env::temp_dir;
-
-    use crate::LocalFileStorage;
+    use crate::RamStorageBuilder;
 
     use super::*;
 
     #[tokio::test]
-    async fn bundlestorage_test() -> anyhow::Result<()> {
-        let temp_dir = temp_dir();
-        let bundle_file_name = temp_dir.join("bundle1");
-        let mut create_bundle = BundleStorageBuilder::new(&bundle_file_name)?;
+    async fn bundle_storage_test() -> anyhow::Result<()> {
+        let mut buffer = Vec::new();
+        let mut bundle_builder = BundleStorageBuilder::new(&mut buffer)?;
 
-        let test_file1_name = temp_dir.join("f1");
-        let test_file2_name = temp_dir.join(HOTCACHE_FILENAME);
+        let temp_dir = tempfile::tempdir()?;
+        let test_filepath1 = temp_dir.path().join("f1");
+        let test_filepath2 = temp_dir.path().join("f2");
 
-        let mut file1 = File::create(&test_file1_name).unwrap();
+        let mut file1 = File::create(&test_filepath1)?;
         file1.write_all(&[123, 76])?;
 
-        let mut file2 = File::create(&test_file2_name).unwrap();
+        let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(&[99, 55, 44])?;
 
-        create_bundle.add_file(&test_file1_name)?;
-        create_bundle.add_file(&test_file2_name)?;
-        let offsets = create_bundle.finalize()?;
-        assert!(offsets.footer_offsets.start > offsets.hotcache_offset_start);
+        bundle_builder.add_file(&test_filepath1)?;
+        bundle_builder.add_file(&test_filepath2)?;
+        bundle_builder.finalize()?;
 
-        let bytes = std::fs::read(&bundle_file_name)?;
+        let metadata = BundleStorageFileOffsets::open(&buffer)?;
+        let bundle_filepath = Path::new("bundle");
+        let ram_storage = RamStorageBuilder::default()
+            .put(&bundle_filepath.to_string_lossy(), &buffer)
+            .build();
 
-        let metadata = BundleStorageFileOffsets::open(&bytes).unwrap();
-
-        let path_root = format!("file://{}", temp_dir.to_string_lossy());
-        let file_storage = LocalFileStorage::from_uri(&path_root)?;
         let bundle_storage = BundleStorage {
             metadata,
-            bundle_file_name,
-            storage: Arc::new(file_storage),
+            bundle_filepath: bundle_filepath.to_path_buf(),
+            storage: Arc::new(ram_storage),
         };
         let f1_data = bundle_storage.get_all(Path::new("f1")).await?;
-        assert_eq!(f1_data, &vec![123, 76]);
+        assert_eq!(&*f1_data, &[123u8, 76u8]);
 
-        let f2_data = bundle_storage.get_all(Path::new(HOTCACHE_FILENAME)).await?;
-        assert_eq!(f2_data, &vec![99, 55, 44]);
-
-        let f2_data = bundle_storage
-            .get_slice(Path::new(HOTCACHE_FILENAME), 1..3)
-            .await?;
-        assert_eq!(f2_data, &vec![55, 44]);
+        let f2_data = bundle_storage.get_all(Path::new("f2")).await?;
+        assert_eq!(&f2_data[..], &[99, 55, 44]);
 
         Ok(())
     }
 
     #[tokio::test]
     async fn bundlestorage_test_empty() -> anyhow::Result<()> {
-        let temp_dir = temp_dir();
-        let bundle_file_name = temp_dir.join("bundle2");
-        let create_bundle = BundleStorageBuilder::new(&bundle_file_name)?;
+        let mut buffer: Vec<u8> = Vec::new();
 
+        let create_bundle = BundleStorageBuilder::new(&mut buffer)?;
         create_bundle.finalize()?;
 
-        let bytes = std::fs::read(&bundle_file_name)?;
+        let metadata = BundleStorageFileOffsets::open(&buffer)?;
 
-        let metadata = BundleStorageFileOffsets::open(&bytes).unwrap();
-
-        let path_root = format!("file://{}", temp_dir.to_string_lossy());
-        let file_storage = LocalFileStorage::from_uri(&path_root)?;
+        let bundle_filepath = PathBuf::from("bundle");
+        let ram_storage = RamStorageBuilder::default()
+            .put(&bundle_filepath.to_string_lossy(), &buffer)
+            .build();
         let bundle_storage = BundleStorage {
             metadata,
-            bundle_file_name,
-            storage: Arc::new(file_storage),
+            bundle_filepath,
+            storage: Arc::new(ram_storage),
         };
 
         assert_eq!(bundle_storage.exists(Path::new("blub")).await?, false);

@@ -440,11 +440,10 @@ mod tests {
     use quickwit_metastore::SplitMetadataAndFooterOffsets;
     use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::SplitSearchError;
-    use quickwit_storage::BundleStorageOffsets;
 
     fn mock_split_meta(split_id: &str) -> SplitMetadataAndFooterOffsets {
         SplitMetadataAndFooterOffsets {
-            bundle_offsets: Default::default(),
+            footer_offsets: Default::default(),
             split_metadata: SplitMetadata {
                 split_id: split_id.to_string(),
                 split_state: SplitState::Published,

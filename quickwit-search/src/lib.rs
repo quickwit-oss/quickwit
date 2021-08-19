@@ -48,7 +48,7 @@ use anyhow::Context;
 use tantivy::DocAddress;
 
 use quickwit_metastore::SplitState;
-use quickwit_metastore::{SplitMetadataAndFooterOffsets, Metastore, MetastoreResult};
+use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadataAndFooterOffsets};
 use quickwit_proto::SearchRequest;
 use quickwit_proto::{PartialHit, SearchResult};
 use quickwit_storage::StorageUriResolver;

@@ -28,9 +28,9 @@ use crate::indexing::manifest::Manifest;
 use anyhow::{self, Context};
 use quickwit_common::HOTCACHE_FILENAME;
 use quickwit_directories::write_hotcache;
-use quickwit_metastore::SplitMetadataAndFooterOffsets;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::SplitMetadataAndFooterOffsets;
 use quickwit_storage::{PutPayload, Storage, StorageUriResolver};
 use std::sync::Arc;
 use std::time::Instant;
@@ -232,7 +232,7 @@ impl Split {
     pub async fn stage(&self) -> anyhow::Result<String> {
         let metadata = SplitMetadataAndFooterOffsets {
             split_metadata: self.metadata.clone(),
-            footer_offsets: (1000..2000)
+            footer_offsets: 1000..2000,
         };
         self.metastore.stage_split(&self.index_id, metadata).await?;
         Ok(self.id.to_string())
