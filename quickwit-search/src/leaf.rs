@@ -26,7 +26,9 @@ use itertools::{Either, Itertools};
 use quickwit_common::HOTCACHE_FILENAME;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_index_config::IndexConfig;
-use quickwit_proto::{LeafSearchResult, SearchRequest, SplitSearchError};
+use quickwit_proto::{
+    LeafSearchRequestMetadata, LeafSearchResult, SearchRequest, SplitSearchError,
+};
 use quickwit_storage::Storage;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -125,11 +127,12 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
 
 /// Apply a leaf search on a single split.
 async fn leaf_search_single_split(
-    split_id: String,
+    request_metadata: LeafSearchRequestMetadata,
     index_config: Arc<dyn IndexConfig>,
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchResult> {
+    let split_id = request_metadata.split_id.to_string();
     let index = open_index(storage).await?;
     let split_schema = index.schema();
     let quickwit_collector = make_collector_for_split(
@@ -159,24 +162,26 @@ async fn leaf_search_single_split(
 pub async fn leaf_search(
     index_config: Arc<dyn IndexConfig>,
     request: &SearchRequest,
-    split_ids: &[String],
+    split_metadata: &[LeafSearchRequestMetadata],
     storage: Arc<dyn Storage>,
 ) -> Result<LeafSearchResult, SearchError> {
-    let leaf_search_single_split_futures: Vec<_> = split_ids
+    let leaf_search_single_split_futures: Vec<_> = split_metadata
         .iter()
-        .map(|split_id| {
-            let split_storage: Arc<dyn Storage> =
-                quickwit_storage::add_prefix_to_storage(storage.clone(), split_id);
+        .map(|split_metadata| {
+            let split_storage: Arc<dyn Storage> = quickwit_storage::add_prefix_to_storage(
+                storage.clone(),
+                split_metadata.split_id.to_string(),
+            );
             let index_config_clone = index_config.clone();
             async move {
                 leaf_search_single_split(
-                    split_id.clone(),
+                    split_metadata.clone(),
                     index_config_clone,
                     request,
                     split_storage,
                 )
                 .await
-                .map_err(|err| (split_id.to_string(), err))
+                .map_err(|err| (split_metadata.split_id.to_string(), err))
             }
         })
         .collect();

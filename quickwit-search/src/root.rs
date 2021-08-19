@@ -26,6 +26,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use itertools::Itertools;
+use quickwit_metastore::SplitMetadataAndFooterOffsets;
+use quickwit_proto::LeafSearchRequestMetadata;
 use quickwit_proto::SplitSearchError;
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
@@ -73,13 +75,24 @@ async fn execute_search(
     for (search_client, jobs) in assigned_leaf_search_jobs.iter() {
         let leaf_search_request = LeafSearchRequest {
             search_request: Some(search_request_with_offset_0.clone()),
-            split_ids: jobs.iter().map(|job| job.split.clone()).collect(),
+            split_metadata: jobs
+                .iter()
+                .map(|job| LeafSearchRequestMetadata {
+                    split_id: job.metadata.split_metadata.split_id.to_string(),
+                    split_footer_start: job.metadata.footer_offsets.start as u64,
+                    split_footer_end: job.metadata.footer_offsets.end as u64,
+                })
+                .collect(),
         };
 
         debug!(leaf_search_request=?leaf_search_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
         let mut search_client_clone: SearchServiceClient = search_client.clone();
         let handle = tokio::spawn(async move {
-            let split_ids = leaf_search_request.split_ids.to_vec();
+            let split_ids = leaf_search_request
+                .split_metadata
+                .iter()
+                .map(|metadata| metadata.split_id.to_string())
+                .collect_vec();
             search_client_clone
                 .leaf_search(leaf_search_request)
                 .await
@@ -176,15 +189,15 @@ fn analyze_errors(search_result: &SearchResultsByAddr) -> Option<ErrorRetries> {
 
 pub(crate) fn job_for_splits(
     split_ids: &HashSet<&String>,
-    split_metadata_map: &HashMap<String, SplitMetadata>,
+    split_metadata_map: &HashMap<String, SplitMetadataAndFooterOffsets>,
 ) -> Vec<Job> {
     // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
     let leaf_search_jobs: Vec<Job> = split_metadata_map
         .iter()
         .filter(|(split_id, _)| split_ids.contains(split_id))
-        .map(|(split_id, split_metadata)| Job {
-            split: split_id.clone(),
-            cost: compute_split_cost(split_metadata),
+        .map(|(_split_id, metadata)| Job {
+            metadata: metadata.clone(),
+            cost: compute_split_cost(&metadata.split_metadata),
         })
         .collect();
     leaf_search_jobs
@@ -210,14 +223,9 @@ pub async fn root_search(
     let split_metadata_list = list_relevant_splits(search_request, metastore).await?;
 
     // Create a hash map of SplitMetadata with split id as a key.
-    let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
+    let split_metadata_map: HashMap<String, SplitMetadataAndFooterOffsets> = split_metadata_list
         .into_iter()
-        .map(|metadata| {
-            (
-                metadata.split_metadata.split_id.clone(),
-                metadata.split_metadata,
-            )
-        })
+        .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
         .collect();
 
     // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
@@ -361,7 +369,7 @@ pub async fn root_search(
     let fetch_docs_req_jobs = partial_hits_map
         .keys()
         .map(|split_id| Job {
-            split: split_id.to_string(),
+            metadata: split_metadata_map.get(split_id).unwrap().clone(),
             cost: 1,
         })
         .collect_vec();
@@ -378,7 +386,8 @@ pub async fn root_search(
     for (search_client, jobs) in doc_fetch_jobs.iter() {
         for job in jobs {
             // TODO group fetch doc requests.
-            if let Some(partial_hits) = partial_hits_map.get(&job.split) {
+            if let Some(partial_hits) = partial_hits_map.get(&job.metadata.split_metadata.split_id)
+            {
                 let fetch_docs_request = FetchDocsRequest {
                     partial_hits: partial_hits.clone(),
                     index_id: search_request.index_id.clone(),
@@ -709,7 +718,12 @@ mod tests {
             .expect_leaf_search()
             .times(2)
             .returning(|leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                if leaf_search_req.split_ids == vec!["split1".to_string()] {
+                let split_ids = leaf_search_req
+                    .split_metadata
+                    .iter()
+                    .map(|metadata| metadata.split_id.to_string())
+                    .collect_vec();
+                if split_ids == vec!["split1".to_string()] {
                     Ok(quickwit_proto::LeafSearchResult {
                         num_hits: 2,
                         partial_hits: vec![
@@ -719,7 +733,7 @@ mod tests {
                         failed_splits: Vec::new(),
                         num_attempted_splits: 1,
                     })
-                } else if leaf_search_req.split_ids == vec!["split2".to_string()] {
+                } else if split_ids == vec!["split2".to_string()] {
                     // RETRY REQUEST!
                     Ok(quickwit_proto::LeafSearchResult {
                         num_hits: 1,
@@ -728,7 +742,7 @@ mod tests {
                         num_attempted_splits: 1,
                     })
                 } else {
-                    panic!("unexpected request in test {:?}", leaf_search_req.split_ids);
+                    panic!("unexpected request in test {:?}", split_ids);
                 }
             });
         mock_search_service2.expect_fetch_docs().returning(

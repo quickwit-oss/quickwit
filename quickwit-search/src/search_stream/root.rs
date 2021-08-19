@@ -26,11 +26,12 @@ use bytes::Bytes;
 use futures::StreamExt;
 use itertools::Either;
 use itertools::Itertools;
+use quickwit_metastore::SplitMetadataAndFooterOffsets;
 use quickwit_proto::LeafSearchStreamRequest;
 use quickwit_proto::SearchStreamRequest;
 use tracing::*;
 
-use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_metastore::Metastore;
 use quickwit_proto::SearchRequest;
 
 use crate::client_pool::Job;
@@ -53,14 +54,9 @@ pub async fn root_search_stream(
     // This needs some refactoring: relevant splits, metadata_map, jobs...
     let search_request = SearchRequest::from(search_stream_request.clone());
     let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
-    let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
+    let split_metadata_map: HashMap<String, SplitMetadataAndFooterOffsets> = split_metadata_list
         .into_iter()
-        .map(|metadata| {
-            (
-                metadata.split_metadata.split_id.clone(),
-                metadata.split_metadata,
-            )
-        })
+        .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
         .collect();
     let leaf_search_jobs: Vec<Job> =
         job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
@@ -72,7 +68,10 @@ pub async fn root_search_stream(
 
     let mut handles = Vec::new();
     for (mut search_client, jobs) in assigned_leaf_search_jobs {
-        let split_ids: Vec<String> = jobs.iter().map(|job| job.split.clone()).collect();
+        let split_ids: Vec<String> = jobs
+            .iter()
+            .map(|job| job.metadata.split_metadata.split_id.clone())
+            .collect();
         let leaf_request = LeafSearchStreamRequest {
             request: Some(search_stream_request.clone()),
             split_ids: split_ids.clone(),
@@ -126,6 +125,7 @@ mod tests {
 
     use crate::MockSearchService;
     use quickwit_index_config::WikipediaIndexConfig;
+    use quickwit_metastore::SplitMetadata;
     use quickwit_metastore::{
         checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitMetadataAndFooterOffsets,
         SplitState,
