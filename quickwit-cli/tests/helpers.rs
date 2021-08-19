@@ -38,6 +38,7 @@ const DEFAULT_INDEX_CONFIG: &str = r#"{
     "store_source": true,
     "default_search_fields": ["event"], // Used when no field is specified in your query. 
     "timestamp_field": "ts",
+    "tag_fields": ["device", "city"],
     "field_mappings": [
         {
             "name": "event",
@@ -52,15 +53,27 @@ const DEFAULT_INDEX_CONFIG: &str = r#"{
             "name": "ts",
             "type": "i64",
             "fast": /* timestamp field should be fast*/ true
+        },
+        {
+            "name": "device",
+            "type": "text",
+            "stored": false,
+            "tokenizer": "raw"
+        },
+        {
+            "name": "city",
+            "type": "text",
+            "stored": false,
+            "tokenizer": "raw"
         }
     ]
 }"#;
 
-const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 2}
-{"event": "bar", "level": "error", "ts": 3}
-{"event": "baz", "level": "warning", "ts": 9}
-{"event": "buz", "level": "debug", "ts": 12}
-{"event": "biz", "level": "info", "ts": 13}"#;
+const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 2, "device": "rpi", "city": "tokio"}
+{"event": "bar", "level": "error", "ts": 3, "device": "rpi", "city": "paris"}
+{"event": "baz", "level": "warning", "ts": 9, "device": "fbit", "city": "london"}
+{"event": "buz", "level": "debug", "ts": 12, "device": "rpi", "city": "paris"}
+{"event": "biz", "level": "info", "ts": 13, "device": "fbit", "city": "paris"}"#;
 
 const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "https://wiki.com?id=10"}
 {"body": "bar", "title": "shimray", "url": "https://wiki.com?id=12"}

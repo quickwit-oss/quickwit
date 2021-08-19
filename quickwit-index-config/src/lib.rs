@@ -51,6 +51,7 @@ pub fn default_config_for_tests() -> DefaultIndexConfig {
                 "body", "attributes.server", "attributes.server.status"
             ],
             "timestamp_field": "timestamp",
+            "tag_fields": [],
             "field_mappings": [
                 {
                     "name": "timestamp",

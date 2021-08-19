@@ -25,7 +25,7 @@ use std::time::Instant;
 
 use quickwit_metastore::checkpoint::CheckpointDelta;
 use tantivy::merge_policy::NoMergePolicy;
-use tantivy::schema::Schema;
+use tantivy::schema::{Field, Schema};
 
 use crate::models::ScratchDirectory;
 
@@ -52,6 +52,8 @@ pub struct IndexedSplit {
     pub index: tantivy::Index,
     pub index_writer: tantivy::IndexWriter,
     pub split_scratch_directory: ScratchDirectory,
+    /// List of (field name, field) for extracting tags.
+    pub tag_fields: Vec<(String, Field)>,
 }
 
 impl fmt::Debug for IndexedSplit {
@@ -74,6 +76,7 @@ impl IndexedSplit {
         index_id: String,
         index_scratch_directory: &ScratchDirectory,
         schema: Schema,
+        tag_fields: Vec<(String, Field)>,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
@@ -95,6 +98,7 @@ impl IndexedSplit {
             index_writer,
             split_scratch_directory,
             checkpoint_delta: CheckpointDelta::default(),
+            tag_fields,
         })
     }
 

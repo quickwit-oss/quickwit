@@ -169,6 +169,26 @@ fn merge_segments_if_required(
     Ok(segment_metas_after_merge)
 }
 
+fn extract_tags(split: &mut IndexedSplit) -> anyhow::Result<Vec<String>> {
+    info!("extract-tags");
+    let mut tags = vec![];
+    let index_reader = split.index.reader()?;
+    for reader in index_reader.searcher().segment_readers() {
+        for (field_name, field) in split.tag_fields.iter() {
+            let inv_index = reader.inverted_index(*field)?;
+            let mut terms_streamer = inv_index.terms().stream()?;
+            while let Some((term_data, _)) = terms_streamer.next() {
+                tags.push(format!(
+                    "{}:{}",
+                    field_name,
+                    String::from_utf8_lossy(term_data)
+                ));
+            }
+        }
+    }
+    Ok(tags)
+}
+
 fn build_hotcache(path: &Path) -> anyhow::Result<()> {
     info!("build-hotcache");
     let hotcache_path = path.join(HOTCACHE_FILENAME);
@@ -181,6 +201,7 @@ fn build_hotcache(path: &Path) -> anyhow::Result<()> {
 fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
+    tags: Vec<String>,
 ) -> anyhow::Result<PackagedSplit> {
     info!("create-packaged-split");
     let num_docs = segment_metas
@@ -211,6 +232,7 @@ fn create_packaged_split(
         size_in_bytes: split.docs_size_in_bytes,
         bundle_offsets,
         file_statistics,
+        tags,
     };
     Ok(packaged_split)
 }
@@ -223,8 +245,9 @@ impl SyncActor for Packager {
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
+        let tags = extract_tags(&mut split)?;
         build_hotcache(split.split_scratch_directory.path())?;
-        let packaged_split = create_packaged_split(&segment_metas[..], split)?;
+        let packaged_split = create_packaged_split(&segment_metas[..], split, tags)?;
         ctx.send_message_blocking(&self.uploader_mailbox, packaged_split)?;
         Ok(())
     }
@@ -296,6 +319,7 @@ mod tests {
             index_writer,
             split_scratch_directory,
             checkpoint_delta: CheckpointDelta::from(10..20),
+            tag_fields: vec![],
         };
         Ok(indexed_split)
     }

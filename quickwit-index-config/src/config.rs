@@ -23,7 +23,6 @@
 use crate::DocParsingError;
 use dyn_clone::clone_trait_object;
 use dyn_clone::DynClone;
-use itertools::Itertools;
 use quickwit_proto::SearchRequest;
 use std::fmt::Debug;
 use tantivy::query::Query;
@@ -110,14 +109,15 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     }
 
     /// Returns the tag fields
-    fn tag_fields(&self, split_schema: &Schema) -> Vec<Field> {
-        self.tag_field_names().iter()
-            .map(|field_name| split_schema.get_field(&field_name))
-            .filter(|field_opt| field_opt.is_some())
-            .map(|field_opt| field_opt.unwrap())
-            .collect_vec()
+    fn tag_fields(&self, split_schema: &Schema) -> Vec<(String, Field)> {
+        let mut fields_map = vec![];
+        for field_name in self.tag_field_names() {
+            if let Some(field) = split_schema.get_field(&field_name) {
+                fields_map.push((field_name, field))
+            }
+        }
+        fields_map
     }
-
 }
 
 clone_trait_object!(IndexConfig);

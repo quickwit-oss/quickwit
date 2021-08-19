@@ -43,7 +43,6 @@ pub async fn index_documents(
     let index_metadata = metastore.index_metadata(&params.index_id).await?;
     let schema = index_metadata.index_config.schema();
     let timestamp_field = index_metadata.index_config.timestamp_field(&schema);
-    let tag_fields = index_metadata.index_config.tag_fields(&schema);
 
     let mut current_split = Split::create(
         params,
@@ -51,7 +50,6 @@ pub async fn index_documents(
         metastore.clone(),
         schema.clone(),
         timestamp_field,
-        tag_fields,
     )
     .await?;
     while let Some(raw_json_doc) = document_source.next_document().await? {

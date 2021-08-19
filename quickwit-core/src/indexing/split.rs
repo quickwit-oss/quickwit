@@ -75,8 +75,8 @@ pub struct Split {
     pub metastore: Arc<dyn Metastore>,
     /// The timestamp field
     pub timestamp_field: Option<Field>,
-    /// The field to extract tags from.
-    pub tag_fields: Vec<Field>,
+    // The field to extract tags from.
+    //pub tag_fields: Vec<Field>,
 }
 
 impl fmt::Debug for Split {
@@ -113,7 +113,7 @@ impl Split {
         metastore: Arc<dyn Metastore>,
         schema: Schema,
         timestamp_field: Option<Field>,
-        tag_fields: Vec<Field>,
+        //tag_fields: Vec<Field>,
     ) -> anyhow::Result<Self> {
         let id = Uuid::new_v4();
         let split_scratch_dir = Box::new(tempfile::tempdir_in(params.temp_dir.path())?);
@@ -144,7 +144,7 @@ impl Split {
             storage,
             metastore,
             timestamp_field,
-            tag_fields,
+            //tag_fields,
         })
     }
 
@@ -181,14 +181,14 @@ impl Split {
             }
         };
 
-        for tag_field in self.tag_fields {
-            if let Some(tag_value) = doc.get_first(tag_field)
-            .and_then(|field_value| field_value.text())
-            .map(|value| String::from(value)) {
-                //Thinking tags should be a HashSet
-                self.metadata.tags.push(tag_value);
-            }
-        }
+        // for tag_field in self.tag_fields {
+        //     if let Some(tag_value) = doc.get_first(tag_field)
+        //     .and_then(|field_value| field_value.text())
+        //     .map(|value| String::from(value)) {
+        //         //Thinking tags should be a HashSet
+        //         self.metadata.tags.push(tag_value);
+        //     }
+        // }
 
         self.metadata.size_in_bytes += doc_size as u64;
         self.metadata.num_records += 1;
@@ -262,6 +262,24 @@ impl Split {
     pub async fn upload(&self) -> anyhow::Result<Manifest> {
         let manifest = put_split_files_to_storage(&*self.storage, self).await?;
         Ok(manifest)
+    }
+
+    pub async fn extract_tags(&mut self, tag_fields: Vec<(String, Field)>) -> anyhow::Result<()> {
+        let index_reader = self.index.reader()?;
+        for reader in index_reader.searcher().segment_readers() {
+            for (field_name, field) in tag_fields.iter() {
+                let inv_index = reader.inverted_index(*field)?;
+                let mut terms_streamer = inv_index.terms().stream()?;
+                while let Some((term_data, _)) = terms_streamer.next() {
+                    self.metadata.tags.push(format!(
+                        "{}:{}",
+                        field_name,
+                        String::from_utf8_lossy(term_data)
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -458,7 +476,6 @@ mod tests {
             metastore,
             schema,
             None,
-            vec![],
         )
         .await?;
 
@@ -526,7 +543,6 @@ mod tests {
             metastore,
             schema.clone(),
             Some(timestamp),
-            vec![],
         )
         .await;
         assert!(split_result.is_ok());
