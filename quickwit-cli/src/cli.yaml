@@ -84,6 +84,11 @@ subcommands:
                 help: Filters out documents after that timestamp (time-series indexes only)
                 long: end-timestamp
                 value_name: TIMESTAMP
+            - tags:
+                help: Searches only in splits matching specified tags
+                long: tags
+                value_name: TAG
+                multiple: true
     - gc:
         about: Garbage collects danglings files from an index
         args:

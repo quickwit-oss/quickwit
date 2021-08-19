@@ -62,6 +62,7 @@ Search for documents matching a query in the given index `<index name>`.
 | **startOffset** | `Integer` | Number of documents to skip | `0` |
 | **maxHits** | `Integer` | Maximum number of hits to return (by default 20) | `20` |
 | **format** | `String` | Response output format. `json` or `pretyjson`  | `pretyjson` |
+| **tags** | `[String]` | If set, the search is restricted to only splits having one of the tags | |
 
 
 ### Response
@@ -110,6 +111,7 @@ The endpoint will return 10 million values if 10 million documents match the que
 | **startTimestamp** | `i64` | If set, restrict search to documents with a `timestamp >= start_timestamp` | |
 | **endTimestamp** | `i64` | If set, restrict search to documents with a `timestamp < end_timestamp`` | |
 | **outputFormat** | `String` | Response output format. `csv` or `clickHouseRowBinary`  | `csv` |
+| **tags** | `[String]` | If set, the search is restricted to only splits having one of the tags | |
 
 
 ### Response

@@ -310,6 +310,7 @@ impl Metastore for SingleFileMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
+        tags: &[String],
     ) -> MetastoreResult<Vec<BundleAndSplitMetadata>> {
         let time_range_filter = |split_metadata: &SplitMetadata| match (
             time_range_opt.as_ref(),
@@ -321,6 +322,18 @@ impl Metastore for SingleFileMetastore {
             _ => true, // Return `true` if `time_range` is omitted or the split has no time range.
         };
 
+        let tag_filter = |split_metadata: &SplitMetadata| {
+            if tags.is_empty() {
+                return true;
+            }
+            for tag in tags {
+                if split_metadata.tags.contains(tag) {
+                    return true;
+                }
+            }
+            false
+        };
+
         let metadata_set = self.get_index(index_id).await?;
         let splits = metadata_set
             .splits
@@ -328,6 +341,7 @@ impl Metastore for SingleFileMetastore {
             .filter(|metadata| {
                 metadata.split_metadata.split_state == state
                     && time_range_filter(&metadata.split_metadata)
+                    && tag_filter(&metadata.split_metadata)
             })
             .collect();
         Ok(splits)

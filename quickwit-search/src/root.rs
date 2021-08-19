@@ -453,6 +453,7 @@ mod tests {
                 time_range: None,
                 generation: 1,
                 update_timestamp: 0,
+                tags: vec!["foo".to_string()],
                 bundle_offsets: BundleStorageOffsets {
                     footer_offsets: 700..800,
                     hotcache_offset_start: 1234,
@@ -500,6 +501,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -515,9 +517,10 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
-                Ok(vec![mock_split_meta("split1")])
-            },
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
         let mut mock_search_service = MockSearchService::new();
@@ -565,6 +568,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -580,7 +584,10 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| {
                 Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
             },
         );
@@ -653,6 +660,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -668,7 +676,10 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| {
                 Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
             },
         );
@@ -764,6 +775,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -779,7 +791,10 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| {
                 Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
             },
         );
@@ -893,6 +908,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -908,9 +924,10 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
-                Ok(vec![mock_split_meta("split1")])
-            },
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
         let mut first_call = true;
@@ -977,6 +994,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -992,9 +1010,10 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
-                Ok(vec![mock_split_meta("split1")])
-            },
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
         let mut mock_search_service1 = MockSearchService::new();
@@ -1038,6 +1057,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -1053,9 +1073,10 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
-                Ok(vec![mock_split_meta("split1")])
-            },
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
         let mut mock_search_service1 = MockSearchService::new();
@@ -1101,6 +1122,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -1116,9 +1138,10 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
-                Ok(vec![mock_split_meta("split1")])
-            },
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
         // service1 - broken node
@@ -1197,6 +1220,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            tags: vec![],
         };
         println!("search_request={:?}", search_request);
 
@@ -1212,9 +1236,10 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
-                Ok(vec![mock_split_meta("split1")])
-            },
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
         // service1 - working node
@@ -1260,7 +1285,6 @@ mod tests {
         );
 
         let search_result = root_search(&search_request, &metastore, &client_pool).await?;
-        //println!("search_result={:?}", search_result);
 
         let search_result_json = SearchResultJson::from(search_result.clone());
         let search_result_json = serde_json::to_string_pretty(&search_result_json)?;

@@ -136,6 +136,9 @@ impl CliCommand {
         } else {
             None
         };
+        let tags = matches
+            .values_of("tags")
+            .map(|values| values.map(|value| value.to_string()).collect());
 
         Ok(CliCommand::Search(SearchIndexArgs {
             index_uri,
@@ -145,6 +148,7 @@ impl CliCommand {
             search_fields,
             start_timestamp,
             end_timestamp,
+            tags,
         }))
     }
 
@@ -460,6 +464,7 @@ mod tests {
                 search_fields: None,
                 start_timestamp: None,
                 end_timestamp: None,
+                tags: None,
             })) if index_uri == "./wikipedia" && query == "Barack Obama"
         ));
 
@@ -482,6 +487,9 @@ mod tests {
             "0",
             "--end-timestamp",
             "1",
+            "--tags",
+            "device:rpi",
+            "city:paris",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
@@ -494,7 +502,10 @@ mod tests {
                 search_fields: Some(field_names),
                 start_timestamp: Some(0),
                 end_timestamp: Some(1),
-            })) if index_uri == "./wikipedia" && query == "Barack Obama" && field_names == vec!["title".to_string(), "url".to_string()]
+                tags: Some(tags),
+            })) if index_uri == "./wikipedia" && query == "Barack Obama"
+                && field_names == vec!["title".to_string(), "url".to_string()]
+                && tags == vec!["device:rpi".to_string(), "city:paris".to_string()]
         ));
 
         Ok(())

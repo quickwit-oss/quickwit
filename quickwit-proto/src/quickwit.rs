@@ -28,6 +28,9 @@ pub struct SearchRequest {
     /// The results with rank [start_offset..start_offset + max_hits) are returned.
     #[prost(uint64, tag = "7")]
     pub start_offset: u64,
+    /// Split tag filter  
+    #[prost(string, repeated, tag = "8")]
+    pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -176,6 +179,9 @@ pub struct SearchStreamRequest {
     /// The output format
     #[prost(enumeration = "OutputFormat", tag = "7")]
     pub output_format: i32,
+    /// Split tag filter  
+    #[prost(string, repeated, tag = "8")]
+    pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

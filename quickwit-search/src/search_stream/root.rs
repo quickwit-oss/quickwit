@@ -144,6 +144,7 @@ mod tests {
                 time_range: None,
                 generation: 1,
                 update_timestamp: 0,
+                tags: vec![],
                 bundle_offsets: BundleStorageOffsets {
                     footer_offsets: 700..800,
                     hotcache_offset_start: 1234,
@@ -163,6 +164,7 @@ mod tests {
             end_timestamp: None,
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
+            tags: vec![],
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -176,9 +178,10 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>| {
-                Ok(vec![mock_split_meta("split1")])
-            },
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();

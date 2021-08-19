@@ -118,6 +118,7 @@ pub struct SearchIndexArgs {
     pub search_fields: Option<Vec<String>>,
     pub start_timestamp: Option<i64>,
     pub end_timestamp: Option<i64>,
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -254,6 +255,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResult>
         search_fields = ?args.search_fields,
         start_timestamp = ?args.start_timestamp,
         end_timestamp = ?args.end_timestamp,
+        tags = ?args.tags,
         "search-index"
     );
     let (metastore_uri, index_id) =
@@ -270,6 +272,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResult>
         end_timestamp: args.end_timestamp,
         max_hits: args.max_hits as u64,
         start_offset: args.start_offset as u64,
+        tags: args.tags.unwrap_or_default(),
     };
     let search_result: SearchResult =
         single_node_search(&search_request, &*metastore, storage_uri_resolver).await?;
