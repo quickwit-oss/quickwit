@@ -22,7 +22,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::models::Manifest;
 use crate::models::PackagedSplit;
 use crate::models::UploadedSplit;
 use crate::semaphore::Semaphore;
@@ -42,7 +41,6 @@ use quickwit_storage::PutPayload;
 use quickwit_storage::Storage;
 use quickwit_storage::BUNDLE_FILENAME;
 use tantivy::chrono::Utc;
-use tantivy::SegmentId;
 use tokio::sync::oneshot::Receiver;
 use tracing::info;
 
@@ -85,26 +83,19 @@ impl Actor for Uploader {
     }
 }
 
-fn create_manifest(segments: Vec<SegmentId>, split_metadata: SplitMetadata) -> Manifest {
-    Manifest {
-        split_metadata,
-        segments,
-    }
-}
-
 /// Upload all files within a single split to the storage
-async fn put_split_files_to_storage(
+async fn put_split_file_to_storage(
     split: &PackagedSplit,
-    split_metadata: SplitMetadata,
     storage: &dyn Storage,
-) -> anyhow::Result<Manifest> {
+) -> anyhow::Result<()> {
     let bundle_path = split.split_scratch_directory.path().join(BUNDLE_FILENAME);
-    info!("upload-split-bundle {:?} ", bundle_path);
-    let start = Instant::now();
+    let key = PathBuf::from(format!("{}.split", &split.split_id));
 
+    let start = Instant::now();
     let mut upload_res_futures = vec![];
-    let key = PathBuf::from(BUNDLE_FILENAME);
-    let payload = quickwit_storage::PutPayload::from(bundle_path);
+
+    info!(bundle_path=%bundle_path.display(), split_id=%split.split_id, "upload-split-bundle");
+    let payload = PutPayload::from(bundle_path);
     let upload_res_future = async move {
         storage.put(&key, payload).await.with_context(|| {
             format!(
@@ -117,31 +108,19 @@ async fn put_split_files_to_storage(
     };
     upload_res_futures.push(upload_res_future);
 
-    let manifest = create_manifest(split.segment_ids.clone(), split_metadata);
     futures::future::try_join_all(upload_res_futures).await?;
 
-    let manifest_body = manifest.to_json()?.into_bytes();
-    let manifest_path = PathBuf::from(".manifest");
-    storage
-        .put(&manifest_path, PutPayload::from(manifest_body))
-        .await?;
-
-    let elapsed_secs = start.elapsed().as_secs();
     let elapsed_ms = start.elapsed().as_millis();
-    let file_statistics = split.file_statistics.clone();
     let split_size_in_megabytes = split.footer_offsets.end / 1000000;
     let throughput_mb_s = split_size_in_megabytes as f32 / (elapsed_ms as f32 / 1000.0);
     info!(
-        min_file_size_in_bytes = %file_statistics.min_file_size_in_bytes,
-        max_file_size_in_bytes = %file_statistics.max_file_size_in_bytes,
-        avg_file_size_in_bytes = %file_statistics.avg_file_size_in_bytes,
         split_size_in_megabytes = %split_size_in_megabytes,
-        elapsed_secs = %elapsed_secs,
+        elapsed_ms = %elapsed_ms,
         throughput_mb_s = %throughput_mb_s,
         "Uploaded split to storage"
     );
 
-    Ok(manifest)
+    Ok(())
 }
 
 fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets {
@@ -162,14 +141,14 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets
 
 async fn run_upload(
     split: PackagedSplit,
-    split_storage: Arc<dyn Storage>,
+    index_storage: Arc<dyn Storage>,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<UploadedSplit> {
     let metadata = create_split_metadata(&split);
     metastore
         .stage_split(&split.index_id, metadata.clone())
         .await?;
-    put_split_files_to_storage(&split, metadata.split_metadata.clone(), &*split_storage).await?;
+    put_split_file_to_storage(&split, &*index_storage).await?;
     Ok(UploadedSplit {
         index_id: split.index_id,
         metadata,
@@ -195,14 +174,12 @@ impl AsyncActor for Uploader {
         // The permit will be added back manually to the semaphore the task after it is finished.
         let permit_guard = self.concurrent_upload_permits.acquire().await;
 
-        let split_storage = quickwit_storage::add_prefix_to_storage(
-            self.index_storage.clone(),
-            split.split_id.clone(),
-        );
         let metastore = self.metastore.clone();
         let kill_switch = ctx.kill_switch().clone();
+        let index_storage = self.index_storage.clone();
+
         tokio::task::spawn(async move {
-            let run_upload_res = run_upload(split, split_storage, metastore).await;
+            let run_upload_res = run_upload(split, index_storage, metastore).await;
             if run_upload_res.is_err() {
                 kill_switch.kill();
             }
@@ -226,6 +203,7 @@ mod tests {
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
+    use tantivy::SegmentId;
 
     use super::*;
 
@@ -271,7 +249,6 @@ mod tests {
                     time_range: Some(1_628_203_589i64..=1_628_203_640i64),
                     size_in_bytes: 1_000,
                     footer_offsets: (1000..2000),
-                    file_statistics: Default::default(),
                     segment_ids,
                     split_scratch_directory,
                     num_docs: 10,
@@ -296,13 +273,7 @@ mod tests {
         );
         let mut files = ram_storage.list_files().await;
         files.sort();
-        assert_eq!(
-            &files,
-            &[
-                PathBuf::from("test-split/.manifest"),
-                PathBuf::from("test-split/bundle"),
-            ]
-        );
+        assert_eq!(&files, &[PathBuf::from("test-split.split")]);
         Ok(())
     }
 }

@@ -18,11 +18,12 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
 use std::path::Path;
+use std::path::PathBuf;
 
 use crate::models::IndexedSplit;
 use crate::models::PackagedSplit;
+use crate::models::ScratchDirectory;
 use anyhow::Context;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
@@ -33,7 +34,6 @@ use quickwit_common::HOTCACHE_FILENAME;
 use quickwit_directories::write_hotcache;
 use quickwit_storage::BundleStorageBuilder;
 use quickwit_storage::BundleStorageOffsets;
-use quickwit_storage::FileStatistics;
 use quickwit_storage::BUNDLE_FILENAME;
 use tantivy::SegmentId;
 use tantivy::SegmentMeta;
@@ -94,55 +94,47 @@ fn commit_split(split: &mut IndexedSplit, ctx: &ActorContext<IndexedSplit>) -> a
     Ok(())
 }
 
-fn create_file_bundle(
+fn list_split_files(
     segment_metas: &[SegmentMeta],
-    scratch_dir: &Path,
-) -> anyhow::Result<(BundleStorageOffsets, FileStatistics)> {
-    let mut files_to_upload = Vec::new();
+    scratch_directory: &ScratchDirectory,
+) -> Vec<PathBuf> {
+    let mut index_files = vec![
+        scratch_directory.path().join("meta.json"),
+        scratch_directory.path().join(HOTCACHE_FILENAME),
+    ];
+
     // list the segment files
     for segment_meta in segment_metas {
         for relative_path in segment_meta.list_files() {
-            let filepath = scratch_dir.join(&relative_path);
-            match std::fs::metadata(&filepath) {
-                Ok(metadata) => {
-                    files_to_upload.push((filepath, metadata.len()));
-                }
-                Err(io_err) => {
-                    // If the file is missing, this is fine.
-                    // segment_meta.list_files() may actually returns files that are
-                    // do not exist.
-                    if io_err.kind() != io::ErrorKind::NotFound {
-                        return Err(io_err).with_context(|| {
-                            format!(
-                                "Failed to read metadata of segment file `{}`",
-                                relative_path.display(),
-                            )
-                        })?;
-                    }
-                }
+            let filepath = scratch_directory.path().join(&relative_path);
+            if filepath.exists() {
+                // If the file is missing, this is fine.
+                // segment_meta.list_files() may actually returns files that
+                // may not exist.
+                index_files.push(filepath);
             }
         }
     }
+    index_files
+}
 
+fn create_file_bundle(
+    segment_metas: &[SegmentMeta],
+    scratch_dir: &ScratchDirectory,
+) -> anyhow::Result<BundleStorageOffsets> {
     // create bundle
-    let bundle_path = scratch_dir.join(BUNDLE_FILENAME);
-    debug!("Creating Bundle {:?}", bundle_path,);
+    let bundle_path = scratch_dir.path().join(BUNDLE_FILENAME);
+    debug!(bundle_path=?bundle_path,  segment_metas=?segment_metas, "Creating Bundle");
 
-    let mut create_bundle = BundleStorageBuilder::new(&bundle_path)?;
+    // List the split files that will be packaged into the bundle.
+    let mut bundle_storage_builder = BundleStorageBuilder::new(&bundle_path)?;
 
-    // We also need the meta.json file and the hotcache. Contrary to segment files,
-    // we return an error here if they are missing.
-    for relative_path in [Path::new("meta.json"), Path::new(HOTCACHE_FILENAME)]
-        .iter()
-        .cloned()
-    {
-        let filepath = scratch_dir.join(&relative_path);
-        create_bundle.add_file(&filepath)?;
+    for split_file in list_split_files(segment_metas, scratch_dir) {
+        bundle_storage_builder.add_file(&split_file)?;
     }
-    let file_statistics = create_bundle.file_statistics();
 
-    let bundle_storage_offsets = create_bundle.finalize()?;
-    Ok((bundle_storage_offsets, file_statistics))
+    let bundle_storage_offsets = bundle_storage_builder.finalize()?;
+    Ok(bundle_storage_offsets)
 }
 
 /// If necessary, merge all segments and returns a PackagedSplit.
@@ -191,15 +183,13 @@ fn create_packaged_split(
         .iter()
         .map(|segment_meta| segment_meta.id())
         .collect();
-    let (bundle_offsets, file_statistics) =
-        create_file_bundle(segment_metas, split.split_scratch_directory.path()).with_context(
-            || {
-                format!(
-                    "Failed to identify files for upload in packaging for split `{}`.",
-                    split.split_id
-                )
-            },
-        )?;
+    let bundle_offsets = create_file_bundle(segment_metas, &split.split_scratch_directory)
+        .with_context(|| {
+            format!(
+                "Failed to identify files for upload in packaging for split `{}`.",
+                split.split_id
+            )
+        })?;
     let packaged_split = PackagedSplit {
         index_id: split.index_id,
         split_id: split.split_id.to_string(),
@@ -210,7 +200,6 @@ fn create_packaged_split(
         time_range: split.time_range,
         size_in_bytes: split.docs_size_in_bytes,
         bundle_offsets,
-        file_statistics,
     };
     Ok(packaged_split)
 }
