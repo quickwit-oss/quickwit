@@ -66,56 +66,11 @@ impl BundleStorage {
             metadata,
         })
     }
-
-    /// Return the file statistics for the files that have been added.
-    pub fn file_statistics(&self) -> FileStatistics {
-        self.metadata.file_statistics()
-    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct BundleStorageFileOffsets {
     pub(crate) files: HashMap<PathBuf, Range<usize>>,
-}
-
-impl BundleStorageFileOffsets {
-    pub fn file_statistics(&self) -> FileStatistics {
-        let min_file_size_in_bytes = self
-            .files
-            .values()
-            .map(|range| range.end - range.start)
-            .min()
-            .unwrap_or(0) as u64;
-        let max_file_size_in_bytes = self
-            .files
-            .values()
-            .map(|range| range.end - range.start)
-            .max()
-            .unwrap_or(0) as u64;
-        let avg_file_size_in_bytes = self
-            .files
-            .values()
-            .map(|range| range.end - range.start)
-            .sum::<usize>() as u64
-            / self.files.len() as u64;
-
-        FileStatistics {
-            min_file_size_in_bytes,
-            max_file_size_in_bytes,
-            avg_file_size_in_bytes,
-        }
-    }
-}
-
-/// Contains file size statistics.
-#[derive(Default, Debug, Clone)]
-pub struct FileStatistics {
-    /// the min_file_size_in_bytesf
-    pub min_file_size_in_bytes: u64,
-    /// the max_file_size_in_bytesf
-    pub max_file_size_in_bytes: u64,
-    /// the avg_file_size_in_bytesf
-    pub avg_file_size_in_bytes: u64,
 }
 
 impl BundleStorageFileOffsets {
@@ -207,23 +162,9 @@ fn unsupported_operation(path: &Path) -> StorageError {
 pub struct BundleStorageBuilder {
     metadata: BundleStorageFileOffsets,
     current_offset: usize,
-    /// The offset in the file where the hotcache begins. This is used to read
-    /// the hotcache and footer in a single read.
-    hotcache_offset: usize,
     bundle_file: File,
 }
 
-/// Contains hotcache and footer offset used for single reads of hotcache and footer.
-#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
-pub struct BundleStorageOffsets {
-    /// The offset in the file where the hotcache begins. This is used to read
-    /// the hotcache and footer in a single read.
-    pub hotcache_offset_start: usize,
-    /// start and end (not inclusive) of the footer offsets.
-    pub footer_offsets: Range<usize>,
-    /// The total size of the bundle.
-    pub bundle_file_size: usize,
-}
 
 impl BundleStorageBuilder {
     /// Creates a new BundleStorageBuilder, to which files can be added.
@@ -233,14 +174,8 @@ impl BundleStorageBuilder {
         Ok(BundleStorageBuilder {
             bundle_file: sink,
             current_offset: 0,
-            hotcache_offset: 0,
             metadata: Default::default(),
         })
-    }
-
-    /// Return the file statistics for the files that have been added.
-    pub fn file_statistics(&self) -> FileStatistics {
-        self.metadata.file_statistics()
     }
 
     /// Appends a file to the bundle file.
@@ -253,9 +188,6 @@ impl BundleStorageBuilder {
         file_name: PathBuf,
     ) -> io::Result<()> {
         let bytes_written = io::copy(&mut read, &mut self.bundle_file)? as usize;
-        if file_name == Path::new(HOTCACHE_FILENAME) {
-            self.hotcache_offset = self.current_offset;
-        }
         self.metadata.files.insert(
             file_name,
             self.current_offset..self.current_offset + bytes_written,
@@ -280,13 +212,13 @@ impl BundleStorageBuilder {
         Ok(())
     }
 
-    /// Writes the metadata into the footer.
-    ///
-    pub fn finalize(mut self) -> io::Result<BundleStorageOffsets> {
+    /// Writes the bundle file offsets metadata at the end of the bundle file,
+    /// and returns the byte-range of this metadata information.
+    pub fn finalize(mut self) -> io::Result<Range<u64>> {
         // The footer offset, where the footer begins.
         // The footer includes the footer metadata as json encoded and the size of the footer in
         // bytes.
-        let footer_offset_start = self.current_offset;
+        let file_offsets_metadata_start = self.current_offset;
         let metadata_json = serde_json::to_string(&self.metadata)?;
         self.bundle_file.write_all(metadata_json.as_bytes())?;
         self.current_offset += metadata_json.as_bytes().len();
@@ -294,12 +226,7 @@ impl BundleStorageBuilder {
         BinarySerializable::serialize(&meta_data_json_len, &mut self.bundle_file)?;
         self.current_offset += 8;
         let footer_offset_end = self.current_offset;
-        let offsets = BundleStorageOffsets {
-            hotcache_offset_start: self.hotcache_offset,
-            footer_offsets: footer_offset_start..footer_offset_end,
-            bundle_file_size: self.current_offset,
-        };
-        Ok(offsets)
+        Ok(file_offsets_metadata_start..self.current_offset)
     }
 }
 #[cfg(test)]

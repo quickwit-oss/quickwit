@@ -232,7 +232,7 @@ impl Split {
     pub async fn stage(&self) -> anyhow::Result<String> {
         let metadata = SplitMetadataAndFooterOffsets {
             split_metadata: self.metadata.clone(),
-            bundle_offsets: Default::default(),
+            footer_offsets: (1000..2000)
         };
         self.metastore.stage_split(&self.index_id, metadata).await?;
         Ok(self.id.to_string())

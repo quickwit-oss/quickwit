@@ -135,7 +135,7 @@ mod tests {
 
     fn mock_split_meta(split_id: &str) -> SplitMetadataAndFooterOffsets {
         SplitMetadataAndFooterOffsets {
-            bundle_offsets: Default::default(),
+            footer_offsets: Default::default(),
             split_metadata: SplitMetadata {
                 split_id: split_id.to_string(),
                 split_state: SplitState::Published,

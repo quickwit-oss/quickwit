@@ -136,7 +136,7 @@ mod tests {
                         split_id: "split2".to_string(),
                         ..Default::default()
                     },
-                    bundle_offsets: Default::default()
+                    footer_offsets: (1000..1200)
                 },
                 checkpoint_delta: CheckpointDelta::from(3..7),
             })
@@ -149,7 +149,7 @@ mod tests {
                         split_id: "split1".to_string(),
                         ..Default::default()
                     },
-                    bundle_offsets: Default::default()
+                    footer_offsets: Default::default()
                 },
                 checkpoint_delta: CheckpointDelta::from(1..3),
             })

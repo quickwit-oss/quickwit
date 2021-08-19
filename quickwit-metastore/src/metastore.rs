@@ -29,7 +29,6 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use chrono::Utc;
 use quickwit_index_config::IndexConfig;
-use quickwit_storage::BundleStorageOffsets;
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};
@@ -54,8 +53,9 @@ pub struct IndexMetadata {
 pub struct SplitMetadataAndFooterOffsets {
     /// A split metadata carries all meta data about a split.
     pub split_metadata: SplitMetadata,
-    /// Contains hotcache and footer offset used for single reads of hotcache and footer.
-    pub bundle_offsets: BundleStorageOffsets,
+    /// Contains the range of bytes of the footer that needs to be downloaded
+    /// in order to open a split.
+    pub footer_offsets: Range<u64>,
 }
 
 /// A split metadata carries all meta data about a split.
@@ -75,9 +75,6 @@ pub struct SplitMetadata {
     /// Note this is not the split file size. It is the size of the original
     /// JSON payloads.
     pub size_in_bytes: u64,
-
-    /// The bundle offsets. Used for single read of hotcache and bundle footer.
-    pub bundle_offsets: BundleStorageOffsets,
 
     /// If a timestamp field is available, the min / max timestamp in the split.
     pub time_range: Option<RangeInclusive<i64>>,
@@ -103,7 +100,6 @@ impl SplitMetadata {
             split_state: SplitState::New,
             num_records: 0,
             size_in_bytes: 0,
-            bundle_offsets: BundleStorageOffsets::default(),
             time_range: None,
             generation: 0,
             update_timestamp: Utc::now().timestamp(),

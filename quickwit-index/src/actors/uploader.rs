@@ -129,7 +129,7 @@ async fn put_split_files_to_storage(
     let elapsed_secs = start.elapsed().as_secs();
     let elapsed_ms = start.elapsed().as_millis();
     let file_statistics = split.file_statistics.clone();
-    let split_size_in_megabytes = split.bundle_offsets.bundle_file_size / 1000000;
+    let split_size_in_megabytes = split.footer_offsets.end / 1000000;
     let throughput_mb_s = split_size_in_megabytes as f32 / (elapsed_ms as f32 / 1000.0);
     info!(
         min_file_size_in_bytes = %file_statistics.min_file_size_in_bytes,
@@ -155,9 +155,8 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets
             split_state: SplitState::New,
             update_timestamp: Utc::now().timestamp(),
             tags: vec![], // TODO: handle tags collection and attaching to split
-            bundle_offsets: split.bundle_offsets.clone(),
         },
-        bundle_offsets: split.bundle_offsets.clone(),
+        footer_offsets: split.footer_offsets.clone(),
     }
 }
 
@@ -226,7 +225,6 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use quickwit_metastore::MockMetastore;
-    use quickwit_storage::BundleStorageOffsets;
     use quickwit_storage::RamStorage;
 
     use super::*;
@@ -272,11 +270,7 @@ mod tests {
                     checkpoint_delta: CheckpointDelta::from(3..15),
                     time_range: Some(1_628_203_589i64..=1_628_203_640i64),
                     size_in_bytes: 1_000,
-                    bundle_offsets: BundleStorageOffsets {
-                        footer_offsets: 400..500,
-                        hotcache_offset_start: 300,
-                        bundle_file_size: 500,
-                    },
+                    footer_offsets: (1000..2000),
                     file_statistics: Default::default(),
                     segment_ids,
                     split_scratch_directory,

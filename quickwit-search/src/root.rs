@@ -454,11 +454,6 @@ mod tests {
                 generation: 1,
                 update_timestamp: 0,
                 tags: vec!["foo".to_string()],
-                bundle_offsets: BundleStorageOffsets {
-                    footer_offsets: 700..800,
-                    hotcache_offset_start: 1234,
-                    bundle_file_size: 9001,
-                },
             },
         }
     }
