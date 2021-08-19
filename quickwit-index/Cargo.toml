@@ -29,6 +29,7 @@ flume = "0.10"
 serde = "1"
 serde_json = "1"
 thiserror = "1"
+itertools = "0.10"
 
 [dev-dependencies]
 quickwit-metastore = {path = "../quickwit-metastore", features=["testsuite"]}

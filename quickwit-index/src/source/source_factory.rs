@@ -19,9 +19,12 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use super::Source;
+use crate::source::SourceConfig;
 use async_trait::async_trait;
+use itertools::Itertools;
 use quickwit_metastore::checkpoint::Checkpoint;
 use std::collections::HashMap;
+use thiserror::Error;
 
 #[async_trait]
 pub trait SourceFactory: 'static + Send + Sync {
@@ -56,13 +59,112 @@ impl<T: TypedSourceFactory> SourceFactory for T {
 }
 
 #[derive(Default)]
-pub struct SourceFactoryResolver {
+pub struct SourceLoader {
     type_to_factory: HashMap<String, Box<dyn SourceFactory>>,
 }
 
-impl SourceFactoryResolver {
+#[derive(Error, Debug)]
+pub enum SourceLoaderError {
+    #[error("Unknown source type `{requested_source_type}` (available source types are {available_source_types}).")]
+    UnknownSourceType {
+        requested_source_type: String,
+        available_source_types: String, //< a comma separated list with the available source_type.
+    },
+    #[error("Failed to create source `{source_id}` of type `{source_type}`. Cause: {error:?}")]
+    FailedToCreateSource {
+        source_id: String,
+        source_type: String,
+        #[source]
+        error: anyhow::Error,
+    },
+}
+
+impl SourceLoader {
     pub fn add_source<S: ToString, F: SourceFactory>(&mut self, source: S, factory: F) {
         self.type_to_factory
             .insert(source.to_string(), Box::new(factory));
+    }
+
+    pub async fn load_source(
+        &self,
+        source_config: SourceConfig,
+        checkpoint: Checkpoint,
+    ) -> Result<Box<dyn Source>, SourceLoaderError> {
+        let source_factory = self
+            .type_to_factory
+            .get(&source_config.source_type)
+            .ok_or_else(|| SourceLoaderError::UnknownSourceType {
+                requested_source_type: source_config.source_type.clone(),
+                available_source_types: self.type_to_factory.keys().join(","),
+            })?;
+        let SourceConfig {
+            id,
+            source_type,
+            params,
+        } = source_config;
+        source_factory
+            .create_source(params, checkpoint)
+            .await
+            .map_err(|error| SourceLoaderError::FailedToCreateSource {
+                source_id: id,
+                source_type: source_type.clone(),
+                error,
+            })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::source::quickwit_supported_sources;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_source_loader_success() -> anyhow::Result<()> {
+        let source_loader = quickwit_supported_sources();
+        let source_config = SourceConfig {
+            id: "test-source".to_string(),
+            source_type: "vec".to_string(),
+            params: json!({"items": [], "batch_num_docs": 3}),
+        };
+        source_loader
+            .load_source(source_config, Checkpoint::default())
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_source_loader_missing_type() {
+        let source_loader = quickwit_supported_sources();
+        let source_config = SourceConfig {
+            id: "test-source".to_string(),
+            source_type: "vec2".to_string(),
+            params: json!({"items": []}),
+        };
+        let source_result = source_loader
+            .load_source(source_config, Checkpoint::default())
+            .await;
+        assert!(matches!(
+            source_result,
+            Err(SourceLoaderError::UnknownSourceType { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_source_loader_invalid_params() -> anyhow::Result<()> {
+        let source_loader = quickwit_supported_sources();
+        let source_config = SourceConfig {
+            id: "test-source".to_string(),
+            source_type: "vec".to_string(),
+            params: json!({"item": [], "batch_num_docs": 3}), //< item is misspelled
+        };
+        let source_result = source_loader
+            .load_source(source_config, Checkpoint::default())
+            .await;
+        assert!(matches!(
+            source_result,
+            Err(SourceLoaderError::FailedToCreateSource { .. })
+        ));
+        Ok(())
     }
 }

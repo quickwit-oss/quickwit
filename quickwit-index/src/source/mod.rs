@@ -24,6 +24,7 @@ mod vec_source;
 
 use crate::models::IndexerMessage;
 use async_trait::async_trait;
+use once_cell::sync::OnceCell;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
 use quickwit_actors::ActorExitStatus;
@@ -32,7 +33,7 @@ use quickwit_actors::Mailbox;
 use std::fmt;
 
 pub use file_source::{FileSource, FileSourceFactory, FileSourceParams};
-pub use source_factory::{SourceFactory, SourceFactoryResolver, TypedSourceFactory};
+pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 pub use vec_source::{VecSource, VecSourceFactory, VecSourceParams};
 
 pub type SourceContext = ActorContext<Loop>;
@@ -148,8 +149,18 @@ impl AsyncActor for SourceActor {
     }
 }
 
-pub fn quickwit_supported_sources() -> SourceFactoryResolver {
-    let mut source_factory = SourceFactoryResolver::default();
-    source_factory.add_source("file", FileSourceFactory);
-    source_factory
+pub fn quickwit_supported_sources() -> &'static SourceLoader {
+    static SOURCE_LOADER: OnceCell<SourceLoader> = OnceCell::new();
+    SOURCE_LOADER.get_or_init(|| {
+        let mut source_factory = SourceLoader::default();
+        source_factory.add_source("file", FileSourceFactory);
+        source_factory.add_source("vec", VecSourceFactory);
+        source_factory
+    })
+}
+
+pub struct SourceConfig {
+    pub id: String,
+    pub source_type: String,
+    pub params: serde_json::Value,
 }

@@ -18,21 +18,20 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
-use std::sync::Arc;
-
 use crate::actors::Indexer;
 use crate::actors::Packager;
 use crate::actors::Publisher;
 use crate::actors::Uploader;
 use crate::models::CommitPolicy;
-use crate::source::{FileSourceFactory, FileSourceParams, SourceActor, TypedSourceFactory};
+use crate::source::quickwit_supported_sources;
+use crate::source::SourceActor;
+use crate::source::SourceConfig;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorExitStatus;
 use quickwit_actors::Universe;
-use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
+use std::sync::Arc;
 use tracing::info;
 
 pub mod actors;
@@ -43,6 +42,7 @@ pub mod source;
 pub async fn spawn_indexing_pipeline(
     universe: &Universe,
     index_id: String,
+    source_config: SourceConfig,
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
 ) -> anyhow::Result<(ActorExitStatus, <Publisher as Actor>::ObservableState)> {
@@ -67,17 +67,13 @@ pub async fn spawn_indexing_pipeline(
         packager_mailbox,
     )?;
     let (indexer_mailbox, _indexer_handler) = universe.spawn_sync_actor(indexer);
-
-    let params = FileSourceParams {
-        filepath: PathBuf::from("data/test_corpus.json"),
-    };
-    // TODO the source is hardcoded here.
-    let source = FileSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
+    let source = quickwit_supported_sources()
+        .load_source(source_config, index_metadata.checkpoint)
+        .await?;
     let actor_source = SourceActor {
-        source: Box::new(source),
+        source,
         batch_sink: indexer_mailbox,
     };
-
     let (_source_mailbox, _source_handle) = universe.spawn(actor_source);
     let (actor_termination, observation) = publisher_handler.join().await;
     Ok((actor_termination, observation))
@@ -86,11 +82,15 @@ pub async fn spawn_indexing_pipeline(
 #[cfg(test)]
 mod tests {
 
+    use crate::source::SourceConfig;
+    use serde_json::json;
+
     use super::spawn_indexing_pipeline;
     use quickwit_actors::Universe;
     use quickwit_metastore::IndexMetadata;
     use quickwit_metastore::MockMetastore;
     use quickwit_metastore::SplitState;
+    use std::path::PathBuf;
     use std::sync::Arc;
 
     #[tokio::test]
@@ -128,9 +128,15 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
         let universe = Universe::new();
+        let source_config = SourceConfig {
+            id: "test-source".to_string(),
+            source_type: "file".to_string(),
+            params: json!({ "filepath": PathBuf::from("data/test_corpus.json") }),
+        };
         let (publisher_termination, publisher_counters) = spawn_indexing_pipeline(
             &universe,
             "test-index".to_string(),
+            source_config,
             Arc::new(metastore),
             Default::default(),
         )
