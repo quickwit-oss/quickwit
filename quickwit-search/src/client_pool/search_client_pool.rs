@@ -238,7 +238,7 @@ mod tests {
 
     use quickwit_cluster::cluster::{read_host_key, Cluster};
     use quickwit_cluster::test_utils::{available_port, test_cluster};
-    use quickwit_metastore::{SplitMetadataAndFooterOffsets, SplitMetadata};
+    use quickwit_metastore::{SplitMetadata, SplitMetadataAndFooterOffsets};
 
     use crate::client_pool::search_client_pool::create_search_service_client;
     use crate::client_pool::{ClientPool, Job};
