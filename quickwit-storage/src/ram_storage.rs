@@ -114,12 +114,17 @@ impl Storage for RamStorage {
         Ok(payload_bytes)
     }
 
-    async fn exists(&self, path: &Path) -> StorageResult<bool> {
-        Ok(self.files.read().await.contains_key(path))
-    }
-
     fn uri(&self) -> String {
         "ram://".to_string()
+    }
+
+    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
+        if let Some(file_bytes) = self.files.read().await.get(path) {
+            Ok(file_bytes.len() as u64)
+        } else {
+            let err = anyhow::anyhow!("Missing file `{}`", path.display());
+            Err(StorageErrorKind::DoesNotExist.with_error(err))
+        }
     }
 }
 
