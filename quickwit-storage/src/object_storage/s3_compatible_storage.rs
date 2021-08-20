@@ -565,14 +565,14 @@ impl Storage for S3CompatibleObjectStorage {
             .map_err(|err| err.add_context(format!("Failed to fetch object: {}", self.uri(path))))
     }
 
-    async fn exists(&self, path: &Path) -> StorageResult<bool> {
+    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let key = self.key(path);
         let head_object_req = HeadObjectRequest {
             bucket: self.bucket.clone(),
             key,
             ..Default::default()
         };
-        let head_object_output = retry(|| async {
+        let head_object_output_res = retry(|| async {
             self.s3_client
                 .head_object(head_object_req.clone())
                 .await
@@ -580,19 +580,38 @@ impl Storage for S3CompatibleObjectStorage {
         })
         .await;
 
-        match head_object_output {
-            Ok(_) => Ok(true),
+        match head_object_output_res {
+            Ok(head_object_output) => {
+                let content_length = head_object_output
+                    .content_length
+                    .and_then(|num_bytes| {
+                        if num_bytes >= 0 {
+                            Some(num_bytes as u64)
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or_else(|| {
+                        StorageErrorKind::Service.with_error(anyhow::anyhow!(
+                            "Head output did not contain a valid content length."
+                        ))
+                    })?;
+                Ok(content_length)
+            }
             Err(RusotoErrorWrapper(RusotoError::Service(HeadObjectError::NoSuchKey(_)))) => {
-                Ok(false)
+                Err(StorageErrorKind::DoesNotExist
+                    .with_error(anyhow::anyhow!("Missing key in S3 `{}`", path.display())))
             }
             // Also catching 404 until this issue is fixed: https://github.com/rusoto/rusoto/issues/716
             Err(RusotoErrorWrapper(RusotoError::Unknown(http_resp))) if http_resp.status == 404 => {
-                Ok(false)
+                Err(StorageErrorKind::DoesNotExist.with_error(anyhow::anyhow!(
+                    "S3 returned a 404 for key `{}`",
+                    path.display()
+                )))
             }
             Err(err) => Err(err.into()),
         }
     }
-
     fn uri(&self) -> String {
         format!("s3://{}/{}", self.bucket, self.prefix.to_string_lossy())
     }

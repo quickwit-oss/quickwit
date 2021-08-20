@@ -24,11 +24,11 @@ use crate::{PutPayload, Storage, StorageErrorKind, StorageFactory, StorageResult
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::future::{BoxFuture, FutureExt};
-use std::fmt;
 use std::io::{ErrorKind, SeekFrom};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{fmt, io};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tracing::warn;
@@ -116,6 +116,14 @@ fn delete_all_dirs(root: PathBuf, path: &Path) -> BoxFuture<'_, std::io::Result<
     .boxed()
 }
 
+fn missing_file_is_ok(io_result: io::Result<()>) -> io::Result<()> {
+    match io_result {
+        Ok(()) => Ok(()),
+        Err(io_err) if io_err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(io_err) => Err(io_err),
+    }
+}
+
 #[async_trait]
 impl Storage for LocalFileStorage {
     async fn put(&self, path: &Path, payload: PutPayload) -> crate::StorageResult<()> {
@@ -151,7 +159,7 @@ impl Storage for LocalFileStorage {
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let full_path = self.root.join(path);
-        fs::remove_file(full_path).await?;
+        missing_file_is_ok(fs::remove_file(full_path).await)?;
         let parent = path.parent();
         if parent.is_none() {
             return Ok(());
@@ -173,19 +181,20 @@ impl Storage for LocalFileStorage {
         format!("file://{}", self.root.to_string_lossy())
     }
 
-    async fn exists(&self, path: &Path) -> StorageResult<bool> {
+    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let full_path = self.root.join(path);
         match fs::metadata(full_path).await {
             Ok(metadata) => {
                 if metadata.is_file() {
-                    Ok(true)
+                    Ok(metadata.len())
                 } else {
-                    Ok(false)
+                    Err(StorageErrorKind::DoesNotExist
+                        .with_error(anyhow::anyhow!("File {} is actually a directory")))
                 }
             }
             Err(err) => {
                 if err.kind() == ErrorKind::NotFound {
-                    Ok(false)
+                    Err(StorageErrorKind::DoesNotExist.with_error(err))
                 } else {
                     Err(err.into())
                 }

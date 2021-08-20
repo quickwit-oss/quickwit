@@ -141,6 +141,11 @@ impl Storage for BundleStorage {
         Ok(self.metadata.exists(path))
     }
 
+    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
+        let file_range = self.metadata.get(path)?;
+        Ok(file_range.len() as u64)
+    }
+
     fn uri(&self) -> String {
         self.storage.uri()
     }

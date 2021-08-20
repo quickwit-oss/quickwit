@@ -26,7 +26,7 @@ use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use crate::StorageResult;
+use crate::{StorageErrorKind, StorageResult};
 
 /// Payload argument of a put request.
 #[derive(Clone)]
@@ -103,10 +103,21 @@ pub trait Storage: Send + Sync + 'static {
     async fn get_all(&self, path: &Path) -> StorageResult<Bytes>;
 
     /// Deletes a file.
+    ///
+    /// This method should return Ok(()) if the file did not exist.
     async fn delete(&self, path: &Path) -> StorageResult<()>;
 
     /// Returns whether a file exists or not.
-    async fn exists(&self, path: &Path) -> StorageResult<bool>;
+    async fn exists(&self, path: &Path) -> StorageResult<bool> {
+        match self.file_num_bytes(path).await {
+            Ok(_) => Ok(true),
+            Err(storage_err) if storage_err.kind() == StorageErrorKind::DoesNotExist => Ok(false),
+            Err(other_storage_err) => Err(other_storage_err),
+        }
+    }
+
+    /// Returns a file size.
+    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64>;
 
     /// Returns an URI identifying the storage
     fn uri(&self) -> String;
