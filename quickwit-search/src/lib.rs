@@ -49,7 +49,7 @@ use tantivy::DocAddress;
 
 use quickwit_metastore::SplitState;
 use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadataAndFooterOffsets};
-use quickwit_proto::SearchRequest;
+use quickwit_proto::{LeafSearchRequestMetadata, SearchRequest};
 use quickwit_proto::{PartialHit, SearchResult};
 use quickwit_storage::StorageUriResolver;
 
@@ -154,15 +154,19 @@ pub async fn single_node_search(
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
     let metas = list_relevant_splits(search_request, metastore).await?;
-    let split_ids: Vec<String> = metas
+    let split_metadata: Vec<_> = metas
         .iter()
-        .map(|meta| meta.split_metadata.split_id.clone())
+        .map(|meta| LeafSearchRequestMetadata {
+            split_id: meta.split_metadata.split_id.clone(),
+            split_footer_start: meta.footer_offsets.start as u64,
+            split_footer_end: meta.footer_offsets.end as u64,
+        })
         .collect();
     let index_config = index_metadata.index_config;
     let leaf_search_result = leaf_search(
         index_config,
         search_request,
-        &split_ids[..],
+        &split_metadata[..],
         storage.clone(),
     )
     .await

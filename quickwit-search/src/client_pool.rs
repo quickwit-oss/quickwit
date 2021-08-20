@@ -24,15 +24,16 @@ pub mod search_client_pool;
 use std::{collections::HashSet, net::SocketAddr};
 
 use async_trait::async_trait;
+use quickwit_metastore::SplitMetadataAndFooterOffsets;
 
 use crate::SearchServiceClient;
 
 /// Job.
 /// The unit in which distributed search is performed.
-#[derive(Debug, Hash, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
-    /// Split ID.
-    pub split: String,
+    /// SplitMetadataAndFooterOffsets
+    pub metadata: SplitMetadataAndFooterOffsets,
 
     /// The cost of the job. This is used to sort jobs.
     pub cost: u32,
