@@ -73,6 +73,10 @@ impl Storage for StorageWithCache {
         self.storage.exists(path).await
     }
 
+    async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
+        self.storage.file_num_bytes(path).await
+    }
+
     fn uri(&self) -> String {
         self.storage.uri()
     }
