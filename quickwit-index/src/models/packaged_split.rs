@@ -20,8 +20,7 @@
 
 use crate::models::ScratchDirectory;
 use quickwit_metastore::checkpoint::CheckpointDelta;
-use quickwit_storage::{BundleStorageOffsets, FileStatistics};
-use std::ops::RangeInclusive;
+use std::ops::{Range, RangeInclusive};
 use tantivy::SegmentId;
 
 #[derive(Debug)]
@@ -31,10 +30,7 @@ pub struct PackagedSplit {
     pub checkpoint_delta: CheckpointDelta,
     pub time_range: Option<RangeInclusive<i64>>,
     pub size_in_bytes: u64,
-
-    pub bundle_offsets: BundleStorageOffsets,
-    pub file_statistics: FileStatistics,
-
+    pub footer_offsets: Range<u64>,
     pub segment_ids: Vec<SegmentId>,
     pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,

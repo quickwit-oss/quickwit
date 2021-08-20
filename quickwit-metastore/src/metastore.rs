@@ -29,7 +29,6 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use chrono::Utc;
 use quickwit_index_config::IndexConfig;
-use quickwit_storage::BundleStorageOffsets;
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};
@@ -51,11 +50,12 @@ pub struct IndexMetadata {
 
 /// Carries split and bundle offsets for single read metadata.
 #[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
-pub struct BundleAndSplitMetadata {
+pub struct SplitMetadataAndFooterOffsets {
     /// A split metadata carries all meta data about a split.
     pub split_metadata: SplitMetadata,
-    /// Contains hotcache and footer offset used for single reads of hotcache and footer.
-    pub bundle_offsets: BundleStorageOffsets,
+    /// Contains the range of bytes of the footer that needs to be downloaded
+    /// in order to open a split.
+    pub footer_offsets: Range<u64>,
 }
 
 /// A split metadata carries all meta data about a split.
@@ -75,9 +75,6 @@ pub struct SplitMetadata {
     /// Note this is not the split file size. It is the size of the original
     /// JSON payloads.
     pub size_in_bytes: u64,
-
-    /// The bundle offsets. Used for single read of hotcache and bundle footer.
-    pub bundle_offsets: BundleStorageOffsets,
 
     /// If a timestamp field is available, the min / max timestamp in the split.
     pub time_range: Option<RangeInclusive<i64>>,
@@ -103,7 +100,6 @@ impl SplitMetadata {
             split_state: SplitState::New,
             num_records: 0,
             size_in_bytes: 0,
-            bundle_offsets: BundleStorageOffsets::default(),
             time_range: None,
             generation: 0,
             update_timestamp: Utc::now().timestamp(),
@@ -140,7 +136,7 @@ pub struct MetadataSet {
     /// Metadata specific to the index.
     pub index: IndexMetadata,
     /// List of splits belonging to the index.
-    pub splits: HashMap<String, BundleAndSplitMetadata>,
+    pub splits: HashMap<String, SplitMetadataAndFooterOffsets>,
 }
 
 /// Metastore meant to manage Quickwit's indexes and their splits.
@@ -195,7 +191,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn stage_split(
         &self,
         index_id: &str,
-        split_metadata: BundleAndSplitMetadata,
+        split_metadata: SplitMetadataAndFooterOffsets,
     ) -> MetastoreResult<()>;
 
     /// Publishes a list splits.
@@ -220,12 +216,14 @@ pub trait Metastore: Send + Sync + 'static {
         split_state: SplitState,
         time_range: Option<Range<i64>>,
         tags: &[String],
-    ) -> MetastoreResult<Vec<BundleAndSplitMetadata>>;
+    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>>;
 
     /// Lists the splits without filtering.
     /// Returns a list of all splits currently known to the metastore regardless of their state.
-    async fn list_all_splits(&self, index_id: &str)
-        -> MetastoreResult<Vec<BundleAndSplitMetadata>>;
+    async fn list_all_splits(
+        &self,
+        index_id: &str,
+    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>>;
 
     /// Marks a list of splits as deleted.
     /// This API will change the state to `ScheduledForDeletion` so that it is not referenced by the client.

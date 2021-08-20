@@ -89,7 +89,7 @@ mod tests {
     use super::*;
     use quickwit_actors::Universe;
     use quickwit_metastore::checkpoint::CheckpointDelta;
-    use quickwit_metastore::{BundleAndSplitMetadata, MockMetastore, SplitMetadata};
+    use quickwit_metastore::{MockMetastore, SplitMetadata, SplitMetadataAndFooterOffsets};
     use tokio::sync::oneshot;
 
     #[tokio::test]
@@ -131,12 +131,12 @@ mod tests {
         assert!(split_future_tx2
             .send(UploadedSplit {
                 index_id: "index".to_string(),
-                metadata: BundleAndSplitMetadata {
+                metadata: SplitMetadataAndFooterOffsets {
                     split_metadata: SplitMetadata {
                         split_id: "split2".to_string(),
                         ..Default::default()
                     },
-                    bundle_offsets: Default::default()
+                    footer_offsets: 1000..1200
                 },
                 checkpoint_delta: CheckpointDelta::from(3..7),
             })
@@ -144,12 +144,12 @@ mod tests {
         assert!(split_future_tx1
             .send(UploadedSplit {
                 index_id: "index".to_string(),
-                metadata: BundleAndSplitMetadata {
+                metadata: SplitMetadataAndFooterOffsets {
                     split_metadata: SplitMetadata {
                         split_id: "split1".to_string(),
                         ..Default::default()
                     },
-                    bundle_offsets: Default::default()
+                    footer_offsets: 1000..1200
                 },
                 checkpoint_delta: CheckpointDelta::from(1..3),
             })

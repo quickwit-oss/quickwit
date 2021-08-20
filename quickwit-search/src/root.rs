@@ -437,14 +437,13 @@ mod tests {
 
     use crate::{MockSearchService, SearchResultJson};
     use quickwit_index_config::WikipediaIndexConfig;
-    use quickwit_metastore::BundleAndSplitMetadata;
+    use quickwit_metastore::SplitMetadataAndFooterOffsets;
     use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::SplitSearchError;
-    use quickwit_storage::BundleStorageOffsets;
 
-    fn mock_split_meta(split_id: &str) -> BundleAndSplitMetadata {
-        BundleAndSplitMetadata {
-            bundle_offsets: Default::default(),
+    fn mock_split_meta(split_id: &str) -> SplitMetadataAndFooterOffsets {
+        SplitMetadataAndFooterOffsets {
+            footer_offsets: Default::default(),
             split_metadata: SplitMetadata {
                 split_id: split_id.to_string(),
                 split_state: SplitState::Published,
@@ -454,11 +453,6 @@ mod tests {
                 generation: 1,
                 update_timestamp: 0,
                 tags: vec!["foo".to_string()],
-                bundle_offsets: BundleStorageOffsets {
-                    footer_offsets: 700..800,
-                    hotcache_offset_start: 1234,
-                    bundle_file_size: 9001,
-                },
             },
         }
     }

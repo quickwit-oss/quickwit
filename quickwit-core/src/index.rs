@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use quickwit_metastore::{
-    BundleAndSplitMetadata, IndexMetadata, Metastore, MetastoreUriResolver, SplitState,
+    IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadataAndFooterOffsets, SplitState,
 };
 use quickwit_storage::StorageUriResolver;
 use tantivy::chrono::Utc;
@@ -195,7 +195,7 @@ pub async fn delete_garbage_files(
 
 /// list the files for a list of split.
 async fn list_splits_files(
-    splits: Vec<BundleAndSplitMetadata>,
+    splits: Vec<SplitMetadataAndFooterOffsets>,
     index_uri: String,
     storage_resolver: StorageUriResolver,
 ) -> anyhow::Result<Vec<FileEntry>> {
