@@ -23,15 +23,16 @@ use crate::SearchError;
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
-use quickwit_common::HOTCACHE_FILENAME;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{
     LeafSearchRequestMetadata, LeafSearchResult, SearchRequest, SplitSearchError,
 };
-use quickwit_storage::Storage;
+use quickwit_storage::{BundleStorage, Storage, BUNDLE_FILENAME};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::convert::TryInto;
+use std::ops::Range;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tantivy::{collector::Collector, query::Query, Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
@@ -39,16 +40,50 @@ use tokio::task::spawn_blocking;
 /// Opens a `tantivy::Index` for the given split.
 ///
 /// The resulting index uses a dynamic and a static cache.
-pub(crate) async fn open_index(split_storage: Arc<dyn Storage>) -> anyhow::Result<Index> {
-    let hotcache_bytes = split_storage
-        .get_all(Path::new(HOTCACHE_FILENAME))
-        .await
-        .with_context(|| format!("Failed to fetch hotcache from {}", split_storage.uri()))?;
-    let directory = StorageDirectory::new(split_storage);
-    let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
-    let hot_directory = HotDirectory::open(caching_directory, hotcache_bytes)?;
+pub(crate) async fn open_index(
+    split_storage: Arc<dyn Storage>,
+    split_footer_offsets: Range<u64>,
+) -> anyhow::Result<Index> {
+    let hot_directory =
+        fetch_bundle_and_hotcache(split_storage.clone(), split_footer_offsets).await?;
     let index = Index::open(hot_directory)?;
     Ok(index)
+}
+
+async fn fetch_bundle_and_hotcache(
+    split_storage: Arc<dyn Storage>,
+    split_footer_offsets: Range<u64>,
+) -> anyhow::Result<HotDirectory> {
+    let data = split_storage
+        .get_slice(
+            Path::new(BUNDLE_FILENAME),
+            split_footer_offsets.start as usize..split_footer_offsets.end as usize,
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to fetch hotcache and footer from {}",
+                split_storage.uri()
+            )
+        })?;
+    let hotcache_end = data.len() - 8;
+    let hotcache_num_bytes =
+        u64::from_le_bytes((&data[hotcache_end..]).try_into().unwrap()) as usize;
+
+    let hotcache_start = hotcache_end - hotcache_num_bytes as usize;
+    let file_bundle_metadata_bytes = &data[split_footer_offsets.start as usize..hotcache_start];
+
+    let hotcache_bytes = data.slice(hotcache_start..hotcache_end);
+    let bundle = BundleStorage::new(
+        split_storage,
+        PathBuf::from(BUNDLE_FILENAME),
+        &file_bundle_metadata_bytes,
+    )?;
+    let directory = StorageDirectory::new(Arc::new(bundle));
+    let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
+    let hot_directory = HotDirectory::open(caching_directory, hotcache_bytes)?;
+
+    Ok(hot_directory)
 }
 
 /// Tantivy search does not make it possible to fetch data asynchronously during
@@ -133,7 +168,11 @@ async fn leaf_search_single_split(
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchResult> {
     let split_id = request_metadata.split_id.to_string();
-    let index = open_index(storage).await?;
+    let index = open_index(
+        storage,
+        request_metadata.split_footer_start..request_metadata.split_footer_end,
+    )
+    .await?;
     let split_schema = index.schema();
     let quickwit_collector = make_collector_for_split(
         split_id,

@@ -113,14 +113,13 @@ message LeafSearchRequest {
 }
 
 message LeafSearchRequestMetadata {
-  // The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
-  uint64 split_footer_start = 1;
-  // The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
-  uint64 split_footer_end = 2;
-
   // Index split id to apply the query on.
   // This id is resolved from the index_uri defined in the search_request.
-  string split_id = 3;
+  string split_id = 1;
+  // The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
+  uint64 split_footer_start = 2;
+  // The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
+  uint64 split_footer_end = 3;
 }
 
 message Hit {
@@ -227,8 +226,9 @@ message LeafSearchStreamRequest {
   SearchStreamRequest request = 1;
 
   // Index split ids to apply the query on.
-  // This ids are resolved from the index_uri defined in the stream request.
-  repeated string split_ids = 2;
+  // This ids are resolved from the index_uri defined in the search_request.
+  repeated LeafSearchRequestMetadata split_metadata = 4;
+
 }
 
 

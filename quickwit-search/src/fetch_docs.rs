@@ -25,6 +25,7 @@ use anyhow::Context;
 use itertools::Itertools;
 use quickwit_proto::FetchDocsResult;
 use quickwit_proto::Hit;
+use quickwit_proto::LeafSearchRequestMetadata;
 use quickwit_proto::PartialHit;
 use quickwit_storage::Storage;
 use tantivy::IndexReader;
@@ -35,10 +36,11 @@ use crate::GlobalDocAddress;
 
 /// Given a list of global doc address, fetch all of the documents and
 /// returns them as a hashmap.
-async fn fetch_docs_to_map(
-    mut global_doc_addrs: Vec<GlobalDocAddress<'_>>,
+async fn fetch_docs_to_map<'a>(
+    split_id_to_metadata: HashMap<String, &LeafSearchRequestMetadata>,
+    mut global_doc_addrs: Vec<GlobalDocAddress<'a>>,
     index_storage: Arc<dyn Storage>,
-) -> anyhow::Result<HashMap<GlobalDocAddress<'_>, String>> {
+) -> anyhow::Result<HashMap<GlobalDocAddress<'a>, String>> {
     let mut split_fetch_docs_futures = Vec::new();
 
     // We sort global hit addrs in order to allow for the grouby.
@@ -52,7 +54,20 @@ async fn fetch_docs_to_map(
             quickwit_storage::add_prefix_to_storage(index_storage.clone(), &split_id);
         let global_doc_addrs: Vec<GlobalDocAddress> =
             global_doc_addrs.into_iter().cloned().collect();
-        split_fetch_docs_futures.push(fetch_docs_in_split(global_doc_addrs, split_storage));
+        split_fetch_docs_futures.push(fetch_docs_in_split(
+            split_id_to_metadata
+                .get(split_id)
+                .cloned()
+                .ok_or_else(|| {
+                    anyhow::anyhow!(format!(
+                        "could not find split id metadata in fetch docs step, {}",
+                        split_id
+                    ))
+                })?
+                .clone(),
+            global_doc_addrs,
+            split_storage,
+        ));
     }
 
     let split_fetch_docs: Vec<Vec<(GlobalDocAddress, String)>> =
@@ -76,14 +91,19 @@ async fn fetch_docs_to_map(
 pub async fn fetch_docs(
     partial_hits: Vec<PartialHit>,
     index_storage: Arc<dyn Storage>,
+    split_metadata: &[LeafSearchRequestMetadata],
 ) -> anyhow::Result<FetchDocsResult> {
+    let split_id_to_metadata: HashMap<String, &LeafSearchRequestMetadata> = split_metadata
+        .iter()
+        .map(|metadata| (metadata.split_id.to_string(), metadata))
+        .collect();
     let global_doc_addrs: Vec<GlobalDocAddress> = partial_hits
         .iter()
         .map(GlobalDocAddress::from_partial_hit)
         .collect();
 
     let mut global_doc_addr_to_doc_json =
-        fetch_docs_to_map(global_doc_addrs, index_storage).await?;
+        fetch_docs_to_map(split_id_to_metadata, global_doc_addrs, index_storage).await?;
 
     let hits: Vec<Hit> = partial_hits
         .iter()
@@ -103,12 +123,15 @@ pub async fn fetch_docs(
 }
 
 async fn get_searcher_for_split(
+    request_metadata: LeafSearchRequestMetadata,
     split_storage: Arc<dyn Storage>,
     num_searchers: usize,
 ) -> anyhow::Result<IndexReader> {
-    let index = open_index(split_storage)
-        .await
-        .with_context(|| "open-index-for-split")?;
+    let index = open_index(
+        split_storage,
+        request_metadata.split_footer_start..request_metadata.split_footer_end,
+    )
+    .await?;
     let reader = index
         .reader_builder()
         .num_searchers(num_searchers)
@@ -118,11 +141,13 @@ async fn get_searcher_for_split(
 }
 
 /// Fetching docs from a specific split.
-async fn fetch_docs_in_split(
-    global_doc_addrs: Vec<GlobalDocAddress<'_>>,
+async fn fetch_docs_in_split<'a>(
+    request_metadata: LeafSearchRequestMetadata,
+    global_doc_addrs: Vec<GlobalDocAddress<'a>>,
     split_storage: Arc<dyn Storage>,
-) -> anyhow::Result<Vec<(GlobalDocAddress<'_>, String)>> {
-    let index_reader = get_searcher_for_split(split_storage, global_doc_addrs.len()).await?;
+) -> anyhow::Result<Vec<(GlobalDocAddress<'a>, String)>> {
+    let index_reader =
+        get_searcher_for_split(request_metadata, split_storage, global_doc_addrs.len()).await?;
     let mut doc_futures = Vec::new();
     for global_doc_addr in global_doc_addrs {
         let searcher = index_reader.searcher();

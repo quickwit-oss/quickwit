@@ -83,6 +83,8 @@ struct BundleStorageFileOffsets {
 }
 
 impl BundleStorageFileOffsets {
+    // Reads File offsets from a bundle.
+    // The provided slice can contain parts of the body, but doesn't need to.
     fn open(data: &[u8]) -> Result<Self, CorruptedData> {
         let (body_and_footer, footer_num_bytes_data) = data.split_at(data.len() - 8);
         let footer_num_bytes: u64 = u64::from_le_bytes(footer_num_bytes_data.try_into().unwrap());
@@ -261,7 +263,7 @@ mod tests {
         bundle_builder.add_file(&test_filepath2)?;
         bundle_builder.finalize()?;
 
-        let metadata = BundleStorageFileOffsets::open(&buffer)?;
+        let metadata = BundleStorageFileOffsets::open(&buffer[1..])?;
         let bundle_filepath = Path::new("bundle");
         let ram_storage = RamStorageBuilder::default()
             .put(&bundle_filepath.to_string_lossy(), &buffer)

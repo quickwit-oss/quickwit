@@ -144,13 +144,13 @@ impl SearchService for SearchServiceImpl {
             })?;
         let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
-        let split_ids = leaf_search_request.split_metadata;
+        let split_metadata = leaf_search_request.split_metadata;
         let index_config = index_metadata.index_config;
 
         let leaf_search_result = leaf_search(
             index_config,
             &search_request,
-            &split_ids[..],
+            &split_metadata[..],
             storage.clone(),
         )
         .await?;
@@ -173,8 +173,9 @@ impl SearchService for SearchServiceImpl {
         let index_metadata = metastore.index_metadata(&index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
 
+        // TODO add metadata to partial hits ?
         let fetch_docs_result =
-            fetch_docs(fetch_docs_request.partial_hits, storage.clone()).await?;
+            fetch_docs(fetch_docs_request.partial_hits, storage.clone(), &[]).await?;
 
         Ok(fetch_docs_result)
     }
@@ -202,7 +203,7 @@ impl SearchService for SearchServiceImpl {
         let stream_request = leaf_stream_request
             .request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
-        info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_ids, "leaf_search");
+        info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_metadata, "leaf_search");
         let metastore = self
             .metastore_router
             .get(&stream_request.index_id)
@@ -212,10 +213,15 @@ impl SearchService for SearchServiceImpl {
             })?;
         let index_metadata = metastore.index_metadata(&stream_request.index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
-        let split_ids = leaf_stream_request.split_ids;
+        let split_metadata = leaf_stream_request.split_metadata;
         let index_config = index_metadata.index_config;
-        let leaf_receiver =
-            leaf_search_stream(index_config, &stream_request, split_ids, storage.clone()).await;
+        let leaf_receiver = leaf_search_stream(
+            index_config,
+            &stream_request,
+            split_metadata,
+            storage.clone(),
+        )
+        .await;
         Ok(leaf_receiver)
     }
 }

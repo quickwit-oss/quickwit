@@ -171,9 +171,13 @@ pub async fn single_node_search(
     )
     .await
     .with_context(|| "leaf_search")?;
-    let fetch_docs_result = fetch_docs(leaf_search_result.partial_hits, storage)
-        .await
-        .with_context(|| "fetch_request")?;
+    let fetch_docs_result = fetch_docs(
+        leaf_search_result.partial_hits,
+        storage,
+        &split_metadata[..],
+    )
+    .await
+    .with_context(|| "fetch_request")?;
     let elapsed = start_instant.elapsed();
     Ok(SearchResult {
         num_hits: leaf_search_result.num_hits,

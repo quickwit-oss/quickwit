@@ -81,16 +81,16 @@ pub struct LeafSearchRequest {
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequestMetadata {
-    /// The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
-    #[prost(uint64, tag = "1")]
-    pub split_footer_start: u64,
-    /// The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
-    #[prost(uint64, tag = "2")]
-    pub split_footer_end: u64,
     /// Index split id to apply the query on.
     /// This id is resolved from the index_uri defined in the search_request.
-    #[prost(string, tag = "3")]
+    #[prost(string, tag = "1")]
     pub split_id: ::prost::alloc::string::String,
+    /// The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
+    #[prost(uint64, tag = "2")]
+    pub split_footer_start: u64,
+    /// The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
+    #[prost(uint64, tag = "3")]
+    pub split_footer_end: u64,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -207,9 +207,9 @@ pub struct LeafSearchStreamRequest {
     #[prost(message, optional, tag = "1")]
     pub request: ::core::option::Option<SearchStreamRequest>,
     /// Index split ids to apply the query on.
-    /// This ids are resolved from the index_uri defined in the stream request.
-    #[prost(string, repeated, tag = "2")]
-    pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// This ids are resolved from the index_uri defined in the search_request.
+    #[prost(message, repeated, tag = "4")]
+    pub split_metadata: ::prost::alloc::vec::Vec<LeafSearchRequestMetadata>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

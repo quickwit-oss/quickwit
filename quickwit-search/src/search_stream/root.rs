@@ -27,6 +27,7 @@ use futures::StreamExt;
 use itertools::Either;
 use itertools::Itertools;
 use quickwit_metastore::SplitMetadataAndFooterOffsets;
+use quickwit_proto::LeafSearchRequestMetadata;
 use quickwit_proto::LeafSearchStreamRequest;
 use quickwit_proto::SearchStreamRequest;
 use tracing::*;
@@ -74,7 +75,14 @@ pub async fn root_search_stream(
             .collect();
         let leaf_request = LeafSearchStreamRequest {
             request: Some(search_stream_request.clone()),
-            split_ids: split_ids.clone(),
+            split_metadata: jobs
+                .iter()
+                .map(|job| LeafSearchRequestMetadata {
+                    split_id: job.metadata.split_metadata.split_id.to_string(),
+                    split_footer_start: job.metadata.footer_offsets.start as u64,
+                    split_footer_end: job.metadata.footer_offsets.end as u64,
+                })
+                .collect(),
         };
         debug!(leaf_request=?leaf_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search stream.");
         let handle = tokio::spawn(async move {

@@ -723,7 +723,7 @@ mod tests {
                     .iter()
                     .map(|metadata| metadata.split_id.to_string())
                     .collect_vec();
-                if split_ids == vec!["split1".to_string()] {
+                if &split_ids == &["split1".to_string()] {
                     Ok(quickwit_proto::LeafSearchResult {
                         num_hits: 2,
                         partial_hits: vec![
@@ -733,7 +733,7 @@ mod tests {
                         failed_splits: Vec::new(),
                         num_attempted_splits: 1,
                     })
-                } else if split_ids == vec!["split2".to_string()] {
+                } else if &split_ids == &["split2".to_string()] {
                     // RETRY REQUEST!
                     Ok(quickwit_proto::LeafSearchResult {
                         num_hits: 1,
