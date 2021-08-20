@@ -127,7 +127,6 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets
             split_state: SplitState::New,
             update_timestamp: Utc::now().timestamp(),
             tags: split.tags.clone(),
-            bundle_offsets: split.bundle_offsets.clone(),
         },
         footer_offsets: split.footer_offsets.clone(),
     }

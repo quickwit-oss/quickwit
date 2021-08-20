@@ -199,17 +199,6 @@ fn create_packaged_split(
         .map(|segment_meta| segment_meta.id())
         .collect();
 
-    let hotcache_offset_start = split_file.written_bytes();
-    build_hotcache(&split.split_scratch_directory, &mut split_file)?;
-    let hotcache_offset_end = split_file.written_bytes();
-    let hotcache_num_bytes = hotcache_offset_end - hotcache_offset_start;
-
-    split_file.write_all(&hotcache_num_bytes.to_le_bytes())?;
-    split_file.flush()?;
-
-    let footer_end = split_file.written_bytes();
-  
-  
     // extract tag values from `_tags` special fields
     let mut tags = vec![];
     if let Some(tags_field) = split.tags_field {
@@ -222,6 +211,16 @@ fn create_packaged_split(
             }
         }
     }
+
+    let hotcache_offset_start = split_file.written_bytes();
+    build_hotcache(&split.split_scratch_directory, &mut split_file)?;
+    let hotcache_offset_end = split_file.written_bytes();
+    let hotcache_num_bytes = hotcache_offset_end - hotcache_offset_start;
+
+    split_file.write_all(&hotcache_num_bytes.to_le_bytes())?;
+    split_file.flush()?;
+
+    let footer_end = split_file.written_bytes();
 
     let packaged_split = PackagedSplit {
         index_id: split.index_id,
