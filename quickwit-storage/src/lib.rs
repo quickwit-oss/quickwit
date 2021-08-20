@@ -138,6 +138,17 @@ pub(crate) mod tests {
         Ok(())
     }
 
+    async fn test_file_size(storage: &mut dyn Storage) -> anyhow::Result<()> {
+        let test_path = Path::new("write_for_filesize");
+        let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
+        storage
+            .put(test_path, PutPayload::from(payload_bytes))
+            .await?;
+        assert_eq!(storage.file_num_bytes(test_path).await?, 26u64);
+        storage.delete(test_path).await?;
+        Ok(())
+    }
+
     async fn test_exists(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("exists");
         assert!(matches!(storage.exists(test_path).await, Ok(false)));
@@ -146,6 +157,13 @@ pub(crate) mod tests {
             .await?;
         assert!(matches!(storage.exists(test_path).await, Ok(true)));
         assert!(matches!(storage.delete(test_path).await, Ok(())));
+        Ok(())
+    }
+
+    async fn test_delete_missing_file(storage: &mut dyn Storage) -> anyhow::Result<()> {
+        let test_path = Path::new("missing_file");
+        assert!(matches!(storage.exists(test_path).await, Ok(false)));
+        assert!(storage.delete(test_path).await.is_ok());
         Ok(())
     }
 
@@ -192,6 +210,12 @@ pub(crate) mod tests {
         test_write_and_delete_with_dir_separator(storage)
             .await
             .with_context(|| "write_and_delete_with_separator")?;
+        test_file_size(storage)
+            .await
+            .with_context(|| "delete_missing_file")?;
+        test_delete_missing_file(storage)
+            .await
+            .with_context(|| "delete_missing_file")?;
         Ok(())
     }
 }

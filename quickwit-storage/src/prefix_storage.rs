@@ -71,6 +71,10 @@ impl Storage for PrefixStorage {
             .to_string_lossy()
             .to_string()
     }
+
+    async fn file_num_bytes(&self, path: &Path) -> crate::StorageResult<u64> {
+        self.storage.file_num_bytes(&self.prefix.join(path)).await
+    }
 }
 
 /// Creates a [`PrefixStorage`] using an underlying storage and a prefix.
