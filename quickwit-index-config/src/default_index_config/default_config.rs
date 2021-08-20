@@ -220,6 +220,7 @@ impl std::fmt::Debug for DefaultIndexConfig {
     }
 }
 
+/// Converts a [`tantivy::Value`] to it's [`String`] value.
 fn tantivy_value_to_string(field_value: &Value) -> String {
     match field_value {
         Value::Str(text) => text.clone(),

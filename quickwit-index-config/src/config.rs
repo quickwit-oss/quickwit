@@ -109,17 +109,6 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
         vec![]
     }
 
-    /// Returns the tag fields
-    fn tag_fields(&self, split_schema: &Schema) -> Vec<(String, Field)> {
-        let mut fields_map = vec![];
-        for field_name in self.tag_field_names() {
-            if let Some(field) = split_schema.get_field(&field_name) {
-                fields_map.push((field_name, field))
-            }
-        }
-        fields_map
-    }
-
     /// Returns the special tags field if any.
     fn tags_field(&self, split_schema: &Schema) -> Option<Field> {
         if self.tag_field_names().is_empty() {

@@ -251,7 +251,7 @@ impl Split {
         Ok(manifest)
     }
 
-    // TODO: This is here to proove ourselves tags are working
+    // TODO: This is here to prove to ourselves that tags are working
     // with tests. This indexing will be replaced by the actor indexing pipeline.
     /// Extracts tags from the split.
     pub async fn extract_tags(&mut self, tags_field: Option<Field>) -> anyhow::Result<()> {

@@ -203,8 +203,8 @@ fn create_packaged_split(
 
     // extract tag values from `_tags` special fields
     let mut tags = vec![];
-    let index_reader = split.index.reader()?;
     if let Some(tags_field) = split.tags_field {
+        let index_reader = split.index.reader()?;
         for reader in index_reader.searcher().segment_readers() {
             let inv_index = reader.inverted_index(tags_field)?;
             let mut terms_streamer = inv_index.terms().stream()?;
