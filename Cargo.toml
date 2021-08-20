@@ -6,12 +6,12 @@ members = [
   "quickwit-cluster",
   "quickwit-core",
   "quickwit-index-config",
+  "quickwit-indexing",
   "quickwit-directories",
   "quickwit-metastore",
   "quickwit-proto",
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
-  "quickwit-telemetry",
-  "quickwit-index"
+  "quickwit-telemetry"
 ]

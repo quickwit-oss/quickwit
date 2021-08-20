@@ -28,7 +28,8 @@ use crate::{Actor, ActorContext, KillSwitch, Mailbox, RecvError};
 use anyhow::Context;
 use async_trait::async_trait;
 use tokio::sync::watch::{self, Sender};
-use tracing::{debug, error};
+use tokio::task::JoinHandle;
+use tracing::{debug, error, info};
 
 /// An async actor is executed on a regular tokio task.
 ///
@@ -94,8 +95,14 @@ pub(crate) fn spawn_async_actor<A: AsyncActor>(
     let mailbox_clone = mailbox.clone();
     let ctx = ActorContext::new(mailbox, kill_switch, scheduler_mailbox);
     let ctx_clone = ctx.clone();
-    let join_handle = tokio::spawn(async_actor_loop(actor, inbox, ctx, state_tx));
-    let handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
+    let (exit_status_tx, exit_status_rx) = watch::channel(None);
+    let join_handle: JoinHandle<()> = tokio::spawn(async move {
+        let actor_instance_id = ctx.actor_instance_id().to_string();
+        let exit_status = async_actor_loop(actor, inbox, ctx, state_tx).await;
+        info!(exit_status=%exit_status, actor=actor_instance_id.as_str(), "exit");
+        let _ = exit_status_tx.send(Some(exit_status));
+    });
+    let handle = ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx);
     (mailbox_clone, handle)
 }
 
@@ -110,7 +117,7 @@ async fn process_msg<A: Actor + AsyncActor>(
     }
     ctx.progress().record_progress();
 
-    let command_or_msg_recv_res = if ctx.get_state() == ActorState::Running {
+    let command_or_msg_recv_res = if ctx.state() == ActorState::Running {
         inbox.recv_timeout().await
     } else {
         // The actor is paused. We only process command and scheduled message.

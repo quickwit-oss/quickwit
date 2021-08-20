@@ -18,13 +18,17 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::mem;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
 
 use crate::models::PackagedSplit;
 use crate::models::UploadedSplit;
 use crate::semaphore::Semaphore;
+use anyhow::bail;
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::Actor;
@@ -43,6 +47,7 @@ use quickwit_storage::BUNDLE_FILENAME;
 use tantivy::chrono::Utc;
 use tokio::sync::oneshot::Receiver;
 use tracing::info;
+use tracing::warn;
 
 pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 3;
 
@@ -51,6 +56,7 @@ pub struct Uploader {
     index_storage: Arc<dyn Storage>,
     publisher_mailbox: Mailbox<Receiver<UploadedSplit>>,
     concurrent_upload_permits: Semaphore,
+    counters: UploaderCounters,
 }
 
 impl Uploader {
@@ -64,18 +70,25 @@ impl Uploader {
             index_storage,
             publisher_mailbox,
             concurrent_upload_permits: Semaphore::new(MAX_CONCURRENT_SPLIT_UPLOAD),
+            counters: Default::default(),
         }
     }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct UploaderCounters {
+    pub num_staged_splits: Arc<AtomicU64>,
+    pub num_uploaded_splits: Arc<AtomicU64>,
 }
 
 impl Actor for Uploader {
     type Message = PackagedSplit;
 
-    type ObservableState = ();
+    type ObservableState = UploaderCounters;
 
     #[allow(clippy::unused_unit)]
     fn observable_state(&self) -> Self::ObservableState {
-        ()
+        self.counters.clone()
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
@@ -136,12 +149,15 @@ async fn stage_and_upload_split(
     split: PackagedSplit,
     index_storage: &dyn Storage,
     metastore: &dyn Metastore,
+    counters: UploaderCounters,
 ) -> anyhow::Result<UploadedSplit> {
     let metadata = create_split_metadata(&split);
     metastore
         .stage_split(&split.index_id, metadata.clone())
         .await?;
+    counters.num_staged_splits.fetch_add(1, Ordering::SeqCst);
     put_split_file_to_storage(&split, &*index_storage).await?;
+    counters.num_uploaded_splits.fetch_add(1, Ordering::SeqCst);
     Ok(UploadedSplit {
         index_id: split.index_id,
         metadata,
@@ -164,17 +180,37 @@ impl AsyncActor for Uploader {
         ctx.send_message(&self.publisher_mailbox, split_uploaded_rx)
             .await?;
 
-        {
-            // The permit will be added back manually to the semaphore the task after it is finished.
-            let _permit_guard = self.concurrent_upload_permits.acquire().await;
+        // The permit will be added back manually to the semaphore the task after it is finished.
+        let permit_guard = self.concurrent_upload_permits.acquire().await;
 
-            let uploaded_split =
-                stage_and_upload_split(split, &*self.index_storage, &*self.metastore).await?;
+        let kill_switch = ctx.kill_switch().clone();
+        let metastore = self.metastore.clone();
+        let index_storage = self.index_storage.clone();
 
-            split_uploaded_tx
-                .send(uploaded_split)
-                .map_err(|_| ActorExitStatus::DownstreamClosed)?;
-        }
+        let counters = self.counters.clone();
+
+        tokio::spawn(async move {
+            let stage_and_upload_res: anyhow::Result<()> =
+                stage_and_upload_split(split, &*index_storage, &*metastore, counters)
+                    .await
+                    .and_then(|uploaded_split| {
+                        if let Err(uploaded_split) = split_uploaded_tx.send(uploaded_split) {
+                            bail!(
+                                "Failed to send upload split `{}`. The publisher is probably dead.",
+                                &uploaded_split.metadata.split_metadata.split_id
+                            );
+                        }
+                        Ok(())
+                    });
+
+            if let Err(cause) = stage_and_upload_res {
+                warn!(cause=%cause, "Failed to upload split. Killing!");
+                kill_switch.kill();
+            }
+
+            // we explicitely drop it in order to force move the permit guard into the async task.
+            mem::drop(permit_guard);
+        });
 
         Ok(())
     }
@@ -212,7 +248,7 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: Arc<dyn Storage> = Arc::new(ram_storage.clone());
         let uploader = Uploader::new(Arc::new(mock_metastore), index_storage.clone(), mailbox);
-        let (uploader_mailbox, uploader_handle) = universe.spawn(uploader);
+        let (uploader_mailbox, uploader_handle) = universe.spawn_async_actor(uploader);
         let split_scratch_directory = ScratchDirectory::try_new_temp()?;
         std::fs::write(
             split_scratch_directory.path().join(BUNDLE_FILENAME),

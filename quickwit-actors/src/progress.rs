@@ -27,7 +27,7 @@ use std::sync::Arc;
 ///
 /// If no progress is observed until the next heartbeat, the actor will be killed.
 #[derive(Clone)]
-pub(crate) struct Progress(Arc<AtomicU32>);
+pub struct Progress(Arc<AtomicU32>);
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
 enum ProgressState {
@@ -110,7 +110,7 @@ impl Progress {
     /// This method mutates the state as follows and returns true if
     /// the object was in the protected zone or had change registered.
     /// - Updated -> NoUpdate, returns true
-    /// - NoUpdate -> Updated, returns true
+    /// - NoUpdate -> NoUpdate, returns false
     /// - ProtectedZone -> ProtectedZone, returns true
     pub fn registered_activity_since_last_call(&self) -> bool {
         let previous_state: ProgressState = self

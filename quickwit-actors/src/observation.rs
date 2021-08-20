@@ -19,11 +19,20 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::ops::Deref;
 
 #[derive(Debug)]
 pub struct Observation<ObservableState> {
     pub obs_type: ObservationType,
     pub state: ObservableState,
+}
+
+impl<ObservableState> Deref for Observation<ObservableState> {
+    type Target = ObservableState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
 }
 
 // Describes the actual outcome of observation.

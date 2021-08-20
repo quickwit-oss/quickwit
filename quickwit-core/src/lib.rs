@@ -29,13 +29,14 @@
 - `delete_index` for deleting an index
 */
 
-mod counter;
 mod index;
-mod indexing;
 mod test_utils;
 
-pub use index::{create_index, delete_index, garbage_collect_index};
-pub use indexing::{
-    index_data, test_document_source, DocumentSource, IndexDataParams, IndexingStatistics,
-};
+pub use index::{create_index, delete_index, garbage_collect_index, reset_index};
 pub use test_utils::TestSandbox;
+
+#[derive(Debug)]
+pub struct FileEntry {
+    pub file_name: String,
+    pub file_size_in_bytes: u64,
+}

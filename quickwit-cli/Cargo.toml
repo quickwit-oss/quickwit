@@ -17,10 +17,13 @@ path = "src/main.rs"
 anyhow = "1"
 byte-unit = "4"
 clap = { version = "2", features = ["yaml"] }
+futures = "0.3"
+quickwit-actors = { version = "0.1.0", path = "../quickwit-actors" }
 quickwit-core = { version = "0.1.0", path = "../quickwit-core" }
 quickwit-common = { version = "0.1.0", path = "../quickwit-common" }
 quickwit-metastore = { version = "0.1.0", path = "../quickwit-metastore" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
+quickwit-indexing = {path = "../quickwit-indexing" }
 quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
 quickwit-search = { version = "0.1", path = "../quickwit-search" }
 quickwit-serve = { version = "0.1", path = "../quickwit-serve" }

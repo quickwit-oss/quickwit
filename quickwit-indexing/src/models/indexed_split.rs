@@ -27,9 +27,8 @@ use quickwit_metastore::checkpoint::CheckpointDelta;
 use tantivy::merge_policy::NoMergePolicy;
 use tantivy::schema::Schema;
 
+use crate::actors::IndexerParams;
 use crate::models::ScratchDirectory;
-
-const MEM_BUDGET_IN_BYTES: usize = 1_000_000_000;
 
 pub struct IndexedSplit {
     pub split_id: String,
@@ -72,16 +71,16 @@ fn new_split_id() -> String {
 impl IndexedSplit {
     pub fn new_in_dir(
         index_id: String,
-        index_scratch_directory: &ScratchDirectory,
+        indexer_params: &IndexerParams,
         schema: Schema,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
         // and avoid possible race conditions.
-        let split_scratch_directory = index_scratch_directory.temp_child()?;
+        let split_scratch_directory = indexer_params.scratch_directory.temp_child()?;
         let index = tantivy::Index::create_in_dir(split_scratch_directory.path(), schema)?;
-        // TODO make mem budget configurable.
-        let index_writer = index.writer_with_num_threads(1, MEM_BUDGET_IN_BYTES)?;
+        let index_writer =
+            index.writer_with_num_threads(1, indexer_params.heap_size.get_bytes() as usize)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
         let split_id = new_split_id();
         Ok(IndexedSplit {

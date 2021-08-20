@@ -2,7 +2,7 @@
 //  Copyright (C) 2021 Quickwit Inc.
 //
 //  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+//  For commercial li num_splits_emitted: () censing, contact us at hello@quickwit.io.
 //
 //  AGPL:
 //  This program is free software: you can redistribute it and/or modify
@@ -18,11 +18,12 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::io;
 use std::ops::RangeInclusive;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context;
+use byte_unit::Byte;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
 use quickwit_actors::ActorExitStatus;
@@ -55,6 +56,9 @@ pub struct IndexerCounters {
     pub num_missing_timestamp: u64,
     pub num_valid_docs: u64,
 
+    /// Number of splits that were emitted by the indexer.
+    pub num_splits_emitted: u64,
+
     /// Number of bytes that went through the indexer
     /// during its entire lifetime.
     ///
@@ -66,12 +70,32 @@ pub struct IndexerCounters {
     pub num_docs_in_split: u64,
 }
 
+impl IndexerCounters {
+    /// Returns the overall number of docs that went through the indexer (valid or not).
+    pub fn num_processed_docs(&self) -> u64 {
+        self.num_valid_docs + self.num_parse_errors + self.num_missing_timestamp
+    }
+
+    /// Returns the overall number of docs that went through the indexer (valid or not).
+    pub fn num_invalid_docs(&self) -> u64 {
+        self.num_parse_errors + self.num_missing_timestamp
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexDataParams {
+    /// Tempory directory to use for indexing
+    pub scratch_directory: ScratchDirectory,
+    /// Number of thread to use for indexing.
+    pub num_threads: usize,
+    /// Amount of memory shared among indexing threads.
+    pub heap_size: u64,
+}
+
 struct IndexerState {
     index_id: String,
     index_config: Arc<dyn IndexConfig>,
-    commit_policy: CommitPolicy, //< TODO should move into the index config.
-    // splits index writer will write in TempDir within this directory
-    indexing_scratch_directory: ScratchDirectory,
+    indexer_params: IndexerParams,
     timestamp_field_opt: Option<Field>,
 }
 
@@ -87,11 +111,8 @@ enum PrepareDocumentOutcome {
 impl IndexerState {
     fn create_indexed_split(&self) -> anyhow::Result<IndexedSplit> {
         let schema = self.index_config.schema();
-        let indexed_split = IndexedSplit::new_in_dir(
-            self.index_id.clone(),
-            &self.indexing_scratch_directory,
-            schema,
-        )?;
+        let indexed_split =
+            IndexedSplit::new_in_dir(self.index_id.clone(), &self.indexer_params, schema)?;
         Ok(indexed_split)
     }
 
@@ -109,7 +130,10 @@ impl IndexerState {
             let commit_timeout = IndexerMessage::CommitTimeout {
                 split_id: new_indexed_split.split_id.clone(),
             };
-            ctx.schedule_self_msg_blocking(self.commit_policy.timeout, commit_timeout);
+            ctx.schedule_self_msg_blocking(
+                self.indexer_params.commit_policy.timeout,
+                commit_timeout,
+            );
             *current_split_opt = Some(new_indexed_split);
         }
         let current_index_split = current_split_opt.as_mut().with_context(|| {
@@ -223,6 +247,24 @@ fn record_timestamp(timestamp: i64, time_range: &mut Option<RangeInclusive<i64>>
     *time_range = Some(new_timestamp_range);
 }
 
+#[derive(Clone)]
+pub struct IndexerParams {
+    pub scratch_directory: ScratchDirectory,
+    pub heap_size: Byte,
+    pub commit_policy: CommitPolicy,
+}
+
+impl IndexerParams {
+    pub fn for_test() -> io::Result<Self> {
+        let scratch_directory = ScratchDirectory::try_new_temp()?;
+        Ok(IndexerParams {
+            scratch_directory,
+            heap_size: Byte::from_str("30MB").unwrap(),
+            commit_policy: Default::default(),
+        })
+    }
+}
+
 impl SyncActor for Indexer {
     fn process_message(
         &mut self,
@@ -238,7 +280,11 @@ impl SyncActor for Indexer {
                     ctx,
                 )?;
                 if self.counters.num_docs_in_split
-                    >= self.indexer_state.commit_policy.num_docs_threshold
+                    >= self
+                        .indexer_state
+                        .indexer_params
+                        .commit_policy
+                        .num_docs_threshold
                 {
                     self.send_to_packager(CommitTrigger::NumDocsLimit, ctx)?;
                 }
@@ -292,28 +338,21 @@ impl Indexer {
     pub fn try_new(
         index_id: String,
         index_config: Arc<dyn IndexConfig>,
-        indexing_directory: Option<PathBuf>, //< if None, we create a tempdirectory.
-        commit_policy: CommitPolicy,
+        indexer_params: IndexerParams,
         packager_mailbox: Mailbox<IndexedSplit>,
     ) -> anyhow::Result<Indexer> {
-        let indexing_scratch_directory = if let Some(path) = indexing_directory {
-            ScratchDirectory::new_in_path(path)
-        } else {
-            ScratchDirectory::try_new_temp()?
-        };
         let schema = index_config.schema();
         let timestamp_field_opt = index_config.timestamp_field(&schema);
         Ok(Indexer {
             indexer_state: IndexerState {
                 index_id,
                 index_config,
-                indexing_scratch_directory,
-                commit_policy,
+                indexer_params,
                 timestamp_field_opt,
             },
             packager_mailbox,
-            counters: IndexerCounters::default(),
             current_split_opt: None,
+            counters: IndexerCounters::default(),
         })
     }
 
@@ -328,9 +367,10 @@ impl Indexer {
         } else {
             return Ok(());
         };
-        self.counters.num_docs_in_split = 0;
         info!(commit_trigger=?commit_trigger, index=?indexed_split.index_id, split=?indexed_split.split_id,"send-to-packager");
         ctx.send_message_blocking(&self.packager_mailbox, indexed_split)?;
+        self.counters.num_docs_in_split = 0;
+        self.counters.num_splits_emitted += 1;
         Ok(())
     }
 }
@@ -342,9 +382,12 @@ mod tests {
 
     use crate::actors::indexer::record_timestamp;
     use crate::actors::indexer::IndexerCounters;
+    use crate::actors::IndexerParams;
     use crate::models::CommitPolicy;
     use crate::models::IndexerMessage;
     use crate::models::RawDocBatch;
+    use crate::models::ScratchDirectory;
+    use byte_unit::Byte;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::Universe;
     use quickwit_metastore::checkpoint::CheckpointDelta;
@@ -366,17 +409,20 @@ mod tests {
     async fn test_indexer_simple() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let commit_policy = CommitPolicy {
-            timeout: Duration::from_secs(60),
-            num_docs_threshold: 3,
+        let indexer_params = IndexerParams {
+            commit_policy: CommitPolicy {
+                timeout: Duration::from_secs(60),
+                num_docs_threshold: 3,
+            },
+            scratch_directory: ScratchDirectory::try_new_temp()?,
+            heap_size: Byte::from_str("30MB").unwrap(),
         };
         let (mailbox, inbox) = create_test_mailbox();
         let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
         let indexer = Indexer::try_new(
             "test-index".to_string(),
             index_config,
-            None,
-            commit_policy,
+            indexer_params,
             mailbox,
         )?;
         let (indexer_mailbox, indexer_handle) = universe.spawn_sync_actor::<Indexer>(indexer);
@@ -402,6 +448,7 @@ mod tests {
                 num_parse_errors: 1,
                 num_missing_timestamp: 1,
                 num_valid_docs: 2,
+                num_splits_emitted: 0,
                 num_docs_in_split: 2, //< we have not reached the commit limit yet.
                 overall_num_bytes: 103,
             }
@@ -423,6 +470,7 @@ mod tests {
                 num_parse_errors: 1,
                 num_missing_timestamp: 1,
                 num_valid_docs: 3,
+                num_splits_emitted: 1,
                 num_docs_in_split: 0, //< the num docs in split counter has been reset.
                 overall_num_bytes: 146,
             }
@@ -437,17 +485,20 @@ mod tests {
     async fn test_indexer_timeout() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let commit_policy = CommitPolicy {
-            timeout: Duration::from_secs(60),
-            num_docs_threshold: 10_000,
+        let indexer_params = IndexerParams {
+            commit_policy: CommitPolicy {
+                timeout: Duration::from_secs(60),
+                num_docs_threshold: 10_000_000,
+            },
+            scratch_directory: ScratchDirectory::try_new_temp()?,
+            heap_size: Byte::from_str("30MB").unwrap(),
         };
         let (mailbox, inbox) = create_test_mailbox();
         let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
         let indexer = Indexer::try_new(
             "test-index".to_string(),
             index_config,
-            None,
-            commit_policy,
+            indexer_params,
             mailbox,
         )?;
         let (indexer_mailbox, indexer_handle) = universe.spawn_sync_actor::<Indexer>(indexer);
@@ -468,6 +519,7 @@ mod tests {
                 num_parse_errors: 0,
                 num_missing_timestamp: 0,
                 num_valid_docs: 1,
+                num_splits_emitted: 0,
                 num_docs_in_split: 1,
                 overall_num_bytes: 42,
             }
@@ -480,6 +532,7 @@ mod tests {
                 num_parse_errors: 0,
                 num_missing_timestamp: 0,
                 num_valid_docs: 1,
+                num_splits_emitted: 1,
                 num_docs_in_split: 0,
                 overall_num_bytes: 42,
             }
@@ -494,14 +547,13 @@ mod tests {
     async fn test_indexer_eof() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
-        let commit_policy = CommitPolicy::default();
         let (mailbox, inbox) = create_test_mailbox();
         let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
+        let indexer_params = IndexerParams::for_test()?;
         let indexer = Indexer::try_new(
             "test-index".to_string(),
             index_config,
-            None,
-            commit_policy,
+            indexer_params,
             mailbox,
         )?;
         let (indexer_mailbox, indexer_handle) = universe.spawn_sync_actor::<Indexer>(indexer);
@@ -526,6 +578,7 @@ mod tests {
                 num_parse_errors: 0,
                 num_missing_timestamp: 0,
                 num_valid_docs: 1,
+                num_splits_emitted: 1,
                 num_docs_in_split: 0,
                 overall_num_bytes: 42,
             }

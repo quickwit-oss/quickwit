@@ -2736,12 +2736,15 @@ dependencies = [
  "chrono",
  "clap",
  "crossterm",
+ "futures",
  "json_comments",
  "once_cell",
  "predicates 2.0.0",
+ "quickwit-actors",
  "quickwit-common",
  "quickwit-core",
  "quickwit-index-config",
+ "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-search",
@@ -2794,12 +2797,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "byte-unit",
  "futures",
  "futures-util",
  "mockall 0.9.1",
+ "quickwit-actors",
  "quickwit-common",
  "quickwit-directories",
  "quickwit-index-config",
+ "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-storage",
  "rand 0.8.4",
@@ -2838,33 +2844,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickwit-index"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "flume",
- "futures",
- "itertools 0.10.1",
- "mockall 0.9.1",
- "once_cell",
- "quickwit-actors",
- "quickwit-common",
- "quickwit-directories",
- "quickwit-index-config",
- "quickwit-metastore",
- "quickwit-storage",
- "serde",
- "serde_json",
- "tantivy",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "ulid",
-]
-
-[[package]]
 name = "quickwit-index-config"
 version = "0.1.0"
 dependencies = [
@@ -2884,6 +2863,35 @@ dependencies = [
  "tantivy-query-grammar",
  "thiserror",
  "typetag",
+]
+
+[[package]]
+name = "quickwit-indexing"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "byte-unit",
+ "flume",
+ "futures",
+ "itertools 0.10.1",
+ "mockall 0.9.1",
+ "once_cell",
+ "quickwit-actors",
+ "quickwit-common",
+ "quickwit-directories",
+ "quickwit-index-config",
+ "quickwit-metastore",
+ "quickwit-storage",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "tantivy",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "ulid",
 ]
 
 [[package]]

@@ -47,10 +47,11 @@ mod tests;
 mod universe;
 
 pub use self::actor::ActorContext;
+pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
 pub use self::mailbox::{create_mailbox, create_test_mailbox, Mailbox};
 pub use actor::{Actor, ActorExitStatus};
-pub use actor_handle::ActorHandle;
+pub use actor_handle::{ActorHandle, Health, Supervisable};
 pub use async_actor::AsyncActor;
 pub use kill_switch::KillSwitch;
 pub use observation::{Observation, ObservationType};

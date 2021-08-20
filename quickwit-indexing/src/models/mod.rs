@@ -18,12 +18,22 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-mod indexer;
-mod packager;
-mod publisher;
-mod uploader;
+mod commit_policy;
+mod indexed_split;
+mod indexer_message;
+mod indexing_statistics;
+mod manifest;
+mod packaged_split;
+mod raw_doc_batch;
+mod scratch_directory;
+mod uploaded_split;
 
-pub use self::indexer::Indexer;
-pub use self::packager::Packager;
-pub use self::publisher::Publisher;
-pub use self::uploader::Uploader;
+pub use commit_policy::CommitPolicy;
+pub use indexed_split::IndexedSplit;
+pub use indexer_message::IndexerMessage;
+pub use indexing_statistics::{AtomicCounter, IndexingStatistics};
+pub use manifest::{Manifest, ManifestEntry};
+pub use packaged_split::PackagedSplit;
+pub use raw_doc_batch::RawDocBatch;
+pub use scratch_directory::ScratchDirectory;
+pub use uploaded_split::UploadedSplit;
