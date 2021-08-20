@@ -20,6 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use crate::default_index_config::TAGS_FIELD_NAME;
 use crate::DocParsingError;
 use dyn_clone::clone_trait_object;
 use dyn_clone::DynClone;
@@ -117,6 +118,14 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
             }
         }
         fields_map
+    }
+
+    /// Returns the special tags field if any.
+    fn tags_field(&self, split_schema: &Schema) -> Option<Field> {
+        if self.tag_field_names().is_empty() {
+            return None;
+        }
+        split_schema.get_field(TAGS_FIELD_NAME)
     }
 }
 

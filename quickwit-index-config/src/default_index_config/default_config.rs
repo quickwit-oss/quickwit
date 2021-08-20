@@ -20,7 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use super::{default_as_true, SOURCE_FIELD_NAME};
+use super::{default_as_true, SOURCE_FIELD_NAME, TAGS_FIELD_NAME};
 use super::{field_mapping_entry::DocParsingError, FieldMappingEntry, FieldMappingType};
 use crate::query_builder::build_query;
 use crate::{IndexConfig, QueryParserError, SortBy, SortOrder};
@@ -29,7 +29,7 @@ use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use std::{collections::HashSet, convert::TryFrom};
-use tantivy::schema::Cardinality;
+use tantivy::schema::{Cardinality, Value, STRING};
 use tantivy::{
     query::Query,
     schema::{FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, STORED},
@@ -78,6 +78,7 @@ impl DefaultIndexConfigBuilder {
                 .with_context(|| format!("Unknown default search field: `{}`", field_name))?;
             default_search_field_names.push(field_name.clone());
         }
+
         // Resolve timestamp field
         if let Some(ref timestamp_field_name) = self.timestamp_field {
             let timestamp_field = schema
@@ -98,27 +99,15 @@ impl DefaultIndexConfigBuilder {
         }
 
         // Resolve tag fields
-        const RAW_TOKENIZER: &str = "raw";
+        let mut tag_field_names = Vec::new();
         for tag_field_name in self.tag_fields.iter() {
-            let tag_field = schema
+            if tag_field_names.contains(tag_field_name) {
+                bail!("Duplicated tag field: `{}`", tag_field_name)
+            }
+            schema
                 .get_field(tag_field_name)
                 .with_context(|| format!("Unknown tag field: `{}`", tag_field_name))?;
-
-            let tag_field_entry = schema.get_field_entry(tag_field);
-            if let FieldType::Str(options) = tag_field_entry.field_type() {
-                if let Some(field_indexing) = options.get_indexing_options() {
-                    if field_indexing.tokenizer() != RAW_TOKENIZER {
-                        bail!("Tag field `{}` must not be tokenized, please set its `tokenizer` attribute to `{}`.", tag_field_name, RAW_TOKENIZER)
-                    }
-                } else {
-                    bail!("Tag field `{}` must be indexed.", tag_field_name)
-                }
-            } else {
-                bail!(
-                    "Tag field must be of type Str, please change your field type `{}` to text.",
-                    tag_field_name
-                )
-            }
+            tag_field_names.push(tag_field_name.clone());
         }
 
         // Build the root mapping entry, it has an empty name so that we don't prefix all
@@ -130,7 +119,7 @@ impl DefaultIndexConfigBuilder {
             default_search_field_names,
             timestamp_field_name: self.timestamp_field,
             field_mappings,
-            tag_field_names: self.tag_fields,
+            tag_field_names,
         })
     }
 
@@ -144,6 +133,9 @@ impl DefaultIndexConfigBuilder {
                 if field_name == SOURCE_FIELD_NAME {
                     bail!("`_source` is a reserved name, change your field name.");
                 }
+                if field_name == TAGS_FIELD_NAME {
+                    bail!("`_tags` is a reserved name, change your field name.");
+                }
                 if unique_field_names.contains(&field_name) {
                     bail!(
                         "Field name must be unique, found duplicates for `{}`",
@@ -156,6 +148,9 @@ impl DefaultIndexConfigBuilder {
         }
         if self.store_source {
             builder.add_text_field(SOURCE_FIELD_NAME, STORED);
+        }
+        if !self.tag_fields.is_empty() {
+            builder.add_text_field(TAGS_FIELD_NAME, STRING);
         }
         Ok(builder.build())
     }
@@ -225,6 +220,19 @@ impl std::fmt::Debug for DefaultIndexConfig {
     }
 }
 
+fn tantivy_value_to_string(field_value: &Value) -> String {
+    match field_value {
+        Value::Str(text) => text.clone(),
+        Value::PreTokStr(data) => data.text.clone(),
+        Value::U64(num) => num.to_string(),
+        Value::I64(num) => num.to_string(),
+        Value::F64(num) => num.to_string(),
+        Value::Date(date) => date.to_rfc3339(),
+        Value::Facet(facet) => facet.to_string(),
+        Value::Bytes(data) => base64::encode(data),
+    }
+}
+
 #[typetag::serde(name = "default")]
 impl IndexConfig for DefaultIndexConfig {
     fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
@@ -244,11 +252,20 @@ impl IndexConfig for DefaultIndexConfig {
             DocParsingError::NotJson(doc_json_sample)
         })?;
         let parsing_result = self.field_mappings.parse(&json_obj)?;
+        let tags_field_opt = self.schema.get_field(TAGS_FIELD_NAME);
         for (field_path, field_value) in parsing_result {
+            let field_name = field_path.field_name();
             let field = self
                 .schema
-                .get_field(&field_path.field_name())
-                .ok_or_else(|| DocParsingError::NoSuchFieldInSchema(field_path.field_name()))?;
+                .get_field(&field_name)
+                .ok_or_else(|| DocParsingError::NoSuchFieldInSchema(field_name.clone()))?;
+            if self.tag_field_names.contains(&field_name) {
+                let tags_field = tags_field_opt.ok_or_else(|| {
+                    DocParsingError::NoSuchFieldInSchema(TAGS_FIELD_NAME.to_string())
+                })?;
+                let tag_value = format!("{}:{}", field_name, tantivy_value_to_string(&field_value));
+                document.add(FieldValue::new(tags_field, Value::Str(tag_value)));
+            }
             document.add(FieldValue::new(field, field_value))
         }
         Ok(document)

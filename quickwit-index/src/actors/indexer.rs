@@ -87,12 +87,12 @@ enum PrepareDocumentOutcome {
 impl IndexerState {
     fn create_indexed_split(&self) -> anyhow::Result<IndexedSplit> {
         let schema = self.index_config.schema();
-        let tag_fields = self.index_config.tag_fields(&schema);
+        let tags_field = self.index_config.tags_field(&schema);
         let indexed_split = IndexedSplit::new_in_dir(
             self.index_id.clone(),
             &self.indexing_scratch_directory,
             schema,
-            tag_fields,
+            tags_field,
         )?;
         Ok(indexed_split)
     }

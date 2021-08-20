@@ -57,14 +57,12 @@ const DEFAULT_INDEX_CONFIG: &str = r#"{
         {
             "name": "device",
             "type": "text",
-            "stored": false,
-            "tokenizer": "raw"
+            "stored": false
         },
         {
             "name": "city",
             "type": "text",
-            "stored": false,
-            "tokenizer": "raw"
+            "stored": false
         }
     ]
 }"#;

@@ -169,31 +169,6 @@ fn merge_segments_if_required(
     Ok(segment_metas_after_merge)
 }
 
-/// Extracts tags from the split.
-///
-/// Tags are constructed by combining field name and terms of the field in the form `field_name:term`.
-/// For example: a split containing the terms [tokio, london, paris] for a field named `city`,
-/// the list of extracted tags will be: [city:tokio, city:london, city:paris]  
-fn extract_tags(split: &mut IndexedSplit) -> anyhow::Result<Vec<String>> {
-    info!("extract-tags");
-    let mut tags = vec![];
-    let index_reader = split.index.reader()?;
-    for reader in index_reader.searcher().segment_readers() {
-        for (field_name, field) in split.tag_fields.iter() {
-            let inv_index = reader.inverted_index(*field)?;
-            let mut terms_streamer = inv_index.terms().stream()?;
-            while let Some((term_data, _)) = terms_streamer.next() {
-                tags.push(format!(
-                    "{}:{}",
-                    field_name,
-                    String::from_utf8_lossy(term_data)
-                ));
-            }
-        }
-    }
-    Ok(tags)
-}
-
 fn build_hotcache(path: &Path) -> anyhow::Result<()> {
     info!("build-hotcache");
     let hotcache_path = path.join(HOTCACHE_FILENAME);
@@ -206,7 +181,6 @@ fn build_hotcache(path: &Path) -> anyhow::Result<()> {
 fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
-    tags: Vec<String>,
 ) -> anyhow::Result<PackagedSplit> {
     info!("create-packaged-split");
     let num_docs = segment_metas
@@ -226,6 +200,20 @@ fn create_packaged_split(
                 )
             },
         )?;
+
+    // extract tag values from `_tags` special fields
+    let mut tags = vec![];
+    let index_reader = split.index.reader()?;
+    if let Some(tags_field) = split.tags_field {
+        for reader in index_reader.searcher().segment_readers() {
+            let inv_index = reader.inverted_index(tags_field)?;
+            let mut terms_streamer = inv_index.terms().stream()?;
+            while let Some((term_data, _)) = terms_streamer.next() {
+                tags.push(String::from_utf8_lossy(term_data).to_string());
+            }
+        }
+    }
+
     let packaged_split = PackagedSplit {
         index_id: split.index_id,
         split_id: split.split_id.to_string(),
@@ -250,9 +238,8 @@ impl SyncActor for Packager {
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
-        let tags = extract_tags(&mut split)?;
         build_hotcache(split.split_scratch_directory.path())?;
-        let packaged_split = create_packaged_split(&segment_metas[..], split, tags)?;
+        let packaged_split = create_packaged_split(&segment_metas[..], split)?;
         ctx.send_message_blocking(&self.uploader_mailbox, packaged_split)?;
         Ok(())
     }
@@ -324,7 +311,7 @@ mod tests {
             index_writer,
             split_scratch_directory,
             checkpoint_delta: CheckpointDelta::from(10..20),
-            tag_fields: vec![],
+            tags_field: None,
         };
         Ok(indexed_split)
     }
