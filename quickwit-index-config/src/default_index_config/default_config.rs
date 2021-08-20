@@ -126,6 +126,8 @@ impl DefaultIndexConfigBuilder {
     /// Build the schema from the field mappings and store_source parameter.
     fn build_schema(&self) -> anyhow::Result<Schema> {
         let mut builder = SchemaBuilder::new();
+        builder.add_text_field(TAGS_FIELD_NAME, STRING);
+
         let mut unique_field_names: HashSet<String> = HashSet::new();
         for field_mapping in self.field_mappings.iter() {
             for (field_path, field_type) in field_mapping.field_entries()? {
@@ -149,9 +151,7 @@ impl DefaultIndexConfigBuilder {
         if self.store_source {
             builder.add_text_field(SOURCE_FIELD_NAME, STORED);
         }
-        if !self.tag_fields.is_empty() {
-            builder.add_text_field(TAGS_FIELD_NAME, STRING);
-        }
+
         Ok(builder.build())
     }
 }

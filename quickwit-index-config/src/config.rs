@@ -111,9 +111,6 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
 
     /// Returns the special tags field if any.
     fn tags_field(&self, split_schema: &Schema) -> Option<Field> {
-        if self.tag_field_names().is_empty() {
-            return None;
-        }
         split_schema.get_field(TAGS_FIELD_NAME)
     }
 }

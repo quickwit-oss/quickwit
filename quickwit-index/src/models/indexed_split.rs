@@ -53,7 +53,7 @@ pub struct IndexedSplit {
     pub index_writer: tantivy::IndexWriter,
     pub split_scratch_directory: ScratchDirectory,
     /// The special field for extracting tags.
-    pub tags_field: Option<Field>,
+    pub tags_field: Field,
 }
 
 impl fmt::Debug for IndexedSplit {
@@ -76,7 +76,7 @@ impl IndexedSplit {
         index_id: String,
         index_scratch_directory: &ScratchDirectory,
         schema: Schema,
-        tags_field: Option<Field>,
+        tags_field: Field,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,

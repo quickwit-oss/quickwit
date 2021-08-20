@@ -254,17 +254,15 @@ impl Split {
     // TODO: This is here to prove to ourselves that tags are working
     // with tests. This indexing will be replaced by the actor indexing pipeline.
     /// Extracts tags from the split.
-    pub async fn extract_tags(&mut self, tags_field: Option<Field>) -> anyhow::Result<()> {
+    pub async fn extract_tags(&mut self, tags_field: Field) -> anyhow::Result<()> {
         let index_reader = self.index.reader()?;
-        if let Some(tags_field) = tags_field {
-            for reader in index_reader.searcher().segment_readers() {
-                let inv_index = reader.inverted_index(tags_field)?;
-                let mut terms_streamer = inv_index.terms().stream()?;
-                while let Some((term_data, _)) = terms_streamer.next() {
-                    self.metadata
-                        .tags
-                        .push(String::from_utf8_lossy(term_data).to_string());
-                }
+        for reader in index_reader.searcher().segment_readers() {
+            let inv_index = reader.inverted_index(tags_field)?;
+            let mut terms_streamer = inv_index.terms().stream()?;
+            while let Some((term_data, _)) = terms_streamer.next() {
+                self.metadata
+                    .tags
+                    .push(String::from_utf8_lossy(term_data).to_string());
             }
         }
         Ok(())
