@@ -144,7 +144,7 @@ impl<'de> Deserialize<'de> for Checkpoint {
 /// Error returned when trying to apply a checkpoint delta to a checkpoint that is not
 /// compatible. ie: the checkpoint delta starts from a point anterior to
 /// the checkpoint.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 #[error("IncompatibleChkpt at partition: {partition_id:?} cur_pos:{current_position:?} delta_pos:{delta_position_from:?}")]
 pub struct IncompatibleCheckpoint {
     /// One PartitionId for which the incompatibility has been detected.
@@ -201,7 +201,7 @@ impl Checkpoint {
     ///    |------------------------------|-----------------------------|
     ///    |  (..a] (b..c] with a = b     | Compatible                  |
     ///    |  (..a] (b..c] with b > a     | Compatible                  |
-    ///    |  (..a] (b..c]  with b < a    | Incompatible                |
+    ///    |  (..a] (b..c] with b < a     | Incompatible                |
     ///
     /// If the delta is compatible, returns an error without modifying the original checkpoint.
     pub fn try_apply_delta(
@@ -295,7 +295,7 @@ impl From<Range<u64>> for CheckpointDelta {
 }
 
 impl CheckpointDelta {
-    /// Record a `(from, to]` position interval for a given partition..
+    /// Records a `(from, to]` position interval for a given partition.
     pub fn add_partition(
         &mut self,
         partition_id: PartitionId,
@@ -310,19 +310,19 @@ impl CheckpointDelta {
         self.per_partition.insert(partition_id, partition_delta);
     }
 
-    /// Extend the given checkpoint_delta with another checkpoint delta.
+    /// Extends the current checkpoint delta in-place with the provided checkpoint delta.
     ///
     /// Contrary to checkpoint update, the two deltas here need to chain perfectly.
     pub fn add(&mut self, delta: CheckpointDelta) -> Result<(), IncompatibleCheckpoint> {
         for (partition_id, partition_delta) in delta.per_partition {
-            let entry = self.per_partition.entry(partition_id.clone());
+            let entry = self.per_partition.entry(partition_id);
             match entry {
                 Entry::Occupied(mut occupied_entry) => {
                     if occupied_entry.get().to == partition_delta.from {
-                        occupied_entry.insert(partition_delta);
+                        occupied_entry.get_mut().to = partition_delta.to
                     } else {
                         return Err(IncompatibleCheckpoint {
-                            partition_id,
+                            partition_id: occupied_entry.key().clone(),
                             current_position: occupied_entry.get().to.clone(),
                             delta_position_from: partition_delta.from,
                         });
@@ -454,6 +454,79 @@ mod tests {
         };
         assert!(checkpoint.try_apply_delta(delta3).is_ok());
         assert_eq!(format!("{:?}", checkpoint), "Ckpt(a:00128 b:60190 c:20008)");
+    }
+
+    #[test]
+    fn test_add_checkpoint_delta() -> anyhow::Result<()> {
+        let mut delta1 = {
+            let mut delta = CheckpointDelta::default();
+            delta.add_partition(
+                PartitionId::from("a"),
+                Position::from("00123"),
+                Position::from("00128"),
+            );
+            delta.add_partition(
+                PartitionId::from("b"),
+                Position::from("60002"),
+                Position::from("60187"),
+            );
+            delta
+        };
+        let delta2 = {
+            let mut delta = CheckpointDelta::default();
+            delta.add_partition(
+                PartitionId::from("b"),
+                Position::from("60187"),
+                Position::from("60348"),
+            );
+            delta.add_partition(
+                PartitionId::from("c"),
+                Position::from("20001"),
+                Position::from("20008"),
+            );
+            delta
+        };
+        let delta3 = {
+            let mut delta = CheckpointDelta::default();
+            delta.add_partition(
+                PartitionId::from("a"),
+                Position::from("00123"),
+                Position::from("00128"),
+            );
+            delta.add_partition(
+                PartitionId::from("b"),
+                Position::from("60002"),
+                Position::from("60348"),
+            );
+            delta.add_partition(
+                PartitionId::from("c"),
+                Position::from("20001"),
+                Position::from("20008"),
+            );
+            delta
+        };
+        delta1.add(delta2)?;
+        assert_eq!(delta1, delta3);
+
+        let delta4 = {
+            let mut delta = CheckpointDelta::default();
+            delta.add_partition(
+                PartitionId::from("a"),
+                Position::from("00130"),
+                Position::from("00142"),
+            );
+            delta
+        };
+        let result = delta1.add(delta4);
+        assert_eq!(
+            result,
+            Err(IncompatibleCheckpoint {
+                partition_id: PartitionId::from("a"),
+                current_position: Position::from("00128"),
+                delta_position_from: Position::from("00130"),
+            })
+        );
+        Ok(())
     }
 
     #[test]
