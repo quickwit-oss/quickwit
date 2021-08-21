@@ -107,6 +107,8 @@ pub struct TestEnv {
     pub index_uri: String,
     /// Resource files needed for the test.
     pub resource_files: HashMap<&'static str, PathBuf>,
+    /// The metastore uri.
+    pub metastore_uri: String,
 }
 
 pub enum TestStorageType {
@@ -117,6 +119,7 @@ pub enum TestStorageType {
 /// Creates all necessary artifacts in a test environement.
 pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
     let local_directory = tempdir()?;
+
     let (local_directory_path, index_uri) = match storage_type {
         TestStorageType::LocalFileSystem => {
             let local_path =
@@ -142,10 +145,16 @@ pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv>
     resource_files.insert("logs", log_docs_path);
     resource_files.insert("wiki", wikipedia_docs_path);
 
+    let metastore_uri = format!(
+        "file://{}",
+        local_directory_path.parent().unwrap().display()
+    );
+
     Ok(TestEnv {
         local_directory,
         local_directory_path,
         index_uri,
         resource_files,
+        metastore_uri,
     })
 }

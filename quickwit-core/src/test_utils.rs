@@ -18,6 +18,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 use std::sync::Arc;
 
 use quickwit_index_config::IndexConfig;
@@ -56,9 +57,8 @@ impl TestSandbox {
             checkpoint: Checkpoint::default(),
         };
         let storage_uri_resolver = StorageUriResolver::default();
-        let metastore = MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone())
-            .resolve(metastore_uri)
-            .await?;
+        let metastore_uri_resolver = MetastoreUriResolver::default();
+        let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
         metastore.create_index(index_metadata).await?;
         Ok(TestSandbox {
             index_id: index_id.to_string(),

@@ -24,6 +24,7 @@ use std::collections::HashSet;
 use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use chrono::Utc;
 use tokio::time::{sleep, Duration};
 
@@ -35,7 +36,15 @@ use crate::{
     SplitState,
 };
 
-pub async fn test_metastore_create_index(metastore: &dyn Metastore) {
+#[async_trait]
+pub trait DefaultForTest {
+    async fn default_for_test() -> Self;
+}
+
+#[allow(dead_code)]
+pub async fn test_metastore_create_index<MetastoreToTest: Metastore + DefaultForTest>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
     let index_id = "my-index";
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
@@ -62,7 +71,10 @@ pub async fn test_metastore_create_index(metastore: &dyn Metastore) {
     assert!(matches!(result, ()));
 }
 
-pub async fn test_metastore_delete_index(metastore: &dyn Metastore) {
+#[allow(dead_code)]
+pub async fn test_metastore_delete_index<MetastoreToTest: Metastore + DefaultForTest>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
     let index_id = "my-index";
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
@@ -91,7 +103,10 @@ pub async fn test_metastore_delete_index(metastore: &dyn Metastore) {
 }
 
 #[allow(unused_variables)]
-pub async fn test_metastore_index_metadata(metastore: &dyn Metastore) {
+#[allow(dead_code)]
+pub async fn test_metastore_index_metadata<MetastoreToTest: Metastore + DefaultForTest>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
     let index_id = "my-index";
     let index_metadata = IndexMetadata {
         index_id: index_id.to_string(),
@@ -119,7 +134,10 @@ pub async fn test_metastore_index_metadata(metastore: &dyn Metastore) {
     assert!(matches!(result, index_metadata));
 }
 
-pub async fn test_metastore_stage_split(metastore: &dyn Metastore) {
+#[allow(dead_code)]
+pub async fn test_metastore_stage_split<MetastoreToTest: Metastore + DefaultForTest>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -174,7 +192,10 @@ pub async fn test_metastore_stage_split(metastore: &dyn Metastore) {
     assert!(matches!(result, MetastoreError::InternalError { .. }));
 }
 
-pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
+#[allow(dead_code)]
+pub async fn test_metastore_publish_splits<MetastoreToTest: Metastore + DefaultForTest>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -567,7 +588,10 @@ pub async fn test_metastore_publish_splits(metastore: &dyn Metastore) {
     }
 }
 
-pub async fn test_metastore_mark_splits_as_deleted(metastore: &dyn Metastore) {
+#[allow(dead_code)]
+pub async fn test_metastore_mark_splits_as_deleted<MetastoreToTest: Metastore + DefaultForTest>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -645,7 +669,10 @@ pub async fn test_metastore_mark_splits_as_deleted(metastore: &dyn Metastore) {
     }
 }
 
-pub async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
+#[allow(dead_code)]
+pub async fn test_metastore_delete_splits<MetastoreToTest: Metastore + DefaultForTest>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -783,7 +810,10 @@ pub async fn test_metastore_delete_splits(metastore: &dyn Metastore) {
     }
 }
 
-pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
+#[allow(dead_code)]
+pub async fn test_metastore_list_all_splits<MetastoreToTest: Metastore + DefaultForTest>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -928,7 +958,10 @@ pub async fn test_metastore_list_all_splits(metastore: &dyn Metastore) {
     }
 }
 
-pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
+#[allow(dead_code)]
+pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForTest>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -1465,7 +1498,10 @@ pub async fn test_metastore_list_splits(metastore: &dyn Metastore) {
     }
 }
 
-pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
+#[allow(dead_code)]
+pub async fn test_metastore_split_update_timestamp<MetastoreToTest: Metastore + DefaultForTest>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
     let mut current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -1533,7 +1569,10 @@ pub async fn test_metastore_split_update_timestamp(metastore: &dyn Metastore) {
     assert!(split_meta.update_timestamp > current_timestamp);
 }
 
-pub async fn test_metastore_storage_failing(metastore: &dyn Metastore) {
+#[allow(dead_code)]
+pub async fn test_metastore_storage_failing<MetastoreToTest: Metastore + DefaultForTest>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
     let current_timestamp = Utc::now().timestamp();
 
     let index_id = "my-index";
@@ -1588,4 +1627,66 @@ pub async fn test_metastore_storage_failing(metastore: &dyn Metastore) {
         .await
         .unwrap();
     assert!(!split.is_empty());
+}
+
+macro_rules! metastore_test_suite {
+    ($metastore_type:ty) => {
+        #[cfg(test)]
+        mod common_tests {
+            #[tokio::test]
+            async fn test_metastore_create_index() {
+                crate::tests::test_metastore_create_index::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_delete_index() {
+                crate::tests::test_metastore_delete_index::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_index_metadata() {
+                crate::tests::test_metastore_index_metadata::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_stage_split() {
+                crate::tests::test_metastore_stage_split::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_publish_splits() {
+                crate::tests::test_metastore_publish_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_mark_splits_as_deleted() {
+                crate::tests::test_metastore_mark_splits_as_deleted::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_delete_splits() {
+                crate::tests::test_metastore_delete_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_list_all_splits() {
+                crate::tests::test_metastore_list_all_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_list_splits() {
+                crate::tests::test_metastore_list_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_split_update_timestamp() {
+                crate::tests::test_metastore_split_update_timestamp::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_storage_failing() {
+                crate::tests::test_metastore_split_update_timestamp::<$metastore_type>().await;
+            }
+        }
+    };
 }

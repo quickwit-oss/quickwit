@@ -35,6 +35,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tracing::Level;
 use tracing_subscriber::fmt::Subscriber;
+
 #[derive(Debug, PartialEq)]
 enum CliCommand {
     New(CreateIndexArgs),
@@ -44,6 +45,7 @@ enum CliCommand {
     GarbageCollect(GarbageCollectIndexArgs),
     Delete(DeleteIndexArgs),
 }
+
 impl CliCommand {
     fn default_log_level(&self) -> Level {
         match self {
@@ -81,10 +83,16 @@ impl CliCommand {
             .value_of("index-config-path")
             .map(PathBuf::from)
             .context("'index-config-path' is a required arg")?;
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .map(|metastore_uri_str| metastore_uri_str.to_string())
+            .context("'metastore-uri' is a required arg")?;
         let overwrite = matches.is_present("overwrite");
+
         Ok(CliCommand::New(CreateIndexArgs::new(
             index_uri,
             index_config_path,
+            metastore_uri,
             overwrite,
         )?))
     }
@@ -101,13 +109,19 @@ impl CliCommand {
             .value_of("heap-size")
             .context("heap-size has a default value")?;
         let heap_size = Byte::from_str(heap_size_str)?.get_bytes() as u64;
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .map(|metastore_uri_str| metastore_uri_str.to_string())
+            .context("'metastore-uri' is a required arg")?;
         let overwrite = matches.is_present("overwrite");
+
         Ok(CliCommand::Index(IndexDataArgs {
             index_uri,
             input_path,
             temp_dir,
             num_threads,
             heap_size,
+            metastore_uri,
             overwrite,
         }))
     }
@@ -139,6 +153,10 @@ impl CliCommand {
         let tags = matches
             .values_of("tags")
             .map(|values| values.map(|value| value.to_string()).collect());
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .map(|metastore_uri_str| metastore_uri_str.to_string())
+            .context("'metastore-uri' is a required arg")?;
 
         Ok(CliCommand::Search(SearchIndexArgs {
             index_uri,
@@ -149,6 +167,7 @@ impl CliCommand {
             start_timestamp,
             end_timestamp,
             tags,
+            metastore_uri,
         }))
     }
 
@@ -175,6 +194,11 @@ impl CliCommand {
             .context("'host-key-path-prefix' has a default  value")?
             .to_string();
 
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .map(|metastore_uri_str| metastore_uri_str.to_string())
+            .context("'metastore-uri' is a required arg")?;
+
         let host_key_path =
             Path::new(format!("{}-{}-{}", host_key_path_prefix, host, port.to_string()).as_str())
                 .to_path_buf();
@@ -192,16 +216,28 @@ impl CliCommand {
             rest_socket_addr,
             host_key_path,
             peer_socket_addrs,
+            metastore_uri,
         }))
     }
+
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_uri = matches
             .value_of("index-uri")
             .context("'index-uri' is a required arg")?
             .to_string();
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .map(|metastore_uri_str| metastore_uri_str.to_string())
+            .context("'metastore-uri' is a required arg")?;
         let dry_run = matches.is_present("dry-run");
-        Ok(CliCommand::Delete(DeleteIndexArgs { index_uri, dry_run }))
+
+        Ok(CliCommand::Delete(DeleteIndexArgs {
+            index_uri,
+            metastore_uri,
+            dry_run,
+        }))
     }
+
     fn parse_garbage_collect_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_uri = matches
             .value_of("index-uri")
@@ -211,10 +247,16 @@ impl CliCommand {
             .value_of("grace-period")
             .map(parse_duration_with_unit)
             .context("'grace-period' should have default")??;
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .map(|metastore_uri_str| metastore_uri_str.to_string())
+            .context("'metastore-uri' is a required arg")?;
         let dry_run = matches.is_present("dry-run");
+
         Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
             index_uri,
             grace_period,
+            metastore_uri,
             dry_run,
         }))
     }
@@ -356,12 +398,15 @@ mod tests {
             "file:///indexes/wikipedia",
             "--index-config-path",
             &path_str,
+            "--metastore-uri",
+            "file:///indexes",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         let expected_cmd = CliCommand::New(
             CreateIndexArgs::new(
                 "file:///indexes/wikipedia".to_string(),
                 path.to_path_buf(),
+                "file:///indexes".to_string(),
                 false,
             )
             .unwrap(),
@@ -375,6 +420,8 @@ mod tests {
             "file:///indexes/wikipedia",
             "--index-config-path",
             &path_str,
+            "--metastore-uri",
+            "file:///indexes",
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
@@ -382,6 +429,7 @@ mod tests {
             CreateIndexArgs::new(
                 "file:///indexes/wikipedia".to_string(),
                 path.to_path_buf(),
+                "file:///indexes".to_string(),
                 true,
             )
             .unwrap(),
@@ -395,8 +443,13 @@ mod tests {
     fn test_parse_index_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches =
-            app.get_matches_from_safe(vec!["index", "--index-uri", "file:///indexes/wikipedia"])?;
+        let matches = app.get_matches_from_safe(vec![
+            "index",
+            "--index-uri",
+            "file:///indexes/wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
+        ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
@@ -406,8 +459,9 @@ mod tests {
                 temp_dir: None,
                 num_threads: 2,
                 heap_size: 2_000_000_000,
+                metastore_uri,
                 overwrite: false,
-            })) if &index_uri == "file:///indexes/wikipedia"
+            })) if &index_uri == "file:///indexes/wikipedia" && &metastore_uri == "file:///indexes"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -424,6 +478,8 @@ mod tests {
             "4",
             "--heap-size",
             "4gib",
+            "--metastore-uri",
+            "file:///indexes",
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
@@ -435,8 +491,9 @@ mod tests {
                 temp_dir,
                 num_threads: 4,
                 heap_size: 4_294_967_296,
+                metastore_uri,
                 overwrite: true,
-            })) if &index_uri == "file:///indexes/wikipedia" && input_path == Path::new("/data/wikipedia.json") && temp_dir == Some(PathBuf::from("./tmp"))
+            })) if &index_uri == "file:///indexes/wikipedia" && input_path == Path::new("/data/wikipedia.json") && temp_dir == Some(PathBuf::from("./tmp")) && &metastore_uri == "file:///indexes"
         ));
 
         Ok(())
@@ -452,6 +509,8 @@ mod tests {
             "./wikipedia",
             "--query",
             "Barack Obama",
+            "--metastore-uri",
+            "file:///indexes",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
@@ -465,7 +524,8 @@ mod tests {
                 start_timestamp: None,
                 end_timestamp: None,
                 tags: None,
-            })) if index_uri == "./wikipedia" && query == "Barack Obama"
+                metastore_uri,
+            })) if &index_uri == "./wikipedia" && &query == "Barack Obama" && &metastore_uri == "file:///indexes"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -474,6 +534,8 @@ mod tests {
             "search",
             "--index-uri",
             "./wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
             "--query",
             "Barack Obama",
             "--max-hits",
@@ -503,9 +565,10 @@ mod tests {
                 start_timestamp: Some(0),
                 end_timestamp: Some(1),
                 tags: Some(tags),
-            })) if index_uri == "./wikipedia" && query == "Barack Obama"
+                metastore_uri,
+            })) if &index_uri == "./wikipedia" && query == "Barack Obama"
                 && field_names == vec!["title".to_string(), "url".to_string()]
-                && tags == vec!["device:rpi".to_string(), "city:paris".to_string()]
+                && tags == vec!["device:rpi".to_string(), "city:paris".to_string()] && &metastore_uri == "file:///indexes"
         ));
 
         Ok(())
@@ -515,15 +578,21 @@ mod tests {
     fn test_parse_delete_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches =
-            app.get_matches_from_safe(vec!["delete", "--index-uri", "file:///indexes/wikipedia"])?;
+        let matches = app.get_matches_from_safe(vec![
+            "delete",
+            "--index-uri",
+            "file:///indexes/wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
+        ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
             Ok(CliCommand::Delete(DeleteIndexArgs {
                 index_uri,
+                metastore_uri,
                 dry_run: false
-            })) if &index_uri == "file:///indexes/wikipedia"
+            })) if &index_uri == "file:///indexes/wikipedia" && &metastore_uri == "file:///indexes"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -532,6 +601,8 @@ mod tests {
             "delete",
             "--index-uri",
             "file:///indexes/wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
             "--dry-run",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
@@ -539,8 +610,9 @@ mod tests {
             command,
             Ok(CliCommand::Delete(DeleteIndexArgs {
                 index_uri,
+                metastore_uri,
                 dry_run: true
-            })) if &index_uri == "file:///indexes/wikipedia"
+            })) if &index_uri == "file:///indexes/wikipedia" && &metastore_uri == "file:///indexes"
         ));
         Ok(())
     }
@@ -549,16 +621,22 @@ mod tests {
     fn test_parse_garbage_collect_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches =
-            app.get_matches_from_safe(vec!["gc", "--index-uri", "file:///indexes/wikipedia"])?;
+        let matches = app.get_matches_from_safe(vec![
+            "gc",
+            "--index-uri",
+            "file:///indexes/wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
+        ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
             Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
                 index_uri,
                 grace_period,
+                metastore_uri,
                 dry_run: false
-            })) if &index_uri == "file:///indexes/wikipedia" && grace_period == Duration::from_secs(60 * 60)
+            })) if &index_uri == "file:///indexes/wikipedia" && grace_period == Duration::from_secs(60 * 60) && &metastore_uri == "file:///indexes"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -569,6 +647,8 @@ mod tests {
             "file:///indexes/wikipedia",
             "--grace-period",
             "5m",
+            "--metastore-uri",
+            "file:///indexes",
             "--dry-run",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
@@ -577,8 +657,9 @@ mod tests {
             Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
                 index_uri,
                 grace_period,
+                metastore_uri,
                 dry_run: true
-            })) if &index_uri == "file:///indexes/wikipedia" && grace_period == Duration::from_secs(5 * 60)
+            })) if &index_uri == "file:///indexes/wikipedia" && grace_period == Duration::from_secs(5 * 60) && &metastore_uri == "file:///indexes"
         ));
         Ok(())
     }
@@ -599,13 +680,15 @@ mod tests {
             "/etc/quickwit-host-key",
             "--peer-seed",
             "192.168.1.13:9090",
+            "--metastore-uri",
+            "file:///indexes",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
             Ok(CliCommand::Serve(ServeArgs {
-                index_uris, rest_socket_addr, host_key_path, peer_socket_addrs
-            })) if index_uris == vec!["file:///indexes/wikipedia".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap()]
+                index_uris, rest_socket_addr, host_key_path, peer_socket_addrs, metastore_uri,
+            })) if index_uris == vec!["file:///indexes/wikipedia".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap()] && &metastore_uri == "file:///indexes"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -626,13 +709,15 @@ mod tests {
             "192.168.1.13:9090",
             "--peer-seed",
             "192.168.1.14:9090",
+            "--metastore-uri",
+            "file:///indexes",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
             Ok(CliCommand::Serve(ServeArgs {
-                index_uris, rest_socket_addr, host_key_path, peer_socket_addrs
-            })) if index_uris == vec!["file:///indexes/wikipedia".to_string(), "file:///indexes/hdfslogs".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap(), to_socket_addr("192.168.1.14:9090").unwrap()]
+                index_uris, rest_socket_addr, host_key_path, peer_socket_addrs, metastore_uri,
+            })) if index_uris == vec!["file:///indexes/wikipedia".to_string(), "file:///indexes/hdfslogs".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap(), to_socket_addr("192.168.1.14:9090").unwrap()] && &metastore_uri == "file:///indexes"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -649,13 +734,15 @@ mod tests {
             "/etc/quickwit-host-key",
             "--peer-seed",
             "192.168.1.13:9090,192.168.1.14:9090",
+            "--metastore-uri",
+            "file:///indexes",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
             command,
             Ok(CliCommand::Serve(ServeArgs {
-                index_uris, rest_socket_addr, host_key_path, peer_socket_addrs
-            })) if index_uris == vec!["file:///indexes/wikipedia".to_string(), "file:///indexes/hdfslogs".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap(), to_socket_addr("192.168.1.14:9090").unwrap()]
+                index_uris, rest_socket_addr, host_key_path, peer_socket_addrs, metastore_uri,
+            })) if index_uris == vec!["file:///indexes/wikipedia".to_string(), "file:///indexes/hdfslogs".to_string()] && rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap(), to_socket_addr("192.168.1.14:9090").unwrap()] && &metastore_uri == "file:///indexes"
         ));
 
         Ok(())
