@@ -127,7 +127,10 @@ impl SearchService for SearchServiceImpl {
             .search_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
         info!(index=?search_request.index_id, splits=?leaf_search_request.split_metadata, "leaf_search");
-        let index_metadata = self.metastore.index_metadata(&search_request.index_id).await?;
+        let index_metadata = self
+            .metastore
+            .index_metadata(&search_request.index_id)
+            .await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let split_ids = leaf_search_request.split_metadata;
         let index_config = index_metadata.index_config;
