@@ -28,7 +28,7 @@ pub struct SearchRequest {
     /// The results with rank [start_offset..start_offset + max_hits) are returned.
     #[prost(uint64, tag = "7")]
     pub start_offset: u64,
-    /// Split tag filter  
+    /// Split tag filter
     #[prost(string, repeated, tag = "8")]
     pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -81,16 +81,16 @@ pub struct LeafSearchRequest {
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequestMetadata {
-    /// The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
-    #[prost(uint64, tag = "1")]
-    pub split_footer_start: u64,
-    /// The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
-    #[prost(uint64, tag = "2")]
-    pub split_footer_end: u64,
     /// Index split id to apply the query on.
     /// This id is resolved from the index_uri defined in the search_request.
-    #[prost(string, tag = "3")]
+    #[prost(string, tag = "1")]
     pub split_id: ::prost::alloc::string::String,
+    /// The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
+    #[prost(uint64, tag = "2")]
+    pub split_footer_start: u64,
+    /// The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
+    #[prost(uint64, tag = "3")]
+    pub split_footer_end: u64,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -194,7 +194,7 @@ pub struct SearchStreamRequest {
     /// The output format
     #[prost(enumeration = "OutputFormat", tag = "7")]
     pub output_format: i32,
-    /// Split tag filter  
+    /// Split tag filter
     #[prost(string, repeated, tag = "8")]
     pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
