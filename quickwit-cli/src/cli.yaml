@@ -17,7 +17,7 @@ subcommands:
                 value_name: INDEX CONFIG
                 required: true
             - metastore-uri:
-                help: Location of the metastore. If it is omitted, it will be automatically extracted from the index-uri.
+                help: Location of the metastore
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
@@ -51,7 +51,7 @@ subcommands:
                 value_name: HEAP SIZE
                 default_value: 2G
             - metastore-uri:
-                help: Location of the metastore. If it is omitted, it will be automatically extracted from the index-uri.
+                help: Location of the metastore
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
@@ -100,7 +100,7 @@ subcommands:
                 value_name: TAG
                 multiple: true
             - metastore-uri:
-                help: Location of the metastore. If it is omitted, it will be automatically extracted from the index-uri.
+                help: Location of the metastore
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
@@ -118,7 +118,7 @@ subcommands:
                 value_name: GRACE PERIOD
                 default_value: '1h'
             - metastore-uri:
-                help: Location of the metastore. If it is omitted, it will be automatically extracted from the index-uri.
+                help: Location of the metastore
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
@@ -134,7 +134,7 @@ subcommands:
                 value_name: INDEX URI
                 required: true
             - metastore-uri:
-                help: Location of the metastore. If it is omitted, it will be automatically extracted from the index-uri.
+                help: Location of the metastore
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
