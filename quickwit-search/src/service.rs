@@ -134,7 +134,7 @@ impl SearchService for SearchServiceImpl {
         let search_request = leaf_search_request
             .search_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
-        info!(index=?search_request.index_id, splits=?leaf_search_request.split_metadata, "leaf_search");
+        info!(index=?search_request.index_id, splits=?leaf_search_request.splits, "leaf_search");
         let metastore = self
             .metastore_router
             .get(&search_request.index_id)
@@ -144,7 +144,7 @@ impl SearchService for SearchServiceImpl {
             })?;
         let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
-        let split_ids = leaf_search_request.split_metadata;
+        let split_ids = leaf_search_request.splits;
         let index_config = index_metadata.index_config;
 
         let leaf_search_result = leaf_search(
@@ -173,10 +173,11 @@ impl SearchService for SearchServiceImpl {
         let index_metadata = metastore.index_metadata(&index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
 
-        let fetch_docs_result =
-            fetch_docs(fetch_docs_request.partial_hits, storage.clone()).await?;
-
-        Ok(fetch_docs_result)
+        /// TODO Fix with #443
+        todo!();
+        // let fetch_docs_result =
+        //     fetch_docs(fetch_docs_request.partial_hits, &[], storage.clone()).await?;
+        // Ok(fetch_docs_result)
     }
 
     async fn root_search_stream(

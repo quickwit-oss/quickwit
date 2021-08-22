@@ -162,9 +162,7 @@ mod tests {
             ctx: &ActorContext<Self::Message>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
-            dbg!("process message");
             ctx.schedule_self_msg(Duration::from_secs(60), ()).await;
-            dbg!("process message done");
             Ok(())
         }
     }

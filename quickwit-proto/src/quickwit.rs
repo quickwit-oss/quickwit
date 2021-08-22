@@ -28,7 +28,7 @@ pub struct SearchRequest {
     /// The results with rank [start_offset..start_offset + max_hits) are returned.
     #[prost(uint64, tag = "7")]
     pub start_offset: u64,
-    /// Split tag filter  
+    /// Split tag filter
     #[prost(string, repeated, tag = "8")]
     pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -75,12 +75,12 @@ pub struct LeafSearchRequest {
     /// Index split ids to apply the query on.
     /// This ids are resolved from the index_uri defined in the search_request.
     #[prost(message, repeated, tag = "4")]
-    pub split_metadata: ::prost::alloc::vec::Vec<LeafSearchRequestMetadata>,
+    pub splits: ::prost::alloc::vec::Vec<SplitAndFooterOffsets>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct LeafSearchRequestMetadata {
+pub struct SplitAndFooterOffsets {
     /// The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
     #[prost(uint64, tag = "1")]
     pub split_footer_start: u64,
@@ -194,7 +194,7 @@ pub struct SearchStreamRequest {
     /// The output format
     #[prost(enumeration = "OutputFormat", tag = "7")]
     pub output_format: i32,
-    /// Split tag filter  
+    /// Split tag filter
     #[prost(string, repeated, tag = "8")]
     pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }

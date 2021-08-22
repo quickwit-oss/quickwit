@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_metastore::SplitMetadataAndFooterOffsets;
-use quickwit_proto::LeafSearchRequestMetadata;
+use quickwit_proto::SplitAndFooterOffsets;
 use quickwit_proto::SplitSearchError;
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
@@ -75,9 +75,9 @@ async fn execute_search(
     for (search_client, jobs) in assigned_leaf_search_jobs.iter() {
         let leaf_search_request = LeafSearchRequest {
             search_request: Some(search_request_with_offset_0.clone()),
-            split_metadata: jobs
+            splits: jobs
                 .iter()
-                .map(|job| LeafSearchRequestMetadata {
+                .map(|job| SplitAndFooterOffsets {
                     split_id: job.metadata.split_metadata.split_id.to_string(),
                     split_footer_start: job.metadata.footer_offsets.start as u64,
                     split_footer_end: job.metadata.footer_offsets.end as u64,
@@ -89,7 +89,7 @@ async fn execute_search(
         let mut search_client_clone: SearchServiceClient = search_client.clone();
         let handle = tokio::spawn(async move {
             let split_ids = leaf_search_request
-                .split_metadata
+                .splits
                 .iter()
                 .map(|metadata| metadata.split_id.to_string())
                 .collect_vec();
@@ -719,7 +719,7 @@ mod tests {
             .times(2)
             .returning(|leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 let split_ids = leaf_search_req
-                    .split_metadata
+                    .splits
                     .iter()
                     .map(|metadata| metadata.split_id.to_string())
                     .collect_vec();

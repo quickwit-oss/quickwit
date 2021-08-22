@@ -20,7 +20,6 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use quickwit_common::HOTCACHE_FILENAME;
 use quickwit_storage::Cache;
 use quickwit_storage::SliceCache;
 use std::ops::Range;
@@ -46,12 +45,7 @@ impl From<Vec<(&'static str, Arc<dyn Cache>)>> for QuickwitCache {
 
 impl Default for QuickwitCache {
     fn default() -> Self {
-        let mut quickwit_cache = QuickwitCache::empty();
-        quickwit_cache.add_route(
-            HOTCACHE_FILENAME,
-            Arc::new(SimpleCache::with_capacity_in_bytes(HOTCACHE_CACHE_CAPACITY)),
-        );
-        quickwit_cache
+        QuickwitCache::empty()
     }
 }
 

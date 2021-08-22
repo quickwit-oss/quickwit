@@ -76,6 +76,8 @@ async fn leaf_search_stream_single_split(
     stream_request: &SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResult> {
+    todo!();
+    /*
     let index = open_index(storage).await?;
     let split_schema = index.schema();
     let fast_field_to_extract = stream_request.fast_field.clone();
@@ -147,4 +149,5 @@ async fn leaf_search_stream_single_split(
         }
     }
     Ok(LeafSearchStreamResult { data: buffer })
+    */
 }
