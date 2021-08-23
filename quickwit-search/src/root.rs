@@ -79,8 +79,8 @@ async fn execute_search(
         debug!(leaf_search_request=?leaf_search_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
         let mut search_client_clone: SearchServiceClient = search_client.clone();
         let span = info_span!(
-            "execute_leaf_search",
-            idx = result_per_node_addr_futures.len()
+            "leaf_node_search",
+            grpc_addr=?search_client.grpc_addr()
         );
         let handle = tokio::spawn(
             async move {

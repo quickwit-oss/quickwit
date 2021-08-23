@@ -34,6 +34,7 @@ use crate::root::{job_for_splits, NodeSearchError};
 use crate::{list_relevant_splits, ClientPool, SearchClientPool, SearchError};
 
 /// Perform a distributed search stream.
+#[instrument(skip(search_stream_request, metastore, client_pool))]
 pub async fn root_search_stream(
     search_stream_request: &SearchStreamRequest,
     metastore: &dyn Metastore,
@@ -80,6 +81,10 @@ pub async fn root_search_stream(
             index_uri: index_metadata.index_uri.to_string(),
         };
         debug!(leaf_request=?leaf_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search stream.");
+        let span = info_span!(
+            "leaf_node_search_stream",
+            grpc_addr=?search_client.grpc_addr()
+        );
         let handle = tokio::spawn(async move {
             let mut receiver = search_client
                 .leaf_search_stream(leaf_request)
@@ -104,10 +109,9 @@ pub async fn root_search_stream(
                 leaf_bytes.push(Bytes::from(leaf_data.data));
             }
             Result::<Vec<Bytes>, NodeSearchError>::Ok(leaf_bytes)
-        });
+        }.instrument(span));
         handles.push(handle);
     }
-
     let nodes_results = futures::future::try_join_all(handles).await?;
     let (nodes_bytes, errors): (Vec<Vec<Bytes>>, Vec<_>) =
         nodes_results

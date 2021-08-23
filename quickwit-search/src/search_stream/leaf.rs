@@ -31,7 +31,7 @@ use tantivy::schema::Type;
 use tantivy::{LeasedItem, ReloadPolicy, Searcher};
 use tokio::task::spawn_blocking;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::error;
+use tracing::*;
 
 use super::FastFieldCollectorBuilder;
 use crate::leaf::{open_index, warmup};

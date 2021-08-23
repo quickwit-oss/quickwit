@@ -22,8 +22,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::TryStreamExt;
 use opentelemetry::{global, propagation::Extractor};
-use tracing::{instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+use tracing::*;
 
 use quickwit_proto::{
     search_service_server as grpc, LeafSearchStreamRequest, LeafSearchStreamResult,
@@ -124,10 +124,14 @@ impl grpc::SearchService for GrpcSearchAdapter {
             dyn futures::Stream<Item = Result<LeafSearchStreamResult, tonic::Status>> + Send + Sync,
         >,
     >;
+    #[instrument(skip(self, request))]
     async fn leaf_search_stream(
         &self,
         request: tonic::Request<LeafSearchStreamRequest>,
     ) -> Result<tonic::Response<Self::LeafSearchStreamStream>, tonic::Status> {
+        let parent_cx =
+            global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
+        Span::current().set_parent(parent_cx);
         let leaf_search_request = request.into_inner();
         let leaf_search_result = self
             .0

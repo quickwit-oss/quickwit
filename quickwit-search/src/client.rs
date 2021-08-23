@@ -33,6 +33,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::{Channel, Endpoint};
 use tonic::Request;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+use tracing::*;
 
 use crate::error::parse_grpc_error;
 use crate::{SearchError, SearchService};
@@ -155,8 +156,18 @@ impl SearchServiceClient {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let mut grpc_client_clone = grpc_client.clone();
                 let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
+                let span = info_span!(
+                    "leaf_node_client_search_stream",
+                    grpc_addr=?self.grpc_addr()
+                );
                 tokio::spawn(async move {
-                    let tonic_request = Request::new(request);
+                    let mut tonic_request = Request::new(request);
+                    global::get_text_map_propagator(|propagator| {
+                        propagator.inject_context(
+                            &tracing::Span::current().context(),
+                            &mut MetadataMap(tonic_request.metadata_mut()),
+                        )
+                    });
                     let mut results_stream = grpc_client_clone
                         .leaf_search_stream(tonic_request)
                         .await
@@ -177,7 +188,8 @@ impl SearchServiceClient {
                     }
 
                     Result::<_, SearchError>::Ok(())
-                });
+                }.instrument(span));
+
                 Ok(UnboundedReceiverStream::new(result_receiver))
             }
             SearchServiceClientImpl::Local(service) => service.leaf_search_stream(request).await,

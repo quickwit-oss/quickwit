@@ -112,7 +112,7 @@ pub(crate) async fn open_index(
 ///
 /// The downloaded data depends on the query (which term's posting list is required,
 /// are position required too), and the collector.
-#[tracing::instrument(skip(searcher, query, fast_field_names))]
+#[instrument(skip(searcher, query, fast_field_names))]
 pub(crate) async fn warmup(
     searcher: &Searcher,
     query: &dyn Query,
@@ -184,7 +184,7 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
 }
 
 /// Apply a leaf search on a single split.
-#[tracing::instrument(skip(search_request, storage, split, index_config))]
+#[instrument(skip(search_request, storage, split, index_config))]
 async fn leaf_search_single_split(
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
