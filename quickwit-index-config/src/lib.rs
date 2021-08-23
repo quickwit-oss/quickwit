@@ -51,7 +51,7 @@ pub fn default_config_for_tests() -> DefaultIndexConfig {
                 "body", "attributes.server", "attributes.server.status"
             ],
             "timestamp_field": "timestamp",
-            "tag_fields": [],
+            "tag_fields": ["owner"],
             "field_mappings": [
                 {
                     "name": "timestamp",
@@ -77,6 +77,10 @@ pub fn default_config_for_tests() -> DefaultIndexConfig {
                     "name": "response_payload",
                     "type": "bytes",
                     "fast": true
+                },
+                {
+                    "name": "owner",
+                    "type": "text"
                 },
                 {
                     "name": "attributes",

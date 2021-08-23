@@ -306,6 +306,8 @@ impl IndexConfig for DefaultIndexConfig {
 
 #[cfg(test)]
 mod tests {
+    use crate::default_index_config::default_config::tantivy_value_to_string;
+    use crate::default_index_config::TAGS_FIELD_NAME;
     use crate::{default_index_config::default_config::SOURCE_FIELD_NAME, IndexConfig};
     use crate::{DefaultIndexConfigBuilder, DocParsingError};
 
@@ -514,6 +516,98 @@ mod tests {
         let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
         let expected_msg = "`_source` is a reserved name, change your field name.".to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_parse_document_with_wrong_base64_value() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "timestamp_field": null,
+            "tag_fields": ["image"],
+            "field_mappings": [
+                {
+                    "name": "image",
+                    "type": "bytes",
+                    "stored": true
+                }
+            ]
+        }"#;
+
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let index_config = builder.build()?;
+        let result = index_config.doc_from_json(
+            r#"{
+            "city": "paris",
+            "image": "invalid base64 data"
+        }"#,
+        );
+        let expected_msg = "The field 'image' could not be parsed: Expected Base64 string, got 'invalid base64 data'" ;
+        assert_eq!(result.unwrap_err().to_string(), expected_msg);
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_document_with_tag_fields() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "timestamp_field": null,
+            "tag_fields": ["city", "image"],
+            "field_mappings": [
+                {
+                    "name": "city",
+                    "type": "text",
+                    "stored": true
+                },
+                {
+                    "name": "image",
+                    "type": "bytes",
+                    "stored": true
+                }
+            ]
+        }"#;
+
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let index_config = builder.build()?;
+        let schema = index_config.schema();
+        const JSON_DOC_VALUE: &str = r#"{
+            "city": "tokio",
+            "image": "dG9raW8="
+        }"#;
+        let document = index_config.doc_from_json(JSON_DOC_VALUE)?;
+
+        //  2 properties, + 1 value for "_source" + 2 values for "_tags"
+        assert_eq!(document.len(), 5);
+        let expected_json_paths_and_values: HashMap<String, JsonValue> = serde_json::from_str(
+            r#"{
+                "city": ["tokio"],
+                "image": ["dG9raW8="]
+            }"#,
+        )
+        .unwrap();
+        document.field_values().iter().for_each(|field_value| {
+            let field_name = schema.get_field_name(field_value.field());
+            if field_name == SOURCE_FIELD_NAME {
+                assert_eq!(field_value.value().text().unwrap(), JSON_DOC_VALUE, "");
+            } else if field_name == TAGS_FIELD_NAME {
+                assert!(vec!["city:tokio", "image:dG9raW8="]
+                    .contains(&field_value.value().text().unwrap()));
+            } else {
+                let json_value = JsonValue::String(tantivy_value_to_string(field_value.value()));
+                let value = json_value.to_string();
+                let is_value_in_expected_values = expected_json_paths_and_values
+                    .get(field_name)
+                    .unwrap()
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|expected_value| format!("{}", expected_value))
+                    .any(|expected_value| expected_value == value);
+                assert!(is_value_in_expected_values);
+            }
+        });
         Ok(())
     }
 }
