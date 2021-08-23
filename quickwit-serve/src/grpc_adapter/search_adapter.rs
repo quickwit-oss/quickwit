@@ -21,10 +21,34 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::TryStreamExt;
+use opentelemetry::{global, propagation::Extractor};
+use tracing::{instrument, Span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+
 use quickwit_proto::{
     search_service_server as grpc, LeafSearchStreamRequest, LeafSearchStreamResult,
 };
 use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
+
+struct MetadataMap<'a>(&'a tonic::metadata::MetadataMap);
+
+impl<'a> Extractor for MetadataMap<'a> {
+    /// Get a value for a key from the MetadataMap.  If the value can't be converted to &str, returns None
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).and_then(|metadata| metadata.to_str().ok())
+    }
+
+    /// Collect all the keys from the MetadataMap.
+    fn keys(&self) -> Vec<&str> {
+        self.0
+            .keys()
+            .map(|key| match key {
+                tonic::metadata::KeyRef::Ascii(v) => v.as_str(),
+                tonic::metadata::KeyRef::Binary(v) => v.as_str(),
+            })
+            .collect::<Vec<_>>()
+    }
+}
 
 #[derive(Clone)]
 pub struct GrpcSearchAdapter(Arc<dyn SearchService>);
@@ -44,10 +68,14 @@ impl From<Arc<SearchServiceImpl>> for GrpcSearchAdapter {
 
 #[async_trait]
 impl grpc::SearchService for GrpcSearchAdapter {
+    #[instrument(skip(self, request))]
     async fn root_search(
         &self,
         request: tonic::Request<quickwit_proto::SearchRequest>,
     ) -> Result<tonic::Response<quickwit_proto::SearchResult>, tonic::Status> {
+        let parent_cx =
+            global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
+        Span::current().set_parent(parent_cx);
         let search_request = request.into_inner();
         let search_result = self
             .0
@@ -57,10 +85,14 @@ impl grpc::SearchService for GrpcSearchAdapter {
         Ok(tonic::Response::new(search_result))
     }
 
+    #[instrument(skip(self, request))]
     async fn leaf_search(
         &self,
         request: tonic::Request<quickwit_proto::LeafSearchRequest>,
     ) -> Result<tonic::Response<quickwit_proto::LeafSearchResult>, tonic::Status> {
+        let parent_cx =
+            global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
+        Span::current().set_parent(parent_cx);
         let leaf_search_request = request.into_inner();
         let leaf_search_result = self
             .0
@@ -70,10 +102,14 @@ impl grpc::SearchService for GrpcSearchAdapter {
         Ok(tonic::Response::new(leaf_search_result))
     }
 
+    #[instrument(skip(self, request))]
     async fn fetch_docs(
         &self,
         request: tonic::Request<quickwit_proto::FetchDocsRequest>,
     ) -> Result<tonic::Response<quickwit_proto::FetchDocsResult>, tonic::Status> {
+        let parent_cx =
+            global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
+        Span::current().set_parent(parent_cx);
         let fetch_docs_request = request.into_inner();
         let fetch_docs_result = self
             .0

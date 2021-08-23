@@ -30,6 +30,9 @@ quickwit-telemetry = { version = "0.1", path = "../quickwit-telemetry" }
 quickwit-proto = { version = "0.1", path = "../quickwit-proto" }
 tracing = '0.1'
 tracing-subscriber = "0.2"
+tracing-opentelemetry = "0.15"
+opentelemetry = { version = "0.16", features = ["rt-tokio"] }
+opentelemetry-jaeger = { version = "0.15", features = ["rt-tokio"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.6", features = ["full"] }
 crossterm = "0.20"

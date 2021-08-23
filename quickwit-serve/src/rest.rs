@@ -144,6 +144,7 @@ pub struct SearchRequestQueryString {
     pub tags: Option<Vec<String>>,
 }
 
+#[instrument(skip(index_id, search_request, search_service))]
 async fn search_endpoint<TSearchService: SearchService>(
     index_id: String,
     search_request: SearchRequestQueryString,

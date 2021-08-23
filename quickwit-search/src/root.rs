@@ -78,20 +78,27 @@ async fn execute_search(
 
         debug!(leaf_search_request=?leaf_search_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
         let mut search_client_clone: SearchServiceClient = search_client.clone();
-        let handle = tokio::spawn(async move {
-            let split_ids = leaf_search_request
-                .split_metadata
-                .iter()
-                .map(|metadata| metadata.split_id.to_string())
-                .collect_vec();
-            search_client_clone
-                .leaf_search(leaf_search_request)
-                .await
-                .map_err(|search_error| NodeSearchError {
-                    search_error,
-                    split_ids,
-                })
-        });
+        let span = info_span!(
+            "execute_leaf_search",
+            idx = result_per_node_addr_futures.len()
+        );
+        let handle = tokio::spawn(
+            async move {
+                let split_ids = leaf_search_request
+                    .split_metadata
+                    .iter()
+                    .map(|metadata| metadata.split_id.to_string())
+                    .collect_vec();
+                search_client_clone
+                    .leaf_search(leaf_search_request)
+                    .await
+                    .map_err(|search_error| NodeSearchError {
+                        search_error,
+                        split_ids,
+                    })
+            }
+            .instrument(span),
+        );
         result_per_node_addr_futures.insert(search_client.grpc_addr(), handle);
     }
     let mut result_per_node_addr = HashMap::new();
@@ -203,6 +210,7 @@ pub(crate) fn job_for_splits(
 /// splits, and retry them. Complete failure against nodes are also considered retryable splits.
 /// The leaf nodes which did not return any result are suspected to be unhealthy and are excluded
 /// from this retry round. If all nodes are unhealthy the retry will not exclude any nodes.
+#[instrument(skip(search_request, client_pool, metastore))]
 pub async fn root_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,

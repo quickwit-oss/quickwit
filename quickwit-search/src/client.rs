@@ -17,6 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use futures::StreamExt;
+use futures::TryStreamExt;
+use http::Uri;
+use opentelemetry::{global, propagation::Injector};
+use quickwit_proto::LeafSearchStreamResult;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -27,9 +32,23 @@ use quickwit_proto::LeafSearchStreamResult;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::{Channel, Endpoint};
 use tonic::Request;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::error::parse_grpc_error;
 use crate::{SearchError, SearchService};
+
+struct MetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
+
+impl<'a> Injector for MetadataMap<'a> {
+    /// Set a key and value in the MetadataMap.  Does nothing if the key or value are not valid inputs
+    fn set(&mut self, key: &str, value: String) {
+        if let Ok(key) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes()) {
+            if let Ok(val) = tonic::metadata::MetadataValue::from_str(&value) {
+                self.0.insert(key, val);
+            }
+        }
+    }
+}
 
 /// Impl is an enumeration that meant to manage Quickwit's search service client types.
 #[derive(Clone)]
@@ -110,7 +129,13 @@ impl SearchServiceClient {
     ) -> Result<quickwit_proto::LeafSearchResult, SearchError> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
-                let tonic_request = Request::new(request);
+                let mut tonic_request = Request::new(request);
+                global::get_text_map_propagator(|propagator| {
+                    propagator.inject_context(
+                        &tracing::Span::current().context(),
+                        &mut MetadataMap(tonic_request.metadata_mut()),
+                    )
+                });
                 let tonic_result = grpc_client
                     .leaf_search(tonic_request)
                     .await
@@ -166,7 +191,13 @@ impl SearchServiceClient {
     ) -> Result<quickwit_proto::FetchDocsResult, SearchError> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
-                let tonic_request = Request::new(request);
+                let mut tonic_request = Request::new(request);
+                global::get_text_map_propagator(|propagator| {
+                    propagator.inject_context(
+                        &tracing::Span::current().context(),
+                        &mut MetadataMap(tonic_request.metadata_mut()),
+                    )
+                });
                 let tonic_result = grpc_client
                     .fetch_docs(tonic_request)
                     .await
