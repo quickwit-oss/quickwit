@@ -42,6 +42,13 @@ pub enum SearchError {
 }
 
 impl SearchError {
+    /// Return if an error is considered retryable on error.
+    pub fn is_retryable_on_error(&self) -> bool {
+        match self {
+            SearchError::IndexDoesNotExist { .. } | SearchError::InvalidQuery(_) => false,
+            SearchError::InternalError(_) | SearchError::StorageResolverError(_) => true,
+        }
+    }
     fn convert_to_tonic_status_code(search_error: &SearchError) -> tonic::Code {
         match search_error {
             SearchError::IndexDoesNotExist { .. } => tonic::Code::NotFound,
