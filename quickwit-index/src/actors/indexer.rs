@@ -87,10 +87,15 @@ enum PrepareDocumentOutcome {
 impl IndexerState {
     fn create_indexed_split(&self) -> anyhow::Result<IndexedSplit> {
         let schema = self.index_config.schema();
+        let tags_field = self
+            .index_config
+            .tags_field(&schema)
+            .with_context(|| "Could not find special field `_tags` in the schema.".to_string())?;
         let indexed_split = IndexedSplit::new_in_dir(
             self.index_id.clone(),
             &self.indexing_scratch_directory,
             schema,
+            tags_field,
         )?;
         Ok(indexed_split)
     }

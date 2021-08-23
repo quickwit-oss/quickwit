@@ -23,6 +23,7 @@
 use std::sync::Arc;
 
 use crate::indexing::split::Split;
+use anyhow::Context;
 use futures::StreamExt;
 use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::Metastore;
@@ -48,6 +49,13 @@ pub async fn finalize_split(
     metastore: Arc<dyn Metastore>,
     statistics: Arc<IndexingStatistics>,
 ) -> anyhow::Result<()> {
+    let index_metadata = metastore.index_metadata(&index_id).await?;
+    let schema = index_metadata.index_config.schema();
+    let tags_field = index_metadata
+        .index_config
+        .tags_field(&schema)
+        .with_context(|| "Could not find special field `_tags` in the schema.".to_string())?;
+
     let stream = ReceiverStream::new(split_receiver);
     let mut finalize_stream = stream
         .map(|mut split| {
@@ -58,6 +66,7 @@ pub async fn finalize_split(
 
                 split.commit().await?;
                 split.merge_all_segments().await?;
+                split.extract_tags(tags_field).await?;
                 split.build_hotcache().await?;
 
                 //TODO: discuss & fix possible data race see `Metastore::stage_split`

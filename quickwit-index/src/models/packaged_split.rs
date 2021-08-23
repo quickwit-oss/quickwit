@@ -34,4 +34,5 @@ pub struct PackagedSplit {
     pub segment_ids: Vec<SegmentId>,
     pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,
+    pub tags: Vec<String>,
 }

@@ -20,12 +20,13 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use crate::default_index_config::TAGS_FIELD_NAME;
 use crate::query_builder::build_query;
 use crate::{DocParsingError, IndexConfig, QueryParserError};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use tantivy::query::Query;
-use tantivy::schema::{Schema, TextFieldIndexing, TextOptions};
+use tantivy::schema::{Schema, TextFieldIndexing, TextOptions, STRING};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::Document;
 
@@ -61,6 +62,7 @@ impl WikipediaIndexConfig {
         schema_builder.add_text_field("title", text_options.clone());
         schema_builder.add_text_field("body", text_options.clone());
         schema_builder.add_text_field("url", text_options);
+        schema_builder.add_text_field(TAGS_FIELD_NAME, STRING);
         schema_builder.build()
     }
 }

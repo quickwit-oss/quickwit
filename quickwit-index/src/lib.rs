@@ -113,6 +113,12 @@ mod tests {
         metastore
             .expect_stage_split()
             .withf(move |index_id, metadata| -> bool {
+                let mut split_tags: Vec<String> = metadata.split_metadata.tags.clone();
+                split_tags.sort();
+                let expected_tags: Vec<String> =
+                    vec!["owner:bar".to_string(), "owner:foo".to_string()];
+                assert_eq!(split_tags, expected_tags);
+
                 (index_id == "test-index") && metadata.split_metadata.split_state == SplitState::New
             })
             .times(1)
@@ -123,7 +129,7 @@ mod tests {
                 index_id == "test-index"
                     && splits.len() == 1
                     && format!("{:?}", checkpoint_delta)
-                        .ends_with(":(00000000000000000000..00000000000000000070])")
+                        .ends_with(":(00000000000000000000..00000000000000000202])")
             })
             .times(1)
             .returning(|_, _, _| Ok(()));

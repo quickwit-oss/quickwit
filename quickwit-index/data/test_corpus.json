@@ -1,4 +1,4 @@
-{"body": "hello"}
-{"body": "happy"}
-{"body": "tax"}
-{"body": "payer"}
+{"body": "hello", "owner": "foo", "timestamp": 70}
+{"body": "happy", "owner": "foo", "timestamp": 80}
+{"body": "tax", "owner": "bar", "timestamp": 50}
+{"body": "payer", "owner": "foo", "timestamp": 20}

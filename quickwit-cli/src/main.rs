@@ -338,6 +338,7 @@ mod tests {
             "store_source": true,
             "default_search_fields": ["timestamp"],
             "timestamp_field": "timestamp",
+            "tag_fields": [],
             "field_mappings": [
                 {
                     "name": "timestamp",
