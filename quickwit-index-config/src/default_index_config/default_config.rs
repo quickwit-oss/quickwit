@@ -306,7 +306,6 @@ impl IndexConfig for DefaultIndexConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::default_index_config::default_config::tantivy_value_to_string;
     use crate::default_index_config::TAGS_FIELD_NAME;
     use crate::{default_index_config::default_config::SOURCE_FIELD_NAME, IndexConfig};
     use crate::{DefaultIndexConfigBuilder, DocParsingError};
@@ -322,6 +321,7 @@ mod tests {
             "response_date": "2021-12-19T16:39:57Z",
             "response_time": 2.3,
             "response_payload": "YWJj",
+            "owner": "foo",
             "attributes": {
                 "server": "ABC",
                 "tags": [22, 23],
@@ -336,6 +336,7 @@ mod tests {
             "response_date": ["2021-12-19T16:39:57+00:00"],
             "response_time": [2.3],
             "response_payload": [[97,98,99]],
+            "owner": ["foo"],
             "body_other_tokenizer": ["20200415T072306-0700 INFO This is a great log"],
             "attributes.server": ["ABC"],
             "attributes.server.payload": [[97], [98]],
@@ -354,7 +355,7 @@ mod tests {
             ["attributes.server", "attributes.server.status", "body"]
         );
         let field_mappings = config.field_mappings.field_mappings().unwrap_or_default();
-        assert_eq!(field_mappings.len(), 6);
+        assert_eq!(field_mappings.len(), 7);
         Ok(())
     }
 
@@ -381,15 +382,18 @@ mod tests {
         let index_config = crate::default_config_for_tests();
         let document = index_config.doc_from_json(JSON_DOC_VALUE)?;
         let schema = index_config.schema();
-        // 6 property entry + 1 field "_source" + two fields values for "tags" field
+        // 7 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
-        assert_eq!(document.len(), 13);
+        // + 1 value for special `_tags`
+        assert_eq!(document.len(), 15);
         let expected_json_paths_and_values: HashMap<String, JsonValue> =
             serde_json::from_str(EXPECTED_JSON_PATHS_AND_VALUES).unwrap();
         document.field_values().iter().for_each(|field_value| {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
-                assert_eq!(field_value.value().text().unwrap(), JSON_DOC_VALUE, "");
+                assert_eq!(field_value.value().text().unwrap(), JSON_DOC_VALUE);
+            } else if field_name == TAGS_FIELD_NAME {
+                assert_eq!(field_value.value().text().unwrap(), "owner:foo");
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
@@ -574,7 +578,7 @@ mod tests {
         let schema = index_config.schema();
         const JSON_DOC_VALUE: &str = r#"{
             "city": "tokio",
-            "image": "dG9raW8="
+            "image": "YWJj"
         }"#;
         let document = index_config.doc_from_json(JSON_DOC_VALUE)?;
 
@@ -583,20 +587,20 @@ mod tests {
         let expected_json_paths_and_values: HashMap<String, JsonValue> = serde_json::from_str(
             r#"{
                 "city": ["tokio"],
-                "image": ["dG9raW8="]
+                "image": [[97,98,99]]
             }"#,
         )
         .unwrap();
         document.field_values().iter().for_each(|field_value| {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
-                assert_eq!(field_value.value().text().unwrap(), JSON_DOC_VALUE, "");
+                assert_eq!(field_value.value().text().unwrap(), JSON_DOC_VALUE);
             } else if field_name == TAGS_FIELD_NAME {
-                assert!(vec!["city:tokio", "image:dG9raW8="]
-                    .contains(&field_value.value().text().unwrap()));
+                assert!(
+                    vec!["city:tokio", "image:YWJj"].contains(&field_value.value().text().unwrap())
+                );
             } else {
-                let json_value = JsonValue::String(tantivy_value_to_string(field_value.value()));
-                let value = json_value.to_string();
+                let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
                     .get(field_name)
                     .unwrap()
