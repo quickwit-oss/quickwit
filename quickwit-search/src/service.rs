@@ -174,8 +174,12 @@ impl SearchService for SearchServiceImpl {
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
 
         // TODO add metadata to partial hits ?
-        let fetch_docs_result =
-            fetch_docs(fetch_docs_request.partial_hits, storage.clone(), &[]).await?;
+        let fetch_docs_result = fetch_docs(
+            fetch_docs_request.partial_hits,
+            storage.clone(),
+            fetch_docs_request.metadata,
+        )
+        .await?;
 
         Ok(fetch_docs_result)
     }

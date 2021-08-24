@@ -388,9 +388,27 @@ pub async fn root_search(
             // TODO group fetch doc requests.
             if let Some(partial_hits) = partial_hits_map.get(&job.metadata.split_metadata.split_id)
             {
+                let metadata: HashMap<String, LeafSearchRequestMetadata> = partial_hits
+                    .iter()
+                    .map(|partial_hit| {
+                        let metadata: LeafSearchRequestMetadata = split_metadata_map
+                            .get(&partial_hit.split_id)
+                            .map(|metadata| metadata.into())
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(format!(
+                                    "could not find split id metadata in hashmap {}",
+                                    &partial_hit.split_id
+                                ))
+                            })?;
+
+                        Ok((partial_hit.split_id.to_string(), metadata))
+                    })
+                    .collect::<Result<HashMap<String, LeafSearchRequestMetadata>, anyhow::Error>>(
+                    )?;
                 let fetch_docs_request = FetchDocsRequest {
                     partial_hits: partial_hits.clone(),
                     index_id: search_request.index_id.clone(),
+                    metadata,
                 };
                 let mut search_client_clone = search_client.clone();
                 let handle = tokio::spawn(async move {

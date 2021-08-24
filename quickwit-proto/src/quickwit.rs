@@ -161,6 +161,10 @@ pub struct FetchDocsRequest {
     /// Index ID
     #[prost(string, tag = "2")]
     pub index_id: ::prost::alloc::string::String,
+    /// The metadata containing the split offsets per split_id.
+    #[prost(map = "string, message", tag = "3")]
+    pub metadata:
+        ::std::collections::HashMap<::prost::alloc::string::String, LeafSearchRequestMetadata>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -177,6 +177,10 @@ message FetchDocsRequest {
 
   // Index ID
   string index_id = 2;
+
+  // The metadata containing the split offsets per split_id.
+  map<string, LeafSearchRequestMetadata> metadata = 3;
+
 }
 
 message FetchDocsResult {

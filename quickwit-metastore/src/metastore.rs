@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};
 use crate::MetastoreResult;
+use quickwit_proto::LeafSearchRequestMetadata;
 
 /// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -56,6 +57,16 @@ pub struct SplitMetadataAndFooterOffsets {
     /// Contains the range of bytes of the footer that needs to be downloaded
     /// in order to open a split.
     pub footer_offsets: Range<u64>,
+}
+
+impl From<&SplitMetadataAndFooterOffsets> for LeafSearchRequestMetadata {
+    fn from(offsets: &SplitMetadataAndFooterOffsets) -> Self {
+        LeafSearchRequestMetadata {
+            split_id: offsets.split_metadata.split_id.clone(),
+            split_footer_start: offsets.footer_offsets.start as u64,
+            split_footer_end: offsets.footer_offsets.end as u64,
+        }
+    }
 }
 
 /// A split metadata carries all meta data about a split.

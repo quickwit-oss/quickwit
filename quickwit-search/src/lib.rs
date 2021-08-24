@@ -154,14 +154,8 @@ pub async fn single_node_search(
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
     let metas = list_relevant_splits(search_request, metastore).await?;
-    let split_metadata: Vec<_> = metas
-        .iter()
-        .map(|meta| LeafSearchRequestMetadata {
-            split_id: meta.split_metadata.split_id.clone(),
-            split_footer_start: meta.footer_offsets.start as u64,
-            split_footer_end: meta.footer_offsets.end as u64,
-        })
-        .collect();
+    let split_metadata: Vec<LeafSearchRequestMetadata> =
+        metas.iter().map(|meta| meta.into()).collect();
     let index_config = index_metadata.index_config;
     let leaf_search_result = leaf_search(
         index_config,
@@ -174,7 +168,10 @@ pub async fn single_node_search(
     let fetch_docs_result = fetch_docs(
         leaf_search_result.partial_hits,
         storage,
-        &split_metadata[..],
+        split_metadata
+            .iter()
+            .map(|metadata| (metadata.split_id.to_string(), metadata.clone()))
+            .collect(),
     )
     .await
     .with_context(|| "fetch_request")?;

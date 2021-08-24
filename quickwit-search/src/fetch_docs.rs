@@ -37,7 +37,7 @@ use crate::GlobalDocAddress;
 /// Given a list of global doc address, fetch all of the documents and
 /// returns them as a hashmap.
 async fn fetch_docs_to_map<'a>(
-    split_id_to_metadata: HashMap<String, &LeafSearchRequestMetadata>,
+    split_id_to_metadata: HashMap<String, LeafSearchRequestMetadata>,
     mut global_doc_addrs: Vec<GlobalDocAddress<'a>>,
     index_storage: Arc<dyn Storage>,
 ) -> anyhow::Result<HashMap<GlobalDocAddress<'a>, String>> {
@@ -60,7 +60,7 @@ async fn fetch_docs_to_map<'a>(
                 .cloned()
                 .ok_or_else(|| {
                     anyhow::anyhow!(format!(
-                        "could not find split id metadata in fetch docs step, {}",
+                        "could not find split id metadata in hashmap in fetch docs step, {}",
                         split_id
                     ))
                 })?
@@ -91,12 +91,8 @@ async fn fetch_docs_to_map<'a>(
 pub async fn fetch_docs(
     partial_hits: Vec<PartialHit>,
     index_storage: Arc<dyn Storage>,
-    split_metadata: &[LeafSearchRequestMetadata],
+    split_id_to_metadata: HashMap<String, LeafSearchRequestMetadata>,
 ) -> anyhow::Result<FetchDocsResult> {
-    let split_id_to_metadata: HashMap<String, &LeafSearchRequestMetadata> = split_metadata
-        .iter()
-        .map(|metadata| (metadata.split_id.to_string(), metadata))
-        .collect();
     let global_doc_addrs: Vec<GlobalDocAddress> = partial_hits
         .iter()
         .map(GlobalDocAddress::from_partial_hit)

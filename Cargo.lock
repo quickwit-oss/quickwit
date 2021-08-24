@@ -2895,6 +2895,7 @@ dependencies = [
  "chrono",
  "mockall 0.9.1",
  "quickwit-index-config",
+ "quickwit-proto",
  "quickwit-storage",
  "serde",
  "serde_json",
