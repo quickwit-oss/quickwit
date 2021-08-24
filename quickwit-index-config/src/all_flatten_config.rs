@@ -21,14 +21,15 @@
 */
 
 use crate::{
-    default_index_config::SOURCE_FIELD_NAME, query_builder::build_query, DocParsingError,
-    IndexConfig, QueryParserError,
+    default_index_config::{SOURCE_FIELD_NAME, TAGS_FIELD_NAME},
+    query_builder::build_query,
+    DocParsingError, IndexConfig, QueryParserError,
 };
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use tantivy::{
     query::Query,
-    schema::{Schema, SchemaBuilder, STORED},
+    schema::{Schema, SchemaBuilder, STORED, STRING},
     Document,
 };
 
@@ -62,6 +63,7 @@ impl AllFlattenIndexConfig {
     fn default_schema() -> Schema {
         let mut schema_builder = SchemaBuilder::new();
         schema_builder.add_text_field(SOURCE_FIELD_NAME, STORED);
+        schema_builder.add_text_field(TAGS_FIELD_NAME, STRING);
         schema_builder.build()
     }
 }

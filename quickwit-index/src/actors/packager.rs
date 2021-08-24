@@ -199,6 +199,17 @@ fn create_packaged_split(
         .map(|segment_meta| segment_meta.id())
         .collect();
 
+    // extract tag values from `_tags` special fields
+    let mut tags = vec![];
+    let index_reader = split.index.reader()?;
+    for reader in index_reader.searcher().segment_readers() {
+        let inv_index = reader.inverted_index(split.tags_field)?;
+        let mut terms_streamer = inv_index.terms().stream()?;
+        while let Some((term_data, _)) = terms_streamer.next() {
+            tags.push(String::from_utf8_lossy(term_data).to_string());
+        }
+    }
+
     let hotcache_offset_start = split_file.written_bytes();
     build_hotcache(&split.split_scratch_directory, &mut split_file)?;
     let hotcache_offset_end = split_file.written_bytes();
@@ -218,6 +229,7 @@ fn create_packaged_split(
         segment_ids,
         time_range: split.time_range,
         size_in_bytes: split.docs_size_in_bytes,
+        tags,
         footer_offsets: footer_start..footer_end,
     };
     Ok(packaged_split)
@@ -303,6 +315,7 @@ mod tests {
             index_writer,
             split_scratch_directory,
             checkpoint_delta: CheckpointDelta::from(10..20),
+            tags_field: tantivy::schema::Field::from_field_id(0),
         };
         Ok(indexed_split)
     }

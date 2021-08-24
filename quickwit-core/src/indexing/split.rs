@@ -145,8 +145,8 @@ impl Split {
     }
 
     /// Add document to the index split.
-    pub fn add_document(&mut self, doc: Document) -> anyhow::Result<()> {
-        self.update_metadata(&doc)?;
+    pub fn add_document(&mut self, doc: Document, doc_size: usize) -> anyhow::Result<()> {
+        self.update_metadata(&doc, doc_size)?;
         self.index_writer
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing index writer."))?
@@ -154,8 +154,13 @@ impl Split {
         Ok(())
     }
 
-    /// Update the split metadata (num_records, time_range) based on incomming document.
-    fn update_metadata(&mut self, doc: &Document) -> anyhow::Result<()> {
+    /// Increment document parse errors.
+    pub fn add_parse_error(&mut self) {
+        self.num_parsing_errors += 1;
+    }
+
+    /// Update the split metadata (num_records, size_in_bytes, time_range) based on incomming document.
+    fn update_metadata(&mut self, doc: &Document, doc_size: usize) -> anyhow::Result<()> {
         if let Some(timestamp_field) = self.timestamp_field {
             let split_time_range =
                 self.metadata.time_range.as_mut().with_context(|| {
@@ -171,6 +176,8 @@ impl Split {
                 );
             }
         };
+
+        self.metadata.size_in_bytes += doc_size as u64;
         self.metadata.num_records += 1;
         Ok(())
     }
@@ -242,6 +249,23 @@ impl Split {
     pub async fn upload(&self) -> anyhow::Result<Manifest> {
         let manifest = put_split_files_to_storage(&*self.storage, self).await?;
         Ok(manifest)
+    }
+
+    // TODO: This is here to prove to ourselves that tags are working
+    // with tests. This indexing will be replaced by the actor indexing pipeline.
+    /// Extracts tags from the split.
+    pub async fn extract_tags(&mut self, tags_field: Field) -> anyhow::Result<()> {
+        let index_reader = self.index.reader()?;
+        for reader in index_reader.searcher().segment_readers() {
+            let inv_index = reader.inverted_index(tags_field)?;
+            let mut terms_streamer = inv_index.terms().stream()?;
+            while let Some((term_data, _)) = terms_streamer.next() {
+                self.metadata
+                    .tags
+                    .push(String::from_utf8_lossy(term_data).to_string());
+            }
+        }
+        Ok(())
     }
 }
 
@@ -442,7 +466,7 @@ mod tests {
         .await?;
 
         for _ in 0..20 {
-            split.add_document(Document::default())?;
+            split.add_document(Document::default(), 0)?;
         }
         assert_eq!(split.metadata.num_records, 20);
         assert_eq!(split.metadata.time_range, None);
@@ -450,7 +474,7 @@ mod tests {
         assert!(!split.has_enough_docs());
 
         for _ in 0..90 {
-            split.add_document(Document::default())?;
+            split.add_document(Document::default(), 0)?;
         }
         assert_eq!(split.metadata.num_records, 110);
         assert_eq!(split.metadata.time_range, None);
@@ -519,7 +543,7 @@ mod tests {
         ];
 
         for doc in docs {
-            split.add_document(schema.parse_document(doc)?)?;
+            split.add_document(schema.parse_document(doc)?, doc.as_bytes().len())?;
         }
 
         assert_eq!(split.metadata.num_records, 5);

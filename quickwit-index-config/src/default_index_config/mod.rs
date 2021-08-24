@@ -34,6 +34,9 @@ pub use self::field_mapping_type::FieldMappingType;
 /// Field name reserved for storing the source document.
 pub static SOURCE_FIELD_NAME: &str = "_source";
 
+/// Field name reserved for storing the tags.
+pub static TAGS_FIELD_NAME: &str = "_tags";
+
 /// Regular expression representing the restriction on a valid field name.
 pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[_a-zA-Z][_\.\-a-zA-Z0-9]*$"#;
 

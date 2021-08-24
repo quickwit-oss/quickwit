@@ -230,10 +230,22 @@ fn test_cmd_search() -> Result<()> {
     .success()
     .stdout(predicate::function(|output: &[u8]| {
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(0i64))
+        result["numHits"] == Value::Number(Number::from(2i64))
     }));
 
-    // TODO add another case when we have mechanism for tagging splits
+    make_command(
+        format!(
+            "search --index-uri {} --query level:info --tags city:conakry",
+            test_env.index_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::function(|output: &[u8]| {
+        let result: Value = serde_json::from_slice(output).unwrap();
+        result["numHits"] == Value::Number(Number::from(0i64))
+    }));
 
     Ok(())
 }

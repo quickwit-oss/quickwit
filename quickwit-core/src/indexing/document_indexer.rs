@@ -55,24 +55,21 @@ pub async fn index_documents(
     while let Some(raw_json_doc) = document_source.next_document().await? {
         let doc_size = raw_json_doc.as_bytes().len();
         let parse_result = index_metadata.index_config.doc_from_json(&raw_json_doc);
-        // TODO: split metadata is updating here and in the `split.update_metadata` method
-        // which is a little bit confusing.
-        let doc = match parse_result {
+        match parse_result {
             Ok(doc) => {
-                current_split.metadata.size_in_bytes += doc_size as u64;
+                current_split.add_document(doc, doc_size)?;
                 statistics.num_docs.inc();
                 statistics.total_bytes_processed.add(doc_size);
-                doc
             }
             Err(_) => {
-                current_split.num_parsing_errors += 1;
+                current_split.add_parse_error();
                 statistics.num_docs.inc();
                 statistics.num_parse_errors.inc();
                 statistics.total_bytes_processed.add(doc_size);
                 continue;
             }
         };
-        current_split.add_document(doc)?;
+
         if current_split.has_enough_docs() {
             let split = std::mem::replace(
                 &mut current_split,
