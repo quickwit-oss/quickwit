@@ -236,8 +236,7 @@ fn test_cmd_search() -> Result<()> {
     make_command(
         format!(
             "search --index-uri {} --metastore-uri {} --query level:info --tags city:conakry",
-            test_env.index_uri,
-            test_env.metastore_uri
+            test_env.index_uri, test_env.metastore_uri
         )
         .as_str(),
     )
