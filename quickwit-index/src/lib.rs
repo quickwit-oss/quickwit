@@ -53,9 +53,9 @@ pub async fn spawn_indexing_pipeline(
     // TODO supervisor with respawn, one for all and respawn system.
     // TODO add a supervisition that checks the progress of all of these actors.
     let publisher = Publisher::new(metastore.clone());
-    let (publisher_mailbox, publisher_handler) = universe.spawn(publisher);
+    let (publisher_mailbox, publisher_handler) = universe.spawn_async_actor(publisher);
     let uploader = Uploader::new(metastore, index_storage, publisher_mailbox);
-    let (uploader_mailbox, _uploader_handler) = universe.spawn(uploader);
+    let (uploader_mailbox, _uploader_handler) = universe.spawn_async_actor(uploader);
     info!(actor_name=%uploader_mailbox.actor_instance_id());
     let packager = Packager::new(uploader_mailbox);
     let (packager_mailbox, _packager_handler) = universe.spawn_sync_actor(packager);
@@ -74,7 +74,7 @@ pub async fn spawn_indexing_pipeline(
         source,
         batch_sink: indexer_mailbox,
     };
-    let (_source_mailbox, _source_handle) = universe.spawn(actor_source);
+    let (_source_mailbox, _source_handle) = universe.spawn_async_actor(actor_source);
     let (actor_termination, observation) = publisher_handler.join().await;
     Ok((actor_termination, observation))
 }

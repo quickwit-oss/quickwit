@@ -212,7 +212,7 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: Arc<dyn Storage> = Arc::new(ram_storage.clone());
         let uploader = Uploader::new(Arc::new(mock_metastore), index_storage.clone(), mailbox);
-        let (uploader_mailbox, uploader_handle) = universe.spawn(uploader);
+        let (uploader_mailbox, uploader_handle) = universe.spawn_async_actor(uploader);
         let split_scratch_directory = ScratchDirectory::try_new_temp()?;
         std::fs::write(
             split_scratch_directory.path().join(BUNDLE_FILENAME),
