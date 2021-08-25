@@ -18,6 +18,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 use async_trait::async_trait;
 use bytes::Bytes;
 use quickwit_metastore::Metastore;
@@ -27,7 +28,6 @@ use quickwit_proto::{
 };
 use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResult, SearchStreamRequest};
 use quickwit_storage::StorageUriResolver;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
@@ -42,7 +42,7 @@ use crate::SearchError;
 #[derive(Clone)]
 /// The search service implementation.
 pub struct SearchServiceImpl {
-    metastore_router: HashMap<String, Arc<dyn Metastore>>,
+    metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
     client_pool: Arc<SearchClientPool>,
 }
@@ -95,12 +95,12 @@ pub trait SearchService: 'static + Send + Sync {
 impl SearchServiceImpl {
     /// Create search service
     pub fn new(
-        metastore_router: HashMap<String, Arc<dyn Metastore>>,
+        metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
         client_pool: Arc<SearchClientPool>,
     ) -> Self {
         SearchServiceImpl {
-            metastore_router,
+            metastore,
             storage_resolver,
             client_pool,
         }
@@ -113,16 +113,8 @@ impl SearchService for SearchServiceImpl {
         &self,
         search_request: SearchRequest,
     ) -> Result<SearchResult, SearchError> {
-        let metastore = self
-            .metastore_router
-            .get(&search_request.index_id)
-            .cloned()
-            .ok_or_else(|| SearchError::IndexDoesNotExist {
-                index_id: search_request.index_id.clone(),
-            })?;
-
         let search_result =
-            root_search(&search_request, metastore.as_ref(), &self.client_pool).await?;
+            root_search(&search_request, self.metastore.as_ref(), &self.client_pool).await?;
 
         Ok(search_result)
     }
@@ -135,14 +127,10 @@ impl SearchService for SearchServiceImpl {
             .search_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
         info!(index=?search_request.index_id, splits=?leaf_search_request.split_metadata, "leaf_search");
-        let metastore = self
-            .metastore_router
-            .get(&search_request.index_id)
-            .cloned()
-            .ok_or_else(|| SearchError::IndexDoesNotExist {
-                index_id: search_request.index_id.clone(),
-            })?;
-        let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+        let index_metadata = self
+            .metastore
+            .index_metadata(&search_request.index_id)
+            .await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let split_ids = leaf_search_request.split_metadata;
         let index_config = index_metadata.index_config;
@@ -163,14 +151,7 @@ impl SearchService for SearchServiceImpl {
         fetch_docs_request: FetchDocsRequest,
     ) -> Result<FetchDocsResult, SearchError> {
         let index_id = fetch_docs_request.index_id;
-        let metastore = self
-            .metastore_router
-            .get(&index_id)
-            .cloned()
-            .ok_or_else(|| SearchError::IndexDoesNotExist {
-                index_id: index_id.clone(),
-            })?;
-        let index_metadata = metastore.index_metadata(&index_id).await?;
+        let index_metadata = self.metastore.index_metadata(&index_id).await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
 
         let fetch_docs_result =
@@ -183,15 +164,8 @@ impl SearchService for SearchServiceImpl {
         &self,
         stream_request: SearchStreamRequest,
     ) -> Result<Vec<Bytes>, SearchError> {
-        let metastore = self
-            .metastore_router
-            .get(&stream_request.index_id)
-            .cloned()
-            .ok_or_else(|| SearchError::IndexDoesNotExist {
-                index_id: stream_request.index_id.clone(),
-            })?;
         let data =
-            root_search_stream(&stream_request, metastore.as_ref(), &self.client_pool).await?;
+            root_search_stream(&stream_request, self.metastore.as_ref(), &self.client_pool).await?;
         Ok(data)
     }
 
@@ -203,14 +177,10 @@ impl SearchService for SearchServiceImpl {
             .request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
         info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_ids, "leaf_search");
-        let metastore = self
-            .metastore_router
-            .get(&stream_request.index_id)
-            .cloned()
-            .ok_or_else(|| SearchError::IndexDoesNotExist {
-                index_id: stream_request.index_id.clone(),
-            })?;
-        let index_metadata = metastore.index_metadata(&stream_request.index_id).await?;
+        let index_metadata = self
+            .metastore
+            .index_metadata(&stream_request.index_id)
+            .await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let split_ids = leaf_stream_request.split_ids;
         let index_config = index_metadata.index_config;

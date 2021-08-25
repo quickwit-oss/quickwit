@@ -24,7 +24,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, PartialEq)]
 pub struct ServeArgs {
-    /// Index ID.
+    /// Index URI.
     pub index_uris: Vec<String>,
 
     /// Socket address of the REST server.
@@ -35,4 +35,7 @@ pub struct ServeArgs {
 
     /// Socket addresses of the peer REST server.
     pub peer_socket_addrs: Vec<SocketAddr>,
+
+    /// Metastore URI.
+    pub metastore_uri: String,
 }

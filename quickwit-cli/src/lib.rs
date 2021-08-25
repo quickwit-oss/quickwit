@@ -25,7 +25,7 @@ use crossterm::style::PrintStyledContent;
 use crossterm::style::Stylize;
 use crossterm::QueueableCommand;
 use json_comments::StripComments;
-use quickwit_common::extract_metastore_uri_and_index_id_from_index_uri;
+use quickwit_common::extract_index_id_from_index_uri;
 use quickwit_core::DocumentSource;
 use quickwit_index_config::DefaultIndexConfigBuilder;
 use quickwit_index_config::IndexConfig;
@@ -69,6 +69,7 @@ const THROUGHPUT_WINDOW_SIZE: usize = 5;
 pub struct CreateIndexArgs {
     index_uri: String,
     index_config: Arc<dyn IndexConfig>,
+    metastore_uri: String,
     overwrite: bool,
 }
 impl PartialEq for CreateIndexArgs {
@@ -83,6 +84,7 @@ impl CreateIndexArgs {
     pub fn new(
         index_uri: String,
         index_config_path: PathBuf,
+        metastore_uri: String,
         overwrite: bool,
     ) -> anyhow::Result<Self> {
         let json_file = std::fs::File::open(index_config_path)?;
@@ -94,6 +96,7 @@ impl CreateIndexArgs {
         Ok(Self {
             index_uri,
             index_config,
+            metastore_uri,
             overwrite,
         })
     }
@@ -106,6 +109,7 @@ pub struct IndexDataArgs {
     pub temp_dir: Option<PathBuf>,
     pub num_threads: usize,
     pub heap_size: u64,
+    pub metastore_uri: String,
     pub overwrite: bool,
 }
 
@@ -119,11 +123,13 @@ pub struct SearchIndexArgs {
     pub start_timestamp: Option<i64>,
     pub end_timestamp: Option<i64>,
     pub tags: Option<Vec<String>>,
+    pub metastore_uri: String,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DeleteIndexArgs {
     pub index_uri: String,
+    pub metastore_uri: String,
     pub dry_run: bool,
 }
 
@@ -131,21 +137,21 @@ pub struct DeleteIndexArgs {
 pub struct GarbageCollectIndexArgs {
     pub index_uri: String,
     pub grace_period: Duration,
+    pub metastore_uri: String,
     pub dry_run: bool,
 }
 
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri = %args.index_uri,
-        index_config = ?args.index_config,
-        overwrite = args.overwrite,
-        "create-index"
-    );
+    debug!(args = ?args, "create-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+    let index_id = extract_index_id_from_index_uri(&args.index_uri)?;
+    debug!(
+        index_id = %index_id,
+        "extract index id from index uri"
+    );
+
     if args.overwrite {
-        delete_index(metastore_uri, index_id, false).await?;
+        delete_index(&args.metastore_uri, index_id, false).await?;
     }
 
     let index_metadata = IndexMetadata {
@@ -154,7 +160,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         index_config: args.index_config,
         checkpoint: Checkpoint::default(),
     };
-    create_index(metastore_uri, index_metadata).await?;
+    create_index(&args.metastore_uri, index_metadata).await?;
     Ok(())
 }
 
@@ -168,21 +174,18 @@ fn create_index_scratch_dir(path_tempdir_opt: Option<&PathBuf>) -> anyhow::Resul
 }
 
 pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri = %args.index_uri,
-        input_uri = ?args.input_path,
-        temp_dir = ?args.temp_dir,
-        num_threads = args.num_threads,
-        heap_size = args.heap_size,
-        overwrite = args.overwrite,
-        "indexing"
-    );
+    debug!(args = ?args, "indexing");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::IndexStart).await;
 
     let input_path = args.input_path.clone();
     let document_source = create_document_source_from_args(input_path).await?;
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+
+    let index_id = extract_index_id_from_index_uri(&args.index_uri)?;
+    debug!(
+        index_id = %index_id,
+        "extract index id from index uri"
+    );
+
     let temp_dir = create_index_scratch_dir(args.temp_dir.as_ref())?;
     let params = IndexDataParams {
         index_id: index_id.to_string(),
@@ -209,9 +212,8 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         args.input_path.clone(),
     );
     let storage_uri_resolver = StorageUriResolver::default();
-    let metastore_uri_resolver =
-        MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone());
-    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let index_future = async move {
         index_data(
             metastore,
@@ -247,23 +249,17 @@ async fn create_document_source_from_args(
 }
 
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResult> {
+    debug!(args = ?args, "search-index");
+
+    let index_id = extract_index_id_from_index_uri(&args.index_uri)?;
     debug!(
-        index_uri = %args.index_uri,
-        query = %args.query,
-        max_hits = args.max_hits,
-        start_offset = args.start_offset,
-        search_fields = ?args.search_fields,
-        start_timestamp = ?args.start_timestamp,
-        end_timestamp = ?args.end_timestamp,
-        tags = ?args.tags,
-        "search-index"
+        index_id = %index_id,
+        "extract index id from index uri"
     );
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+
     let storage_uri_resolver = StorageUriResolver::default();
-    let metastore_uri_resolver =
-        MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone());
-    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
         query: args.query.clone(),
@@ -290,16 +286,16 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
 }
 
 pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri = %args.index_uri,
-        dry_run = args.dry_run,
-        "delete-index"
-    );
+    debug!(args = ?args, "delete-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
 
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let affected_files = delete_index(metastore_uri, index_id, args.dry_run).await?;
+    let index_id = extract_index_id_from_index_uri(&args.index_uri)?;
+    debug!(
+        index_id = %index_id,
+        "extract index id from index uri"
+    );
+
+    let affected_files = delete_index(&args.metastore_uri, index_id, args.dry_run).await?;
     if args.dry_run {
         if affected_files.is_empty() {
             println!("Only the index will be deleted since it does not contains any data file.");
@@ -321,18 +317,22 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
 }
 
 pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri = %args.index_uri,
-        grace_period = ?args.grace_period,
-        dry_run = args.dry_run,
-        "garbage-collect-index"
-    );
+    debug!(args = ?args, "garbage-collect-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
 
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let deleted_files =
-        garbage_collect_index(metastore_uri, index_id, args.grace_period, args.dry_run).await?;
+    let index_id = extract_index_id_from_index_uri(&args.index_uri)?;
+    debug!(
+        index_id = %index_id,
+        "extract index id from index uri"
+    );
+
+    let deleted_files = garbage_collect_index(
+        &args.metastore_uri,
+        index_id,
+        args.grace_period,
+        args.dry_run,
+    )
+    .await?;
     if deleted_files.is_empty() {
         println!("No dangling files to garbage collect.");
         return Ok(());
@@ -518,22 +518,21 @@ impl ThroughputCalculator {
 }
 
 #[test]
-fn test_extract_metastore_uri_and_index_id_from_index_uri() -> anyhow::Result<()> {
+fn test_extract_index_id_from_index_uri() -> anyhow::Result<()> {
     let index_uri = "file:///indexes/wikipedia-xd_1";
-    let (metastore_uri, index_id) = extract_metastore_uri_and_index_id_from_index_uri(index_uri)?;
-    assert_eq!("file:///indexes", metastore_uri);
+    let index_id = extract_index_id_from_index_uri(index_uri)?;
     assert_eq!("wikipedia-xd_1", index_id);
 
-    let result = extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/_wikipedia");
+    let result = extract_index_id_from_index_uri("file:///indexes/_wikipedia");
     assert!(result.is_err());
 
-    let result = extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/-wikipedia");
+    let result = extract_index_id_from_index_uri("file:///indexes/-wikipedia");
     assert!(result.is_err());
 
-    let result = extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/2-wiki-pedia");
+    let result = extract_index_id_from_index_uri("file:///indexes/2-wiki-pedia");
     assert!(result.is_err());
 
-    let result = extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/01wikipedia");
+    let result = extract_index_id_from_index_uri("file:///indexes/01wikipedia");
     assert!(result.is_err());
     Ok(())
 }
