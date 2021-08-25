@@ -28,6 +28,7 @@ use crate::models::IndexedSplit;
 use crate::models::PackagedSplit;
 use crate::models::ScratchDirectory;
 use anyhow::Context;
+use fail::fail_point;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
 use quickwit_actors::Mailbox;
@@ -241,10 +242,12 @@ impl SyncActor for Packager {
         mut split: IndexedSplit,
         ctx: &ActorContext<IndexedSplit>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        fail_point!("packager:before");
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
         let packaged_split = create_packaged_split(&segment_metas[..], split)?;
         ctx.send_message_blocking(&self.uploader_mailbox, packaged_split)?;
+        fail_point!("packager:after");
         Ok(())
     }
 }

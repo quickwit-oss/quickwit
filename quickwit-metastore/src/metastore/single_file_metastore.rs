@@ -62,7 +62,8 @@ pub struct SingleFileMetastore {
 
 #[allow(dead_code)]
 impl SingleFileMetastore {
-    #[cfg(test)]
+    /// Create a SingleFileMetastore for tests.
+    #[doc(hidden)]
     pub fn for_test() -> Self {
         use quickwit_storage::RamStorage;
         SingleFileMetastore::new(Arc::new(RamStorage::default()))
