@@ -35,7 +35,6 @@ use quickwit_metastore::Metastore;
 use quickwit_proto::SearchRequest;
 
 use crate::client_pool::Job;
-use crate::error::parse_grpc_error;
 use crate::list_relevant_splits;
 use crate::root::job_for_splits;
 use crate::root::NodeSearchError;
@@ -88,8 +87,8 @@ pub async fn root_search_stream(
 
             let mut leaf_bytes: Vec<Bytes> = Vec::new();
             while let Some(leaf_result) = receiver.next().await {
-                let leaf_data = leaf_result.map_err(|status| NodeSearchError {
-                    search_error: parse_grpc_error(&status),
+                let leaf_data = leaf_result.map_err(|search_error| NodeSearchError {
+                    search_error,
                     split_ids: split_ids.clone(),
                 })?;
                 leaf_bytes.push(Bytes::from(leaf_data.data));
@@ -188,7 +187,7 @@ mod tests {
         }))?;
         mock_search_service.expect_leaf_search_stream().return_once(
             |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
-                Ok(UnboundedReceiverStream::new(result_receiver))
+                Ok(Box::pin(UnboundedReceiverStream::new(result_receiver)))
             },
         );
         // The test will hang on indefinitely if we don't drop the receiver.

@@ -19,10 +19,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 
 use async_trait::async_trait;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use futures::TryStreamExt;
 
 use quickwit_proto::{
     search_service_server as grpc, LeafSearchStreamRequest, LeafSearchStreamResult,
@@ -79,8 +79,14 @@ impl grpc::SearchService for GrpcSearchAdapter {
         Ok(tonic::Response::new(fetch_docs_result))
     }
 
-    type LeafSearchStreamStream =
-        UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>;
+    type LeafSearchStreamStream = Pin<
+        Box<
+            dyn futures::Stream<Item = Result<LeafSearchStreamResult, tonic::Status>>
+                + Sync
+                + Send
+                + 'static,
+        >,
+    >;
     async fn leaf_search_stream(
         &self,
         request: tonic::Request<LeafSearchStreamRequest>,
@@ -90,7 +96,8 @@ impl grpc::SearchService for GrpcSearchAdapter {
             .0
             .leaf_search_stream(leaf_search_request)
             .await
-            .map_err(SearchError::convert_to_tonic_status)?;
-        Ok(tonic::Response::new(leaf_search_result))
+            .map_err(SearchError::convert_to_tonic_status)?
+            .map_err(SearchError::convert_to_tonic_status);
+        Ok(tonic::Response::new(Box::pin(leaf_search_result)))
     }
 }

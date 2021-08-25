@@ -28,8 +28,8 @@ use quickwit_proto::{
 };
 use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResult, SearchStreamRequest};
 use quickwit_storage::StorageUriResolver;
+use std::pin::Pin;
 use std::sync::Arc;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
 use crate::fetch_docs;
@@ -89,7 +89,16 @@ pub trait SearchService: 'static + Send + Sync {
     async fn leaf_search_stream(
         &self,
         _request: LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>>;
+    ) -> crate::Result<
+        Pin<
+            Box<
+                dyn futures::Stream<Item = crate::Result<LeafSearchStreamResult>>
+                    + Sync
+                    + Send
+                    + 'static,
+            >,
+        >,
+    >;
 }
 
 impl SearchServiceImpl {
@@ -172,7 +181,16 @@ impl SearchService for SearchServiceImpl {
     async fn leaf_search_stream(
         &self,
         leaf_stream_request: LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>> {
+    ) -> crate::Result<
+        Pin<
+            Box<
+                dyn futures::Stream<Item = crate::Result<LeafSearchStreamResult>>
+                    + Sync
+                    + Send
+                    + 'static,
+            >,
+        >,
+    > {
         let stream_request = leaf_stream_request
             .request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
@@ -184,8 +202,9 @@ impl SearchService for SearchServiceImpl {
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let split_ids = leaf_stream_request.split_ids;
         let index_config = index_metadata.index_config;
-        let leaf_receiver =
-            leaf_search_stream(index_config, &stream_request, split_ids, storage.clone()).await;
+        let leaf_receiver = Box::pin(
+            leaf_search_stream(index_config, stream_request, split_ids, storage.clone()).await,
+        );
         Ok(leaf_receiver)
     }
 }

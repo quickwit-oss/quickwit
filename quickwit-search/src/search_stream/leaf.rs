@@ -22,6 +22,7 @@ use super::FastFieldCollectorBuilder;
 use crate::leaf::open_index;
 use crate::leaf::warmup;
 use crate::SearchError;
+use futures::{FutureExt, StreamExt};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::LeafSearchStreamResult;
 use quickwit_proto::OutputFormat;
@@ -31,7 +32,8 @@ use quickwit_storage::Storage;
 use std::sync::Arc;
 use tantivy::schema::Type;
 use tantivy::ReloadPolicy;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+
+const CONCURRENT_SPLIT_SEARCH_STREAM: usize = 2;
 
 /// `leaf` step of search stream.
 // Note: we return a stream of a result with a tonic::Status error
@@ -42,38 +44,29 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 // signature defined by proto generated code.
 pub async fn leaf_search_stream(
     index_config: Arc<dyn IndexConfig>,
-    request: &SearchStreamRequest,
+    request: SearchStreamRequest,
     split_ids: Vec<String>,
     storage: Arc<dyn Storage>,
-) -> UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>> {
-    let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-    for split_id in split_ids {
-        let split_storage: Arc<dyn Storage> =
-            quickwit_storage::add_prefix_to_storage(storage.clone(), split_id.clone());
-        let index_config_clone = index_config.clone();
-        let result_sender_clone = result_sender.clone();
-        let request_clone = request.clone();
-        tokio::spawn(async move {
-            let leaf_split_result =
-                leaf_search_stream_single_split(index_config_clone, &request_clone, split_storage)
-                    .await
-                    .map_err(SearchError::convert_to_tonic_status);
-            result_sender_clone.send(leaf_split_result).map_err(|_| {
-                SearchError::InternalError(format!(
-                    "Unable to send leaf export result for split `{}`",
-                    split_id
-                ))
-            })?;
-            Result::<(), SearchError>::Ok(())
-        });
-    }
-    UnboundedReceiverStream::new(result_receiver)
+) -> impl futures::Stream<Item = crate::Result<LeafSearchStreamResult>> + Sync + Send + 'static {
+    futures::stream::iter(split_ids)
+        .map(move |split_id| {
+            let index_config_clone = index_config.clone();
+            let request_clone = request.clone();
+            let split_storage: Arc<dyn Storage> =
+                quickwit_storage::add_prefix_to_storage(storage.clone(), split_id);
+            (index_config_clone, request_clone, split_storage)
+        })
+        .map(|(index_config_clone, request_clone, split_storage)| {
+            leaf_search_stream_single_split(index_config_clone, request_clone, split_storage)
+                .shared()
+        })
+        .buffered(CONCURRENT_SPLIT_SEARCH_STREAM)
 }
 
 /// Apply a leaf search on a single split.
 async fn leaf_search_stream_single_split(
     index_config: Arc<dyn IndexConfig>,
-    stream_request: &SearchStreamRequest,
+    stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResult> {
     let index = open_index(storage).await?;

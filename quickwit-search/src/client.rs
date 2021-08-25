@@ -19,6 +19,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use futures::StreamExt;
 use http::Uri;
 use quickwit_proto::LeafSearchStreamResult;
 use std::fmt;
@@ -126,21 +127,20 @@ impl SearchServiceClient {
     pub async fn leaf_search_stream(
         &mut self,
         request: quickwit_proto::LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>> {
+    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>>> {
+        // It could be possible to return a stream... but the stream should be Sync + Send and tonic returns
+        // a stream which is only Send.
+        let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let mut grpc_client_clone = grpc_client.clone();
-                let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
+                let tonic_request = Request::new(request);
+                let mut results_stream = grpc_client_clone
+                    .leaf_search_stream(tonic_request)
+                    .await
+                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
+                    .into_inner();
                 tokio::spawn(async move {
-                    let tonic_request = Request::new(request);
-                    let mut results_stream = grpc_client_clone
-                        .leaf_search_stream(tonic_request)
-                        .await
-                        .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
-                        .into_inner();
-
-                    // TODO: returning stream instead of a channel may be better.
-                    // But this seems to be difficult. Try it at your own expense.
                     while let Some(result) = results_stream
                         .message()
                         .await
@@ -156,11 +156,25 @@ impl SearchServiceClient {
                     }
                     Result::<_, SearchError>::Ok(())
                 });
-
-                Ok(UnboundedReceiverStream::new(result_receiver))
             }
-            SearchServiceClientImpl::Local(service) => service.leaf_search_stream(request).await,
+            SearchServiceClientImpl::Local(service) => {
+                let mut results_stream = service.leaf_search_stream(request).await?;
+                tokio::spawn(async move {
+                    while let Some(result) = results_stream.next().await {
+                        // We want to stop doing unnecessary work on the leaves as soon as
+                        // there is an issue sending the result.
+                        // Terminating the task will drop the `result_stream` consequently
+                        // canceling the gRPC request.
+                        result_sender.send(result).map_err(|_| {
+                            SearchError::InternalError("Could not send leaf result".into())
+                        })?;
+                    }
+                    Result::<_, SearchError>::Ok(())
+                });
+            }
         }
+
+        Ok(UnboundedReceiverStream::new(result_receiver))
     }
 
     /// Perform fetch docs.
