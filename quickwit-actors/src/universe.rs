@@ -82,7 +82,10 @@ impl Universe {
         let _ = rx.await;
     }
 
-    pub fn spawn<A: AsyncActor>(&self, actor: A) -> (Mailbox<A::Message>, ActorHandle<A>) {
+    pub fn spawn_async_actor<A: AsyncActor>(
+        &self,
+        actor: A,
+    ) -> (Mailbox<A::Message>, ActorHandle<A>) {
         spawn_async_actor(
             actor,
             self.kill_switch.clone(),
@@ -159,9 +162,7 @@ mod tests {
             ctx: &ActorContext<Self::Message>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
-            dbg!("process message");
             ctx.schedule_self_msg(Duration::from_secs(60), ()).await;
-            dbg!("process message done");
             Ok(())
         }
     }
@@ -170,7 +171,7 @@ mod tests {
     async fn test_schedule_for_actor() {
         let universe = Universe::new();
         let actor_with_schedule = ActorWithSchedule::default();
-        let (_maibox, handler) = universe.spawn(actor_with_schedule);
+        let (_maibox, handler) = universe.spawn_async_actor(actor_with_schedule);
         let count_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(count_after_initialization, 1);
         universe.simulate_time_shift(Duration::from_secs(200)).await;

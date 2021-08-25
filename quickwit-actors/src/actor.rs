@@ -26,20 +26,23 @@ use thiserror::Error;
 use tokio::sync::watch::Sender;
 use tracing::{debug, error};
 
+use crate::async_actor::spawn_async_actor;
 use crate::channel_with_priority::Priority;
 use crate::mailbox::{Command, CommandOrMessage};
 use crate::scheduler::{Callback, SchedulerMessage};
+use crate::sync_actor::spawn_sync_actor;
 use crate::{
     actor_state::{ActorState, AtomicState},
     progress::{Progress, ProtectedZoneGuard},
     KillSwitch, Mailbox, QueueCapacity, SendError,
 };
+use crate::{ActorHandle, AsyncActor, SyncActor};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
 ///
 /// It is in many ways, similar to the exit status code of a program.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum ActorExitStatus {
     /// The actor successfully exited.
     ///
@@ -80,11 +83,17 @@ pub enum ActorExitStatus {
 
     /// An unexpected error happened while processing a message.
     #[error("Failure(cause={0:?})")]
-    Failure(#[from] anyhow::Error),
+    Failure(Arc<anyhow::Error>),
 
     /// The thread or the task executing the actor loop panicked.
     #[error("Panicked")]
     Panicked,
+}
+
+impl From<anyhow::Error> for ActorExitStatus {
+    fn from(err: anyhow::Error) -> Self {
+        ActorExitStatus::Failure(Arc::new(err))
+    }
 }
 
 impl ActorExitStatus {
@@ -210,6 +219,22 @@ impl<Message> ActorContext<Message> {
         &self.progress
     }
 
+    pub fn spawn_async<A: AsyncActor>(
+        &self,
+        actor: A,
+        kill_switch: KillSwitch,
+    ) -> (Mailbox<A::Message>, ActorHandle<A>) {
+        spawn_async_actor(actor, kill_switch, self.scheduler_mailbox.clone())
+    }
+
+    pub fn spawn_sync<A: SyncActor>(
+        &self,
+        actor: A,
+        kill_switch: KillSwitch,
+    ) -> (Mailbox<A::Message>, ActorHandle<A>) {
+        spawn_sync_actor(actor, kill_switch, self.scheduler_mailbox.clone())
+    }
+
     /// Records some progress.
     /// This function is only useful when implementing actors that may take more than
     /// `HEARTBEAT` to process a single message.
@@ -219,7 +244,7 @@ impl<Message> ActorContext<Message> {
         self.progress.record_progress();
     }
 
-    pub(crate) fn get_state(&self) -> ActorState {
+    pub(crate) fn state(&self) -> ActorState {
         self.actor_state.get_state()
     }
 

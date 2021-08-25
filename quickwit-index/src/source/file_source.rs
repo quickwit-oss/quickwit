@@ -32,6 +32,7 @@ use quickwit_metastore::checkpoint::Position;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
@@ -71,11 +72,13 @@ impl Source for FileSource {
         let mut docs = Vec::new();
         while self.counters.current_offset < limit_num_bytes {
             let mut doc_line = String::new();
-            let num_bytes = self
-                .file
-                .read_line(&mut doc_line)
-                .await
-                .map_err(|io_err: io::Error| ActorExitStatus::Failure(anyhow::anyhow!(io_err)))?;
+            let num_bytes =
+                self.file
+                    .read_line(&mut doc_line)
+                    .await
+                    .map_err(|io_err: io::Error| {
+                        ActorExitStatus::Failure(Arc::new(anyhow::anyhow!(io_err)))
+                    })?;
             if num_bytes == 0 {
                 reached_eof = true;
                 break;
@@ -167,7 +170,8 @@ mod tests {
             source: Box::new(file_source),
             batch_sink: mailbox,
         };
-        let (_file_source_mailbox, file_source_handle) = universe.spawn(file_source_actor);
+        let (_file_source_mailbox, file_source_handle) =
+            universe.spawn_async_actor(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(
@@ -205,7 +209,8 @@ mod tests {
             source: Box::new(source),
             batch_sink: mailbox,
         };
-        let (_file_source_mailbox, file_source_handle) = universe.spawn(file_source_actor);
+        let (_file_source_mailbox, file_source_handle) =
+            universe.spawn_async_actor(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(
