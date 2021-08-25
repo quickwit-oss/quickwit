@@ -220,7 +220,7 @@ fn test_cmd_search() -> Result<()> {
     // search with tags
     make_command(
         format!(
-            "search --index-uri {} --query level:info --metastore-uri {}  --tags city:paris device:rpi",
+            "search --index-uri {} --query level:info --metastore-uri {} --tags city:paris device:rpi",
             test_env.index_uri,
             test_env.metastore_uri,
         )
@@ -235,8 +235,9 @@ fn test_cmd_search() -> Result<()> {
 
     make_command(
         format!(
-            "search --index-uri {} --query level:info --tags city:conakry",
-            test_env.index_uri
+            "search --index-uri {} --metastore-uri {} --query level:info --tags city:conakry",
+            test_env.index_uri,
+            test_env.metastore_uri
         )
         .as_str(),
     )
