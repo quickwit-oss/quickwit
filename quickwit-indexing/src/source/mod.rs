@@ -19,6 +19,8 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 mod file_source;
+#[cfg(feature = "kafka")]
+mod kafka_source;
 mod source_factory;
 mod vec_source;
 
@@ -33,6 +35,8 @@ use quickwit_actors::Mailbox;
 use std::fmt;
 
 pub use file_source::{FileSource, FileSourceFactory, FileSourceParams};
+#[cfg(feature = "kafka")]
+pub use kafka_source::{KafkaSource, KafkaSourceFactory, KafkaSourceParams};
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 pub use vec_source::{VecSource, VecSourceFactory, VecSourceParams};
 
@@ -154,6 +158,8 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
     SOURCE_LOADER.get_or_init(|| {
         let mut source_factory = SourceLoader::default();
         source_factory.add_source("file", FileSourceFactory);
+        #[cfg(feature = "kafka")]
+        source_factory.add_source("kafka", KafkaSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
         source_factory
     })

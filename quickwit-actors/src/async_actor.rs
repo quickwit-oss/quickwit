@@ -86,14 +86,18 @@ pub(crate) fn spawn_async_actor<A: AsyncActor>(
     ctx: ActorContext<A::Message>,
     inbox: Inbox<A::Message>,
 ) -> ActorHandle<A> {
-    debug!(actor_name=%ctx.actor_instance_id(),"spawning-async-actor");
+    debug!(actor_name = %ctx.actor_instance_id(), "spawning-async-actor");
     let (state_tx, state_rx) = watch::channel(actor.observable_state());
     let ctx_clone = ctx.clone();
     let (exit_status_tx, exit_status_rx) = watch::channel(None);
     let join_handle: JoinHandle<()> = tokio::spawn(async move {
         let actor_instance_id = ctx.actor_instance_id().to_string();
         let exit_status = async_actor_loop(actor, inbox, ctx, state_tx).await;
-        info!(exit_status=%exit_status, actor=actor_instance_id.as_str(), "exit");
+        info!(
+            actor_name = actor_instance_id.as_str(),
+            exit_status = %exit_status,
+            "actor-exit"
+        );
         let _ = exit_status_tx.send(Some(exit_status));
     });
     ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)

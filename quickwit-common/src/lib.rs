@@ -60,16 +60,12 @@ pub fn extract_index_id_from_index_uri(mut index_uri: &str) -> anyhow::Result<&s
     Ok(parts[0])
 }
 
-/// Resolve DNS entry and convert them to SocketAddr.
+/// Resolves and converts an address to a `SocketAddr`.
 pub fn to_socket_addr(addr_str: &str) -> anyhow::Result<SocketAddr> {
-    if let Some(addr) = addr_str.to_socket_addrs()?.next() {
-        Ok(addr)
-    } else {
-        Err(anyhow::anyhow!(
-            "Unable to resolve the socket address. {}",
-            addr_str
-        ))
-    }
+    addr_str
+        .to_socket_addrs()?
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Failed to resolve address `{}`.", addr_str))
 }
 
 #[derive(Debug, PartialEq, Eq)]

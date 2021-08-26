@@ -24,7 +24,7 @@ use std::io;
 
 use thiserror::Error;
 
-use crate::checkpoint::IncompatibleCheckpoint;
+use crate::checkpoint::IncompatibleCheckpointDelta;
 
 /// Metastore error kinds.
 #[allow(missing_docs)]
@@ -60,8 +60,8 @@ pub enum MetastoreError {
     #[error("Split `{split_id}` is not staged.")]
     SplitIsNotStaged { split_id: String },
 
-    #[error("Publish checkpoint delta overlaps with the current checkpoint: {0:?}.")]
-    IncompatibleCheckpointDelta(#[from] IncompatibleCheckpoint),
+    #[error("Published checkpoint delta overlaps with current checkpoint: {0:?}.")]
+    IncompatibleCheckpointDelta(#[from] IncompatibleCheckpointDelta),
 }
 
 /// Generic Result type for metastore operations.
