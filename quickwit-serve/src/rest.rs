@@ -26,6 +26,7 @@ use futures::stream::{self, StreamExt};
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_proto::OutputFormat;
 use quickwit_search::{SearchResponseRest, SearchService, SearchServiceImpl};
+use quickwit_common::metrics;
 use serde::{Deserialize, Deserializer};
 use tracing::info;
 use warp::hyper::header::CONTENT_TYPE;
@@ -43,10 +44,18 @@ pub async fn start_rest_service(
     cluster_service: Arc<ClusterServiceImpl>,
 ) -> anyhow::Result<()> {
     info!(rest_addr=?rest_addr, "Starting REST service.");
+    let request_counter = warp::log::custom(|_| {
+        crate::COUNTERS.num_requests.inc();
+    });
+    let metrics_service = warp::path("metrics")
+        .and(warp::get())
+        .map(metrics::metrics_handler);
     let rest_routes = liveness_check_handler()
         .or(cluster_handler(cluster_service))
         .or(search_handler(search_service.clone()))
         .or(search_stream_handler(search_service))
+        .or(metrics_service)
+        .with(request_counter)
         .recover(recover_fn);
     warp::serve(rest_routes).run(rest_addr).await;
     Ok(())

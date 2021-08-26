@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod coolid;
+pub mod metrics;
 
 pub use coolid::new_coolid;
 use once_cell::sync::Lazy;

@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod args;
+mod counters;
 mod error;
 mod grpc;
 mod grpc_adapter;
@@ -46,6 +47,7 @@ use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream, WriteColor}
 use tracing::debug;
 
 pub use crate::args::ServeArgs;
+pub use crate::counters::COUNTERS;
 pub use crate::error::ApiError;
 use crate::grpc::start_grpc_service;
 use crate::grpc_adapter::cluster_adapter::GrpcClusterAdapter;
