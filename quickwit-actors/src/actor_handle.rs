@@ -262,7 +262,11 @@ impl<A: Actor> ActorHandle<A> {
             }
             Err(_) => {
                 let state = self.last_observation();
-                let obs_type = ObservationType::Timeout;
+                let obs_type = if self.actor_context.state() == ActorState::Exit {
+                    ObservationType::PostMortem
+                } else {
+                    ObservationType::Timeout
+                };
                 Observation { obs_type, state }
             }
         }
