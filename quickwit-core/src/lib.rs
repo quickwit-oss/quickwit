@@ -29,13 +29,27 @@
 - `delete_index` for deleting an index
 */
 
-mod counter;
 mod index;
-mod indexing;
 mod test_utils;
 
-pub use index::{create_index, delete_index, garbage_collect_index};
-pub use indexing::{
-    index_data, test_document_source, DocumentSource, IndexDataParams, IndexingStatistics,
-};
+pub use index::{create_index, delete_index, garbage_collect_index, reset_index};
+use quickwit_metastore::SplitMetadataAndFooterOffsets;
 pub use test_utils::TestSandbox;
+
+#[allow(missing_docs)]
+#[derive(Debug)]
+pub struct FileEntry {
+    /// The file_name is a file name, within an index directory.
+    pub file_name: String,
+    /// File size in bytes.
+    pub file_size_in_bytes: u64, //< TODO switch to `byte_unit::Byte`.
+}
+
+impl From<&SplitMetadataAndFooterOffsets> for FileEntry {
+    fn from(split: &SplitMetadataAndFooterOffsets) -> Self {
+        FileEntry {
+            file_name: quickwit_common::split_file(&split.split_metadata.split_id),
+            file_size_in_bytes: split.footer_offsets.end + 8,
+        }
+    }
+}

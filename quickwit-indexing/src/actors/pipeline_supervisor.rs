@@ -218,11 +218,13 @@ impl IndexingPipelineSupervisor {
 
     async fn process_supervise(&mut self, ctx: &ActorContext<Msg>) -> Result<(), ActorExitStatus> {
         if self.handlers.is_none() {
-            if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
-                // TODO: only retry n-times.
-                error!(err=?spawn_error, "Error while spawning");
-                self.terminate().await;
-            }
+            // TODO Accept errors in spawning. See #463.
+            self.spawn_pipeline(ctx).await?;
+            // if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
+            //     // only retry n-times.
+            //     error!(err=?spawn_error, "Error while spawning");
+            //     self.terminate().await;
+            // }
         } else {
             match self.healthcheck() {
                 Health::Healthy => {}
@@ -270,9 +272,10 @@ impl AsyncActor for IndexingPipelineSupervisor {
         ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
         match message {
-            Msg::Observe => self.process_observe(ctx).await,
-            Msg::Supervise => self.process_supervise(ctx).await,
+            Msg::Observe => self.process_observe(ctx).await?,
+            Msg::Supervise => self.process_supervise(ctx).await?,
         }
+        Ok(())
     }
 }
 

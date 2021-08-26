@@ -31,26 +31,27 @@ use quickwit_actors::Mailbox;
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::checkpoint::PartitionId;
+use quickwit_metastore::checkpoint::Position;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 #[derive(Deserialize, Serialize)]
 pub struct VecSourceParams {
-    items: Vec<String>,
-    batch_num_docs: usize,
+    pub items: Vec<String>,
+    pub batch_num_docs: usize,
+    #[serde(default)]
+    pub partition: String,
 }
 
 pub struct VecSource {
     next_item_id: usize,
     params: VecSourceParams,
+    partition: PartitionId,
 }
 pub struct VecSourceFactory;
 
-fn extract_next_item_id(checkpoint: &Checkpoint) -> anyhow::Result<usize> {
-    let default_partition = PartitionId::default();
-    if let Some(position) = checkpoint
-        .position_for_partition(&default_partition)
-        .cloned()
-    {
+fn extract_next_item_id(partition: &PartitionId, checkpoint: &Checkpoint) -> anyhow::Result<usize> {
+    if let Some(position) = checkpoint.position_for_partition(partition).cloned() {
         if position.as_str().is_empty() {
             Ok(0)
         } else {
@@ -70,12 +71,21 @@ impl TypedSourceFactory for VecSourceFactory {
         params: VecSourceParams,
         checkpoint: Checkpoint,
     ) -> anyhow::Result<Self::Source> {
-        let next_item_id = extract_next_item_id(&checkpoint)?;
+        let partition = PartitionId::from(params.partition.as_str());
+        let next_item_id = extract_next_item_id(&partition, &checkpoint)?;
         Ok(VecSource {
             next_item_id,
             params,
+            partition,
         })
     }
+}
+
+fn position_from_offset(offset: u64) -> Position {
+    if offset == 0 {
+        return Position::default();
+    }
+    Position::from(offset - 1)
 }
 
 #[async_trait]
@@ -93,8 +103,16 @@ impl Source for VecSource {
         let start_item_id = self.next_item_id as u64;
         self.next_item_id += line_docs.len();
         let end_item_id = self.next_item_id as u64;
-        let checkpoint_delta = CheckpointDelta::from(start_item_id..end_item_id);
+        let mut checkpoint_delta = CheckpointDelta::default();
+        checkpoint_delta.add_partition(
+            self.partition.clone(),
+            position_from_offset(start_item_id),
+            position_from_offset(end_item_id),
+        );
         if line_docs.is_empty() {
+            info!("End of source");
+            ctx.send_message(batch_sink, IndexerMessage::EndOfSource)
+                .await?;
             return Err(ActorExitStatus::Success);
         }
         let batch = RawDocBatch {
@@ -132,6 +150,7 @@ mod tests {
         let params = VecSourceParams {
             items,
             batch_num_docs: 3,
+            partition: "partition".to_string(),
         };
         let vec_source =
             VecSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
@@ -144,11 +163,11 @@ mod tests {
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, json!({"next_item_id": 100}));
         let batches = inbox.drain_available_message_for_test();
-        assert_eq!(batches.len(), 34);
-        let expected_checkpoint_delta = CheckpointDelta::from(3u64..6u64);
+        assert_eq!(batches.len(), 35);
         assert!(
-            matches!(&batches[1], &IndexerMessage::Batch(ref raw_batch) if raw_batch.checkpoint_delta == expected_checkpoint_delta)
+            matches!(&batches[1], &IndexerMessage::Batch(ref raw_batch) if format!("{:?}", raw_batch.checkpoint_delta) == "∆(partition:(00000000000000000002..00000000000000000005])")
         );
+        assert!(matches!(&batches[34], &IndexerMessage::EndOfSource));
         Ok(())
     }
 
@@ -161,6 +180,7 @@ mod tests {
         let params = VecSourceParams {
             items,
             batch_num_docs: 3,
+            partition: "".to_string(),
         };
         let mut checkpoint = Checkpoint::default();
         checkpoint.try_apply_delta(CheckpointDelta::from(0u64..2u64))?;

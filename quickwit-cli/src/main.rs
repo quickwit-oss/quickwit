@@ -104,11 +104,10 @@ impl CliCommand {
             .to_string();
         let input_path: Option<PathBuf> = matches.value_of("input-path").map(PathBuf::from);
         let temp_dir: Option<PathBuf> = matches.value_of("temp-dir").map(PathBuf::from);
-        let num_threads = value_t!(matches, "num-threads", usize)?; // 'num-threads' has a default value
         let heap_size_str = matches
             .value_of("heap-size")
             .context("heap-size has a default value")?;
-        let heap_size = Byte::from_str(heap_size_str)?.get_bytes() as u64;
+        let heap_size = Byte::from_str(heap_size_str)?;
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(|metastore_uri_str| metastore_uri_str.to_string())
@@ -119,7 +118,6 @@ impl CliCommand {
             index_uri,
             input_path,
             temp_dir,
-            num_threads,
             heap_size,
             metastore_uri,
             overwrite,
@@ -458,11 +456,10 @@ mod tests {
                 index_uri,
                 input_path: None,
                 temp_dir: None,
-                num_threads: 2,
-                heap_size: 2_000_000_000,
+                heap_size,
                 metastore_uri,
                 overwrite: false,
-            })) if &index_uri == "file:///indexes/wikipedia" && &metastore_uri == "file:///indexes"
+            })) if &index_uri == "file:///indexes/wikipedia" && &metastore_uri == "file:///indexes" && heap_size.get_bytes() == 2_000_000_000
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -475,8 +472,6 @@ mod tests {
             "/data/wikipedia.json",
             "--temp-dir",
             "./tmp",
-            "--num-threads",
-            "4",
             "--heap-size",
             "4gib",
             "--metastore-uri",
@@ -490,11 +485,11 @@ mod tests {
                 index_uri,
                 input_path: Some(input_path),
                 temp_dir,
-                num_threads: 4,
-                heap_size: 4_294_967_296,
+                heap_size,
                 metastore_uri,
                 overwrite: true,
             })) if &index_uri == "file:///indexes/wikipedia" && input_path == Path::new("/data/wikipedia.json") && temp_dir == Some(PathBuf::from("./tmp")) && &metastore_uri == "file:///indexes"
+                && heap_size.get_bytes() == 4_294_967_296
         ));
 
         Ok(())
