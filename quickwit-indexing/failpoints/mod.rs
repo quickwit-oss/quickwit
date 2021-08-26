@@ -175,6 +175,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
     };
     let storage_uri_resolver = StorageUriResolver::default();
     index_data(
+        "test-index".to_string(),
         metastore.clone(),
         params,
         source_config,

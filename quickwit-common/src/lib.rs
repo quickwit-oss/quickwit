@@ -101,3 +101,7 @@ pub fn setup_logging_for_tests() {
         env_logger::builder().format_timestamp(None).init();
     });
 }
+
+pub fn split_file(split_id: &str) -> String {
+    format!("{}.split", split_id)
+}
