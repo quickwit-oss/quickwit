@@ -36,6 +36,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tantivy::common::CountingWriter;
+use tantivy::directory::FileSlice;
 use tantivy::HasLen;
 use thiserror::Error;
 use tracing::error;
@@ -77,28 +78,50 @@ pub struct CorruptedData {
     pub error: serde_json::Error,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct BundleStorageFileOffsets {
-    pub(crate) files: HashMap<PathBuf, Range<usize>>,
+const FOOTER_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u64>();
+
+/// Returns the file offsets in the file bundle.
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+pub struct BundleStorageFileOffsets {
+    files: HashMap<PathBuf, Range<usize>>,
 }
 
 impl BundleStorageFileOffsets {
     fn open(data: &[u8]) -> Result<Self, CorruptedData> {
-        let (body_and_footer, footer_num_bytes_data) = data.split_at(data.len() - 8);
+        let (body_and_footer, footer_num_bytes_data) =
+            data.split_at(data.len() - FOOTER_LENGTH_NUM_BYTES);
         let footer_num_bytes: u64 = u64::from_le_bytes(footer_num_bytes_data.try_into().unwrap());
         let footer_slice = &body_and_footer[body_and_footer.len() - footer_num_bytes as usize..];
         let bundle_storage_file_offsets = serde_json::from_slice(footer_slice)?;
         Ok(bundle_storage_file_offsets)
     }
 
-    fn get(&self, path: &Path) -> StorageResult<Range<usize>> {
+    /// Read metadata from a file.
+    pub fn open_from_file_slice(file: FileSlice) -> io::Result<Self> {
+        let (body_and_footer, footer_num_bytes_data) = file.split_from_end(8);
+        let footer_num_bytes_data = footer_num_bytes_data.read_bytes()?;
+        let footer_num_bytes: u64 =
+            u64::from_le_bytes(footer_num_bytes_data.as_slice().try_into().unwrap());
+
+        let bundle_storage_file_offsets_data = body_and_footer
+            .slice_from_end(footer_num_bytes as usize)
+            .read_bytes()?;
+        let bundle_storage_file_offsets =
+            serde_json::from_slice(&bundle_storage_file_offsets_data)?;
+
+        Ok(bundle_storage_file_offsets)
+    }
+
+    /// Return file offsets for given path.
+    pub fn get(&self, path: &Path) -> StorageResult<Range<usize>> {
         self.files
             .get(path)
             .cloned()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "not found in metadata").into())
     }
 
-    fn exists(&self, path: &Path) -> bool {
+    /// Return if file exists in metadata.
+    pub fn exists(&self, path: &Path) -> bool {
         self.files.contains_key(path)
     }
 }
@@ -243,10 +266,53 @@ impl<W: io::Write> BundleStorageBuilder<W> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use crate::RamStorageBuilder;
 
     use super::*;
 
+    #[tokio::test]
+    async fn bundle_storage_file_offsets() -> anyhow::Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let test_filepath1 = temp_dir.path().join("f1");
+        let test_filepath2 = temp_dir.path().join("f2");
+        let test_bundle_path = temp_dir.path().join("le_bundle");
+
+        let mut bundle_file = File::create(test_bundle_path.to_owned())?;
+        let mut bundle_builder = BundleStorageBuilder::new(&mut bundle_file)?;
+
+        let mut file1 = File::create(&test_filepath1)?;
+        file1.write_all(&[123, 76])?;
+
+        let mut file2 = File::create(&test_filepath2)?;
+        file2.write_all(&[99, 55, 44])?;
+
+        bundle_builder.add_file(&test_filepath1)?;
+        bundle_builder.add_file(&test_filepath2)?;
+        bundle_builder.finalize()?;
+
+        let bundle_filepath = Path::new("bundle");
+        let buffer = fs::read(test_bundle_path)?;
+        let bundle_file_slice = FileSlice::from(buffer.to_owned());
+        let metadata = BundleStorageFileOffsets::open_from_file_slice(bundle_file_slice)?;
+        let ram_storage = RamStorageBuilder::default()
+            .put(&bundle_filepath.to_string_lossy(), &buffer)
+            .build();
+
+        let bundle_storage = BundleStorage {
+            metadata,
+            bundle_filepath: bundle_filepath.to_path_buf(),
+            storage: Arc::new(ram_storage),
+        };
+        let f1_data = bundle_storage.get_all(Path::new("f1")).await?;
+        assert_eq!(&*f1_data, &[123u8, 76u8]);
+
+        let f2_data = bundle_storage.get_all(Path::new("f2")).await?;
+        assert_eq!(&f2_data[..], &[99, 55, 44]);
+
+        Ok(())
+    }
     #[tokio::test]
     async fn bundle_storage_test() -> anyhow::Result<()> {
         let mut buffer = Vec::new();
