@@ -187,7 +187,7 @@ impl IndexerState {
         let indexed_split = self.get_or_create_current_indexed_split(current_split_opt, ctx)?;
         indexed_split
             .checkpoint_delta
-            .add(batch.checkpoint_delta)
+            .extend(batch.checkpoint_delta)
             .with_context(|| "Batch delta does not follow indexer checkpoint")?;
         for doc_json in batch.docs {
             counters.overall_num_bytes += doc_json.len() as u64;

@@ -52,7 +52,7 @@ pub enum ActorExitStatus {
     /// (This exit is triggered by the actor implementer.)
     ///
     /// (This is equivalent to exit status code 0.)
-    /// Note this is not really an error.
+    /// Note that this is not really an error.
     #[error("Success")]
     Success,
 
