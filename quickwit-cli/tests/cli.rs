@@ -29,6 +29,8 @@ use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::{create_index_cli, CreateIndexArgs};
+use quickwit_common::extract_index_id_from_index_uri;
+use quickwit_metastore::{MetastoreUriResolver, SplitState};
 use quickwit_storage::{localstack_region, S3CompatibleObjectStorage, Storage};
 use serde_json::{Number, Value};
 use serial_test::serial;
@@ -190,106 +192,104 @@ fn test_cmd_index() -> Result<()> {
     Ok(())
 }
 
-/// TODO Temporarily disabled
-// #[test]
-// fn test_cmd_search() -> Result<()> {
-//     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
-//     create_logs_index(&test_env);
+#[test]
+fn test_cmd_search() -> Result<()> {
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
 
-//     index_data(
-//         &test_env.index_uri,
-//         test_env.resource_files["logs"].as_path(),
-//         &test_env.metastore_uri,
-//     );
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["logs"].as_path(),
+        &test_env.metastore_uri,
+    );
 
-//     make_command(
-//         format!(
-//             "search --index-uri {} --query level:info --metastore-uri {}",
-//             test_env.index_uri, test_env.metastore_uri,
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success()
-//     .stdout(predicate::function(|output: &[u8]| {
-//         let result: Value = serde_json::from_slice(output).unwrap();
-//         result["numHits"] == Value::Number(Number::from(2i64))
-//     }));
+    make_command(
+        format!(
+            "search --index-uri {} --query level:info --metastore-uri {}",
+            test_env.index_uri, test_env.metastore_uri,
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::function(|output: &[u8]| {
+        let result: Value = serde_json::from_slice(output).unwrap();
+        result["numHits"] == Value::Number(Number::from(2i64))
+    }));
 
-//     // search with tags
-//     make_command(
-//         format!(
-//             "search --index-uri {} --query level:info --metastore-uri {} --tags city:paris device:rpi",
-//             test_env.index_uri,
-//             test_env.metastore_uri,
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success()
-//     .stdout(predicate::function(|output: &[u8]| {
-//         let result: Value = serde_json::from_slice(output).unwrap();
-//         result["numHits"] == Value::Number(Number::from(2i64))
-//     }));
+    // search with tags
+    make_command(
+        format!(
+            "search --index-uri {} --query level:info --metastore-uri {} --tags city:paris device:rpi",
+            test_env.index_uri,
+            test_env.metastore_uri,
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::function(|output: &[u8]| {
+        let result: Value = serde_json::from_slice(output).unwrap();
+        result["numHits"] == Value::Number(Number::from(2i64))
+    }));
 
-//     make_command(
-//         format!(
-//             "search --index-uri {} --metastore-uri {} --query level:info --tags city:conakry",
-//             test_env.index_uri, test_env.metastore_uri
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success()
-//     .stdout(predicate::function(|output: &[u8]| {
-//         let result: Value = serde_json::from_slice(output).unwrap();
-//         result["numHits"] == Value::Number(Number::from(0i64))
-//     }));
+    make_command(
+        format!(
+            "search --index-uri {} --metastore-uri {} --query level:info --tags city:conakry",
+            test_env.index_uri, test_env.metastore_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::function(|output: &[u8]| {
+        let result: Value = serde_json::from_slice(output).unwrap();
+        result["numHits"] == Value::Number(Number::from(0i64))
+    }));
 
-//     Ok(())
-// }
+    Ok(())
+}
 
-// #[test]
-// fn test_cmd_delete_index_dry_run() -> Result<()> {
-//     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
-//     create_logs_index(&test_env);
+#[test]
+fn test_cmd_delete_index_dry_run() -> Result<()> {
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
 
-//     // Empty index.
-//     make_command(
-//         format!(
-//             "delete --index-uri {} --metastore-uri {} --dry-run",
-//             test_env.index_uri, test_env.metastore_uri
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success()
-//     .stdout(predicate::str::contains("Only the index will be deleted"));
+    // Empty index.
+    make_command(
+        format!(
+            "delete --index-uri {} --metastore-uri {} --dry-run",
+            test_env.index_uri, test_env.metastore_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("Only the index will be deleted"));
 
-//     index_data(
-//         &test_env.index_uri,
-//         test_env.resource_files["logs"].as_path(),
-//         &test_env.metastore_uri,
-//     );
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["logs"].as_path(),
+        &test_env.metastore_uri,
+    );
 
-//     // Non-empty index
-//     make_command(
-//         format!(
-//             "delete --index-uri {} --metastore-uri {} --dry-run",
-//             test_env.index_uri, test_env.metastore_uri
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success()
-//     .stdout(predicate::str::contains(
-//         "The following files will be removed",
-//     ))
-//     .stdout(predicate::str::contains("/hotcache"))
-//     .stdout(predicate::str::contains("/.manifest"));
+    // Non-empty index
+    make_command(
+        format!(
+            "delete --index-uri {} --metastore-uri {} --dry-run",
+            test_env.index_uri, test_env.metastore_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "The following files will be removed",
+    ))
+    .stdout(predicate::str::contains(".split"));
 
-//     Ok(())
-// }
+    Ok(())
+}
 
 #[test]
 fn test_cmd_delete() -> Result<()> {
@@ -329,186 +329,193 @@ fn test_cmd_delete() -> Result<()> {
     Ok(())
 }
 
-// #[tokio::test]
-// async fn test_cmd_garbage_collect() -> Result<()> {
-//     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
-//     create_logs_index(&test_env);
-//     index_data(
-//         &test_env.index_uri,
-//         test_env.resource_files["logs"].as_path(),
-//         &test_env.metastore_uri,
-//     );
+#[tokio::test]
+async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["logs"].as_path(),
+        &test_env.metastore_uri,
+    );
 
-//     let index_id = extract_index_id_from_index_uri(&test_env.index_uri)?;
-//     let metastore = MetastoreUriResolver::default()
-//         .resolve(&test_env.metastore_uri)
-//         .await?;
-//     let splits = metastore.list_all_splits(index_id).await?;
-//     assert_eq!(splits.len(), 1);
-//     make_command(
-//         format!(
-//             "gc --index-uri {} --metastore-uri {}",
-//             test_env.index_uri, test_env.metastore_uri
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success()
-//     .stdout(predicate::str::contains(
-//         "No dangling files to garbage collect",
-//     ));
+    let index_id = extract_index_id_from_index_uri(&test_env.index_uri)?;
+    let metastore = MetastoreUriResolver::default()
+        .resolve(&test_env.metastore_uri)
+        .await?;
+    let splits = metastore.list_all_splits(index_id).await?;
+    assert_eq!(splits.len(), 1);
+    make_command(
+        format!(
+            "gc --index-uri {} --metastore-uri {}",
+            test_env.index_uri, test_env.metastore_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "No dangling files to garbage collect",
+    ));
 
-//     let split_path = test_env
-//         .local_directory_path
-//         .join(splits[0].split_metadata.split_id.as_str());
-//     assert_eq!(split_path.exists(), true);
+    let index_path = test_env.local_directory_path;
 
-//     let split_ids = vec![splits[0].split_metadata.split_id.as_str()];
-//     metastore
-//         .mark_splits_as_deleted(index_id, &split_ids)
-//         .await?;
-//     make_command(
-//         format!(
-//             "gc --index-uri {} --metastore-uri {} --dry-run --grace-period 10m",
-//             test_env.index_uri, test_env.metastore_uri,
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success()
-//     .stdout(predicate::str::contains(
-//         "The following files will be garbage collected.",
-//     ))
-//     .stdout(predicate::str::contains("/hotcache"))
-//     .stdout(predicate::str::contains("/.manifest"));
-//     assert_eq!(split_path.exists(), true);
+    assert_eq!(index_path.exists(), true);
 
-//     make_command(
-//         format!(
-//             "gc --index-uri {} --metastore-uri {} --grace-period 10m",
-//             test_env.index_uri, test_env.metastore_uri
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success()
-//     .stdout(predicate::str::contains(
-//         "Index successfully garbage collected",
-//     ));
+    let split_ids = &[splits[0].split_metadata.split_id.as_str()];
+    metastore
+        .mark_splits_as_deleted(index_id, split_ids)
+        .await?;
+    make_command(
+        format!(
+            "gc --index-uri {} --metastore-uri {} --dry-run --grace-period 10m",
+            test_env.index_uri, test_env.metastore_uri,
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "The following files will be garbage collected.",
+    ))
+    .stdout(predicate::str::contains(".split"));
 
-//     assert_eq!(split_path.exists(), false);
-//     let metastore = MetastoreUriResolver::default()
-//         .resolve(&test_env.metastore_uri)
-//         .await?;
-//     assert_eq!(metastore.list_all_splits(index_id).await?.len(), 0);
+    for split_id in split_ids {
+        let split_file = quickwit_common::split_file(split_id);
+        let split_filepath = index_path.join(&split_file);
+        assert_eq!(split_filepath.exists(), true);
+    }
 
-//     make_command(
-//         format!(
-//             "delete --index-uri {} --metastore-uri {}",
-//             test_env.index_uri, test_env.metastore_uri
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success();
-//     assert_eq!(test_env.local_directory_path.exists(), false);
-//     Ok(())
-// }
+    make_command(
+        format!(
+            "gc --index-uri {} --metastore-uri {} --grace-period 10m",
+            test_env.index_uri, test_env.metastore_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "Index successfully garbage collected",
+    ));
 
-// #[tokio::test]
-// async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<()> {
-//     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
-//     create_logs_index(&test_env);
-//     index_data(
-//         &test_env.index_uri,
-//         test_env.resource_files["logs"].as_path(),
-//         &test_env.metastore_uri,
-//     );
+    for split_id in split_ids {
+        let split_file = quickwit_common::split_file(split_id);
+        let split_filepath = index_path.join(&split_file);
+        assert_eq!(split_filepath.exists(), false);
+    }
 
-//     let index_id = extract_index_id_from_index_uri(&test_env.index_uri)?;
-//     let metastore = MetastoreUriResolver::default()
-//         .resolve(&test_env.metastore_uri)
-//         .await?;
-//     let splits = metastore.list_all_splits(index_id).await?;
-//     assert_eq!(splits.len(), 1);
-//     make_command(
-//         format!(
-//             "gc --index-uri {} --metastore-uri {}",
-//             test_env.index_uri, test_env.metastore_uri
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success()
-//     .stdout(predicate::str::contains(
-//         "No dangling files to garbage collect",
-//     ));
+    let metastore = MetastoreUriResolver::default()
+        .resolve(&test_env.metastore_uri)
+        .await?;
+    assert_eq!(metastore.list_all_splits(index_id).await?.len(), 0);
 
-//     let split_path = test_env
-//         .local_directory_path
-//         .join(splits[0].split_metadata.split_id.as_str());
-//     assert_eq!(split_path.exists(), true);
+    make_command(
+        format!(
+            "delete --index-uri {} --metastore-uri {}",
+            test_env.index_uri, test_env.metastore_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success();
+    assert_eq!(index_path.exists(), false);
+    Ok(())
+}
 
-//     // The following steps help turn an existing published split into a staged one
-//     // without deleting the files.
-//     let split_ids = vec![splits[0].split_metadata.split_id.as_str()];
-//     metastore
-//         .mark_splits_as_deleted(index_id, &split_ids)
-//         .await?;
-//     metastore.delete_splits(index_id, &split_ids).await?;
-//     let mut meta = splits[0].clone();
-//     meta.split_metadata.split_state = SplitState::New;
-//     metastore.stage_split(index_id, meta).await?;
-//     assert_eq!(split_path.exists(), true);
+#[tokio::test]
+async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<()> {
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
+    index_data(
+        &test_env.index_uri,
+        test_env.resource_files["logs"].as_path(),
+        &test_env.metastore_uri,
+    );
 
-//     make_command(
-//         format!(
-//             "gc --index-uri {} --metastore-uri {} --grace-period 2s",
-//             test_env.index_uri, test_env.metastore_uri
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success()
-//     .stdout(predicate::str::contains(
-//         "No dangling files to garbage collect",
-//     ));
-//     assert_eq!(split_path.exists(), true);
+    let index_id = extract_index_id_from_index_uri(&test_env.index_uri)?;
+    let metastore = MetastoreUriResolver::default()
+        .resolve(&test_env.metastore_uri)
+        .await?;
+    let splits = metastore.list_all_splits(index_id).await?;
+    assert_eq!(splits.len(), 1);
+    make_command(
+        format!(
+            "gc --index-uri {} --metastore-uri {}",
+            test_env.index_uri, test_env.metastore_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "No dangling files to garbage collect",
+    ));
 
-//     // wait for grace period
-//     sleep(Duration::from_secs(3)).await;
-//     make_command(
-//         format!(
-//             "gc --index-uri {} --metastore-uri {} --dry-run --grace-period 2s",
-//             test_env.index_uri, test_env.metastore_uri,
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success()
-//     .stdout(predicate::str::contains(
-//         "The following files will be garbage collected.",
-//     ))
-//     .stdout(predicate::str::contains("/hotcache"))
-//     .stdout(predicate::str::contains("/.manifest"));
-//     assert_eq!(split_path.exists(), true);
+    let index_path = test_env.local_directory_path;
+    let split_filename = quickwit_common::split_file(&splits[0].split_metadata.split_id.as_str());
+    let split_path = index_path.join(&split_filename);
+    assert_eq!(split_path.exists(), true);
 
-//     make_command(
-//         format!(
-//             "gc --index-uri {} --metastore-uri {} --grace-period 2s",
-//             test_env.index_uri, test_env.metastore_uri
-//         )
-//         .as_str(),
-//     )
-//     .assert()
-//     .success()
-//     .stdout(predicate::str::contains(
-//         "Index successfully garbage collected",
-//     ));
-//     assert_eq!(split_path.exists(), false);
+    // The following steps help turn an existing published split into a staged one
+    // without deleting the files.
+    let split_ids = vec![splits[0].split_metadata.split_id.as_str()];
+    metastore
+        .mark_splits_as_deleted(index_id, &split_ids)
+        .await?;
+    metastore.delete_splits(index_id, &split_ids).await?;
+    let mut meta = splits[0].clone();
+    meta.split_metadata.split_state = SplitState::New;
+    metastore.stage_split(index_id, meta).await?;
+    assert_eq!(split_path.exists(), true);
 
-//     Ok(())
-// }
+    make_command(
+        format!(
+            "gc --index-uri {} --metastore-uri {} --grace-period 2s",
+            test_env.index_uri, test_env.metastore_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "No dangling files to garbage collect",
+    ));
+    assert_eq!(split_path.exists(), true);
+
+    // wait for grace period
+    sleep(Duration::from_secs(3)).await;
+    make_command(
+        format!(
+            "gc --index-uri {} --metastore-uri {} --dry-run --grace-period 2s",
+            test_env.index_uri, test_env.metastore_uri,
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "The following files will be garbage collected.",
+    ))
+    .stdout(predicate::str::contains(&split_filename));
+    assert_eq!(split_path.exists(), true);
+
+    make_command(
+        format!(
+            "gc --index-uri {} --metastore-uri {} --grace-period 2s",
+            test_env.index_uri, test_env.metastore_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains(
+        "Index successfully garbage collected",
+    ));
+    assert_eq!(split_path.exists(), false);
+
+    Ok(())
+}
 
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]

@@ -49,7 +49,45 @@ impl From<&SplitMetadataAndFooterOffsets> for FileEntry {
     fn from(split: &SplitMetadataAndFooterOffsets) -> Self {
         FileEntry {
             file_name: quickwit_common::split_file(&split.split_metadata.split_id),
-            file_size_in_bytes: split.footer_offsets.end + 8,
+            file_size_in_bytes: split.footer_offsets.end,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use quickwit_index_config::WikipediaIndexConfig;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_file_entry_from_split() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let index_id = "test-index";
+        let test_sandbox =
+            TestSandbox::create(index_id, Arc::new(WikipediaIndexConfig::new())).await?;
+        test_sandbox.add_documents(vec![
+            serde_json::json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
+        ]).await?;
+        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let file_entries: Vec<FileEntry> = splits
+            .iter()
+            .map(|split_meta| FileEntry::from(split_meta))
+            .collect();
+        assert_eq!(file_entries.len(), 1);
+        let index_meta = test_sandbox.metastore().index_metadata(index_id).await?;
+        let storage = test_sandbox
+            .storage_uri_resolver()
+            .resolve(&index_meta.index_uri)?;
+        for file_entry in file_entries {
+            let split_num_bytes = storage
+                .file_num_bytes(Path::new(file_entry.file_name.as_str()))
+                .await?;
+            assert_eq!(split_num_bytes, file_entry.file_size_in_bytes);
+        }
+        Ok(())
     }
 }

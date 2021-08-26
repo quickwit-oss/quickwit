@@ -49,8 +49,8 @@ use tantivy::DocAddress;
 
 use quickwit_metastore::SplitState;
 use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadataAndFooterOffsets};
-use quickwit_proto::{LeafSearchRequestMetadata, SearchRequest};
 use quickwit_proto::{PartialHit, SearchResult};
+use quickwit_proto::{SearchRequest, SplitAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
 
 pub use crate::client::SearchServiceClient;
@@ -152,11 +152,11 @@ pub async fn single_node_search(
 ) -> Result<SearchResult> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
+    let index_storage = storage_resolver.resolve(&index_metadata.index_uri)?;
     let metas = list_relevant_splits(search_request, metastore).await?;
-    let split_metadata: Vec<_> = metas
+    let split_metadata: Vec<SplitAndFooterOffsets> = metas
         .iter()
-        .map(|meta| LeafSearchRequestMetadata {
+        .map(|meta| SplitAndFooterOffsets {
             split_id: meta.split_metadata.split_id.clone(),
             split_footer_start: meta.footer_offsets.start as u64,
             split_footer_end: meta.footer_offsets.end as u64,
@@ -167,11 +167,11 @@ pub async fn single_node_search(
         index_config,
         search_request,
         &split_metadata[..],
-        storage.clone(),
+        index_storage.clone(),
     )
     .await
     .with_context(|| "leaf_search")?;
-    let fetch_docs_result = fetch_docs(leaf_search_result.partial_hits, storage)
+    let fetch_docs_result = fetch_docs(leaf_search_result.partial_hits, index_storage, &split_metadata)
         .await
         .with_context(|| "fetch_request")?;
     let elapsed = start_instant.elapsed();
@@ -183,7 +183,6 @@ pub async fn single_node_search(
     })
 }
 
-/* Temporarily disabling unit test.
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -389,4 +388,3 @@ mod tests {
         Ok(())
     }
 }
-*/

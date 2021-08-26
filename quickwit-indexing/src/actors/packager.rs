@@ -42,6 +42,17 @@ use tantivy::SegmentId;
 use tantivy::SegmentMeta;
 use tracing::info;
 
+/// The role of the packager is to get an index writer and
+/// produce a split file.
+///
+/// This includes the following steps:
+/// - commit: this step is CPU heavy
+/// - indentifying the list of tags for the splits, and labelling it accordingly
+/// - creating a bundle file
+/// - computing the hotcache
+/// - appending it to the split file.
+///
+/// The split format is described in `internals/split-format.md`
 pub struct Packager {
     uploader_mailbox: Mailbox<PackagedSplit>,
 }

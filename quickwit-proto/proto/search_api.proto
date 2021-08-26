@@ -73,7 +73,7 @@ message SearchRequest {
   // The results with rank [start_offset..start_offset + max_hits) are returned.
   uint64 start_offset = 7;
 
-  // Split tag filter  
+  // Split tag filter
   repeated string tags = 8;
 }
 
@@ -109,10 +109,10 @@ message LeafSearchRequest {
 
   // Index split ids to apply the query on.
   // This ids are resolved from the index_uri defined in the search_request.
-  repeated LeafSearchRequestMetadata split_metadata = 4;
+  repeated SplitAndFooterOffsets split_metadata = 4;
 }
 
-message LeafSearchRequestMetadata {
+message SplitAndFooterOffsets {
   // The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
   uint64 split_footer_start = 1;
   // The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
@@ -178,6 +178,11 @@ message FetchDocsRequest {
 
   // Index ID
   string index_id = 2;
+
+  // Split footer offsets. They are required for fetch docs to
+  // fetch the document content in two reads, when the footer is not
+  // cached.
+  repeated SplitAndFooterOffsets split_metadata = 3;
 }
 
 message FetchDocsResult {
@@ -217,7 +222,7 @@ message SearchStreamRequest {
   // The output format
   OutputFormat output_format = 7;
 
-  // Split tag filter  
+  // Split tag filter
   repeated string tags = 8;
 }
 
@@ -228,7 +233,7 @@ message LeafSearchStreamRequest {
 
   // Index split ids to apply the query on.
   // This ids are resolved from the index_uri defined in the stream request.
-  repeated string split_ids = 2;
+  repeated SplitAndFooterOffsets split_metadata = 2;
 }
 
 
