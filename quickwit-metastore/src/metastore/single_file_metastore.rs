@@ -175,6 +175,67 @@ impl SingleFileMetastore {
 
         Ok(())
     }
+
+    /// Helper to mark a list of splits as published.
+    fn mark_splits_as_published_helper<'a>(
+        split_ids: &[&'a str],
+        metadata_set: &mut MetadataSet,
+    ) -> MetastoreResult<()> {
+        for &split_id in split_ids {
+            // Check for the existence of split.
+            let mut metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
+                MetastoreError::SplitDoesNotExist {
+                    split_id: split_id.to_string(),
+                }
+            })?;
+
+            match metadata.split_metadata.split_state {
+                SplitState::Published => {
+                    // Split is already published. This is fine, we just skip it.
+                    continue;
+                }
+                SplitState::Staged => {
+                    // The split state needs to be updated.
+                    metadata.split_metadata.split_state = SplitState::Published;
+                    metadata.split_metadata.update_timestamp = Utc::now().timestamp();
+                }
+                _ => {
+                    return Err(MetastoreError::SplitIsNotStaged {
+                        split_id: split_id.to_string(),
+                    })
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Helper to mark a list of splits as deleted.
+    fn mark_splits_as_deleted_helper<'a>(
+        split_ids: &[&'a str],
+        metadata_set: &mut MetadataSet,
+    ) -> MetastoreResult<bool> {
+        let mut is_modified = false;
+        for &split_id in split_ids {
+            // Check for the existence of split.
+            let metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
+                MetastoreError::SplitDoesNotExist {
+                    split_id: split_id.to_string(),
+                }
+            })?;
+
+            if metadata.split_metadata.split_state == SplitState::ScheduledForDeletion {
+                // If the split is already scheduled for deletion, this API call returns success.
+                continue;
+            }
+
+            metadata.split_metadata.split_state = SplitState::ScheduledForDeletion;
+            metadata.split_metadata.update_timestamp = Utc::now().timestamp();
+            is_modified = true;
+        }
+
+        Ok(is_modified)
+    }
 }
 
 #[async_trait]
@@ -280,31 +341,25 @@ impl Metastore for SingleFileMetastore {
             .checkpoint
             .try_apply_delta(checkpoint_delta)?;
 
-        for &split_id in split_ids {
-            // Check for the existence of split.
-            let mut metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
-                MetastoreError::SplitDoesNotExist {
-                    split_id: split_id.to_string(),
-                }
-            })?;
+        SingleFileMetastore::mark_splits_as_published_helper(split_ids, &mut metadata_set)?;
+        self.put_index(metadata_set).await?;
+        Ok(())
+    }
 
-            match metadata.split_metadata.split_state {
-                SplitState::Published => {
-                    // Split is already published. This is fine, we just skip it.
-                    continue;
-                }
-                SplitState::Staged => {
-                    // The split state needs to be updated.
-                    metadata.split_metadata.split_state = SplitState::Published;
-                    metadata.split_metadata.update_timestamp = Utc::now().timestamp();
-                }
-                _ => {
-                    return Err(MetastoreError::SplitIsNotStaged {
-                        split_id: split_id.to_string(),
-                    })
-                }
-            }
-        }
+    async fn replace_splits<'a>(
+        &self,
+        index_id: &str,
+        new_split_ids: &[&'a str],
+        replaced_split_ids: &[&'a str],
+    ) -> MetastoreResult<()> {
+        let mut metadata_set = self.get_index(index_id).await?;
+
+        // Try to publish splits.
+        SingleFileMetastore::mark_splits_as_published_helper(new_split_ids, &mut metadata_set)?;
+
+        // Mark splits as deleted.
+        SingleFileMetastore::mark_splits_as_deleted_helper(replaced_split_ids, &mut metadata_set)?;
+
         self.put_index(metadata_set).await?;
         Ok(())
     }
@@ -367,25 +422,8 @@ impl Metastore for SingleFileMetastore {
     ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
 
-        let mut is_modified = false;
-        for &split_id in split_ids {
-            // Check for the existence of split.
-            let metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
-                MetastoreError::SplitDoesNotExist {
-                    split_id: split_id.to_string(),
-                }
-            })?;
-
-            if metadata.split_metadata.split_state == SplitState::ScheduledForDeletion {
-                // If the split is already scheduled for deletion, this API call returns success.
-                continue;
-            }
-
-            metadata.split_metadata.split_state = SplitState::ScheduledForDeletion;
-            metadata.split_metadata.update_timestamp = Utc::now().timestamp();
-            is_modified = true;
-        }
-
+        let is_modified =
+            SingleFileMetastore::mark_splits_as_deleted_helper(split_ids, &mut metadata_set)?;
         if is_modified {
             self.put_index(metadata_set).await?;
         }
