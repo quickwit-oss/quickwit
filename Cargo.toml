@@ -13,5 +13,5 @@ members = [
   "quickwit-serve",
   "quickwit-storage",
   "quickwit-telemetry",
-  "quickwit-index"
+  "quickwit-indexing"
 ]

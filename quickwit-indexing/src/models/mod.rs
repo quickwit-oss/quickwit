@@ -21,6 +21,7 @@
 mod commit_policy;
 mod indexed_split;
 mod indexer_message;
+mod indexing_statistics;
 mod manifest;
 mod packaged_split;
 mod raw_doc_batch;
@@ -30,6 +31,7 @@ mod uploaded_split;
 pub use commit_policy::CommitPolicy;
 pub use indexed_split::IndexedSplit;
 pub use indexer_message::IndexerMessage;
+pub use indexing_statistics::IndexingStatistics;
 pub use manifest::{Manifest, ManifestEntry};
 pub use packaged_split::PackagedSplit;
 pub use raw_doc_batch::RawDocBatch;

@@ -24,8 +24,11 @@ use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
+use std::convert::TryInto;
 use std::fmt;
+use std::num::ParseIntError;
 use std::ops::Range;
+use std::str::FromStr;
 use std::sync::Arc;
 use thiserror::Error;
 use tracing::info;
@@ -88,6 +91,14 @@ impl From<u64> for Position {
     fn from(pos: u64) -> Self {
         let pos_str = format!("{:0>20}", pos);
         Position(Arc::new(pos_str))
+    }
+}
+
+impl TryInto<u64> for Position {
+    type Error = ParseIntError;
+
+    fn try_into(self) -> Result<u64, Self::Error> {
+        FromStr::from_str(self.0.as_str())
     }
 }
 
@@ -156,6 +167,10 @@ pub struct IncompatibleCheckpoint {
 }
 
 impl Checkpoint {
+    pub fn position_for_partition(&self, partition_id: &PartitionId) -> Option<&Position> {
+        self.per_partition.get(partition_id)
+    }
+
     /// Returns an iterator with the reached position for each given partition.
     pub fn iter(&self) -> impl Iterator<Item = (PartitionId, Position)> + '_ {
         self.per_partition
