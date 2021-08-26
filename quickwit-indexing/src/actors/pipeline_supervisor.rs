@@ -219,7 +219,7 @@ impl IndexingPipelineSupervisor {
     async fn process_supervise(&mut self, ctx: &ActorContext<Msg>) -> Result<(), ActorExitStatus> {
         if self.handlers.is_none() {
             if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
-                // only retry n-times.
+                // TODO: only retry n-times.
                 error!(err=?spawn_error, "Error while spawning");
                 self.terminate().await;
             }
