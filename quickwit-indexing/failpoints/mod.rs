@@ -18,16 +18,16 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Fail points are code instrumentations that allow errors and other behavior
+//! Fail points are a form of code instrumentation that allow errors and other behaviors
 //! to be injected dynamically at runtime, primarily for testing purposes. Fail
-//! points are flexible and can be configured to exhibit a variety of behavior,
-//! including panics, early returns, and sleeping. They can be controlled both
+//! points are flexible and can be configured to exhibit a variety of behaviors,
+//! including panics, early returns, and sleeps. They can be controlled both
 //! programmatically and via the environment, and can be triggered conditionally
 //! and probabilistically.
 //!
-//! They rely on global variable, which requires them to be executed in a single
+//! They rely on a global variable, which requires them to be executed in a single
 //! thread.
-//! For this reason, we isolate them from the other unit test and define an
+//! For this reason, we isolate them from the other unit tests and define an
 //! independant binary target.
 //!
 //! They are not executed by default.
