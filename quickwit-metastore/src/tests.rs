@@ -589,6 +589,253 @@ pub async fn test_metastore_publish_splits<MetastoreToTest: Metastore + DefaultF
 }
 
 #[allow(dead_code)]
+pub async fn test_metastore_replace_splits<MetastoreToTest: Metastore + DefaultForTest>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
+    let current_timestamp = Utc::now().timestamp();
+
+    let index_id = "my-index";
+    let index_metadata = IndexMetadata {
+        index_id: index_id.to_string(),
+        index_uri: "ram://indexes/my-index".to_string(),
+        index_config: Arc::new(AllFlattenIndexConfig::default()),
+        checkpoint: Checkpoint::default(),
+    };
+
+    let split_id_1 = "one";
+    let split_metadata_1 = SplitMetadataAndFooterOffsets {
+        footer_offsets: 1000..2000,
+        split_metadata: SplitMetadata {
+            split_id: split_id_1.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 1,
+            size_in_bytes: 2,
+            time_range: None,
+            generation: 1,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
+
+    let split_id_2 = "two";
+    let split_metadata_2 = SplitMetadataAndFooterOffsets {
+        footer_offsets: 1000..2000,
+        split_metadata: SplitMetadata {
+            split_id: split_id_2.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 5,
+            size_in_bytes: 6,
+            time_range: None,
+            generation: 1,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
+
+    let split_id_3 = "three";
+    let split_metadata_3 = SplitMetadataAndFooterOffsets {
+        footer_offsets: 1000..2000,
+        split_metadata: SplitMetadata {
+            split_id: split_id_3.to_string(),
+            split_state: SplitState::Staged,
+            num_records: 5,
+            size_in_bytes: 6,
+            time_range: None,
+            generation: 1,
+            update_timestamp: current_timestamp,
+            ..Default::default()
+        },
+    };
+
+    // Replace splits on a non-existent index
+    {
+        let result = metastore
+            .replace_splits(
+                "non-existent-index",
+                &["non-existent-split-one"],
+                &["non-existent-split-two"],
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
+    }
+
+    // Replace a non-existent split on an index
+    {
+        let result = metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .replace_splits(
+                index_id,
+                &["non-existent-split"],
+                &["non-existent-split-two"],
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+
+        let result = metastore.delete_index(index_id).await.unwrap();
+        assert!(matches!(result, ()));
+    }
+
+    // Replace a publish split with a non existing split
+    {
+        let result = metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .stage_split(index_id, split_metadata_1.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .publish_splits(index_id, &[split_id_1], CheckpointDelta::default())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .replace_splits(index_id, &[split_id_2], &[split_id_1])
+            .await
+            .unwrap_err();
+        assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+
+        let result = metastore.delete_index(index_id).await.unwrap();
+        assert!(matches!(result, ()));
+    }
+
+    // Replace a publish split with a deleted split
+    {
+        let result = metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .stage_split(index_id, split_metadata_1.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+        let result = metastore
+            .stage_split(index_id, split_metadata_2.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .publish_splits(
+                index_id,
+                &[split_id_1, split_id_2],
+                CheckpointDelta::default(),
+            )
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .mark_splits_as_deleted(index_id, &[split_id_2])
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .replace_splits(index_id, &[split_id_2], &[split_id_1])
+            .await
+            .unwrap_err();
+        assert!(matches!(result, MetastoreError::SplitIsNotStaged { .. }));
+
+        let result = metastore.delete_index(index_id).await.unwrap();
+        assert!(matches!(result, ()));
+    }
+
+    // Replace a publish split with mixed splits
+    {
+        let result = metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .stage_split(index_id, split_metadata_1.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .publish_splits(index_id, &[split_id_1], CheckpointDelta::default())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .stage_split(index_id, split_metadata_2.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .replace_splits(index_id, &[split_id_2, split_id_3], &[split_id_1])
+            .await
+            .unwrap_err();
+        assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+
+        let result = metastore.delete_index(index_id).await.unwrap();
+        assert!(matches!(result, ()));
+    }
+
+    // Replace a publish split with staged splits
+    {
+        let result = metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .stage_split(index_id, split_metadata_1.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .publish_splits(index_id, &[split_id_1], CheckpointDelta::default())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .stage_split(index_id, split_metadata_2.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+        let result = metastore
+            .stage_split(index_id, split_metadata_3.clone())
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore
+            .replace_splits(index_id, &[split_id_2, split_id_3], &[split_id_1])
+            .await
+            .unwrap();
+        assert!(matches!(result, ()));
+
+        let result = metastore.delete_index(index_id).await.unwrap();
+        assert!(matches!(result, ()));
+    }
+}
+
+#[allow(dead_code)]
 pub async fn test_metastore_mark_splits_as_deleted<MetastoreToTest: Metastore + DefaultForTest>() {
     let metastore = MetastoreToTest::default_for_test().await;
 
@@ -1656,6 +1903,11 @@ macro_rules! metastore_test_suite {
             #[tokio::test]
             async fn test_metastore_publish_splits() {
                 crate::tests::test_metastore_publish_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_replace_splits() {
+                crate::tests::test_metastore_replace_splits::<$metastore_type>().await;
             }
 
             #[tokio::test]
