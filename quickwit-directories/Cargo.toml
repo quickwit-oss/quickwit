@@ -28,3 +28,7 @@ async-trait = "0.1"
 chrono = "0.4"
 bytes = "1"
 stable_deref_trait = "1"
+
+[dev-dependencies]
+tempfile = '3'
+
