@@ -96,7 +96,7 @@ When creating an index on a local file system, absolute path is enforce. This im
 
 *Description*
 
-Indexes a dataset consisting of newline-delimited JSON objects located at `input-path` or read from *stdin*. The data is appended to the target index specified by `index-uri` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin. Currently, only local datasets are supported. By default, tantivy's indexer will work with a heap of 1 GiB of memory, but this can be set with the `heap-size` options. This does not directly reflects the overall memory usage of `quickwit index`, but doubling this value should give a fair approximation.
+Indexes a dataset consisting of newline-delimited JSON objects located at `input-path` or read from *stdin*. The data is appended to the target index specified by `index-uri` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin. Currently, only local datasets are supported. By default, tantivy's indexer will work with a heap of 1 GiB of memory, but this can be set with the `heap-size` options. This does not directly reflect the overall memory usage of `quickwit index`, but doubling this value should give a fair approximation.
 
 
 *Synopsis*
