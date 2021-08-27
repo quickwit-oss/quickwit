@@ -28,6 +28,7 @@ use crate::models::IndexedSplit;
 use crate::models::PackagedSplit;
 use crate::models::ScratchDirectory;
 use anyhow::Context;
+use fail::fail_point;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
 use quickwit_actors::Mailbox;
@@ -41,6 +42,17 @@ use tantivy::SegmentId;
 use tantivy::SegmentMeta;
 use tracing::info;
 
+/// The role of the packager is to get an index writer and
+/// produce a split file.
+///
+/// This includes the following steps:
+/// - commit: this step is CPU heavy
+/// - indentifying the list of tags for the splits, and labelling it accordingly
+/// - creating a bundle file
+/// - computing the hotcache
+/// - appending it to the split file.
+///
+/// The split format is described in `internals/split-format.md`
 pub struct Packager {
     uploader_mailbox: Mailbox<PackagedSplit>,
 }
@@ -62,7 +74,7 @@ impl Actor for Packager {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(1)
+        QueueCapacity::Bounded(0)
     }
 }
 
@@ -199,6 +211,17 @@ fn create_packaged_split(
         .map(|segment_meta| segment_meta.id())
         .collect();
 
+    // extract tag values from `_tags` special fields
+    let mut tags = vec![];
+    let index_reader = split.index.reader()?;
+    for reader in index_reader.searcher().segment_readers() {
+        let inv_index = reader.inverted_index(split.tags_field)?;
+        let mut terms_streamer = inv_index.terms().stream()?;
+        while let Some((term_data, _)) = terms_streamer.next() {
+            tags.push(String::from_utf8_lossy(term_data).to_string());
+        }
+    }
+
     let hotcache_offset_start = split_file.written_bytes();
     build_hotcache(&split.split_scratch_directory, &mut split_file)?;
     let hotcache_offset_end = split_file.written_bytes();
@@ -218,6 +241,7 @@ fn create_packaged_split(
         segment_ids,
         time_range: split.time_range,
         size_in_bytes: split.docs_size_in_bytes,
+        tags,
         footer_offsets: footer_start..footer_end,
     };
     Ok(packaged_split)
@@ -229,10 +253,12 @@ impl SyncActor for Packager {
         mut split: IndexedSplit,
         ctx: &ActorContext<IndexedSplit>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        fail_point!("packager:before");
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
         let packaged_split = create_packaged_split(&segment_metas[..], split)?;
         ctx.send_message_blocking(&self.uploader_mailbox, packaged_split)?;
+        fail_point!("packager:after");
         Ok(())
     }
 }
@@ -303,6 +329,7 @@ mod tests {
             index_writer,
             split_scratch_directory,
             checkpoint_delta: CheckpointDelta::from(10..20),
+            tags_field: tantivy::schema::Field::from_field_id(0),
         };
         Ok(indexed_split)
     }

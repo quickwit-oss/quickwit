@@ -20,6 +20,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use crate::default_index_config::TAGS_FIELD_NAME;
 use crate::DocParsingError;
 use dyn_clone::clone_trait_object;
 use dyn_clone::DynClone;
@@ -102,6 +103,16 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     fn timestamp_field_name(&self) -> Option<String> {
         None
     }
+
+    /// Returns the tag field names
+    fn tag_field_names(&self) -> Vec<String> {
+        vec![]
+    }
+
+    /// Returns the special tags field if any.
+    fn tags_field(&self, split_schema: &Schema) -> Option<Field> {
+        split_schema.get_field(TAGS_FIELD_NAME)
+    }
 }
 
 clone_trait_object!(IndexConfig);
@@ -119,6 +130,7 @@ mod tests {
         {
             "type": "default",
             "default_search_fields": [],
+            "tag_fields": [],
             "field_mappings": []
         }"#;
 

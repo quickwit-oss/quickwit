@@ -47,10 +47,11 @@ mod tests;
 mod universe;
 
 pub use self::actor::ActorContext;
+pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError};
 pub use self::mailbox::{create_mailbox, create_test_mailbox, Mailbox};
 pub use actor::{Actor, ActorExitStatus};
-pub use actor_handle::ActorHandle;
+pub use actor_handle::{ActorHandle, Health, Supervisable};
 pub use async_actor::AsyncActor;
 pub use kill_switch::KillSwitch;
 pub use observation::{Observation, ObservationType};
@@ -63,7 +64,7 @@ pub use universe::Universe;
 /// If an actor does not advertise a progress within an interval of duration `HEARTBEAT`,
 /// its supervisor will consider it as blocked and will proceed to kill it, as well
 /// as all of the actors all the actors that share the killswitch.
-pub const HEARTBEAT: Duration = Duration::from_secs(2);
+pub const HEARTBEAT: Duration = Duration::from_secs(1);
 
 pub fn message_timeout() -> Duration {
     HEARTBEAT.mul_f32(0.2f32)

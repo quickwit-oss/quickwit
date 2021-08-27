@@ -51,7 +51,7 @@ impl fmt::Debug for ScratchDirectory {
     }
 }
 
-pub struct Inner {
+struct Inner {
     // The goal of this handle to _parent is just to ensure that it does not get deleted before
     // its child.
     _parent: Option<Arc<Inner>>,

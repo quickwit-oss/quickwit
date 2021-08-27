@@ -23,6 +23,7 @@ use crate::models::RawDocBatch;
 use crate::source::Source;
 use crate::source::SourceContext;
 use crate::source::TypedSourceFactory;
+use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::ActorExitStatus;
 use quickwit_actors::Mailbox;
@@ -30,10 +31,14 @@ use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::checkpoint::PartitionId;
 use quickwit_metastore::checkpoint::Position;
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
 use std::io;
+use std::io::SeekFrom;
 use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncRead;
+use tokio::io::AsyncSeekExt;
 use tokio::io::BufReader;
 use tracing::info;
 
@@ -50,7 +55,7 @@ pub struct FileSourceCounters {
 pub struct FileSource {
     params: FileSourceParams,
     counters: FileSourceCounters,
-    file: BufReader<File>,
+    reader: BufReader<Box<dyn AsyncRead + Send + Sync + Unpin>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -72,10 +77,10 @@ impl Source for FileSource {
         while self.counters.current_offset < limit_num_bytes {
             let mut doc_line = String::new();
             let num_bytes = self
-                .file
+                .reader
                 .read_line(&mut doc_line)
                 .await
-                .map_err(|io_err: io::Error| ActorExitStatus::Failure(anyhow::anyhow!(io_err)))?;
+                .map_err(|io_err: io::Error| anyhow::anyhow!(io_err))?;
             if num_bytes == 0 {
                 reached_eof = true;
                 break;
@@ -86,11 +91,14 @@ impl Source for FileSource {
         }
         if !docs.is_empty() {
             let mut checkpoint_delta = CheckpointDelta::default();
-            checkpoint_delta.add_partition(
-                PartitionId::from(self.params.filepath.to_string_lossy().to_string()),
-                Position::from(self.counters.previous_offset),
-                Position::from(self.counters.current_offset),
-            );
+            // TODO the filepath should actually probably be part of the checkpoint.
+            if let Some(filepath) = self.params.filepath.as_ref() {
+                checkpoint_delta.add_partition(
+                    PartitionId::from(filepath.to_string_lossy().to_string()),
+                    Position::from(self.counters.previous_offset),
+                    Position::from(self.counters.current_offset),
+                );
+            }
             let raw_doc_batch = RawDocBatch {
                 docs,
                 checkpoint_delta,
@@ -113,9 +121,9 @@ impl Source for FileSource {
 }
 
 // TODO handle log directories.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct FileSourceParams {
-    pub filepath: PathBuf,
+    pub filepath: Option<PathBuf>, //< If None read from stdin.
 }
 
 pub struct FileSourceFactory;
@@ -129,13 +137,38 @@ impl TypedSourceFactory for FileSourceFactory {
     // TODO handle checkpoint for files.
     async fn typed_create_source(
         mut params: FileSourceParams,
-        _checkpoint: quickwit_metastore::checkpoint::Checkpoint,
+        checkpoint: quickwit_metastore::checkpoint::Checkpoint,
     ) -> anyhow::Result<FileSource> {
-        params.filepath = std::fs::canonicalize(params.filepath)?;
-        let file = File::open(&params.filepath).await?;
+        params.filepath = if let Some(filepath) = params.filepath {
+            let canonical_path = std::fs::canonicalize(&filepath)
+                .with_context(|| format!("Source file `{}`.", filepath.display()))?;
+            Some(canonical_path)
+        } else {
+            None
+        };
+        let mut offset = 0;
+        let reader: Box<dyn AsyncRead + Send + Sync + Unpin> =
+            if let Some(filepath) = &params.filepath {
+                let mut file = File::open(&filepath)
+                    .await
+                    .with_context(|| format!("Source file `{}`", filepath.display()))?;
+                let partition_id = PartitionId::from(filepath.to_string_lossy().to_string());
+                if let Some(position) = checkpoint.position_for_partition(&partition_id).cloned() {
+                    offset = position.try_into()?;
+                    file.seek(SeekFrom::Start(offset)).await?;
+                }
+                Box::new(file)
+            } else {
+                // we cannot use the checkpoint.
+                Box::new(tokio::io::stdin())
+            };
         let file_source = FileSource {
-            counters: FileSourceCounters::default(),
-            file: BufReader::new(file),
+            counters: FileSourceCounters {
+                previous_offset: offset,
+                current_offset: offset,
+                num_lines_processed: 0,
+            },
+            reader: BufReader::new(reader),
             params,
         };
         Ok(file_source)
@@ -159,7 +192,7 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let params = FileSourceParams {
-            filepath: PathBuf::from("data/test_corpus.json"),
+            filepath: Some(PathBuf::from("data/test_corpus.json")),
         };
         let file_source =
             FileSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
@@ -167,7 +200,8 @@ mod tests {
             source: Box::new(file_source),
             batch_sink: mailbox,
         };
-        let (_file_source_mailbox, file_source_handle) = universe.spawn(file_source_actor);
+        let (_file_source_mailbox, file_source_handle) =
+            universe.spawn_async_actor(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(
@@ -198,14 +232,15 @@ mod tests {
         }
         temp_file.flush()?;
         let params = FileSourceParams {
-            filepath: temp_path.as_path().to_path_buf(),
+            filepath: Some(temp_path.as_path().to_path_buf()),
         };
         let source = FileSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
         let file_source_actor = SourceActor {
             source: Box::new(source),
             batch_sink: mailbox,
         };
-        let (_file_source_mailbox, file_source_handle) = universe.spawn(file_source_actor);
+        let (_file_source_mailbox, file_source_handle) =
+            universe.spawn_async_actor(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(
@@ -249,5 +284,55 @@ mod tests {
         } else {
             None
         }
+    }
+
+    #[tokio::test]
+    async fn test_file_source_resume_from_checkpoint() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let (mailbox, inbox) = create_test_mailbox();
+        use tempfile::NamedTempFile;
+        let mut temp_file = NamedTempFile::new()?;
+        let temp_path = temp_file.path().to_path_buf();
+        for i in 0..100 {
+            temp_file.write_all(format!("{}\n", i).as_bytes())?;
+        }
+        temp_file.flush()?;
+        let params = FileSourceParams {
+            filepath: Some(temp_path.as_path().to_path_buf()),
+        };
+        let mut checkpoint = Checkpoint::default();
+        let mut checkpoint_delta = CheckpointDelta::default();
+        let partition_id = PartitionId::from(
+            temp_file
+                .path()
+                .canonicalize()?
+                .to_string_lossy()
+                .to_string(),
+        );
+        checkpoint_delta.add_partition(partition_id, Position::from(0), Position::from(4));
+        checkpoint.try_apply_delta(checkpoint_delta)?;
+        let source = FileSourceFactory::typed_create_source(params, checkpoint).await?;
+        let file_source_actor = SourceActor {
+            source: Box::new(source),
+            batch_sink: mailbox,
+        };
+        let (_file_source_mailbox, file_source_handle) =
+            universe.spawn_async_actor(file_source_actor);
+        let (actor_termination, counters) = file_source_handle.join().await;
+        assert!(actor_termination.is_success());
+        assert_eq!(
+            counters,
+            serde_json::json!({
+                "previous_offset": 290u64,
+                "current_offset": 290u64,
+                "num_lines_processed": 98
+            })
+        );
+        let indexer_msgs = inbox.drain_available_message_for_test();
+        assert!(
+            matches!(&indexer_msgs[0], IndexerMessage::Batch(raw_batch) if raw_batch.docs[0].starts_with("2\n"))
+        );
+        Ok(())
     }
 }

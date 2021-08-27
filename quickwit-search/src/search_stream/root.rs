@@ -29,6 +29,7 @@ use itertools::Itertools;
 use quickwit_metastore::SplitMetadataAndFooterOffsets;
 use quickwit_proto::LeafSearchStreamRequest;
 use quickwit_proto::SearchStreamRequest;
+use quickwit_proto::SplitIdAndFooterOffsets;
 use tracing::*;
 
 use quickwit_metastore::Metastore;
@@ -68,13 +69,17 @@ pub async fn root_search_stream(
 
     let mut handles = Vec::new();
     for (mut search_client, jobs) in assigned_leaf_search_jobs {
-        let split_ids: Vec<String> = jobs
+        let split_metadata_list: Vec<SplitIdAndFooterOffsets> = jobs
             .iter()
-            .map(|job| job.metadata.split_metadata.split_id.clone())
+            .map(|job| SplitIdAndFooterOffsets {
+                split_id: job.metadata.split_metadata.split_id.clone(),
+                split_footer_start: job.metadata.footer_offsets.start,
+                split_footer_end: job.metadata.footer_offsets.end,
+            })
             .collect();
         let leaf_request = LeafSearchStreamRequest {
             request: Some(search_stream_request.clone()),
-            split_ids: split_ids.clone(),
+            split_metadata: split_metadata_list.clone(),
         };
         debug!(leaf_request=?leaf_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search stream.");
         let handle = tokio::spawn(async move {
@@ -83,14 +88,20 @@ pub async fn root_search_stream(
                 .await
                 .map_err(|search_error| NodeSearchError {
                     search_error,
-                    split_ids: split_ids.clone(),
+                    split_ids: split_metadata_list
+                        .iter()
+                        .map(|split| split.split_id.clone())
+                        .collect(),
                 })?;
 
             let mut leaf_bytes: Vec<Bytes> = Vec::new();
             while let Some(leaf_result) = receiver.next().await {
                 let leaf_data = leaf_result.map_err(|status| NodeSearchError {
                     search_error: parse_grpc_error(&status),
-                    split_ids: split_ids.clone(),
+                    split_ids: split_metadata_list
+                        .iter()
+                        .map(|split| split.split_id.clone())
+                        .collect(),
                 })?;
                 leaf_bytes.push(Bytes::from(leaf_data.data));
             }

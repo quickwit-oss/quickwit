@@ -28,18 +28,16 @@ mod quickwit_cache;
 mod rest;
 
 use quickwit_cache::QuickwitCache;
-use std::collections::HashMap;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use anyhow::Context;
 use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use tracing::debug;
 
 use quickwit_cluster::cluster::{read_host_key, Cluster};
 use quickwit_cluster::service::ClusterServiceImpl;
-use quickwit_metastore::{Metastore, MetastoreUriResolver};
+use quickwit_metastore::MetastoreUriResolver;
 use quickwit_search::{
     http_addr_to_grpc_addr, http_addr_to_swim_addr, SearchClientPool, SearchServiceImpl,
 };
@@ -56,46 +54,6 @@ use crate::grpc_adapter::cluster_adapter::GrpcClusterAdapter;
 use crate::grpc_adapter::search_adapter::GrpcSearchAdapter;
 
 use crate::rest::start_rest_service;
-
-async fn get_from_cache_or_create_metastore(
-    metastore_cache: &mut HashMap<String, Arc<dyn Metastore>>,
-    metastore_uri_resolver: &MetastoreUriResolver,
-    metastore_uri: &str,
-) -> anyhow::Result<Arc<dyn Metastore>> {
-    if let Some(metastore_in_cache) = metastore_cache.get(metastore_uri) {
-        return Ok(metastore_in_cache.clone());
-    }
-    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
-    metastore_cache.insert(metastore_uri.to_string(), metastore.clone());
-    Ok(metastore)
-}
-
-async fn create_index_to_metastore_router(
-    metastore_resolver: &MetastoreUriResolver,
-    index_uris: &[String],
-) -> anyhow::Result<HashMap<String, Arc<dyn Metastore>>> {
-    let mut index_to_metastore_router = HashMap::default();
-    let mut metastore_cache: HashMap<String, Arc<dyn Metastore>> = HashMap::default();
-    for index_uri in index_uris {
-        let (metastore_uri, index_id) =
-            quickwit_common::extract_metastore_uri_and_index_id_from_index_uri(index_uri)?;
-        if index_to_metastore_router.contains_key(index_id) {
-            anyhow::bail!("Index id `{}` appears twice.", index_id);
-        }
-        let metastore = get_from_cache_or_create_metastore(
-            &mut metastore_cache,
-            metastore_resolver,
-            metastore_uri,
-        )
-        .await?;
-        metastore
-            .list_all_splits(index_id)
-            .await
-            .with_context(|| format!("Index `{}` was not found", index_uri))?;
-        index_to_metastore_router.insert(index_id.to_string(), metastore.clone());
-    }
-    Ok(index_to_metastore_router)
-}
 
 fn display_help_message(
     rest_socket_addr: SocketAddr,
@@ -149,14 +107,9 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
     }))
     .await;
     let storage_resolver = storage_uri_resolver();
-    let metastore_resolver = MetastoreUriResolver::with_storage_resolver(storage_resolver.clone());
-    let metastore_router =
-        create_index_to_metastore_router(&metastore_resolver, &args.index_uris).await?;
-    let example_index_name = metastore_router
-        .keys()
-        .next()
-        .with_context(|| "No index available.")?
-        .to_string();
+    let metastore_resolver = MetastoreUriResolver::default();
+    let example_index_name = "my_index".to_string();
+    let metastore = metastore_resolver.resolve(&args.metastore_uri).await?;
 
     let host_key = read_host_key(args.host_key_path.as_path())?;
     let swim_addr = http_addr_to_swim_addr(args.rest_socket_addr);
@@ -176,7 +129,7 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
     let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
 
     let search_service = Arc::new(SearchServiceImpl::new(
-        metastore_router,
+        metastore,
         storage_resolver,
         client_pool,
     ));

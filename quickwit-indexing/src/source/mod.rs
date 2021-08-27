@@ -159,6 +159,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
     })
 }
 
+#[derive(Clone)]
 pub struct SourceConfig {
     pub id: String,
     pub source_type: String,

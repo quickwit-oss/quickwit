@@ -29,9 +29,13 @@ use async_trait::async_trait;
 use chrono::Utc;
 use tokio::sync::RwLock;
 
+use quickwit_storage::StorageResolverError;
+use quickwit_storage::StorageUriResolver;
 use quickwit_storage::{PutPayload, Storage, StorageErrorKind};
 
 use crate::checkpoint::CheckpointDelta;
+use crate::MetastoreFactory;
+use crate::MetastoreResolverError;
 use crate::{
     IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreResult, SplitMetadata,
     SplitMetadataAndFooterOffsets, SplitState,
@@ -50,7 +54,7 @@ fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
     left.end <= *right.start() || *right.end() < left.start
 }
 
-/// Single file meta store implementation.
+/// Single file metastore implementation.
 pub struct SingleFileMetastore {
     storage: Arc<dyn Storage>,
     cache: Arc<RwLock<HashMap<String, MetadataSet>>>,
@@ -58,7 +62,8 @@ pub struct SingleFileMetastore {
 
 #[allow(dead_code)]
 impl SingleFileMetastore {
-    #[cfg(test)]
+    /// Create a SingleFileMetastore for tests.
+    #[doc(hidden)]
     pub fn for_test() -> Self {
         use quickwit_storage::RamStorage;
         SingleFileMetastore::new(Arc::new(RamStorage::default()))
@@ -74,24 +79,24 @@ impl SingleFileMetastore {
 
     /// Checks whether the index exists in storage.
     async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
-        let index_path = meta_path(index_id);
+        let metadata_path = meta_path(index_id);
 
-        let exists =
-            self.storage
-                .exists(&index_path)
-                .await
-                .map_err(|storage_err| match storage_err.kind() {
-                    StorageErrorKind::DoesNotExist => MetastoreError::IndexDoesNotExist {
-                        index_id: index_id.to_string(),
-                    },
-                    StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
-                        message: "The request credentials do not allow this operation.".to_string(),
-                    },
-                    _ => MetastoreError::InternalError {
-                        message: "Failed to check index file existence.".to_string(),
-                        cause: anyhow::anyhow!(storage_err),
-                    },
-                })?;
+        let exists = self
+            .storage
+            .exists(&metadata_path)
+            .await
+            .map_err(|storage_err| match storage_err.kind() {
+                StorageErrorKind::DoesNotExist => MetastoreError::IndexDoesNotExist {
+                    index_id: index_id.to_string(),
+                },
+                StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
+                    message: "The request credentials do not allow this operation.".to_string(),
+                },
+                _ => MetastoreError::InternalError {
+                    message: "Failed to check index file existence.".to_string(),
+                    cause: anyhow::anyhow!(storage_err),
+                },
+            })?;
 
         Ok(exists)
     }
@@ -110,10 +115,10 @@ impl SingleFileMetastore {
         }
 
         // It is not in the cache yet, let's fetch it from the storage...
-        let index_path = meta_path(index_id);
+        let metadata_path = meta_path(index_id);
         let content = self
             .storage
-            .get_all(&index_path)
+            .get_all(&metadata_path)
             .await
             .map_err(|storage_err| match storage_err.kind() {
                 StorageErrorKind::DoesNotExist => MetastoreError::IndexDoesNotExist {
@@ -149,11 +154,11 @@ impl SingleFileMetastore {
         })?;
 
         let index_id = metadata_set.index.index_id.clone();
-        let index_path = meta_path(&index_id);
+        let metadata_path = meta_path(&index_id);
 
         // Put data back into storage.
         self.storage
-            .put(&index_path, PutPayload::from(content))
+            .put(&metadata_path, PutPayload::from(content))
             .await
             .map_err(|storage_err| match storage_err.kind() {
                 StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
@@ -204,11 +209,11 @@ impl Metastore for SingleFileMetastore {
             });
         }
 
-        let index_path = meta_path(index_id);
+        let metadata_path = meta_path(index_id);
 
         // Delete metadata set from storage.
         self.storage
-            .delete(&index_path)
+            .delete(&metadata_path)
             .await
             .map_err(|storage_err| match storage_err.kind() {
                 StorageErrorKind::DoesNotExist => MetastoreError::IndexDoesNotExist {
@@ -434,16 +439,64 @@ impl Metastore for SingleFileMetastore {
     }
 }
 
+/// A single file metastore factory
+#[derive(Clone)]
+pub struct SingleFileMetastoreFactory {
+    storage_uri_resolver: StorageUriResolver,
+}
+
+impl Default for SingleFileMetastoreFactory {
+    fn default() -> Self {
+        SingleFileMetastoreFactory {
+            storage_uri_resolver: StorageUriResolver::default(),
+        }
+    }
+}
+
+#[async_trait]
+impl MetastoreFactory for SingleFileMetastoreFactory {
+    async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+        let storage = self
+            .storage_uri_resolver
+            .resolve(uri)
+            .map_err(|err| match err {
+                StorageResolverError::InvalidUri { message } => {
+                    MetastoreResolverError::InvalidUri(message)
+                }
+                StorageResolverError::ProtocolUnsupported { protocol } => {
+                    MetastoreResolverError::ProtocolUnsupported(protocol)
+                }
+                StorageResolverError::FailedToOpenStorage { kind, message } => {
+                    MetastoreResolverError::FailedToOpenMetastore(MetastoreError::InternalError {
+                        message: "Failed to open storage hosting the single file metastore."
+                            .to_string(),
+                        cause: anyhow::anyhow!("StorageError {:?}: {}.", kind, message),
+                    })
+                }
+            })?;
+
+        Ok(Arc::new(SingleFileMetastore::new(storage)))
+    }
+}
+
+#[cfg(test)]
+#[async_trait]
+impl crate::tests::DefaultForTest for SingleFileMetastore {
+    async fn default_for_test() -> Self {
+        use quickwit_storage::RamStorage;
+        SingleFileMetastore::new(Arc::new(RamStorage::default()))
+    }
+}
+
+metastore_test_suite!(crate::SingleFileMetastore);
+
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use std::sync::Arc;
 
     use quickwit_index_config::AllFlattenIndexConfig;
-    use quickwit_storage::{MockStorage, StorageErrorKind};
 
     use crate::checkpoint::Checkpoint;
-    use crate::tests::*;
     use crate::{IndexMetadata, Metastore, MetastoreError, SingleFileMetastore};
 
     #[tokio::test]
@@ -523,86 +576,5 @@ mod tests {
                 MetastoreError::IndexDoesNotExist { .. }
             ));
         }
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_create_index() {
-        let metastore = SingleFileMetastore::for_test();
-        test_metastore_create_index(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_delete_index() {
-        let metastore = SingleFileMetastore::for_test();
-        test_metastore_delete_index(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_index_metadata() {
-        let metastore = SingleFileMetastore::for_test();
-        test_metastore_index_metadata(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_stage_split() {
-        let metastore = SingleFileMetastore::for_test();
-        test_metastore_stage_split(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_publish_splits() {
-        let metastore = SingleFileMetastore::for_test();
-        test_metastore_publish_splits(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_mark_splits_as_deleted() {
-        let metastore = SingleFileMetastore::for_test();
-        test_metastore_mark_splits_as_deleted(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_delete_splits() {
-        let metastore = SingleFileMetastore::for_test();
-        test_metastore_delete_splits(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_list_all_splits() {
-        let metastore = SingleFileMetastore::for_test();
-        test_metastore_list_all_splits(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_list_splits() {
-        let metastore = SingleFileMetastore::for_test();
-        test_metastore_list_splits(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_split_update_timestamp() {
-        let metastore = SingleFileMetastore::for_test();
-        test_metastore_split_update_timestamp(&metastore).await;
-    }
-
-    #[tokio::test]
-    async fn test_single_file_metastore_storage_failing() {
-        // The single file metastore should not update its internal state if the storage fails.
-        let mut mock_storage = MockStorage::default();
-
-        mock_storage // remove this if we end up changing the semantics of create.
-            .expect_exists()
-            .returning(|_| Ok(false));
-        mock_storage.expect_put().times(2).returning(|uri, _| {
-            assert_eq!(uri, Path::new("my-index/quickwit.json"));
-            Ok(())
-        });
-        mock_storage.expect_put().times(1).returning(|_uri, _| {
-            Err(StorageErrorKind::Io
-                .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
-        });
-
-        let metastore = SingleFileMetastore::new(Arc::new(mock_storage));
-        test_metastore_storage_failing(&metastore).await;
     }
 }

@@ -16,6 +16,11 @@ subcommands:
                 long: index-config-path
                 value_name: INDEX CONFIG
                 required: true
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
+                required: true
             - overwrite:
                 help: Overwrites pre-existing index
                 long: overwrite
@@ -45,6 +50,11 @@ subcommands:
                 long: heap-size
                 value_name: HEAP SIZE
                 default_value: 2G
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
+                required: true
             - overwrite:
                 help: Overwrites pre-existing index
                 long: overwrite
@@ -89,6 +99,11 @@ subcommands:
                 long: tags
                 value_name: TAG
                 multiple: true
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
+                required: true
     - gc:
         about: Garbage collects danglings files from an index
         args:
@@ -102,6 +117,11 @@ subcommands:
                 long: grace-period
                 value_name: GRACE PERIOD
                 default_value: '1h'
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
+                required: true
             - dry-run:
                 help: Executes the command in dry run mode and displays the list of files to remove
                 long: dry-run
@@ -112,6 +132,11 @@ subcommands:
                 help: Location of the target index
                 long: index-uri
                 value_name: INDEX URI
+                required: true
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
                 required: true
             - dry-run:
                 help: Executes the command in dry run mode and displays the list of files to delete
@@ -147,3 +172,8 @@ subcommands:
                 value_name: PEER SEED
                 multiple: true
                 use_delimiter: true
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
+                required: true

@@ -23,15 +23,13 @@ use crate::SearchError;
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
-use quickwit_common::HOTCACHE_FILENAME;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_index_config::IndexConfig;
-use quickwit_proto::{
-    LeafSearchRequestMetadata, LeafSearchResult, SearchRequest, SplitSearchError,
-};
-use quickwit_storage::Storage;
+use quickwit_proto::{LeafSearchResult, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError};
+use quickwit_storage::{BundleStorage, Storage};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::convert::TryInto;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tantivy::{collector::Collector, query::Query, Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
@@ -39,12 +37,33 @@ use tokio::task::spawn_blocking;
 /// Opens a `tantivy::Index` for the given split.
 ///
 /// The resulting index uses a dynamic and a static cache.
-pub(crate) async fn open_index(split_storage: Arc<dyn Storage>) -> anyhow::Result<Index> {
-    let hotcache_bytes = split_storage
-        .get_all(Path::new(HOTCACHE_FILENAME))
+pub(crate) async fn open_index(
+    index_storage: Arc<dyn Storage>,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
+) -> anyhow::Result<Index> {
+    let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
+    let mut footer_data = index_storage
+        .get_slice(
+            &split_file,
+            split_and_footer_offsets.split_footer_start as usize
+                ..split_and_footer_offsets.split_footer_end as usize,
+        )
         .await
-        .with_context(|| format!("Failed to fetch hotcache from {}", split_storage.uri()))?;
-    let directory = StorageDirectory::new(split_storage);
+        .with_context(|| {
+            format!(
+                "Failed to fetch hotcache and footer from {} for split `{}`",
+                index_storage.uri(),
+                split_and_footer_offsets.split_id
+            )
+        })?;
+    let hotcache_len_bytes = footer_data.split_off(footer_data.len() - 8);
+    let hotcache_num_bytes =
+        u64::from_le_bytes((&*hotcache_len_bytes).try_into().unwrap()) as usize;
+
+    let hotcache_bytes = footer_data.split_off(footer_data.len() - hotcache_num_bytes);
+
+    let bundle = BundleStorage::new(index_storage, split_file, &footer_data)?;
+    let directory = StorageDirectory::new(Arc::new(bundle));
     let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
     let hot_directory = HotDirectory::open(caching_directory, hotcache_bytes)?;
     let index = Index::open(hot_directory)?;
@@ -127,13 +146,13 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
 
 /// Apply a leaf search on a single split.
 async fn leaf_search_single_split(
-    request_metadata: LeafSearchRequestMetadata,
-    index_config: Arc<dyn IndexConfig>,
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
+    split: SplitIdAndFooterOffsets,
+    index_config: Arc<dyn IndexConfig>,
 ) -> crate::Result<LeafSearchResult> {
-    let split_id = request_metadata.split_id.to_string();
-    let index = open_index(storage).await?;
+    let split_id = split.split_id.to_string();
+    let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
     let quickwit_collector = make_collector_for_split(
         split_id,
@@ -160,28 +179,25 @@ async fn leaf_search_single_split(
 /// The root will be in charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
 pub async fn leaf_search(
-    index_config: Arc<dyn IndexConfig>,
     request: &SearchRequest,
-    split_metadata: &[LeafSearchRequestMetadata],
-    storage: Arc<dyn Storage>,
+    index_storage: Arc<dyn Storage>,
+    splits: &[SplitIdAndFooterOffsets],
+    index_config: Arc<dyn IndexConfig>,
 ) -> Result<LeafSearchResult, SearchError> {
-    let leaf_search_single_split_futures: Vec<_> = split_metadata
+    let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
-        .map(|split_metadata| {
-            let split_storage: Arc<dyn Storage> = quickwit_storage::add_prefix_to_storage(
-                storage.clone(),
-                split_metadata.split_id.to_string(),
-            );
+        .map(|split| {
             let index_config_clone = index_config.clone();
+            let index_storage_clone = index_storage.clone();
             async move {
                 leaf_search_single_split(
-                    split_metadata.clone(),
-                    index_config_clone,
                     request,
-                    split_storage,
+                    index_storage_clone,
+                    split.clone(),
+                    index_config_clone,
                 )
                 .await
-                .map_err(|err| (split_metadata.split_id.to_string(), err))
+                .map_err(|err| (split.split_id.clone(), err))
             }
         })
         .collect();

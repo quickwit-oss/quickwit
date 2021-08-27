@@ -18,20 +18,21 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-mod commit_policy;
-mod indexed_split;
-mod indexer_message;
-mod manifest;
-mod packaged_split;
-mod raw_doc_batch;
-mod scratch_directory;
-mod uploaded_split;
+use crate::models::ScratchDirectory;
+use quickwit_metastore::checkpoint::CheckpointDelta;
+use std::ops::{Range, RangeInclusive};
+use tantivy::SegmentId;
 
-pub use commit_policy::CommitPolicy;
-pub use indexed_split::IndexedSplit;
-pub use indexer_message::IndexerMessage;
-pub use manifest::{Manifest, ManifestEntry};
-pub use packaged_split::PackagedSplit;
-pub use raw_doc_batch::RawDocBatch;
-pub use scratch_directory::ScratchDirectory;
-pub use uploaded_split::UploadedSplit;
+#[derive(Debug)]
+pub struct PackagedSplit {
+    pub split_id: String,
+    pub index_id: String,
+    pub checkpoint_delta: CheckpointDelta,
+    pub time_range: Option<RangeInclusive<i64>>,
+    pub size_in_bytes: u64,
+    pub footer_offsets: Range<u64>,
+    pub segment_ids: Vec<SegmentId>,
+    pub split_scratch_directory: ScratchDirectory,
+    pub num_docs: u64,
+    pub tags: Vec<String>,
+}

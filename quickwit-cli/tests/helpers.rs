@@ -38,6 +38,7 @@ const DEFAULT_INDEX_CONFIG: &str = r#"{
     "store_source": true,
     "default_search_fields": ["event"], // Used when no field is specified in your query. 
     "timestamp_field": "ts",
+    "tag_fields": ["device", "city"],
     "field_mappings": [
         {
             "name": "event",
@@ -52,15 +53,25 @@ const DEFAULT_INDEX_CONFIG: &str = r#"{
             "name": "ts",
             "type": "i64",
             "fast": /* timestamp field should be fast*/ true
+        },
+        {
+            "name": "device",
+            "type": "text",
+            "stored": false
+        },
+        {
+            "name": "city",
+            "type": "text",
+            "stored": false
         }
     ]
 }"#;
 
-const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 2}
-{"event": "bar", "level": "error", "ts": 3}
-{"event": "baz", "level": "warning", "ts": 9}
-{"event": "buz", "level": "debug", "ts": 12}
-{"event": "biz", "level": "info", "ts": 13}"#;
+const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 2, "device": "rpi", "city": "tokio"}
+{"event": "bar", "level": "error", "ts": 3, "device": "rpi", "city": "paris"}
+{"event": "baz", "level": "warning", "ts": 9, "device": "fbit", "city": "london"}
+{"event": "buz", "level": "debug", "ts": 12, "device": "rpi", "city": "paris"}
+{"event": "biz", "level": "info", "ts": 13, "device": "fbit", "city": "paris"}"#;
 
 const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "https://wiki.com?id=10"}
 {"body": "bar", "title": "shimray", "url": "https://wiki.com?id=12"}
@@ -107,6 +118,8 @@ pub struct TestEnv {
     pub index_uri: String,
     /// Resource files needed for the test.
     pub resource_files: HashMap<&'static str, PathBuf>,
+    /// The metastore uri.
+    pub metastore_uri: String,
 }
 
 pub enum TestStorageType {
@@ -117,6 +130,7 @@ pub enum TestStorageType {
 /// Creates all necessary artifacts in a test environement.
 pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
     let local_directory = tempdir()?;
+
     let (local_directory_path, index_uri) = match storage_type {
         TestStorageType::LocalFileSystem => {
             let local_path =
@@ -142,10 +156,16 @@ pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv>
     resource_files.insert("logs", log_docs_path);
     resource_files.insert("wiki", wikipedia_docs_path);
 
+    let metastore_uri = format!(
+        "file://{}",
+        local_directory_path.parent().unwrap().display()
+    );
+
     Ok(TestEnv {
         local_directory,
         local_directory_path,
         index_uri,
         resource_files,
+        metastore_uri,
     })
 }

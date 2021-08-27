@@ -23,6 +23,7 @@ use std::sync::Arc;
 use crate::models::UploadedSplit;
 use anyhow::Context;
 use async_trait::async_trait;
+use fail::fail_point;
 use quickwit_actors::Actor;
 use quickwit_actors::ActorContext;
 use quickwit_actors::AsyncActor;
@@ -32,7 +33,7 @@ use tokio::sync::oneshot::Receiver;
 
 #[derive(Debug, Clone, Default)]
 pub struct PublisherCounters {
-    pub num_published_splits: usize,
+    pub num_published_splits: u64,
 }
 pub struct Publisher {
     metastore: Arc<dyn Metastore>,
@@ -68,6 +69,7 @@ impl AsyncActor for Publisher {
         uploaded_split_future: Receiver<UploadedSplit>,
         _ctx: &ActorContext<Receiver<UploadedSplit>>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        fail_point!("publisher:before");
         let uploaded_split = uploaded_split_future
             .await
             .with_context(|| "Upload apparently failed")?; //< splits must be published in order, so one uploaded failing means we should fail entirely.
@@ -80,6 +82,7 @@ impl AsyncActor for Publisher {
             .await
             .with_context(|| "Failed to publish splits")?;
         self.counters.num_published_splits += 1;
+        fail_point!("publisher:after");
         Ok(())
     }
 }
@@ -116,7 +119,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
         let publisher = Publisher::new(Arc::new(mock_metastore));
-        let (publisher_mailbox, publisher_handle) = universe.spawn(publisher);
+        let (publisher_mailbox, publisher_handle) = universe.spawn_async_actor(publisher);
         let (split_future_tx1, split_future_rx1) = oneshot::channel::<UploadedSplit>();
         assert!(universe
             .send_message(&publisher_mailbox, split_future_rx1)

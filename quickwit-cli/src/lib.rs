@@ -20,15 +20,29 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+use anyhow::bail;
+use anyhow::Context;
+use byte_unit::Byte;
 use crossterm::style::Print;
 use crossterm::style::PrintStyledContent;
 use crossterm::style::Stylize;
 use crossterm::QueueableCommand;
 use json_comments::StripComments;
-use quickwit_common::extract_metastore_uri_and_index_id_from_index_uri;
-use quickwit_core::DocumentSource;
+use quickwit_actors::ActorExitStatus;
+use quickwit_actors::ActorHandle;
+use quickwit_actors::ObservationType;
+use quickwit_actors::Universe;
+use quickwit_common::extract_index_id_from_index_uri;
+use quickwit_core::reset_index;
 use quickwit_index_config::DefaultIndexConfigBuilder;
 use quickwit_index_config::IndexConfig;
+use quickwit_indexing::actors::IndexerParams;
+use quickwit_indexing::actors::{IndexingPipelineParams, IndexingPipelineSupervisor};
+use quickwit_indexing::models::CommitPolicy;
+use quickwit_indexing::models::IndexingStatistics;
+use quickwit_indexing::models::ScratchDirectory;
+use quickwit_indexing::source::FileSourceParams;
+use quickwit_indexing::source::SourceConfig;
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::MetastoreUriResolver;
@@ -40,27 +54,15 @@ use quickwit_storage::StorageUriResolver;
 use quickwit_telemetry::payload::TelemetryEvent;
 use std::collections::VecDeque;
 use std::env;
-use std::io;
 use std::io::Stdout;
 use std::io::{stdout, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::usize;
-use tempfile::TempDir;
-use tokio::fs::File;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::BufReader;
-use tokio::sync::watch;
-use tokio::task;
-use tokio::time::timeout;
-use tokio::try_join;
 use tracing::debug;
 
-use quickwit_core::{
-    create_index, delete_index, garbage_collect_index, index_data, IndexDataParams,
-    IndexingStatistics,
-};
+use quickwit_core::{create_index, delete_index, garbage_collect_index};
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
@@ -69,6 +71,7 @@ const THROUGHPUT_WINDOW_SIZE: usize = 5;
 pub struct CreateIndexArgs {
     index_uri: String,
     index_config: Arc<dyn IndexConfig>,
+    metastore_uri: String,
     overwrite: bool,
 }
 impl PartialEq for CreateIndexArgs {
@@ -83,6 +86,7 @@ impl CreateIndexArgs {
     pub fn new(
         index_uri: String,
         index_config_path: PathBuf,
+        metastore_uri: String,
         overwrite: bool,
     ) -> anyhow::Result<Self> {
         let json_file = std::fs::File::open(index_config_path)?;
@@ -94,6 +98,7 @@ impl CreateIndexArgs {
         Ok(Self {
             index_uri,
             index_config,
+            metastore_uri,
             overwrite,
         })
     }
@@ -104,8 +109,8 @@ pub struct IndexDataArgs {
     pub index_uri: String,
     pub input_path: Option<PathBuf>,
     pub temp_dir: Option<PathBuf>,
-    pub num_threads: usize,
-    pub heap_size: u64,
+    pub heap_size: Byte,
+    pub metastore_uri: String,
     pub overwrite: bool,
 }
 
@@ -119,11 +124,13 @@ pub struct SearchIndexArgs {
     pub start_timestamp: Option<i64>,
     pub end_timestamp: Option<i64>,
     pub tags: Option<Vec<String>>,
+    pub metastore_uri: String,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DeleteIndexArgs {
     pub index_uri: String,
+    pub metastore_uri: String,
     pub dry_run: bool,
 }
 
@@ -131,21 +138,17 @@ pub struct DeleteIndexArgs {
 pub struct GarbageCollectIndexArgs {
     pub index_uri: String,
     pub grace_period: Duration,
+    pub metastore_uri: String,
     pub dry_run: bool,
 }
 
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri = %args.index_uri,
-        index_config = ?args.index_config,
-        overwrite = args.overwrite,
-        "create-index"
-    );
+    debug!(args = ?args, "create-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+    let index_id = extract_index_id_from_index_uri(&args.index_uri)?;
+
     if args.overwrite {
-        delete_index(metastore_uri, index_id, false).await?;
+        delete_index(&args.metastore_uri, index_id, false).await?;
     }
 
     let index_metadata = IndexMetadata {
@@ -154,43 +157,56 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         index_config: args.index_config,
         checkpoint: Checkpoint::default(),
     };
-    create_index(metastore_uri, index_metadata).await?;
+    create_index(&args.metastore_uri, index_metadata).await?;
     Ok(())
 }
 
-fn create_index_scratch_dir(path_tempdir_opt: Option<&PathBuf>) -> anyhow::Result<Arc<TempDir>> {
-    let scratch_dir = if let Some(path_tempdir) = path_tempdir_opt {
-        tempfile::tempdir_in(&path_tempdir)?
-    } else {
-        tempfile::tempdir()?
-    };
-    Ok(Arc::new(scratch_dir))
-}
-
 pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri = %args.index_uri,
-        input_uri = ?args.input_path,
-        temp_dir = ?args.temp_dir,
-        num_threads = args.num_threads,
-        heap_size = args.heap_size,
-        overwrite = args.overwrite,
-        "indexing"
-    );
+    debug!(args=?args, "indexing");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::IndexStart).await;
 
     let input_path = args.input_path.clone();
-    let document_source = create_document_source_from_args(input_path).await?;
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let temp_dir = create_index_scratch_dir(args.temp_dir.as_ref())?;
-    let params = IndexDataParams {
-        index_id: index_id.to_string(),
-        temp_dir,
-        num_threads: args.num_threads,
-        heap_size: args.heap_size,
-        overwrite: args.overwrite,
+    let source_config = create_source_config_from_args(input_path.clone());
+
+    let index_id = extract_index_id_from_index_uri(&args.index_uri)?;
+    debug!(
+        index_id = %index_id,
+        "extract index id from index uri"
+    );
+
+    let scratch_directory = if let Some(scratch_root_path) = args.temp_dir.as_ref() {
+        ScratchDirectory::new_in_path(scratch_root_path.clone())
+    } else {
+        ScratchDirectory::try_new_temp()
+            .with_context(|| "Failed to create a tempdir for the indexer")?
     };
+
+    let storage_uri_resolver = StorageUriResolver::default();
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+
+    if args.overwrite {
+        reset_index(&*metastore, index_id, storage_uri_resolver.clone()).await?;
+    }
+
+    let indexer_params = IndexerParams {
+        scratch_directory,
+        heap_size: args.heap_size,
+        commit_policy: CommitPolicy::default(), //< TODO make the commit policy configurable
+    };
+
+    let indexing_pipeline_params = IndexingPipelineParams {
+        index_id: index_id.to_string(),
+        source_config,
+        indexer_params,
+        metastore,
+        storage_uri_resolver,
+    };
+
+    let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
+
+    let universe = Universe::new();
+    let (_supervisor_mailbox, supervisor_handler) = universe.spawn_async_actor(indexing_supervisor);
 
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
     if args.input_path.is_none() && is_stdin_atty {
@@ -201,69 +217,34 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         println!("Please enter your new line delimited json documents one line at a time.\nEnd your input using {}.", eof_shortcut);
     }
 
-    let statistics = Arc::new(IndexingStatistics::default());
-    let (task_completed_sender, task_completed_receiver) = watch::channel::<bool>(false);
-    let reporting_future = start_statistics_reporting(
-        statistics.clone(),
-        task_completed_receiver,
-        args.input_path.clone(),
-    );
-    let storage_uri_resolver = StorageUriResolver::default();
-    let metastore_uri_resolver =
-        MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone());
-    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
-    let index_future = async move {
-        index_data(
-            metastore,
-            params,
-            document_source,
-            storage_uri_resolver,
-            statistics.clone(),
-        )
-        .await?;
-        task_completed_sender.send(true)?;
-        anyhow::Result::<()>::Ok(())
-    };
+    let statistics =
+        start_statistics_reporting_loop(supervisor_handler, args.input_path.clone()).await?;
 
-    let (_, num_published_splits) = try_join!(index_future, reporting_future)?;
-    if num_published_splits > 0 {
+    if statistics.num_published_splits > 0 {
         println!("You can now query your index with `quickwit search --index-uri {} --query \"barack obama\"`" , args.index_uri);
     }
     Ok(())
 }
 
-async fn create_document_source_from_args(
-    input_path_opt: Option<PathBuf>,
-) -> io::Result<Box<dyn DocumentSource>> {
-    if let Some(input_path) = input_path_opt {
-        let file = File::open(input_path).await?;
-        let reader = BufReader::new(file);
-        Ok(Box::new(reader.lines()))
-    } else {
-        let stdin = tokio::io::stdin();
-        let reader = BufReader::new(stdin);
-        Ok(Box::new(reader.lines()))
+fn create_source_config_from_args(input_path_opt: Option<PathBuf>) -> SourceConfig {
+    let params = FileSourceParams {
+        filepath: input_path_opt,
+    };
+    SourceConfig {
+        id: "cli_source".to_string(),
+        source_type: "file".to_string(),
+        params: serde_json::to_value(params).unwrap(),
     }
 }
 
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResult> {
-    debug!(
-        index_uri = %args.index_uri,
-        query = %args.query,
-        max_hits = args.max_hits,
-        start_offset = args.start_offset,
-        search_fields = ?args.search_fields,
-        start_timestamp = ?args.start_timestamp,
-        end_timestamp = ?args.end_timestamp,
-        tags = ?args.tags,
-        "search-index"
-    );
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
+    debug!(args = ?args, "search-index");
+
+    let index_id = extract_index_id_from_index_uri(&args.index_uri)?;
+
     let storage_uri_resolver = StorageUriResolver::default();
-    let metastore_uri_resolver =
-        MetastoreUriResolver::with_storage_resolver(storage_uri_resolver.clone());
-    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let search_request = SearchRequest {
         index_id: index_id.to_string(),
         query: args.query.clone(),
@@ -290,16 +271,12 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
 }
 
 pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri = %args.index_uri,
-        dry_run = args.dry_run,
-        "delete-index"
-    );
+    debug!(args = ?args, "delete-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
 
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let affected_files = delete_index(metastore_uri, index_id, args.dry_run).await?;
+    let index_id = extract_index_id_from_index_uri(&args.index_uri)?;
+
+    let affected_files = delete_index(&args.metastore_uri, index_id, args.dry_run).await?;
     if args.dry_run {
         if affected_files.is_empty() {
             println!("Only the index will be deleted since it does not contains any data file.");
@@ -321,18 +298,18 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
 }
 
 pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow::Result<()> {
-    debug!(
-        index_uri = %args.index_uri,
-        grace_period = ?args.grace_period,
-        dry_run = args.dry_run,
-        "garbage-collect-index"
-    );
+    debug!(args = ?args, "garbage-collect-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
 
-    let (metastore_uri, index_id) =
-        extract_metastore_uri_and_index_id_from_index_uri(&args.index_uri)?;
-    let deleted_files =
-        garbage_collect_index(metastore_uri, index_id, args.grace_period, args.dry_run).await?;
+    let index_id = extract_index_id_from_index_uri(&args.index_uri)?;
+
+    let deleted_files = garbage_collect_index(
+        &args.metastore_uri,
+        index_id,
+        args.grace_period,
+        args.dry_run,
+    )
+    .await?;
     if deleted_files.is_empty() {
         println!("No dangling files to garbage collect.");
         return Ok(());
@@ -363,79 +340,93 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
 
 /// Starts a tokio task that displays the indexing statistics
 /// every once in awhile.
-pub async fn start_statistics_reporting(
-    statistics: Arc<IndexingStatistics>,
-    mut task_completed_receiver: watch::Receiver<bool>,
+pub async fn start_statistics_reporting_loop(
+    pipeline_handler: ActorHandle<IndexingPipelineSupervisor>,
     input_path_opt: Option<PathBuf>,
-) -> anyhow::Result<usize> {
-    task::spawn(async move {
-        let mut stdout_handle = stdout();
-        let start_time = Instant::now();
-        let is_tty = atty::is(atty::Stream::Stdout);
-        let mut throughput_calculator = ThroughputCalculator::new(start_time);
-        loop {
-            // Try to receive with a timeout of 1 second.
-            // 1 second is also the frequency at which we update statistic in the console
-            let is_done = timeout(Duration::from_secs(1), task_completed_receiver.changed())
-                .await
-                .is_ok();
+) -> anyhow::Result<IndexingStatistics> {
+    let mut stdout_handle = stdout();
+    let start_time = Instant::now();
+    let is_tty = atty::is(atty::Stream::Stdout);
+    let mut throughput_calculator = ThroughputCalculator::new(start_time);
+    let mut report_interval = tokio::time::interval(Duration::from_secs(1));
 
-            // Let's not display live statistics to allow screen to scroll.
-            if statistics.num_docs.get() > 0 {
-                display_statistics(
-                    &mut stdout_handle,
-                    &mut throughput_calculator,
-                    statistics.clone(),
-                    is_tty,
-                )?;
-            }
+    loop {
+        // TODO fixme. The way we wait today is a bit lame: if the indexing pipeline exits, we will stil
+        // wait up to an entire heartbeat...  Ideally we should  select between two futures.
+        report_interval.tick().await;
+        // Try to receive with a timeout of 1 second.
+        // 1 second is also the frequency at which we update statistic in the console
+        let observation = pipeline_handler.observe().await;
 
-            if is_done {
-                break;
-            }
-        }
-
-        // If we have received zero docs at this point,
-        // there is no point in displaying report.
-        if statistics.num_docs.get() == 0 {
-            return anyhow::Result::<usize>::Ok(0);
-        }
-
-        if input_path_opt.is_none() {
+        // Let's not display live statistics to allow screen to scroll.
+        if observation.state.num_docs > 0 {
             display_statistics(
                 &mut stdout_handle,
                 &mut throughput_calculator,
-                statistics.clone(),
+                &observation.state,
                 is_tty,
             )?;
         }
-        //display end of task report
-        println!();
-        let elapsed_secs = start_time.elapsed().as_secs();
-        if elapsed_secs >= 60 {
-            println!(
-                "Indexed {} documents in {:.2$}min",
-                statistics.num_docs.get(),
-                elapsed_secs.max(1) as f64 / 60f64,
-                2
-            );
-        } else {
-            println!(
-                "Indexed {} documents in {}s",
-                statistics.num_docs.get(),
-                elapsed_secs.max(1)
-            );
-        }
 
-        anyhow::Result::<usize>::Ok(statistics.num_published_splits.get())
-    })
-    .await?
+        if observation.obs_type == ObservationType::PostMortem {
+            break;
+        }
+    }
+
+    let (supervisor_exit_status, statistics) = pipeline_handler.join().await;
+
+    match supervisor_exit_status {
+        ActorExitStatus::Success => {}
+        ActorExitStatus::Quit
+        | ActorExitStatus::DownstreamClosed
+        | ActorExitStatus::Killed
+        | ActorExitStatus::Panicked => {
+            bail!(supervisor_exit_status)
+        }
+        ActorExitStatus::Failure(err) => {
+            bail!(err);
+        }
+    }
+
+    // If we have received zero docs at this point,
+    // there is no point in displaying report.
+    if statistics.num_docs == 0 {
+        return Ok(statistics);
+    }
+
+    if input_path_opt.is_none() {
+        display_statistics(
+            &mut stdout_handle,
+            &mut throughput_calculator,
+            &statistics,
+            is_tty,
+        )?;
+    }
+    //display end of task report
+    println!();
+    let elapsed_secs = start_time.elapsed().as_secs();
+    if elapsed_secs >= 60 {
+        println!(
+            "Indexed {} documents in {:.2$}min",
+            statistics.num_docs,
+            elapsed_secs.max(1) as f64 / 60f64,
+            2
+        );
+    } else {
+        println!(
+            "Indexed {} documents in {}s",
+            statistics.num_docs,
+            elapsed_secs.max(1)
+        );
+    }
+
+    Ok(statistics)
 }
 
 fn display_statistics(
     stdout_handle: &mut Stdout,
     throughput_calculator: &mut ThroughputCalculator,
-    statistics: Arc<IndexingStatistics>,
+    statistics: &IndexingStatistics,
     is_tty: bool,
 ) -> anyhow::Result<()> {
     let elapsed_duration = chrono::Duration::from_std(throughput_calculator.elapsed_time())?;
@@ -445,18 +436,18 @@ fn display_statistics(
         elapsed_duration.num_minutes(),
         elapsed_duration.num_seconds()
     );
-    let throughput_mb_s = throughput_calculator.calculate(statistics.total_bytes_processed.get());
+    let throughput_mb_s = throughput_calculator.calculate(statistics.total_bytes_processed);
     if is_tty {
         stdout_handle.queue(PrintStyledContent("Num docs: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:>7}", statistics.num_docs.get())))?;
+        stdout_handle.queue(Print(format!("{:>7}", statistics.num_docs)))?;
         stdout_handle.queue(PrintStyledContent(" Parse errs: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:>5}", statistics.num_parse_errors.get())))?;
+        stdout_handle.queue(Print(format!("{:>5}", statistics.num_invalid_docs)))?;
         stdout_handle.queue(PrintStyledContent(" Staged splits: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:>3}", statistics.num_staged_splits.get())))?;
+        stdout_handle.queue(Print(format!("{:>3}", statistics.num_staged_splits)))?;
         stdout_handle.queue(PrintStyledContent(" Input size: ".blue()))?;
         stdout_handle.queue(Print(format!(
             "{:>5}MB",
-            statistics.total_bytes_processed.get() / 1_000_000
+            statistics.total_bytes_processed / 1_000_000
         )))?;
         stdout_handle.queue(PrintStyledContent(" Thrghput: ".blue()))?;
         stdout_handle.queue(Print(format!("{:>5.2}MB/s", throughput_mb_s)))?;
@@ -465,10 +456,10 @@ fn display_statistics(
     } else {
         let report_line = format!(
             "Num docs: {:>7} Parse errs: {:>5} Staged splits: {:>3} Input size: {:>5}MB Thrghput: {:>5.2}MB/s Time: {}\n",
-            statistics.num_docs.get(),
-            statistics.num_parse_errors.get(),
-            statistics.num_staged_splits.get(),
-            statistics.total_bytes_processed.get() / 1_000_000,
+            statistics.num_docs,
+            statistics.num_invalid_docs,
+            statistics.num_staged_splits,
+            statistics.total_bytes_processed / 1_000_000,
             throughput_mb_s,
             elapsed_time,
         );
@@ -481,7 +472,7 @@ fn display_statistics(
 /// ThroughputCalculator is used to calculate throughput.
 struct ThroughputCalculator {
     /// Stores the time series of processed bytes value.
-    processed_bytes_values: VecDeque<(Instant, usize)>,
+    processed_bytes_values: VecDeque<(Instant, u64)>,
     /// Store the time this calculator started
     start_time: Instant,
 }
@@ -489,8 +480,8 @@ struct ThroughputCalculator {
 impl ThroughputCalculator {
     /// Creates new instance.
     pub fn new(start_time: Instant) -> Self {
-        let processed_bytes_values: VecDeque<(Instant, usize)> = (0..THROUGHPUT_WINDOW_SIZE)
-            .map(|_| (start_time, 0usize))
+        let processed_bytes_values: VecDeque<(Instant, u64)> = (0..THROUGHPUT_WINDOW_SIZE)
+            .map(|_| (start_time, 0u64))
             .collect();
         Self {
             processed_bytes_values,
@@ -499,7 +490,7 @@ impl ThroughputCalculator {
     }
 
     /// Calculates the throughput.
-    pub fn calculate(&mut self, current_processed_bytes: usize) -> f64 {
+    pub fn calculate(&mut self, current_processed_bytes: u64) -> f64 {
         self.processed_bytes_values.pop_front();
         let current_instant = Instant::now();
         let (first_instant, first_processed_bytes) = *self.processed_bytes_values.front().unwrap();
@@ -518,22 +509,21 @@ impl ThroughputCalculator {
 }
 
 #[test]
-fn test_extract_metastore_uri_and_index_id_from_index_uri() -> anyhow::Result<()> {
+fn test_extract_index_id_from_index_uri() -> anyhow::Result<()> {
     let index_uri = "file:///indexes/wikipedia-xd_1";
-    let (metastore_uri, index_id) = extract_metastore_uri_and_index_id_from_index_uri(index_uri)?;
-    assert_eq!("file:///indexes", metastore_uri);
+    let index_id = extract_index_id_from_index_uri(index_uri)?;
     assert_eq!("wikipedia-xd_1", index_id);
 
-    let result = extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/_wikipedia");
+    let result = extract_index_id_from_index_uri("file:///indexes/_wikipedia");
     assert!(result.is_err());
 
-    let result = extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/-wikipedia");
+    let result = extract_index_id_from_index_uri("file:///indexes/-wikipedia");
     assert!(result.is_err());
 
-    let result = extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/2-wiki-pedia");
+    let result = extract_index_id_from_index_uri("file:///indexes/2-wiki-pedia");
     assert!(result.is_err());
 
-    let result = extract_metastore_uri_and_index_id_from_index_uri("file:///indexes/01wikipedia");
+    let result = extract_index_id_from_index_uri("file:///indexes/01wikipedia");
     assert!(result.is_err());
     Ok(())
 }

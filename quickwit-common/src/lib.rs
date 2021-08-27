@@ -30,19 +30,11 @@ pub use coolid::new_coolid;
 /// Filenames used for hotcache files.
 pub const HOTCACHE_FILENAME: &str = "hotcache";
 
-/// For the moment, the only metastore available is the
-/// a one file per index store, located on the same storage as the
-/// index.
-/// For a simpler UX, we let the user define an `index_url` instead
-/// of a metastore and an index_id.
 /// This function takes such a index_url and breaks it into
 /// s3://my_bucket/some_path_containing_my_indices / my_index
-/// \--------------------------------------------/ \------/
-///        metastore_uri                           index_id
-///
-pub fn extract_metastore_uri_and_index_id_from_index_uri(
-    mut index_uri: &str,
-) -> anyhow::Result<(&str, &str)> {
+///                                                  \------/
+///                                                  index_id
+pub fn extract_index_id_from_index_uri(mut index_uri: &str) -> anyhow::Result<&str> {
     static INDEX_URI_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^.+://.+/.+$").unwrap());
     static INDEX_ID_PATTERN: Lazy<Regex> =
         Lazy::new(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9_\-]*$").unwrap());
@@ -65,7 +57,7 @@ pub fn extract_metastore_uri_and_index_id_from_index_uri(
         anyhow::bail!("Invalid index_id `{}`. Only alpha-numeric, `-` and `_` characters allowed. Cannot start with `-`, `_` or digit.", parts[0]);
     }
 
-    Ok((parts[1], parts[0]))
+    Ok(parts[0])
 }
 
 /// Resolve DNS entry and convert them to SocketAddr.
@@ -108,4 +100,8 @@ pub fn setup_logging_for_tests() {
     INIT.call_once(|| {
         env_logger::builder().format_timestamp(None).init();
     });
+}
+
+pub fn split_file(split_id: &str) -> String {
+    format!("{}.split", split_id)
 }

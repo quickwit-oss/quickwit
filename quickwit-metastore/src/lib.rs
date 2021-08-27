@@ -19,6 +19,7 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
 
@@ -26,6 +27,9 @@
 - single file metastore
 etc.
 */
+
+#[macro_use]
+mod tests;
 
 #[allow(missing_docs)]
 pub mod checkpoint;
@@ -42,6 +46,3 @@ pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};
 
 #[cfg(feature = "testsuite")]
 pub use metastore::MockMetastore;
-
-#[cfg(test)]
-mod tests;

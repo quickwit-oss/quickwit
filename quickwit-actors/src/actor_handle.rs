@@ -24,7 +24,9 @@ use crate::mailbox::Command;
 use crate::observation::ObservationType;
 use crate::{Actor, ActorContext, ActorExitStatus, Observation};
 use std::any::Any;
+use std::borrow::Borrow;
 use std::fmt;
+use std::sync::Arc;
 use tokio::sync::{oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
@@ -34,7 +36,19 @@ use tracing::error;
 pub struct ActorHandle<A: Actor> {
     actor_context: ActorContext<A::Message>,
     last_state: watch::Receiver<A::ObservableState>,
-    join_handle: JoinHandle<ActorExitStatus>,
+    join_handle: JoinHandle<()>,
+    pub actor_exit_status: watch::Receiver<Option<ActorExitStatus>>,
+}
+
+/// Describes the health of a given actor.
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub enum Health {
+    /// The actor is running an behaving as expected.
+    Healthy,
+    /// No progress was registered, or the process terminated with an error
+    FailureOrUnhealthy,
+    /// The actor terminated successfully.
+    Success,
 }
 
 impl<A: Actor> fmt::Debug for ActorHandle<A> {
@@ -46,34 +60,53 @@ impl<A: Actor> fmt::Debug for ActorHandle<A> {
     }
 }
 
+pub trait Supervisable {
+    fn name(&self) -> &str;
+    fn health(&self) -> Health;
+}
+
+impl<A: Actor> Supervisable for ActorHandle<A> {
+    fn name(&self) -> &str {
+        self.actor_context.actor_instance_id()
+    }
+
+    fn health(&self) -> Health {
+        let actor_state = self.actor_context.state();
+        if actor_state == ActorState::Exit {
+            let actor_exit_status = self
+                .actor_exit_status
+                .borrow()
+                .clone()
+                .unwrap_or(ActorExitStatus::Panicked);
+            if actor_exit_status.is_success() {
+                Health::Success
+            } else {
+                Health::FailureOrUnhealthy
+            }
+        } else if self
+            .actor_context
+            .progress()
+            .registered_activity_since_last_call()
+        {
+            Health::Healthy
+        } else {
+            Health::FailureOrUnhealthy
+        }
+    }
+}
+
 impl<A: Actor> ActorHandle<A> {
     pub(crate) fn new(
         last_state: watch::Receiver<A::ObservableState>,
-        join_handle: JoinHandle<ActorExitStatus>,
-        ctx: ActorContext<A::Message>,
+        join_handle: JoinHandle<()>,
+        actor_context: ActorContext<A::Message>,
+        actor_exit_status: watch::Receiver<Option<ActorExitStatus>>,
     ) -> Self {
-        let mut interval = tokio::time::interval(crate::HEARTBEAT);
-        let ctx_clone = ctx.clone();
-        tokio::task::spawn(async move {
-            // TODO have proper supervision.
-            interval.tick().await;
-            while ctx.kill_switch().is_alive() {
-                interval.tick().await;
-                if !ctx.progress().registered_activity_since_last_call() {
-                    if ctx.get_state() == ActorState::Exit {
-                        return;
-                    }
-                    error!(actor=%ctx.actor_instance_id(), "actor-timeout");
-                    ctx.kill_switch().kill();
-                    // TODO abort async tasks?
-                    return;
-                }
-            }
-        });
         ActorHandle {
-            join_handle,
+            actor_context,
             last_state,
-            actor_context: ctx_clone,
+            join_handle,
+            actor_exit_status,
         }
     }
 
@@ -88,14 +121,18 @@ impl<A: Actor> ActorHandle<A> {
     /// This method timeout if reaching the end of the message takes more than an HEARTBEAT.
     pub async fn process_pending_and_observe(&self) -> Observation<A::ObservableState> {
         let (tx, rx) = oneshot::channel();
-        if self
-            .actor_context
-            .mailbox()
-            .send_with_priority(Command::Observe(tx).into(), Priority::Low)
-            .await
-            .is_err()
+        if self.actor_context.state() != ActorState::Exit
+            && self
+                .actor_context
+                .mailbox()
+                .send_with_priority(Command::Observe(tx).into(), Priority::Low)
+                .await
+                .is_err()
         {
-            error!("Failed to send message");
+            error!(
+                actor = self.actor_context.actor_instance_id(),
+                "Failed to send observe message"
+            );
         }
         // The timeout is required here. If the actor fails, its inbox is properly dropped but the send channel might actually
         // prevent the onechannel Receiver from being dropped.
@@ -155,13 +192,20 @@ impl<A: Actor> ActorHandle<A> {
 
     /// Waits until the actor exits by itself. This is the equivalent of `Thread::join`.
     pub async fn join(self) -> (ActorExitStatus, A::ObservableState) {
-        let exit_status = self.join_handle.await.unwrap_or_else(|join_err| {
-            if join_err.is_panic() {
-                ActorExitStatus::Panicked
-            } else {
-                ActorExitStatus::Killed
-            }
-        });
+        let exit_status = match self.join_handle.await {
+            Ok(()) => self
+                .actor_exit_status
+                .borrow()
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| {
+                    ActorExitStatus::Failure(Arc::new(anyhow::anyhow!(
+                        "Could not find exit status"
+                    )))
+                }),
+            Err(join_err) if join_err.is_panic() => ActorExitStatus::Panicked,
+            Err(_) => ActorExitStatus::Killed,
+        };
         let observation = self.last_state.borrow().clone();
         (exit_status, observation)
     }
@@ -172,6 +216,13 @@ impl<A: Actor> ActorHandle<A> {
     /// after the current active message and the current command queue have been processed.
     pub async fn observe(&self) -> Observation<A::ObservableState> {
         let (tx, rx) = oneshot::channel();
+        if self.actor_context.state() == ActorState::Exit {
+            let state = self.last_observation().borrow().clone();
+            return Observation {
+                obs_type: ObservationType::PostMortem,
+                state,
+            };
+        }
         if self
             .actor_context
             .mailbox()
@@ -179,7 +230,10 @@ impl<A: Actor> ActorHandle<A> {
             .await
             .is_err()
         {
-            error!("Failed to send message");
+            error!(
+                actor_id = self.actor_context.actor_instance_id(),
+                "Failed to send observe message"
+            );
         }
         self.wait_for_observable_state_callback(rx).await
     }
@@ -208,7 +262,11 @@ impl<A: Actor> ActorHandle<A> {
             }
             Err(_) => {
                 let state = self.last_observation();
-                let obs_type = ObservationType::Timeout;
+                let obs_type = if self.actor_context.state() == ActorState::Exit {
+                    ObservationType::PostMortem
+                } else {
+                    ObservationType::Timeout
+                };
                 Observation { obs_type, state }
             }
         }
@@ -299,7 +357,7 @@ mod tests {
     #[tokio::test]
     async fn test_panic_in_async_actor() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (mailbox, handle) = universe.spawn(PanickingActor::default());
+        let (mailbox, handle) = universe.spawn_async_actor(PanickingActor::default());
         universe.send_message(&mailbox, ()).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Panicked));
@@ -321,7 +379,7 @@ mod tests {
     #[tokio::test]
     async fn test_exit_in_async_actor() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (mailbox, handle) = universe.spawn(ExitActor::default());
+        let (mailbox, handle) = universe.spawn_async_actor(ExitActor::default());
         universe.send_message(&mailbox, ()).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));

@@ -20,66 +20,66 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use async_trait::async_trait;
-use quickwit_storage::StorageResolverError;
-use quickwit_storage::StorageUriResolver;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::MetastoreError;
-use crate::SingleFileMetastore;
+use async_trait::async_trait;
+
+use crate::metastore::single_file_metastore::SingleFileMetastoreFactory;
 use crate::{Metastore, MetastoreResolverError};
 
 /// A metastore factory builds a [`Metastore`] object from an URI.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait MetastoreFactory: Send + Sync + 'static {
-    /// Returns the protocol this URI resolver is serving.
-    fn protocol(&self) -> String;
     /// Given an URI, returns a [`Metastore`] object.
-    async fn resolve(&self, uri: String) -> Result<Arc<dyn Metastore>, MetastoreResolverError>;
+    async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError>;
+}
+
+#[derive(Default)]
+pub struct MetastoreUriResolverBuilder {
+    per_protocol_resolver: HashMap<String, Arc<dyn MetastoreFactory>>,
+}
+
+impl MetastoreUriResolverBuilder {
+    pub fn register<S: MetastoreFactory>(mut self, protocol: &str, resolver: S) -> Self {
+        self.per_protocol_resolver
+            .insert(protocol.to_string(), Arc::new(resolver));
+        self
+    }
+
+    pub fn build(self) -> MetastoreUriResolver {
+        MetastoreUriResolver {
+            per_protocol_resolver: Arc::new(self.per_protocol_resolver),
+        }
+    }
 }
 
 /// Resolves an URI by dispatching it to the right [`MetastoreFactory`]
 /// based on its protocol.
 pub struct MetastoreUriResolver {
-    per_protocol_resolver: HashMap<String, Arc<dyn MetastoreFactory>>,
-    default_storage_resolver: StorageUriResolver,
+    per_protocol_resolver: Arc<HashMap<String, Arc<dyn MetastoreFactory>>>,
 }
 
 impl Default for MetastoreUriResolver {
     fn default() -> Self {
-        MetastoreUriResolver {
-            per_protocol_resolver: Default::default(),
-            default_storage_resolver: Default::default(),
-        }
+        MetastoreUriResolver::builder()
+            .register("ram", SingleFileMetastoreFactory::default())
+            .register("file", SingleFileMetastoreFactory::default())
+            .register("s3", SingleFileMetastoreFactory::default())
+            .register("s3+localstack", SingleFileMetastoreFactory::default())
+            .build()
     }
 }
 
 impl MetastoreUriResolver {
-    /// Creates a `MetaStoreUriResolver` with a specific storage resolver.
-    pub fn with_storage_resolver(
-        default_storage_resolver: StorageUriResolver,
-    ) -> MetastoreUriResolver {
-        MetastoreUriResolver {
-            per_protocol_resolver: Default::default(),
-            default_storage_resolver,
-        }
-    }
-
-    /// Registers a resolver.
-    ///
-    /// If a previous resolver was registered for this protocol, it is discarded
-    /// and replaced with the new one.
-    pub fn register<S: MetastoreFactory>(&mut self, resolver: S) {
-        self.per_protocol_resolver
-            .insert(resolver.protocol(), Arc::new(resolver));
+    /// Creates an empty `MetastoreUriResolver`.
+    pub fn builder() -> MetastoreUriResolverBuilder {
+        MetastoreUriResolverBuilder::default()
     }
 
     /// Resolves the given URI.
     pub async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
-        // TODO: be a little bit more restrictive on the uri, currently we accept
-        // path like `file://` which will certainly not work.
         let protocol = uri.split("://").next().ok_or_else(|| {
             MetastoreResolverError::InvalidUri(format!(
                 "Protocol not found in metastore URI: {}",
@@ -87,31 +87,13 @@ impl MetastoreUriResolver {
             ))
         })?;
 
-        if let Some(resolver) = self.per_protocol_resolver.get(protocol) {
-            let metastore = resolver.resolve(uri.to_string()).await?;
-            return Ok(metastore);
-        }
+        let resolver = self
+            .per_protocol_resolver
+            .get(protocol)
+            .ok_or_else(|| MetastoreResolverError::ProtocolUnsupported(protocol.to_string()))?;
 
-        let storage = self
-            .default_storage_resolver
-            .resolve(uri)
-            .map_err(|err| match err {
-                StorageResolverError::InvalidUri { message } => {
-                    MetastoreResolverError::InvalidUri(message)
-                }
-                StorageResolverError::ProtocolUnsupported { protocol } => {
-                    MetastoreResolverError::ProtocolUnsupported(protocol)
-                }
-                StorageResolverError::FailedToOpenStorage { kind, message } => {
-                    MetastoreResolverError::FailedToOpenMetastore(MetastoreError::InternalError {
-                        message: "Failed to open storage hosting the single file metastore."
-                            .to_string(),
-                        cause: anyhow::anyhow!("StorageError {:?}: {}.", kind, message),
-                    })
-                }
-            })?;
-        let single_file_metastore = Arc::new(SingleFileMetastore::new(storage));
-        Ok(single_file_metastore)
+        let metastore = resolver.resolve(uri).await?;
+        Ok(metastore)
     }
 }
 

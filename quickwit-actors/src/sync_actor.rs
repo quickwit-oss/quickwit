@@ -19,7 +19,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use tokio::sync::watch::{self, Sender};
-use tokio::task::spawn_blocking;
+use tokio::task::{spawn_blocking, JoinHandle};
 use tracing::{debug, error, info};
 
 use crate::actor::{process_command, ActorExitStatus};
@@ -83,13 +83,14 @@ pub(crate) fn spawn_sync_actor<A: SyncActor>(
     let (state_tx, state_rx) = watch::channel(actor.observable_state());
     let ctx = ActorContext::new(mailbox, kill_switch, scheduler_mailbox);
     let ctx_clone = ctx.clone();
-    let join_handle = spawn_blocking::<_, ActorExitStatus>(move || {
-        let actor_name = actor.name();
+    let (exit_status_tx, exit_status_rx) = watch::channel(None);
+    let join_handle: JoinHandle<()> = spawn_blocking(move || {
+        let actor_instance_id = ctx.actor_instance_id().to_string();
         let exit_status = sync_actor_loop(actor, inbox, ctx, state_tx);
-        info!(exit_status=%exit_status, actor=%actor_name, "exit");
-        exit_status
+        info!(exit_status=%exit_status, actor=actor_instance_id.as_str(), "exit");
+        let _ = exit_status_tx.send(Some(exit_status));
     });
-    let handle = ActorHandle::new(state_rx, join_handle, ctx_clone);
+    let handle = ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx);
     (mailbox_clone, handle)
 }
 
@@ -108,7 +109,7 @@ fn process_msg<A: Actor + SyncActor>(
 
     ctx.progress().record_progress();
 
-    let command_or_msg_recv_res = if ctx.get_state() == ActorState::Running {
+    let command_or_msg_recv_res = if ctx.state() == ActorState::Running {
         inbox.recv_timeout_blocking()
     } else {
         // The actor is paused. We only process command and scheduled message.
