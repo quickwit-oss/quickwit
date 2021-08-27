@@ -18,6 +18,8 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::convert::TryInto;
+
 use crate::models::IndexerMessage;
 use crate::models::RawDocBatch;
 use crate::source::Source;
@@ -28,19 +30,38 @@ use quickwit_actors::ActorExitStatus;
 use quickwit_actors::Mailbox;
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::checkpoint::CheckpointDelta;
+use quickwit_metastore::checkpoint::PartitionId;
+use quickwit_metastore::checkpoint::Position;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 #[derive(Deserialize, Serialize)]
 pub struct VecSourceParams {
-    items: Vec<String>,
-    batch_num_docs: usize,
+    pub items: Vec<String>,
+    pub batch_num_docs: usize,
+    #[serde(default)]
+    pub partition: String,
 }
 
 pub struct VecSource {
     next_item_id: usize,
     params: VecSourceParams,
+    partition: PartitionId,
 }
 pub struct VecSourceFactory;
+
+fn extract_next_item_id(partition: &PartitionId, checkpoint: &Checkpoint) -> anyhow::Result<usize> {
+    if let Some(position) = checkpoint.position_for_partition(partition).cloned() {
+        if position.as_str().is_empty() {
+            Ok(0)
+        } else {
+            let last_seen: u64 = position.try_into()?;
+            Ok(last_seen as usize + 1)
+        }
+    } else {
+        Ok(0)
+    }
+}
 
 #[async_trait]
 impl TypedSourceFactory for VecSourceFactory {
@@ -48,13 +69,23 @@ impl TypedSourceFactory for VecSourceFactory {
     type Params = VecSourceParams;
     async fn typed_create_source(
         params: VecSourceParams,
-        _checkpoint: Checkpoint,
+        checkpoint: Checkpoint,
     ) -> anyhow::Result<Self::Source> {
+        let partition = PartitionId::from(params.partition.as_str());
+        let next_item_id = extract_next_item_id(&partition, &checkpoint)?;
         Ok(VecSource {
-            next_item_id: 0,
+            next_item_id,
             params,
+            partition,
         })
     }
+}
+
+fn position_from_offset(offset: u64) -> Position {
+    if offset == 0 {
+        return Position::default();
+    }
+    Position::from(offset - 1)
 }
 
 #[async_trait]
@@ -72,8 +103,16 @@ impl Source for VecSource {
         let start_item_id = self.next_item_id as u64;
         self.next_item_id += line_docs.len();
         let end_item_id = self.next_item_id as u64;
-        let checkpoint_delta = CheckpointDelta::from(start_item_id..end_item_id);
+        let mut checkpoint_delta = CheckpointDelta::default();
+        checkpoint_delta.add_partition(
+            self.partition.clone(),
+            position_from_offset(start_item_id),
+            position_from_offset(end_item_id),
+        );
         if line_docs.is_empty() {
+            info!("End of source");
+            ctx.send_message(batch_sink, IndexerMessage::EndOfSource)
+                .await?;
             return Err(ActorExitStatus::Success);
         }
         let batch = RawDocBatch {
@@ -94,9 +133,8 @@ impl Source for VecSource {
 
 #[cfg(test)]
 mod tests {
-    use crate::source::SourceActor;
-
     use super::*;
+    use crate::source::SourceActor;
     use quickwit_actors::create_test_mailbox;
     use quickwit_actors::Universe;
     use serde_json::json;
@@ -112,6 +150,7 @@ mod tests {
         let params = VecSourceParams {
             items,
             batch_num_docs: 3,
+            partition: "partition".to_string(),
         };
         let vec_source =
             VecSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
@@ -123,8 +162,42 @@ mod tests {
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, json!({"next_item_id": 100}));
-        let batch = inbox.drain_available_message_for_test();
-        assert_eq!(batch.len(), 34);
+        let batches = inbox.drain_available_message_for_test();
+        assert_eq!(batches.len(), 35);
+        assert!(
+            matches!(&batches[1], &IndexerMessage::Batch(ref raw_batch) if format!("{:?}", raw_batch.checkpoint_delta) == "∆(partition:(00000000000000000002..00000000000000000005])")
+        );
+        assert!(matches!(&batches[34], &IndexerMessage::EndOfSource));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_vec_source_from_checkpoint() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let (mailbox, inbox) = create_test_mailbox();
+        let items = (0..10).map(|i| format!("{}", i)).collect();
+        let params = VecSourceParams {
+            items,
+            batch_num_docs: 3,
+            partition: "".to_string(),
+        };
+        let mut checkpoint = Checkpoint::default();
+        checkpoint.try_apply_delta(CheckpointDelta::from(0u64..2u64))?;
+
+        let vec_source = VecSourceFactory::typed_create_source(params, checkpoint).await?;
+        let vec_source_actor = SourceActor {
+            source: Box::new(vec_source),
+            batch_sink: mailbox,
+        };
+        let (_vec_source_mailbox, vec_source_handle) = universe.spawn_async_actor(vec_source_actor);
+        let (actor_termination, last_observation) = vec_source_handle.join().await;
+        assert!(actor_termination.is_success());
+        assert_eq!(last_observation, json!({"next_item_id": 10}));
+        let messages = inbox.drain_available_message_for_test();
+        assert!(
+            matches!(&messages[0], &IndexerMessage::Batch(ref raw_batch) if &raw_batch.docs[0] == "2")
+        );
         Ok(())
     }
 }

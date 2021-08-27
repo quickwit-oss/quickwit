@@ -20,10 +20,14 @@
 
 mod indexer;
 mod packager;
+mod pipeline_supervisor;
 mod publisher;
 mod uploader;
 
-pub use self::indexer::Indexer;
+pub use self::indexer::{Indexer, IndexerCounters, IndexerParams};
 pub use self::packager::Packager;
-pub use self::publisher::Publisher;
-pub use self::uploader::Uploader;
+pub use self::publisher::{Publisher, PublisherCounters};
+pub use self::uploader::{Uploader, UploaderCounters};
+pub use pipeline_supervisor::{
+    IndexingPipelineHandler, IndexingPipelineParams, IndexingPipelineSupervisor,
+};

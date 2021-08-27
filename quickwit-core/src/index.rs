@@ -20,17 +20,17 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::time::Duration;
-
+use crate::FileEntry;
 use futures::StreamExt;
-use quickwit_metastore::{
-    IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadataAndFooterOffsets, SplitState,
-};
+use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver};
+use quickwit_metastore::{SplitMetadataAndFooterOffsets, SplitState};
 use quickwit_storage::StorageUriResolver;
+use std::path::Path;
+use std::time::Duration;
 use tantivy::chrono::Utc;
 use tracing::warn;
 
-use crate::indexing::{remove_split_files_from_storage, FileEntry};
+pub const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 
 /// Creates an index at `index-path` extracted from `metastore_uri`. The command fails if an index
 /// already exists at `index-path`.
@@ -56,7 +56,6 @@ pub async fn create_index(
 /// * `metastore_uri` - The metastore URI for accessing the metastore.
 /// * `index_id` - The target index Id.
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
-///
 pub async fn delete_index(
     metastore_uri: &str,
     index_id: &str,
@@ -69,8 +68,7 @@ pub async fn delete_index(
 
     if dry_run {
         let all_splits = metastore.list_all_splits(index_id).await?;
-        let index_uri = metastore.index_metadata(index_id).await?.index_uri;
-        return list_splits_files(all_splits, index_uri, storage_resolver).await;
+        return Ok(list_split_files(&all_splits));
     }
 
     // Schedule staged and published splits for deletion.
@@ -90,9 +88,7 @@ pub async fn delete_index(
         .await?;
 
     let file_entries = delete_garbage_files(metastore.as_ref(), index_id, storage_resolver).await?;
-    //TODO: discuss & fix possible data race
     metastore.delete_index(index_id).await?;
-
     Ok(file_entries)
 }
 
@@ -129,9 +125,8 @@ pub async fn garbage_collect_index(
             .list_splits(index_id, SplitState::ScheduledForDeletion, None, &[])
             .await?;
 
-        let index_uri = metastore.index_metadata(index_id).await?.index_uri;
         scheduled_for_delete_splits.extend(staged_splits);
-        return list_splits_files(scheduled_for_delete_splits, index_uri, storage_resolver).await;
+        return Ok(list_split_files(&scheduled_for_delete_splits));
     }
 
     // schedule all staged splits for delete
@@ -147,7 +142,7 @@ pub async fn garbage_collect_index(
     Ok(file_entries)
 }
 
-/// Get the list of files logically deleted from the index and removes them from the storage.
+/// Remove the list of split from the storage.
 /// It should leave the index and its metastore in good state.
 ///
 /// * `metastore_uri` - The target index metastore uri.
@@ -164,55 +159,82 @@ pub async fn delete_garbage_files(
         .await?;
 
     let index_uri = metastore.index_metadata(index_id).await?.index_uri;
+    let storage = storage_resolver.resolve(&index_uri)?;
 
-    let mut delete_stream = tokio_stream::iter(splits_to_delete.clone())
+    let mut success_deletes_split_ids: Vec<&str> = Vec::new();
+    let mut success_deletes_file_entries: Vec<FileEntry> = Vec::new();
+    let mut failure_deletes: Vec<&str> = Vec::new();
+
+    let mut split_delete_results_stream = tokio_stream::iter(splits_to_delete.iter())
         .map(|meta| {
-            let moved_storage_resolver = storage_resolver.clone();
-            let split_uri = format!("{}/{}", index_uri, meta.split_metadata.split_id);
+            let moved_storage = storage.clone();
             async move {
-                remove_split_files_from_storage(&split_uri, moved_storage_resolver, false).await
+                let file_entry = FileEntry::from(meta);
+                let delete_result = moved_storage.delete(Path::new(&file_entry.file_name)).await;
+                (
+                    &meta.split_metadata.split_id,
+                    file_entry,
+                    delete_result.is_ok(),
+                )
             }
         })
-        .buffer_unordered(crate::indexing::MAX_CONCURRENT_SPLIT_TASKS);
+        .buffer_unordered(MAX_CONCURRENT_SPLIT_TASKS);
 
-    let mut file_entries = vec![];
-    while let Some(delete_result) = delete_stream.next().await {
-        let deleted_files = delete_result.map_err(|error| {
-            warn!("Some split files were not deleted.");
-            error
-        })?;
-        file_entries.extend(deleted_files);
+    while let Some((split_id, file_entry, is_success)) = split_delete_results_stream.next().await {
+        if is_success {
+            success_deletes_split_ids.push(split_id);
+            success_deletes_file_entries.push(file_entry);
+        } else {
+            failure_deletes.push(split_id);
+        }
     }
 
-    let split_ids = splits_to_delete
+    if !failure_deletes.is_empty() {
+        warn!(splits=?failure_deletes, "Some splits were not deleted");
+    }
+
+    if !success_deletes_split_ids.is_empty() {
+        metastore
+            .delete_splits(index_id, &success_deletes_split_ids)
+            .await?;
+    }
+    Ok(success_deletes_file_entries)
+}
+
+/// Clears the index by applying the following actions:
+/// - mark all splits as deleted.
+/// - delete the files of all splits marked as deleted using garbage collection.
+/// - delete the splits from the metastore.
+///
+/// * `index_uri` - The target index Uri.
+/// * `index_id` - The target index Id.
+/// * `storage_resolver` - A storage resolver object to access the storage.
+/// * `metastore` - A emtastore object for interracting with the metastore.
+///
+pub async fn reset_index(
+    metastore: &dyn Metastore,
+    index_id: &str,
+    storage_resolver: StorageUriResolver,
+) -> anyhow::Result<()> {
+    let splits = metastore.list_all_splits(index_id).await?;
+    let split_ids = splits
         .iter()
         .map(|meta| meta.split_metadata.split_id.as_str())
         .collect::<Vec<_>>();
-    metastore.delete_splits(index_id, &split_ids).await?;
-
-    Ok(file_entries)
+    metastore
+        .mark_splits_as_deleted(index_id, &split_ids)
+        .await?;
+    let garbage_removal_result = delete_garbage_files(metastore, index_id, storage_resolver).await;
+    if garbage_removal_result.is_err() {
+        warn!(metastore_uri = %metastore.uri(), "All split files could not be removed during garbage collection.");
+    }
+    Ok(())
 }
 
-/// list the files for a list of split.
-async fn list_splits_files(
-    splits: Vec<SplitMetadataAndFooterOffsets>,
-    index_uri: String,
-    storage_resolver: StorageUriResolver,
-) -> anyhow::Result<Vec<FileEntry>> {
-    let mut list_stream = tokio_stream::iter(splits)
-        .map(|meta| {
-            let moved_storage_resolver = storage_resolver.clone();
-            let split_uri = format!("{}/{}", index_uri, meta.split_metadata.split_id);
-            async move {
-                remove_split_files_from_storage(&split_uri, moved_storage_resolver, true).await
-            }
-        })
-        .buffer_unordered(crate::indexing::MAX_CONCURRENT_SPLIT_TASKS);
-
-    let mut file_entries = vec![];
-    while let Some(list_result) = list_stream.next().await {
-        file_entries.extend(list_result?);
-    }
-
-    Ok(file_entries)
+/// Lists the files for a list of split files.
+///
+/// Some of these file may actually not exist. (It happens in the middle of a delete operation
+/// for instance, or right after the failure of a delete operation.
+fn list_split_files(splits: &[SplitMetadataAndFooterOffsets]) -> Vec<FileEntry> {
+    splits.iter().map(FileEntry::from).collect()
 }
