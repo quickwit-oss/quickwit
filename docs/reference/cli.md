@@ -96,7 +96,8 @@ When creating an index on a local file system, absolute path is enforce. This im
 
 *Description*
 
-Indexes a dataset consisting of newline-delimited JSON objects located at `input-path` or read from *stdin*. The data is appended to the target index specified by `index-uri` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin. Currently, only local datasets are supported. By default, the process uses 4 threads and 1 GiB of memory per thread. The `num-threads` and `heap-size` options customize those settings.
+Indexes a dataset consisting of newline-delimited JSON objects located at `input-path` or read from *stdin*. The data is appended to the target index specified by `index-uri` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin. Currently, only local datasets are supported. By default, tantivy's indexer will work with a heap of 1 GiB of memory, but this can be set with the `heap-size` options. This does not directly reflects the overall memory usage of `quickwit index`, but doubling this value should give a fair approximation.
+
 
 *Synopsis*
 
@@ -105,7 +106,6 @@ quickwit index
     --index-uri <uri>
     [--input-path <path>]
     [--overwrite]
-    [--num-thread <num threads>]
     [--heap-size <num bytes>]
     [--temp-dir]
 ```
@@ -115,7 +115,6 @@ quickwit index
 `--index-uri` (string) Location of the target index.<br />
 `--input-path` (string) Location of the source dataset.<br />
 `--overwrite` (boolean) Overwrites existing data.<br />
-`--num-thread` (integer) Number of allocated threads for the process.<br />
 `--heap-size` (integer) Amount of allocated memory for the process.<br />
 `--temp-dir` (string) Path of temporary directory for building the index (defaults to `/tmp`)
 
@@ -143,7 +142,7 @@ quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json -
 *Customizing the resources allocated to the program*
 
 ```bash
-quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json --num-threads 8 --heap-size 16GiB
+quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json --heap-size 4GiB
 ```
 
 ### Search
