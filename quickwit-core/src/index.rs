@@ -202,14 +202,14 @@ pub async fn delete_garbage_files(
 }
 
 /// Clears the index by applying the following actions:
-/// - mark all splits as deleted.
+/// - mark all splits as deleted in the metastore.
 /// - delete the files of all splits marked as deleted using garbage collection.
 /// - delete the splits from the metastore.
 ///
 /// * `index_uri` - The target index Uri.
 /// * `index_id` - The target index Id.
 /// * `storage_resolver` - A storage resolver object to access the storage.
-/// * `metastore` - A emtastore object for interracting with the metastore.
+/// * `metastore` - A metastore object for interacting with the metastore.
 ///
 pub async fn reset_index(
     metastore: &dyn Metastore,
