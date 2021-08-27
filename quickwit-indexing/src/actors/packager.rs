@@ -63,7 +63,7 @@ impl Actor for Packager {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(1)
+        QueueCapacity::Bounded(0)
     }
 }
 
