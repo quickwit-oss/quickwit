@@ -49,8 +49,8 @@ use tantivy::DocAddress;
 
 use quickwit_metastore::SplitState;
 use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadataAndFooterOffsets};
-use quickwit_proto::{LeafSearchRequestMetadata, SearchRequest};
 use quickwit_proto::{PartialHit, SearchResult};
+use quickwit_proto::{SearchRequest, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
 
 pub use crate::client::SearchServiceClient;
@@ -126,6 +126,19 @@ fn extract_time_range(search_request: &SearchRequest) -> Option<Range<i64>> {
     }
 }
 
+fn extract_split_and_footer_offsets(
+    split_metadata_and_footer_offsets: &SplitMetadataAndFooterOffsets,
+) -> SplitIdAndFooterOffsets {
+    SplitIdAndFooterOffsets {
+        split_id: split_metadata_and_footer_offsets
+            .split_metadata
+            .split_id
+            .clone(),
+        split_footer_start: split_metadata_and_footer_offsets.footer_offsets.start as u64,
+        split_footer_end: split_metadata_and_footer_offsets.footer_offsets.end as u64,
+    }
+}
+
 /// Extract the list of relevant splits for a given search request.
 async fn list_relevant_splits(
     search_request: &SearchRequest,
@@ -152,28 +165,26 @@ pub async fn single_node_search(
 ) -> Result<SearchResult> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
+    let index_storage = storage_resolver.resolve(&index_metadata.index_uri)?;
     let metas = list_relevant_splits(search_request, metastore).await?;
-    let split_metadata: Vec<_> = metas
-        .iter()
-        .map(|meta| LeafSearchRequestMetadata {
-            split_id: meta.split_metadata.split_id.clone(),
-            split_footer_start: meta.footer_offsets.start as u64,
-            split_footer_end: meta.footer_offsets.end as u64,
-        })
-        .collect();
+    let split_metadata: Vec<SplitIdAndFooterOffsets> =
+        metas.iter().map(extract_split_and_footer_offsets).collect();
     let index_config = index_metadata.index_config;
     let leaf_search_result = leaf_search(
-        index_config,
         search_request,
+        index_storage.clone(),
         &split_metadata[..],
-        storage.clone(),
+        index_config,
     )
     .await
     .with_context(|| "leaf_search")?;
-    let fetch_docs_result = fetch_docs(leaf_search_result.partial_hits, storage)
-        .await
-        .with_context(|| "fetch_request")?;
+    let fetch_docs_result = fetch_docs(
+        leaf_search_result.partial_hits,
+        index_storage,
+        &split_metadata,
+    )
+    .await
+    .with_context(|| "fetch_request")?;
     let elapsed = start_instant.elapsed();
     Ok(SearchResult {
         num_hits: leaf_search_result.num_hits,
@@ -183,7 +194,6 @@ pub async fn single_node_search(
     })
 }
 
-/* Temporarily disabling unit test.
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -389,4 +399,3 @@ mod tests {
         Ok(())
     }
 }
-*/
