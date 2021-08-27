@@ -8,7 +8,7 @@ In reality, this file hides an internal mini static filesystem,
 with the tantivy index files.
 
 The split file data layout looks like this:
-- concatenation all of the files hidden in the split
+- concatenation all of the files in the split
 - a footer
 
 The footer follows the following format.
