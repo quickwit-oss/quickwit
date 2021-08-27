@@ -146,10 +146,10 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
 
 /// Apply a leaf search on a single split.
 async fn leaf_search_single_split(
-    split: SplitAndFooterOffsets,
-    index_config: Arc<dyn IndexConfig>,
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
+    split: SplitAndFooterOffsets,
+    index_config: Arc<dyn IndexConfig>,
 ) -> crate::Result<LeafSearchResult> {
     let split_id = split.split_id.to_string();
     let index = open_index(storage, &split).await?;
@@ -179,10 +179,10 @@ async fn leaf_search_single_split(
 /// The root will be in charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
 pub async fn leaf_search(
-    index_config: Arc<dyn IndexConfig>,
     request: &SearchRequest,
-    splits: &[SplitAndFooterOffsets],
     index_storage: Arc<dyn Storage>,
+    splits: &[SplitAndFooterOffsets],
+    index_config: Arc<dyn IndexConfig>,
 ) -> Result<LeafSearchResult, SearchError> {
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
@@ -191,10 +191,10 @@ pub async fn leaf_search(
             let index_storage_clone = index_storage.clone();
             async move {
                 leaf_search_single_split(
-                    split.clone(),
-                    index_config_clone,
                     request,
                     index_storage_clone,
+                    split.clone(),
+                    index_config_clone,
                 )
                 .await
                 .map_err(|err| (split.split_id.clone(), err))

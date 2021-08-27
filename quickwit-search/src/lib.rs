@@ -164,16 +164,20 @@ pub async fn single_node_search(
         .collect();
     let index_config = index_metadata.index_config;
     let leaf_search_result = leaf_search(
-        index_config,
         search_request,
-        &split_metadata[..],
         index_storage.clone(),
+        &split_metadata[..],
+        index_config,
     )
     .await
     .with_context(|| "leaf_search")?;
-    let fetch_docs_result = fetch_docs(leaf_search_result.partial_hits, index_storage, &split_metadata)
-        .await
-        .with_context(|| "fetch_request")?;
+    let fetch_docs_result = fetch_docs(
+        leaf_search_result.partial_hits,
+        index_storage,
+        &split_metadata,
+    )
+    .await
+    .with_context(|| "fetch_request")?;
     let elapsed = start_instant.elapsed();
     Ok(SearchResult {
         num_hits: leaf_search_result.num_hits,

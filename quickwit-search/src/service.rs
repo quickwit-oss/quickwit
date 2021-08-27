@@ -136,10 +136,10 @@ impl SearchService for SearchServiceImpl {
         let index_config = index_metadata.index_config;
 
         let leaf_search_result = leaf_search(
-            index_config,
             &search_request,
-            &split_ids[..],
             storage.clone(),
+            &split_ids[..],
+            index_config,
         )
         .await?;
 
@@ -188,10 +188,10 @@ impl SearchService for SearchServiceImpl {
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let index_config = index_metadata.index_config;
         let leaf_receiver = leaf_search_stream(
-            index_config,
             &stream_request,
-            leaf_stream_request.split_metadata,
             storage.clone(),
+            leaf_stream_request.split_metadata,
+            index_config,
         )
         .await;
         Ok(leaf_receiver)

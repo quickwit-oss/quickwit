@@ -42,10 +42,10 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 // to tonic::Status as tonic::Status is required by the stream result
 // signature defined by proto generated code.
 pub async fn leaf_search_stream(
-    index_config: Arc<dyn IndexConfig>,
     request: &SearchStreamRequest,
-    splits: Vec<SplitAndFooterOffsets>,
     storage: Arc<dyn Storage>,
+    splits: Vec<SplitAndFooterOffsets>,
+    index_config: Arc<dyn IndexConfig>,
 ) -> UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>> {
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
     for split in splits {
