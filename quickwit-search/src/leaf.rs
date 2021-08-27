@@ -21,8 +21,10 @@
 use crate::collector::{make_collector_for_split, make_merge_collector, GenericQuickwitCollector};
 use crate::SearchError;
 use anyhow::Context;
+use bytes::Bytes;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
+use lru::LruCache;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{LeafSearchResult, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError};
@@ -30,19 +32,27 @@ use quickwit_storage::{BundleStorage, Storage};
 use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tantivy::{collector::Collector, query::Query, Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 
-/// Opens a `tantivy::Index` for the given split.
-///
-/// The resulting index uses a dynamic and a static cache.
-pub(crate) async fn open_index(
+lazy_static! {
+    static ref SPLIT_FOOTER_CACHE: Mutex<LruCache<String, Bytes>> = Mutex::new(LruCache::new(500));
+}
+
+async fn get_or_load_split_footer(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
-) -> anyhow::Result<Index> {
+) -> anyhow::Result<Bytes> {
+    {
+        let mut cache_mutex_guard = SPLIT_FOOTER_CACHE.lock().unwrap();
+        let possible_val = cache_mutex_guard.get(&split_and_footer_offsets.split_id);
+        if let Some(footer_data) = possible_val {
+            return Ok(footer_data.clone());
+        }
+    }
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
-    let mut footer_data = index_storage
+    let footer_data = index_storage
         .get_slice(
             &split_file,
             split_and_footer_offsets.split_footer_start as usize
@@ -56,6 +66,25 @@ pub(crate) async fn open_index(
                 split_and_footer_offsets.split_id
             )
         })?;
+
+    SPLIT_FOOTER_CACHE.lock().unwrap().put(
+        split_and_footer_offsets.split_id.to_owned(),
+        footer_data.clone(),
+    );
+
+    Ok(footer_data)
+}
+
+/// Opens a `tantivy::Index` for the given split.
+///
+/// The resulting index uses a dynamic and a static cache.
+pub(crate) async fn open_index(
+    index_storage: Arc<dyn Storage>,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
+) -> anyhow::Result<Index> {
+    let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
+    let mut footer_data =
+        get_or_load_split_footer(index_storage.clone(), split_and_footer_offsets).await?;
     let hotcache_len_bytes = footer_data.split_off(footer_data.len() - 8);
     let hotcache_num_bytes =
         u64::from_le_bytes((&*hotcache_len_bytes).try_into().unwrap()) as usize;

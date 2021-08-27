@@ -23,6 +23,9 @@
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
 
+#[macro_use]
+extern crate lazy_static;
+
 mod client;
 mod client_pool;
 mod collector;
