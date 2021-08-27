@@ -206,6 +206,16 @@ pub trait Metastore: Send + Sync + 'static {
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()>;
 
+    /// Replaces a list of splits with another list.
+    /// This API is useful during merge and demux operations.
+    /// The new splits should be staged, and the replaced splits should exist.
+    async fn replace_splits<'a>(
+        &self,
+        index_id: &str,
+        new_split_ids: &[&'a str],
+        replaced_split_ids: &[&'a str],
+    ) -> MetastoreResult<()>;
+
     /// Lists the splits.
     /// Returns a list of splits that intersects the given `time_range`, `split_state` and `tag`.
     /// Regardless of the time range filter, if a split has no timestamp it is always returned.
