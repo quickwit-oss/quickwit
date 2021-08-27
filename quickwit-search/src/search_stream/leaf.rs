@@ -27,7 +27,7 @@ use quickwit_proto::LeafSearchStreamResult;
 use quickwit_proto::OutputFormat;
 use quickwit_proto::SearchRequest;
 use quickwit_proto::SearchStreamRequest;
-use quickwit_proto::SplitAndFooterOffsets;
+use quickwit_proto::SplitIdAndFooterOffsets;
 use quickwit_storage::Storage;
 use std::sync::Arc;
 use tantivy::schema::Type;
@@ -44,7 +44,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 pub async fn leaf_search_stream(
     request: &SearchStreamRequest,
     storage: Arc<dyn Storage>,
-    splits: Vec<SplitAndFooterOffsets>,
+    splits: Vec<SplitIdAndFooterOffsets>,
     index_config: Arc<dyn IndexConfig>,
 ) -> UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>> {
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -76,7 +76,7 @@ pub async fn leaf_search_stream(
 
 /// Apply a leaf search on a single split.
 async fn leaf_search_stream_single_split(
-    split: SplitAndFooterOffsets,
+    split: SplitIdAndFooterOffsets,
     index_config: Arc<dyn IndexConfig>,
     stream_request: &SearchStreamRequest,
     storage: Arc<dyn Storage>,

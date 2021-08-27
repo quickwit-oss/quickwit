@@ -50,7 +50,7 @@ use tantivy::DocAddress;
 use quickwit_metastore::SplitState;
 use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadataAndFooterOffsets};
 use quickwit_proto::{PartialHit, SearchResult};
-use quickwit_proto::{SearchRequest, SplitAndFooterOffsets};
+use quickwit_proto::{SearchRequest, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
 
 pub use crate::client::SearchServiceClient;
@@ -126,6 +126,19 @@ fn extract_time_range(search_request: &SearchRequest) -> Option<Range<i64>> {
     }
 }
 
+fn extract_split_and_footer_offsets(
+    split_metadata_and_footer_offsets: &SplitMetadataAndFooterOffsets,
+) -> SplitIdAndFooterOffsets {
+    SplitIdAndFooterOffsets {
+        split_id: split_metadata_and_footer_offsets
+            .split_metadata
+            .split_id
+            .clone(),
+        split_footer_start: split_metadata_and_footer_offsets.footer_offsets.start as u64,
+        split_footer_end: split_metadata_and_footer_offsets.footer_offsets.end as u64,
+    }
+}
+
 /// Extract the list of relevant splits for a given search request.
 async fn list_relevant_splits(
     search_request: &SearchRequest,
@@ -154,14 +167,8 @@ pub async fn single_node_search(
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let index_storage = storage_resolver.resolve(&index_metadata.index_uri)?;
     let metas = list_relevant_splits(search_request, metastore).await?;
-    let split_metadata: Vec<SplitAndFooterOffsets> = metas
-        .iter()
-        .map(|meta| SplitAndFooterOffsets {
-            split_id: meta.split_metadata.split_id.clone(),
-            split_footer_start: meta.footer_offsets.start as u64,
-            split_footer_end: meta.footer_offsets.end as u64,
-        })
-        .collect();
+    let split_metadata: Vec<SplitIdAndFooterOffsets> =
+        metas.iter().map(extract_split_and_footer_offsets).collect();
     let index_config = index_metadata.index_config;
     let leaf_search_result = leaf_search(
         search_request,

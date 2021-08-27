@@ -25,7 +25,7 @@ use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_index_config::IndexConfig;
-use quickwit_proto::{LeafSearchResult, SearchRequest, SplitAndFooterOffsets, SplitSearchError};
+use quickwit_proto::{LeafSearchResult, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError};
 use quickwit_storage::{BundleStorage, Storage};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
@@ -39,7 +39,7 @@ use tokio::task::spawn_blocking;
 /// The resulting index uses a dynamic and a static cache.
 pub(crate) async fn open_index(
     index_storage: Arc<dyn Storage>,
-    split_and_footer_offsets: &SplitAndFooterOffsets,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Index> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let mut footer_data = index_storage
@@ -148,7 +148,7 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
 async fn leaf_search_single_split(
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
-    split: SplitAndFooterOffsets,
+    split: SplitIdAndFooterOffsets,
     index_config: Arc<dyn IndexConfig>,
 ) -> crate::Result<LeafSearchResult> {
     let split_id = split.split_id.to_string();
@@ -181,7 +181,7 @@ async fn leaf_search_single_split(
 pub async fn leaf_search(
     request: &SearchRequest,
     index_storage: Arc<dyn Storage>,
-    splits: &[SplitAndFooterOffsets],
+    splits: &[SplitIdAndFooterOffsets],
     index_config: Arc<dyn IndexConfig>,
 ) -> Result<LeafSearchResult, SearchError> {
     let leaf_search_single_split_futures: Vec<_> = splits

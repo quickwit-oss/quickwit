@@ -26,7 +26,7 @@ use itertools::Itertools;
 use quickwit_proto::FetchDocsResult;
 use quickwit_proto::Hit;
 use quickwit_proto::PartialHit;
-use quickwit_proto::SplitAndFooterOffsets;
+use quickwit_proto::SplitIdAndFooterOffsets;
 use quickwit_storage::Storage;
 use tantivy::IndexReader;
 use tantivy::ReloadPolicy;
@@ -40,11 +40,11 @@ use crate::GlobalDocAddress;
 async fn fetch_docs_to_map<'a>(
     mut global_doc_addrs: Vec<GlobalDocAddress<'a>>,
     index_storage: Arc<dyn Storage>,
-    splits: &[SplitAndFooterOffsets],
+    splits: &[SplitIdAndFooterOffsets],
 ) -> anyhow::Result<HashMap<GlobalDocAddress<'a>, String>> {
     let mut split_fetch_docs_futures = Vec::new();
 
-    let split_offsets_map: HashMap<&str, &SplitAndFooterOffsets> = splits
+    let split_offsets_map: HashMap<&str, &SplitIdAndFooterOffsets> = splits
         .iter()
         .map(|split| (split.split_id.as_str(), split))
         .collect();
@@ -89,7 +89,7 @@ async fn fetch_docs_to_map<'a>(
 pub async fn fetch_docs(
     partial_hits: Vec<PartialHit>,
     index_storage: Arc<dyn Storage>,
-    splits: &[SplitAndFooterOffsets],
+    splits: &[SplitIdAndFooterOffsets],
 ) -> anyhow::Result<FetchDocsResult> {
     let global_doc_addrs: Vec<GlobalDocAddress> = partial_hits
         .iter()
@@ -119,7 +119,7 @@ pub async fn fetch_docs(
 async fn get_searcher_for_split(
     num_searchers: usize,
     index_storage: Arc<dyn Storage>,
-    split: &SplitAndFooterOffsets,
+    split: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<IndexReader> {
     let index = open_index(index_storage, split)
         .await
@@ -137,7 +137,7 @@ async fn get_searcher_for_split(
 async fn fetch_docs_in_split<'a>(
     global_doc_addrs: Vec<GlobalDocAddress<'a>>,
     index_storage: Arc<dyn Storage>,
-    split: &SplitAndFooterOffsets,
+    split: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Vec<(GlobalDocAddress<'a>, String)>> {
     let index_reader = get_searcher_for_split(global_doc_addrs.len(), index_storage, split).await?;
     let mut doc_futures = Vec::new();

@@ -29,7 +29,7 @@ use itertools::Itertools;
 use quickwit_metastore::SplitMetadataAndFooterOffsets;
 use quickwit_proto::LeafSearchStreamRequest;
 use quickwit_proto::SearchStreamRequest;
-use quickwit_proto::SplitAndFooterOffsets;
+use quickwit_proto::SplitIdAndFooterOffsets;
 use tracing::*;
 
 use quickwit_metastore::Metastore;
@@ -69,9 +69,9 @@ pub async fn root_search_stream(
 
     let mut handles = Vec::new();
     for (mut search_client, jobs) in assigned_leaf_search_jobs {
-        let split_metadata_list: Vec<SplitAndFooterOffsets> = jobs
+        let split_metadata_list: Vec<SplitIdAndFooterOffsets> = jobs
             .iter()
-            .map(|job| SplitAndFooterOffsets {
+            .map(|job| SplitIdAndFooterOffsets {
                 split_id: job.metadata.split_metadata.split_id.clone(),
                 split_footer_start: job.metadata.footer_offsets.start,
                 split_footer_end: job.metadata.footer_offsets.end,

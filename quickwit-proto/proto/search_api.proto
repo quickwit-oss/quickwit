@@ -109,18 +109,18 @@ message LeafSearchRequest {
 
   // Index split ids to apply the query on.
   // This ids are resolved from the index_uri defined in the search_request.
-  repeated SplitAndFooterOffsets split_metadata = 4;
+  repeated SplitIdAndFooterOffsets split_metadata = 4;
 }
 
-message SplitAndFooterOffsets {
-  // The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
-  uint64 split_footer_start = 1;
-  // The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
-  uint64 split_footer_end = 2;
-
+message SplitIdAndFooterOffsets {
   // Index split id to apply the query on.
   // This id is resolved from the index_uri defined in the search_request.
-  string split_id = 3;
+  string split_id = 1;
+  // The offset of the start of footer in the split bundle. The footer contains the file bundle metadata and the hotcache.
+  uint64 split_footer_start = 2;
+  // The offset of the end of the footer in split bundle. The footer contains the file bundle metada and the hotcache.
+  uint64 split_footer_end = 3;
+
 }
 
 message Hit {
@@ -182,7 +182,7 @@ message FetchDocsRequest {
   // Split footer offsets. They are required for fetch docs to
   // fetch the document content in two reads, when the footer is not
   // cached.
-  repeated SplitAndFooterOffsets split_metadata = 3;
+  repeated SplitIdAndFooterOffsets split_metadata = 3;
 }
 
 message FetchDocsResult {
@@ -233,7 +233,7 @@ message LeafSearchStreamRequest {
 
   // Index split ids to apply the query on.
   // This ids are resolved from the index_uri defined in the stream request.
-  repeated SplitAndFooterOffsets split_metadata = 2;
+  repeated SplitIdAndFooterOffsets split_metadata = 2;
 }
 
 

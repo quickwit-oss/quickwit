@@ -73,10 +73,7 @@ mod tests {
             serde_json::json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
         ]).await?;
         let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
-        let file_entries: Vec<FileEntry> = splits
-            .iter()
-            .map(|split_meta| FileEntry::from(split_meta))
-            .collect();
+        let file_entries: Vec<FileEntry> = splits.iter().map(FileEntry::from).collect();
         assert_eq!(file_entries.len(), 1);
         let index_meta = test_sandbox.metastore().index_metadata(index_id).await?;
         let storage = test_sandbox

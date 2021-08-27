@@ -453,7 +453,7 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     ));
 
     let index_path = test_env.local_directory_path;
-    let split_filename = quickwit_common::split_file(&splits[0].split_metadata.split_id.as_str());
+    let split_filename = quickwit_common::split_file(splits[0].split_metadata.split_id.as_str());
     let split_path = index_path.join(&split_filename);
     assert_eq!(split_path.exists(), true);
 

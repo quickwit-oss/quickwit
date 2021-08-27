@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_metastore::SplitMetadataAndFooterOffsets;
-use quickwit_proto::SplitAndFooterOffsets;
+use quickwit_proto::SplitIdAndFooterOffsets;
 use quickwit_proto::SplitSearchError;
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
@@ -43,6 +43,7 @@ use quickwit_proto::{
 
 use crate::client_pool::Job;
 use crate::collector::make_merge_collector;
+use crate::extract_split_and_footer_offsets;
 use crate::list_relevant_splits;
 use crate::ClientPool;
 use crate::SearchClientPool;
@@ -77,11 +78,7 @@ async fn execute_search(
             search_request: Some(search_request_with_offset_0.clone()),
             split_metadata: jobs
                 .iter()
-                .map(|job| SplitAndFooterOffsets {
-                    split_id: job.metadata.split_metadata.split_id.to_string(),
-                    split_footer_start: job.metadata.footer_offsets.start as u64,
-                    split_footer_end: job.metadata.footer_offsets.end as u64,
-                })
+                .map(|job| extract_split_and_footer_offsets(&job.metadata))
                 .collect(),
         };
 
@@ -201,19 +198,6 @@ pub(crate) fn job_for_splits(
         })
         .collect();
     leaf_search_jobs
-}
-
-fn extract_split_and_footer_offsets(
-    split_metadata_and_footer_offsets: &SplitMetadataAndFooterOffsets,
-) -> SplitAndFooterOffsets {
-    SplitAndFooterOffsets {
-        split_id: split_metadata_and_footer_offsets
-            .split_metadata
-            .split_id
-            .clone(),
-        split_footer_start: split_metadata_and_footer_offsets.footer_offsets.start as u64,
-        split_footer_end: split_metadata_and_footer_offsets.footer_offsets.end as u64,
-    }
 }
 
 /// Perform a distributed search.
@@ -401,7 +385,7 @@ pub async fn root_search(
             // TODO group fetch doc requests.
             if let Some(partial_hits) = partial_hits_map.get(&job.metadata.split_metadata.split_id)
             {
-                let split_metadata: Vec<SplitAndFooterOffsets> = partial_hits
+                let split_metadata: Vec<SplitIdAndFooterOffsets> = partial_hits
                     .iter()
                     .map(|partial_hit| {
                         split_metadata_map
@@ -414,7 +398,7 @@ pub async fn root_search(
                                 ))
                             })
                     })
-                    .collect::<anyhow::Result<Vec<SplitAndFooterOffsets>>>()?;
+                    .collect::<anyhow::Result<Vec<SplitIdAndFooterOffsets>>>()?;
                 let fetch_docs_request = FetchDocsRequest {
                     partial_hits: partial_hits.clone(),
                     index_id: search_request.index_id.clone(),
