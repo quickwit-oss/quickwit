@@ -2836,6 +2836,7 @@ dependencies = [
  "serde_json",
  "stable_deref_trait",
  "tantivy",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",
