@@ -253,21 +253,28 @@ impl Scheduler {
     fn schedule_next_timeout(&mut self, ctx: &ActorContext<SchedulerMessage>) {
         let simulated_now = self.simulated_now();
         let next_deadline_opt = self.future_events.peek().map(|evt| evt.0.deadline);
-        let timeout = if let Some(next_deadline) = next_deadline_opt {
-            next_deadline - simulated_now
-        } else {
-            return;
+        let timeout = match next_deadline_opt {
+            Some(next_deadline) if next_deadline <= simulated_now => Duration::default(),
+            Some(next_deadline) => next_deadline - simulated_now,
+            None => {
+                // No event to schedule
+                return;
+            }
         };
-        let mailbox = ctx.mailbox().clone();
-        let timeout = async move {
-            tokio::time::sleep(timeout).await;
-            let _ = mailbox.send_message(SchedulerMessage::Timeout).await;
-        };
-        let new_join_handle: JoinHandle<()> = tokio::task::spawn(timeout);
+        // The next event timeout is about to change. Let's cancel the previous scheduled event.
         if let Some(previous_join_handle) = self.next_timeout.take() {
             previous_join_handle.abort();
         }
-        // n.b.: Dropping the previous timeout cancels it.
+        let self_mailbox = ctx.mailbox().clone();
+        let new_join_handle: JoinHandle<()> = tokio::task::spawn(async move {
+            if timeout.is_zero() {
+                tokio::task::yield_now().await;
+            } else {
+                tokio::time::sleep(timeout).await;
+            }
+            // We ignore the send error here. The scheduler was just terminated
+            let _ = self_mailbox.send_message(SchedulerMessage::Timeout).await;
+        });
         self.next_timeout = Some(new_join_handle);
     }
 }
