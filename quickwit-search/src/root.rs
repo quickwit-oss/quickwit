@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_metastore::SplitMetadataAndFooterOffsets;
-use quickwit_proto::LeafSearchRequestMetadata;
+use quickwit_proto::SplitIdAndFooterOffsets;
 use quickwit_proto::SplitSearchError;
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
@@ -43,6 +43,7 @@ use quickwit_proto::{
 
 use crate::client_pool::Job;
 use crate::collector::make_merge_collector;
+use crate::extract_split_and_footer_offsets;
 use crate::list_relevant_splits;
 use crate::ClientPool;
 use crate::SearchClientPool;
@@ -77,11 +78,7 @@ async fn execute_search(
             search_request: Some(search_request_with_offset_0.clone()),
             split_metadata: jobs
                 .iter()
-                .map(|job| LeafSearchRequestMetadata {
-                    split_id: job.metadata.split_metadata.split_id.to_string(),
-                    split_footer_start: job.metadata.footer_offsets.start as u64,
-                    split_footer_end: job.metadata.footer_offsets.end as u64,
-                })
+                .map(|job| extract_split_and_footer_offsets(&job.metadata))
                 .collect(),
         };
 
@@ -388,9 +385,24 @@ pub async fn root_search(
             // TODO group fetch doc requests.
             if let Some(partial_hits) = partial_hits_map.get(&job.metadata.split_metadata.split_id)
             {
+                let split_metadata: Vec<SplitIdAndFooterOffsets> = partial_hits
+                    .iter()
+                    .map(|partial_hit| {
+                        split_metadata_map
+                            .get(&partial_hit.split_id)
+                            .map(|metadata| extract_split_and_footer_offsets(metadata))
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(format!(
+                                    "could not find split id metadata in hashmap {}",
+                                    &partial_hit.split_id
+                                ))
+                            })
+                    })
+                    .collect::<anyhow::Result<Vec<SplitIdAndFooterOffsets>>>()?;
                 let fetch_docs_request = FetchDocsRequest {
                     partial_hits: partial_hits.clone(),
                     index_id: search_request.index_id.clone(),
+                    split_metadata,
                 };
                 let mut search_client_clone = search_client.clone();
                 let handle = tokio::spawn(async move {

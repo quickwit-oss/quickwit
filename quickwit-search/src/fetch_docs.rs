@@ -26,6 +26,7 @@ use itertools::Itertools;
 use quickwit_proto::FetchDocsResult;
 use quickwit_proto::Hit;
 use quickwit_proto::PartialHit;
+use quickwit_proto::SplitIdAndFooterOffsets;
 use quickwit_storage::Storage;
 use tantivy::IndexReader;
 use tantivy::ReloadPolicy;
@@ -35,11 +36,18 @@ use crate::GlobalDocAddress;
 
 /// Given a list of global doc address, fetch all of the documents and
 /// returns them as a hashmap.
-async fn fetch_docs_to_map(
-    mut global_doc_addrs: Vec<GlobalDocAddress<'_>>,
+#[allow(clippy::needless_lifetimes)]
+async fn fetch_docs_to_map<'a>(
+    mut global_doc_addrs: Vec<GlobalDocAddress<'a>>,
     index_storage: Arc<dyn Storage>,
-) -> anyhow::Result<HashMap<GlobalDocAddress<'_>, String>> {
+    splits: &[SplitIdAndFooterOffsets],
+) -> anyhow::Result<HashMap<GlobalDocAddress<'a>, String>> {
     let mut split_fetch_docs_futures = Vec::new();
+
+    let split_offsets_map: HashMap<&str, &SplitIdAndFooterOffsets> = splits
+        .iter()
+        .map(|split| (split.split_id.as_str(), split))
+        .collect();
 
     // We sort global hit addrs in order to allow for the grouby.
     global_doc_addrs.sort_by_key(|global_doc_addr| global_doc_addr.split);
@@ -48,11 +56,16 @@ async fn fetch_docs_to_map(
         .group_by(|global_doc_addr| global_doc_addr.split)
         .into_iter()
     {
-        let split_storage: Arc<dyn Storage> =
-            quickwit_storage::add_prefix_to_storage(index_storage.clone(), &split_id);
         let global_doc_addrs: Vec<GlobalDocAddress> =
             global_doc_addrs.into_iter().cloned().collect();
-        split_fetch_docs_futures.push(fetch_docs_in_split(global_doc_addrs, split_storage));
+        let split_and_offset = split_offsets_map
+            .get(&split_id)
+            .ok_or_else(|| anyhow::anyhow!("Failed to find offset for split {}", split_id))?;
+        split_fetch_docs_futures.push(fetch_docs_in_split(
+            global_doc_addrs,
+            index_storage.clone(),
+            *split_and_offset,
+        ));
     }
 
     let split_fetch_docs: Vec<Vec<(GlobalDocAddress, String)>> =
@@ -76,6 +89,7 @@ async fn fetch_docs_to_map(
 pub async fn fetch_docs(
     partial_hits: Vec<PartialHit>,
     index_storage: Arc<dyn Storage>,
+    splits: &[SplitIdAndFooterOffsets],
 ) -> anyhow::Result<FetchDocsResult> {
     let global_doc_addrs: Vec<GlobalDocAddress> = partial_hits
         .iter()
@@ -83,7 +97,7 @@ pub async fn fetch_docs(
         .collect();
 
     let mut global_doc_addr_to_doc_json =
-        fetch_docs_to_map(global_doc_addrs, index_storage).await?;
+        fetch_docs_to_map(global_doc_addrs, index_storage, splits).await?;
 
     let hits: Vec<Hit> = partial_hits
         .iter()
@@ -103,10 +117,11 @@ pub async fn fetch_docs(
 }
 
 async fn get_searcher_for_split(
-    split_storage: Arc<dyn Storage>,
     num_searchers: usize,
+    index_storage: Arc<dyn Storage>,
+    split: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<IndexReader> {
-    let index = open_index(split_storage)
+    let index = open_index(index_storage, split)
         .await
         .with_context(|| "open-index-for-split")?;
     let reader = index
@@ -118,11 +133,13 @@ async fn get_searcher_for_split(
 }
 
 /// Fetching docs from a specific split.
-async fn fetch_docs_in_split(
-    global_doc_addrs: Vec<GlobalDocAddress<'_>>,
-    split_storage: Arc<dyn Storage>,
-) -> anyhow::Result<Vec<(GlobalDocAddress<'_>, String)>> {
-    let index_reader = get_searcher_for_split(split_storage, global_doc_addrs.len()).await?;
+#[allow(clippy::needless_lifetimes)]
+async fn fetch_docs_in_split<'a>(
+    global_doc_addrs: Vec<GlobalDocAddress<'a>>,
+    index_storage: Arc<dyn Storage>,
+    split: &SplitIdAndFooterOffsets,
+) -> anyhow::Result<Vec<(GlobalDocAddress<'a>, String)>> {
+    let index_reader = get_searcher_for_split(global_doc_addrs.len(), index_storage, split).await?;
     let mut doc_futures = Vec::new();
     for global_doc_addr in global_doc_addrs {
         let searcher = index_reader.searcher();

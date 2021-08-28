@@ -27,6 +27,7 @@ use quickwit_proto::LeafSearchStreamResult;
 use quickwit_proto::OutputFormat;
 use quickwit_proto::SearchRequest;
 use quickwit_proto::SearchStreamRequest;
+use quickwit_proto::SplitIdAndFooterOffsets;
 use quickwit_storage::Storage;
 use std::sync::Arc;
 use tantivy::schema::Type;
@@ -41,27 +42,30 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 // to tonic::Status as tonic::Status is required by the stream result
 // signature defined by proto generated code.
 pub async fn leaf_search_stream(
-    index_config: Arc<dyn IndexConfig>,
     request: &SearchStreamRequest,
-    split_ids: Vec<String>,
     storage: Arc<dyn Storage>,
+    splits: Vec<SplitIdAndFooterOffsets>,
+    index_config: Arc<dyn IndexConfig>,
 ) -> UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>> {
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-    for split_id in split_ids {
-        let split_storage: Arc<dyn Storage> =
-            quickwit_storage::add_prefix_to_storage(storage.clone(), split_id.clone());
+    for split in splits {
         let index_config_clone = index_config.clone();
         let result_sender_clone = result_sender.clone();
         let request_clone = request.clone();
+        let storage_clone = storage.clone();
         tokio::spawn(async move {
-            let leaf_split_result =
-                leaf_search_stream_single_split(index_config_clone, &request_clone, split_storage)
-                    .await
-                    .map_err(SearchError::convert_to_tonic_status);
+            let leaf_split_result = leaf_search_stream_single_split(
+                split.clone(),
+                index_config_clone,
+                &request_clone,
+                storage_clone,
+            )
+            .await
+            .map_err(SearchError::convert_to_tonic_status);
             result_sender_clone.send(leaf_split_result).map_err(|_| {
                 SearchError::InternalError(format!(
                     "Unable to send leaf export result for split `{}`",
-                    split_id
+                    &split.split_id
                 ))
             })?;
             Result::<(), SearchError>::Ok(())
@@ -72,11 +76,12 @@ pub async fn leaf_search_stream(
 
 /// Apply a leaf search on a single split.
 async fn leaf_search_stream_single_split(
+    split: SplitIdAndFooterOffsets,
     index_config: Arc<dyn IndexConfig>,
     stream_request: &SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResult> {
-    let index = open_index(storage).await?;
+    let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
     let fast_field_to_extract = stream_request.fast_field.clone();
     let fast_field = split_schema
