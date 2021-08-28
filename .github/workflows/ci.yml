@@ -73,11 +73,12 @@ jobs:
         name: cargo test
         with:
           command: test
-      - uses: actions-rs/cargo@v1
-        name: cargo test failpoints
-        with:
-          command: test
-          args: --features fail/failpoints test_failpoint -- --test-threads 1
+      # See #473 #472
+      # - uses: actions-rs/cargo@v1
+      #   name: cargo test failpoints
+      #   with:
+      #     command: test
+      #     args: --features fail/failpoints test_failpoint -- --test-threads 1
 
   # test:
   #   name: Run tests
