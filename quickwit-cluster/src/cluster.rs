@@ -22,21 +22,18 @@ use std::fs;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::RecvTimeoutError;
 use std::sync::Arc;
 use std::time::Duration;
 
-use artillery_core::epidemic::prelude::{
-    ArtilleryMember, ArtilleryMemberEvent, ArtilleryMemberState, Cluster as ArtilleryCluster,
-    ClusterConfig as ArtilleryClusterConfig,
+use crate::error::{ClusterError, ClusterResult};
+use quickwit_swim::prelude::{
+    ArtilleryError, ArtilleryMember, ArtilleryMemberEvent, ArtilleryMemberState,
+    Cluster as ArtilleryCluster, ClusterConfig as ArtilleryClusterConfig,
 };
-use artillery_core::errors::ArtilleryError;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
-use tracing::*;
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
-
-use crate::error::{ClusterError, ClusterResult};
 
 /// The ID that makes the cluster unique.
 const CLUSTER_ID: &str = "quickwit-cluster";
@@ -99,7 +96,7 @@ pub struct Cluster {
     pub listen_addr: SocketAddr,
 
     /// The actual cluster that implement the SWIM protocol.
-    artillery_cluster: Arc<ArtilleryCluster>,
+    artillery_cluster: ArtilleryCluster,
 
     /// A receiver(channel) for exchanging members in a cluster.
     members: watch::Receiver<Vec<Member>>,
@@ -122,8 +119,8 @@ impl Cluster {
             listen_addr,
             ..Default::default()
         };
-        let (artillery_cluster, _) =
-            ArtilleryCluster::new_cluster(host_key, config).map_err(|err| match err {
+        let (artillery_cluster, swim_event_rx) =
+            ArtilleryCluster::create_and_start(host_key, config).map_err(|err| match err {
                 ArtilleryError::Io(io_err) => ClusterError::UDPPortBindingError {
                     port: listen_addr.port(),
                     message: io_err.to_string(),
@@ -138,7 +135,7 @@ impl Cluster {
         // Create cluster.
         let cluster = Cluster {
             listen_addr,
-            artillery_cluster: Arc::new(artillery_cluster),
+            artillery_cluster,
             members: members_receiver,
             stop: Arc::new(AtomicBool::new(false)),
         };
@@ -155,14 +152,13 @@ impl Cluster {
         }
 
         // Prepare to start a task that will monitor cluster events.
-        let task_inner = cluster.artillery_cluster.clone();
         let task_listen_addr = cluster.listen_addr;
         let task_stop = cluster.stop.clone();
 
         // Start to monitor the cluster events.
         tokio::task::spawn_blocking(move || {
             loop {
-                match task_inner.events.recv_timeout(CLUSTER_EVENT_TIMEOUT) {
+                match swim_event_rx.recv_timeout(CLUSTER_EVENT_TIMEOUT) {
                     Ok((artillery_members, artillery_member_event)) => {
                         log_artillery_event(artillery_member_event);
                         let updated_memberlist: Vec<Member> = artillery_members
@@ -180,11 +176,11 @@ impl Cluster {
                             break;
                         }
                     }
-                    Err(RecvTimeoutError::Disconnected) => {
+                    Err(flume::RecvTimeoutError::Disconnected) => {
                         debug!("channel disconnected");
                         break;
                     }
-                    Err(RecvTimeoutError::Timeout) => {
+                    Err(flume::RecvTimeoutError::Timeout) => {
                         if task_stop.load(Ordering::Relaxed) {
                             debug!("receive a stop signal");
                             break;
@@ -208,13 +204,13 @@ impl Cluster {
     }
 
     /// Specify the address of a running node and join the cluster to which the node belongs.
-    pub fn add_peer_node(&self, peer_addr: SocketAddr) {
+    pub async fn add_peer_node(&self, peer_addr: SocketAddr) {
         info!(peer_addr=?peer_addr, "Add peer node.");
         self.artillery_cluster.add_seed_node(peer_addr);
     }
 
     /// Leave the cluster.
-    pub fn leave(&self) {
+    pub async fn leave(&self) {
         info!("Leave the cluster.");
         self.artillery_cluster.leave_cluster();
         self.stop.store(true, Ordering::Relaxed);
@@ -265,8 +261,9 @@ mod tests {
     use std::net::SocketAddr;
     use std::thread;
     use std::time;
+    use std::time::Duration;
 
-    use artillery_core::epidemic::prelude::{ArtilleryMember, ArtilleryMemberState};
+    use quickwit_swim::prelude::{ArtilleryMember, ArtilleryMemberState};
 
     use crate::cluster::{convert_member, read_host_key, Member};
     use crate::test_utils::{available_port, test_cluster};
@@ -352,7 +349,7 @@ mod tests {
         let expected = vec![cluster.listen_addr];
         assert_eq!(members, expected);
 
-        cluster.leave();
+        cluster.leave().await;
 
         tmp_dir.close()?;
 
@@ -366,14 +363,15 @@ mod tests {
         let cluster1 = test_cluster(tmp_dir.path().join("host_key1").as_path())?;
 
         let cluster2 = test_cluster(tmp_dir.path().join("host_key2").as_path())?;
-        cluster2.add_peer_node(cluster1.listen_addr);
+        cluster2.add_peer_node(cluster1.listen_addr).await;
 
         let cluster3 = test_cluster(tmp_dir.path().join("host_key3").as_path())?;
-        cluster3.add_peer_node(cluster1.listen_addr);
+        cluster3.add_peer_node(cluster1.listen_addr).await;
 
         // Wait for the cluster to be configured.
-        thread::sleep(time::Duration::from_secs(5));
+        tokio::time::sleep(Duration::from_secs(5)).await;
 
+        dbg!("hello");
         let mut members: Vec<SocketAddr> = cluster1
             .members()
             .iter()
@@ -390,17 +388,17 @@ mod tests {
         println!("{:?}", expected);
         assert_eq!(members, expected);
 
-        cluster1.leave();
+        cluster1.leave().await;
 
         // Wait for leaving the cluster.
         thread::sleep(time::Duration::from_millis(10));
 
-        cluster2.leave();
+        cluster2.leave().await;
 
         // Wait for leaving the cluster.
         thread::sleep(time::Duration::from_millis(10));
 
-        cluster3.leave();
+        cluster3.leave().await;
 
         tmp_dir.close().unwrap();
 
