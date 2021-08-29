@@ -22,6 +22,7 @@ use super::FastFieldCollectorBuilder;
 use crate::leaf::open_index;
 use crate::leaf::warmup;
 use crate::SearchError;
+use futures::{FutureExt, StreamExt};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::LeafSearchStreamResult;
 use quickwit_proto::OutputFormat;
@@ -30,9 +31,17 @@ use quickwit_proto::SearchStreamRequest;
 use quickwit_proto::SplitIdAndFooterOffsets;
 use quickwit_storage::Storage;
 use std::sync::Arc;
+use tantivy::query::Query;
 use tantivy::schema::Type;
+use tantivy::LeasedItem;
 use tantivy::ReloadPolicy;
+use tantivy::Searcher;
+use tokio::task::spawn_blocking;
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tracing::error;
+
+// TODO: buffer of 5 seems to be sufficient to do the job locally, needs to be tested on a cluster.
+const CONCURRENT_SPLIT_SEARCH_STREAM: usize = 5;
 
 /// `leaf` step of search stream.
 // Note: we return a stream of a result with a tonic::Status error
@@ -46,39 +55,59 @@ pub async fn leaf_search_stream(
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
     index_config: Arc<dyn IndexConfig>,
-) -> UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>> {
+) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>> {
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-    for split in splits {
-        let index_config_clone = index_config.clone();
-        let result_sender_clone = result_sender.clone();
-        let request_clone = request.clone();
-        let storage_clone = storage.clone();
-        tokio::spawn(async move {
-            let leaf_split_result = leaf_search_stream_single_split(
-                split.clone(),
-                index_config_clone,
-                &request_clone,
-                storage_clone,
-            )
-            .await
-            .map_err(SearchError::convert_to_tonic_status);
-            result_sender_clone.send(leaf_split_result).map_err(|_| {
-                SearchError::InternalError(format!(
-                    "Unable to send leaf export result for split `{}`",
-                    &split.split_id
-                ))
-            })?;
-            Result::<(), SearchError>::Ok(())
-        });
-    }
+    let request_clone = request.clone();
+    tokio::spawn(async move {
+        let mut stream =
+            leaf_search_results_stream(request_clone, storage, splits, index_config).await;
+        while let Some(item) = stream.next().await {
+            if let Err(error) = result_sender.send(item) {
+                error!(
+                    "Failed to send leaf search stream result. Stop sending. Cause: {}",
+                    error
+                );
+                break;
+            }
+        }
+    });
     UnboundedReceiverStream::new(result_receiver)
+}
+
+async fn leaf_search_results_stream(
+    request: SearchStreamRequest,
+    storage: Arc<dyn Storage>,
+    splits: Vec<SplitIdAndFooterOffsets>,
+    index_config: Arc<dyn IndexConfig>,
+) -> impl futures::Stream<Item = crate::Result<LeafSearchStreamResult>> + Sync + Send + 'static {
+    futures::stream::iter(splits)
+        .map(move |split| {
+            (
+                split,
+                index_config.clone(),
+                request.clone(),
+                storage.clone(),
+            )
+        })
+        .map(
+            |(split, index_config_clone, request_clone, split_storage)| {
+                leaf_search_stream_single_split(
+                    split,
+                    index_config_clone,
+                    request_clone,
+                    split_storage,
+                )
+                .shared()
+            },
+        )
+        .buffer_unordered(CONCURRENT_SPLIT_SEARCH_STREAM)
 }
 
 /// Apply a leaf search on a single split.
 async fn leaf_search_stream_single_split(
     split: SplitIdAndFooterOffsets,
     index_config: Arc<dyn IndexConfig>,
-    stream_request: &SearchStreamRequest,
+    stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResult> {
     let index = open_index(storage, &split).await?;
@@ -88,8 +117,8 @@ async fn leaf_search_stream_single_split(
         .get_field(&fast_field_to_extract)
         .ok_or_else(|| {
             SearchError::InvalidQuery(format!(
-                "Fast field `{}` does not exist.",
-                fast_field_to_extract
+                "Fast field `{}` does not exist for split {}.",
+                fast_field_to_extract, split.split_id,
             ))
         })?;
     let fast_field_type = split_schema.get_field_entry(fast_field).field_type();
@@ -103,7 +132,10 @@ async fn leaf_search_stream_single_split(
     )?;
 
     let output_format = OutputFormat::from_i32(stream_request.output_format).ok_or_else(|| {
-        SearchError::InternalError("Invalid output format specified.".to_string())
+        SearchError::InternalError(format!(
+            "Invalid output format specified for split {}.",
+            split.split_id
+        ))
     })?;
     let search_request = SearchRequest::from(stream_request.clone());
     let query = index_config.query(split_schema, &search_request)?;
@@ -120,6 +152,27 @@ async fn leaf_search_stream_single_split(
         fast_field_collector_builder.fast_field_to_warm(),
     )
     .await?;
+    let collect_handle = spawn_blocking(move || {
+        collect_fast_field_values(
+            &fast_field_collector_builder,
+            &searcher,
+            query,
+            output_format,
+        )
+    });
+    let buffer = collect_handle.await.map_err(|error| {
+        error!(split_id = %split.split_id, fast_field=%fast_field_to_extract, error_message=%error, "Failed to collect fast field");
+        SearchError::InternalError(format!("Error when collecting fast field values for split {}: {:?}", split.split_id, error))
+    })??;
+    Ok(LeafSearchStreamResult { data: buffer })
+}
+
+fn collect_fast_field_values(
+    fast_field_collector_builder: &FastFieldCollectorBuilder,
+    searcher: &LeasedItem<Searcher>,
+    query: Box<dyn Query>,
+    output_format: OutputFormat,
+) -> crate::Result<Vec<u8>> {
     let mut buffer = Vec::new();
     match fast_field_collector_builder.value_type() {
         Type::I64 => {
@@ -151,5 +204,5 @@ async fn leaf_search_stream_single_split(
             )));
         }
     }
-    Ok(LeafSearchStreamResult { data: buffer })
+    Ok(buffer)
 }

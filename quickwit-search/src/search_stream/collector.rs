@@ -168,11 +168,13 @@ impl FastFieldCollectorBuilder {
     }
 
     pub fn fast_field_to_warm(&self) -> Vec<String> {
+        let mut fields = vec![self.fast_field_name.clone()];
         if let Some(timestamp_field_name) = &self.timestamp_field_name {
-            vec![timestamp_field_name.clone(), self.fast_field_name.clone()]
-        } else {
-            vec![self.fast_field_name.clone()]
+            if *timestamp_field_name != self.fast_field_name {
+                fields.push(timestamp_field_name.clone());
+            }
         }
+        fields
     }
 
     pub fn typed_build<TFastValue: FastValue>(&self) -> FastFieldCollector<TFastValue> {
@@ -193,5 +195,36 @@ impl FastFieldCollectorBuilder {
     pub fn build_u64(&self) -> FastFieldCollector<u64> {
         // TODO: check type
         self.typed_build::<u64>()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fast_field_collector_builder() -> anyhow::Result<()> {
+        let builder = FastFieldCollectorBuilder::new(
+            Type::U64,
+            "field_name".to_string(),
+            Some("field_name".to_string()),
+            None,
+            None,
+            None,
+        )?;
+        assert_eq!(builder.fast_field_to_warm(), vec!["field_name"]);
+        let builder = FastFieldCollectorBuilder::new(
+            Type::U64,
+            "field_name".to_string(),
+            Some("timestamp_field_name".to_string()),
+            None,
+            None,
+            None,
+        )?;
+        assert_eq!(
+            builder.fast_field_to_warm(),
+            vec!["field_name", "timestamp_field_name"]
+        );
+        Ok(())
     }
 }

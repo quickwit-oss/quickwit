@@ -42,7 +42,7 @@ pub enum StorageErrorKind {
 
 /// Generic Storage Resolver Error.
 #[allow(missing_docs)]
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Serialize, Deserialize, Clone)]
 pub enum StorageResolverError {
     /// The input is not a valid URI.
     /// A protocol is required for the URI.
