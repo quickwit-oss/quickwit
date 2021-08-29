@@ -136,8 +136,10 @@ fn create_file_bundle(
     segment_metas: &[SegmentMeta],
     scratch_dir: &ScratchDirectory,
     split_file: &mut impl io::Write,
+    ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<Range<u64>> {
-    // create bundle
+    info!("create-file-bundle");
+    let _protected_zone_guard = ctx.protect_zone();
     // List the split files that will be packaged into the bundle.
     let mut bundle_storage_builder = BundleStorageBuilder::new(split_file)?;
 
@@ -186,6 +188,7 @@ fn build_hotcache<W: io::Write>(
 fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
+    ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<PackagedSplit> {
     info!("create-packaged-split");
 
@@ -199,6 +202,7 @@ fn create_packaged_split(
         segment_metas,
         &split.split_scratch_directory,
         &mut split_file,
+        ctx,
     )?;
 
     let num_docs = segment_metas
@@ -211,7 +215,7 @@ fn create_packaged_split(
         .map(|segment_meta| segment_meta.id())
         .collect();
 
-    // extract tag values from `_tags` special fields
+    // Extract tag values from `_tags` special fields.
     let mut tags = vec![];
     let index_reader = split.index.reader()?;
     for reader in index_reader.searcher().segment_readers() {
@@ -227,6 +231,7 @@ fn create_packaged_split(
     let hotcache_offset_end = split_file.written_bytes();
     let hotcache_num_bytes = hotcache_offset_end - hotcache_offset_start;
 
+    info!("split-write-all");
     split_file.write_all(&hotcache_num_bytes.to_le_bytes())?;
     split_file.flush()?;
 
@@ -256,7 +261,7 @@ impl SyncActor for Packager {
         fail_point!("packager:before");
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
-        let packaged_split = create_packaged_split(&segment_metas[..], split)?;
+        let packaged_split = create_packaged_split(&segment_metas[..], split, ctx)?;
         ctx.send_message_blocking(&self.uploader_mailbox, packaged_split)?;
         fail_point!("packager:after");
         Ok(())
