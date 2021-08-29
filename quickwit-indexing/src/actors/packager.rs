@@ -40,7 +40,7 @@ use quickwit_storage::BUNDLE_FILENAME;
 use tantivy::common::CountingWriter;
 use tantivy::SegmentId;
 use tantivy::SegmentMeta;
-use tracing::info;
+use tracing::*;
 
 /// The role of the packager is to get an index writer and
 /// produce a split file.
@@ -138,7 +138,6 @@ fn create_file_bundle(
     split_file: &mut impl io::Write,
     ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<Range<u64>> {
-    info!("create-file-bundle");
     let _protected_zone_guard = ctx.protect_zone();
     // List the split files that will be packaged into the bundle.
     let mut bundle_storage_builder = BundleStorageBuilder::new(split_file)?;
@@ -159,7 +158,7 @@ fn merge_segments_if_required(
     split: &mut IndexedSplit,
     ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<Vec<SegmentMeta>> {
-    info!("merge-segments-if-required");
+    debug!(index=%split.index_id, split=?split, "merge-segments-if-required");
     let segment_metas_before_merge = split.index.searchable_segment_metas()?;
     if is_merge_required(&segment_metas_before_merge[..]) {
         let segment_ids: Vec<SegmentId> = segment_metas_before_merge
@@ -179,7 +178,6 @@ fn build_hotcache<W: io::Write>(
     scratch_dir: &ScratchDirectory,
     split_file: &mut W,
 ) -> anyhow::Result<()> {
-    info!("build-hotcache");
     let mmap_directory = tantivy::directory::MmapDirectory::open(scratch_dir.path())?;
     write_hotcache(mmap_directory, split_file)?;
     Ok(())
@@ -190,11 +188,12 @@ fn create_packaged_split(
     split: IndexedSplit,
     ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<PackagedSplit> {
-    info!("create-packaged-split");
+    info!(split=?split, "create-packaged-split");
 
     let split_filepath = split.split_scratch_directory.path().join(BUNDLE_FILENAME); // TODO rename <split_id>.split
     let mut split_file = CountingWriter::wrap(File::create(split_filepath)?);
 
+    debug!(split=?split, "create-file-bundle");
     let Range {
         start: footer_start,
         end: _,
@@ -215,7 +214,7 @@ fn create_packaged_split(
         .map(|segment_meta| segment_meta.id())
         .collect();
 
-    // Extract tag values from `_tags` special fields.
+    // Extracts tag values from `_tags` special fields.
     let mut tags = vec![];
     let index_reader = split.index.reader()?;
     for reader in index_reader.searcher().segment_readers() {
@@ -225,13 +224,16 @@ fn create_packaged_split(
             tags.push(String::from_utf8_lossy(term_data).to_string());
         }
     }
+    ctx.record_progress();
 
+    debug!(split = ?split, "build-hotcache");
     let hotcache_offset_start = split_file.written_bytes();
     build_hotcache(&split.split_scratch_directory, &mut split_file)?;
     let hotcache_offset_end = split_file.written_bytes();
     let hotcache_num_bytes = hotcache_offset_end - hotcache_offset_start;
+    ctx.record_progress();
 
-    info!("split-write-all");
+    info!(split = ?split, "split-write-all");
     split_file.write_all(&hotcache_num_bytes.to_le_bytes())?;
     split_file.flush()?;
 
