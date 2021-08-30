@@ -201,7 +201,7 @@ mod tests {
                 Ok(UnboundedReceiverStream::new(result_receiver))
             },
         );
-        // The test will hang on indefinitely if we don't drop the receiver.
+        // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
@@ -252,7 +252,7 @@ mod tests {
                 Ok(UnboundedReceiverStream::new(result_receiver))
             },
         );
-        // The test will hang on indefinitely if we don't drop the receiver.
+        // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);

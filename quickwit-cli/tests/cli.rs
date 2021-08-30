@@ -606,7 +606,10 @@ async fn test_all_local_index() -> Result<()> {
     .assert()
     .success();
 
-    let metadata_file_exist = test_env.storage.exists(&Path::new(index_id).join("quickwit.json")).await?;
+    let metadata_file_exist = test_env
+        .storage
+        .exists(&Path::new(index_id).join("quickwit.json"))
+        .await?;
     assert_eq!(metadata_file_exist, true);
 
     index_data(
@@ -654,7 +657,7 @@ async fn test_all_local_index() -> Result<()> {
     .text()
     .await?;
     assert_eq!(search_stream_response, "2\n13\n");
-    
+
     server_process.kill().unwrap();
 
     make_command(
@@ -666,7 +669,10 @@ async fn test_all_local_index() -> Result<()> {
     )
     .assert()
     .success();
-    let metadata_file_exist = test_env.storage.exists(&Path::new(index_id).join("quickwit.json")).await?;
+    let metadata_file_exist = test_env
+        .storage
+        .exists(&Path::new(index_id).join("quickwit.json"))
+        .await?;
     assert_eq!(metadata_file_exist, false);
 
     Ok(())
