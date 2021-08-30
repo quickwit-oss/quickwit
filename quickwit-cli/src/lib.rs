@@ -89,29 +89,19 @@ impl CreateIndexArgs {
         index_config_path: PathBuf,
         overwrite: bool,
     ) -> anyhow::Result<Self> {
-        let json_file = std::fs::File::open(index_config_path.clone()).map_err(|error| {
-            anyhow::anyhow!(
-                "index-config-path `{:?}` cannot be opened: {}.",
-                index_config_path,
-                error
-            )
-        })?;
+        let json_file = std::fs::File::open(index_config_path.clone())
+            .with_context(|| format!("Cannot open index-config-path {:?}", index_config_path))?;
         let reader = std::io::BufReader::new(json_file);
         let strip_comment_reader = StripComments::new(reader);
         let builder: DefaultIndexConfigBuilder = serde_json::from_reader(strip_comment_reader)
-            .map_err(|error| {
-                anyhow::anyhow!(
-                    "index-config-path `{:?}` is not a valid json file: {}.",
-                    index_config_path,
-                    error
+            .with_context(|| {
+                format!(
+                    "index-config-path {:?} is not a valid json file",
+                    index_config_path
                 )
             })?;
-        let default_index_config = builder.build().map_err(|error| {
-            anyhow::anyhow!(
-                "index-config-path `{:?}` is invalid: {}.",
-                index_config_path,
-                error
-            )
+        let default_index_config = builder.build().with_context(|| {
+            format!("index-config-path file {:?} is invalid", index_config_path)
         })?;
         let index_config = Arc::new(default_index_config) as Arc<dyn IndexConfig>;
 
@@ -233,7 +223,7 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         start_statistics_reporting_loop(supervisor_handler, args.input_path.clone()).await?;
 
     if statistics.num_published_splits > 0 {
-        println!("You can now query your index with `quickwit search --index-id {} --query \"barack obama\"`" , args.index_id);
+        println!("You can now query your index with `quickwit search --index-id {} --metastore-uri {} --query \"barack obama\"`" , args.index_id, args.metastore_uri);
     }
     Ok(())
 }
