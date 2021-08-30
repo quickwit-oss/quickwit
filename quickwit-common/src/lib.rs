@@ -20,12 +20,14 @@
  */
 
 mod coolid;
+mod lru_cache;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::net::{SocketAddr, ToSocketAddrs};
 
 pub use coolid::new_coolid;
+pub use lru_cache::LRUCache;
 
 /// Filenames used for hotcache files.
 pub const HOTCACHE_FILENAME: &str = "hotcache";
