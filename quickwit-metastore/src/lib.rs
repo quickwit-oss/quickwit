@@ -28,13 +28,27 @@
 #[macro_use]
 mod tests;
 
+#[cfg(feature = "postgresql")]
+#[macro_use]
+extern crate diesel_migrations;
+
+#[cfg(feature = "postgresql")]
+#[macro_use]
+extern crate diesel;
+
 #[allow(missing_docs)]
 pub mod checkpoint;
 mod error;
 mod metastore;
 mod metastore_resolver;
 
+#[cfg(feature = "postgresql")]
+#[allow(missing_docs)]
+pub mod postgresql;
+
 pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
+#[cfg(feature = "postgresql")]
+pub use metastore::postgresql_metastore::PostgresqlMetastore;
 pub use metastore::single_file_metastore::SingleFileMetastore;
 #[cfg(feature = "testsuite")]
 pub use metastore::MockMetastore;

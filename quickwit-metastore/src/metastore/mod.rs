@@ -17,11 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+#[cfg(feature = "postgresql")]
+pub mod postgresql_metastore;
 pub mod single_file_metastore;
 
 use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::ops::{Range, RangeInclusive};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -127,6 +130,26 @@ impl Default for SplitState {
     }
 }
 
+impl FromStr for SplitState {
+    type Err = &'static str;
+
+    fn from_str(input: &str) -> Result<SplitState, Self::Err> {
+        match input {
+            "New" => Ok(SplitState::New),
+            "Staged" => Ok(SplitState::Staged),
+            "Published" => Ok(SplitState::Published),
+            "ScheduledForDeletion" => Ok(SplitState::ScheduledForDeletion),
+            _ => Err("Unknown split state"),
+        }
+    }
+}
+
+impl fmt::Display for SplitState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 /// A MetadataSet carries an index metadata and its split metadata.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetadataSet {
@@ -144,13 +167,13 @@ pub struct MetadataSet {
 ///
 /// The split state goes through the following life cycle:
 /// 1. `New`
-///  - Create new split and start indexing.
+///   - Create new split and start indexing.
 /// 2. `Staged`
-///  - Start uploading the split files.
+///   - Start uploading the split files.
 /// 3. `Published`
-///  - Uploading the split files is complete and the split is searchable.
+///   - Uploading the split files is complete and the split is searchable.
 /// 4. `ScheduledForDeletion`
-///  - Mark the split for deletion.
+///   - Mark the split for deletion.
 ///
 /// If a split has a file in the storage, it MUST be registered in the metastore,
 /// and its state can be as follows:
@@ -253,4 +276,23 @@ pub trait Metastore: Send + Sync + 'static {
 
     /// Returns the Metastore uri.
     fn uri(&self) -> String;
+}
+
+// Returns true if filter_tags is empty (unspecified),
+// or if filter_tags is specified and split_tags contains at least one of the tags in filter_tags.
+pub fn match_tags_filter(split_tags: &[String], filter_tags: &[String]) -> bool {
+    let mut match_tag = false;
+
+    if filter_tags.is_empty() {
+        match_tag = true;
+    } else {
+        for filter_tag in filter_tags {
+            if split_tags.contains(filter_tag) {
+                match_tag = true;
+                break;
+            }
+        }
+    }
+
+    match_tag
 }
