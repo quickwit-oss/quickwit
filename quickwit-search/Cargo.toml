@@ -28,7 +28,7 @@ hyper = { version = "0.14", features = ["stream", "server", "http1", "http2", "t
 bytes = "1"
 quickwit-common = {path="../quickwit-common"}
 lru = "0.6.6"
-lazy_static = "1.4.0"
+once_cell = "1"
 
 [dependencies.tantivy]
 git = 'https://github.com/quickwit-inc/tantivy'

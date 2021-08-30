@@ -58,13 +58,12 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
         }
     }
 
-    pub fn get<'a, Q>(&'a mut self, cache_key: &Q) -> Option<Bytes>
+    pub fn get<Q>(&mut self, cache_key: &Q) -> Option<Bytes>
     where
         KeyRef<K>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        //fn get(&mut self, cache_key: &K) -> Option<Bytes> {
-        self.lru_cache.get(&cache_key).cloned()
+        self.lru_cache.get(cache_key).cloned()
     }
 
     /// Attempt to put the given amount of data in the cache.
@@ -119,7 +118,7 @@ impl<K: Hash + Eq> MemorySizedCache<K> {
     }
 
     /// If available, returns the cached view of the slice.
-    pub fn get<'a, Q>(&'a self, cache_key: &Q) -> Option<Bytes>
+    pub fn get<Q>(&self, cache_key: &Q) -> Option<Bytes>
     where
         KeyRef<K>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,

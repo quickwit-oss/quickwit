@@ -24,20 +24,22 @@ use anyhow::Context;
 use bytes::Bytes;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
-use lru::LruCache;
+use once_cell::sync::OnceCell;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{LeafSearchResult, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError};
-use quickwit_storage::{BundleStorage, Storage};
+use quickwit_storage::{BundleStorage, MemorySizedCache, Storage};
 use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+
+use std::sync::Arc;
 use tantivy::{collector::Collector, query::Query, Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 
-lazy_static! {
-    static ref SPLIT_FOOTER_CACHE: Mutex<LruCache<String, Bytes>> = Mutex::new(LruCache::new(500));
+fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
+    static INSTANCE: OnceCell<MemorySizedCache<String>> = OnceCell::new();
+    INSTANCE.get_or_init(|| MemorySizedCache::with_capacity_in_bytes(25_000_000))
 }
 
 async fn get_from_cache_or_fetch(
@@ -45,10 +47,9 @@ async fn get_from_cache_or_fetch(
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Bytes> {
     {
-        let mut cache_mutex_guard = SPLIT_FOOTER_CACHE.lock().unwrap();
-        let possible_val = cache_mutex_guard.get(&split_and_footer_offsets.split_id);
+        let possible_val = global_split_footer_cache().get(&split_and_footer_offsets.split_id);
         if let Some(footer_data) = possible_val {
-            return Ok(footer_data.clone());
+            return Ok(footer_data);
         }
     }
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
@@ -67,7 +68,7 @@ async fn get_from_cache_or_fetch(
             )
         })?;
 
-    SPLIT_FOOTER_CACHE.lock().unwrap().put(
+    global_split_footer_cache().put(
         split_and_footer_offsets.split_id.to_owned(),
         footer_data_opt.clone(),
     );
