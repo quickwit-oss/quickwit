@@ -40,7 +40,7 @@ lazy_static! {
     static ref SPLIT_FOOTER_CACHE: Mutex<LruCache<String, Bytes>> = Mutex::new(LruCache::new(500));
 }
 
-async fn get_or_load_split_footer(
+async fn get_from_cache_or_fetch(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Bytes> {
@@ -52,7 +52,7 @@ async fn get_or_load_split_footer(
         }
     }
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
-    let footer_data = index_storage
+    let footer_data_opt = index_storage
         .get_slice(
             &split_file,
             split_and_footer_offsets.split_footer_start as usize
@@ -69,10 +69,10 @@ async fn get_or_load_split_footer(
 
     SPLIT_FOOTER_CACHE.lock().unwrap().put(
         split_and_footer_offsets.split_id.to_owned(),
-        footer_data.clone(),
+        footer_data_opt.clone(),
     );
 
-    Ok(footer_data)
+    Ok(footer_data_opt)
 }
 
 /// Opens a `tantivy::Index` for the given split.
@@ -84,7 +84,7 @@ pub(crate) async fn open_index(
 ) -> anyhow::Result<Index> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let mut footer_data =
-        get_or_load_split_footer(index_storage.clone(), split_and_footer_offsets).await?;
+        get_from_cache_or_fetch(index_storage.clone(), split_and_footer_offsets).await?;
     let hotcache_len_bytes = footer_data.split_off(footer_data.len() - 8);
     let hotcache_num_bytes =
         u64::from_le_bytes((&*hotcache_len_bytes).try_into().unwrap()) as usize;
