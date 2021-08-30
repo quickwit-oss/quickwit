@@ -589,6 +589,92 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
 /// testing the api via cli commands
 #[tokio::test]
 #[serial]
+async fn test_all_local_index() -> Result<()> {
+    // Implicit index_id defined in test env struct.
+    // TODO: change that after the metastore uri refactoring.
+    let index_id = "data";
+    let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
+    make_command(
+        format!(
+            "new --index-uri {} --metastore-uri {} --index-config-path {}",
+            test_env.index_uri(index_id),
+            test_env.metastore_uri,
+            test_env.resource_files["config"].display()
+        )
+        .as_str(),
+    )
+    .assert()
+    .success();
+
+    let metadata_file_exist = test_env.storage.exists(&Path::new(index_id).join("quickwit.json")).await?;
+    assert_eq!(metadata_file_exist, true);
+
+    index_data(
+        index_id,
+        test_env.resource_files["logs"].as_path(),
+        &test_env.metastore_uri,
+    );
+
+    // serve & api-search
+    let mut server_process = spawn_command(
+        format!(
+            "serve --metastore-uri {} --host 127.0.0.1 --port 8182",
+            test_env.metastore_uri,
+        )
+        .as_str(),
+    )
+    .unwrap();
+    sleep(Duration::from_secs(2)).await;
+    let mut data = vec![0; 512];
+    server_process
+        .stdout
+        .as_mut()
+        .expect("Failed to get server process output")
+        .read_exact(&mut data)
+        .expect("Cannot read output");
+    let process_output_str = String::from_utf8(data).unwrap();
+    let query_response = reqwest::get(format!(
+        "http://127.0.0.1:8182/api/v1/{}/search?query=level:info",
+        index_id
+    ))
+    .await?
+    .text()
+    .await?;
+
+    assert!(process_output_str.contains("http://127.0.0.1:8182"));
+    let result: Value =
+        serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
+    assert_eq!(result["numHits"], Value::Number(Number::from(2i64)));
+
+    let search_stream_response = reqwest::get(format!(
+        "http://127.0.0.1:8182/api/v1/{}/search/stream?query=level:info&outputFormat=csv&fastField=ts",
+        index_id
+    ))
+    .await?
+    .text()
+    .await?;
+    assert_eq!(search_stream_response, "2\n13\n");
+    
+    server_process.kill().unwrap();
+
+    make_command(
+        format!(
+            "delete --index-id {} --metastore-uri {}",
+            index_id, test_env.metastore_uri
+        )
+        .as_str(),
+    )
+    .assert()
+    .success();
+    let metadata_file_exist = test_env.storage.exists(&Path::new(index_id).join("quickwit.json")).await?;
+    assert_eq!(metadata_file_exist, false);
+
+    Ok(())
+}
+
+/// testing the api via cli commands
+#[tokio::test]
+#[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_all_with_s3_localstack_cli() -> Result<()> {
     let index_id = "s3_index_1";
