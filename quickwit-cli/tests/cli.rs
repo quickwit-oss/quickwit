@@ -29,7 +29,6 @@ use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::{create_index_cli, CreateIndexArgs};
-use quickwit_common::extract_index_id_from_index_uri;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
 use quickwit_storage::{localstack_region, S3CompatibleObjectStorage, Storage};
 use serde_json::{Number, Value};
@@ -44,7 +43,7 @@ fn create_logs_index(test_env: &TestEnv) {
     make_command(
         format!(
             "new --index-uri {} --index-config-path {} --metastore-uri {}",
-            test_env.index_uri,
+            test_env.index_uri(),
             test_env.resource_files["config"].display(),
             test_env.metastore_uri,
         )
@@ -55,11 +54,11 @@ fn create_logs_index(test_env: &TestEnv) {
     assert!(test_env.local_directory_path.join("quickwit.json").exists());
 }
 
-fn index_data(uri: &str, input_path: &Path, metastore_uri: &str) {
+fn index_data(index_id: &str, input_path: &Path, metastore_uri: &str) {
     make_command(
         format!(
-            "index --index-uri {} --input-path {} --metastore-uri {}",
-            uri,
+            "index --index-id {} --input-path {} --metastore-uri {}",
+            index_id,
             input_path.display(),
             metastore_uri,
         )
@@ -105,7 +104,7 @@ fn test_cmd_new_on_existing_index() -> Result<()> {
     make_command(
         format!(
             "new --index-uri {} --index-config-path {} --metastore-uri {}",
-            test_env.index_uri,
+            test_env.index_uri(),
             test_env.resource_files["config"].display(),
             test_env.metastore_uri,
         )
@@ -123,8 +122,8 @@ fn test_cmd_index_on_non_existing_index() -> Result<()> {
     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
     make_command(
         format!(
-            "index --index-uri {}/non-existing-index --input-path {} --metastore-uri {}",
-            test_env.index_uri,
+            "index --index-id {}/non-existing-index --input-path {} --metastore-uri {}",
+            test_env.index_id,
             test_env.resource_files["logs"].display(),
             test_env.metastore_uri,
         )
@@ -143,8 +142,8 @@ fn test_cmd_index_on_non_existing_file() -> Result<()> {
     create_logs_index(&test_env);
     make_command(
         format!(
-            "index --index-uri {} --input-path {} --metastore-uri {}",
-            test_env.index_uri,
+            "index --index-id {} --input-path {} --metastore-uri {}",
+            test_env.index_id,
             test_env
                 .local_directory_path
                 .join("non-existing-data.json")
@@ -166,7 +165,7 @@ fn test_cmd_index() -> Result<()> {
     create_logs_index(&test_env);
 
     index_data(
-        &test_env.index_uri,
+        &test_env.index_id,
         test_env.resource_files["logs"].as_path(),
         &test_env.metastore_uri,
     );
@@ -175,8 +174,8 @@ fn test_cmd_index() -> Result<()> {
     let log_path = test_env.resource_files["logs"].clone();
     make_command(
         format!(
-            "index --index-uri {} --metastore-uri {} ",
-            test_env.index_uri, test_env.metastore_uri
+            "index --index-id {} --metastore-uri {} ",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -198,15 +197,15 @@ fn test_cmd_search() -> Result<()> {
     create_logs_index(&test_env);
 
     index_data(
-        &test_env.index_uri,
+        &test_env.index_id,
         test_env.resource_files["logs"].as_path(),
         &test_env.metastore_uri,
     );
 
     make_command(
         format!(
-            "search --index-uri {} --query level:info --metastore-uri {}",
-            test_env.index_uri, test_env.metastore_uri,
+            "search --metastore-uri {} --index-id {} --query level:info",
+            test_env.metastore_uri, test_env.index_id,
         )
         .as_str(),
     )
@@ -220,9 +219,9 @@ fn test_cmd_search() -> Result<()> {
     // search with tags
     make_command(
         format!(
-            "search --index-uri {} --query level:info --metastore-uri {} --tags city:paris device:rpi",
-            test_env.index_uri,
+            "search --metastore-uri {} --index-id {} --query level:info --tags city:paris device:rpi",
             test_env.metastore_uri,
+            test_env.index_id,
         )
         .as_str(),
     )
@@ -235,8 +234,8 @@ fn test_cmd_search() -> Result<()> {
 
     make_command(
         format!(
-            "search --index-uri {} --metastore-uri {} --query level:info --tags city:conakry",
-            test_env.index_uri, test_env.metastore_uri
+            "search --metastore-uri {} --index-id {} --query level:info --tags city:conakry",
+            test_env.metastore_uri, test_env.index_id,
         )
         .as_str(),
     )
@@ -258,8 +257,8 @@ fn test_cmd_delete_index_dry_run() -> Result<()> {
     // Empty index.
     make_command(
         format!(
-            "delete --index-uri {} --metastore-uri {} --dry-run",
-            test_env.index_uri, test_env.metastore_uri
+            "delete --index-id {} --metastore-uri {} --dry-run",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -268,7 +267,7 @@ fn test_cmd_delete_index_dry_run() -> Result<()> {
     .stdout(predicate::str::contains("Only the index will be deleted"));
 
     index_data(
-        &test_env.index_uri,
+        &test_env.index_id,
         test_env.resource_files["logs"].as_path(),
         &test_env.metastore_uri,
     );
@@ -276,8 +275,8 @@ fn test_cmd_delete_index_dry_run() -> Result<()> {
     // Non-empty index
     make_command(
         format!(
-            "delete --index-uri {} --metastore-uri {} --dry-run",
-            test_env.index_uri, test_env.metastore_uri
+            "delete --index-id {} --metastore-uri {} --dry-run",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -297,15 +296,15 @@ fn test_cmd_delete() -> Result<()> {
     create_logs_index(&test_env);
 
     index_data(
-        &test_env.index_uri,
+        &test_env.index_id,
         test_env.resource_files["logs"].as_path(),
         &test_env.metastore_uri,
     );
 
     make_command(
         format!(
-            "gc --index-uri {} --metastore-uri {}",
-            test_env.index_uri, test_env.metastore_uri
+            "gc --index-id {} --metastore-uri {}",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -317,8 +316,8 @@ fn test_cmd_delete() -> Result<()> {
 
     make_command(
         format!(
-            "delete --index-uri {} --metastore-uri {}",
-            test_env.index_uri, test_env.metastore_uri
+            "delete --index-id {} --metastore-uri {}",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -334,21 +333,20 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);
     index_data(
-        &test_env.index_uri,
+        &test_env.index_id,
         test_env.resource_files["logs"].as_path(),
         &test_env.metastore_uri,
     );
 
-    let index_id = extract_index_id_from_index_uri(&test_env.index_uri)?;
     let metastore = MetastoreUriResolver::default()
         .resolve(&test_env.metastore_uri)
         .await?;
-    let splits = metastore.list_all_splits(index_id).await?;
+    let splits = metastore.list_all_splits(&test_env.index_id).await?;
     assert_eq!(splits.len(), 1);
     make_command(
         format!(
-            "gc --index-uri {} --metastore-uri {}",
-            test_env.index_uri, test_env.metastore_uri
+            "gc --index-id {} --metastore-uri {}",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -364,12 +362,12 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
 
     let split_ids = &[splits[0].split_metadata.split_id.as_str()];
     metastore
-        .mark_splits_as_deleted(index_id, split_ids)
+        .mark_splits_as_deleted(&test_env.index_id, split_ids)
         .await?;
     make_command(
         format!(
-            "gc --index-uri {} --metastore-uri {} --dry-run --grace-period 10m",
-            test_env.index_uri, test_env.metastore_uri,
+            "gc --index-id {} --metastore-uri {} --dry-run --grace-period 10m",
+            test_env.index_id, test_env.metastore_uri,
         )
         .as_str(),
     )
@@ -388,15 +386,15 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
 
     make_command(
         format!(
-            "gc --index-uri {} --metastore-uri {} --grace-period 10m",
-            test_env.index_uri, test_env.metastore_uri
+            "gc --index-id {} --metastore-uri {} --grace-period 10m",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
     .assert()
     .success()
     .stdout(predicate::str::contains(
-        "Index successfully garbage collected",
+        "Index `my-test-index` successfully garbage collected",
     ));
 
     for split_id in split_ids {
@@ -408,12 +406,15 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
     let metastore = MetastoreUriResolver::default()
         .resolve(&test_env.metastore_uri)
         .await?;
-    assert_eq!(metastore.list_all_splits(index_id).await?.len(), 0);
+    assert_eq!(
+        metastore.list_all_splits(&test_env.index_id).await?.len(),
+        0
+    );
 
     make_command(
         format!(
-            "delete --index-uri {} --metastore-uri {}",
-            test_env.index_uri, test_env.metastore_uri
+            "delete --index-id {} --metastore-uri {}",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -428,21 +429,20 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);
     index_data(
-        &test_env.index_uri,
+        &test_env.index_id,
         test_env.resource_files["logs"].as_path(),
         &test_env.metastore_uri,
     );
 
-    let index_id = extract_index_id_from_index_uri(&test_env.index_uri)?;
     let metastore = MetastoreUriResolver::default()
         .resolve(&test_env.metastore_uri)
         .await?;
-    let splits = metastore.list_all_splits(index_id).await?;
+    let splits = metastore.list_all_splits(&test_env.index_id).await?;
     assert_eq!(splits.len(), 1);
     make_command(
         format!(
-            "gc --index-uri {} --metastore-uri {}",
-            test_env.index_uri, test_env.metastore_uri
+            "gc --index-id {} --metastore-uri {}",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -461,18 +461,20 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     // without deleting the files.
     let split_ids = vec![splits[0].split_metadata.split_id.as_str()];
     metastore
-        .mark_splits_as_deleted(index_id, &split_ids)
+        .mark_splits_as_deleted(&test_env.index_id, &split_ids)
         .await?;
-    metastore.delete_splits(index_id, &split_ids).await?;
+    metastore
+        .delete_splits(&test_env.index_id, &split_ids)
+        .await?;
     let mut meta = splits[0].clone();
     meta.split_metadata.split_state = SplitState::New;
-    metastore.stage_split(index_id, meta).await?;
+    metastore.stage_split(&test_env.index_id, meta).await?;
     assert_eq!(split_path.exists(), true);
 
     make_command(
         format!(
-            "gc --index-uri {} --metastore-uri {} --grace-period 2s",
-            test_env.index_uri, test_env.metastore_uri
+            "gc --index-id {} --metastore-uri {} --grace-period 2s",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -487,8 +489,8 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     sleep(Duration::from_secs(3)).await;
     make_command(
         format!(
-            "gc --index-uri {} --metastore-uri {} --dry-run --grace-period 2s",
-            test_env.index_uri, test_env.metastore_uri,
+            "gc --index-id {} --metastore-uri {} --dry-run --grace-period 2s",
+            test_env.index_id, test_env.metastore_uri,
         )
         .as_str(),
     )
@@ -502,15 +504,15 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
 
     make_command(
         format!(
-            "gc --index-uri {} --metastore-uri {} --grace-period 2s",
-            test_env.index_uri, test_env.metastore_uri
+            "gc --index-id {} --metastore-uri {} --grace-period 2s",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
     .assert()
     .success()
     .stdout(predicate::str::contains(
-        "Index successfully garbage collected",
+        "Index `my-test-index` successfully garbage collected",
     ));
     assert_eq!(split_path.exists(), false);
 
@@ -524,8 +526,8 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
     let test_env = create_test_env(TestStorageType::S3ViaLocalStorage(s3_path))?;
     make_command(
         format!(
-            "new --index-uri {} --metastore-uri {} --index-config-path {}",
-            test_env.index_uri,
+            "new --index-id {} --metastore-uri {} --index-config-path {}",
+            test_env.index_id,
             test_env.metastore_uri,
             test_env.resource_files["config"].display()
         )
@@ -535,15 +537,15 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
     .success();
 
     index_data(
-        &test_env.index_uri,
+        &test_env.index_id,
         test_env.resource_files["logs"].as_path(),
         &test_env.metastore_uri,
     );
 
     make_command(
         format!(
-            "gc --index-uri {} --metastore-uri {}",
-            test_env.index_uri, test_env.metastore_uri
+            "gc --index-id {} --metastore-uri {}",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -555,8 +557,8 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
 
     make_command(
         format!(
-            "delete --index-uri {} --metastore-uri {} --dry-run",
-            test_env.index_uri, test_env.metastore_uri
+            "delete --index-id {} --metastore-uri {} --dry-run",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -570,8 +572,8 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
 
     make_command(
         format!(
-            "delete --index-uri {} --metastore-uri {}",
-            test_env.index_uri, test_env.metastore_uri
+            "delete --index-id {} --metastore-uri {}",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -591,12 +593,12 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
         PathBuf::from(&("quickwit-integration-tests/indices/".to_string() + data_endpoint));
     let test_env = create_test_env(TestStorageType::S3ViaLocalStorage(s3_path))?;
     let object_storage =
-        S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.index_uri)?;
+        S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.index_uri())?;
 
     make_command(
         format!(
-            "new --index-uri {} --metastore-uri {} --index-config-path {}",
-            test_env.index_uri,
+            "new --index-id {} --metastore-uri {} --index-config-path {}",
+            test_env.index_id,
             test_env.metastore_uri,
             test_env.resource_files["config"].display()
         )
@@ -609,7 +611,7 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     assert_eq!(metadata_file_exist, true);
 
     index_data(
-        &test_env.index_uri,
+        &test_env.index_id,
         test_env.resource_files["logs"].as_path(),
         &test_env.metastore_uri,
     );
@@ -617,8 +619,8 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     // cli search
     make_command(
         format!(
-            "search --index-uri {} --metastore-uri {} --query level:info",
-            test_env.index_uri, test_env.metastore_uri,
+            "search --index-id {} --metastore-uri {} --query level:info",
+            test_env.index_id, test_env.metastore_uri,
         )
         .as_str(),
     )
@@ -632,8 +634,8 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     // serve & api-search
     let mut server_process = spawn_command(
         format!(
-            "serve --index-uri {} --metastore-uri {} --host 127.0.0.1 --port 8182",
-            test_env.index_uri, test_env.metastore_uri,
+            "serve --index-id {} --metastore-uri {} --host 127.0.0.1 --port 8182",
+            test_env.index_id, test_env.metastore_uri,
         )
         .as_str(),
     )
@@ -663,8 +665,8 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
 
     make_command(
         format!(
-            "delete --index-uri {} --metastore-uri {}",
-            test_env.index_uri, test_env.metastore_uri
+            "delete --index-id {} --metastore-uri {}",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )
@@ -686,11 +688,11 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
         PathBuf::from(&("quickwit-integration-tests/indices/".to_string() + data_endpoint));
     let test_env = create_test_env(TestStorageType::S3ViaLocalStorage(s3_path))?;
     let object_storage =
-        S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.index_uri)?;
+        S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.index_uri())?;
     let args = CreateIndexArgs::new(
-        test_env.index_uri.clone(),
-        test_env.resource_files["config"].to_path_buf(),
         test_env.metastore_uri.clone(),
+        test_env.index_uri(),
+        test_env.resource_files["config"].to_path_buf(),
         false,
     )?;
     create_index_cli(args).await?;
@@ -699,7 +701,7 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     assert_eq!(metadata_file_exist, true);
 
     index_data(
-        &test_env.index_uri,
+        &test_env.index_id,
         test_env.resource_files["logs"].as_path(),
         &test_env.metastore_uri,
     );
@@ -707,8 +709,8 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     // cli search
     make_command(
         format!(
-            "search --index-uri {} --metastore-uri {} --query level:info",
-            test_env.index_uri, test_env.metastore_uri,
+            "search --index-id {} --metastore-uri {} --query level:info",
+            test_env.index_id, test_env.metastore_uri,
         )
         .as_str(),
     )
@@ -722,8 +724,8 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     // serve & api-search
     let mut server_process = spawn_command(
         format!(
-            "serve --index-uri {} --metastore-uri {} --host 127.0.0.1 --port 8182",
-            test_env.index_uri, test_env.metastore_uri,
+            "serve --metastore-uri {} --host 127.0.0.1 --port 8182",
+            test_env.metastore_uri,
         )
         .as_str(),
     )
@@ -753,8 +755,8 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
 
     make_command(
         format!(
-            "delete --index-uri {} --metastore-uri {}",
-            test_env.index_uri, test_env.metastore_uri
+            "delete --index-id {} --metastore-uri {}",
+            test_env.index_id, test_env.metastore_uri
         )
         .as_str(),
     )

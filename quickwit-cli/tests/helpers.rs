@@ -114,12 +114,18 @@ pub struct TestEnv {
     pub local_directory: TempDir,
     /// Path of the temporary directory of the test.
     pub local_directory_path: PathBuf,
-    /// The index uri.
-    pub index_uri: String,
     /// Resource files needed for the test.
     pub resource_files: HashMap<&'static str, PathBuf>,
     /// The metastore uri.
     pub metastore_uri: String,
+    /// The index id.
+    pub index_id: String,
+}
+
+impl TestEnv {
+    pub fn index_uri(&self) -> String {
+        format!("{}/{}", self.metastore_uri, self.index_id)
+    }
 }
 
 pub enum TestStorageType {
@@ -131,18 +137,19 @@ pub enum TestStorageType {
 pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
     let local_directory = tempdir()?;
 
-    let (local_directory_path, index_uri) = match storage_type {
+    let (metastore_path, metastore_uri) = match storage_type {
         TestStorageType::LocalFileSystem => {
-            let local_path =
-                PathBuf::from(format!("{}/indices/data", local_directory.path().display()));
-            let uri = format!("file://{}", local_path.display());
-            (local_path, uri)
+            let local_path = PathBuf::from(format!("{}/indices", local_directory.path().display()));
+            let metastore_uri = format!("file://{}", local_path.display());
+            (local_path, metastore_uri)
         }
         TestStorageType::S3ViaLocalStorage(s3_path) => {
-            let uri = format!("s3+localstack://{}", s3_path.display());
-            (s3_path, uri)
+            let metastore_uri = format!("s3+localstack://{}", s3_path.display());
+            (s3_path, metastore_uri)
         }
     };
+    let index_id = "my-test-index".to_string();
+    let index_dir_path = metastore_path.join(index_id.clone());
 
     let config_path = local_directory.path().join("config.json");
     fs::write(&config_path, DEFAULT_INDEX_CONFIG)?;
@@ -156,15 +163,10 @@ pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv>
     resource_files.insert("logs", log_docs_path);
     resource_files.insert("wiki", wikipedia_docs_path);
 
-    let metastore_uri = format!(
-        "file://{}",
-        local_directory_path.parent().unwrap().display()
-    );
-
     Ok(TestEnv {
+        index_id,
         local_directory,
-        local_directory_path,
-        index_uri,
+        local_directory_path: index_dir_path,
         resource_files,
         metastore_uri,
     })
