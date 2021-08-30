@@ -337,7 +337,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
         "{}MB of storage garbage collected.",
         deleted_bytes / 1_000_000
     );
-    println!("Index `{}` successfully garbage collected", args.index_id);
+    println!("Index `{}` successfully garbage collected.", args.index_id);
     Ok(())
 }
 
