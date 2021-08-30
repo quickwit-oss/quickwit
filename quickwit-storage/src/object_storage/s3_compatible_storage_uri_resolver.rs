@@ -20,10 +20,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-use std::{str::FromStr, sync::Arc};
-
 use ec2_instance_metadata::{InstanceMetadata, InstanceMetadataClient};
 pub use rusoto_core::Region;
+use std::{str::FromStr, sync::Arc};
 
 use crate::{S3CompatibleObjectStorage, StorageFactory};
 

@@ -49,6 +49,7 @@ use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::Metastore;
 use quickwit_metastore::SingleFileMetastore;
 use quickwit_metastore::SplitState;
+use quickwit_storage::quickwit_storage_uri_resolver;
 use quickwit_storage::StorageUriResolver;
 use serde_json::json;
 use std::sync::Arc;
@@ -191,7 +192,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
             "batch_num_docs": 1
         }),
     };
-    let storage_uri_resolver = StorageUriResolver::default();
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
     index_data(
         "test-index".to_string(),
         metastore.clone(),

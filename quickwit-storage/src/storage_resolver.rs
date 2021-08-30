@@ -21,11 +21,30 @@
 */
 use crate::{local_file_storage::LocalFileStorageFactory, ram_storage::RamStorageFactory};
 use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
+use once_cell::sync::OnceCell;
 use quickwit_common::{get_quickwit_env, QuickwitEnv};
 use rusoto_core::Region;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
+use tracing::info;
+
+/// Quickwit supported storage resolvers.
+pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
+    info!("uri resolver");
+    static STORAGE_URI_RESOLVER: OnceCell<StorageUriResolver> = OnceCell::new();
+    STORAGE_URI_RESOLVER.get_or_init(|| {
+        StorageUriResolver::builder()
+            .register(RamStorageFactory::default())
+            .register(LocalFileStorageFactory::default())
+            .register(S3CompatibleObjectStorageFactory::default())
+            .register(S3CompatibleObjectStorageFactory::new(
+                localstack_region(),
+                "s3+localstack",
+            ))
+            .build()
+    })
+}
 
 /// A storage factory builds a [`Storage`] object from an URI.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
@@ -67,24 +86,22 @@ impl StorageUriResolverBuilder {
     }
 }
 
-impl Default for StorageUriResolver {
-    fn default() -> Self {
+impl StorageUriResolver {
+    /// Creates an empty `StorageUriResolver`.
+    pub fn builder() -> StorageUriResolverBuilder {
+        StorageUriResolverBuilder::default()
+    }
+
+    /// Creates `StorageUriResolver` for testing.
+    pub fn for_test() -> Self {
         StorageUriResolver::builder()
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory::default())
-            .register(S3CompatibleObjectStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::new(
                 localstack_region(),
                 "s3+localstack",
             ))
             .build()
-    }
-}
-
-impl StorageUriResolver {
-    /// Creates an empty `StorageUriResolver`.
-    pub fn builder() -> StorageUriResolverBuilder {
-        StorageUriResolverBuilder::default()
     }
 
     /// Resolves the given URI.
@@ -185,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_storage_resolver_unsupported_protocol() {
-        let storage_resolver = StorageUriResolver::default();
+        let storage_resolver = StorageUriResolver::for_test();
         assert!(matches!(
             storage_resolver.resolve("protocol://hello"),
             Err(crate::StorageResolverError::ProtocolUnsupported { protocol }) if protocol == "protocol"

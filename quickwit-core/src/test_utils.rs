@@ -58,7 +58,7 @@ impl TestSandbox {
             index_config,
             checkpoint: Checkpoint::default(),
         };
-        let storage_uri_resolver = StorageUriResolver::default();
+        let storage_uri_resolver = StorageUriResolver::for_test();
         let metastore_uri_resolver = MetastoreUriResolver::default();
         let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
         metastore.create_index(index_metadata).await?;
