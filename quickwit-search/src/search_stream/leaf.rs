@@ -89,17 +89,10 @@ async fn leaf_search_results_stream(
                 storage.clone(),
             )
         })
-        .map(
-            |(split, index_config_clone, request_clone, split_storage)| {
-                leaf_search_stream_single_split(
-                    split,
-                    index_config_clone,
-                    request_clone,
-                    split_storage,
-                )
+        .map(|(split, index_config_clone, request_clone, storage)| {
+            leaf_search_stream_single_split(split, index_config_clone, request_clone, storage)
                 .shared()
-            },
-        )
+        })
         .buffer_unordered(CONCURRENT_SPLIT_SEARCH_STREAM)
 }
 
@@ -205,4 +198,87 @@ fn collect_fast_field_values(
         }
     }
     Ok(buffer)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{str::from_utf8, sync::Arc};
+
+    use quickwit_core::TestSandbox;
+    use quickwit_index_config::DefaultIndexConfigBuilder;
+
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_leaf_search_stream_to_csv_output_with_filtering() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "default_search_fields": ["body"],
+            "timestamp_field": "ts",
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "body",
+                    "type": "text"
+                },
+                {
+                    "name": "ts",
+                    "type": "i64",
+                    "fast": true
+                }
+            ]
+        }"#;
+        let index_config =
+            Arc::new(serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?);
+        let index_id = "single-node-simple";
+        let test_sandbox = TestSandbox::create("single-node-simple", index_config.clone()).await?;
+
+        let mut docs = vec![];
+        let mut filtered_timestamp_values = vec![];
+        let end_timestamp = 20;
+        for i in 0..30 {
+            let body = format!("info @ t:{}", i + 1);
+            docs.push(json!({"body": body, "ts": i+1}));
+            if i + 1 < end_timestamp {
+                filtered_timestamp_values.push((i + 1).to_string());
+            }
+        }
+        test_sandbox.add_documents(docs).await?;
+
+        let request = SearchStreamRequest {
+            index_id: index_id.to_string(),
+            query: "info".to_string(),
+            search_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: Some(end_timestamp),
+            fast_field: "ts".to_string(),
+            output_format: 0,
+            tags: vec![],
+        };
+        let index_metadata = test_sandbox.metastore().index_metadata(index_id).await?;
+        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits_offsets = splits
+            .into_iter()
+            .map(|split_meta| SplitIdAndFooterOffsets {
+                split_id: split_meta.split_metadata.split_id,
+                split_footer_start: split_meta.footer_offsets.start,
+                split_footer_end: split_meta.footer_offsets.end,
+            })
+            .collect();
+        let mut single_node_stream = leaf_search_stream(
+            &request,
+            test_sandbox
+                .storage_uri_resolver()
+                .resolve(&index_metadata.index_uri)?,
+            splits_offsets,
+            index_config,
+        )
+        .await;
+        let res = single_node_stream.next().await.expect("no leaf result")?;
+        assert_eq!(
+            from_utf8(&res.data)?,
+            format!("{}\n", filtered_timestamp_values.join("\n"))
+        );
+        Ok(())
+    }
 }
