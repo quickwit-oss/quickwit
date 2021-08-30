@@ -89,11 +89,31 @@ impl CreateIndexArgs {
         index_config_path: PathBuf,
         overwrite: bool,
     ) -> anyhow::Result<Self> {
-        let json_file = std::fs::File::open(index_config_path)?;
+        let json_file = std::fs::File::open(index_config_path.clone()).map_err(|error| {
+            anyhow::anyhow!(
+                "index-config-path `{:?}` cannot be opened: {}.",
+                index_config_path,
+                error
+            )
+        })?;
         let reader = std::io::BufReader::new(json_file);
         let strip_comment_reader = StripComments::new(reader);
-        let builder: DefaultIndexConfigBuilder = serde_json::from_reader(strip_comment_reader)?;
-        let index_config = Arc::new(builder.build()?) as Arc<dyn IndexConfig>;
+        let builder: DefaultIndexConfigBuilder = serde_json::from_reader(strip_comment_reader)
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "index-config-path `{:?}` is not a valid json file: {}.",
+                    index_config_path,
+                    error
+                )
+            })?;
+        let default_index_config = builder.build().map_err(|error| {
+            anyhow::anyhow!(
+                "index-config-path `{:?}` is invalid: {}.",
+                index_config_path,
+                error
+            )
+        })?;
+        let index_config = Arc::new(default_index_config) as Arc<dyn IndexConfig>;
 
         Ok(Self {
             metastore_uri,
