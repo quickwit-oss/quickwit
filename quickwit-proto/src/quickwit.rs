@@ -173,6 +173,10 @@ pub struct FetchDocsRequest {
     /// cached.
     #[prost(message, repeated, tag = "3")]
     pub split_metadata: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+    /// Index URI. The index URI defines the location of the storage that contains the
+    /// split files.
+    #[prost(string, tag = "4")]
+    pub index_uri: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

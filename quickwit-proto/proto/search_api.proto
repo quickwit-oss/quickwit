@@ -191,6 +191,10 @@ message FetchDocsRequest {
   // fetch the document content in two reads, when the footer is not
   // cached.
   repeated SplitIdAndFooterOffsets split_metadata = 3;
+
+  // Index URI. The index URI defines the location of the storage that contains the
+  // split files.
+  string index_uri = 4;
 }
 
 message FetchDocsResult {

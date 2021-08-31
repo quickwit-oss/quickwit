@@ -226,6 +226,7 @@ pub async fn root_search(
     let split_metadata_list = list_relevant_splits(search_request, metastore).await?;
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
 
+    dbg!("waa1");
     // Create a hash map of SplitMetadata with split id as a key.
     let split_metadata_map: HashMap<String, SplitMetadataAndFooterOffsets> = split_metadata_list
         .into_iter()
@@ -412,6 +413,7 @@ pub async fn root_search(
                     partial_hits: partial_hits.clone(),
                     index_id: search_request.index_id.clone(),
                     split_metadata,
+                    index_uri: index_metadata.index_uri.to_string(),
                 };
                 let mut search_client_clone = search_client.clone();
                 let handle = tokio::spawn(async move {

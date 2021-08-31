@@ -156,9 +156,9 @@ impl SearchService for SearchServiceImpl {
         &self,
         fetch_docs_request: FetchDocsRequest,
     ) -> Result<FetchDocsResult, SearchError> {
-        let index_id = fetch_docs_request.index_id;
-        let index_metadata = self.metastore.index_metadata(&index_id).await?;
-        let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let storage = self
+            .storage_resolver
+            .resolve(&fetch_docs_request.index_uri)?;
 
         let fetch_docs_result = fetch_docs(
             fetch_docs_request.partial_hits,
