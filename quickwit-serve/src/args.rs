@@ -24,9 +24,6 @@ use std::path::PathBuf;
 
 #[derive(Debug, PartialEq)]
 pub struct ServeArgs {
-    /// Index URI.
-    pub index_uris: Vec<String>,
-
     /// Socket address of the REST server.
     pub rest_socket_addr: SocketAddr,
 
