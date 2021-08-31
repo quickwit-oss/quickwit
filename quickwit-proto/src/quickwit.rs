@@ -76,6 +76,9 @@ pub struct LeafSearchRequest {
     /// This ids are resolved from the index_uri defined in the search_request.
     #[prost(message, repeated, tag = "4")]
     pub split_metadata: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+    /// `IndexConfig` as json serialized trait.
+    #[prost(string, tag = "5")]
+    pub index_config: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

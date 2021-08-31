@@ -57,6 +57,14 @@ pub enum SortBy {
     DocId,
 }
 
+/// An index metadata carries all meta data about an index.
+//#[derive(Clone, Debug, Serialize, Deserialize)]
+//pub struct IndexConfigo {
+//schema: Schema,
+//default_sort_by: SortBy,
+//timestamp_field: Option<Field>,
+//}
+
 /// The `IndexConfig` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
 ///
@@ -150,6 +158,32 @@ mod tests {
             format!("{:?}", deserialized_default_config),
             format!("{:?}", expected_default_config),
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_sedeserialize_index_config() -> anyhow::Result<()> {
+        let all_flatten_config =
+            serde_json::from_str::<Box<dyn IndexConfig>>(JSON_ALL_FLATTEN_INDEX_CONFIG)?;
+        assert_eq!(
+            format!("{:?}", all_flatten_config),
+            "AllFlattenIndexConfig".to_string()
+        );
+
+        let deserialized_default_config =
+            serde_json::from_str::<Box<dyn IndexConfig>>(JSON_DEFAULT_INDEX_CONFIG)?;
+        let expected_default_config = DefaultIndexConfigBuilder::new().build()?;
+        assert_eq!(
+            format!("{:?}", deserialized_default_config),
+            format!("{:?}", expected_default_config),
+        );
+
+        let hmm_ok = serde_json::to_string(&deserialized_default_config)?;
+        let deserialized_default_config = serde_json::from_str::<Box<dyn IndexConfig>>(&hmm_ok)?;
+        let hmm_ok2 = serde_json::to_string(&deserialized_default_config)?;
+
+        assert_eq!(hmm_ok, hmm_ok2);
+
         Ok(())
     }
 }

@@ -21,6 +21,7 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use quickwit_index_config::IndexConfig;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, SearchRequest,
@@ -133,7 +134,14 @@ impl SearchService for SearchServiceImpl {
             .await?;
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let split_ids = leaf_search_request.split_metadata;
-        let index_config = index_metadata.index_config;
+        let index_config =
+            serde_json::from_str::<Arc<dyn IndexConfig>>(&leaf_search_request.index_config)
+                .map_err(|err| {
+                    SearchError::InternalError(format!(
+                        "Could not deserialize index config {}",
+                        err.to_string()
+                    ))
+                })?;
 
         let leaf_search_result = leaf_search(
             &search_request,

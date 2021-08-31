@@ -26,6 +26,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use itertools::Itertools;
+use quickwit_metastore::IndexMetadata;
 use quickwit_metastore::SplitMetadataAndFooterOffsets;
 use quickwit_proto::SplitIdAndFooterOffsets;
 use quickwit_proto::SplitSearchError;
@@ -66,11 +67,14 @@ pub struct NodeSearchError {
 type SearchResultsByAddr = HashMap<SocketAddr, Result<LeafSearchResult, NodeSearchError>>;
 
 async fn execute_search(
+    index_metadata: &IndexMetadata,
     assigned_leaf_search_jobs: &[(SearchServiceClient, Vec<Job>)],
     search_request_with_offset_0: SearchRequest,
 ) -> anyhow::Result<SearchResultsByAddr> {
     // Perform the query phase.
     let mut result_per_node_addr_futures = HashMap::new();
+
+    let index_config_str = serde_json::to_string(&index_metadata.index_config)?;
 
     // Perform the query phase.
     for (search_client, jobs) in assigned_leaf_search_jobs.iter() {
@@ -80,6 +84,7 @@ async fn execute_search(
                 .iter()
                 .map(|job| extract_split_and_footer_offsets(&job.metadata))
                 .collect(),
+            index_config: index_config_str.to_string(),
         };
 
         debug!(leaf_search_request=?leaf_search_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
@@ -218,6 +223,7 @@ pub async fn root_search(
 
     // Create a job for leaf node search and assign the splits that the node is responsible for based on the job.
     let split_metadata_list = list_relevant_splits(search_request, metastore).await?;
+    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
 
     // Create a hash map of SplitMetadata with split id as a key.
     let split_metadata_map: HashMap<String, SplitMetadataAndFooterOffsets> = split_metadata_list
@@ -242,6 +248,7 @@ pub async fn root_search(
 
     // Perform the query phase.
     let mut result_per_node_addr = execute_search(
+        &index_metadata,
         &assigned_leaf_search_jobs,
         search_request_with_offset_0.clone(),
     )
@@ -261,6 +268,7 @@ pub async fn root_search(
             .await?;
         // Perform the query phase.
         let result_per_node_addr_new = execute_search(
+            &index_metadata,
             &retry_assigned_leaf_search_jobs,
             search_request_with_offset_0.clone(),
         )
