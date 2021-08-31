@@ -36,9 +36,9 @@ use quickwit_metastore::Metastore;
 use quickwit_proto::SearchRequest;
 
 use crate::client_pool::Job;
+use crate::error::NodeSearchError;
 use crate::list_relevant_splits;
 use crate::root::job_for_splits;
-use crate::root::NodeSearchError;
 use crate::ClientPool;
 use crate::SearchClientPool;
 use crate::SearchError;

@@ -101,3 +101,9 @@ impl From<JoinError> for SearchError {
         SearchError::InternalError(format!("Spawned task in root join failed: {}", join_error))
     }
 }
+
+#[derive(Debug)]
+pub struct NodeSearchError {
+    pub search_error: SearchError,
+    pub split_ids: Vec<String>,
+}
