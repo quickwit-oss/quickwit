@@ -226,7 +226,6 @@ pub async fn root_search(
     let split_metadata_list = list_relevant_splits(search_request, metastore).await?;
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
 
-    dbg!("waa1");
     // Create a hash map of SplitMetadata with split id as a key.
     let split_metadata_map: HashMap<String, SplitMetadataAndFooterOffsets> = split_metadata_list
         .into_iter()

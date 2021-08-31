@@ -55,6 +55,9 @@ pub async fn root_search_stream(
     // This needs some refactoring: relevant splits, metadata_map, jobs...
     let search_request = SearchRequest::from(search_stream_request.clone());
     let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
+    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+
+    // Create a hash map of SplitMetadata with split id as a key.
     let split_metadata_map: HashMap<String, SplitMetadataAndFooterOffsets> = split_metadata_list
         .into_iter()
         .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
@@ -66,6 +69,10 @@ pub async fn root_search_stream(
         .await?;
 
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
+
+    let index_config_str = serde_json::to_string(&index_metadata.index_config).map_err(|err| {
+        SearchError::InternalError(format!("Could not serialize index config {}", err))
+    })?;
 
     let mut handles = Vec::new();
     for (mut search_client, jobs) in assigned_leaf_search_jobs {
@@ -80,6 +87,8 @@ pub async fn root_search_stream(
         let leaf_request = LeafSearchStreamRequest {
             request: Some(search_stream_request.clone()),
             split_metadata: split_metadata_list.clone(),
+            index_config: index_config_str.to_string(),
+            index_uri: index_metadata.index_uri.to_string(),
         };
         debug!(leaf_request=?leaf_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search stream.");
         let handle = tokio::spawn(async move {
