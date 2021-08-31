@@ -31,6 +31,7 @@ use predicates::prelude::*;
 use quickwit_cli::{create_index_cli, CreateIndexArgs};
 use quickwit_metastore::{Metastore, MetastoreUriResolver, SplitState};
 use serde_json::{Number, Value};
+use serial_test::serial;
 use std::{io::Read, path::Path};
 use tokio::time::{sleep, Duration};
 
@@ -587,6 +588,7 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
 
 /// testing the api via cli commands
 #[tokio::test]
+#[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_all_with_s3_localstack_cli() -> Result<()> {
     let index_id = "s3_index_1";
@@ -677,6 +679,7 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
 
 /// testing the api via structs of the lib (if available)
 #[tokio::test]
+#[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     let index_id = "s3_index_2";
