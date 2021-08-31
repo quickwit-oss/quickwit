@@ -154,8 +154,12 @@ async fn leaf_search_single_split(
     let split_id = split.split_id.to_string();
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
-    let quickwit_collector =
-        make_collector_for_split(split_id, &*index_config, search_request, &split_schema);
+    let quickwit_collector = make_collector_for_split(
+        split_id,
+        index_config.as_ref(),
+        search_request,
+        &split_schema,
+    );
     let query = index_config.query(split_schema, search_request)?;
 
     let reader = index

@@ -113,6 +113,11 @@ message LeafSearchRequest {
 
   // `IndexConfig` as json serialized trait. 
   string index_config = 5;
+
+  // Index URI. The index URI defines the location of the storage that contains the
+  // split files.
+  string index_uri = 6;
+
 }
 
 message SplitIdAndFooterOffsets {

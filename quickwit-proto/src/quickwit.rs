@@ -79,6 +79,10 @@ pub struct LeafSearchRequest {
     /// `IndexConfig` as json serialized trait.
     #[prost(string, tag = "5")]
     pub index_config: ::prost::alloc::string::String,
+    /// Index URI. The index URI defines the location of the storage that contains the
+    /// split files.
+    #[prost(string, tag = "6")]
+    pub index_uri: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

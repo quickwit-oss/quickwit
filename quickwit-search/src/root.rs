@@ -85,6 +85,7 @@ async fn execute_search(
                 .map(|job| extract_split_and_footer_offsets(&job.metadata))
                 .collect(),
             index_config: index_config_str.to_string(),
+            index_uri: index_metadata.index_uri.to_string(),
         };
 
         debug!(leaf_search_request=?leaf_search_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
