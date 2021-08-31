@@ -1,5 +1,6 @@
 {
     "store_source": true,
+    "tag_fields": [],
     "default_search_fields": ["body", "title"],
     "field_mappings": [
         {

@@ -426,8 +426,8 @@ fn display_statistics(
     let elapsed_time = format!(
         "{:02}:{:02}:{:02}",
         elapsed_duration.num_hours(),
-        elapsed_duration.num_minutes(),
-        elapsed_duration.num_seconds()
+        elapsed_duration.num_minutes() % 60,
+        elapsed_duration.num_seconds() % 60
     );
     let throughput_mb_s = throughput_calculator.calculate(statistics.total_bytes_processed);
     if is_tty {
