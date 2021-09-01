@@ -27,7 +27,7 @@ use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{LeafSearchResult, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError};
 use quickwit_storage::{BundleStorage, Storage};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -81,7 +81,7 @@ pub(crate) async fn open_index(
 pub(crate) async fn warmup(
     searcher: &Searcher,
     query: &dyn Query,
-    fast_field_names: Vec<String>,
+    fast_field_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
     warm_up_terms(searcher, query).await?;
     warm_up_fastfields(searcher, fast_field_names).await?;
@@ -90,7 +90,7 @@ pub(crate) async fn warmup(
 
 async fn warm_up_fastfields(
     searcher: &Searcher,
-    fast_field_names: Vec<String>,
+    fast_field_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
     let mut fast_fields = Vec::new();
     for fast_field_name in fast_field_names.iter() {
@@ -168,7 +168,7 @@ async fn leaf_search_single_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
-    warmup(&*searcher, &query, quickwit_collector.fast_field_names()).await?;
+    warmup(&*searcher, &query, &quickwit_collector.fast_field_names()).await?;
     let leaf_search_result = searcher.search(&query, &quickwit_collector)?;
     Ok(leaf_search_result)
 }

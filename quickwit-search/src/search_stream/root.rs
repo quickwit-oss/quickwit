@@ -36,7 +36,6 @@ use quickwit_metastore::Metastore;
 use quickwit_proto::SearchRequest;
 
 use crate::client_pool::Job;
-use crate::error::parse_grpc_error;
 use crate::list_relevant_splits;
 use crate::root::job_for_splits;
 use crate::root::NodeSearchError;
@@ -105,8 +104,8 @@ pub async fn root_search_stream(
 
             let mut leaf_bytes: Vec<Bytes> = Vec::new();
             while let Some(leaf_result) = receiver.next().await {
-                let leaf_data = leaf_result.map_err(|status| NodeSearchError {
-                    search_error: parse_grpc_error(&status),
+                let leaf_data = leaf_result.map_err(|search_error| NodeSearchError {
+                    search_error,
                     split_ids: split_metadata_list
                         .iter()
                         .map(|split| split.split_id.clone())
@@ -211,7 +210,7 @@ mod tests {
                 Ok(UnboundedReceiverStream::new(result_receiver))
             },
         );
-        // The test will hang on indefinitely if we don't drop the receiver.
+        // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
@@ -219,6 +218,56 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(&result[0], &b"123"[..]);
         assert_eq!(&result[1], &b"456"[..]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_root_search_stream_single_split_with_error() -> anyhow::Result<()> {
+        let request = quickwit_proto::SearchStreamRequest {
+            index_id: "test-idx".to_string(),
+            query: "test".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            fast_field: "timestamp".to_string(),
+            output_format: OutputFormat::Csv as i32,
+            tags: vec![],
+        };
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata {
+                    index_id: "test-idx".to_string(),
+                    index_uri: "file:///path/to/index/test-idx".to_string(),
+                    index_config: Arc::new(WikipediaIndexConfig::new()),
+                    checkpoint: Checkpoint::default(),
+                })
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+        );
+        let mut mock_search_service = MockSearchService::new();
+        let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
+        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
+            data: b"123".to_vec(),
+        }))?;
+        result_sender.send(Err(SearchError::InternalError("error".to_string())))?;
+        mock_search_service.expect_leaf_search_stream().return_once(
+            |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                Ok(UnboundedReceiverStream::new(result_receiver))
+            },
+        );
+        // The test will hang on indefinitely if we don't drop the sender.
+        drop(result_sender);
+        let client_pool =
+            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
+        let result = root_search_stream(&request, &metastore, &client_pool).await;
+        assert_eq!(result.is_err(), true);
+        assert_eq!(result.unwrap_err().to_string(), "Internal error: `[NodeSearchError { search_error: InternalError(\"error\"), split_ids: [\"split1\"] }]`.");
         Ok(())
     }
 }

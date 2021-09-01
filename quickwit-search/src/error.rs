@@ -29,7 +29,7 @@ use quickwit_storage::StorageResolverError;
 
 /// Possible SearchError
 #[allow(missing_docs)]
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Serialize, Deserialize, Clone)]
 pub enum SearchError {
     #[error("Index `{index_id}` does not exist.")]
     IndexDoesNotExist { index_id: String },

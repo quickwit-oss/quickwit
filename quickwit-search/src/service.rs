@@ -90,7 +90,7 @@ pub trait SearchService: 'static + Send + Sync {
     async fn leaf_search_stream(
         &self,
         _request: LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>>;
+    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>>>;
 }
 
 impl SearchServiceImpl {
@@ -186,7 +186,7 @@ impl SearchService for SearchServiceImpl {
     async fn leaf_search_stream(
         &self,
         leaf_stream_request: LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>> {
+    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>>> {
         let stream_request = leaf_stream_request
             .request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
@@ -196,7 +196,7 @@ impl SearchService for SearchServiceImpl {
             .resolve(&leaf_stream_request.index_uri)?;
         let index_config = deserialize_index_config(&leaf_stream_request.index_config)?;
         let leaf_receiver = leaf_search_stream(
-            &stream_request,
+            stream_request,
             storage.clone(),
             leaf_stream_request.split_metadata,
             index_config,
