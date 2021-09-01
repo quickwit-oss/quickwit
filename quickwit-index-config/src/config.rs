@@ -57,14 +57,6 @@ pub enum SortBy {
     DocId,
 }
 
-/// An index metadata carries all meta data about an index.
-//#[derive(Clone, Debug, Serialize, Deserialize)]
-//pub struct IndexConfigo {
-//schema: Schema,
-//default_sort_by: SortBy,
-//timestamp_field: Option<Field>,
-//}
-
 /// The `IndexConfig` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
 ///
