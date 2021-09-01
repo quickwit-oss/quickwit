@@ -31,7 +31,7 @@ use predicates::prelude::*;
 use quickwit_cli::{create_index_cli, CreateIndexArgs};
 use quickwit_common::extract_index_id_from_index_uri;
 use quickwit_metastore::{MetastoreUriResolver, SplitState};
-use quickwit_storage::{localstack_region, S3CompatibleObjectStorage, Storage};
+use quickwit_storage::{RegionProvider, S3CompatibleObjectStorage, Storage};
 use serde_json::{Number, Value};
 use serial_test::serial;
 use std::{
@@ -590,8 +590,9 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     let s3_path =
         PathBuf::from(&("quickwit-integration-tests/indices/".to_string() + data_endpoint));
     let test_env = create_test_env(TestStorageType::S3ViaLocalStorage(s3_path))?;
+    let localstack_region = RegionProvider::Localstack.get_region();
     let object_storage =
-        S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.index_uri)?;
+        S3CompatibleObjectStorage::from_uri(localstack_region, &test_env.index_uri)?;
 
     make_command(
         format!(
@@ -685,8 +686,9 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     let s3_path =
         PathBuf::from(&("quickwit-integration-tests/indices/".to_string() + data_endpoint));
     let test_env = create_test_env(TestStorageType::S3ViaLocalStorage(s3_path))?;
+    let localstack_region = RegionProvider::Localstack.get_region();
     let object_storage =
-        S3CompatibleObjectStorage::from_uri(localstack_region(), &test_env.index_uri)?;
+        S3CompatibleObjectStorage::from_uri(localstack_region, &test_env.index_uri)?;
     let args = CreateIndexArgs::new(
         test_env.index_uri.clone(),
         test_env.resource_files["config"].to_path_buf(),

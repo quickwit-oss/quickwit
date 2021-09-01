@@ -50,12 +50,12 @@ pub use self::bundle_storage::{
 };
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 pub use self::object_storage::{
-    MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
+    MultiPartPolicy, RegionProvider, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
 pub use self::prefix_storage::add_prefix_to_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::storage_resolver::{
-    localstack_region, quickwit_storage_uri_resolver, StorageFactory, StorageUriResolver,
+    quickwit_storage_uri_resolver, StorageFactory, StorageUriResolver,
 };
 pub use crate::cache::{Cache, SliceCache, StorageWithCacheFactory};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};

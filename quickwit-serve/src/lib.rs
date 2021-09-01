@@ -42,8 +42,8 @@ use quickwit_search::{
     http_addr_to_grpc_addr, http_addr_to_swim_addr, SearchClientPool, SearchServiceImpl,
 };
 use quickwit_storage::{
-    localstack_region, LocalFileStorageFactory, S3CompatibleObjectStorageFactory,
-    StorageUriResolver, StorageWithCacheFactory,
+    LocalFileStorageFactory, RegionProvider, S3CompatibleObjectStorageFactory, StorageUriResolver,
+    StorageWithCacheFactory,
 };
 use quickwit_telemetry::payload::{ServeEvent, TelemetryEvent};
 
@@ -93,7 +93,7 @@ fn storage_uri_resolver() -> StorageUriResolver {
         .register(LocalFileStorageFactory::default())
         .register(s3_storage)
         .register(S3CompatibleObjectStorageFactory::new(
-            localstack_region(),
+            RegionProvider::Localstack,
             "s3+localstack",
         ))
         .build()

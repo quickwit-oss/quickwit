@@ -19,11 +19,10 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-use crate::{local_file_storage::LocalFileStorageFactory, ram_storage::RamStorageFactory};
-use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
+use crate::local_file_storage::LocalFileStorageFactory;
+use crate::ram_storage::RamStorageFactory;
+use crate::{RegionProvider, S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
 use once_cell::sync::OnceCell;
-use quickwit_common::{get_quickwit_env, QuickwitEnv};
-use rusoto_core::Region;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
@@ -39,7 +38,7 @@ pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
             .register(LocalFileStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::new(
-                localstack_region(),
+                RegionProvider::Localstack,
                 "s3+localstack",
             ))
             .build()
@@ -98,7 +97,7 @@ impl StorageUriResolver {
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::new(
-                localstack_region(),
+                RegionProvider::Localstack,
                 "s3+localstack",
             ))
             .build()
@@ -127,19 +126,6 @@ impl StorageUriResolver {
             }
         })?;
         Ok(storage)
-    }
-}
-
-/// Returns a localstack region (used for testing).
-pub fn localstack_region() -> Region {
-    let endpoint = if get_quickwit_env() == QuickwitEnv::LOCAL {
-        "http://localhost:4566".to_string()
-    } else {
-        "http://localstack:4566".to_string()
-    };
-    Region::Custom {
-        name: "localstack".to_string(),
-        endpoint,
     }
 }
 
