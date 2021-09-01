@@ -28,7 +28,6 @@ use crate::Universe;
 use crate::{ActorContext, ActorExitStatus, AsyncActor, Mailbox, Observation, SyncActor};
 use async_trait::async_trait;
 use std::collections::HashSet;
-use std::time::Duration;
 
 // An actor that receives ping messages.
 #[derive(Default)]
@@ -369,6 +368,13 @@ impl Actor for LoopingActor {
 
 #[async_trait]
 impl AsyncActor for LoopingActor {
+    async fn initialize(
+        &mut self,
+        ctx: &ActorContext<Self::Message>,
+    ) -> Result<(), ActorExitStatus> {
+        <LoopingActor as AsyncActor>::process_message(self, Msg::Looping, ctx).await
+    }
+
     async fn process_message(
         &mut self,
         message: Self::Message,
@@ -387,6 +393,10 @@ impl AsyncActor for LoopingActor {
 }
 
 impl SyncActor for LoopingActor {
+    fn initialize(&mut self, ctx: &ActorContext<Self::Message>) -> Result<(), ActorExitStatus> {
+        <LoopingActor as SyncActor>::process_message(self, Msg::Looping, ctx)
+    }
+
     fn process_message(
         &mut self,
         message: Self::Message,
@@ -406,51 +416,36 @@ impl SyncActor for LoopingActor {
 }
 
 #[tokio::test]
-async fn test_default_message_async() -> anyhow::Result<()> {
+async fn test_looping_async() -> anyhow::Result<()> {
     let universe = Universe::new();
-    let actor_with_default_msg = LoopingActor::default();
-    let (actor_with_default_msg_mailbox, actor_with_default_msg_handle) =
-        universe.spawn_async_actor(actor_with_default_msg);
-    universe
-        .send_message(&actor_with_default_msg_mailbox, Msg::Looping)
-        .await?;
-    assert!(actor_with_default_msg_mailbox
+    let looping_actor = LoopingActor::default();
+    let (looping_actor_mailbox, looping_actor_handle) = universe.spawn_sync_actor(looping_actor);
+    assert!(looping_actor_mailbox
         .send_message(Msg::Normal)
         .await
         .is_ok());
-    tokio::time::sleep(Duration::from_millis(10)).await;
-    let state = actor_with_default_msg_handle
-        .process_pending_and_observe()
-        .await
-        .state;
-    actor_with_default_msg_handle.quit().await;
+    looping_actor_handle.process_pending_and_observe().await;
+    let (exit_status, state) = looping_actor_handle.quit().await;
+    assert!(matches!(exit_status, ActorExitStatus::Quit));
     assert_eq!(state.normal_count, 1);
     assert!(state.default_count > 0);
     Ok(())
 }
 
 #[tokio::test]
-async fn test_default_message_sync() -> anyhow::Result<()> {
+async fn test_looping_sync() -> anyhow::Result<()> {
     let universe = Universe::new();
-    let actor_with_default_msg = LoopingActor::default();
-    let (actor_with_default_msg_mailbox, actor_with_default_msg_handle) =
-        universe.spawn_sync_actor(actor_with_default_msg);
-    let universe = Universe::new();
-    universe
-        .send_message(&actor_with_default_msg_mailbox, Msg::Looping)
-        .await?;
-    assert!(actor_with_default_msg_mailbox
+    let looping_actor = LoopingActor::default();
+    let (looping_actor_mailbox, looping_actor_handle) = universe.spawn_sync_actor(looping_actor);
+    assert!(looping_actor_mailbox
         .send_message(Msg::Normal)
         .await
         .is_ok());
-    tokio::time::sleep(Duration::from_millis(10)).await;
-    let state = actor_with_default_msg_handle
-        .process_pending_and_observe()
-        .await
-        .state;
-    actor_with_default_msg_handle.quit().await;
+    looping_actor_handle.process_pending_and_observe().await;
+    let (exit_status, state) = looping_actor_handle.quit().await;
+    assert!(matches!(exit_status, ActorExitStatus::Quit));
     assert_eq!(state.normal_count, 1);
-    assert!(state.default_count > 1);
+    assert!(state.default_count > 0);
     Ok(())
 }
 
