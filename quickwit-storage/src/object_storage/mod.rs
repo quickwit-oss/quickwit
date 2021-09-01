@@ -25,9 +25,11 @@ mod file_slice_stream;
 
 mod s3_compatible_storage;
 pub use self::s3_compatible_storage::S3CompatibleObjectStorage;
+pub use self::s3_compatible_storage_uri_resolver::{
+    RegionProvider, S3CompatibleObjectStorageFactory,
+};
 
 mod policy;
 pub use crate::object_storage::policy::MultiPartPolicy;
 
 mod s3_compatible_storage_uri_resolver;
-pub use self::s3_compatible_storage_uri_resolver::S3CompatibleObjectStorageFactory;

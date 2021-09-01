@@ -24,7 +24,7 @@ use crate::FileEntry;
 use futures::StreamExt;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver};
 use quickwit_metastore::{SplitMetadataAndFooterOffsets, SplitState};
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::{quickwit_storage_uri_resolver, StorageUriResolver};
 use std::path::Path;
 use std::time::Duration;
 use tantivy::chrono::Utc;
@@ -64,7 +64,7 @@ pub async fn delete_index(
     let metastore = MetastoreUriResolver::default()
         .resolve(metastore_uri)
         .await?;
-    let storage_resolver = StorageUriResolver::default();
+    let storage_resolver = quickwit_storage_uri_resolver();
 
     if dry_run {
         let all_splits = metastore.list_all_splits(index_id).await?;
@@ -87,7 +87,8 @@ pub async fn delete_index(
         .mark_splits_as_deleted(index_id, &split_ids)
         .await?;
 
-    let file_entries = delete_garbage_files(metastore.as_ref(), index_id, storage_resolver).await?;
+    let file_entries =
+        delete_garbage_files(metastore.as_ref(), index_id, storage_resolver.clone()).await?;
     metastore.delete_index(index_id).await?;
     Ok(file_entries)
 }
@@ -108,7 +109,7 @@ pub async fn garbage_collect_index(
     let metastore = MetastoreUriResolver::default()
         .resolve(metastore_uri)
         .await?;
-    let storage_resolver = StorageUriResolver::default();
+    let storage_resolver = quickwit_storage_uri_resolver();
 
     // Prune staged splits that are not older than the `grace_period`
     let grace_period_timestamp = Utc::now().timestamp() - grace_period.as_secs() as i64;
@@ -138,7 +139,8 @@ pub async fn garbage_collect_index(
         .mark_splits_as_deleted(index_id, &split_ids)
         .await?;
 
-    let file_entries = delete_garbage_files(metastore.as_ref(), index_id, storage_resolver).await?;
+    let file_entries =
+        delete_garbage_files(metastore.as_ref(), index_id, storage_resolver.clone()).await?;
     Ok(file_entries)
 }
 
