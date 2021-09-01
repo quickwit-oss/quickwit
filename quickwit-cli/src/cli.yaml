@@ -6,6 +6,11 @@ subcommands:
     - new:
         about: Creates an index
         args:
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
+                required: true
             - index-uri:
                 help: Location of the target index
                 long: index-uri
@@ -16,21 +21,21 @@ subcommands:
                 long: index-config-path
                 value_name: INDEX CONFIG
                 required: true
-            - metastore-uri:
-                help: Location of the metastore
-                long: metastore-uri
-                value_name: METASTORE URI
-                required: true
             - overwrite:
                 help: Overwrites pre-existing index
                 long: overwrite
     - index:
         about: Indexes a dataset
         args:
-            - index-uri:
-                help: Location of the target index
-                long: index-uri
-                value_name: INDEX URI
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
+                required: true
+            - index-id:
+                help: Index id
+                long: index-id
+                value_name: INDEX ID
                 required: true
             - input-path:
                 help: Location of the source dataset
@@ -50,21 +55,21 @@ subcommands:
                 long: heap-size
                 value_name: HEAP SIZE
                 default_value: 2G
-            - metastore-uri:
-                help: Location of the metastore
-                long: metastore-uri
-                value_name: METASTORE URI
-                required: true
             - overwrite:
                 help: Overwrites pre-existing index
                 long: overwrite
     - search:
         about: Searches an index
         args:
-            - index-uri:
-                help: Location of the target index
-                long: index-uri
-                value_name: INDEX URI
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
+                required: true
+            - index-id:
+                help: Index id
+                long: index-id
+                value_name: INDEX ID
                 required: true
             - query:
                 help: Query expressed in Tantivy syntax
@@ -99,44 +104,39 @@ subcommands:
                 long: tags
                 value_name: TAG
                 multiple: true
+    - gc:
+        about: Garbage collects danglings files from an index
+        args:
             - metastore-uri:
                 help: Location of the metastore
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
-    - gc:
-        about: Garbage collects danglings files from an index
-        args:
-            - index-uri:
-                help: Location of the target index
-                long: index-uri
-                value_name: INDEX URI
+            - index-id:
+                help: Index id
+                long: index-id
+                value_name: INDEX ID
                 required: true
             - grace-period:
                 help: Threshold period after which intermediate files can be garbage collected.
                 long: grace-period
                 value_name: GRACE PERIOD
                 default_value: '1h'
-            - metastore-uri:
-                help: Location of the metastore
-                long: metastore-uri
-                value_name: METASTORE URI
-                required: true
             - dry-run:
                 help: Executes the command in dry run mode and displays the list of files to remove
                 long: dry-run
     - delete:
         about: Deletes an index
         args:
-            - index-uri:
-                help: Location of the target index
-                long: index-uri
-                value_name: INDEX URI
-                required: true
             - metastore-uri:
                 help: Location of the metastore
                 long: metastore-uri
                 value_name: METASTORE URI
+                required: true
+            - index-id:
+                help: Index id
+                long: index-id
+                value_name: INDEX ID
                 required: true
             - dry-run:
                 help: Executes the command in dry run mode and displays the list of files to delete
@@ -144,12 +144,10 @@ subcommands:
     - serve:
         about: Starts a web server that exposes the Quickwit REST API.
         args:
-            - index-uri:
-                help: Comma-separated list of index locations.
-                long: index-uri
-                value_name: INDEX URI
-                multiple: true
-                use_delimiter: true
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
                 required: true
             - host:
                 help: Hostname the web server should bind to.
@@ -172,8 +170,3 @@ subcommands:
                 value_name: PEER SEED
                 multiple: true
                 use_delimiter: true
-            - metastore-uri:
-                help: Location of the metastore
-                long: metastore-uri
-                value_name: METASTORE URI
-                required: true

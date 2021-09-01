@@ -22,12 +22,19 @@
 
 use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
+use predicates::str;
+use quickwit_metastore::SingleFileMetastore;
+use quickwit_storage::localstack_region;
+use quickwit_storage::LocalFileStorage;
+use quickwit_storage::S3CompatibleObjectStorage;
+use quickwit_storage::Storage;
 use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::process::Child;
 use std::process::Stdio;
+use std::sync::Arc;
 use tempfile::tempdir;
 use tempfile::TempDir;
 
@@ -114,33 +121,48 @@ pub struct TestEnv {
     pub local_directory: TempDir,
     /// Path of the temporary directory of the test.
     pub local_directory_path: PathBuf,
-    /// The index uri.
-    pub index_uri: String,
     /// Resource files needed for the test.
     pub resource_files: HashMap<&'static str, PathBuf>,
     /// The metastore uri.
     pub metastore_uri: String,
+    pub storage: Arc<dyn Storage>,
+}
+
+impl TestEnv {
+    pub fn index_uri(&self, index_id: &str) -> String {
+        format!("{}/{}", self.metastore_uri, index_id)
+    }
+
+    // For cache reason, it's safer to always create an instance and then make your assertions.
+    pub fn metastore(&self) -> SingleFileMetastore {
+        SingleFileMetastore::new(self.storage.clone())
+    }
 }
 
 pub enum TestStorageType {
-    S3ViaLocalStorage(PathBuf),
+    S3,
     LocalFileSystem,
 }
 
 /// Creates all necessary artifacts in a test environement.
 pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
     let local_directory = tempdir()?;
+    let local_directory_path = local_directory.path().to_path_buf();
 
-    let (local_directory_path, index_uri) = match storage_type {
+    // TODO: refactor when we have a singleton storage resolver.
+    let (metastore_uri, storage) = match storage_type {
         TestStorageType::LocalFileSystem => {
-            let local_path =
-                PathBuf::from(format!("{}/indices/data", local_directory.path().display()));
-            let uri = format!("file://{}", local_path.display());
-            (local_path, uri)
+            let metastore_uri = format!("file://{}", local_directory_path.display());
+            let storage: Arc<dyn Storage> = Arc::new(LocalFileStorage::from_uri(&metastore_uri)?);
+            (metastore_uri, storage)
         }
-        TestStorageType::S3ViaLocalStorage(s3_path) => {
-            let uri = format!("s3+localstack://{}", s3_path.display());
-            (s3_path, uri)
+        TestStorageType::S3 => {
+            let metastore_uri = "s3+localstack://quickwit-integration-tests/indices";
+            let storage: Arc<dyn Storage> = Arc::new(S3CompatibleObjectStorage::from_uri(
+                localstack_region(),
+                metastore_uri,
+            )?);
+            (metastore_uri.to_string(), storage)
         }
     };
 
@@ -156,16 +178,11 @@ pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv>
     resource_files.insert("logs", log_docs_path);
     resource_files.insert("wiki", wikipedia_docs_path);
 
-    let metastore_uri = format!(
-        "file://{}",
-        local_directory_path.parent().unwrap().display()
-    );
-
     Ok(TestEnv {
         local_directory,
         local_directory_path,
-        index_uri,
         resource_files,
         metastore_uri,
+        storage,
     })
 }
