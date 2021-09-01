@@ -47,7 +47,6 @@ pub trait ClusterService: 'static + Send + Sync {
 /// Cluster service implementation.
 /// This is a service to check the status of the cluster and to operate the cluster.
 pub struct ClusterServiceImpl {
-    /// Cluster.
     cluster: Arc<Cluster>,
 }
 
@@ -68,14 +67,12 @@ impl ClusterService for ClusterServiceImpl {
             .into_iter()
             .map(PMember::from)
             .collect();
-
         Ok(MembersResult { members })
     }
 
     /// This is the API to leave the member from the cluster.
     async fn leave(&self, _request: LeaveRequest) -> Result<LeaveResult, ClusterError> {
-        self.cluster.leave();
-
+        self.cluster.leave().await;
         Ok(LeaveResult {})
     }
 }

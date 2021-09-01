@@ -265,7 +265,7 @@ mod tests {
 
         assert_eq!(addrs, expected);
 
-        cluster.leave();
+        cluster.leave().await;
 
         tmp_dir.close()?;
 
@@ -279,7 +279,7 @@ mod tests {
         let cluster1 = Arc::new(test_cluster(tmp_dir.path().join("host_key1").as_path())?);
 
         let cluster2 = Arc::new(test_cluster(tmp_dir.path().join("host_key2").as_path())?);
-        cluster2.add_peer_node(cluster1.listen_addr);
+        cluster2.add_peer_node(cluster1.listen_addr).await;
 
         // Wait for the cluster to be configured.
         thread::sleep(time::Duration::from_secs(5));
@@ -301,8 +301,8 @@ mod tests {
 
         assert_eq!(addrs, expected);
 
-        cluster1.leave();
-        cluster2.leave();
+        cluster1.leave().await;
+        cluster2.leave().await;
 
         tmp_dir.close()?;
 
@@ -378,7 +378,7 @@ mod tests {
         // compare jobs
         assert_eq!(assigned_jobs.get(0).unwrap().1, expected.get(0).unwrap().1);
 
-        cluster.leave();
+        cluster.leave().await;
 
         tmp_dir.close()?;
 
