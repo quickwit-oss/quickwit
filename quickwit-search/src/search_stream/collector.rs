@@ -214,7 +214,10 @@ mod tests {
             None,
             None,
         )?;
-        assert_eq!(builder.fast_field_to_warm(), HashSet::from_iter(["field_name".to_string()]));
+        assert_eq!(
+            builder.fast_field_to_warm(),
+            HashSet::from_iter(["field_name".to_string()])
+        );
         let builder = FastFieldCollectorBuilder::new(
             Type::U64,
             "field_name".to_string(),
