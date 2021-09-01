@@ -24,8 +24,8 @@ use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
 use predicates::str;
 use quickwit_metastore::SingleFileMetastore;
-use quickwit_storage::localstack_region;
 use quickwit_storage::LocalFileStorage;
+use quickwit_storage::RegionProvider;
 use quickwit_storage::S3CompatibleObjectStorage;
 use quickwit_storage::Storage;
 use std::collections::HashMap;
@@ -159,7 +159,7 @@ pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv>
         TestStorageType::S3 => {
             let metastore_uri = "s3+localstack://quickwit-integration-tests/indices";
             let storage: Arc<dyn Storage> = Arc::new(S3CompatibleObjectStorage::from_uri(
-                localstack_region(),
+                RegionProvider::Localstack.get_region(),
                 metastore_uri,
             )?);
             (metastore_uri.to_string(), storage)

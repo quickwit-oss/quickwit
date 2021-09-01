@@ -50,7 +50,7 @@ use quickwit_proto::SearchRequest;
 use quickwit_proto::SearchResult;
 use quickwit_search::single_node_search;
 use quickwit_search::SearchResultJson;
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::quickwit_storage_uri_resolver;
 use quickwit_telemetry::payload::TelemetryEvent;
 use std::collections::VecDeque;
 use std::env;
@@ -183,7 +183,7 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         ScratchDirectory::try_new_temp()
             .with_context(|| "Failed to create a tempdir for the indexer")?
     };
-    let storage_uri_resolver = StorageUriResolver::default();
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
 
@@ -202,7 +202,7 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         source_config,
         indexer_params,
         metastore,
-        storage_uri_resolver,
+        storage_uri_resolver: storage_uri_resolver.clone(),
     };
 
     let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
@@ -241,8 +241,7 @@ fn create_source_config_from_args(input_path_opt: Option<PathBuf>) -> SourceConf
 
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResult> {
     debug!(args = ?args, "search-index");
-
-    let storage_uri_resolver = StorageUriResolver::default();
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let search_request = SearchRequest {
@@ -256,7 +255,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResult>
         tags: args.tags.unwrap_or_default(),
     };
     let search_result: SearchResult =
-        single_node_search(&search_request, &*metastore, storage_uri_resolver).await?;
+        single_node_search(&search_request, &*metastore, storage_uri_resolver.clone()).await?;
     Ok(search_result)
 }
 

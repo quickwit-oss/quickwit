@@ -19,13 +19,29 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-use crate::{local_file_storage::LocalFileStorageFactory, ram_storage::RamStorageFactory};
-use crate::{S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
-use quickwit_common::{get_quickwit_env, QuickwitEnv};
-use rusoto_core::Region;
+use crate::local_file_storage::LocalFileStorageFactory;
+use crate::ram_storage::RamStorageFactory;
+use crate::{RegionProvider, S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
+use once_cell::sync::OnceCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
+
+/// Quickwit supported storage resolvers.
+pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
+    static STORAGE_URI_RESOLVER: OnceCell<StorageUriResolver> = OnceCell::new();
+    STORAGE_URI_RESOLVER.get_or_init(|| {
+        StorageUriResolver::builder()
+            .register(RamStorageFactory::default())
+            .register(LocalFileStorageFactory::default())
+            .register(S3CompatibleObjectStorageFactory::default())
+            .register(S3CompatibleObjectStorageFactory::new(
+                RegionProvider::Localstack,
+                "s3+localstack",
+            ))
+            .build()
+    })
+}
 
 /// A storage factory builds a [`Storage`] object from an URI.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
@@ -67,24 +83,22 @@ impl StorageUriResolverBuilder {
     }
 }
 
-impl Default for StorageUriResolver {
-    fn default() -> Self {
-        StorageUriResolver::builder()
-            .register(RamStorageFactory::default())
-            .register(LocalFileStorageFactory::default())
-            .register(S3CompatibleObjectStorageFactory::default())
-            .register(S3CompatibleObjectStorageFactory::new(
-                localstack_region(),
-                "s3+localstack",
-            ))
-            .build()
-    }
-}
-
 impl StorageUriResolver {
     /// Creates an empty `StorageUriResolver`.
     pub fn builder() -> StorageUriResolverBuilder {
         StorageUriResolverBuilder::default()
+    }
+
+    /// Creates `StorageUriResolver` for testing.
+    pub fn for_test() -> Self {
+        StorageUriResolver::builder()
+            .register(RamStorageFactory::default())
+            .register(LocalFileStorageFactory::default())
+            .register(S3CompatibleObjectStorageFactory::new(
+                RegionProvider::Localstack,
+                "s3+localstack",
+            ))
+            .build()
     }
 
     /// Resolves the given URI.
@@ -110,19 +124,6 @@ impl StorageUriResolver {
             }
         })?;
         Ok(storage)
-    }
-}
-
-/// Returns a localstack region (used for testing).
-pub fn localstack_region() -> Region {
-    let endpoint = if get_quickwit_env() == QuickwitEnv::LOCAL {
-        "http://localhost:4566".to_string()
-    } else {
-        "http://localstack:4566".to_string()
-    };
-    Region::Custom {
-        name: "localstack".to_string(),
-        endpoint,
     }
 }
 
@@ -185,7 +186,7 @@ mod tests {
 
     #[test]
     fn test_storage_resolver_unsupported_protocol() {
-        let storage_resolver = StorageUriResolver::default();
+        let storage_resolver = StorageUriResolver::for_test();
         assert!(matches!(
             storage_resolver.resolve("protocol://hello"),
             Err(crate::StorageResolverError::ProtocolUnsupported { protocol }) if protocol == "protocol"
