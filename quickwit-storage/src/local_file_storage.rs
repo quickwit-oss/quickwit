@@ -72,6 +72,11 @@ impl LocalFileStorage {
         }
         Ok(Self { root: pathbuf })
     }
+
+    /// Return the root path of this storage.
+    pub fn get_root(&self) -> PathBuf {
+        self.root.clone()
+    }
 }
 
 /// Delete empty directories starting from `{root}/{path}` directory and stopping at `{root}`

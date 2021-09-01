@@ -38,6 +38,7 @@ pub use self::storage::{PutPayload, Storage};
 
 mod bundle_storage;
 mod error;
+mod local_file_cache_storage;
 mod local_file_storage;
 mod object_storage;
 mod prefix_storage;
@@ -45,9 +46,8 @@ mod ram_storage;
 mod retry;
 mod storage_resolver;
 
-pub use self::bundle_storage::{
-    BundleStorage, BundleStorageBuilder, BundleStorageFileOffsets, BUNDLE_FILENAME,
-};
+pub use self::bundle_storage::{BundleStorage, BundleStorageBuilder,BundleStorageFileOffsets, BUNDLE_FILENAME};
+pub use self::local_file_cache_storage::StorageWithLocalFileCache;
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, RegionProvider, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
