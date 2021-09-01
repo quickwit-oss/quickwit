@@ -123,7 +123,7 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
         // it joins the cluster in which that node participates.
         let peer_swim_addr = http_addr_to_swim_addr(*peer_socket_addr);
         debug!(peer_swim_addr=?peer_swim_addr, "Add peer node.");
-        cluster.add_peer_node(peer_swim_addr);
+        cluster.add_peer_node(peer_swim_addr).await;
     }
 
     let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
