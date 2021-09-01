@@ -178,11 +178,12 @@ mod tests {
             format!("{:?}", expected_default_config),
         );
 
-        let hmm_ok = serde_json::to_string(&deserialized_default_config)?;
-        let deserialized_default_config = serde_json::from_str::<Box<dyn IndexConfig>>(&hmm_ok)?;
-        let hmm_ok2 = serde_json::to_string(&deserialized_default_config)?;
+        let serialized_config = serde_json::to_string(&deserialized_default_config)?;
+        let deserialized_default_config =
+            serde_json::from_str::<Box<dyn IndexConfig>>(&serialized_config)?;
+        let serialized_config_2 = serde_json::to_string(&deserialized_default_config)?;
 
-        assert_eq!(hmm_ok, hmm_ok2);
+        assert_eq!(serialized_config, serialized_config_2);
 
         Ok(())
     }
