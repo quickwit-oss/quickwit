@@ -606,11 +606,11 @@ async fn test_all_local_index() -> Result<()> {
     .assert()
     .success();
 
-    let metadata_file_exist = test_env
+    let metadata_file_exists = test_env
         .storage
         .exists(&Path::new(index_id).join("quickwit.json"))
         .await?;
-    assert_eq!(metadata_file_exist, true);
+    assert_eq!(metadata_file_exists, true);
 
     index_data(
         index_id,
@@ -669,11 +669,11 @@ async fn test_all_local_index() -> Result<()> {
     )
     .assert()
     .success();
-    let metadata_file_exist = test_env
+    let metadata_file_exists = test_env
         .storage
         .exists(&Path::new(index_id).join("quickwit.json"))
         .await?;
-    assert_eq!(metadata_file_exist, false);
+    assert_eq!(metadata_file_exists, false);
 
     Ok(())
 }
