@@ -424,10 +424,7 @@ async fn test_looping_async() -> anyhow::Result<()> {
         .send_message(Msg::Normal)
         .await
         .is_ok());
-    looping_actor_handle
-        .process_pending_and_observe()
-        .await
-        .state;
+    looping_actor_handle.process_pending_and_observe().await;
     let (exit_status, state) = looping_actor_handle.quit().await;
     assert!(matches!(exit_status, ActorExitStatus::Quit));
     assert_eq!(state.normal_count, 1);
@@ -444,10 +441,7 @@ async fn test_looping_sync() -> anyhow::Result<()> {
         .send_message(Msg::Normal)
         .await
         .is_ok());
-    looping_actor_handle
-        .process_pending_and_observe()
-        .await
-        .state;
+    looping_actor_handle.process_pending_and_observe().await;
     let (exit_status, state) = looping_actor_handle.quit().await;
     assert!(matches!(exit_status, ActorExitStatus::Quit));
     assert_eq!(state.normal_count, 1);
