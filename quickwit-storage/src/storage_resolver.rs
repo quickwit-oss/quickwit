@@ -26,11 +26,9 @@ use once_cell::sync::OnceCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
-use tracing::info;
 
 /// Quickwit supported storage resolvers.
 pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
-    info!("uri resolver");
     static STORAGE_URI_RESOLVER: OnceCell<StorageUriResolver> = OnceCell::new();
     STORAGE_URI_RESOLVER.get_or_init(|| {
         StorageUriResolver::builder()
