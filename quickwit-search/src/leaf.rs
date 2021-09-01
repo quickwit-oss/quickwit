@@ -39,10 +39,10 @@ use tokio::task::spawn_blocking;
 
 fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
     static INSTANCE: OnceCell<MemorySizedCache<String>> = OnceCell::new();
-    INSTANCE.get_or_init(|| MemorySizedCache::with_capacity_in_bytes(25_000_000))
+    INSTANCE.get_or_init(|| MemorySizedCache::with_capacity_in_bytes(500_000_000))
 }
 
-async fn get_from_cache_or_fetch(
+async fn get_split_footer_from_cache_or_fetch(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Bytes> {
@@ -85,7 +85,8 @@ pub(crate) async fn open_index(
 ) -> anyhow::Result<Index> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let mut footer_data =
-        get_from_cache_or_fetch(index_storage.clone(), split_and_footer_offsets).await?;
+        get_split_footer_from_cache_or_fetch(index_storage.clone(), split_and_footer_offsets)
+            .await?;
     let hotcache_len_bytes = footer_data.split_off(footer_data.len() - 8);
     let hotcache_num_bytes =
         u64::from_le_bytes((&*hotcache_len_bytes).try_into().unwrap()) as usize;
