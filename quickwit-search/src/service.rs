@@ -188,7 +188,7 @@ impl SearchService for SearchServiceImpl {
         let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
         let index_config = index_metadata.index_config;
         let leaf_receiver = leaf_search_stream(
-            &stream_request,
+            stream_request,
             storage.clone(),
             leaf_stream_request.split_metadata,
             index_config,

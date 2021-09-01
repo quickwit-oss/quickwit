@@ -19,6 +19,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use futures::StreamExt;
+use futures::TryStreamExt;
 use http::Uri;
 use quickwit_proto::LeafSearchStreamResult;
 use std::fmt;
@@ -137,32 +139,16 @@ impl SearchServiceClient {
                         .leaf_search_stream(tonic_request)
                         .await
                         .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
-                        .into_inner();
-                    loop {
-                        let grpc_result = results_stream.message().await;
-                        if grpc_result.is_err() {
-                            result_sender
-                                .send(Err(parse_grpc_error(&grpc_result.unwrap_err())))
-                                .map_err(|_| {
-                                    SearchError::InternalError(
-                                        "Sender closed, could not send leaf result.".into(),
-                                    )
-                                })?;
-                            // Stop the loop as soon as we receive a leaf error.
-                            break;
-                        }
+                        .into_inner()
+                        .take_while(|grpc_result| futures::future::ready(grpc_result.is_ok()))
+                        .map_err(|tonic_error| parse_grpc_error(&tonic_error));
 
-                        if let Some(result) = grpc_result.unwrap() {
-                            result_sender.send(Ok(result)).map_err(|_| {
-                                SearchError::InternalError(
-                                    "Sender closed, could not send leaf result.".into(),
-                                )
-                            })?;
-                        } else {
-                            // Stop the loop as soon as we get an empty message as this means that
-                            // there is no more result to receive.
-                            break;
-                        }
+                    while let Some(search_result) = results_stream.next().await {
+                        result_sender.send(search_result).map_err(|_| {
+                            SearchError::InternalError(
+                                "Sender closed, could not send leaf result.".into(),
+                            )
+                        })?;
                     }
 
                     Result::<_, SearchError>::Ok(())

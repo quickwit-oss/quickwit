@@ -18,6 +18,7 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use crate::filters::TimestampFilter;
@@ -167,12 +168,11 @@ impl FastFieldCollectorBuilder {
         self.fast_field_value_type
     }
 
-    pub fn fast_field_to_warm(&self) -> Vec<String> {
-        let mut fields = vec![self.fast_field_name.clone()];
+    pub fn fast_field_to_warm(&self) -> HashSet<String> {
+        let mut fields = HashSet::new();
+        fields.insert(self.fast_field_name.clone());
         if let Some(timestamp_field_name) = &self.timestamp_field_name {
-            if *timestamp_field_name != self.fast_field_name {
-                fields.push(timestamp_field_name.clone());
-            }
+            fields.insert(timestamp_field_name.clone());
         }
         fields
     }
@@ -200,6 +200,8 @@ impl FastFieldCollectorBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::iter::FromIterator;
+
     use super::*;
 
     #[test]
@@ -212,7 +214,7 @@ mod tests {
             None,
             None,
         )?;
-        assert_eq!(builder.fast_field_to_warm(), vec!["field_name"]);
+        assert_eq!(builder.fast_field_to_warm(), HashSet::from_iter(["field_name".to_string()]));
         let builder = FastFieldCollectorBuilder::new(
             Type::U64,
             "field_name".to_string(),
@@ -223,7 +225,7 @@ mod tests {
         )?;
         assert_eq!(
             builder.fast_field_to_warm(),
-            vec!["field_name", "timestamp_field_name"]
+            HashSet::from_iter(["field_name".to_string(), "timestamp_field_name".to_string()])
         );
         Ok(())
     }

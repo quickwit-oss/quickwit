@@ -51,16 +51,14 @@ const CONCURRENT_SPLIT_SEARCH_STREAM: usize = 5;
 // to tonic::Status as tonic::Status is required by the stream result
 // signature defined by proto generated code.
 pub async fn leaf_search_stream(
-    request: &SearchStreamRequest,
+    request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
     index_config: Arc<dyn IndexConfig>,
 ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>> {
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-    let request_clone = request.clone();
     tokio::spawn(async move {
-        let mut stream =
-            leaf_search_results_stream(request_clone, storage, splits, index_config).await;
+        let mut stream = leaf_search_results_stream(request, storage, splits, index_config).await;
         while let Some(item) = stream.next().await {
             if let Err(error) = result_sender.send(item) {
                 error!(
@@ -82,16 +80,13 @@ async fn leaf_search_results_stream(
 ) -> impl futures::Stream<Item = crate::Result<LeafSearchStreamResult>> + Sync + Send + 'static {
     futures::stream::iter(splits)
         .map(move |split| {
-            (
+            leaf_search_stream_single_split(
                 split,
                 index_config.clone(),
                 request.clone(),
                 storage.clone(),
             )
-        })
-        .map(|(split, index_config_clone, request_clone, storage)| {
-            leaf_search_stream_single_split(split, index_config_clone, request_clone, storage)
-                .shared()
+            .shared()
         })
         .buffer_unordered(CONCURRENT_SPLIT_SEARCH_STREAM)
 }
@@ -142,7 +137,7 @@ async fn leaf_search_stream_single_split(
     warmup(
         &*searcher,
         query.as_ref(),
-        fast_field_collector_builder.fast_field_to_warm(),
+        &fast_field_collector_builder.fast_field_to_warm(),
     )
     .await?;
     let collect_handle = spawn_blocking(move || {
@@ -266,7 +261,7 @@ mod tests {
             })
             .collect();
         let mut single_node_stream = leaf_search_stream(
-            &request,
+            request,
             test_sandbox
                 .storage_uri_resolver()
                 .resolve(&index_metadata.index_uri)?,
