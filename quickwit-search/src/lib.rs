@@ -207,9 +207,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_node_simple() -> anyhow::Result<()> {
-        let index_name = "single-node-simple";
+        let index_id = "single-node-simple-1";
         let test_sandbox =
-            TestSandbox::create("single-node-simple", Arc::new(WikipediaIndexConfig::new()))
+            TestSandbox::create(index_id, Arc::new(WikipediaIndexConfig::new()))
                 .await?;
         let docs = vec![
             json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
@@ -217,7 +217,7 @@ mod tests {
         ];
         test_sandbox.add_documents(docs.clone()).await?;
         let search_request = SearchRequest {
-            index_id: index_name.to_string(),
+            index_id: index_id.to_string(),
             query: "anthropomorphic".to_string(),
             search_fields: vec!["body".to_string()],
             start_timestamp: None,
