@@ -209,8 +209,7 @@ mod tests {
     async fn test_single_node_simple() -> anyhow::Result<()> {
         let index_id = "single-node-simple-1";
         let test_sandbox =
-            TestSandbox::create(index_id, Arc::new(WikipediaIndexConfig::new()))
-                .await?;
+            TestSandbox::create(index_id, Arc::new(WikipediaIndexConfig::new())).await?;
         let docs = vec![
             json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
             json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle"}),
@@ -264,10 +263,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_node_several_splits() -> anyhow::Result<()> {
-        let index_name = "single-node-simple";
+        let index_id = "single-node-several-splits";
         let test_sandbox =
-            TestSandbox::create("single-node-simple", Arc::new(WikipediaIndexConfig::new()))
-                .await?;
+            TestSandbox::create(index_id, Arc::new(WikipediaIndexConfig::new())).await?;
         for _ in 0..10u32 {
             test_sandbox.add_documents(vec![
             json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
@@ -275,7 +273,7 @@ mod tests {
         ]).await?;
         }
         let search_request = SearchRequest {
-            index_id: index_name.to_string(),
+            index_id: index_id.to_string(),
             query: "beagle".to_string(),
             search_fields: vec![],
             start_timestamp: None,
@@ -322,9 +320,8 @@ mod tests {
         }"#;
         let index_config =
             serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
-        let index_name = "single-node-simple";
-        let test_sandbox =
-            TestSandbox::create("single-node-simple", Arc::new(index_config)).await?;
+        let index_id = "single-node-filtering";
+        let test_sandbox = TestSandbox::create(index_id, Arc::new(index_config)).await?;
 
         let mut docs = vec![];
         for i in 0..30 {
@@ -334,7 +331,7 @@ mod tests {
         test_sandbox.add_documents(docs).await?;
 
         let search_request = SearchRequest {
-            index_id: index_name.to_string(),
+            index_id: index_id.to_string(),
             query: "info".to_string(),
             search_fields: vec![],
             start_timestamp: Some(10),
@@ -356,7 +353,7 @@ mod tests {
 
         // filter on time range [i64::MIN 20[ should only hit first 19 docs because of filtering
         let search_request = SearchRequest {
-            index_id: index_name.to_string(),
+            index_id: index_id.to_string(),
             query: "info".to_string(),
             search_fields: vec![],
             start_timestamp: None,
@@ -378,7 +375,7 @@ mod tests {
 
         // filter on tag, should not return any hit since no split is tagged
         let search_request = SearchRequest {
-            index_id: index_name.to_string(),
+            index_id: index_id.to_string(),
             query: "info".to_string(),
             search_fields: vec![],
             start_timestamp: None,
