@@ -57,7 +57,7 @@ pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::storage_resolver::{
     quickwit_storage_uri_resolver, StorageFactory, StorageUriResolver,
 };
-pub use crate::cache::{Cache, SliceCache, StorageWithCacheFactory};
+pub use crate::cache::{Cache, MemorySizedCache, SliceCache, StorageWithCacheFactory};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 #[cfg(any(test, feature = "testsuite"))]

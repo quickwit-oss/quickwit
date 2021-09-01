@@ -18,13 +18,14 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::hash::Hash;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use bytes::Bytes;
-use lru::LruCache;
-use tracing::{error, warn};
+
+use super::memory_sized_cache::MemorySizedCache;
 
 #[derive(Hash, Debug, Clone, PartialEq, Eq)]
 struct SliceAddress {
@@ -32,91 +33,25 @@ struct SliceAddress {
     pub byte_range: Range<usize>,
 }
 
-#[derive(Clone, Copy, Debug)]
-enum Capacity {
-    Unlimited,
-    InBytes(usize),
-}
-
-impl Capacity {
-    fn exceeds_capacity(&self, num_bytes: usize) -> bool {
-        match *self {
-            Capacity::Unlimited => false,
-            Capacity::InBytes(capacity_in_bytes) => num_bytes > capacity_in_bytes,
-        }
-    }
-}
-struct NeedMutSliceCache {
-    lru_cache: LruCache<SliceAddress, Bytes>,
-    num_bytes: usize,
-    capacity: Capacity,
-}
-
-impl NeedMutSliceCache {
-    /// Creates a new NeedMutSliceCache with the given capacity.
-    fn with_capacity(capacity: Capacity) -> Self {
-        NeedMutSliceCache {
-            // The limit will be decided by the amount of memory in the cache,
-            // not the number of items in the cache.
-            // Enforcing this limit is done in the `NeedMutCache` impl.
-            lru_cache: LruCache::unbounded(),
-            num_bytes: 0,
-            capacity,
-        }
-    }
-
-    fn get(&mut self, cache_key: &SliceAddress) -> Option<Bytes> {
-        self.lru_cache.get(cache_key).cloned()
-    }
-
-    /// Attempt to put the given amount of data in the cache.
-    /// This may fail silently if the owned_bytes slice is larger than the cache
-    /// capacity.
-    fn put(&mut self, slice_addr: SliceAddress, bytes: Bytes) {
-        if self.capacity.exceeds_capacity(bytes.len()) {
-            // The value does not fit in the cache. We simply don't store it.
-            warn!(
-                capacity_in_bytes = ?self.capacity,
-                len = bytes.len(),
-                "Downloaded a byte slice larger than the cache capacity."
-            );
-            return;
-        }
-        if let Some(previous_data) = self.lru_cache.pop(&slice_addr) {
-            self.num_bytes -= previous_data.len();
-        }
-        while self.capacity.exceeds_capacity(self.num_bytes + bytes.len()) {
-            if let Some((_, bytes)) = self.lru_cache.pop_lru() {
-                self.num_bytes -= bytes.len();
-            } else {
-                error!("Logical error. Even after removing all of the items in the cache the capacity is insufficient. This case is guarded against and should never happen.");
-                return;
-            }
-        }
-        self.num_bytes += bytes.len();
-        self.lru_cache.put(slice_addr, bytes);
-    }
-}
-
 /// A simple in-resident memory slice cache.
 pub struct SliceCache {
-    inner: Mutex<NeedMutSliceCache>,
+    inner: Mutex<MemorySizedCache<SliceAddress>>,
 }
 
 impl SliceCache {
     /// Creates an slice cache with the given capacity.
     pub fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
         SliceCache {
-            inner: Mutex::new(NeedMutSliceCache::with_capacity(Capacity::InBytes(
+            inner: Mutex::new(MemorySizedCache::<SliceAddress>::with_capacity_in_bytes(
                 capacity_in_bytes,
-            ))),
+            )),
         }
     }
 
     /// Creates a slice cache that nevers removes any entry.
     pub fn with_infinite_capacity() -> Self {
         SliceCache {
-            inner: Mutex::new(NeedMutSliceCache::with_capacity(Capacity::Unlimited)),
+            inner: Mutex::new(MemorySizedCache::with_infinite_capacity()),
         }
     }
 
