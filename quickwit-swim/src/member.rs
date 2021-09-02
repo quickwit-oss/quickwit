@@ -20,7 +20,7 @@ pub enum ArtilleryMemberState {
     Down,
     /// Left the cluster
     #[serde(rename = "l")]
-    Left
+    Left,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -34,12 +34,12 @@ pub struct ArtilleryMember {
     #[serde(rename = "m")]
     member_state: ArtilleryMemberState,
     #[serde(rename = "t", skip, default = "Instant::now")]
-    last_state_change: Instant
+    last_state_change: Instant,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
 pub struct ArtilleryStateChange {
-    member: ArtilleryMember
+    member: ArtilleryMember,
 }
 
 impl ArtilleryMember {
@@ -47,14 +47,14 @@ impl ArtilleryMember {
         host_key: Uuid,
         remote_host: SocketAddr,
         incarnation_number: u64,
-        known_state: ArtilleryMemberState
+        known_state: ArtilleryMemberState,
     ) -> Self {
         ArtilleryMember {
             host_key,
             remote_host: Some(remote_host),
             incarnation_number,
             member_state: known_state,
-            last_state_change: Instant::now()
+            last_state_change: Instant::now(),
         }
     }
 
@@ -64,7 +64,7 @@ impl ArtilleryMember {
             remote_host: None,
             incarnation_number: 0,
             member_state: ArtilleryMemberState::Alive,
-            last_state_change: Instant::now()
+            last_state_change: Instant::now(),
         }
     }
 
@@ -131,14 +131,14 @@ impl PartialOrd for ArtilleryMember {
             self.host_key.as_bytes(),
             format!("{:?}", self.remote_host),
             self.incarnation_number,
-            self.member_state
+            self.member_state,
         );
 
         let t2 = (
             rhs.host_key.as_bytes(),
             format!("{:?}", rhs.remote_host),
             rhs.incarnation_number,
-            rhs.member_state
+            rhs.member_state,
         );
 
         t1.partial_cmp(&t2)
@@ -159,14 +159,14 @@ impl Debug for ArtilleryMember {
             .field("state", &self.member_state)
             .field(
                 "drift_time_ms",
-                &self.last_state_change.elapsed().as_millis()
+                &self.last_state_change.elapsed().as_millis(),
             )
             .field(
                 "remote_host",
                 &self
                     .remote_host
                     .map_or(String::from("(current)"), |r| format!("{}", r))
-                    .as_str()
+                    .as_str(),
             )
             .finish()
     }
@@ -174,7 +174,7 @@ impl Debug for ArtilleryMember {
 
 pub fn most_uptodate_member_data<'a>(
     lhs: &'a ArtilleryMember,
-    rhs: &'a ArtilleryMember
+    rhs: &'a ArtilleryMember,
 ) -> &'a ArtilleryMember {
     // Don't apply clippy here.
     // It's important bit otherwise we won't understand.
@@ -184,7 +184,7 @@ pub fn most_uptodate_member_data<'a>(
         lhs.member_state,
         lhs.incarnation_number,
         rhs.member_state,
-        rhs.incarnation_number
+        rhs.incarnation_number,
     ) {
         (ArtilleryMemberState::Alive, i, ArtilleryMemberState::Suspect, j) => i > j,
         (ArtilleryMemberState::Alive, i, ArtilleryMemberState::Alive, j) => i > j,
@@ -193,7 +193,7 @@ pub fn most_uptodate_member_data<'a>(
         (ArtilleryMemberState::Down, _, ArtilleryMemberState::Alive, _) => true,
         (ArtilleryMemberState::Down, _, ArtilleryMemberState::Suspect, _) => true,
         (ArtilleryMemberState::Left, _, _, _) => true,
-        _ => false
+        _ => false,
     };
 
     if lhs_overrides {
@@ -219,7 +219,7 @@ mod test {
             remote_host: Some(FromStr::from_str("127.0.0.1:1337").unwrap()),
             incarnation_number: 123,
             member_state: ArtilleryMemberState::Alive,
-            last_state_change: Instant::now() - Duration::from_secs(3600)
+            last_state_change: Instant::now() - Duration::from_secs(3600),
         };
 
         let encoded = bincode::serialize(&member).unwrap();

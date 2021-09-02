@@ -112,17 +112,17 @@ pub(crate) async fn open_index(
 ///
 /// The downloaded data depends on the query (which term's posting list is required,
 /// are position required too), and the collector.
-#[instrument(skip(searcher, query, fast_field_names))]
+#[instrument(level = "debug", skip(searcher, query, fast_field_names))]
 pub(crate) async fn warmup(
     searcher: &Searcher,
     query: &dyn Query,
     fast_field_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
     warm_up_terms(searcher, query)
-        .instrument(info_span!("warm_up_terms"))
+        .instrument(debug_span!("warm_up_terms"))
         .await?;
     warm_up_fastfields(searcher, fast_field_names)
-        .instrument(info_span!("warm_up_fastfields"))
+        .instrument(debug_span!("warm_up_fastfields"))
         .await?;
     Ok(())
 }

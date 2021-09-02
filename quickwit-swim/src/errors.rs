@@ -21,7 +21,7 @@ pub enum ArtilleryError {
     #[error("Artillery :: Decoding Error: {}", _0)]
     Decoding(String),
     #[error("Artillery :: Numeric Cast Error: {}", _0)]
-    NumericCast(String)
+    NumericCast(String),
 }
 
 impl From<serde_json::error::Error> for ArtilleryError {

@@ -17,17 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use futures::StreamExt;
-use futures::TryStreamExt;
-use http::Uri;
-use opentelemetry::{global, propagation::Injector};
-use quickwit_proto::LeafSearchStreamResult;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use futures::{StreamExt, TryStreamExt};
 use http::Uri;
+use opentelemetry::global;
+use opentelemetry::propagation::Injector;
 use quickwit_proto::LeafSearchStreamResult;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::{Channel, Endpoint};
@@ -41,7 +38,8 @@ use crate::{SearchError, SearchService};
 struct MetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
 
 impl<'a> Injector for MetadataMap<'a> {
-    /// Sets a key and value in the MetadataMap.  Does nothing if the key or value are not valid inputs
+    /// Sets a key and value in the MetadataMap.  Does nothing if the key or value are not valid
+    /// inputs
     fn set(&mut self, key: &str, value: String) {
         if let Ok(metadata_key) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes()) {
             if let Ok(metadata_value) = tonic::metadata::MetadataValue::from_str(&value) {

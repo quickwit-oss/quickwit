@@ -10,14 +10,14 @@ use crate::member::{self, ArtilleryMember, ArtilleryMemberState, ArtilleryStateC
 
 pub struct ArtilleryMemberList {
     members: Vec<ArtilleryMember>,
-    periodic_index: usize
+    periodic_index: usize,
 }
 
 impl ArtilleryMemberList {
     pub fn new(current: ArtilleryMember) -> Self {
         ArtilleryMemberList {
             members: vec![current],
-            periodic_index: 0
+            periodic_index: 0,
         }
     }
 
@@ -79,7 +79,7 @@ impl ArtilleryMemberList {
 
     pub fn time_out_nodes(
         &mut self,
-        expired_hosts: &HashSet<SocketAddr>
+        expired_hosts: &HashSet<SocketAddr>,
     ) -> (Vec<ArtilleryMember>, Vec<ArtilleryMember>) {
         let mut suspect_members = Vec::new();
         let mut down_members = Vec::new();
@@ -129,7 +129,7 @@ impl ArtilleryMemberList {
     pub fn apply_state_changes(
         &mut self,
         state_changes: Vec<ArtilleryStateChange>,
-        from: &SocketAddr
+        from: &SocketAddr,
     ) -> (Vec<ArtilleryMember>, Vec<ArtilleryMember>) {
         let mut current_members = self.to_map();
 
@@ -183,7 +183,7 @@ impl ArtilleryMemberList {
     pub fn hosts_for_indirect_ping(
         &self,
         host_count: usize,
-        target: &SocketAddr
+        target: &SocketAddr,
     ) -> Vec<SocketAddr> {
         let mut possible_members: Vec<_> = self
             .members
