@@ -246,28 +246,27 @@ impl CliCommand {
     }
 }
 
-fn setup_logging_and_tracing(default_level: Level) {
-    let env_filter = {
-        if env::var("RUST_LOG").is_ok() {
-            EnvFilter::from_default_env()
-        } else {
-            EnvFilter::try_new(format!("quickwit={}", default_level))
-                .expect("Failed to set up tracing env filter.")
-        }
-    };
+fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
+    let env_filter = env::var("RUST_LOG")
+        .map(|_| EnvFilter::from_default_env())
+        .or_else(|_| EnvFilter::try_new(format!("quickwit={}", level)))
+        .context("Failed to set up tracing env filter.")?;
+
     global::set_text_map_propagator(TraceContextPropagator::new());
+
     // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
     let tracer = opentelemetry_jaeger::new_pipeline()
         .with_service_name("quickwit")
         //.install_batch(opentelemetry::runtime::Tokio)
         .install_simple()
-        .expect("Failed to initialize Jaeger exporter.");
+        .context("Failed to initialize Jaeger exporter.")?;
     tracing_subscriber::registry()
         .with(env_filter)
         .with(tracing_opentelemetry::layer().with_tracer(tracer))
         .with(tracing_subscriber::fmt::layer())
         .try_init()
-        .expect("Failed to setup tracing.");
+        .context("Failed to set up tracing.")?;
+    Ok(())
 }
 
 #[tokio::main]
@@ -290,7 +289,7 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    setup_logging_and_tracing(command.default_log_level());
+    setup_logging_and_tracing(command.default_log_level())?;
 
     let command_res = match command {
         CliCommand::New(args) => create_index_cli(args).await,

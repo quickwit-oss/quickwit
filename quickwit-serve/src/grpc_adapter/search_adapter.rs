@@ -22,8 +22,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::TryStreamExt;
 use opentelemetry::{global, propagation::Extractor};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing::*;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use quickwit_proto::{
     search_service_server as grpc, LeafSearchStreamRequest, LeafSearchStreamResult,
@@ -33,7 +33,7 @@ use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
 struct MetadataMap<'a>(&'a tonic::metadata::MetadataMap);
 
 impl<'a> Extractor for MetadataMap<'a> {
-    /// Get a value for a key from the MetadataMap.  If the value can't be converted to &str, returns None
+    /// Gets a value for a key from the MetadataMap.  If the value can't be converted to &str, returns None
     fn get(&self, key: &str) -> Option<&str> {
         self.0.get(key).and_then(|metadata| metadata.to_str().ok())
     }
@@ -124,7 +124,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
             dyn futures::Stream<Item = Result<LeafSearchStreamResult, tonic::Status>> + Send + Sync,
         >,
     >;
-    #[instrument(skip(self, request))]
+    #[instrument(name = "search_adapter:leaf_search_stream", skip(self, request))]
     async fn leaf_search_stream(
         &self,
         request: tonic::Request<LeafSearchStreamRequest>,

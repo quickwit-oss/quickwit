@@ -54,18 +54,23 @@ pub async fn leaf_search_stream(
     index_config: Arc<dyn IndexConfig>,
 ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>> {
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-    tokio::spawn(async move {
-        let mut stream = leaf_search_results_stream(request, storage, splits, index_config).await;
-        while let Some(item) = stream.next().await {
-            if let Err(error) = result_sender.send(item) {
-                error!(
-                    "Failed to send leaf search stream result. Stop sending. Cause: {}",
-                    error
-                );
-                break;
+    let span = info_span!("leaf_search_stream",);
+    tokio::spawn(
+        async move {
+            let mut stream =
+                leaf_search_results_stream(request, storage, splits, index_config).await;
+            while let Some(item) = stream.next().await {
+                if let Err(error) = result_sender.send(item) {
+                    error!(
+                        "Failed to send leaf search stream result. Stop sending. Cause: {}",
+                        error
+                    );
+                    break;
+                }
             }
         }
-    });
+        .instrument(span),
+    );
     UnboundedReceiverStream::new(result_receiver)
 }
 
@@ -145,6 +150,12 @@ async fn leaf_search_stream_single_split(
             output_format,
         )
     });
+    let span = debug_span!(
+        "collect_fast_field",
+        split_id = %split.split_id,
+        fast_field=%fast_field_to_extract,
+    );
+    let _ = span.enter();
     let buffer = collect_handle.await.map_err(|error| {
         error!(split_id = %split.split_id, fast_field=%fast_field_to_extract, error_message=%error, "Failed to collect fast field");
         SearchError::InternalError(format!("Error when collecting fast field values for split {}: {:?}", split.split_id, error))
