@@ -34,6 +34,7 @@ mod test_utils;
 
 pub use index::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_metastore::SplitMetadataAndFooterOffsets;
+pub use test_utils::mock_split_meta;
 pub use test_utils::TestSandbox;
 
 #[allow(missing_docs)]

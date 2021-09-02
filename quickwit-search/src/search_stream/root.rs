@@ -143,30 +143,11 @@ mod tests {
     use std::ops::Range;
 
     use crate::MockSearchService;
+    use quickwit_core::mock_split_meta;
     use quickwit_index_config::WikipediaIndexConfig;
-    use quickwit_metastore::SplitMetadata;
-    use quickwit_metastore::{
-        checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitMetadataAndFooterOffsets,
-        SplitState,
-    };
+    use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::OutputFormat;
     use tokio_stream::wrappers::UnboundedReceiverStream;
-
-    fn mock_split_meta(split_id: &str) -> SplitMetadataAndFooterOffsets {
-        SplitMetadataAndFooterOffsets {
-            footer_offsets: 700..800,
-            split_metadata: SplitMetadata {
-                split_id: split_id.to_string(),
-                split_state: SplitState::Published,
-                num_records: 10,
-                size_in_bytes: 256,
-                time_range: None,
-                generation: 1,
-                update_timestamp: 0,
-                tags: vec![],
-            },
-        }
-    }
 
     #[tokio::test]
     async fn test_root_search_stream_single_split() -> anyhow::Result<()> {

@@ -53,14 +53,16 @@ use quickwit_proto::{PartialHit, SearchResult};
 use quickwit_proto::{SearchRequest, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
 
+pub use crate::client::create_search_service_client;
 pub use crate::client::SearchServiceClient;
 pub use crate::client_pool::search_client_pool::SearchClientPool;
 pub use crate::client_pool::ClientPool;
 pub use crate::error::SearchError;
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
-use crate::root::root_search;
+pub use crate::root::root_search;
 pub use crate::search_result_json::SearchResultJson;
+pub use crate::search_stream::root_search_stream;
 pub use crate::service::MockSearchService;
 pub use crate::service::{SearchService, SearchServiceImpl};
 
