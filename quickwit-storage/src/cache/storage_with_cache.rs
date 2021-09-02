@@ -21,7 +21,7 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::Cache;
@@ -79,6 +79,10 @@ impl Storage for StorageWithCache {
 
     fn uri(&self) -> String {
         self.storage.uri()
+    }
+
+    fn root(&self) -> Option<PathBuf> {
+        self.storage.root()
     }
 }
 

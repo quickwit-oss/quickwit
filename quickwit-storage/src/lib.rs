@@ -33,12 +33,12 @@ etc.
 
 */
 mod cache;
+mod cache_bis;
 mod storage;
 pub use self::storage::{PutPayload, Storage};
 
 mod bundle_storage;
 mod error;
-mod local_file_cache_storage;
 mod local_file_storage;
 mod object_storage;
 mod prefix_storage;

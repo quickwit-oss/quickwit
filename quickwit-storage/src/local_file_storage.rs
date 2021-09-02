@@ -206,6 +206,10 @@ impl Storage for LocalFileStorage {
             }
         }
     }
+
+    fn root(&self) -> Option<PathBuf> {
+        Some(self.root.clone())
+    }
 }
 
 /// A File storage resolver

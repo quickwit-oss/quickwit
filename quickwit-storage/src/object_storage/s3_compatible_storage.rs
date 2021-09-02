@@ -615,6 +615,10 @@ impl Storage for S3CompatibleObjectStorage {
     fn uri(&self) -> String {
         format!("s3://{}/{}", self.bucket, self.prefix.to_string_lossy())
     }
+
+    fn root(&self) -> Option<PathBuf> {
+        None
+    }
 }
 
 #[cfg(test)]

@@ -121,4 +121,7 @@ pub trait Storage: Send + Sync + 'static {
 
     /// Returns an URI identifying the storage
     fn uri(&self) -> String;
+
+    /// Return the root path of this storage if appropriate.
+    fn root(&self) -> Option<PathBuf>;
 }
