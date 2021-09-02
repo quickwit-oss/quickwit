@@ -158,7 +158,7 @@ fn merge_segments_if_required(
     split: &mut IndexedSplit,
     ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<Vec<SegmentMeta>> {
-    debug!(index=%split.index_id, split=?split, "merge-segments-if-required");
+    debug!(split = ?split, "merge-segments-if-required");
     let segment_metas_before_merge = split.index.searchable_segment_metas()?;
     if is_merge_required(&segment_metas_before_merge[..]) {
         let segment_ids: Vec<SegmentId> = segment_metas_before_merge
@@ -188,12 +188,12 @@ fn create_packaged_split(
     split: IndexedSplit,
     ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<PackagedSplit> {
-    info!(split=?split, "create-packaged-split");
+    info!(split = ?split, "create-packaged-split");
 
     let split_filepath = split.split_scratch_directory.path().join(BUNDLE_FILENAME); // TODO rename <split_id>.split
     let mut split_file = CountingWriter::wrap(File::create(split_filepath)?);
 
-    debug!(split=?split, "create-file-bundle");
+    debug!(split = ?split, "create-file-bundle");
     let Range {
         start: footer_start,
         end: _,
