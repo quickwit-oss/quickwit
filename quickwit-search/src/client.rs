@@ -140,15 +140,18 @@ impl SearchServiceClient {
                         .await
                         .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
                         .into_inner()
-                        .take_while(|grpc_result| futures::future::ready(grpc_result.is_ok()))
                         .map_err(|tonic_error| parse_grpc_error(&tonic_error));
 
                     while let Some(search_result) = results_stream.next().await {
+                        let is_err = search_result.is_err();
                         result_sender.send(search_result).map_err(|_| {
                             SearchError::InternalError(
                                 "Sender closed, could not send leaf result.".into(),
                             )
                         })?;
+                        if is_err {
+                            break;
+                        }
                     }
 
                     Result::<_, SearchError>::Ok(())

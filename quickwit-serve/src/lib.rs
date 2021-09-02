@@ -150,3 +150,94 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{array::IntoIter, collections::HashMap, ops::Range, sync::Arc};
+
+    use quickwit_core::mock_split_meta;
+    use quickwit_index_config::WikipediaIndexConfig;
+    use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
+    use quickwit_proto::{search_service_server::SearchServiceServer, OutputFormat};
+    use quickwit_search::{
+        create_search_service_client, root_search_stream, MockSearchService, SearchError,
+        SearchService,
+    };
+    use tokio::sync::RwLock;
+    use tokio_stream::wrappers::UnboundedReceiverStream;
+    use tonic::transport::Server;
+
+    use super::*;
+
+    async fn start_test_server(
+        address: SocketAddr,
+        search_service: Arc<dyn SearchService>,
+    ) -> anyhow::Result<()> {
+        let search_grpc_adpater = GrpcSearchAdapter::from_mock(search_service);
+        let _ = tokio::spawn(async move {
+            Server::builder()
+                .add_service(SearchServiceServer::new(search_grpc_adpater))
+                .serve(address)
+                .await?;
+            Result::<_, anyhow::Error>::Ok(())
+        });
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_serve_search_stream_with_a_leaf_error_on_leaf_node() -> anyhow::Result<()> {
+        // This test aims at checking the client grpc implementation.
+        let request = quickwit_proto::SearchStreamRequest {
+            index_id: "test-idx".to_string(),
+            query: "test".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            fast_field: "timestamp".to_string(),
+            output_format: OutputFormat::Csv as i32,
+            tags: vec![],
+        };
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata {
+                    index_id: "test-idx".to_string(),
+                    index_uri: "file:///path/to/index/test-idx".to_string(),
+                    index_config: Arc::new(WikipediaIndexConfig::new()),
+                    checkpoint: Checkpoint::default(),
+                })
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+        );
+        let mut mock_search_service = MockSearchService::new();
+        let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
+        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
+            data: b"123".to_vec(),
+        }))?;
+        result_sender.send(Err(SearchError::InternalError("error".to_string())))?;
+        mock_search_service.expect_leaf_search_stream().return_once(
+            |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                Ok(UnboundedReceiverStream::new(result_receiver))
+            },
+        );
+        // The test will hang on indefinitely if we don't drop the sender.
+        drop(result_sender);
+
+        let grpc_addr: SocketAddr = format!("127.0.0.1:{}", 10000).parse()?;
+        start_test_server(grpc_addr, Arc::new(mock_search_service)).await?;
+        let client = create_search_service_client(grpc_addr).await?;
+        let clients: HashMap<_, _> = IntoIter::new([(grpc_addr, client)]).collect();
+        let client_pool = Arc::new(SearchClientPool {
+            clients: Arc::new(RwLock::new(clients)),
+        });
+        let search_result = root_search_stream(&request, &metastore, &client_pool).await;
+        assert!(search_result.is_err());
+        assert_eq!(search_result.unwrap_err().to_string(), "Internal error: `[NodeSearchError { search_error: InternalError(\"error\"), split_ids: [\"split1\"] }]`.");
+        Ok(())
+    }
+}

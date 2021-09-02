@@ -30,7 +30,10 @@ use quickwit_indexing::index_data;
 use quickwit_indexing::models::{CommitPolicy, IndexingStatistics, ScratchDirectory};
 use quickwit_indexing::source::{SourceConfig, VecSourceParams};
 use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver};
+use quickwit_metastore::{
+    IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadata, SplitMetadataAndFooterOffsets,
+    SplitState,
+};
 use quickwit_storage::StorageUriResolver;
 
 /// Creates a Test environment.
@@ -124,6 +127,23 @@ impl TestSandbox {
     /// Returns the storage uri resolver
     pub fn storage_uri_resolver(&self) -> StorageUriResolver {
         self.storage_uri_resolver.clone()
+    }
+}
+
+/// Mock split meta helper.
+pub fn mock_split_meta(split_id: &str) -> SplitMetadataAndFooterOffsets {
+    SplitMetadataAndFooterOffsets {
+        footer_offsets: 700..800,
+        split_metadata: SplitMetadata {
+            split_id: split_id.to_string(),
+            split_state: SplitState::Published,
+            num_records: 10,
+            size_in_bytes: 256,
+            time_range: None,
+            generation: 1,
+            update_timestamp: 0,
+            tags: vec![],
+        },
     }
 }
 
