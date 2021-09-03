@@ -18,6 +18,7 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::fs::File;
 use std::io;
 use std::io::Write;
@@ -40,7 +41,7 @@ use quickwit_storage::BUNDLE_FILENAME;
 use tantivy::common::CountingWriter;
 use tantivy::SegmentId;
 use tantivy::SegmentMeta;
-use tracing::info;
+use tracing::*;
 
 /// The role of the packager is to get an index writer and
 /// produce a split file.
@@ -136,8 +137,9 @@ fn create_file_bundle(
     segment_metas: &[SegmentMeta],
     scratch_dir: &ScratchDirectory,
     split_file: &mut impl io::Write,
+    ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<Range<u64>> {
-    // create bundle
+    let _protected_zone_guard = ctx.protect_zone();
     // List the split files that will be packaged into the bundle.
     let mut bundle_storage_builder = BundleStorageBuilder::new(split_file)?;
 
@@ -157,7 +159,7 @@ fn merge_segments_if_required(
     split: &mut IndexedSplit,
     ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<Vec<SegmentMeta>> {
-    info!("merge-segments-if-required");
+    debug!(split = ?split, "merge-segments-if-required");
     let segment_metas_before_merge = split.index.searchable_segment_metas()?;
     if is_merge_required(&segment_metas_before_merge[..]) {
         let segment_ids: Vec<SegmentId> = segment_metas_before_merge
@@ -177,7 +179,6 @@ fn build_hotcache<W: io::Write>(
     scratch_dir: &ScratchDirectory,
     split_file: &mut W,
 ) -> anyhow::Result<()> {
-    info!("build-hotcache");
     let mmap_directory = tantivy::directory::MmapDirectory::open(scratch_dir.path())?;
     write_hotcache(mmap_directory, split_file)?;
     Ok(())
@@ -186,12 +187,14 @@ fn build_hotcache<W: io::Write>(
 fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
+    ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<PackagedSplit> {
-    info!("create-packaged-split");
+    info!(split = ?split, "create-packaged-split");
 
     let split_filepath = split.split_scratch_directory.path().join(BUNDLE_FILENAME); // TODO rename <split_id>.split
     let mut split_file = CountingWriter::wrap(File::create(split_filepath)?);
 
+    debug!(split = ?split, "create-file-bundle");
     let Range {
         start: footer_start,
         end: _,
@@ -199,6 +202,7 @@ fn create_packaged_split(
         segment_metas,
         &split.split_scratch_directory,
         &mut split_file,
+        ctx,
     )?;
 
     let num_docs = segment_metas
@@ -211,22 +215,26 @@ fn create_packaged_split(
         .map(|segment_meta| segment_meta.id())
         .collect();
 
-    // extract tag values from `_tags` special fields
-    let mut tags = vec![];
+    // Extracts tag values from `_tags` special fields.
+    let mut tags = HashSet::default();
     let index_reader = split.index.reader()?;
     for reader in index_reader.searcher().segment_readers() {
         let inv_index = reader.inverted_index(split.tags_field)?;
         let mut terms_streamer = inv_index.terms().stream()?;
         while let Some((term_data, _)) = terms_streamer.next() {
-            tags.push(String::from_utf8_lossy(term_data).to_string());
+            tags.insert(String::from_utf8_lossy(term_data).to_string());
         }
     }
+    ctx.record_progress();
 
+    debug!(split = ?split, "build-hotcache");
     let hotcache_offset_start = split_file.written_bytes();
     build_hotcache(&split.split_scratch_directory, &mut split_file)?;
     let hotcache_offset_end = split_file.written_bytes();
     let hotcache_num_bytes = hotcache_offset_end - hotcache_offset_start;
+    ctx.record_progress();
 
+    info!(split = ?split, "split-write-all");
     split_file.write_all(&hotcache_num_bytes.to_le_bytes())?;
     split_file.flush()?;
 
@@ -256,7 +264,7 @@ impl SyncActor for Packager {
         fail_point!("packager:before");
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
-        let packaged_split = create_packaged_split(&segment_metas[..], split)?;
+        let packaged_split = create_packaged_split(&segment_metas[..], split, ctx)?;
         ctx.send_message_blocking(&self.uploader_mailbox, packaged_split)?;
         fail_point!("packager:after");
         Ok(())

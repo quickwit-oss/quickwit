@@ -294,6 +294,7 @@ mod tests {
     use super::IndexingPipelineSupervisor;
     use crate::actors::IndexerParams;
     use crate::source::SourceConfig;
+    use quickwit_storage::StorageUriResolver;
     use serde_json::json;
 
     use quickwit_actors::Universe;
@@ -349,7 +350,7 @@ mod tests {
             source_config,
             indexer_params,
             metastore: Arc::new(metastore),
-            storage_uri_resolver: Default::default(),
+            storage_uri_resolver: StorageUriResolver::for_test(),
         };
         let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_async_actor(indexing_supervisor);

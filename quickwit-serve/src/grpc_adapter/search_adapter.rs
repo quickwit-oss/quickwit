@@ -22,7 +22,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use futures::TryStreamExt;
 
 use quickwit_proto::{
     search_service_server as grpc, LeafSearchStreamRequest, LeafSearchStreamResult,
@@ -31,6 +31,13 @@ use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
 
 #[derive(Clone)]
 pub struct GrpcSearchAdapter(Arc<dyn SearchService>);
+
+impl GrpcSearchAdapter {
+    #[cfg(test)]
+    pub fn from_mock(mock_search_service_arc: Arc<dyn SearchService>) -> Self {
+        GrpcSearchAdapter(mock_search_service_arc)
+    }
+}
 
 impl From<Arc<SearchServiceImpl>> for GrpcSearchAdapter {
     fn from(search_service_arc: Arc<SearchServiceImpl>) -> Self {
@@ -79,8 +86,11 @@ impl grpc::SearchService for GrpcSearchAdapter {
         Ok(tonic::Response::new(fetch_docs_result))
     }
 
-    type LeafSearchStreamStream =
-        UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>;
+    type LeafSearchStreamStream = std::pin::Pin<
+        Box<
+            dyn futures::Stream<Item = Result<LeafSearchStreamResult, tonic::Status>> + Send + Sync,
+        >,
+    >;
     async fn leaf_search_stream(
         &self,
         request: tonic::Request<LeafSearchStreamRequest>,
@@ -90,7 +100,8 @@ impl grpc::SearchService for GrpcSearchAdapter {
             .0
             .leaf_search_stream(leaf_search_request)
             .await
-            .map_err(SearchError::convert_to_tonic_status)?;
-        Ok(tonic::Response::new(leaf_search_result))
+            .map_err(SearchError::convert_to_tonic_status)?
+            .map_err(SearchError::convert_to_tonic_status);
+        Ok(tonic::Response::new(Box::pin(leaf_search_result)))
     }
 }

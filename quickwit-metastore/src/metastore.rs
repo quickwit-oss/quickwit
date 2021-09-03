@@ -22,6 +22,7 @@
 
 pub mod single_file_metastore;
 
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::ops::{Range, RangeInclusive};
 use std::{collections::HashMap, sync::Arc};
@@ -88,8 +89,8 @@ pub struct SplitMetadata {
     /// Timestamp for tracking when the split state was last modified.
     pub update_timestamp: i64,
 
-    /// A list of tags for categorizing and searching group of splits.
-    pub tags: Vec<String>,
+    /// A set of tags for categorizing and searching group of splits.
+    pub tags: HashSet<String>,
 }
 
 impl SplitMetadata {
@@ -103,7 +104,7 @@ impl SplitMetadata {
             time_range: None,
             generation: 0,
             update_timestamp: Utc::now().timestamp(),
-            tags: vec![],
+            tags: Default::default(),
         }
     }
 }

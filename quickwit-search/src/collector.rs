@@ -21,6 +21,7 @@
 use itertools::Itertools;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use std::collections::HashSet;
 use tantivy::schema::Schema;
 
 use quickwit_index_config::IndexConfig;
@@ -222,7 +223,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
 
 // TODO: seems not very useful, remove it and refactor it.
 pub trait GenericQuickwitCollector: Collector {
-    fn fast_field_names(&self) -> Vec<String>;
+    fn fast_field_names(&self) -> HashSet<String>;
 }
 
 /// The quickwit collector is the tantivy Collector used in Quickwit.
@@ -235,14 +236,14 @@ pub struct QuickwitCollector {
     pub start_offset: usize,
     pub max_hits: usize,
     pub sort_by: SortBy,
-    pub fast_field_names: Vec<String>,
+    pub fast_field_names: HashSet<String>,
     pub timestamp_field_opt: Option<Field>,
     pub start_timestamp_opt: Option<i64>,
     pub end_timestamp_opt: Option<i64>,
 }
 
 impl GenericQuickwitCollector for QuickwitCollector {
-    fn fast_field_names(&self) -> Vec<String> {
+    fn fast_field_names(&self) -> HashSet<String> {
         self.fast_field_names.clone()
     }
 }
@@ -352,18 +353,14 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
 }
 
 /// Extracts all fast field names.
-fn extract_fast_field_names(index_config: &dyn IndexConfig) -> Vec<String> {
-    let mut fast_fields = vec![];
+fn extract_fast_field_names(index_config: &dyn IndexConfig) -> HashSet<String> {
+    let mut fast_fields = HashSet::new();
     if let Some(timestamp_field) = index_config.timestamp_field_name() {
-        fast_fields.push(timestamp_field);
+        fast_fields.insert(timestamp_field);
     }
-
     if let SortBy::SortByFastField { field_name, .. } = index_config.default_sort_by() {
-        if !fast_fields.contains(&field_name) {
-            fast_fields.push(field_name);
-        }
+        fast_fields.insert(field_name);
     }
-
     fast_fields
 }
 
@@ -396,7 +393,7 @@ pub fn make_merge_collector(search_request: &SearchRequest) -> QuickwitCollector
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by: SortBy::DocId,
-        fast_field_names: vec![],
+        fast_field_names: HashSet::new(),
         timestamp_field_opt: None,
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,

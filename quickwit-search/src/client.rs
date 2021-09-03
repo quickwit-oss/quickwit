@@ -19,6 +19,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+use futures::StreamExt;
+use futures::TryStreamExt;
 use http::Uri;
 use quickwit_proto::LeafSearchStreamResult;
 use std::fmt;
@@ -126,7 +128,7 @@ impl SearchServiceClient {
     pub async fn leaf_search_stream(
         &mut self,
         request: quickwit_proto::LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>> {
+    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>>> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let mut grpc_client_clone = grpc_client.clone();
@@ -137,26 +139,23 @@ impl SearchServiceClient {
                         .leaf_search_stream(tonic_request)
                         .await
                         .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
-                        .into_inner();
+                        .into_inner()
+                        .map_err(|tonic_error| parse_grpc_error(&tonic_error));
 
-                    // TODO: returning stream instead of a channel may be better.
-                    // But this seems to be difficult. Try it at your own expense.
-                    while let Some(result) = results_stream
-                        .message()
-                        .await
-                        .map_err(|status| parse_grpc_error(&status))?
-                    {
-                        // We want to stop doing unnecessary work on the leaves as soon as
-                        // there is an issue sending the result.
-                        // Terminating the task will drop the `result_stream` consequently
-                        // canceling the gRPC request.
-                        result_sender.send(Ok(result)).map_err(|_| {
-                            SearchError::InternalError("Could not send leaf result".into())
+                    while let Some(search_result) = results_stream.next().await {
+                        let is_err = search_result.is_err();
+                        result_sender.send(search_result).map_err(|_| {
+                            SearchError::InternalError(
+                                "Sender closed, could not send leaf result.".into(),
+                            )
                         })?;
+                        if is_err {
+                            break;
+                        }
                     }
+
                     Result::<_, SearchError>::Ok(())
                 });
-
                 Ok(UnboundedReceiverStream::new(result_receiver))
             }
             SearchServiceClientImpl::Local(service) => service.leaf_search_stream(request).await,

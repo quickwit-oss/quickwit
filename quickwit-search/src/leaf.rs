@@ -21,28 +21,39 @@
 use crate::collector::{make_collector_for_split, make_merge_collector, GenericQuickwitCollector};
 use crate::SearchError;
 use anyhow::Context;
+use bytes::Bytes;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
+use once_cell::sync::OnceCell;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{LeafSearchResult, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError};
-use quickwit_storage::{BundleStorage, Storage};
-use std::collections::BTreeMap;
+use quickwit_storage::{BundleStorage, MemorySizedCache, Storage};
+use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
 use std::path::PathBuf;
+
 use std::sync::Arc;
 use tantivy::{collector::Collector, query::Query, Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 
-/// Opens a `tantivy::Index` for the given split.
-///
-/// The resulting index uses a dynamic and a static cache.
-pub(crate) async fn open_index(
+fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
+    static INSTANCE: OnceCell<MemorySizedCache<String>> = OnceCell::new();
+    INSTANCE.get_or_init(|| MemorySizedCache::with_capacity_in_bytes(500_000_000))
+}
+
+async fn get_split_footer_from_cache_or_fetch(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
-) -> anyhow::Result<Index> {
+) -> anyhow::Result<Bytes> {
+    {
+        let possible_val = global_split_footer_cache().get(&split_and_footer_offsets.split_id);
+        if let Some(footer_data) = possible_val {
+            return Ok(footer_data);
+        }
+    }
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
-    let mut footer_data = index_storage
+    let footer_data_opt = index_storage
         .get_slice(
             &split_file,
             split_and_footer_offsets.split_footer_start as usize
@@ -56,6 +67,26 @@ pub(crate) async fn open_index(
                 split_and_footer_offsets.split_id
             )
         })?;
+
+    global_split_footer_cache().put(
+        split_and_footer_offsets.split_id.to_owned(),
+        footer_data_opt.clone(),
+    );
+
+    Ok(footer_data_opt)
+}
+
+/// Opens a `tantivy::Index` for the given split.
+///
+/// The resulting index uses a dynamic and a static cache.
+pub(crate) async fn open_index(
+    index_storage: Arc<dyn Storage>,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
+) -> anyhow::Result<Index> {
+    let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
+    let mut footer_data =
+        get_split_footer_from_cache_or_fetch(index_storage.clone(), split_and_footer_offsets)
+            .await?;
     let hotcache_len_bytes = footer_data.split_off(footer_data.len() - 8);
     let hotcache_num_bytes =
         u64::from_le_bytes((&*hotcache_len_bytes).try_into().unwrap()) as usize;
@@ -81,7 +112,7 @@ pub(crate) async fn open_index(
 pub(crate) async fn warmup(
     searcher: &Searcher,
     query: &dyn Query,
-    fast_field_names: Vec<String>,
+    fast_field_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
     warm_up_terms(searcher, query).await?;
     warm_up_fastfields(searcher, fast_field_names).await?;
@@ -90,7 +121,7 @@ pub(crate) async fn warmup(
 
 async fn warm_up_fastfields(
     searcher: &Searcher,
-    fast_field_names: Vec<String>,
+    fast_field_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
     let mut fast_fields = Vec::new();
     for fast_field_name in fast_field_names.iter() {
@@ -168,7 +199,7 @@ async fn leaf_search_single_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = reader.searcher();
-    warmup(&*searcher, &query, quickwit_collector.fast_field_names()).await?;
+    warmup(&*searcher, &query, &quickwit_collector.fast_field_names()).await?;
     let leaf_search_result = searcher.search(&query, &quickwit_collector)?;
     Ok(leaf_search_result)
 }

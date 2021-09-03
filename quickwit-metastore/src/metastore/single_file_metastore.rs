@@ -29,8 +29,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 use tokio::sync::RwLock;
 
-use quickwit_storage::StorageResolverError;
 use quickwit_storage::StorageUriResolver;
+use quickwit_storage::{quickwit_storage_uri_resolver, StorageResolverError};
 use quickwit_storage::{PutPayload, Storage, StorageErrorKind};
 
 use crate::checkpoint::CheckpointDelta;
@@ -486,7 +486,7 @@ pub struct SingleFileMetastoreFactory {
 impl Default for SingleFileMetastoreFactory {
     fn default() -> Self {
         SingleFileMetastoreFactory {
-            storage_uri_resolver: StorageUriResolver::default(),
+            storage_uri_resolver: quickwit_storage_uri_resolver().clone(),
         }
     }
 }

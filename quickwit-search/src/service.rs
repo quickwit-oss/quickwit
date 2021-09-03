@@ -21,6 +21,7 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use quickwit_index_config::IndexConfig;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, SearchRequest,
@@ -89,7 +90,7 @@ pub trait SearchService: 'static + Send + Sync {
     async fn leaf_search_stream(
         &self,
         _request: LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>>;
+    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>>>;
 }
 
 impl SearchServiceImpl {
@@ -105,6 +106,17 @@ impl SearchServiceImpl {
             client_pool,
         }
     }
+}
+
+fn deserialize_index_config(index_config_str: &str) -> Result<Arc<dyn IndexConfig>, SearchError> {
+    let index_config =
+        serde_json::from_str::<Arc<dyn IndexConfig>>(index_config_str).map_err(|err| {
+            SearchError::InternalError(format!(
+                "Could not deserialize index config {}",
+                err.to_string()
+            ))
+        })?;
+    Ok(index_config)
 }
 
 #[async_trait]
@@ -127,13 +139,11 @@ impl SearchService for SearchServiceImpl {
             .search_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
         info!(index=?search_request.index_id, splits=?leaf_search_request.split_metadata, "leaf_search");
-        let index_metadata = self
-            .metastore
-            .index_metadata(&search_request.index_id)
-            .await?;
-        let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let storage = self
+            .storage_resolver
+            .resolve(&leaf_search_request.index_uri)?;
         let split_ids = leaf_search_request.split_metadata;
-        let index_config = index_metadata.index_config;
+        let index_config = deserialize_index_config(&leaf_search_request.index_config)?;
 
         let leaf_search_result = leaf_search(
             &search_request,
@@ -150,9 +160,9 @@ impl SearchService for SearchServiceImpl {
         &self,
         fetch_docs_request: FetchDocsRequest,
     ) -> Result<FetchDocsResult, SearchError> {
-        let index_id = fetch_docs_request.index_id;
-        let index_metadata = self.metastore.index_metadata(&index_id).await?;
-        let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
+        let storage = self
+            .storage_resolver
+            .resolve(&fetch_docs_request.index_uri)?;
 
         let fetch_docs_result = fetch_docs(
             fetch_docs_request.partial_hits,
@@ -176,19 +186,17 @@ impl SearchService for SearchServiceImpl {
     async fn leaf_search_stream(
         &self,
         leaf_stream_request: LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<Result<LeafSearchStreamResult, tonic::Status>>> {
+    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>>> {
         let stream_request = leaf_stream_request
             .request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
         info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_metadata, "leaf_search");
-        let index_metadata = self
-            .metastore
-            .index_metadata(&stream_request.index_id)
-            .await?;
-        let storage = self.storage_resolver.resolve(&index_metadata.index_uri)?;
-        let index_config = index_metadata.index_config;
+        let storage = self
+            .storage_resolver
+            .resolve(&leaf_stream_request.index_uri)?;
+        let index_config = deserialize_index_config(&leaf_stream_request.index_config)?;
         let leaf_receiver = leaf_search_stream(
-            &stream_request,
+            stream_request,
             storage.clone(),
             leaf_stream_request.split_metadata,
             index_config,
