@@ -18,6 +18,7 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::fs::File;
 use std::io;
 use std::io::Write;
@@ -215,13 +216,13 @@ fn create_packaged_split(
         .collect();
 
     // Extracts tag values from `_tags` special fields.
-    let mut tags = vec![];
+    let mut tags = HashSet::default();
     let index_reader = split.index.reader()?;
     for reader in index_reader.searcher().segment_readers() {
         let inv_index = reader.inverted_index(split.tags_field)?;
         let mut terms_streamer = inv_index.terms().stream()?;
         while let Some((term_data, _)) = terms_streamer.next() {
-            tags.push(String::from_utf8_lossy(term_data).to_string());
+            tags.insert(String::from_utf8_lossy(term_data).to_string());
         }
     }
     ctx.record_progress();

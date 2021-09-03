@@ -41,6 +41,10 @@ pub trait DefaultForTest {
     async fn default_for_test() -> Self;
 }
 
+fn to_set(tags: &[&str]) -> HashSet<String> {
+    tags.iter().map(ToString::to_string).collect()
+}
+
 #[allow(dead_code)]
 pub async fn test_metastore_create_index<MetastoreToTest: Metastore + DefaultForTest>() {
     let metastore = MetastoreToTest::default_for_test().await;
@@ -1230,7 +1234,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             time_range: Some(RangeInclusive::new(0, 99)),
             generation: 3,
             update_timestamp: current_timestamp,
-            tags: vec!["foo".to_string(), "bar".to_string()],
+            tags: to_set(&["foo", "bar"]),
         },
     };
 
@@ -1244,7 +1248,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             time_range: Some(RangeInclusive::new(100, 199)),
             generation: 3,
             update_timestamp: current_timestamp,
-            tags: vec!["bar".to_string()],
+            tags: to_set(&["bar"]),
         },
     };
 
@@ -1258,7 +1262,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             time_range: Some(RangeInclusive::new(200, 299)),
             generation: 3,
             update_timestamp: current_timestamp,
-            tags: vec!["foo".to_string(), "baz".to_string()],
+            tags: to_set(&["foo", "baz"]),
         },
     };
 
@@ -1272,7 +1276,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             time_range: Some(RangeInclusive::new(300, 399)),
             generation: 3,
             update_timestamp: current_timestamp,
-            tags: vec!["foo".to_string()],
+            tags: to_set(&["foo"]),
         },
     };
 
@@ -1286,7 +1290,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             time_range: None,
             generation: 3,
             update_timestamp: current_timestamp,
-            tags: vec!["baz".to_string(), "biz".to_string()],
+            tags: to_set(&["baz", "biz"]),
         },
     };
 
