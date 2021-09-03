@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::{ops::Range, path::PathBuf};
 
-use crate::{PutPayload, StorageResult};
+use crate::{PutPayload, StorageErrorKind, StorageResult};
 
 pub use storage_with_local_cache::StorageWithLocalStorageCache;
 
@@ -53,6 +53,17 @@ struct CacheState {
     items: Vec<(PathBuf, usize)>,
     num_bytes: usize,
     item_count: usize,
+}
+
+impl CacheState {
+    /// Construct an instance of [`CacheState`] from an persiste cache state file.
+    pub fn from_path(path: &Path) -> StorageResult<Self> {
+        let file_path = path.to_path_buf().join(CACHE_STATE_FILE_NAME);
+        let json_file = std::fs::File::open(file_path)?;
+        let reader = std::io::BufReader::new(json_file);
+        serde_json::from_reader(reader)
+            .map_err(|err| StorageErrorKind::InternalError.with_error(err))
+    }
 }
 
 /// The `Cache` trait is the abstraction used to describe the caching logic

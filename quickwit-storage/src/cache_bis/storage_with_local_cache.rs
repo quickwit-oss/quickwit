@@ -20,32 +20,38 @@
 */
 
 use std::{
+    collections::HashSet,
     ops::Range,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use crate::{PutPayload, Storage, StorageErrorKind, StorageResult};
+use crate::{PutPayload, Storage, StorageErrorKind, StorageResult, StorageUriResolver};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bytes::Bytes;
-use tokio::sync::Mutex;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    sync::{
+        broadcast::{self, Sender},
+        Mutex,
+    },
+};
 
-use super::{local_storage_cache::LocalStorageCache, Cache, FULL_SLICE};
+use super::{local_storage_cache::LocalStorageCache, Cache, CacheState, FULL_SLICE};
 
-/// A storage with a backing [`LocalFileCache`].
+/// A storage with a backing [`Cache`].
 pub struct StorageWithLocalStorageCache {
     remote_storage: Arc<dyn Storage>,
     cache: Mutex<Box<dyn Cache>>,
-    //TODO: solve in-fligh requests will be solved with waiting on channel
-    //subscirber
+    in_flight_download_requests: Mutex<HashSet<PathBuf>>,
+    notification_sender: Sender<(PathBuf, Bytes)>,
 }
 
 impl StorageWithLocalStorageCache {
-
-    /// Create an instance of [`StorageWithLocalFileCache`]
+    /// Create an instance of [`StorageWithLocalStorageCache`]
     ///
-    /// It needs to create both the remote and local Storage to work with.
+    /// It needs both the remote and local Storage to work with.
     /// max_item_count and max_num_bytes are used for the cache [`Capacity`].
     pub fn create(
         remote_storage: Arc<dyn Storage>,
@@ -54,9 +60,12 @@ impl StorageWithLocalStorageCache {
         max_num_bytes: usize,
     ) -> StorageResult<Self> {
         let _local_storage_root = local_storage.root().ok_or_else(|| {
-            StorageErrorKind::InternalError
-                .with_error(anyhow!("The local storage need to have valid root path."))
+            StorageErrorKind::InternalError.with_error(anyhow!(
+                "The local storage needs to have valid file system root path."
+            ))
         })?;
+
+        let (notification_sender, _) = broadcast::channel(10);
         Ok(Self {
             remote_storage,
             cache: Mutex::new(Box::new(LocalStorageCache::new(
@@ -64,7 +73,121 @@ impl StorageWithLocalStorageCache {
                 max_num_bytes,
                 max_item_count,
             ))),
+            in_flight_download_requests: Mutex::new(HashSet::new()),
+            notification_sender,
         })
+    }
+
+    /// Create an instance of [`StorageWithLocalStorageCache`] from a path.
+    ///
+    /// It needs a folder `path` previously used by an instance of [`StorageWithLocalStorageCache`].
+    /// Lastly, the file at `{path}/[`CACHE_STATE_FILE_NAME`]` should be present and valid.
+    // TODO: this constructor should move into a factory.
+    pub fn from_path(path: &Path) -> StorageResult<Self> {
+        let cache_state = CacheState::from_path(path)?;
+
+        let remote_storage = StorageUriResolver::default()
+            .resolve(&cache_state.remote_storage_uri)
+            .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
+
+        let local_storage = StorageUriResolver::default()
+            .resolve(&cache_state.local_storage_uri)
+            .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
+
+        Self::create(
+            remote_storage,
+            local_storage,
+            cache_state.capacity.max_item_count,
+            cache_state.capacity.max_num_bytes,
+        )
+    }
+
+    /// Helper method to register a `get_all` request,
+    /// & put subsequent requests for this entry on hold.
+    async fn get_all_from_remote_storage(&self, path: &Path) -> StorageResult<(Bytes, bool)> {
+        let is_currently_downloading = self
+            .in_flight_download_requests
+            .lock()
+            .await
+            .get(&path.to_path_buf())
+            .is_some();
+
+        // Wait for download to complete
+        if is_currently_downloading {
+            let mut receiver = self.notification_sender.subscribe();
+            while let Ok((downloaded_path, data)) = receiver.recv().await {
+                if downloaded_path == path {
+                    return Ok((data, false));
+                }
+            }
+        }
+
+        self.in_flight_download_requests
+            .lock()
+            .await
+            .insert(path.to_path_buf());
+
+        // Donwload & notify
+        let data = self.remote_storage.get_all(path).await?;
+        let _send_result = self
+            .notification_sender
+            .send((path.to_path_buf(), data.clone()));
+
+        self.in_flight_download_requests
+            .lock()
+            .await
+            .remove(&path.to_path_buf());
+
+        Ok((data, true))
+    }
+
+    /// Helper method to register a `copy_to_file` request,
+    /// & put subsequent requests for this entry on hold.
+    async fn copy_to_from_remote_storage(
+        &self,
+        path: &Path,
+        output_path: &Path,
+    ) -> StorageResult<(Bytes, bool)> {
+        let is_currently_downloading = self
+            .in_flight_download_requests
+            .lock()
+            .await
+            .get(&path.to_path_buf())
+            .is_some();
+
+        // Wait for download to complete
+        if is_currently_downloading {
+            let mut receiver = self.notification_sender.subscribe();
+            while let Ok((downloaded_path, data)) = receiver.recv().await {
+                if downloaded_path == path {
+                    return Ok((data, false));
+                }
+            }
+        }
+
+        self.in_flight_download_requests
+            .lock()
+            .await
+            .insert(path.to_path_buf());
+
+        // Donwload & notify
+        self.remote_storage.copy_to_file(path, output_path).await?;
+        let data = read_all(output_path).await.map_err(|err| {
+            StorageErrorKind::Io.with_error(anyhow!("Could not read from file: {}.", err))
+        })?;
+
+        self.notification_sender
+            .send((path.to_path_buf(), data.clone()))
+            .map_err(|err| {
+                StorageErrorKind::InternalError
+                    .with_error(anyhow!("Could not send notification: {}.", err))
+            })?;
+
+        self.in_flight_download_requests
+            .lock()
+            .await
+            .remove(&path.to_path_buf());
+        Ok((data, true))
     }
 }
 
@@ -72,9 +195,9 @@ impl StorageWithLocalStorageCache {
 impl Storage for StorageWithLocalStorageCache {
     async fn put(&self, path: &Path, payload: PutPayload) -> StorageResult<()> {
         self.remote_storage.put(path, payload.clone()).await?;
-        let mut looked_cache = self.cache.lock().await;
-        looked_cache.put(path, payload).await?;
-        looked_cache.save_state(self.remote_storage.uri()).await
+        let mut locked_cache = self.cache.lock().await;
+        locked_cache.put(path, payload).await?;
+        locked_cache.save_state(self.remote_storage.uri()).await
     }
 
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
@@ -88,12 +211,19 @@ impl Storage for StorageWithLocalStorageCache {
             return Ok(());
         }
 
-        self.remote_storage.copy_to_file(path, output_path).await?;
-        let mut looked_cache = self.cache.lock().await;
-        looked_cache
+        let (data, is_the_downloader) = self.copy_to_from_remote_storage(path, output_path).await?;
+        if !is_the_downloader {
+            write_all(output_path, data).await.map_err(|err| {
+                StorageErrorKind::Io.with_error(anyhow!("Could not write to file `{}`.", err))
+            })?;
+            return Ok(());
+        }
+
+        let mut locked_cache = self.cache.lock().await;
+        locked_cache
             .put(path, PutPayload::LocalFile(output_path.to_path_buf()))
             .await?;
-        looked_cache.save_state(self.remote_storage.uri()).await
+        locked_cache.save_state(self.remote_storage.uri()).await
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
@@ -101,15 +231,20 @@ impl Storage for StorageWithLocalStorageCache {
             return Ok(bytes);
         }
 
-        //TODO find ways around copying all bytes in RAM
-        //copy_to_file maybe?
-        let all_bytes = self.remote_storage.get_all(path).await?;
+        //TODO: optimisatize this to avoid copying whole data in RAM (copy_to_file maybe?)
+        // We need to think of how byte range will be cached (path, range) as address
+        // The solution should guide this optimisation
+        let (all_bytes, is_the_downloader) = self.get_all_from_remote_storage(path).await?;
         let data = Bytes::copy_from_slice(&all_bytes[range.start..range.end]);
-        let mut looked_cache = self.cache.lock().await;
-        looked_cache
+        if !is_the_downloader {
+            return Ok(data);
+        }
+
+        let mut locked_cache = self.cache.lock().await;
+        locked_cache
             .put(path, PutPayload::InMemory(all_bytes))
             .await?;
-        looked_cache.save_state(self.remote_storage.uri()).await?;
+        locked_cache.save_state(self.remote_storage.uri()).await?;
         Ok(data)
     }
 
@@ -118,21 +253,24 @@ impl Storage for StorageWithLocalStorageCache {
             return Ok(bytes);
         }
 
-        let all_bytes = self.remote_storage.get_all(path).await?;
+        let (all_bytes, is_the_downloader) = self.get_all_from_remote_storage(path).await?;
+        if !is_the_downloader {
+            return Ok(all_bytes);
+        }
 
-        let mut looked_cache = self.cache.lock().await;
-        looked_cache
+        let mut locked_cache = self.cache.lock().await;
+        locked_cache
             .put(path, PutPayload::InMemory(all_bytes.clone()))
             .await?;
-        looked_cache.save_state(self.remote_storage.uri()).await?;
+        locked_cache.save_state(self.remote_storage.uri()).await?;
         Ok(all_bytes)
     }
 
     async fn delete(&self, path: &Path) -> crate::StorageResult<()> {
         self.remote_storage.delete(path).await?;
-        let mut looked_cache = self.cache.lock().await;
-        if looked_cache.delete(path).await? {
-            return looked_cache.save_state(self.remote_storage.uri()).await;
+        let mut locked_cache = self.cache.lock().await;
+        if locked_cache.delete(path).await? {
+            return locked_cache.save_state(self.remote_storage.uri()).await;
         }
         Ok(())
     }
@@ -150,6 +288,22 @@ impl Storage for StorageWithLocalStorageCache {
     }
 }
 
+/// Helper function to read a file content.
+async fn read_all(path: &Path) -> anyhow::Result<Bytes> {
+    let mut file = tokio::fs::File::open(path).await?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).await?;
+    Ok(Bytes::from(buffer))
+}
+
+/// Helper function to write a file content
+async fn write_all(path: &Path, data: Bytes) -> anyhow::Result<()> {
+    let mut file = tokio::fs::File::create(path).await?;
+    file.write_all(&data.to_vec()).await?;
+    file.flush().await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::cache_bis::CacheState;
@@ -159,8 +313,10 @@ mod tests {
     use crate::MockStorage;
     use crate::Storage;
     use anyhow::Context;
+    use futures::future;
     use std::path::Path;
     use std::sync::Arc;
+    use std::time::Duration;
 
     use bytes::Bytes;
     use tempfile::{tempdir, TempDir};
@@ -190,11 +346,11 @@ mod tests {
             .times(1)
             .returning(|path, _payload| {
                 assert_eq!(path, Path::new("foo"));
-                Ok(())
+                Box::pin(async { Ok(()) })
             });
         remote_storage.expect_get_all().times(1).returning(|path| {
             assert_eq!(path, Path::new("bar"));
-            Ok(Bytes::from(b"data".to_vec()))
+            Box::pin(async { Ok(Bytes::from(b"data".to_vec())) })
         });
 
         local_storage
@@ -210,7 +366,7 @@ mod tests {
             .times(2)
             .returning(|path, _payload| {
                 assert!(path == Path::new("foo") || path == Path::new("bar"));
-                Ok(())
+                Box::pin(async { Ok(()) })
             });
         local_storage
             .expect_get_slice()
@@ -218,7 +374,7 @@ mod tests {
             .returning(|path, range| {
                 assert_eq!(path, Path::new("foo"));
                 assert_eq!(range, FULL_SLICE);
-                Ok(Bytes::from(b"data".to_vec()))
+                Box::pin(async { Ok(Bytes::from(b"data".to_vec())) })
             });
 
         let cached_storage = StorageWithLocalStorageCache::create(
@@ -277,7 +433,7 @@ mod tests {
             .returning(|| "s3://remote".to_string());
         remote_storage.expect_get_all().times(1).returning(|path| {
             assert_eq!(path, Path::new("foo"));
-            Ok(Bytes::from(b"foo".to_vec()))
+            Box::pin(async { Ok(Bytes::from(b"foo".to_vec())) })
         });
 
         local_storage
@@ -294,14 +450,14 @@ mod tests {
             .returning(|path, range| {
                 assert_eq!(path, Path::new("foo"));
                 assert_eq!(range, FULL_SLICE);
-                Ok(Bytes::from(b"foo".to_vec()))
+                Box::pin(async { Ok(Bytes::from(b"foo".to_vec())) })
             });
         local_storage
             .expect_put()
             .times(1)
             .returning(|path, _payload| {
                 assert_eq!(path, Path::new("foo"));
-                Ok(())
+                Box::pin(async { Ok(()) })
             });
 
         let cached_storage = StorageWithLocalStorageCache::create(
@@ -324,7 +480,7 @@ mod tests {
 
         remote_storage.expect_delete().times(1).returning(|path| {
             assert_eq!(path, Path::new("foo"));
-            Ok(())
+            Box::pin(async { Ok(()) })
         });
 
         local_storage
@@ -357,11 +513,11 @@ mod tests {
             .times(1)
             .returning(|path, _payload| {
                 assert_eq!(path, Path::new("foo"));
-                Ok(())
+                Box::pin(async { Ok(()) })
             });
         remote_storage.expect_delete().times(1).returning(|path| {
             assert_eq!(path, Path::new("foo"));
-            Ok(())
+            Box::pin(async { Ok(()) })
         });
 
         local_storage
@@ -377,11 +533,11 @@ mod tests {
             .times(1)
             .returning(|path, _payload| {
                 assert!(path == Path::new("foo") || path == Path::new("bar"));
-                Ok(())
+                Box::pin(async { Ok(()) })
             });
         local_storage.expect_delete().times(1).returning(|path| {
             assert_eq!(path, Path::new("foo"));
-            Ok(())
+            Box::pin(async { Ok(()) })
         });
 
         let cached_storage = StorageWithLocalStorageCache::create(
@@ -416,6 +572,60 @@ mod tests {
                 max_item_count: 10
             }
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_does_not_call_remote_storage_concurrently_one_same_entry(
+    ) -> anyhow::Result<()> {
+        let (local_dir, mut remote_storage, mut local_storage) = create_test_storages()?;
+        let path = local_dir.path().to_path_buf();
+
+        remote_storage
+            .expect_uri()
+            .times(1)
+            .returning(|| "s3://remote".to_string());
+        remote_storage.expect_get_all().times(1).returning(|path| {
+            assert_eq!(path, Path::new("foo"));
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                Ok(Bytes::from(b"foo".to_vec()))
+            })
+        });
+
+        local_storage
+            .expect_uri()
+            .times(1)
+            .returning(|| "file://mock".to_string());
+        local_storage
+            .expect_root()
+            .times(2)
+            .returning(move || Some(path.clone()));
+        // get_slice should not be called since all
+        // requests are served from the single download
+        local_storage.expect_get_slice().never();
+        local_storage
+            .expect_put()
+            .times(1)
+            .returning(|path, _payload| {
+                assert_eq!(path, Path::new("foo"));
+                Box::pin(async { Ok(()) })
+            });
+
+        let cached_storage = StorageWithLocalStorageCache::create(
+            Arc::new(remote_storage),
+            Arc::new(local_storage),
+            10,
+            10,
+        )?;
+
+        let get_task_1 = cached_storage.get_all(Path::new("foo"));
+        let get_task_2 = cached_storage.get_all(Path::new("foo"));
+        let (response1, response2) = future::join(get_task_1, get_task_2).await;
+
+        assert_eq!(response1?, &b"foo"[..]);
+        assert_eq!(response2?, &b"foo"[..]);
 
         Ok(())
     }

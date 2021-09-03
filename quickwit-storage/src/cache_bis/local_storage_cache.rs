@@ -48,7 +48,6 @@ pub struct LocalStorageCache {
 }
 
 impl LocalStorageCache {
-
     /// Create new instance of [`LocalStorageCache`]
     pub fn new(
         local_storage: Arc<dyn Storage>,
