@@ -276,7 +276,7 @@ mod tests {
                     segment_ids,
                     split_scratch_directory,
                     num_docs: 10,
-                    tags: Vec::new(),
+                    tags: Default::default(),
                 },
             )
             .await?;
