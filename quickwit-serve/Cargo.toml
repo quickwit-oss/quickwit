@@ -36,6 +36,8 @@ mockall = "0.10"
 assert-json-diff = "2.0.1"
 tokio = { version = "1", features = ["full"] }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage", features=["testsuite"]}
+quickwit-core = {path="../quickwit-core"}
+quickwit-index-config = {path="../quickwit-index-config"}
 
 [dependencies.quickwit-cluster]
 path = '../quickwit-cluster'

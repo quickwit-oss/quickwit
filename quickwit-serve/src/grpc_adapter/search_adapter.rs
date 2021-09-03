@@ -32,6 +32,13 @@ use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
 #[derive(Clone)]
 pub struct GrpcSearchAdapter(Arc<dyn SearchService>);
 
+impl GrpcSearchAdapter {
+    #[cfg(test)]
+    pub fn from_mock(mock_search_service_arc: Arc<dyn SearchService>) -> Self {
+        GrpcSearchAdapter(mock_search_service_arc)
+    }
+}
+
 impl From<Arc<SearchServiceImpl>> for GrpcSearchAdapter {
     fn from(search_service_arc: Arc<SearchServiceImpl>) -> Self {
         GrpcSearchAdapter(search_service_arc)
