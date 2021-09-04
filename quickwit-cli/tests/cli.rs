@@ -161,7 +161,7 @@ fn test_cmd_index_on_non_existing_file() -> Result<()> {
 }
 
 #[test]
-fn test_cmd_index() -> Result<()> {
+fn test_cmd_index_simple() -> Result<()> {
     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
     let index_id = "my-index";
     create_logs_index(&test_env, index_id);

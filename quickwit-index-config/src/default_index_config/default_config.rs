@@ -31,11 +31,9 @@ use tantivy::schema::{
 use tantivy::Document;
 
 use super::field_mapping_entry::DocParsingError;
-use super::{
-    default_as_true, FieldMappingEntry, FieldMappingType, SOURCE_FIELD_NAME, TAGS_FIELD_NAME,
-};
+use super::{default_as_true, FieldMappingEntry, FieldMappingType};
 use crate::query_builder::build_query;
-use crate::{IndexConfig, QueryParserError, SortBy, SortOrder};
+use crate::{IndexConfig, QueryParserError, SortBy, SortOrder, SOURCE_FIELD_NAME, TAGS_FIELD_NAME};
 
 /// DefaultIndexConfigBuilder is here
 /// to create a valid IndexConfig.
@@ -324,9 +322,11 @@ mod tests {
     use serde_json::{self, Value as JsonValue};
 
     use super::DefaultIndexConfig;
-    use crate::default_index_config::default_config::SOURCE_FIELD_NAME;
-    use crate::default_index_config::TAGS_FIELD_NAME;
-    use crate::{DefaultIndexConfigBuilder, DocParsingError, IndexConfig};
+    use crate::default_index_config::default_config::IndexConfig;
+    use crate::{
+        DefaultIndexConfigBuilder, DocParsingError, DocParsingError, IndexConfig,
+        SOURCE_FIELD_NAME, SOURCE_FIELD_NAME, TAGS_FIELD_NAME, TAGS_FIELD_NAME,
+    };
 
     const JSON_DOC_VALUE: &str = r#"
         {

@@ -17,22 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-const DEFAULT_COMMIT_TIMEOUT: Duration = Duration::from_secs(5);
-const DEFAULT_NUM_DOCS_COMMIT_THRESHOLD: u64 = 10_000_000;
+use crate::merge_policy::MergeOperation;
+use crate::models::ScratchDirectory;
 
-use std::time::Duration;
-
-#[derive(Clone, Copy, Debug)]
-pub struct CommitPolicy {
-    pub timeout: Duration,
-    pub num_docs_threshold: u64,
-}
-
-impl Default for CommitPolicy {
-    fn default() -> Self {
-        CommitPolicy {
-            timeout: DEFAULT_COMMIT_TIMEOUT,
-            num_docs_threshold: DEFAULT_NUM_DOCS_COMMIT_THRESHOLD,
-        }
-    }
+#[derive(Debug)]
+pub struct MergeScratch {
+    pub merge_operation: MergeOperation,
+    /// Scratch directory for computing the merge.
+    pub merge_scratch_directory: ScratchDirectory,
 }

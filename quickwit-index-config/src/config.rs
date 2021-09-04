@@ -25,8 +25,7 @@ use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 use tantivy::Document;
 
-use crate::default_index_config::TAGS_FIELD_NAME;
-use crate::{DocParsingError, QueryParserError};
+use crate::{DocParsingError, QueryParserError, TAGS_FIELD_NAME};
 
 /// Sorted order (either Ascending or Descending).
 /// To get a regular top-K results search, use `SortOrder::Desc`.

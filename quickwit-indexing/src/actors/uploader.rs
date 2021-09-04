@@ -148,6 +148,7 @@ async fn stage_and_upload_split(
         index_id: split.index_id,
         metadata,
         checkpoint_delta: split.checkpoint_delta,
+        replaced_split_ids: Vec::new(),
     })
 }
 
@@ -260,6 +261,7 @@ mod tests {
                     split_scratch_directory,
                     num_docs: 10,
                     tags: Default::default(),
+                    replaced_split_ids: Vec::new(),
                 },
             )
             .await?;

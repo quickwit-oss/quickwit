@@ -111,11 +111,8 @@ impl BundleStorageFileOffsets {
     }
 
     /// Return file offsets for given path.
-    pub fn get(&self, path: &Path) -> StorageResult<Range<usize>> {
-        self.files
-            .get(path)
-            .cloned()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "not found in metadata").into())
+    pub fn get(&self, path: &Path) -> Option<Range<usize>> {
+        self.files.get(path).cloned()
     }
 
     /// Return if file exists in metadata.
@@ -135,7 +132,10 @@ impl Storage for BundleStorage {
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> crate::StorageResult<Bytes> {
-        let file_offsets = self.metadata.get(path)?;
+        let file_offsets = self.metadata.get(path).ok_or_else(|| {
+            crate::StorageErrorKind::DoesNotExist
+                .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
+        })?;
         let new_range =
             file_offsets.start as usize + range.start..file_offsets.start as usize + range.end;
         self.storage
@@ -144,7 +144,10 @@ impl Storage for BundleStorage {
     }
 
     async fn get_all(&self, path: &Path) -> crate::StorageResult<Bytes> {
-        let file_offsets = self.metadata.get(path)?;
+        let file_offsets = self.metadata.get(path).ok_or_else(|| {
+            crate::StorageErrorKind::DoesNotExist
+                .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
+        })?;
         self.storage
             .get_slice(
                 &self.bundle_filepath,
@@ -163,7 +166,10 @@ impl Storage for BundleStorage {
     }
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
-        let file_range = self.metadata.get(path)?;
+        let file_range = self.metadata.get(path).ok_or_else(|| {
+            crate::StorageErrorKind::DoesNotExist
+                .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
+        })?;
         Ok(file_range.len() as u64)
     }
 

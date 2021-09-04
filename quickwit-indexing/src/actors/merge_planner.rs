@@ -1,46 +1,43 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use quickwit_actors::Actor;
-use quickwit_actors::ActorExitStatus;
-use quickwit_actors::Mailbox;
-use quickwit_actors::SyncActor;
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Mailbox, SyncActor};
 use quickwit_metastore::SplitMetadata;
+use tracing::info;
 
 use crate::merge_policy::MergeOperation;
+use crate::models::MergePlannerMessage;
 use crate::MergePolicy;
 
 /// The merge planner decides when to start a merge or a demux task.
 pub struct MergePlanner {
     /// A young split is a split that has not reached maturity
     /// yet and can be candidate to merge and demux operations.
-    young_splits_per_demux_signature: HashMap<String, Vec<SplitMetadata>>,
+    young_splits: Vec<SplitMetadata>,
     merge_policy: Arc<dyn MergePolicy>,
     merge_split_downloader_mailbox: Mailbox<MergeOperation>,
 }
 
 impl Actor for MergePlanner {
-    type Message = SplitMetadata;
+    type Message = MergePlannerMessage;
 
     type ObservableState = ();
 
@@ -50,20 +47,13 @@ impl Actor for MergePlanner {
 impl SyncActor for MergePlanner {
     fn process_message(
         &mut self,
-        split: SplitMetadata,
-        ctx: &quickwit_actors::ActorContext<Self::Message>,
+        message: MergePlannerMessage,
+        ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
-        if self.merge_policy.is_mature(&split) {
-            return Ok(());
+        match message {
+            MergePlannerMessage::NewSplit(split) => self.process_new_split(split, ctx),
+            MergePlannerMessage::EndWithSuccess => self.process_stop_starting_new_merges(ctx),
         }
-        self.add_split(split);
-        for (demux_signature, young_splits) in self.young_splits_per_demux_signature.iter_mut() {
-            let merge_candidates = self.merge_policy.operations(demux_signature, young_splits);
-            for merge_operation in merge_candidates {
-                ctx.send_message_blocking(&self.merge_split_downloader_mailbox, merge_operation)?;
-            }
-        }
-        Ok(())
     }
 }
 
@@ -73,36 +63,58 @@ impl MergePlanner {
         merge_split_downloader_mailbox: Mailbox<MergeOperation>,
     ) -> MergePlanner {
         MergePlanner {
-            young_splits_per_demux_signature: HashMap::new(),
+            young_splits: Vec::new(),
             merge_policy,
             merge_split_downloader_mailbox,
         }
     }
 
+    fn process_new_split(
+        &mut self,
+        split: SplitMetadata,
+        ctx: &ActorContext<MergePlannerMessage>,
+    ) -> Result<(), ActorExitStatus> {
+        info!("process-new-split");
+        if self.merge_policy.is_mature(&split) {
+            info!("split is mature");
+            return Ok(());
+        }
+        self.add_split(split);
+        info!("considering-merge");
+        let merge_candidates = self.merge_policy.operations(&mut self.young_splits);
+        for merge_operation in merge_candidates {
+            info!(merge_operation=?merge_operation, "planning-merge");
+            ctx.send_message_blocking(&self.merge_split_downloader_mailbox, merge_operation)?;
+        }
+        Ok(())
+    }
+
+    fn process_stop_starting_new_merges(
+        &mut self,
+        _ctx: &ActorContext<MergePlannerMessage>,
+    ) -> Result<(), ActorExitStatus> {
+        Err(ActorExitStatus::Success)
+    }
+
     pub fn add_split(&mut self, split: SplitMetadata) {
-        self.young_splits_per_demux_signature
-            .entry(split.demux_signature.to_string())
-            .or_insert_with(Vec::new)
-            .push(split);
+        self.young_splits.push(split);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::merge_policy::MergeOrDemux;
-    use crate::new_split_id;
-    use crate::StableMultitenantWithTimestampMergePolicy;
-    use proptest::sample::select;
-    use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::ObservationType;
-    use quickwit_actors::Universe;
-    use quickwit_metastore::SplitState;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use std::ops::RangeInclusive;
     use std::time::UNIX_EPOCH;
+
+    use proptest::sample::select;
+    use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
+    use quickwit_metastore::SplitState;
     use tokio::runtime::Runtime;
 
     use super::*;
+    use crate::merge_policy::MergeOrDemux;
+    use crate::{new_split_id, StableMultitenantWithTimestampMergePolicy};
 
     fn merged_timestamp(splits: &[SplitMetadata]) -> Option<RangeInclusive<i64>> {
         let time_start = splits
@@ -138,10 +150,6 @@ mod tests {
 
     fn fake_merge(splits: &[SplitMetadata]) -> SplitMetadata {
         assert!(!splits.is_empty(), "Splits is not empty.");
-        let demux_signature = splits[0].demux_signature.clone();
-        assert!(splits
-            .iter()
-            .all(|split| &split.demux_signature == &demux_signature));
         let update_timestamp = std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -156,7 +164,6 @@ mod tests {
             num_records,
             size_in_bytes,
             time_range,
-            demux_signature,
             split_state: SplitState::Published,
             update_timestamp,
             tags,
@@ -186,10 +193,12 @@ mod tests {
         let universe = Universe::new();
         let mut split_index: HashMap<String, usize> = HashMap::default();
         let (merge_planner_mailbox, merge_planner_handler) =
-            universe.spawn_sync_actor(merge_planner);
+            universe.spawn_actor(merge_planner).spawn_sync();
         for split in incoming_splits {
             split_index.insert(split.split_id.clone(), split.num_records);
-            universe.send_message(&merge_planner_mailbox, split).await?;
+            universe
+                .send_message(&merge_planner_mailbox, MergePlannerMessage::NewSplit(split))
+                .await?;
             loop {
                 let obs = merge_planner_handler.process_pending_and_observe().await;
                 assert_eq!(obs.obs_type, ObservationType::Alive);
@@ -200,7 +209,10 @@ mod tests {
                 for merge_op in merge_ops {
                     let split_metadata = apply_merge(&mut split_index, &merge_op);
                     universe
-                        .send_message(&merge_planner_mailbox, split_metadata)
+                        .send_message(
+                            &merge_planner_mailbox,
+                            MergePlannerMessage::NewSplit(split_metadata),
+                        )
                         .await?;
                 }
             }
@@ -223,7 +235,6 @@ mod tests {
             time_range: Some(time_range),
             update_timestamp: 0,
             tags: Default::default(),
-            demux_signature: "".to_string(),
         }
     }
 

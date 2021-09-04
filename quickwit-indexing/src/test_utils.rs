@@ -28,7 +28,7 @@ use quickwit_metastore::{
     IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadata, SplitMetadataAndFooterOffsets,
     SplitState,
 };
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::{Storage, StorageResolverError, StorageUriResolver};
 
 use crate::actors::IndexerParams;
 use crate::index_data;
@@ -47,22 +47,28 @@ pub struct TestSandbox {
     add_docs_id: AtomicUsize,
 }
 
+const METASTORE_URI: &str = "ram://quickwit-test-indices";
+
+fn index_uri(index_id: &str) -> String {
+    format!("{}/{}", METASTORE_URI, index_id)
+}
+
 impl TestSandbox {
     /// Creates a new test environment.
     pub async fn create(
         index_id: &str,
         index_config: Arc<dyn IndexConfig>,
     ) -> anyhow::Result<Self> {
-        let metastore_uri = "ram://quickwit-test-indices";
+        let index_uri = index_uri(index_id);
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
-            index_uri: format!("{}/{}", metastore_uri, index_id),
+            index_uri,
             index_config,
             checkpoint: Checkpoint::default(),
         };
         let storage_uri_resolver = StorageUriResolver::for_test();
         let metastore_uri_resolver = MetastoreUriResolver::default();
-        let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
+        let metastore = metastore_uri_resolver.resolve(METASTORE_URI).await?;
         metastore.create_index(index_metadata).await?;
         Ok(TestSandbox {
             index_id: index_id.to_string(),
@@ -126,6 +132,11 @@ impl TestSandbox {
     /// Returns the storage uri resolver
     pub fn storage_uri_resolver(&self) -> StorageUriResolver {
         self.storage_uri_resolver.clone()
+    }
+
+    pub fn index_storage(&self, index_id: &str) -> Result<Arc<dyn Storage>, StorageResolverError> {
+        let index_storage_uri = index_uri(index_id);
+        self.storage_uri_resolver.resolve(&index_storage_uri)
     }
 }
 

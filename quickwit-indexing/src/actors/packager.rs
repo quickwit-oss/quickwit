@@ -30,10 +30,11 @@ use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity, SyncActor};
 use quickwit_directories::write_hotcache;
 use quickwit_storage::{BundleStorageBuilder, BUNDLE_FILENAME};
 use tantivy::common::CountingWriter;
-use tantivy::{SegmentId, SegmentMeta};
+use tantivy::schema::Field;
+use tantivy::{ReloadPolicy, SegmentId, SegmentMeta};
 use tracing::*;
 
-use crate::models::{IndexedSplit, PackagedSplit, ScratchDirectory};
+use crate::models::{IndexedSplit, MergePlannerMessage, PackagedSplit, ScratchDirectory};
 
 /// The role of the packager is to get an index writer and
 /// produce a split file.
@@ -48,11 +49,22 @@ use crate::models::{IndexedSplit, PackagedSplit, ScratchDirectory};
 /// The split format is described in `internals/split-format.md`
 pub struct Packager {
     uploader_mailbox: Mailbox<PackagedSplit>,
+    merge_planner_mailbox_opt: Option<Mailbox<MergePlannerMessage>>,
+    /// The special field for extracting tags.
+    tags_field: Field,
 }
 
 impl Packager {
-    pub fn new(uploader_mailbox: Mailbox<PackagedSplit>) -> Self {
-        Packager { uploader_mailbox }
+    pub fn new(
+        tags_field: Field,
+        uploader_mailbox: Mailbox<PackagedSplit>,
+        merge_planner_mailbox_opt: Option<Mailbox<MergePlannerMessage>>,
+    ) -> Packager {
+        Packager {
+            uploader_mailbox,
+            merge_planner_mailbox_opt,
+            tags_field,
+        }
     }
 }
 
@@ -158,8 +170,9 @@ fn merge_segments_if_required(
             .into_iter()
             .map(|segment_meta| segment_meta.id())
             .collect();
+
+        info!(segment_ids=?segment_ids,"merging-segments");
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
-        info!(segment_ids=?segment_ids, "merge");
         let _protected_zone_guard = ctx.protect_zone();
         futures::executor::block_on(split.index_writer.merge(&segment_ids))?;
     }
@@ -179,6 +192,7 @@ fn build_hotcache<W: io::Write>(
 fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
+    tags_field: Field,
     ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<PackagedSplit> {
     info!(split = ?split, "create-packaged-split");
@@ -209,9 +223,13 @@ fn create_packaged_split(
 
     // Extracts tag values from `_tags` special fields.
     let mut tags = HashSet::default();
-    let index_reader = split.index.reader()?;
+    let index_reader = split
+        .index
+        .reader_builder()
+        .reload_policy(ReloadPolicy::Manual)
+        .try_into()?;
     for reader in index_reader.searcher().segment_readers() {
-        let inv_index = reader.inverted_index(split.tags_field)?;
+        let inv_index = reader.inverted_index(tags_field)?;
         let mut terms_streamer = inv_index.terms().stream()?;
         while let Some((term_data, _)) = terms_streamer.next() {
             tags.insert(String::from_utf8_lossy(term_data).to_string());
@@ -233,8 +251,9 @@ fn create_packaged_split(
     let footer_end = split_file.written_bytes();
 
     let packaged_split = PackagedSplit {
-        index_id: split.index_id,
         split_id: split.split_id.to_string(),
+        replaced_split_ids: Vec::new(),
+        index_id: split.index_id,
         checkpoint_delta: split.checkpoint_delta,
         split_scratch_directory: split.split_scratch_directory,
         num_docs,
@@ -256,21 +275,37 @@ impl SyncActor for Packager {
         fail_point!("packager:before");
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
-        let packaged_split = create_packaged_split(&segment_metas[..], split, ctx)?;
+        let packaged_split =
+            create_packaged_split(&segment_metas[..], split, self.tags_field, ctx)?;
         ctx.send_message_blocking(&self.uploader_mailbox, packaged_split)?;
         fail_point!("packager:after");
+        Ok(())
+    }
+
+    fn finalize(
+        &mut self,
+        _exit_status: &quickwit_actors::ActorExitStatus,
+        ctx: &ActorContext<Self::Message>,
+    ) -> anyhow::Result<()> {
+        if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
+            // We are trying to stop the merge planner.
+            // If merge planner is already dead, this is not an error.
+            let _ = ctx
+                .send_message_blocking(merge_planner_mailbox, MergePlannerMessage::EndWithSuccess);
+        }
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::mem;
     use std::ops::RangeInclusive;
     use std::time::Instant;
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_metastore::checkpoint::CheckpointDelta;
-    use tantivy::schema::{Schema, FAST, TEXT};
+    use tantivy::schema::{Schema, FAST, STRING, TEXT};
     use tantivy::{doc, Index};
 
     use super::*;
@@ -281,6 +316,8 @@ mod tests {
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field("text", TEXT);
         let timestamp_field = schema_builder.add_u64_field("timestamp", FAST);
+        let _tags_field =
+            schema_builder.add_text_field(quickwit_index_config::TAGS_FIELD_NAME, STRING);
         let schema = schema_builder.build();
         let index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
         let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
@@ -323,7 +360,6 @@ mod tests {
             index_writer,
             split_scratch_directory,
             checkpoint_delta: CheckpointDelta::from(10..20),
-            tags_field: tantivy::schema::Field::from_field_id(0),
         };
         Ok(indexed_split)
     }
@@ -333,9 +369,15 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-        let packager = Packager::new(mailbox);
-        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
+
         let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]])?;
+        let tags_field = indexed_split
+            .index
+            .schema()
+            .get_field(quickwit_index_config::TAGS_FIELD_NAME)
+            .unwrap();
+        let packager = Packager::new(tags_field, mailbox, None);
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(&packager_mailbox, indexed_split)
             .await?;
@@ -353,9 +395,14 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-        let packager = Packager::new(mailbox);
-        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
+        let tags_field = indexed_split
+            .index
+            .schema()
+            .get_field(quickwit_index_config::TAGS_FIELD_NAME)
+            .unwrap();
+        let packager = Packager::new(tags_field, mailbox, None);
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(&packager_mailbox, indexed_split)
             .await?;
@@ -365,6 +412,32 @@ mod tests {
         );
         let packaged_splits = inbox.drain_available_message_for_test();
         assert_eq!(packaged_splits.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_packager_stop_merge_planner_on_finalize() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let (mailbox, _inbox) = create_test_mailbox();
+        let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
+
+        let packager = Packager::new(
+            Field::from_field_id(0u32),
+            mailbox,
+            Some(merge_planner_mailbox),
+        );
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
+        // That way the packager will terminate
+        mem::drop(packager_mailbox);
+        packager_handle.join().await;
+        let merge_planner_msgs = merge_planner_inbox.drain_available_message_for_test();
+        assert_eq!(merge_planner_msgs.len(), 1);
+        let merge_planner_msg = merge_planner_msgs.into_iter().next().unwrap();
+        assert!(matches!(
+            merge_planner_msg,
+            MergePlannerMessage::EndWithSuccess
+        ));
         Ok(())
     }
 }

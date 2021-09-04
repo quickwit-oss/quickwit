@@ -17,56 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::convert::TryInto;
 use std::fmt::Debug;
-use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::{fmt, io};
 
-use async_trait::async_trait;
 use quickwit_storage::BundleStorageFileOffsets;
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
-use tantivy::directory::{FileHandle, FileSlice, OwnedBytes, WatchCallback, WatchHandle, WritePtr};
-use tantivy::{AsyncIoResult, Directory, HasLen};
-use tracing::error;
-
-struct BundleDirectoryFileHandle {
-    bundle_directory: BundleDirectory,
-    path: PathBuf,
-}
-
-impl HasLen for BundleDirectoryFileHandle {
-    fn len(&self) -> usize {
-        unimplemented!()
-    }
-}
-
-impl fmt::Debug for BundleDirectoryFileHandle {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "BundleDirectoryFileHandle({:?}, dir={:?})",
-            &self.path, self.bundle_directory
-        )
-    }
-}
-
-#[async_trait]
-impl FileHandle for BundleDirectoryFileHandle {
-    fn read_bytes(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
-        if byte_range.is_empty() {
-            return Ok(OwnedBytes::empty());
-        }
-        let object_bytes = self
-            .bundle_directory
-            .get_slice(&self.path, byte_range)
-            .map_err(Into::<io::Error>::into)?;
-        Ok(object_bytes)
-    }
-
-    async fn read_bytes_async(&self, _byte_range: Range<usize>) -> AsyncIoResult<OwnedBytes> {
-        unimplemented!()
-    }
-}
+use tantivy::directory::{FileHandle, FileSlice, WatchCallback, WatchHandle, WritePtr};
+use tantivy::Directory;
 
 /// BundleDirectory. Only read is supported.
 #[derive(Clone)]
@@ -81,76 +40,63 @@ impl Debug for BundleDirectory {
     }
 }
 
+fn split_footer(file_slice: FileSlice) -> io::Result<(FileSlice, FileSlice)> {
+    let (body_and_footer_slice, footer_len_slice) = file_slice.split_from_end(8);
+    let footer_len_bytes = footer_len_slice.read_bytes()?;
+    let footer_len = u64::from_le_bytes(footer_len_bytes.as_slice().try_into().unwrap());
+    Ok(body_and_footer_slice.split_from_end(footer_len as usize))
+}
+
 impl BundleDirectory {
+    /// Opens a split.
+    pub fn open_split(split_file: FileSlice) -> io::Result<BundleDirectory> {
+        let (body_and_bundle_metadata, _hot_cache) = split_footer(split_file)?;
+        BundleDirectory::new(body_and_bundle_metadata)
+    }
+
     /// Creates a new BundleDirectory, backed by the given `FileSlice`.
     pub fn new(file: FileSlice) -> io::Result<BundleDirectory> {
         let file_offsets = BundleStorageFileOffsets::open_from_file_slice(file.clone())?;
         Ok(BundleDirectory { file, file_offsets })
     }
-
-    /// Fetches a slice of bytes from the bundle file.
-    pub fn get_slice(&self, path: &Path, range: Range<usize>) -> io::Result<OwnedBytes> {
-        let offsets = self.file_offsets.get(path)?;
-
-        let data = self
-            .file
-            .slice(offsets.start + range.start..offsets.start + range.end)
-            .read_bytes()?;
-        Ok(data)
-    }
-
-    /// Fetches an entire file.
-    pub fn get_all(&self, path: &Path) -> io::Result<OwnedBytes> {
-        let offsets = self.file_offsets.get(path)?;
-
-        let data = self.file.slice(offsets).read_bytes()?;
-        Ok(data)
-    }
-}
-
-fn unsupported_operation(path: &Path) -> io::Error {
-    let msg = "Unsupported operation. BundleDirectory only supports reads";
-    error!(path=?path, msg);
-    io::Error::new(io::ErrorKind::Other, format!("{}: {:?}", msg, path))
 }
 
 impl Directory for BundleDirectory {
     fn get_file_handle(&self, path: &Path) -> Result<Box<dyn FileHandle>, OpenReadError> {
-        Ok(Box::new(BundleDirectoryFileHandle {
-            bundle_directory: self.clone(),
-            path: path.to_path_buf(),
-        }))
+        let file_slice = self.open_read(path)?;
+        Ok(Box::new(file_slice))
+    }
+
+    fn open_read(&self, path: &Path) -> Result<FileSlice, OpenReadError> {
+        let byte_range = self
+            .file_offsets
+            .get(path)
+            .ok_or_else(|| OpenReadError::FileDoesNotExist(path.to_path_buf()))?;
+        Ok(self.file.slice(byte_range))
     }
 
     fn atomic_read(&self, path: &Path) -> Result<Vec<u8>, OpenReadError> {
-        self.get_all(path)
-            .map(|bytes| bytes.as_ref().to_vec())
-            .map_err(|err| OpenReadError::IoError {
-                io_error: err,
-                filepath: path.to_owned(),
-            })
+        let file_slice = self.open_read(path)?;
+        let payload = file_slice
+            .read_bytes()
+            .map_err(|io_error| OpenReadError::wrap_io_error(io_error, path.to_path_buf()))?;
+        Ok(payload.to_vec())
     }
 
-    fn delete(&self, path: &std::path::Path) -> Result<(), DeleteError> {
-        Err(DeleteError::IoError {
-            io_error: unsupported_operation(path),
-            filepath: path.to_path_buf(),
-        })
-    }
-
-    fn exists(&self, path: &std::path::Path) -> Result<bool, OpenReadError> {
+    fn exists(&self, path: &Path) -> Result<bool, OpenReadError> {
         Ok(self.file_offsets.exists(path))
     }
 
-    fn open_write(&self, path: &std::path::Path) -> Result<WritePtr, OpenWriteError> {
-        Err(OpenWriteError::wrap_io_error(
-            unsupported_operation(path),
-            path.to_path_buf(),
-        ))
+    fn open_write(&self, _path: &Path) -> Result<WritePtr, OpenWriteError> {
+        unimplemented!();
     }
 
-    fn atomic_write(&self, path: &std::path::Path, _data: &[u8]) -> io::Result<()> {
-        Err(unsupported_operation(path))
+    fn delete(&self, _path: &Path) -> Result<(), DeleteError> {
+        unimplemented!();
+    }
+
+    fn atomic_write(&self, _path: &Path, _data: &[u8]) -> io::Result<()> {
+        unimplemented!();
     }
 
     fn watch(&self, _callback: WatchCallback) -> tantivy::Result<WatchHandle> {
@@ -192,10 +138,10 @@ mod tests {
 
         let bundle_dir = BundleDirectory::new(bundle_file_slice)?;
 
-        let f1_data = bundle_dir.get_all(Path::new("f1"))?;
+        let f1_data = bundle_dir.atomic_read(Path::new("f1"))?;
         assert_eq!(&*f1_data, &[123u8, 76u8]);
 
-        let f2_data = bundle_dir.get_all(Path::new("f2"))?;
+        let f2_data = bundle_dir.atomic_read(Path::new("f2"))?;
         assert_eq!(&f2_data[..], &[99, 55, 44]);
 
         Ok(())
