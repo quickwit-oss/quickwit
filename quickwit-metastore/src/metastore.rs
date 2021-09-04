@@ -80,8 +80,9 @@ pub struct SplitMetadata {
     /// If a timestamp field is available, the min / max timestamp in the split.
     pub time_range: Option<RangeInclusive<i64>>,
 
-    /// Number of merges this segment has been subjected to during its lifetime.
-    pub generation: usize,
+    /// Encodes the type of demux operation the split has gone through.
+    /// Only splits who went through the same demux signature will be considered for demux.
+    pub demux_signature: String,
 
     /// The state of the split. This is the only mutable attribute of the split.
     pub split_state: SplitState,
@@ -102,9 +103,9 @@ impl SplitMetadata {
             num_records: 0,
             size_in_bytes: 0,
             time_range: None,
-            generation: 0,
             update_timestamp: Utc::now().timestamp(),
             tags: Default::default(),
+            demux_signature: String::new(),
         }
     }
 }

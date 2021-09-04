@@ -30,6 +30,7 @@ use tantivy::schema::Schema;
 
 use crate::actors::IndexerParams;
 use crate::models::ScratchDirectory;
+use crate::new_split_id;
 
 pub struct IndexedSplit {
     pub split_id: String,
@@ -65,10 +66,6 @@ impl fmt::Debug for IndexedSplit {
             .field("dir", &self.split_scratch_directory.path())
             .finish()
     }
-}
-
-fn new_split_id() -> String {
-    ulid::Ulid::new().to_string()
 }
 
 impl IndexedSplit {
