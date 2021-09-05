@@ -52,7 +52,8 @@ pub async fn index_data(
         storage_uri_resolver,
     };
     let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
-    let (_pipeline_mailbox, pipeline_handler) = universe.spawn_async_actor(indexing_supervisor);
+    let (_pipeline_mailbox, pipeline_handler) =
+        universe.spawn_actor(indexing_supervisor).spawn_async();
     let (pipeline_termination, statistics) = pipeline_handler.join().await;
     if !pipeline_termination.is_success() {
         bail!(pipeline_termination);

@@ -201,7 +201,7 @@ mod tests {
             batch_sink: mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
-            universe.spawn_async_actor(file_source_actor);
+            universe.spawn_actor(file_source_actor).spawn_async();
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(
@@ -240,7 +240,7 @@ mod tests {
             batch_sink: mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
-            universe.spawn_async_actor(file_source_actor);
+            universe.spawn_actor(file_source_actor).spawn_async();
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(
@@ -318,7 +318,7 @@ mod tests {
             batch_sink: mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
-            universe.spawn_async_actor(file_source_actor);
+            universe.spawn_actor(file_source_actor).spawn_async();
         let (actor_termination, counters) = file_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(

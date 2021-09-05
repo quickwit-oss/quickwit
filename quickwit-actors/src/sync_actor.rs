@@ -25,9 +25,8 @@ use tracing::{debug, error, info};
 use crate::actor::{process_command, ActorExitStatus};
 use crate::actor_state::ActorState;
 use crate::actor_with_state_tx::ActorWithStateTx;
-use crate::mailbox::{create_mailbox, CommandOrMessage, Inbox};
-use crate::scheduler::SchedulerMessage;
-use crate::{Actor, ActorContext, ActorHandle, KillSwitch, Mailbox, RecvError};
+use crate::mailbox::{CommandOrMessage, Inbox};
+use crate::{Actor, ActorContext, ActorHandle, RecvError};
 
 /// An sync actor is executed on a tokio blocking task.
 ///
@@ -72,16 +71,11 @@ pub trait SyncActor: Actor + Sized {
 
 pub(crate) fn spawn_sync_actor<A: SyncActor>(
     actor: A,
-    kill_switch: KillSwitch,
-    scheduler_mailbox: Mailbox<SchedulerMessage>,
-) -> (Mailbox<A::Message>, ActorHandle<A>) {
-    let actor_name = actor.name();
-    debug!(actor_name=%actor_name,"spawning-sync-actor");
-    let queue_capacity = actor.queue_capacity();
-    let (mailbox, inbox) = create_mailbox(actor_name, queue_capacity);
-    let mailbox_clone = mailbox.clone();
+    ctx: ActorContext<A::Message>,
+    inbox: Inbox<A::Message>,
+) -> ActorHandle<A> {
+    debug!(actor=%ctx.actor_instance_id(),"spawning-sync-actor");
     let (state_tx, state_rx) = watch::channel(actor.observable_state());
-    let ctx = ActorContext::new(mailbox, kill_switch, scheduler_mailbox);
     let ctx_clone = ctx.clone();
     let (exit_status_tx, exit_status_rx) = watch::channel(None);
     let join_handle: JoinHandle<()> = spawn_blocking(move || {
@@ -90,8 +84,7 @@ pub(crate) fn spawn_sync_actor<A: SyncActor>(
         info!(exit_status=%exit_status, actor=actor_instance_id.as_str(), "exit");
         let _ = exit_status_tx.send(Some(exit_status));
     });
-    let handle = ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx);
-    (mailbox_clone, handle)
+    ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)
 }
 
 /// Process a given message.

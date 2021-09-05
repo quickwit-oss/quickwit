@@ -154,10 +154,12 @@ impl AsyncActor for PingerAsyncSenderActor {
 async fn test_ping_actor() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
-    let (ping_recv_mailbox, ping_recv_handle) =
-        universe.spawn_sync_actor(PingReceiverSyncActor::default());
-    let (ping_sender_mailbox, ping_sender_handle) =
-        universe.spawn_async_actor(PingerAsyncSenderActor::default());
+    let (ping_recv_mailbox, ping_recv_handle) = universe
+        .spawn_actor(PingReceiverSyncActor::default())
+        .spawn_sync();
+    let (ping_sender_mailbox, ping_sender_handle) = universe
+        .spawn_actor(PingerAsyncSenderActor::default())
+        .spawn_async();
     assert_eq!(
         ping_recv_handle.observe().await,
         Observation {
@@ -276,7 +278,7 @@ impl AsyncActor for BuggyActor {
 #[tokio::test]
 async fn test_timeouting_actor() {
     let universe = Universe::new();
-    let (buggy_mailbox, buggy_handle) = universe.spawn_async_actor(BuggyActor);
+    let (buggy_mailbox, buggy_handle) = universe.spawn_actor(BuggyActor).spawn_async();
     let buggy_mailbox = buggy_mailbox;
     assert_eq!(
         buggy_handle.observe().await.obs_type,
@@ -311,7 +313,7 @@ async fn test_pause_sync_actor() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
     let actor = PingReceiverSyncActor::default();
-    let (ping_mailbox, ping_handle) = universe.spawn_sync_actor(actor);
+    let (ping_mailbox, ping_handle) = universe.spawn_actor(actor).spawn_sync();
     for _ in 0..1000 {
         assert!(ping_mailbox.send_message(Ping).await.is_ok());
     }
@@ -330,7 +332,9 @@ async fn test_pause_sync_actor() {
 async fn test_pause_async_actor() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
-    let (ping_mailbox, ping_handle) = universe.spawn_async_actor(PingReceiverAsyncActor::default());
+    let (ping_mailbox, ping_handle) = universe
+        .spawn_actor(PingReceiverAsyncActor::default())
+        .spawn_async();
     for _ in 0u32..1000u32 {
         assert!(ping_mailbox.send_message(Ping).await.is_ok());
     }
@@ -419,7 +423,8 @@ impl SyncActor for LoopingActor {
 async fn test_looping_async() -> anyhow::Result<()> {
     let universe = Universe::new();
     let looping_actor = LoopingActor::default();
-    let (looping_actor_mailbox, looping_actor_handle) = universe.spawn_sync_actor(looping_actor);
+    let (looping_actor_mailbox, looping_actor_handle) =
+        universe.spawn_actor(looping_actor).spawn_sync();
     assert!(looping_actor_mailbox
         .send_message(Msg::Normal)
         .await
@@ -436,7 +441,8 @@ async fn test_looping_async() -> anyhow::Result<()> {
 async fn test_looping_sync() -> anyhow::Result<()> {
     let universe = Universe::new();
     let looping_actor = LoopingActor::default();
-    let (looping_actor_mailbox, looping_actor_handle) = universe.spawn_sync_actor(looping_actor);
+    let (looping_actor_mailbox, looping_actor_handle) =
+        universe.spawn_actor(looping_actor).spawn_sync();
     assert!(looping_actor_mailbox
         .send_message(Msg::Normal)
         .await
@@ -497,9 +503,9 @@ impl AsyncActor for SpawningActor {
         message: Self::Message,
         ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
-        let (mailbox, _) = self.handle_opt.get_or_insert_with(|| {
-            ctx.spawn_sync(SummingActor::default(), ctx.kill_switch().clone())
-        });
+        let (mailbox, _) = self
+            .handle_opt
+            .get_or_insert_with(|| ctx.spawn_actor(SummingActor::default()).spawn_sync());
         ctx.send_message(mailbox, message).await?;
         Ok(())
     }
@@ -520,7 +526,7 @@ impl AsyncActor for SpawningActor {
 #[tokio::test]
 async fn test_actor_spawning_actor() -> anyhow::Result<()> {
     let universe = Universe::new();
-    let (mailbox, handle) = universe.spawn_async_actor(SpawningActor::default());
+    let (mailbox, handle) = universe.spawn_actor(SpawningActor::default()).spawn_async();
     mailbox.send_message(1).await?;
     mailbox.send_message(2).await?;
     mailbox.send_message(3).await?;
