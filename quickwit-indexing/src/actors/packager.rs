@@ -348,7 +348,7 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let packager = Packager::new(mailbox);
-        let (packager_mailbox, packager_handle) = universe.spawn_sync_actor(packager);
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]])?;
         universe
             .send_message(&packager_mailbox, indexed_split)
@@ -368,7 +368,7 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let packager = Packager::new(mailbox);
-        let (packager_mailbox, packager_handle) = universe.spawn_sync_actor(packager);
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
         universe
             .send_message(&packager_mailbox, indexed_split)

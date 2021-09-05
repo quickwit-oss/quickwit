@@ -357,7 +357,9 @@ mod tests {
     #[tokio::test]
     async fn test_panic_in_async_actor() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (mailbox, handle) = universe.spawn_async_actor(PanickingActor::default());
+        let (mailbox, handle) = universe
+            .spawn_actor(PanickingActor::default())
+            .spawn_async();
         universe.send_message(&mailbox, ()).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Panicked));
@@ -368,7 +370,7 @@ mod tests {
     #[tokio::test]
     async fn test_panic_in_sync_actor() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (mailbox, handle) = universe.spawn_sync_actor(PanickingActor::default());
+        let (mailbox, handle) = universe.spawn_actor(PanickingActor::default()).spawn_sync();
         universe.send_message(&mailbox, ()).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Panicked));
@@ -379,7 +381,7 @@ mod tests {
     #[tokio::test]
     async fn test_exit_in_async_actor() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (mailbox, handle) = universe.spawn_async_actor(ExitActor::default());
+        let (mailbox, handle) = universe.spawn_actor(ExitActor::default()).spawn_async();
         universe.send_message(&mailbox, ()).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));
@@ -390,7 +392,7 @@ mod tests {
     #[tokio::test]
     async fn test_exit_in_sync_actor() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let (mailbox, handle) = universe.spawn_sync_actor(ExitActor::default());
+        let (mailbox, handle) = universe.spawn_actor(ExitActor::default()).spawn_sync();
         universe.send_message(&mailbox, ()).await?;
         let (exit_status, count) = handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));

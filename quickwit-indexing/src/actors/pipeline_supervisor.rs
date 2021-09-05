@@ -66,6 +66,7 @@ pub struct IndexingPipelineSupervisor {
     previous_generations_statistics: IndexingStatistics,
     statistics: IndexingStatistics,
     handlers: Option<IndexingPipelineHandler>,
+    // Killswitch used for the actors in the pipeline. This is not the supervisor killswitch.
     kill_switch: KillSwitch,
 }
 
@@ -177,26 +178,35 @@ impl IndexingPipelineSupervisor {
             .resolve(&index_metadata.index_uri)?;
 
         let publisher = Publisher::new(self.params.metastore.clone());
-        let (publisher_mailbox, publisher_handler) =
-            ctx.spawn_async(publisher, self.kill_switch.clone());
+        let (publisher_mailbox, publisher_handler) = ctx
+            .spawn_actor(publisher)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_async();
         let uploader = Uploader::new(
             self.params.metastore.clone(),
             index_storage,
             publisher_mailbox,
         );
-        let (uploader_mailbox, uploader_handler) =
-            ctx.spawn_async(uploader, self.kill_switch.clone());
+        let (uploader_mailbox, uploader_handler) = ctx
+            .spawn_actor(uploader)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_async();
         info!(actor_name=%uploader_mailbox.actor_instance_id());
         let packager = Packager::new(uploader_mailbox);
-        let (packager_mailbox, packager_handler) =
-            ctx.spawn_sync(packager, self.kill_switch.clone());
+        let (packager_mailbox, packager_handler) = ctx
+            .spawn_actor(packager)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_sync();
         let indexer = Indexer::try_new(
             self.params.index_id.clone(),
             index_metadata.index_config.clone(),
             self.params.indexer_params.clone(),
             packager_mailbox,
         )?;
-        let (indexer_mailbox, indexer_handler) = ctx.spawn_sync(indexer, self.kill_switch.clone());
+        let (indexer_mailbox, indexer_handler) = ctx
+            .spawn_actor(indexer)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_sync();
         let source = quickwit_supported_sources()
             .load_source(self.params.source_config.clone(), index_metadata.checkpoint)
             .await?;
@@ -204,8 +214,10 @@ impl IndexingPipelineSupervisor {
             source,
             batch_sink: indexer_mailbox,
         };
-        let (_source_mailbox, source_handler) =
-            ctx.spawn_async(actor_source, self.kill_switch.clone());
+        let (_source_mailbox, source_handler) = ctx
+            .spawn_actor(actor_source)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_async();
         self.handlers = Some(IndexingPipelineHandler {
             source: source_handler,
             indexer: indexer_handler,
@@ -353,7 +365,8 @@ mod tests {
             storage_uri_resolver: StorageUriResolver::for_test(),
         };
         let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
-        let (_pipeline_mailbox, pipeline_handler) = universe.spawn_async_actor(indexing_supervisor);
+        let (_pipeline_mailbox, pipeline_handler) =
+            universe.spawn_actor(indexing_supervisor).spawn_async();
         let (pipeline_termination, pipeline_statistics) = pipeline_handler.join().await;
         assert!(pipeline_termination.is_success());
         assert_eq!(pipeline_statistics.num_published_splits, 1);

@@ -41,6 +41,7 @@ mod mailbox;
 mod observation;
 mod progress;
 mod scheduler;
+mod spawn_builder;
 mod sync_actor;
 #[cfg(test)]
 mod tests;
