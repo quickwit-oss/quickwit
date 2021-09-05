@@ -43,3 +43,4 @@ required-features = ["fail/failpoints"]
 quickwit-metastore = {path = "../quickwit-metastore", features=["testsuite"]}
 mockall = "0.9"
 quickwit-common = {path="../quickwit-common", version="0.1"}
+proptest = "1"

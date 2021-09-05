@@ -160,7 +160,6 @@ pub async fn test_metastore_stage_split<MetastoreToTest: Metastore + DefaultForT
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(0, 99)),
-            generation: 3,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -219,7 +218,6 @@ pub async fn test_metastore_publish_splits<MetastoreToTest: Metastore + DefaultF
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(0, 99)),
-            generation: 3,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -234,7 +232,6 @@ pub async fn test_metastore_publish_splits<MetastoreToTest: Metastore + DefaultF
             num_records: 5,
             size_in_bytes: 6,
             time_range: Some(RangeInclusive::new(30, 99)),
-            generation: 2,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -615,7 +612,6 @@ pub async fn test_metastore_replace_splits<MetastoreToTest: Metastore + DefaultF
             num_records: 1,
             size_in_bytes: 2,
             time_range: None,
-            generation: 1,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -630,7 +626,6 @@ pub async fn test_metastore_replace_splits<MetastoreToTest: Metastore + DefaultF
             num_records: 5,
             size_in_bytes: 6,
             time_range: None,
-            generation: 1,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -645,7 +640,6 @@ pub async fn test_metastore_replace_splits<MetastoreToTest: Metastore + DefaultF
             num_records: 5,
             size_in_bytes: 6,
             time_range: None,
-            generation: 1,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -862,7 +856,6 @@ pub async fn test_metastore_mark_splits_as_deleted<MetastoreToTest: Metastore + 
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(0, 99)),
-            generation: 3,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -943,7 +936,6 @@ pub async fn test_metastore_delete_splits<MetastoreToTest: Metastore + DefaultFo
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(0, 99)),
-            generation: 3,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -1084,7 +1076,6 @@ pub async fn test_metastore_list_all_splits<MetastoreToTest: Metastore + Default
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(0, 99)),
-            generation: 3,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -1098,7 +1089,6 @@ pub async fn test_metastore_list_all_splits<MetastoreToTest: Metastore + Default
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(100, 199)),
-            generation: 3,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -1112,7 +1102,6 @@ pub async fn test_metastore_list_all_splits<MetastoreToTest: Metastore + Default
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(200, 299)),
-            generation: 3,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -1126,7 +1115,6 @@ pub async fn test_metastore_list_all_splits<MetastoreToTest: Metastore + Default
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(300, 399)),
-            generation: 3,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -1140,7 +1128,6 @@ pub async fn test_metastore_list_all_splits<MetastoreToTest: Metastore + Default
             num_records: 1,
             size_in_bytes: 2,
             time_range: None,
-            generation: 3,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -1232,7 +1219,6 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(0, 99)),
-            generation: 3,
             update_timestamp: current_timestamp,
             tags: to_set(&["foo", "bar"]),
         },
@@ -1246,7 +1232,6 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(100, 199)),
-            generation: 3,
             update_timestamp: current_timestamp,
             tags: to_set(&["bar"]),
         },
@@ -1260,7 +1245,6 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(200, 299)),
-            generation: 3,
             update_timestamp: current_timestamp,
             tags: to_set(&["foo", "baz"]),
         },
@@ -1274,7 +1258,6 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(300, 399)),
-            generation: 3,
             update_timestamp: current_timestamp,
             tags: to_set(&["foo"]),
         },
@@ -1288,7 +1271,6 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             num_records: 1,
             size_in_bytes: 2,
             time_range: None,
-            generation: 3,
             update_timestamp: current_timestamp,
             tags: to_set(&["baz", "biz"]),
         },
@@ -1772,7 +1754,6 @@ pub async fn test_metastore_split_update_timestamp<MetastoreToTest: Metastore + 
             num_records: 1,
             size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(0, 99)),
-            generation: 3,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
@@ -1843,7 +1824,6 @@ pub async fn test_metastore_storage_failing<MetastoreToTest: Metastore + Default
             num_records: 1,
             size_in_bytes: 2,
             time_range: None,
-            generation: 3,
             update_timestamp: current_timestamp,
             ..Default::default()
         },
