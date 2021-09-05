@@ -142,7 +142,6 @@ pub fn mock_split_meta(split_id: &str) -> SplitMetadataAndFooterOffsets {
             time_range: None,
             update_timestamp: 0,
             tags: Default::default(),
-            demux_signature: "".to_string(),
         },
     }
 }

@@ -53,11 +53,7 @@ pub trait MergePolicy: Send + Sync {
     /// Returns the list of operations that should be performed.
     /// This functions will be called on subset of `SplitMetadata`
     /// for which the number of demux is the same.
-    fn operations(
-        &self,
-        demux_signature: &str,
-        splits: &mut Vec<SplitMetadata>,
-    ) -> Vec<MergeOperation>;
+    fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation>;
     /// A mature split is a split that won't undergo merge or demux operation in the future.
     fn is_mature(&self, split: &SplitMetadata) -> bool;
 }
@@ -113,35 +109,25 @@ impl Default for StableMultitenantWithTimestampMergePolicy {
     }
 }
 
-fn remove_matching_els<T, Pred: Fn(&T) -> bool>(els: &mut Vec<T>, predicate: Pred) -> Vec<T> {
-    let mut matching_els = Vec::new();
+fn remove_matching_items<T, Pred: Fn(&T) -> bool>(items: &mut Vec<T>, predicate: Pred) -> Vec<T> {
+    let mut matching_items = Vec::new();
     let mut i = 0;
-    while i < els.len() {
-        if predicate(&els[i]) {
-            let el = els.remove(i);
-            matching_els.push(el);
+    while i < items.len() {
+        if predicate(&items[i]) {
+            let matching_item = items.remove(i);
+            matching_items.push(matching_item);
         } else {
             i += 1;
         }
     }
-    matching_els
+    matching_items
 }
 
 impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
-    fn operations(
-        &self,
-        demux_signature: &str,
-        splits: &mut Vec<SplitMetadata>,
-    ) -> Vec<MergeOperation> {
+    fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
         if splits.is_empty() {
             return Vec::new();
         }
-        assert!(
-            splits
-                .iter()
-                .all(|split| split.demux_signature == demux_signature),
-            "All splits are expected to have the same demux_signature"
-        );
         assert!(
             splits.iter().all(|split| split.time_range.is_some()),
             "This merge policy requires all splits have a time range"
@@ -150,7 +136,7 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
         // First we isolate splits that are too large.
         // We will read them at the end.
         let splits_too_large =
-            remove_matching_els(splits, |split| split.num_records >= self.max_merge_docs);
+            remove_matching_items(splits, |split| split.num_records >= self.max_merge_docs);
 
         let mut merge_operations: Vec<MergeOperation> = Vec::new();
         // We stable sort the splits, most recent first.
@@ -221,9 +207,6 @@ impl StableMultitenantWithTimestampMergePolicy {
         let mut current_level_max_docs = (splits[0].num_records * 3).max(self.min_level_num_docs);
 
         for (split_ord, split) in splits.iter().enumerate() {
-            if split.num_records >= self.max_merge_docs {
-                break;
-            }
             if split.num_records >= current_level_max_docs {
                 split_levels.push(current_level_start_ord..split_ord);
                 current_level_start_ord = split_ord;
@@ -237,7 +220,7 @@ impl StableMultitenantWithTimestampMergePolicy {
     fn case_levels_given_growth_factor(&self, growth_factor: usize) -> Vec<usize> {
         assert!(self.min_level_num_docs > 0);
         assert!(self.merge_factor > 1);
-        assert!(self.merge_factor_max >= self.merge_factor_max);
+        assert!(self.merge_factor_max >= self.merge_factor);
         assert!(self.max_merge_docs > self.min_level_num_docs);
         let mut levels_start_num_docs = vec![1];
         let mut level_end_doc = self.min_level_num_docs;
@@ -373,30 +356,18 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "All splits are expected to have the same demux_signature")]
-    fn test_stable_multitenant_merge_policy_panic_if_different_number_of_demux() {
-        let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
-        let mut splits = vec![SplitMetadata {
-            demux_signature: "aaa".to_string(),
-            time_range: Some(100..=200),
-            ..Default::default()
-        }];
-        assert!(merge_policy.operations("aab", &mut splits).is_empty());
-    }
-
-    #[test]
     fn test_stable_multitenant_merge_policy_not_enough_splits() {
         let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
         let mut splits = create_splits(vec![100; 7]);
         assert_eq!(splits.len(), 7);
-        assert!(merge_policy.operations("", &mut splits).is_empty());
+        assert!(merge_policy.operations(&mut splits).is_empty());
     }
 
     #[test]
     fn test_stable_multitenant_merge_policy_just_enough_splits_for_a_merge() {
         let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
         let mut splits = create_splits(vec![100; 10]);
-        let mut merge_ops = merge_policy.operations("", &mut splits);
+        let mut merge_ops = merge_policy.operations(&mut splits);
         assert!(splits.is_empty());
         assert_eq!(merge_ops.len(), 1);
         let merge_op = merge_ops.pop().unwrap();
@@ -420,7 +391,7 @@ mod tests {
     fn test_stable_multitenant_merge_policy_many_splits_on_same_level() {
         let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
         let mut splits = create_splits(vec![100; 13]);
-        let mut merge_ops = merge_policy.operations("", &mut splits);
+        let mut merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 1);
         assert_eq!(splits[0].split_id, "split_00");
         assert_eq!(merge_ops.len(), 1);
@@ -447,7 +418,7 @@ mod tests {
         let mut splits = create_splits(vec![
             100, 1000, 10_000, 10_000, 10_000, 10_000, 10_000, 40_000, 40_000, 40_000,
         ]);
-        let mut merge_ops = merge_policy.operations("", &mut splits);
+        let mut merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 0);
         assert_eq!(merge_ops.len(), 1);
         let merge_op = merge_ops.pop().unwrap();
@@ -473,7 +444,7 @@ mod tests {
         let mut splits = create_splits(vec![
             100_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000,
         ]);
-        let merge_ops = merge_policy.operations("", &mut splits);
+        let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 8);
         assert_eq!(merge_ops.len(), 0);
     }
@@ -486,7 +457,7 @@ mod tests {
             10_000_000, /* this split should not interfere with the merging of other splits */
             100_000, 100_000, 100_000, 100_000, 100_000,
         ]);
-        let merge_ops = merge_policy.operations("", &mut splits);
+        let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 1);
         assert_eq!(splits[0].num_records, 10_000_000);
         assert_eq!(merge_ops.len(), 1);

@@ -1221,7 +1221,6 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             time_range: Some(RangeInclusive::new(0, 99)),
             update_timestamp: current_timestamp,
             tags: to_set(&["foo", "bar"]),
-            demux_signature: "demux".to_string(),
         },
     };
 
@@ -1235,7 +1234,6 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             time_range: Some(RangeInclusive::new(100, 199)),
             update_timestamp: current_timestamp,
             tags: to_set(&["bar"]),
-            demux_signature: "demux".to_string(),
         },
     };
 
@@ -1249,7 +1247,6 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             time_range: Some(RangeInclusive::new(200, 299)),
             update_timestamp: current_timestamp,
             tags: to_set(&["foo", "baz"]),
-            demux_signature: "demux".to_string(),
         },
     };
 
@@ -1263,7 +1260,6 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             time_range: Some(RangeInclusive::new(300, 399)),
             update_timestamp: current_timestamp,
             tags: to_set(&["foo"]),
-            demux_signature: "demux".to_string(),
         },
     };
 
@@ -1277,7 +1273,6 @@ pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForT
             time_range: None,
             update_timestamp: current_timestamp,
             tags: to_set(&["baz", "biz"]),
-            demux_signature: String::new(),
         },
     };
 

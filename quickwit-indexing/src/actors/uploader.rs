@@ -137,7 +137,6 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets
             num_records: split.num_docs as usize,
             time_range: split.time_range.clone(),
             size_in_bytes: split.size_in_bytes,
-            demux_signature: "".to_string(),
             split_state: SplitState::New,
             update_timestamp: Utc::now().timestamp(),
             tags: split.tags.clone(),
