@@ -26,17 +26,15 @@ use thiserror::Error;
 use tokio::sync::watch::Sender;
 use tracing::{debug, error};
 
-use crate::async_actor::spawn_async_actor;
 use crate::channel_with_priority::Priority;
 use crate::mailbox::{Command, CommandOrMessage};
 use crate::scheduler::{Callback, SchedulerMessage};
-use crate::sync_actor::spawn_sync_actor;
+use crate::spawn_builder::SpawnBuilder;
 use crate::{
     actor_state::{ActorState, AtomicState},
     progress::{Progress, ProtectedZoneGuard},
     KillSwitch, Mailbox, QueueCapacity, SendError,
 };
-use crate::{ActorHandle, AsyncActor, SyncActor};
 
 /// The actor exit status represents the outcome of the execution of an actor,
 /// after the end of the execution.
@@ -219,20 +217,12 @@ impl<Message> ActorContext<Message> {
         &self.progress
     }
 
-    pub fn spawn_async<A: AsyncActor>(
-        &self,
-        actor: A,
-        kill_switch: KillSwitch,
-    ) -> (Mailbox<A::Message>, ActorHandle<A>) {
-        spawn_async_actor(actor, kill_switch, self.scheduler_mailbox.clone())
-    }
-
-    pub fn spawn_sync<A: SyncActor>(
-        &self,
-        actor: A,
-        kill_switch: KillSwitch,
-    ) -> (Mailbox<A::Message>, ActorHandle<A>) {
-        spawn_sync_actor(actor, kill_switch, self.scheduler_mailbox.clone())
+    pub fn spawn_actor<A: Actor>(&self, actor: A) -> SpawnBuilder<A> {
+        SpawnBuilder::new(
+            actor,
+            self.scheduler_mailbox.clone(),
+            self.kill_switch.clone(),
+        )
     }
 
     /// Records some progress.

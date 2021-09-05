@@ -158,7 +158,8 @@ mod tests {
             source: Box::new(vec_source),
             batch_sink: mailbox,
         };
-        let (_vec_source_mailbox, vec_source_handle) = universe.spawn_async_actor(vec_source_actor);
+        let (_vec_source_mailbox, vec_source_handle) =
+            universe.spawn_actor(vec_source_actor).spawn_async();
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, json!({"next_item_id": 100}));
@@ -190,7 +191,8 @@ mod tests {
             source: Box::new(vec_source),
             batch_sink: mailbox,
         };
-        let (_vec_source_mailbox, vec_source_handle) = universe.spawn_async_actor(vec_source_actor);
+        let (_vec_source_mailbox, vec_source_handle) =
+            universe.spawn_actor(vec_source_actor).spawn_async();
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, json!({"next_item_id": 10}));

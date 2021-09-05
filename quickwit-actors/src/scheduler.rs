@@ -305,7 +305,7 @@ mod tests {
         // It might be a bit confusing. We spawn a scheduler like a regular actor to test it.
         // The scheduler is usually spawned from within the universe.
         let (scheduler_mailbox, scheduler_handler) =
-            universe.spawn_async_actor(Scheduler::default());
+            universe.spawn_actor(Scheduler::default()).spawn_async();
         let (cb_called, callback) = create_test_callback();
         universe
             .send_message(
@@ -348,7 +348,7 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (scheduler_mailbox, scheduler_handler) =
-            universe.spawn_async_actor(Scheduler::default());
+            universe.spawn_actor(Scheduler::default()).spawn_async();
         let (cb_called1, callback1) = create_test_callback();
         let (cb_called2, callback2) = create_test_callback();
         universe

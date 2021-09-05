@@ -445,7 +445,7 @@ mod tests {
             indexer_params,
             mailbox,
         )?;
-        let (indexer_mailbox, indexer_handle) = universe.spawn_sync_actor::<Indexer>(indexer);
+        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn_sync();
         universe
             .send_message(
                 &indexer_mailbox,
@@ -521,7 +521,7 @@ mod tests {
             indexer_params,
             mailbox,
         )?;
-        let (indexer_mailbox, indexer_handle) = universe.spawn_sync_actor::<Indexer>(indexer);
+        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn_sync();
         universe
             .send_message(
                 &indexer_mailbox,
@@ -576,7 +576,7 @@ mod tests {
             indexer_params,
             mailbox,
         )?;
-        let (indexer_mailbox, indexer_handle) = universe.spawn_sync_actor::<Indexer>(indexer);
+        let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn_sync();
         universe
             .send_message(
                 &indexer_mailbox,

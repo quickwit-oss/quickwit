@@ -98,7 +98,6 @@ mod tests {
     #[tokio::test]
     async fn test_publisher_publishes_in_order() {
         quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
@@ -119,7 +118,8 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
         let publisher = Publisher::new(Arc::new(mock_metastore));
-        let (publisher_mailbox, publisher_handle) = universe.spawn_async_actor(publisher);
+        let universe = Universe::new();
+        let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
         let (split_future_tx1, split_future_rx1) = oneshot::channel::<UploadedSplit>();
         assert!(universe
             .send_message(&publisher_mailbox, split_future_rx1)
