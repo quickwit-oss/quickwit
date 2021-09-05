@@ -10,13 +10,10 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-tonic = '0.4.3'
-prost = '0.7'
-
-[dependencies.serde]
-version = '1'
-features = ['derive']
+tonic = '0.5.2'
+prost = { version = "0.8", default-features = false, features = ["prost-derive"] }
+serde = { version = "1.0", features = ["derive"] }
 
 [build-dependencies]
-tonic-build = '0.4.1'
-prost-build = '0.7.0'
+tonic-build = '0.5.2'
+prost-build = '0.8.0'

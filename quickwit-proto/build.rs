@@ -25,8 +25,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut prost_config = prost_build::Config::default();
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
     tonic_build::configure()
-        .type_attribute(".", "#[derive(Serialize, Deserialize)]")
-        .type_attribute(".", "#[serde(rename_all = \"camelCase\")]")
+        .type_attribute(
+            ".",
+            "#[derive(Serialize, Deserialize)]\n#[serde(rename_all = \"camelCase\")]",
+        )
         .format(true)
         .out_dir("src/")
         .compile_with_config(
