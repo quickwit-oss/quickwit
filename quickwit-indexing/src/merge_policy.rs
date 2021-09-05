@@ -150,7 +150,6 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
             if split_range.len() < self.merge_factor {
                 continue;
             }
-            // number of splits we will merge
             let num_splits_in_merge = split_range.len().min(self.merge_factor_max);
             let mut splits_in_merge: Vec<SplitMetadata> = Vec::new();
             for split_ord in split_range.rev().take(num_splits_in_merge) {
@@ -178,7 +177,7 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
 
     fn is_mature(&self, split: &SplitMetadata) -> bool {
         // split.demux_signature == self.target_demux_ops &&
-        // Include demux signature in the is_mature logic.
+        // TODO: include demux signature in the is_mature logic.
         split.num_records > self.max_merge_docs
     }
 }
