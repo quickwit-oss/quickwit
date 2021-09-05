@@ -1969,6 +1969,8 @@ dependencies = [
  "anyhow",
  "async-trait",
  "flume",
+ "itertools",
+ "quickwit-common",
  "quickwit-proto",
  "quickwit-swim",
  "serde",

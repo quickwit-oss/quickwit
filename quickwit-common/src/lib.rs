@@ -19,8 +19,6 @@
 
 mod coolid;
 
-use std::net::{SocketAddr, ToSocketAddrs};
-
 pub use coolid::new_coolid;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -62,14 +60,6 @@ pub fn extract_index_id_from_index_uri(mut index_uri: &str) -> anyhow::Result<&s
     Ok(parts[0])
 }
 
-/// Resolves and converts an address to a `SocketAddr`.
-pub fn to_socket_addr(addr_str: &str) -> anyhow::Result<SocketAddr> {
-    addr_str
-        .to_socket_addrs()?
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("Failed to resolve address `{}`.", addr_str))
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum QuickwitEnv {
     UNSET,
@@ -100,4 +90,24 @@ pub fn setup_logging_for_tests() {
 
 pub fn split_file(split_id: &str) -> String {
     format!("{}.split", split_id)
+}
+
+pub mod net {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, ToSocketAddrs};
+
+    /// Finds a random available port.
+    pub fn find_available_port() -> anyhow::Result<u16> {
+        let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
+        let listener = TcpListener::bind(socket)?;
+        let port = listener.local_addr()?.port();
+        Ok(port)
+    }
+
+    /// Converts this string to a resolved `SocketAddr`.
+    pub fn socket_addr_from_str(addr_str: &str) -> anyhow::Result<SocketAddr> {
+        addr_str
+            .to_socket_addrs()?
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("Failed to resolve address `{}`.", addr_str))
+    }
 }
