@@ -38,7 +38,7 @@ use tokio::{
     },
 };
 
-use super::{local_storage_cache::LocalStorageCache, Cache, CacheState, FULL_SLICE};
+use super::{local_storage_cache::LocalStorageCache, Cache, CacheState};
 
 /// A storage with a backing [`Cache`].
 pub struct StorageWithLocalStorageCache {
@@ -56,7 +56,8 @@ impl StorageWithLocalStorageCache {
     pub fn create(
         remote_storage: Arc<dyn Storage>,
         local_storage: Arc<dyn Storage>,
-        max_item_count: usize,
+        ram_max_num_bytes: usize,
+        max_num_files: usize,
         max_num_bytes: usize,
     ) -> StorageResult<Self> {
         let _local_storage_root = local_storage.root().ok_or_else(|| {
@@ -70,8 +71,9 @@ impl StorageWithLocalStorageCache {
             remote_storage,
             cache: Mutex::new(Box::new(LocalStorageCache::new(
                 local_storage,
+                ram_max_num_bytes,
+                max_num_files,
                 max_num_bytes,
-                max_item_count,
             ))),
             in_flight_download_requests: Mutex::new(HashSet::new()),
             notification_sender,
@@ -94,12 +96,24 @@ impl StorageWithLocalStorageCache {
             .resolve(&cache_state.local_storage_uri)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
 
-        Self::create(
-            remote_storage,
+        let num_files = cache_state.items.len();
+        let num_bytes: usize = cache_state.items.iter().map(|(_, size)| *size).sum();
+        let mut local_storage_cache = LocalStorageCache::new(
             local_storage,
-            cache_state.capacity.max_item_count,
-            cache_state.capacity.max_num_bytes,
-        )
+            cache_state.ram_capacity,
+            cache_state.disk_capacity.max_num_files,
+            cache_state.disk_capacity.max_num_bytes,
+        );
+        local_storage_cache.num_files = num_files;
+        local_storage_cache.num_bytes = num_bytes;
+
+        let (notification_sender, _) = broadcast::channel(10);
+        Ok(Self {
+            remote_storage,
+            cache: Mutex::new(Box::new(local_storage_cache)),
+            in_flight_download_requests: Mutex::new(HashSet::new()),
+            notification_sender,
+        })
     }
 
     /// Helper method to register a `get_all` request,
@@ -227,13 +241,17 @@ impl Storage for StorageWithLocalStorageCache {
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
-        if let Some(bytes) = self.cache.lock().await.get(path, range.clone()).await? {
+        if let Some(bytes) = self
+            .cache
+            .lock()
+            .await
+            .get_slice(path, range.clone())
+            .await?
+        {
             return Ok(bytes);
         }
 
-        //TODO: optimisatize this to avoid copying whole data in RAM (copy_to_file maybe?)
-        // We need to think of how byte range will be cached (path, range) as address
-        // The solution should guide this optimisation
+        //TODO: optimize this to avoid copying whole data in RAM (copy_to_file maybe?)
         let (all_bytes, is_the_downloader) = self.get_all_from_remote_storage(path).await?;
         let data = Bytes::copy_from_slice(&all_bytes[range.start..range.end]);
         if !is_the_downloader {
@@ -249,7 +267,7 @@ impl Storage for StorageWithLocalStorageCache {
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<Bytes> {
-        if let Some(bytes) = self.cache.lock().await.get(path, FULL_SLICE).await? {
+        if let Some(bytes) = self.cache.lock().await.get(path).await? {
             return Ok(bytes);
         }
 
@@ -307,9 +325,8 @@ async fn write_all(path: &Path, data: Bytes) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use crate::cache_bis::CacheState;
-    use crate::cache_bis::Capacity;
+    use crate::cache_bis::DiskCapacity;
     use crate::cache_bis::CACHE_STATE_FILE_NAME;
-    use crate::cache_bis::FULL_SLICE;
     use crate::MockStorage;
     use crate::Storage;
     use anyhow::Context;
@@ -368,18 +385,15 @@ mod tests {
                 assert!(path == Path::new("foo") || path == Path::new("bar"));
                 Box::pin(async { Ok(()) })
             });
-        local_storage
-            .expect_get_slice()
-            .times(1)
-            .returning(|path, range| {
-                assert_eq!(path, Path::new("foo"));
-                assert_eq!(range, FULL_SLICE);
-                Box::pin(async { Ok(Bytes::from(b"data".to_vec())) })
-            });
+        local_storage.expect_get_all().times(1).returning(|path| {
+            assert_eq!(path, Path::new("foo"));
+            Box::pin(async { Ok(Bytes::from(b"data".to_vec())) })
+        });
 
         let cached_storage = StorageWithLocalStorageCache::create(
             Arc::new(remote_storage),
             Arc::new(local_storage),
+            500,
             10,
             10,
         )?;
@@ -408,13 +422,20 @@ mod tests {
 
             assert_eq!(cache_state.remote_storage_uri, String::from("s3://remote"));
             assert_eq!(cache_state.local_storage_uri, String::from("file://mock"));
-            assert_eq!(cache_state.item_count, 2);
-            assert_eq!(cache_state.num_bytes, 7);
+            assert_eq!(cache_state.items.len(), 2);
             assert_eq!(
-                cache_state.capacity,
-                Capacity {
-                    max_num_bytes: 10,
-                    max_item_count: 10
+                cache_state
+                    .items
+                    .iter()
+                    .map(|(_, size)| *size)
+                    .sum::<usize>(),
+                7
+            );
+            assert_eq!(
+                cache_state.disk_capacity,
+                DiskCapacity {
+                    max_num_files: 10,
+                    max_num_bytes: 10
                 }
             );
         }
@@ -444,14 +465,10 @@ mod tests {
             .expect_root()
             .times(2)
             .returning(move || Some(path.clone()));
-        local_storage
-            .expect_get_slice()
-            .times(2)
-            .returning(|path, range| {
-                assert_eq!(path, Path::new("foo"));
-                assert_eq!(range, FULL_SLICE);
-                Box::pin(async { Ok(Bytes::from(b"foo".to_vec())) })
-            });
+        local_storage.expect_get_all().times(2).returning(|path| {
+            assert_eq!(path, Path::new("foo"));
+            Box::pin(async { Ok(Bytes::from(b"foo".to_vec())) })
+        });
         local_storage
             .expect_put()
             .times(1)
@@ -463,6 +480,7 @@ mod tests {
         let cached_storage = StorageWithLocalStorageCache::create(
             Arc::new(remote_storage),
             Arc::new(local_storage),
+            500,
             5,
             5,
         )?;
@@ -491,6 +509,7 @@ mod tests {
         let cached_storage = StorageWithLocalStorageCache::create(
             Arc::new(remote_storage),
             Arc::new(local_storage),
+            500,
             5,
             5,
         )?;
@@ -543,6 +562,7 @@ mod tests {
         let cached_storage = StorageWithLocalStorageCache::create(
             Arc::new(remote_storage),
             Arc::new(local_storage),
+            500,
             10,
             10,
         )?;
@@ -563,13 +583,20 @@ mod tests {
             .with_context(|| "Could not deserialise state".to_string())?;
         assert_eq!(cache_state.remote_storage_uri, String::from("s3://remote"));
         assert_eq!(cache_state.local_storage_uri, String::from("file://mock"));
-        assert_eq!(cache_state.item_count, 0);
-        assert_eq!(cache_state.num_bytes, 0);
+        assert_eq!(cache_state.items.len(), 0);
         assert_eq!(
-            cache_state.capacity,
-            Capacity {
-                max_num_bytes: 10,
-                max_item_count: 10
+            cache_state
+                .items
+                .iter()
+                .map(|(_, size)| *size)
+                .sum::<usize>(),
+            0
+        );
+        assert_eq!(
+            cache_state.disk_capacity,
+            DiskCapacity {
+                max_num_files: 10,
+                max_num_bytes: 10
             }
         );
 
@@ -616,6 +643,7 @@ mod tests {
         let cached_storage = StorageWithLocalStorageCache::create(
             Arc::new(remote_storage),
             Arc::new(local_storage),
+            500,
             10,
             10,
         )?;
