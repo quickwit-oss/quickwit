@@ -86,12 +86,12 @@ impl LocalStorageCache {
         for (path, size) in items {
             disk_cache.put(path, size);
         }
-    
+
         Self {
             local_storage,
-            ram_capacity: ram_capacity,
+            ram_capacity,
             ram_cache: RamCache::new(ram_capacity),
-            disk_capacity: disk_capacity,
+            disk_capacity,
             disk_cache,
             num_bytes,
             num_files,
