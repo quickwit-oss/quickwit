@@ -30,7 +30,7 @@ use std::{ops::Range, path::PathBuf};
 
 use crate::{PutPayload, StorageErrorKind, StorageResult};
 
-pub use storage_with_local_cache::StorageWithLocalStorageCache;
+pub use storage_with_local_cache::{create_cachable_storage, StorageWithLocalStorageCache};
 
 const CACHE_STATE_FILE_NAME: &str = "cache-sate.json";
 

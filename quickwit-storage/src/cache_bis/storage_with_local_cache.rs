@@ -38,7 +38,7 @@ use tokio::{
     },
 };
 
-use super::{local_storage_cache::LocalStorageCache, Cache, CacheState};
+use super::{local_storage_cache::LocalStorageCache, Cache, CacheState, CACHE_STATE_FILE_NAME};
 
 /// A storage with a backing [`Cache`].
 pub struct StorageWithLocalStorageCache {
@@ -322,11 +322,40 @@ async fn write_all(path: &Path, data: Bytes) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// TODO doc
+pub fn create_cachable_storage(
+    remote_storage: Arc<dyn Storage>,
+    local_path: &Path,
+    ram_max_num_bytes: usize,
+    max_num_files: usize,
+    max_num_bytes: usize,
+) -> crate::StorageResult<Arc<dyn Storage>> {
+    let cache_state_file_path = local_path.join(CACHE_STATE_FILE_NAME);
+    let storage = if cache_state_file_path.exists() {
+        StorageWithLocalStorageCache::from_path(local_path)
+    } else {
+        let local_storage_uri = format!("file://{}", local_path.to_string_lossy());
+        let local_storage = StorageUriResolver::default()
+            .resolve(&local_storage_uri)
+            .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
+        StorageWithLocalStorageCache::create(
+            remote_storage,
+            local_storage,
+            ram_max_num_bytes,
+            max_num_files,
+            max_num_bytes,
+        )
+    }?;
+
+    Ok(Arc::new(storage))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::cache_bis::CacheState;
     use crate::cache_bis::DiskCapacity;
     use crate::cache_bis::CACHE_STATE_FILE_NAME;
+    use crate::LocalFileStorage;
     use crate::MockStorage;
     use crate::Storage;
     use anyhow::Context;
@@ -338,15 +367,39 @@ mod tests {
     use bytes::Bytes;
     use tempfile::{tempdir, TempDir};
 
-    use crate::PutPayload;
-
     use super::StorageWithLocalStorageCache;
+    use crate::tests::storage_test_suite;
+    use crate::PutPayload;
 
     fn create_test_storages() -> anyhow::Result<(TempDir, MockStorage, MockStorage)> {
         let local_dir = tempdir()?;
         let remote_storage = MockStorage::default();
         let local_storage = MockStorage::default();
         Ok((local_dir, remote_storage, local_storage))
+    }
+
+    #[tokio::test]
+    async fn test_storage() -> anyhow::Result<()> {
+        let remote_dir = tempdir()?;
+        let remote_storage = Arc::new(LocalFileStorage::from_uri(&format!(
+            "file://{}",
+            remote_dir.path().to_string_lossy()
+        ))?);
+        let local_dir = tempdir()?;
+        let local_storage = Arc::new(LocalFileStorage::from_uri(&format!(
+            "file://{}",
+            local_dir.path().to_string_lossy()
+        ))?);
+
+        let mut storage_with_cache = StorageWithLocalStorageCache::create(
+            remote_storage,
+            local_storage,
+            3_000_000,
+            500,
+            3_000_000,
+        )?;
+        storage_test_suite(&mut storage_with_cache).await?;
+        Ok(())
     }
 
     #[tokio::test]
