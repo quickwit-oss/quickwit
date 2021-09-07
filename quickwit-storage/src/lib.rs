@@ -32,8 +32,8 @@ etc.
 - The `BundleStorage` bundles together multiple files into a single file.
 
 */
+mod cachable_storage;
 mod cache;
-mod cache_bis;
 mod storage;
 pub use self::storage::{PutPayload, Storage};
 
@@ -46,28 +46,22 @@ mod ram_storage;
 mod retry;
 mod storage_resolver;
 
-<<<<<<< HEAD
-pub use self::bundle_storage::{BundleStorage, BundleStorageBuilder,BundleStorageFileOffsets, BUNDLE_FILENAME};
-pub use self::local_file_cache_storage::StorageWithLocalFileCache;
-=======
-pub use self::bundle_storage::{BundleStorage, BundleStorageBuilder, BUNDLE_FILENAME};
->>>>>>> added storage with cache in indexing
+pub use self::bundle_storage::{
+    BundleStorage, BundleStorageBuilder, BundleStorageFileOffsets, BUNDLE_FILENAME,
+};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, RegionProvider, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
 pub use self::prefix_storage::add_prefix_to_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
-<<<<<<< HEAD
 pub use self::storage_resolver::{
     quickwit_storage_uri_resolver, StorageFactory, StorageUriResolver,
 };
+pub use crate::cachable_storage::{
+    create_cachable_storage, CacheConfig, StorageWithLocalStorageCache,
+};
 pub use crate::cache::{Cache, MemorySizedCache, SliceCache, StorageWithCacheFactory};
-=======
-pub use self::storage_resolver::{localstack_region, StorageFactory, StorageUriResolver};
-pub use crate::cache::{Cache, SliceCache, StorageWithCacheFactory};
-pub use crate::cache_bis::{create_cachable_storage, StorageWithLocalStorageCache};
->>>>>>> added storage with cache in indexing
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 #[cfg(any(test, feature = "testsuite"))]

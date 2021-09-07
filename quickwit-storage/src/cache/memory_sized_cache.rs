@@ -39,13 +39,13 @@ impl Capacity {
         }
     }
 }
-struct NeedMutMemorySizedCache<K: Hash + Eq> {
+pub struct NeedMutMemorySizedCache<K: Hash + Eq + Clone> {
     lru_cache: LruCache<K, Bytes>,
     num_bytes: usize,
     capacity: Capacity,
 }
 
-impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
+impl<K: Hash + Eq + Clone> NeedMutMemorySizedCache<K> {
     /// Creates a new NeedMutSliceCache with the given capacity.
     fn with_capacity(capacity: Capacity) -> Self {
         NeedMutMemorySizedCache {
@@ -56,6 +56,11 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
             num_bytes: 0,
             capacity,
         }
+    }
+
+    /// Creates a new NeedMutSliceCache with the given capacity in bytes.
+    pub fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
+        Self::with_capacity(Capacity::InBytes(capacity_in_bytes))
     }
 
     pub fn get<Q>(&mut self, cache_key: &Q) -> Option<Bytes>
@@ -69,7 +74,7 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
     /// Attempt to put the given amount of data in the cache.
     /// This may fail silently if the owned_bytes slice is larger than the cache
     /// capacity.
-    fn put(&mut self, key: K, bytes: Bytes) {
+    pub fn put(&mut self, key: K, bytes: Bytes) {
         if self.capacity.exceeds_capacity(bytes.len()) {
             // The value does not fit in the cache. We simply don't store it.
             warn!(
@@ -93,14 +98,31 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
         self.num_bytes += bytes.len();
         self.lru_cache.put(key, bytes);
     }
+
+    // Remome all cache entries for wich the key statisfies the predicate.
+    pub fn delete<F>(&mut self, predicate: F)
+    where
+        F: Fn(&K) -> bool,
+    {
+        let addrs_to_remove = self
+            .lru_cache
+            .iter()
+            .filter(|(key, _)| predicate(key))
+            .map(|(key, _)| (*key).clone())
+            .collect::<Vec<_>>();
+
+        for addr in addrs_to_remove {
+            self.lru_cache.pop(&addr);
+        }
+    }
 }
 
 /// A simple in-resident memory slice cache.
-pub struct MemorySizedCache<K: Hash + Eq> {
+pub struct MemorySizedCache<K: Hash + Eq + Clone> {
     inner: Mutex<NeedMutMemorySizedCache<K>>,
 }
 
-impl<K: Hash + Eq> MemorySizedCache<K> {
+impl<K: Hash + Eq + Clone> MemorySizedCache<K> {
     /// Creates an slice cache with the given capacity.
     pub fn with_capacity_in_bytes(capacity_in_bytes: usize) -> Self {
         MemorySizedCache {

@@ -22,8 +22,8 @@ mod in_ram_slice_cache;
 mod memory_sized_cache;
 mod storage_with_cache;
 
-pub use self::in_ram_slice_cache::SliceCache;
-pub use self::memory_sized_cache::MemorySizedCache;
+pub use self::in_ram_slice_cache::{SliceAddress, SliceCache};
+pub use self::memory_sized_cache::{MemorySizedCache, NeedMutMemorySizedCache};
 pub use self::storage_with_cache::StorageWithCacheFactory;
 use async_trait::async_trait;
 use bytes::Bytes;

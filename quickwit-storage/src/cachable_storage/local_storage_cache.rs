@@ -29,11 +29,12 @@ use std::{
 use async_trait::async_trait;
 use bytes::Bytes;
 use lru::LruCache;
+use tempfile::Builder;
 
 use crate::{PutPayload, Storage, StorageErrorKind, StorageResult};
 use anyhow::anyhow;
 
-use super::{in_ram_slice_cache::RamCache, Cache, CacheState, DiskCapacity, CACHE_STATE_FILE_NAME};
+use super::{ram_cache::RamCache, CacheState, DiskCapacity, StorageCache, CACHE_STATE_FILE_NAME};
 
 /// A struct providing two caching layers backed by a [`Storage`].
 /// - An in memory cache: holding chunks(range) of files.
@@ -73,6 +74,30 @@ impl LocalStorageCache {
         }
     }
 
+    pub fn from_state(
+        local_storage: Arc<dyn Storage>,
+        ram_capacity: usize,
+        disk_capacity: DiskCapacity,
+        items: Vec<(PathBuf, usize)>,
+    ) -> Self {
+        let num_files = items.len();
+        let num_bytes = items.iter().map(|(_, size)| *size).sum();
+        let mut disk_cache = LruCache::unbounded();
+        for (path, size) in items {
+            disk_cache.put(path, size);
+        }
+    
+        Self {
+            local_storage,
+            ram_capacity: ram_capacity,
+            ram_cache: RamCache::new(ram_capacity),
+            disk_capacity: disk_capacity,
+            disk_cache,
+            num_bytes,
+            num_files,
+        }
+    }
+
     /// Check if an incomming item will exceed the capacity once inserted.
     fn exceeds_capacity(&self, num_bytes: usize, num_files: usize) -> bool {
         self.disk_capacity.max_num_bytes < num_bytes || self.disk_capacity.max_num_files < num_files
@@ -80,7 +105,7 @@ impl LocalStorageCache {
 }
 
 #[async_trait]
-impl Cache for LocalStorageCache {
+impl StorageCache for LocalStorageCache {
     /// Return the disk cached view of the requested file if available.
     async fn get(&mut self, path: &Path) -> StorageResult<Option<Bytes>> {
         if self.disk_cache.get(&path.to_path_buf()).is_none() {
@@ -217,7 +242,7 @@ fn atomic_write(path: &Path, content: &[u8]) -> io::Result<()> {
             "Path {:?} does not have parent directory.",
         )
     })?;
-    let mut tempfile = tempfile::Builder::new().tempfile_in(&parent_path)?;
+    let mut tempfile = Builder::new().tempfile_in(&parent_path)?;
     tempfile.write_all(content)?;
     tempfile.flush()?;
     tempfile.into_temp_path().persist(path)?;

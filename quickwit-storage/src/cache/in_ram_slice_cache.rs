@@ -28,13 +28,15 @@ use bytes::Bytes;
 use super::memory_sized_cache::MemorySizedCache;
 
 #[derive(Hash, Debug, Clone, PartialEq, Eq)]
-struct SliceAddress {
+pub struct SliceAddress {
     pub path: PathBuf,
     pub byte_range: Range<usize>,
 }
 
 /// A simple in-resident memory slice cache.
 pub struct SliceCache {
+    //TODO this is a mutex on top of another mutex.
+    // maybe we should use [`NeedMutMemorySizedCache`]
     inner: Mutex<MemorySizedCache<SliceAddress>>,
 }
 

@@ -38,6 +38,7 @@ use quickwit_actors::KillSwitch;
 use quickwit_actors::Supervisable;
 use quickwit_metastore::Metastore;
 use quickwit_storage::create_cachable_storage;
+use quickwit_storage::CacheConfig;
 use quickwit_storage::StorageUriResolver;
 use smallvec::SmallVec;
 use std::path::Path;
@@ -174,18 +175,18 @@ impl IndexingPipelineSupervisor {
             .metastore
             .index_metadata(&self.params.index_id)
             .await?;
-        let remote_storage = self
+        let index_storage = self
             .params
             .storage_uri_resolver
             .resolve(&index_metadata.index_uri)?;
+        println!("index_storage -> {:?}", index_storage.uri());
 
-        //make the storage
+        //make the storage cachable
         let index_storage = create_cachable_storage(
-            remote_storage,
-            Path::new("/home/evance/PROJECTS/quickwit/zero/local_store"),
-            1_000_000,
-            500,
-            3_000_000_000, // 3gb
+            index_storage,
+            &self.params.storage_uri_resolver,
+            Path::new("/home/evance/PROJECTS/quickwit/zero/cache_store"),
+            CacheConfig::default(),
         )?;
 
         let publisher = Publisher::new(self.params.metastore.clone());

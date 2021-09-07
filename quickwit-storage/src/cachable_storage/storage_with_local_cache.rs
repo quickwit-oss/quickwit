@@ -38,12 +38,14 @@ use tokio::{
     },
 };
 
-use super::{local_storage_cache::LocalStorageCache, Cache, CacheState, CACHE_STATE_FILE_NAME};
+use super::{
+    local_storage_cache::LocalStorageCache, CacheState, StorageCache, CACHE_STATE_FILE_NAME,
+};
 
 /// A storage with a backing [`Cache`].
 pub struct StorageWithLocalStorageCache {
     remote_storage: Arc<dyn Storage>,
-    cache: Mutex<Box<dyn Cache>>,
+    cache: Mutex<Box<dyn StorageCache>>,
     in_flight_download_requests: Mutex<HashSet<PathBuf>>,
     notification_sender: Sender<(PathBuf, Bytes)>,
 }
@@ -85,24 +87,27 @@ impl StorageWithLocalStorageCache {
     /// It needs a folder `path` previously used by an instance of [`StorageWithLocalStorageCache`].
     /// Lastly, the file at `{path}/[`CACHE_STATE_FILE_NAME`]` should be present and valid.
     // TODO: this constructor should move into a factory.
-    pub fn from_path(path: &Path) -> StorageResult<Self> {
+    pub fn from_path(
+        storage_uri_resolver: &StorageUriResolver,
+        path: &Path,
+    ) -> StorageResult<Self> {
         let cache_state = CacheState::from_path(path)?;
 
-        let remote_storage = StorageUriResolver::default()
+        let remote_storage = storage_uri_resolver
             .resolve(&cache_state.remote_storage_uri)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
 
-        let local_storage = StorageUriResolver::default()
+        let local_storage = storage_uri_resolver
             .resolve(&cache_state.local_storage_uri)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
 
         let num_files = cache_state.items.len();
         let num_bytes: usize = cache_state.items.iter().map(|(_, size)| *size).sum();
-        let mut local_storage_cache = LocalStorageCache::new(
+        let mut local_storage_cache = LocalStorageCache::from_state(
             local_storage,
             cache_state.ram_capacity,
-            cache_state.disk_capacity.max_num_files,
-            cache_state.disk_capacity.max_num_bytes,
+            cache_state.disk_capacity,
+            cache_state.items,
         );
         local_storage_cache.num_files = num_files;
         local_storage_cache.num_bytes = num_bytes;
@@ -322,39 +327,56 @@ async fn write_all(path: &Path, data: Bytes) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// TODO doc
-pub fn create_cachable_storage(
-    remote_storage: Arc<dyn Storage>,
-    local_path: &Path,
+/// A struct embedding the cache parameters.
+#[derive(Debug, Clone)]
+pub struct CacheConfig {
     ram_max_num_bytes: usize,
     max_num_files: usize,
     max_num_bytes: usize,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            ram_max_num_bytes: 1_000_000_000, // 1GB
+            max_num_files: 1000,
+            max_num_bytes: 10_000_000_000, // 10GB
+        }
+    }
+}
+
+/// TODO doc
+pub fn create_cachable_storage(
+    remote_storage: Arc<dyn Storage>,
+    storage_uri_resolver: &StorageUriResolver,
+    local_path: &Path,
+    config: CacheConfig,
 ) -> crate::StorageResult<Arc<dyn Storage>> {
     let cache_state_file_path = local_path.join(CACHE_STATE_FILE_NAME);
     let storage = if cache_state_file_path.exists() {
-        StorageWithLocalStorageCache::from_path(local_path)
+        StorageWithLocalStorageCache::from_path(storage_uri_resolver, local_path)?
     } else {
         let local_storage_uri = format!("file://{}", local_path.to_string_lossy());
-        let local_storage = StorageUriResolver::default()
+        let local_storage = storage_uri_resolver
             .resolve(&local_storage_uri)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
         StorageWithLocalStorageCache::create(
             remote_storage,
             local_storage,
-            ram_max_num_bytes,
-            max_num_files,
-            max_num_bytes,
-        )
-    }?;
+            config.ram_max_num_bytes,
+            config.max_num_files,
+            config.max_num_bytes,
+        )?
+    };
 
     Ok(Arc::new(storage))
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::cache_bis::CacheState;
-    use crate::cache_bis::DiskCapacity;
-    use crate::cache_bis::CACHE_STATE_FILE_NAME;
+    use crate::cachable_storage::CacheState;
+    use crate::cachable_storage::DiskCapacity;
+    use crate::cachable_storage::CACHE_STATE_FILE_NAME;
     use crate::LocalFileStorage;
     use crate::MockStorage;
     use crate::Storage;

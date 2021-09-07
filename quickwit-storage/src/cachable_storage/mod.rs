@@ -18,8 +18,8 @@
 //  You should have received a copy of the GNU Affero General Public License
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-mod in_ram_slice_cache;
 mod local_storage_cache;
+mod ram_cache;
 mod storage_with_local_cache;
 
 use async_trait::async_trait;
@@ -30,7 +30,9 @@ use std::{ops::Range, path::PathBuf};
 
 use crate::{PutPayload, StorageErrorKind, StorageResult};
 
-pub use storage_with_local_cache::{create_cachable_storage, StorageWithLocalStorageCache};
+pub use storage_with_local_cache::{
+    create_cachable_storage, CacheConfig, StorageWithLocalStorageCache,
+};
 
 const CACHE_STATE_FILE_NAME: &str = "cache-sate.json";
 
@@ -44,9 +46,9 @@ pub struct DiskCapacity {
     max_num_bytes: usize,
 }
 
-/// CacheState is P.O.D.O for serializing/deserializing the cache state.
+/// CacheState is struct for serializing/deserializing the cache state.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct CacheState {
+pub(crate) struct CacheState {
     remote_storage_uri: String,
     local_storage_uri: String,
     disk_capacity: DiskCapacity,
@@ -55,7 +57,7 @@ struct CacheState {
 }
 
 impl CacheState {
-    /// Construct an instance of [`CacheState`] from an persiste cache state file.
+    /// Construct an instance of [`CacheState`] from a persisted cache state file.
     pub fn from_path(path: &Path) -> StorageResult<Self> {
         let file_path = path.to_path_buf().join(CACHE_STATE_FILE_NAME);
         let json_file = std::fs::File::open(file_path)?;
@@ -69,20 +71,21 @@ impl CacheState {
 /// used in front of a storage. See `FileStorageWithCache`.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
-pub trait Cache: Send + Sync + 'static {
-    async fn get(
-        &mut self,
-        path: &Path, /*, bytes_range: Range<usize>*/
-    ) -> StorageResult<Option<Bytes>>;
+pub trait StorageCache: Send + Sync + 'static {
+    /// Try to get the entire file from the cache.
+    async fn get(&mut self, path: &Path) -> StorageResult<Option<Bytes>>;
 
+    /// Put a payload in the cache.
     async fn put(&mut self, path: &Path, payload: PutPayload) -> StorageResult<()>;
 
+    /// Try to get a slice of data from the cache.
     async fn get_slice(
         &mut self,
         path: &Path,
         bytes_range: Range<usize>,
     ) -> StorageResult<Option<Bytes>>;
 
+    /// Put a slice of data into the cache.
     async fn put_slice(
         &mut self,
         path: &Path,
@@ -90,11 +93,15 @@ pub trait Cache: Send + Sync + 'static {
         bytes: Bytes,
     ) -> StorageResult<()>;
 
+    /// Directly copy a file from the cache
     async fn copy_to_file(&mut self, path: &Path, output_path: &Path) -> StorageResult<bool>;
 
+    /// Removes an item from the cache.
     async fn delete(&mut self, path: &Path) -> StorageResult<bool>;
 
+    /// List all items in the cache and their size.
     fn get_items(&self) -> Vec<(PathBuf, usize)>;
 
+    /// Save the cache state on persistent storage.
     async fn save_state(&self, parent_uri: String) -> StorageResult<()>;
 }
