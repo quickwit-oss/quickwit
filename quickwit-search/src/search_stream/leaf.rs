@@ -94,7 +94,7 @@ async fn leaf_search_results_stream(
 }
 
 /// Apply a leaf search on a single split.
-#[instrument(level = "debug", fields(split_id = %split.split_id), skip(split, index_config, stream_request, storage))]
+#[instrument(fields(split_id = %split.split_id), skip(split, index_config, stream_request, storage))]
 async fn leaf_search_stream_single_split(
     split: SplitIdAndFooterOffsets,
     index_config: Arc<dyn IndexConfig>,
@@ -151,7 +151,7 @@ async fn leaf_search_stream_single_split(
             output_format,
         )
     });
-    let span = debug_span!(
+    let span = info_span!(
         "collect_fast_field",
         split_id = %split.split_id,
         fast_field=%fast_field_to_extract,

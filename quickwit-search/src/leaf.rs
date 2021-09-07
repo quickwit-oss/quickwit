@@ -112,7 +112,7 @@ pub(crate) async fn open_index(
 ///
 /// The downloaded data depends on the query (which term's posting list is required,
 /// are position required too), and the collector.
-#[instrument(level = "debug", skip(searcher, query, fast_field_names))]
+#[instrument(skip(searcher, query, fast_field_names))]
 pub(crate) async fn warmup(
     searcher: &Searcher,
     query: &dyn Query,
@@ -209,6 +209,11 @@ async fn leaf_search_single_split(
         .try_into()?;
     let searcher = reader.searcher();
     warmup(&*searcher, &query, &quickwit_collector.fast_field_names()).await?;
+    let span = info_span!(
+        "search",
+        split_id = %split.split_id,
+    );
+    let _ = span.enter();
     let leaf_search_result = searcher.search(&query, &quickwit_collector)?;
     Ok(leaf_search_result)
 }

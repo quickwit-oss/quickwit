@@ -79,7 +79,7 @@ async fn execute_search(
         debug!(leaf_search_request=?leaf_search_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search.");
         let mut search_client_clone: SearchServiceClient = search_client.clone();
         let span = info_span!(
-            "leaf_node_search",
+            "execute_search",
             grpc_addr=?search_client.grpc_addr()
         );
         let handle = tokio::spawn(
@@ -420,9 +420,11 @@ pub async fn root_search(
                     index_uri: index_metadata.index_uri.to_string(),
                 };
                 let mut search_client_clone = search_client.clone();
-                let handle = tokio::spawn(async move {
-                    search_client_clone.fetch_docs(fetch_docs_request).await
-                });
+                let span = info_span!("execute_fetch_docs",);
+                let handle = tokio::spawn(
+                    async move { search_client_clone.fetch_docs(fetch_docs_request).await }
+                        .instrument(span),
+                );
                 fetch_docs_handles.push(handle);
             }
         }
