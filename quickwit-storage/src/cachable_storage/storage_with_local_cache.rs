@@ -26,7 +26,9 @@ use std::{
     sync::Arc,
 };
 
-use crate::{PutPayload, Storage, StorageErrorKind, StorageResult, StorageUriResolver};
+use crate::{
+    LocalFileStorage, PutPayload, Storage, StorageErrorKind, StorageResult, StorageUriResolver,
+};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -58,21 +60,22 @@ impl StorageWithLocalStorageCache {
     pub fn create(
         remote_storage: Arc<dyn Storage>,
         local_storage: Arc<dyn Storage>,
+        // local_storage_root_path: &Path,
         ram_max_num_bytes: usize,
         max_num_files: usize,
         max_num_bytes: usize,
     ) -> StorageResult<Self> {
-        let _local_storage_root = local_storage.root().ok_or_else(|| {
-            StorageErrorKind::InternalError.with_error(anyhow!(
-                "The local storage needs to have valid file system root path."
-            ))
-        })?;
+        // Extract the local storage root path, also validate that local_storage
+        // is of type [`LocalFileStorage]
+        let local_storage_root_path =
+            LocalFileStorage::extract_root_path_from_uri(&local_storage.uri())?;
 
         let (notification_sender, _) = broadcast::channel(10);
         Ok(Self {
             remote_storage,
             cache: Mutex::new(Box::new(LocalStorageCache::new(
                 local_storage,
+                local_storage_root_path,
                 ram_max_num_bytes,
                 max_num_files,
                 max_num_bytes,
@@ -86,22 +89,32 @@ impl StorageWithLocalStorageCache {
     ///
     /// It needs a folder `path` previously used by an instance of [`StorageWithLocalStorageCache`].
     /// Lastly, the file at `{path}/[`CACHE_STATE_FILE_NAME`]` should be present and valid.
-    // TODO: this constructor should move into a factory.
     pub fn from_path(
         remote_storage: Arc<dyn Storage>,
         storage_uri_resolver: &StorageUriResolver,
         path: &Path,
     ) -> StorageResult<Self> {
         let cache_state = CacheState::from_path(path)?;
-
         let local_storage = storage_uri_resolver
             .resolve(&cache_state.local_storage_uri)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
+
+        // Verify that provided `root_path` and extracted `root_path` match.
+        let local_storage_root_path =
+            LocalFileStorage::extract_root_path_from_uri(&cache_state.local_storage_uri)?;
+        if local_storage_root_path != path.to_path_buf() {
+            return Err(StorageErrorKind::InternalError.with_error(anyhow::anyhow!(
+                "Invalid root path: {}, but {} expected ",
+                path.to_string_lossy(),
+                local_storage_root_path.to_string_lossy()
+            )));
+        }
 
         let num_files = cache_state.items.len();
         let num_bytes: usize = cache_state.items.iter().map(|(_, size)| *size).sum();
         let mut local_storage_cache = LocalStorageCache::from_state(
             local_storage,
+            local_storage_root_path,
             cache_state.ram_capacity,
             cache_state.disk_capacity,
             cache_state.items,
@@ -308,10 +321,6 @@ impl Storage for StorageWithLocalStorageCache {
     fn uri(&self) -> String {
         self.remote_storage.uri()
     }
-
-    fn root(&self) -> Option<PathBuf> {
-        None
-    }
 }
 
 /// Helper function to read a file content.
@@ -348,18 +357,25 @@ impl Default for CacheConfig {
     }
 }
 
-/// TODO doc
+/// Creates an instance [`StorageWithLocalStorageCache`].
+///
+/// It tries to construct an instance from a previously saved state if it exists,
+/// otherwise it will construct a new instance from the given parameters.
 pub fn create_cachable_storage(
     remote_storage: Arc<dyn Storage>,
     storage_uri_resolver: &StorageUriResolver,
-    local_path: &Path,
+    local_storage_root_path: &Path,
     config: CacheConfig,
 ) -> crate::StorageResult<Arc<dyn Storage>> {
-    let cache_state_file_path = local_path.join(CACHE_STATE_FILE_NAME);
+    let cache_state_file_path = local_storage_root_path.join(CACHE_STATE_FILE_NAME);
     let storage = if cache_state_file_path.exists() {
-        StorageWithLocalStorageCache::from_path(remote_storage, storage_uri_resolver, local_path)?
+        StorageWithLocalStorageCache::from_path(
+            remote_storage,
+            storage_uri_resolver,
+            local_storage_root_path,
+        )?
     } else {
-        let local_storage_uri = format!("file://{}", local_path.to_string_lossy());
+        let local_storage_uri = format!("file://{}", local_storage_root_path.to_string_lossy());
         let local_storage = storage_uri_resolver
             .resolve(&local_storage_uri)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
@@ -430,7 +446,8 @@ mod tests {
     #[tokio::test]
     async fn test_put_calls_both_storages_appropriately() -> anyhow::Result<()> {
         let (local_dir, mut remote_storage, mut local_storage) = create_test_storages()?;
-        let path = local_dir.path().to_path_buf();
+        let local_strage_uri = format!("file://{}", local_dir.path().to_string_lossy());
+        let moved_local_strage_uri = local_strage_uri.clone();
 
         remote_storage
             .expect_put()
@@ -446,12 +463,8 @@ mod tests {
 
         local_storage
             .expect_uri()
-            .times(2)
-            .returning(|| "file://mock".to_string());
-        local_storage
-            .expect_root()
             .times(3)
-            .returning(move || Some(path.clone()));
+            .returning(move || moved_local_strage_uri.clone());
         local_storage
             .expect_put()
             .times(2)
@@ -494,7 +507,7 @@ mod tests {
             let cache_state: CacheState = serde_json::from_reader(reader)
                 .with_context(|| "Could not deserialise state".to_string())?;
 
-            assert_eq!(cache_state.local_storage_uri, String::from("file://mock"));
+            assert_eq!(cache_state.local_storage_uri, local_strage_uri);
             assert_eq!(cache_state.items.len(), 2);
             assert_eq!(
                 cache_state
@@ -519,7 +532,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_calls_both_storages_appropriately() -> anyhow::Result<()> {
         let (local_dir, mut remote_storage, mut local_storage) = create_test_storages()?;
-        let path = local_dir.path().to_path_buf();
+        let local_strage_uri = format!("file://{}", local_dir.path().to_string_lossy());
 
         remote_storage.expect_get_all().times(1).returning(|path| {
             assert_eq!(path, Path::new("foo"));
@@ -528,12 +541,8 @@ mod tests {
 
         local_storage
             .expect_uri()
-            .times(1)
-            .returning(|| "file://mock".to_string());
-        local_storage
-            .expect_root()
             .times(2)
-            .returning(move || Some(path.clone()));
+            .returning(move || local_strage_uri.clone());
         local_storage.expect_get_all().times(2).returning(|path| {
             assert_eq!(path, Path::new("foo"));
             Box::pin(async { Ok(Bytes::from(b"foo".to_vec())) })
@@ -563,7 +572,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_only_calls_remote_storage_for_unknow_cache_item() -> anyhow::Result<()> {
         let (local_dir, mut remote_storage, mut local_storage) = create_test_storages()?;
-        let path = local_dir.path().to_path_buf();
+        let local_strage_uri = format!("file://{}", local_dir.path().to_string_lossy());
 
         remote_storage.expect_delete().times(1).returning(|path| {
             assert_eq!(path, Path::new("foo"));
@@ -571,9 +580,9 @@ mod tests {
         });
 
         local_storage
-            .expect_root()
+            .expect_uri()
             .times(1)
-            .returning(move || Some(path.clone()));
+            .returning(move || local_strage_uri.clone());
 
         let cached_storage = StorageWithLocalStorageCache::create(
             Arc::new(remote_storage),
@@ -590,7 +599,8 @@ mod tests {
     #[tokio::test]
     async fn test_delete_calls_both_storages_appropriately() -> anyhow::Result<()> {
         let (local_dir, mut remote_storage, mut local_storage) = create_test_storages()?;
-        let path = local_dir.path().to_path_buf();
+        let local_strage_uri = format!("file://{}", local_dir.path().to_string_lossy());
+        let moved_local_strage_uri = local_strage_uri.clone();
 
         remote_storage
             .expect_put()
@@ -606,12 +616,8 @@ mod tests {
 
         local_storage
             .expect_uri()
-            .times(2)
-            .returning(|| "file://mock".to_string());
-        local_storage
-            .expect_root()
             .times(3)
-            .returning(move || Some(path.clone()));
+            .returning(move || moved_local_strage_uri.clone());
         local_storage
             .expect_put()
             .times(1)
@@ -646,7 +652,7 @@ mod tests {
         let reader = std::io::BufReader::new(json_file);
         let cache_state: CacheState = serde_json::from_reader(reader)
             .with_context(|| "Could not deserialise state".to_string())?;
-        assert_eq!(cache_state.local_storage_uri, String::from("file://mock"));
+        assert_eq!(cache_state.local_storage_uri, local_strage_uri);
         assert_eq!(cache_state.items.len(), 0);
         assert_eq!(
             cache_state
@@ -671,7 +677,7 @@ mod tests {
     async fn test_get_does_not_call_remote_storage_concurrently_one_same_entry(
     ) -> anyhow::Result<()> {
         let (local_dir, mut remote_storage, mut local_storage) = create_test_storages()?;
-        let path = local_dir.path().to_path_buf();
+        let local_strage_uri = format!("file://{}", local_dir.path().to_string_lossy());
 
         remote_storage.expect_get_all().times(1).returning(|path| {
             assert_eq!(path, Path::new("foo"));
@@ -683,12 +689,8 @@ mod tests {
 
         local_storage
             .expect_uri()
-            .times(1)
-            .returning(|| "file://mock".to_string());
-        local_storage
-            .expect_root()
             .times(2)
-            .returning(move || Some(path.clone()));
+            .returning(move || local_strage_uri.clone());
         // get_slice should not be called since all
         // requests are served from the single download
         local_storage.expect_get_slice().never();

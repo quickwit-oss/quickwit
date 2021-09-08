@@ -206,7 +206,8 @@ pub async fn single_node_search(
     })
 }
 
-//TODO: discuss and implement a single cache directory for all search operation
+// TODO: discuss and implement a single cache directory for all search operation
+// [https://github.com/quickwit-inc/quickwit/issues/520]
 fn global_cache_dir() -> &'static TempDir {
     static INSTANCE: OnceCell<TempDir> = OnceCell::new();
     INSTANCE.get_or_init(|| tempfile::tempdir().unwrap())

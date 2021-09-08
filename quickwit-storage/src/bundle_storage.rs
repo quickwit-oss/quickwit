@@ -172,10 +172,6 @@ impl Storage for BundleStorage {
     fn uri(&self) -> String {
         self.storage.uri()
     }
-
-    fn root(&self) -> Option<PathBuf> {
-        None
-    }
 }
 
 impl HasLen for BundleStorage {

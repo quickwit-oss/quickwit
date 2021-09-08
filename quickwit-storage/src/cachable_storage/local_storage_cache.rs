@@ -44,6 +44,7 @@ use super::{ram_cache::RamCache, CacheState, DiskCapacity, StorageCache, CACHE_S
 /// The cache eviction policy in both layers is L.R.U.
 pub struct LocalStorageCache {
     pub local_storage: Arc<dyn Storage>,
+    pub local_storage_root: PathBuf,
     pub ram_capacity: usize,
     pub ram_cache: RamCache,
     pub disk_capacity: DiskCapacity,
@@ -56,12 +57,14 @@ impl LocalStorageCache {
     /// Create new instance of [`LocalStorageCache`]
     pub fn new(
         local_storage: Arc<dyn Storage>,
+        local_storage_root: PathBuf,
         ram_capacity_in_bytes: usize,
         max_num_files: usize,
         max_num_bytes: usize,
     ) -> Self {
         Self {
             local_storage,
+            local_storage_root,
             ram_capacity: ram_capacity_in_bytes,
             ram_cache: RamCache::new(ram_capacity_in_bytes),
             disk_capacity: DiskCapacity {
@@ -76,6 +79,7 @@ impl LocalStorageCache {
 
     pub fn from_state(
         local_storage: Arc<dyn Storage>,
+        local_storage_root: PathBuf,
         ram_capacity: usize,
         disk_capacity: DiskCapacity,
         items: Vec<(PathBuf, usize)>,
@@ -89,6 +93,7 @@ impl LocalStorageCache {
 
         Self {
             local_storage,
+            local_storage_root,
             ram_capacity,
             ram_cache: RamCache::new(ram_capacity),
             disk_capacity,
@@ -218,13 +223,12 @@ impl StorageCache for LocalStorageCache {
             disk_capacity: self.disk_capacity,
             items,
         };
+        // let root_path = self.local_storage.root().ok_or_else(|| {
+        //     StorageErrorKind::InternalError
+        //         .with_error(anyhow!("The local storage need to have valid root path."))
+        // })?;
 
-        let root_path = self.local_storage.root().ok_or_else(|| {
-            StorageErrorKind::InternalError
-                .with_error(anyhow!("The local storage need to have valid root path."))
-        })?;
-
-        let file_path = root_path.join(CACHE_STATE_FILE_NAME);
+        let file_path = self.local_storage_root.join(CACHE_STATE_FILE_NAME);
         let content: Vec<u8> = serde_json::to_vec(&cache_state)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
         atomic_write(&file_path, &content)?;
@@ -263,8 +267,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_cannot_fit_item_in_cache() -> anyhow::Result<()> {
+        let local_storage_root = tempdir()?;
         let ram_storage = Arc::new(RamStorage::default());
-        let mut cache = LocalStorageCache::new(ram_storage, 5, 5, 5);
+        let mut cache =
+            LocalStorageCache::new(ram_storage, local_storage_root.into_path(), 5, 5, 5);
 
         let payload = PutPayload::InMemory(Bytes::from(b"abc".to_vec()));
         cache.put(Path::new("3"), payload).await?;
@@ -282,8 +288,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_edge_condition() -> anyhow::Result<()> {
+        let local_storage_root = tempdir()?;
         let ram_storage = Arc::new(RamStorage::default());
-        let mut cache = LocalStorageCache::new(ram_storage, 5, 5, 5);
+        let mut cache =
+            LocalStorageCache::new(ram_storage, local_storage_root.into_path(), 5, 5, 5);
 
         {
             let payload = PutPayload::InMemory(Bytes::from(b"abc".to_vec()));
@@ -318,8 +326,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_item_from_cache() -> anyhow::Result<()> {
+        let local_storage_root = tempdir()?;
         let ram_storage = Arc::new(RamStorage::default());
-        let mut cache = LocalStorageCache::new(ram_storage, 5, 5, 5);
+        let mut cache =
+            LocalStorageCache::new(ram_storage, local_storage_root.into_path(), 5, 5, 5);
         cache
             .put(
                 Path::new("1"),
@@ -349,8 +359,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_copy_item_from_cache() -> anyhow::Result<()> {
+        let local_storage_root = tempdir()?;
         let ram_storage = Arc::new(RamStorage::default());
-        let mut cache = LocalStorageCache::new(ram_storage, 5, 5, 5);
+        let mut cache =
+            LocalStorageCache::new(ram_storage, local_storage_root.into_path(), 5, 5, 5);
         cache
             .put(
                 Path::new("3"),

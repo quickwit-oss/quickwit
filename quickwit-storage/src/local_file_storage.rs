@@ -47,10 +47,25 @@ impl fmt::Debug for LocalFileStorage {
 
 impl LocalFileStorage {
     /// Creates a file storage instance given a uri
+    pub fn from_uri(uri: &str) -> StorageResult<LocalFileStorage> {
+        let root_pathbuf = Self::extract_root_path_from_uri(uri)?;
+        Ok(Self { root: root_pathbuf })
+    }
+
+    /// Validates if the provided uri is of the correct protocol & extracts the root path.
+    ///
     /// Both scheme `file:///{path}` and `file://{path}` are accepted.
     /// If uri starts with `file://`, a `/` is automatically added to ensure
     /// `path` starts from root.
-    pub fn from_uri(uri: &str) -> StorageResult<LocalFileStorage> {
+    pub fn extract_root_path_from_uri(uri: &str) -> StorageResult<PathBuf> {
+        if !uri.starts_with("file://") {
+            let err_msg = anyhow::anyhow!(
+                "{:?} is an invalid file storage uri. Only file:// is accepted.",
+                uri
+            );
+            return Err(StorageErrorKind::DoesNotExist.with_error(err_msg));
+        }
+
         let mut root_path = uri
             .split("://")
             .nth(1)
@@ -70,12 +85,7 @@ impl LocalFileStorage {
             return Err(StorageErrorKind::Io
                 .with_error(anyhow::anyhow!("Invalid uri, `..` is forbidden: {}", uri)));
         }
-        Ok(Self { root: pathbuf })
-    }
-
-    /// Return the root path of this storage.
-    pub fn get_root(&self) -> PathBuf {
-        self.root.clone()
+        Ok(pathbuf)
     }
 }
 
@@ -205,10 +215,6 @@ impl Storage for LocalFileStorage {
                 }
             }
         }
-    }
-
-    fn root(&self) -> Option<PathBuf> {
-        Some(self.root.clone())
     }
 }
 

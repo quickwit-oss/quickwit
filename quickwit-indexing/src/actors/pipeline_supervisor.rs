@@ -179,7 +179,7 @@ impl IndexingPipelineSupervisor {
             .storage_uri_resolver
             .resolve(&index_metadata.index_uri)?;
 
-        // TODO: Make cache path configurable
+        // TODO: Make cache path configurable [https://github.com/quickwit-inc/quickwit/issues/520]
         let cache_directory = self.params.indexer_params.scratch_directory.temp_child()?;
         let index_storage = create_cachable_storage(
             index_storage,

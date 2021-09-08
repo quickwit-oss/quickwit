@@ -126,10 +126,6 @@ impl Storage for RamStorage {
             Err(StorageErrorKind::DoesNotExist.with_error(err))
         }
     }
-
-    fn root(&self) -> Option<PathBuf> {
-        None
-    }
 }
 
 /// Builder to create a prepopulated [`RamStorage`]. This is mostly useful for tests.

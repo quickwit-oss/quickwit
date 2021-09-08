@@ -75,10 +75,6 @@ impl Storage for PrefixStorage {
     async fn file_num_bytes(&self, path: &Path) -> crate::StorageResult<u64> {
         self.storage.file_num_bytes(&self.prefix.join(path)).await
     }
-
-    fn root(&self) -> Option<PathBuf> {
-        self.storage.root()
-    }
 }
 
 /// Creates a [`PrefixStorage`] using an underlying storage and a prefix.

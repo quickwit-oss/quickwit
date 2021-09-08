@@ -84,7 +84,6 @@ mod tests {
                 .await?;
             assert_eq!(split_num_bytes, file_entry.file_size_in_bytes);
         }
-        //assert_eq!(3, 1);
         Ok(())
     }
 }
