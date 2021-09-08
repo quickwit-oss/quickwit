@@ -208,7 +208,8 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
 
     let universe = Universe::new();
-    let (_supervisor_mailbox, supervisor_handler) = universe.spawn_async_actor(indexing_supervisor);
+    let (_supervisor_mailbox, supervisor_handler) =
+        universe.spawn_actor(indexing_supervisor).spawn_async();
 
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
     if args.input_path.is_none() && is_stdin_atty {

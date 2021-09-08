@@ -137,7 +137,6 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets
             num_records: split.num_docs as usize,
             time_range: split.time_range.clone(),
             size_in_bytes: split.size_in_bytes,
-            generation: 0,
             split_state: SplitState::New,
             update_timestamp: Utc::now().timestamp(),
             tags: split.tags.clone(),
@@ -250,7 +249,7 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: Arc<dyn Storage> = Arc::new(ram_storage.clone());
         let uploader = Uploader::new(Arc::new(mock_metastore), index_storage.clone(), mailbox);
-        let (uploader_mailbox, uploader_handle) = universe.spawn_async_actor(uploader);
+        let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
         let split_scratch_directory = ScratchDirectory::try_new_temp()?;
         std::fs::write(
             split_scratch_directory.path().join(BUNDLE_FILENAME),

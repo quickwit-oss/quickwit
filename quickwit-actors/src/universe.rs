@@ -20,18 +20,14 @@
 
 use std::time::Duration;
 
-use crate::async_actor::spawn_async_actor;
 use crate::scheduler::SchedulerMessage;
 use crate::scheduler::TimeShift;
-use crate::sync_actor::spawn_sync_actor;
+use crate::spawn_builder::SpawnBuilder;
 use crate::Actor;
-use crate::ActorHandle;
-use crate::AsyncActor;
 use crate::KillSwitch;
 use crate::Mailbox;
 use crate::QueueCapacity;
 use crate::Scheduler;
-use crate::SyncActor;
 
 /// Universe serves as the top-level context in which Actor can be spawned.
 /// It is *not* a singleton. A typical application will usually have only one universe hosting all of the actors
@@ -40,6 +36,7 @@ use crate::SyncActor;
 /// In particular, unit test all have their own universe and hence can be executed in parallel.
 pub struct Universe {
     scheduler_mailbox: Mailbox<<Scheduler as Actor>::Message>,
+    // This killswitch is used for the scheduler, and will be used by default for all spawned actors.
     kill_switch: KillSwitch,
 }
 
@@ -51,8 +48,8 @@ impl Universe {
         let kill_switch = KillSwitch::default();
         let (mailbox, _inbox) =
             crate::create_mailbox("fake-mailbox".to_string(), QueueCapacity::Unbounded);
-        let (scheduler_mailbox, _scheduler_handler) =
-            spawn_async_actor(scheduler, kill_switch.clone(), mailbox);
+        let (scheduler_mailbox, _scheduler_inbox) =
+            SpawnBuilder::new(scheduler, mailbox, kill_switch.clone()).spawn_async();
         Universe {
             scheduler_mailbox,
             kill_switch,
@@ -82,25 +79,11 @@ impl Universe {
         let _ = rx.await;
     }
 
-    pub fn spawn_async_actor<A: AsyncActor>(
-        &self,
-        actor: A,
-    ) -> (Mailbox<A::Message>, ActorHandle<A>) {
-        spawn_async_actor(
+    pub fn spawn_actor<A: Actor>(&self, actor: A) -> SpawnBuilder<A> {
+        SpawnBuilder::new(
             actor,
-            self.kill_switch.clone(),
             self.scheduler_mailbox.clone(),
-        )
-    }
-
-    pub fn spawn_sync_actor<A: SyncActor>(
-        &self,
-        actor: A,
-    ) -> (Mailbox<A::Message>, ActorHandle<A>) {
-        spawn_sync_actor(
-            actor,
             self.kill_switch.clone(),
-            self.scheduler_mailbox.clone(),
         )
     }
 
@@ -171,7 +154,7 @@ mod tests {
     async fn test_schedule_for_actor() {
         let universe = Universe::new();
         let actor_with_schedule = ActorWithSchedule::default();
-        let (_maibox, handler) = universe.spawn_async_actor(actor_with_schedule);
+        let (_maibox, handler) = universe.spawn_actor(actor_with_schedule).spawn_async();
         let count_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(count_after_initialization, 1);
         universe.simulate_time_shift(Duration::from_secs(200)).await;

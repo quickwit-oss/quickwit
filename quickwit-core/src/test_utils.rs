@@ -140,7 +140,6 @@ pub fn mock_split_meta(split_id: &str) -> SplitMetadataAndFooterOffsets {
             num_records: 10,
             size_in_bytes: 256,
             time_range: None,
-            generation: 1,
             update_timestamp: 0,
             tags: Default::default(),
         },
