@@ -1,26 +1,22 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use serde::ser::SerializeMap;
-use serde::Deserialize;
-use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -28,9 +24,11 @@ use std::fmt;
 use std::iter::FromIterator;
 use std::ops::Range;
 use std::sync::Arc;
+
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::info;
-use tracing::warn;
+use tracing::{info, warn};
 
 /// PartitionId identifies a partition for a given source.
 #[derive(Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -172,9 +170,7 @@ impl Checkpoint {
 /// ```
 impl FromIterator<(PartitionId, Position)> for Checkpoint {
     fn from_iter<I>(iter: I) -> Checkpoint
-    where
-        I: IntoIterator<Item = (PartitionId, Position)>,
-    {
+    where I: IntoIterator<Item = (PartitionId, Position)> {
         Checkpoint {
             per_partition: iter.into_iter().collect(),
         }
@@ -183,9 +179,7 @@ impl FromIterator<(PartitionId, Position)> for Checkpoint {
 
 impl Serialize for Checkpoint {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
+    where S: serde::Serializer {
         let mut map = serializer.serialize_map(Some(self.per_partition.len()))?;
         for (partition, position) in &self.per_partition {
             map.serialize_entry(&*partition.0, &*position.as_str())?;
@@ -196,9 +190,7 @@ impl Serialize for Checkpoint {
 
 impl<'de> Deserialize<'de> for Checkpoint {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
+    where D: serde::Deserializer<'de> {
         let string_to_string_map: BTreeMap<String, String> = BTreeMap::deserialize(deserializer)?;
         let per_partition: BTreeMap<PartitionId, Position> = string_to_string_map
             .into_iter()
@@ -214,7 +206,10 @@ impl<'de> Deserialize<'de> for Checkpoint {
 /// compatible. ie: the checkpoint delta starts from a point anterior to
 /// the checkpoint.
 #[derive(Error, Debug, PartialEq)]
-#[error("IncompatibleChkptDelta at partition: {partition_id:?} cur_pos:{current_position:?} delta_pos:{delta_position_from:?}")]
+#[error(
+    "IncompatibleChkptDelta at partition: {partition_id:?} cur_pos:{current_position:?} \
+     delta_pos:{delta_position_from:?}"
+)]
 pub struct IncompatibleCheckpointDelta {
     /// One PartitionId for which the incompatibility has been detected.
     pub partition_id: PartitionId,
@@ -274,11 +269,11 @@ impl Checkpoint {
     /// as gaps may happen. For instance, assuming a Kafka source, if the indexing
     /// pipeline is down for more than the retention period.
     ///
-    ///    |    Checkpoint & Delta        | Outcome                     |
-    ///    |------------------------------|-----------------------------|
-    ///    |  (..a] (b..c] with a = b     | Compatible                  |
-    ///    |  (..a] (b..c] with b > a     | Compatible                  |
-    ///    |  (..a] (b..c] with b < a     | Incompatible                |
+    ///   |    Checkpoint & Delta        | Outcome                     |
+    ///   |------------------------------|-----------------------------|
+    ///   |  (..a] (b..c] with a = b     | Compatible                  |
+    ///   |  (..a] (b..c] with b > a     | Compatible                  |
+    ///   |  (..a] (b..c] with b < a     | Incompatible                |
     ///
     /// If the delta is compatible, returns an error without modifying the original checkpoint.
     pub fn try_apply_delta(
@@ -613,7 +608,7 @@ mod tests {
             Err(IncompatibleCheckpointDelta {
                 partition_id: PartitionId::from("a"),
                 current_position: Position::from("00128"),
-                delta_position_from: Position::from("00130"),
+                delta_position_from: Position::from("00130")
             })
         );
         Ok(())

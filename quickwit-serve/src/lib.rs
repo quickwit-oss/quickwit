@@ -1,23 +1,21 @@
-/*
- * Copyright (C) 2021 Quickwit Inc.
- *
- * Quickwit is offered under the AGPL v3.0 and as commercial software.
- * For commercial licensing, contact us at hello@quickwit.io.
- *
- * AGPL:
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod args;
 mod error;
@@ -27,14 +25,11 @@ mod http_handler;
 mod quickwit_cache;
 mod rest;
 
-use quickwit_cache::QuickwitCache;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-use tracing::debug;
-
+use quickwit_cache::QuickwitCache;
 use quickwit_cluster::cluster::{read_host_key, Cluster};
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_metastore::MetastoreUriResolver;
@@ -46,13 +41,14 @@ use quickwit_storage::{
     StorageWithCacheFactory,
 };
 use quickwit_telemetry::payload::{ServeEvent, TelemetryEvent};
+use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+use tracing::debug;
 
 pub use crate::args::ServeArgs;
 pub use crate::error::ApiError;
 use crate::grpc::start_grpc_service;
 use crate::grpc_adapter::cluster_adapter::GrpcClusterAdapter;
 use crate::grpc_adapter::search_adapter::GrpcSearchAdapter;
-
 use crate::rest::start_rest_service;
 
 fn display_help_message(
@@ -153,12 +149,17 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::{array::IntoIter, collections::HashMap, ops::Range, sync::Arc};
+    use std::array::IntoIter;
+    use std::collections::HashMap;
+    use std::ops::Range;
+    use std::sync::Arc;
 
     use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_indexing::mock_split_meta;
-    use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
-    use quickwit_proto::{search_service_server::SearchServiceServer, OutputFormat};
+    use quickwit_metastore::checkpoint::Checkpoint;
+    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
+    use quickwit_proto::search_service_server::SearchServiceServer;
+    use quickwit_proto::OutputFormat;
     use quickwit_search::{
         create_search_service_client, root_search_stream, MockSearchService, SearchError,
         SearchService,
@@ -237,7 +238,11 @@ mod tests {
         });
         let search_result = root_search_stream(&request, &metastore, &client_pool).await;
         assert!(search_result.is_err());
-        assert_eq!(search_result.unwrap_err().to_string(), "Internal error: `[NodeSearchError { search_error: InternalError(\"error\"), split_ids: [\"split1\"] }]`.");
+        assert_eq!(
+            search_result.unwrap_err().to_string(),
+            "Internal error: `[NodeSearchError { search_error: InternalError(\"error\"), \
+             split_ids: [\"split1\"] }]`."
+        );
         Ok(())
     }
 }

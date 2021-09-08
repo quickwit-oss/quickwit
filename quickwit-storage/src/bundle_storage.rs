@@ -1,31 +1,22 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-use crate::Storage;
-use crate::{StorageError, StorageResult};
-use async_trait::async_trait;
-use bytes::Bytes;
-use serde::Deserialize;
-use serde::Serialize;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt;
@@ -35,11 +26,17 @@ use std::io::{self, ErrorKind, Read, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use async_trait::async_trait;
+use bytes::Bytes;
+use serde::{Deserialize, Serialize};
 use tantivy::common::CountingWriter;
 use tantivy::directory::FileSlice;
 use tantivy::HasLen;
 use thiserror::Error;
 use tracing::error;
+
+use crate::{Storage, StorageError, StorageResult};
 
 /// Filename used for the bundle.
 pub const BUNDLE_FILENAME: &str = "bundle";
@@ -55,7 +52,8 @@ pub struct BundleStorage {
 impl BundleStorage {
     /// Creates a new BundleStorage.
     ///
-    /// The provided data must include the footer_bytes at the end of the slice, but it can have more up front.
+    /// The provided data must include the footer_bytes at the end of the slice, but it can have
+    /// more up front.
     pub fn new(
         storage: Arc<dyn Storage>,
         bundle_filepath: PathBuf,
@@ -268,9 +266,8 @@ impl<W: io::Write> BundleStorageBuilder<W> {
 mod tests {
     use std::fs;
 
-    use crate::RamStorageBuilder;
-
     use super::*;
+    use crate::RamStorageBuilder;
 
     #[tokio::test]
     async fn bundle_storage_file_offsets() -> anyhow::Result<()> {

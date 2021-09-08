@@ -1,38 +1,34 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+use std::env;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use quickwit_cli::*;
 use quickwit_common::to_socket_addr;
-use quickwit_serve::serve_cli;
-use quickwit_serve::ServeArgs;
+use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
-use std::env;
-use std::net::SocketAddr;
-use std::path::Path;
-use std::path::PathBuf;
-use std::time::Duration;
 use tracing::Level;
 use tracing_subscriber::fmt::Subscriber;
 
@@ -306,7 +302,11 @@ async fn main() {
 
 /// Return the about text with telemetry info.
 fn about_text() -> String {
-    let mut about_text = format!("Indexing your large dataset on object storage & making it searchable from the command line.\nCommit hash: {}\n", env!("GIT_COMMIT_HASH"));
+    let mut about_text = format!(
+        "Indexing your large dataset on object storage & making it searchable from the command \
+         line.\nCommit hash: {}\n",
+        env!("GIT_COMMIT_HASH")
+    );
     if quickwit_telemetry::is_telemetry_enabled() {
         about_text += "Telemetry Enabled";
     }
@@ -340,17 +340,19 @@ pub fn parse_duration_with_unit(duration: &str) -> anyhow::Result<Duration> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
+    use std::time::Duration;
+
+    use clap::{load_yaml, App, AppSettings};
+    use quickwit_common::to_socket_addr;
+    use quickwit_serve::ServeArgs;
+    use tempfile::NamedTempFile;
+
     use crate::{
         parse_duration_with_unit, CliCommand, CreateIndexArgs, DeleteIndexArgs,
         GarbageCollectIndexArgs, IndexDataArgs, SearchIndexArgs,
     };
-    use clap::{load_yaml, App, AppSettings};
-    use quickwit_common::to_socket_addr;
-    use quickwit_serve::ServeArgs;
-    use std::io::Write;
-    use std::path::{Path, PathBuf};
-    use std::time::Duration;
-    use tempfile::NamedTempFile;
 
     #[test]
     fn test_parse_new_args() -> anyhow::Result<()> {

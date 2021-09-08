@@ -1,44 +1,37 @@
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::models::IndexerMessage;
-use crate::models::RawDocBatch;
-use crate::source::Source;
-use crate::source::SourceContext;
-use crate::source::TypedSourceFactory;
-use anyhow::Context;
-use async_trait::async_trait;
-use quickwit_actors::ActorExitStatus;
-use quickwit_actors::Mailbox;
-use quickwit_metastore::checkpoint::CheckpointDelta;
-use quickwit_metastore::checkpoint::PartitionId;
-use quickwit_metastore::checkpoint::Position;
-use serde::{Deserialize, Serialize};
 use std::io;
 use std::io::SeekFrom;
 use std::path::PathBuf;
+
+use anyhow::Context;
+use async_trait::async_trait;
+use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position};
+use serde::{Deserialize, Serialize};
 use tokio::fs::File;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncRead;
-use tokio::io::AsyncSeekExt;
-use tokio::io::BufReader;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader};
 use tracing::info;
+
+use crate::models::{IndexerMessage, RawDocBatch};
+use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
@@ -186,12 +179,11 @@ impl TypedSourceFactory for FileSourceFactory {
 mod tests {
     use std::io::Write;
 
-    use crate::source::SourceActor;
+    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_metastore::checkpoint::Checkpoint;
 
     use super::*;
-    use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::Universe;
-    use quickwit_metastore::checkpoint::Checkpoint;
+    use crate::source::SourceActor;
 
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {

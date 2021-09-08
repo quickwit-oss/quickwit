@@ -1,30 +1,29 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
-
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 #![allow(clippy::bool_assert_comparison)]
 
 mod helpers;
 
-use crate::helpers::{create_test_env, make_command, spawn_command};
+use std::io::Read;
+use std::path::Path;
+
 use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
@@ -32,8 +31,9 @@ use quickwit_cli::{create_index_cli, CreateIndexArgs};
 use quickwit_metastore::{Metastore, MetastoreUriResolver, SplitState};
 use serde_json::{Number, Value};
 use serial_test::serial;
-use std::{io::Read, path::Path};
 use tokio::time::{sleep, Duration};
+
+use crate::helpers::{create_test_env, make_command, spawn_command};
 
 fn create_logs_index(test_env: &TestEnv, index_id: &str) {
     make_command(
@@ -222,9 +222,9 @@ fn test_cmd_search() -> Result<()> {
     // search with tags
     make_command(
         format!(
-            "search --metastore-uri {} --index-id {} --query level:info --tags city:paris device:rpi",
-            test_env.metastore_uri,
-            index_id,
+            "search --metastore-uri {} --index-id {} --query level:info --tags city:paris \
+             device:rpi",
+            test_env.metastore_uri, index_id,
         )
         .as_str(),
     )

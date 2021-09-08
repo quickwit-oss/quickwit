@@ -1,35 +1,32 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::Arc;
 
-use crate::models::UploadedSplit;
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
-use quickwit_actors::Actor;
-use quickwit_actors::ActorContext;
-use quickwit_actors::AsyncActor;
-use quickwit_actors::QueueCapacity;
+use quickwit_actors::{Actor, ActorContext, AsyncActor, QueueCapacity};
 use quickwit_metastore::Metastore;
 use tokio::sync::oneshot::Receiver;
+
+use crate::models::UploadedSplit;
 
 #[derive(Debug, Clone, Default)]
 pub struct PublisherCounters {
@@ -72,7 +69,8 @@ impl AsyncActor for Publisher {
         fail_point!("publisher:before");
         let uploaded_split = uploaded_split_future
             .await
-            .with_context(|| "Upload apparently failed")?; //< splits must be published in order, so one uploaded failing means we should fail entirely.
+            .with_context(|| "Upload apparently failed")?; //< splits must be published in order, so one uploaded failing means we should fail
+                                                           //< entirely.
         self.metastore
             .publish_splits(
                 &uploaded_split.index_id,
@@ -89,11 +87,12 @@ impl AsyncActor for Publisher {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use quickwit_actors::Universe;
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use quickwit_metastore::{MockMetastore, SplitMetadata, SplitMetadataAndFooterOffsets};
     use tokio::sync::oneshot;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_publisher_publishes_in_order() {
@@ -141,7 +140,7 @@ mod tests {
                     },
                     footer_offsets: 1000..1200
                 },
-                checkpoint_delta: CheckpointDelta::from(3..7),
+                checkpoint_delta: CheckpointDelta::from(3..7)
             })
             .is_ok());
         assert!(split_future_tx1
@@ -154,7 +153,7 @@ mod tests {
                     },
                     footer_offsets: 1000..1200
                 },
-                checkpoint_delta: CheckpointDelta::from(1..3),
+                checkpoint_delta: CheckpointDelta::from(1..3)
             })
             .is_ok());
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;

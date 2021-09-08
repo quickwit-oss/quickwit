@@ -1,28 +1,25 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+use std::{fmt, io};
 
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::io;
 use thiserror::Error;
 
 /// Storage error kind.
@@ -65,9 +62,7 @@ pub enum StorageResolverError {
 impl StorageErrorKind {
     /// Creates a StorageError.
     pub fn with_error<E>(self, source: E) -> StorageError
-    where
-        anyhow::Error: From<E>,
-    {
+    where anyhow::Error: From<E> {
         StorageError {
             kind: self,
             source: From::from(source),
@@ -101,9 +96,7 @@ pub type StorageResult<T> = Result<T, StorageError>;
 impl StorageError {
     /// Add some context to the wrapper error.
     pub fn add_context<C>(self, ctx: C) -> Self
-    where
-        C: fmt::Display + Send + Sync + 'static,
-    {
+    where C: fmt::Display + Send + Sync + 'static {
         StorageError {
             kind: self.kind,
             source: self.source.context(ctx),

@@ -1,39 +1,35 @@
-/*
- * Copyright (C) 2021 Quickwit Inc.
- *
- * Quickwit is offered under the AGPL v3.0 and as commercial software.
- * For commercial licensing, contact us at hello@quickwit.io.
- *
- * AGPL:
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use futures::StreamExt;
-use futures::TryStreamExt;
-use http::Uri;
-use quickwit_proto::LeafSearchStreamResult;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
+
+use futures::{StreamExt, TryStreamExt};
+use http::Uri;
+use quickwit_proto::LeafSearchStreamResult;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tonic::transport::Channel;
-use tonic::transport::Endpoint;
+use tonic::transport::{Channel, Endpoint};
 use tonic::Request;
 
 use crate::error::parse_grpc_error;
-use crate::SearchError;
-use crate::SearchService;
+use crate::{SearchError, SearchService};
 
 /// Impl is an enumeration that meant to manage Quickwit's search service client types.
 #[derive(Clone)]
@@ -43,7 +39,8 @@ enum SearchServiceClientImpl {
 }
 
 /// A search service client.
-/// It contains the client implementation and the gRPC address of the node to which the client connects.
+/// It contains the client implementation and the gRPC address of the node to which the client
+/// connects.
 #[derive(Clone)]
 pub struct SearchServiceClient {
     client_impl: SearchServiceClientImpl,

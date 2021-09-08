@@ -1,42 +1,37 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::time::Duration;
 
-use crate::scheduler::SchedulerMessage;
-use crate::scheduler::TimeShift;
+use crate::scheduler::{SchedulerMessage, TimeShift};
 use crate::spawn_builder::SpawnBuilder;
-use crate::Actor;
-use crate::KillSwitch;
-use crate::Mailbox;
-use crate::QueueCapacity;
-use crate::Scheduler;
+use crate::{Actor, KillSwitch, Mailbox, QueueCapacity, Scheduler};
 
 /// Universe serves as the top-level context in which Actor can be spawned.
-/// It is *not* a singleton. A typical application will usually have only one universe hosting all of the actors
-/// but it is not a requirement.
+/// It is *not* a singleton. A typical application will usually have only one universe hosting all
+/// of the actors but it is not a requirement.
 ///
 /// In particular, unit test all have their own universe and hence can be executed in parallel.
 pub struct Universe {
     scheduler_mailbox: Mailbox<<Scheduler as Actor>::Message>,
-    // This killswitch is used for the scheduler, and will be used by default for all spawned actors.
+    // This killswitch is used for the scheduler, and will be used by default for all spawned
+    // actors.
     kill_switch: KillSwitch,
 }
 
@@ -109,11 +104,7 @@ mod tests {
 
     use async_trait::async_trait;
 
-    use crate::Actor;
-    use crate::ActorContext;
-    use crate::ActorExitStatus;
-    use crate::AsyncActor;
-    use crate::Universe;
+    use crate::{Actor, ActorContext, ActorExitStatus, AsyncActor, Universe};
 
     #[derive(Default)]
     pub struct ActorWithSchedule {
