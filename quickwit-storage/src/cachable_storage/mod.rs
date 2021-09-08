@@ -99,6 +99,8 @@ pub trait StorageCache: Send + Sync + 'static {
     /// Removes an item from the cache.
     async fn delete(&mut self, path: &Path) -> StorageResult<bool>;
 
+    async fn file_num_bytes(&mut self, path: &Path) -> crate::StorageResult<Option<usize>>;
+
     /// List all items in the cache and their size.
     fn get_items(&self) -> Vec<(PathBuf, usize)>;
 

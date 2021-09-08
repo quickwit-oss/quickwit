@@ -179,7 +179,6 @@ impl IndexingPipelineSupervisor {
             .params
             .storage_uri_resolver
             .resolve(&index_metadata.index_uri)?;
-        println!("index_storage -> {:?}", index_storage.uri());
 
         //make the storage cachable
         let index_storage = create_cachable_storage(

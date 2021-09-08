@@ -88,14 +88,11 @@ impl StorageWithLocalStorageCache {
     /// Lastly, the file at `{path}/[`CACHE_STATE_FILE_NAME`]` should be present and valid.
     // TODO: this constructor should move into a factory.
     pub fn from_path(
+        remote_storage: Arc<dyn Storage>,
         storage_uri_resolver: &StorageUriResolver,
         path: &Path,
     ) -> StorageResult<Self> {
         let cache_state = CacheState::from_path(path)?;
-
-        let remote_storage = storage_uri_resolver
-            .resolve(&cache_state.remote_storage_uri)
-            .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
 
         let local_storage = storage_uri_resolver
             .resolve(&cache_state.local_storage_uri)
@@ -299,6 +296,12 @@ impl Storage for StorageWithLocalStorageCache {
     }
 
     async fn file_num_bytes(&self, path: &Path) -> crate::StorageResult<u64> {
+        {
+            let mut locked_cache = self.cache.lock().await;
+            if let Some(file_num_bytes) = locked_cache.file_num_bytes(path).await? {
+                return Ok(file_num_bytes as u64);
+            }
+        }
         self.remote_storage.file_num_bytes(path).await
     }
 
@@ -354,7 +357,7 @@ pub fn create_cachable_storage(
 ) -> crate::StorageResult<Arc<dyn Storage>> {
     let cache_state_file_path = local_path.join(CACHE_STATE_FILE_NAME);
     let storage = if cache_state_file_path.exists() {
-        StorageWithLocalStorageCache::from_path(storage_uri_resolver, local_path)?
+        StorageWithLocalStorageCache::from_path(remote_storage, storage_uri_resolver, local_path)?
     } else {
         let local_storage_uri = format!("file://{}", local_path.to_string_lossy());
         let local_storage = storage_uri_resolver

@@ -196,6 +196,11 @@ impl StorageCache for LocalStorageCache {
         Ok(false)
     }
 
+    async fn file_num_bytes(&mut self, path: &Path) -> crate::StorageResult<Option<usize>> {
+        println!("ITEMS -> {:?}", self.get_items());
+        Ok(self.disk_cache.get(&path.to_path_buf()).cloned())
+    }
+
     /// Return a copy of the items in the disk cache.
     fn get_items(&self) -> Vec<(PathBuf, usize)> {
         let mut cache_items = vec![];
