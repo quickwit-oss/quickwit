@@ -61,6 +61,21 @@ jobs:
     name: Run unit tests (no [ignored])
     runs-on: ubuntu-latest
     container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
+
+    services:
+      # PostgreSQL service container
+      postgres:
+        image: postgres:latest
+        env:
+          POSTGRES_USER: quickwit-dev
+          POSTGRES_PASSWORD: quickwit-dev
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v2
       - uses: actions/cache@v2
@@ -73,6 +88,8 @@ jobs:
         name: cargo test
         with:
           command: test
+        env:
+          TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/metastore
       # See #473 #472
       # - uses: actions-rs/cargo@v1
       #   name: cargo test failpoints
