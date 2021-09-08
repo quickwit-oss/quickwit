@@ -223,10 +223,6 @@ impl StorageCache for LocalStorageCache {
             disk_capacity: self.disk_capacity,
             items,
         };
-        // let root_path = self.local_storage.root().ok_or_else(|| {
-        //     StorageErrorKind::InternalError
-        //         .with_error(anyhow!("The local storage need to have valid root path."))
-        // })?;
 
         let file_path = self.local_storage_root.join(CACHE_STATE_FILE_NAME);
         let content: Vec<u8> = serde_json::to_vec(&cache_state)
@@ -238,7 +234,7 @@ impl StorageCache for LocalStorageCache {
 }
 
 /// Writes a file in an atomic manner.
-//  Copied from tantivy
+// This code was copied from tantivy.
 fn atomic_write(path: &Path, content: &[u8]) -> io::Result<()> {
     // We create the temporary file in the same directory as the target file.
     // Indeed the canonical temp directory and the target file might sit in different
@@ -317,7 +313,7 @@ mod tests {
                 cache.get_slice(Path::new("5"), 1..4).await?.unwrap(),
                 &b"ghi"[..]
             );
-            // our two first entries should have be removed from the cache
+            // our first two entries should have been removed from the cache
             assert!(cache.get(Path::new("2")).await?.is_none());
             assert!(cache.get(Path::new("3")).await?.is_none());
         }

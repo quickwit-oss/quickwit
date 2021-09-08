@@ -37,7 +37,7 @@ pub use storage_with_local_cache::{
 const CACHE_STATE_FILE_NAME: &str = "cache-sate.json";
 
 /// Capacity encapsulates the maximum number of items a cache can hold.
-/// We need to account for number of items as well as the size of each item.
+/// We need to account for the number of items as well as the size of each item.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DiskCapacity {
     /// Maximum of number of files.
@@ -46,12 +46,16 @@ pub struct DiskCapacity {
     max_num_bytes: usize,
 }
 
-/// CacheState is struct for serializing/deserializing the cache state.
+/// CacheState is a struct for serializing/deserializing the cache state.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct CacheState {
+    /// Uri of the local storage.
     local_storage_uri: String,
+    /// The disk capacity
     disk_capacity: DiskCapacity,
+    /// The ram capacity in bytes.
     ram_capacity: usize,
+    /// The list of items in the cache.
     items: Vec<(PathBuf, usize)>,
 }
 
@@ -67,7 +71,7 @@ impl CacheState {
 }
 
 /// The `Cache` trait is the abstraction used to describe the caching logic
-/// used in front of a storage. See `FileStorageWithCache`.
+/// used in front of a storage. See `LocalStorageCache`.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait StorageCache: Send + Sync + 'static {
@@ -92,12 +96,13 @@ pub trait StorageCache: Send + Sync + 'static {
         bytes: Bytes,
     ) -> StorageResult<()>;
 
-    /// Directly copy a file from the cache
+    /// Directly copy a file from the cache.
     async fn copy_to_file(&mut self, path: &Path, output_path: &Path) -> StorageResult<bool>;
 
-    /// Removes an item from the cache.
+    /// Remove an item from the cache.
     async fn delete(&mut self, path: &Path) -> StorageResult<bool>;
 
+    /// Get the size in bytes of a cache item.
     async fn file_num_bytes(&mut self, path: &Path) -> crate::StorageResult<Option<usize>>;
 
     /// List all items in the cache and their size.

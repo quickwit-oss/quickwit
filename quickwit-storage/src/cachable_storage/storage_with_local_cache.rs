@@ -55,12 +55,11 @@ pub struct StorageWithLocalStorageCache {
 impl StorageWithLocalStorageCache {
     /// Create an instance of [`StorageWithLocalStorageCache`]
     ///
-    /// It needs both the remote and local Storage to work with.
+    /// It needs both the remote and local storage to work with.
     /// max_item_count and max_num_bytes are used for the cache [`Capacity`].
     pub fn create(
         remote_storage: Arc<dyn Storage>,
         local_storage: Arc<dyn Storage>,
-        // local_storage_root_path: &Path,
         ram_max_num_bytes: usize,
         max_num_files: usize,
         max_num_bytes: usize,
@@ -88,7 +87,7 @@ impl StorageWithLocalStorageCache {
     /// Create an instance of [`StorageWithLocalStorageCache`] from a path.
     ///
     /// It needs a folder `path` previously used by an instance of [`StorageWithLocalStorageCache`].
-    /// Lastly, the file at `{path}/[`CACHE_STATE_FILE_NAME`]` should be present and valid.
+    /// Lastly, the file at `{path}/[`CACHE_STATE_FILE_NAME`]` should be present with valid content.
     pub fn from_path(
         remote_storage: Arc<dyn Storage>,
         storage_uri_resolver: &StorageUriResolver,
@@ -99,7 +98,7 @@ impl StorageWithLocalStorageCache {
             .resolve(&cache_state.local_storage_uri)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
 
-        // Verify that provided `root_path` and extracted `root_path` match.
+        // Verify that the provided `root_path` and extracted `root_path` match.
         let local_storage_root_path =
             LocalFileStorage::extract_root_path_from_uri(&cache_state.local_storage_uri)?;
         if local_storage_root_path != path.to_path_buf() {
@@ -110,17 +109,13 @@ impl StorageWithLocalStorageCache {
             )));
         }
 
-        let num_files = cache_state.items.len();
-        let num_bytes: usize = cache_state.items.iter().map(|(_, size)| *size).sum();
-        let mut local_storage_cache = LocalStorageCache::from_state(
+        let local_storage_cache = LocalStorageCache::from_state(
             local_storage,
             local_storage_root_path,
             cache_state.ram_capacity,
             cache_state.disk_capacity,
             cache_state.items,
         );
-        local_storage_cache.num_files = num_files;
-        local_storage_cache.num_bytes = num_bytes;
 
         let (notification_sender, _) = broadcast::channel(10);
         Ok(Self {
@@ -266,7 +261,7 @@ impl Storage for StorageWithLocalStorageCache {
             return Ok(bytes);
         }
 
-        //TODO: optimize this to avoid copying whole data in RAM (copy_to_file maybe?)
+        //TODO: optimize this to avoid copying whole data in RAM.
         let (all_bytes, is_the_downloader) = self.get_all_from_remote_storage(path).await?;
         let data = Bytes::copy_from_slice(&all_bytes[range.start..range.end]);
         if !is_the_downloader {
@@ -357,7 +352,7 @@ impl Default for CacheConfig {
     }
 }
 
-/// Creates an instance [`StorageWithLocalStorageCache`].
+/// Creates an instance of [`StorageWithLocalStorageCache`].
 ///
 /// It tries to construct an instance from a previously saved state if it exists,
 /// otherwise it will construct a new instance from the given parameters.
@@ -499,7 +494,7 @@ mod tests {
             &b"data"[..]
         );
 
-        //check cache state is good
+        // Check cache state is good.
         {
             let state_file_path = local_dir.path().join(CACHE_STATE_FILE_NAME);
             let json_file = std::fs::File::open(state_file_path)?;
@@ -646,7 +641,7 @@ mod tests {
 
         cached_storage.delete(Path::new("foo")).await?;
 
-        //verify cache state
+        // Verify cache state.
         let state_file_path = local_dir.path().join(CACHE_STATE_FILE_NAME);
         let json_file = std::fs::File::open(state_file_path)?;
         let reader = std::io::BufReader::new(json_file);
