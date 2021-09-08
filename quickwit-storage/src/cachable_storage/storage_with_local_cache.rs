@@ -213,7 +213,7 @@ impl Storage for StorageWithLocalStorageCache {
         self.remote_storage.put(path, payload.clone()).await?;
         let mut locked_cache = self.cache.lock().await;
         locked_cache.put(path, payload).await?;
-        locked_cache.save_state(self.remote_storage.uri()).await
+        locked_cache.save_state().await
     }
 
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
@@ -239,7 +239,7 @@ impl Storage for StorageWithLocalStorageCache {
         locked_cache
             .put(path, PutPayload::LocalFile(output_path.to_path_buf()))
             .await?;
-        locked_cache.save_state(self.remote_storage.uri()).await
+        locked_cache.save_state().await
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
@@ -264,7 +264,7 @@ impl Storage for StorageWithLocalStorageCache {
         locked_cache
             .put(path, PutPayload::InMemory(all_bytes))
             .await?;
-        locked_cache.save_state(self.remote_storage.uri()).await?;
+        locked_cache.save_state().await?;
         Ok(data)
     }
 
@@ -282,7 +282,7 @@ impl Storage for StorageWithLocalStorageCache {
         locked_cache
             .put(path, PutPayload::InMemory(all_bytes.clone()))
             .await?;
-        locked_cache.save_state(self.remote_storage.uri()).await?;
+        locked_cache.save_state().await?;
         Ok(all_bytes)
     }
 
@@ -290,7 +290,7 @@ impl Storage for StorageWithLocalStorageCache {
         self.remote_storage.delete(path).await?;
         let mut locked_cache = self.cache.lock().await;
         if locked_cache.delete(path).await? {
-            return locked_cache.save_state(self.remote_storage.uri()).await;
+            return locked_cache.save_state().await;
         }
         Ok(())
     }
@@ -433,10 +433,6 @@ mod tests {
         let path = local_dir.path().to_path_buf();
 
         remote_storage
-            .expect_uri()
-            .times(2)
-            .returning(|| "s3://remote".to_string());
-        remote_storage
             .expect_put()
             .times(1)
             .returning(|path, _payload| {
@@ -498,7 +494,6 @@ mod tests {
             let cache_state: CacheState = serde_json::from_reader(reader)
                 .with_context(|| "Could not deserialise state".to_string())?;
 
-            assert_eq!(cache_state.remote_storage_uri, String::from("s3://remote"));
             assert_eq!(cache_state.local_storage_uri, String::from("file://mock"));
             assert_eq!(cache_state.items.len(), 2);
             assert_eq!(
@@ -526,10 +521,6 @@ mod tests {
         let (local_dir, mut remote_storage, mut local_storage) = create_test_storages()?;
         let path = local_dir.path().to_path_buf();
 
-        remote_storage
-            .expect_uri()
-            .times(1)
-            .returning(|| "s3://remote".to_string());
         remote_storage.expect_get_all().times(1).returning(|path| {
             assert_eq!(path, Path::new("foo"));
             Box::pin(async { Ok(Bytes::from(b"foo".to_vec())) })
@@ -602,10 +593,6 @@ mod tests {
         let path = local_dir.path().to_path_buf();
 
         remote_storage
-            .expect_uri()
-            .times(2)
-            .returning(|| "s3://remote".to_string());
-        remote_storage
             .expect_put()
             .times(1)
             .returning(|path, _payload| {
@@ -659,7 +646,6 @@ mod tests {
         let reader = std::io::BufReader::new(json_file);
         let cache_state: CacheState = serde_json::from_reader(reader)
             .with_context(|| "Could not deserialise state".to_string())?;
-        assert_eq!(cache_state.remote_storage_uri, String::from("s3://remote"));
         assert_eq!(cache_state.local_storage_uri, String::from("file://mock"));
         assert_eq!(cache_state.items.len(), 0);
         assert_eq!(
@@ -687,10 +673,6 @@ mod tests {
         let (local_dir, mut remote_storage, mut local_storage) = create_test_storages()?;
         let path = local_dir.path().to_path_buf();
 
-        remote_storage
-            .expect_uri()
-            .times(1)
-            .returning(|| "s3://remote".to_string());
         remote_storage.expect_get_all().times(1).returning(|path| {
             assert_eq!(path, Path::new("foo"));
             Box::pin(async {

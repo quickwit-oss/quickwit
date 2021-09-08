@@ -45,13 +45,15 @@ use std::net::SocketAddr;
 use std::ops::Range;
 
 use anyhow::Context;
+use once_cell::sync::OnceCell;
 use tantivy::DocAddress;
 
 use quickwit_metastore::SplitState;
 use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadataAndFooterOffsets};
 use quickwit_proto::{PartialHit, SearchResult};
 use quickwit_proto::{SearchRequest, SplitIdAndFooterOffsets};
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::{create_cachable_storage, CacheConfig, StorageUriResolver};
+use tempfile::TempDir;
 
 pub use crate::client::create_search_service_client;
 pub use crate::client::SearchServiceClient;
@@ -167,7 +169,15 @@ pub async fn single_node_search(
 ) -> Result<SearchResult> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let index_storage = storage_resolver.resolve(&index_metadata.index_uri)?;
+    let remote_storage = storage_resolver.resolve(&index_metadata.index_uri)?;
+    let index_storage = create_cachable_storage(
+        remote_storage,
+        &storage_resolver,
+        global_cache_dir().path(),
+        CacheConfig::default(),
+    )
+    .map_err(SearchError::from)?;
+
     let metas = list_relevant_splits(search_request, metastore).await?;
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();
@@ -194,6 +204,12 @@ pub async fn single_node_search(
         elapsed_time_micros: elapsed.as_micros() as u64,
         errors: vec![],
     })
+}
+
+//TODO: discuss and implement a single cache directory for all search operation
+fn global_cache_dir() -> &'static TempDir {
+    static INSTANCE: OnceCell<TempDir> = OnceCell::new();
+    INSTANCE.get_or_init(|| tempfile::tempdir().unwrap())
 }
 
 #[cfg(test)]

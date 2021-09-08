@@ -25,7 +25,7 @@ use tokio::task::JoinError;
 
 use quickwit_index_config::QueryParserError;
 use quickwit_metastore::MetastoreError;
-use quickwit_storage::StorageResolverError;
+use quickwit_storage::{StorageError, StorageResolverError};
 
 /// Possible SearchError
 #[allow(missing_docs)]
@@ -99,5 +99,14 @@ impl From<MetastoreError> for SearchError {
 impl From<JoinError> for SearchError {
     fn from(join_error: JoinError) -> SearchError {
         SearchError::InternalError(format!("Spawned task in root join failed: {}", join_error))
+    }
+}
+
+impl From<StorageError> for SearchError {
+    fn from(storage_err: StorageError) -> Self {
+        SearchError::StorageResolverError(StorageResolverError::FailedToOpenStorage {
+            kind: storage_err.kind(),
+            message: storage_err.to_string(),
+        })
     }
 }

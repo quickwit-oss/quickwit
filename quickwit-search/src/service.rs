@@ -28,17 +28,17 @@ use quickwit_proto::{
     SearchResult,
 };
 use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResult, SearchStreamRequest};
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::{create_cachable_storage, CacheConfig, StorageUriResolver};
 use std::sync::Arc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
-use crate::fetch_docs;
 use crate::leaf_search;
 use crate::root_search;
 use crate::search_stream::{leaf_search_stream, root_search_stream};
 use crate::SearchClientPool;
 use crate::SearchError;
+use crate::{fetch_docs, global_cache_dir};
 
 #[derive(Clone)]
 /// The search service implementation.
@@ -139,9 +139,17 @@ impl SearchService for SearchServiceImpl {
             .search_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
         info!(index=?search_request.index_id, splits=?leaf_search_request.split_metadata, "leaf_search");
-        let storage = self
+        let remote_storage = self
             .storage_resolver
             .resolve(&leaf_search_request.index_uri)?;
+        let storage = create_cachable_storage(
+            remote_storage,
+            &self.storage_resolver,
+            global_cache_dir().path(),
+            CacheConfig::default(),
+        )
+        .map_err(SearchError::from)?;
+
         let split_ids = leaf_search_request.split_metadata;
         let index_config = deserialize_index_config(&leaf_search_request.index_config)?;
 
@@ -160,9 +168,16 @@ impl SearchService for SearchServiceImpl {
         &self,
         fetch_docs_request: FetchDocsRequest,
     ) -> Result<FetchDocsResult, SearchError> {
-        let storage = self
+        let remote_storage = self
             .storage_resolver
             .resolve(&fetch_docs_request.index_uri)?;
+        let storage = create_cachable_storage(
+            remote_storage,
+            &self.storage_resolver,
+            global_cache_dir().path(),
+            CacheConfig::default(),
+        )
+        .map_err(SearchError::from)?;
 
         let fetch_docs_result = fetch_docs(
             fetch_docs_request.partial_hits,
@@ -191,9 +206,17 @@ impl SearchService for SearchServiceImpl {
             .request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
         info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_metadata, "leaf_search");
-        let storage = self
+        let remote_storage = self
             .storage_resolver
             .resolve(&leaf_stream_request.index_uri)?;
+        let storage = create_cachable_storage(
+            remote_storage,
+            &self.storage_resolver,
+            global_cache_dir().path(),
+            CacheConfig::default(),
+        )
+        .map_err(SearchError::from)?;
+
         let index_config = deserialize_index_config(&leaf_stream_request.index_config)?;
         let leaf_receiver = leaf_search_stream(
             stream_request,

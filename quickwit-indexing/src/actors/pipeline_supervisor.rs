@@ -41,7 +41,6 @@ use quickwit_storage::create_cachable_storage;
 use quickwit_storage::CacheConfig;
 use quickwit_storage::StorageUriResolver;
 use smallvec::SmallVec;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::join;
@@ -180,11 +179,12 @@ impl IndexingPipelineSupervisor {
             .storage_uri_resolver
             .resolve(&index_metadata.index_uri)?;
 
-        //make the storage cachable
+        // TODO: Make cache path configurable
+        let cache_directory = self.params.indexer_params.scratch_directory.temp_child()?;
         let index_storage = create_cachable_storage(
             index_storage,
             &self.params.storage_uri_resolver,
-            Path::new("/home/evance/PROJECTS/quickwit/zero/cache_store"),
+            cache_directory.path(),
             CacheConfig::default(),
         )?;
 

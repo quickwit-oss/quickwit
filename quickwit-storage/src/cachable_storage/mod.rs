@@ -49,7 +49,6 @@ pub struct DiskCapacity {
 /// CacheState is struct for serializing/deserializing the cache state.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct CacheState {
-    remote_storage_uri: String,
     local_storage_uri: String,
     disk_capacity: DiskCapacity,
     ram_capacity: usize,
@@ -105,5 +104,5 @@ pub trait StorageCache: Send + Sync + 'static {
     fn get_items(&self) -> Vec<(PathBuf, usize)>;
 
     /// Save the cache state on persistent storage.
-    async fn save_state(&self, parent_uri: String) -> StorageResult<()>;
+    async fn save_state(&self) -> StorageResult<()>;
 }

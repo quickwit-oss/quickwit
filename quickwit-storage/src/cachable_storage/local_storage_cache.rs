@@ -197,7 +197,6 @@ impl StorageCache for LocalStorageCache {
     }
 
     async fn file_num_bytes(&mut self, path: &Path) -> crate::StorageResult<Option<usize>> {
-        println!("ITEMS -> {:?}", self.get_items());
         Ok(self.disk_cache.get(&path.to_path_buf()).cloned())
     }
 
@@ -211,10 +210,9 @@ impl StorageCache for LocalStorageCache {
     }
 
     /// Persist the state of the entire cache.
-    async fn save_state(&self, parent_uri: String) -> StorageResult<()> {
+    async fn save_state(&self) -> StorageResult<()> {
         let items = self.get_items();
         let cache_state = CacheState {
-            remote_storage_uri: parent_uri,
             local_storage_uri: self.local_storage.uri(),
             ram_capacity: self.ram_capacity,
             disk_capacity: self.disk_capacity,
