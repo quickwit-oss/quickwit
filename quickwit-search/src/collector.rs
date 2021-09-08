@@ -1,50 +1,38 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashSet};
 
 use itertools::Itertools;
-use std::cmp::Ordering;
-use std::collections::BinaryHeap;
-use std::collections::HashSet;
-use tantivy::schema::Schema;
-
-use quickwit_index_config::IndexConfig;
-use quickwit_index_config::SortBy;
-use quickwit_index_config::SortOrder;
-use quickwit_proto::LeafSearchResult;
-use quickwit_proto::PartialHit;
-use quickwit_proto::SearchRequest;
-use tantivy::collector::Collector;
-use tantivy::collector::SegmentCollector;
-use tantivy::fastfield::DynamicFastFieldReader;
-use tantivy::fastfield::FastFieldReader;
-use tantivy::schema::Field;
-use tantivy::DocId;
-use tantivy::Score;
-use tantivy::SegmentOrdinal;
-use tantivy::SegmentReader;
+use quickwit_index_config::{IndexConfig, SortBy, SortOrder};
+use quickwit_proto::{LeafSearchResult, PartialHit, SearchRequest};
+use tantivy::collector::{Collector, SegmentCollector};
+use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader};
+use tantivy::schema::{Field, Schema};
+use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader};
 
 use crate::filters::TimestampFilter;
 use crate::partial_hit_sorting_key;
 
-/// The `SortingFieldComputer` can be seen as the specialization of `SortBy` applied to a specific `SegmentReader`.
-/// Its role is to compute the sorting field given a `DocId`.
+/// The `SortingFieldComputer` can be seen as the specialization of `SortBy` applied to a specific
+/// `SegmentReader`. Its role is to compute the sorting field given a `DocId`.
 enum SortingFieldComputer {
     SortByFastField {
         fast_field_reader: DynamicFastFieldReader<u64>,
@@ -66,7 +54,8 @@ impl SortingFieldComputer {
                 match order {
                     // Descending is our most common case.
                     SortOrder::Desc => field_val,
-                    // We get Ascending order by using a decreasing mapping over u64 as the sorting_field.
+                    // We get Ascending order by using a decreasing mapping over u64 as the
+                    // sorting_field.
                     SortOrder::Asc => u64::MAX - field_val,
                 }
             }
@@ -402,11 +391,12 @@ pub fn make_merge_collector(search_request: &SearchRequest) -> QuickwitCollector
 
 #[cfg(test)]
 mod tests {
-    use crate::collector::top_k_partial_hits;
+    use std::cmp::Ordering;
+
     use quickwit_proto::PartialHit;
 
     use super::PartialHitHeapItem;
-    use std::cmp::Ordering;
+    use crate::collector::top_k_partial_hits;
 
     #[test]
     fn test_partial_hit_ordered_by_sorting_field() {

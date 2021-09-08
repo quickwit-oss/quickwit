@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,17 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::models::RawDocBatch;
-use crate::source::IndexerMessage;
-use crate::source::Source;
-use crate::source::SourceContext;
-use crate::source::TypedSourceFactory;
+use std::collections::HashMap;
+use std::fmt;
+use std::time::Duration;
+
 use anyhow::{bail, Context};
 use async_trait::async_trait;
 use futures::StreamExt;
 use itertools::Itertools;
-use quickwit_actors::ActorExitStatus;
-use quickwit_actors::Mailbox;
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_metastore::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
@@ -39,23 +37,24 @@ use rdkafka::util::Timeout;
 use rdkafka::{ClientContext, Message, Offset};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
-use std::fmt;
-use std::time::Duration;
 use tracing::{debug, info, warn};
+
+use crate::models::RawDocBatch;
+use crate::source::{IndexerMessage, Source, SourceContext, TypedSourceFactory};
 
 /// Required parameters for instantiating a `KafkaSource`.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct KafkaSourceParams {
-    /// Comma-separated list of host and port pairs that provide the initial addresses of Kafka brokers that act as the
-    /// starting point for a Kafka client to discover the full set of alive servers in the cluster.
+    /// Comma-separated list of host and port pairs that provide the initial addresses of Kafka
+    /// brokers that act as the starting point for a Kafka client to discover the full set of
+    /// alive servers in the cluster.
     pub bootstrap_servers: String,
     /// Specifies the name of the consumer group a Kafka consumer belongs to.
     pub group_id: String,
     /// Name of the topic that the source consumes.
     pub topic: String,
-    /// When set to `true`, the source will terminate after reading the last message of each assigned partition.
-    /// Otherwise, it will keep waiting for new incoming messages.
+    /// When set to `true`, the source will terminate after reading the last message of each
+    /// assigned partition. Otherwise, it will keep waiting for new incoming messages.
     pub enable_partition_eof: Option<bool>,
 }
 
@@ -209,7 +208,8 @@ impl Source for KafkaSource {
                     );
                     continue;
                 }
-                // FIXME: This is assuming that Kafka errors are not recoverable, it may not be the case.
+                // FIXME: This is assuming that Kafka errors are not recoverable, it may not be the
+                // case.
                 Err(err) => return Err(ActorExitStatus::from(anyhow::anyhow!(err))),
             };
             if let Some(doc) = parse_message_payload(&message) {
@@ -226,7 +226,8 @@ impl Source for KafkaSource {
                 .get(&message.partition())
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Received unexpected message from partition `{}`. Assigned partitions: `{{{}}}`.",
+                        "Received unexpected message from partition `{}`. Assigned partitions: \
+                         `{{{}}}`.",
                         message.partition(),
                         self.state.assigned_partition_ids.keys().join(", "),
                     )
@@ -322,7 +323,8 @@ fn create_consumer(
     Ok(consumer)
 }
 
-/// Represents a checkpoint with the Kafka native types: `i32` for partition IDs and `i64` for offsets.
+/// Represents a checkpoint with the Kafka native types: `i32` for partition IDs and `i64` for
+/// offsets.
 fn kafka_checkpoint_from_checkpoint(checkpoint: &Checkpoint) -> anyhow::Result<HashMap<i32, i64>> {
     let mut kafka_checkpoint = HashMap::with_capacity(checkpoint.num_partitions());
     for (partition_id, position) in checkpoint.iter() {
@@ -372,11 +374,12 @@ async fn fetch_partition_ids(
 
 /// Fetches the low and high watermarks for the given topic and partition IDs.
 ///
-/// The low watermark is the offset of the earliest message in the partition. If no messages have been written to the
-/// topic, the low watermark offset is set to 0. The low watermark will also be 0 if one message has been written to
-/// the partition (with offset 0).
+/// The low watermark is the offset of the earliest message in the partition. If no messages have
+/// been written to the topic, the low watermark offset is set to 0. The low watermark will also be
+/// 0 if one message has been written to the partition (with offset 0).
 ///
-/// The high watermark is the offset of the latest message in the partition available for consumption + 1.
+/// The high watermark is the offset of the latest message in the partition available for
+/// consumption + 1.
 async fn fetch_watermarks(
     consumer: &KafkaSourceConsumer,
     topic: &str,
@@ -401,8 +404,8 @@ async fn fetch_watermarks(
     Ok(watermarks)
 }
 
-/// Given a checkpoint, computes the next offset from which to start reading messages for the provided partition IDs.
-/// See `compute_next_offset` for further explanation.
+/// Given a checkpoint, computes the next offset from which to start reading messages for the
+/// provided partition IDs. See `compute_next_offset` for further explanation.
 fn compute_assignment(
     topic: &str,
     partition_ids: &[i32],
@@ -417,10 +420,11 @@ fn compute_assignment(
     Ok(assignment)
 }
 
-/// Given a checkpoint, computes the next offset from which to start reading messages. In most cases, it should be the
-/// offset of the last checkpointed record + 1. However, when that offset no longer exists in the partition (data loss,
-/// retention, ...), the next offset is the low watermark. If a partition ID is not covered by a checkpoint, the
-/// partition is read from the beginning.
+/// Given a checkpoint, computes the next offset from which to start reading messages. In most
+/// cases, it should be the offset of the last checkpointed record + 1. However, when that offset no
+/// longer exists in the partition (data loss, retention, ...), the next offset is the low
+/// watermark. If a partition ID is not covered by a checkpoint, the partition is read from the
+/// beginning.
 fn compute_next_offset(
     partition_id: i32,
     checkpoint: &HashMap<i32, i64>,
@@ -434,7 +438,8 @@ fn compute_next_offset(
         Some(&watermarks) => watermarks,
         None => bail!("Missing watermarks for partition `{}`.", partition_id),
     };
-    // We found a gap between the last checkpoint and the low watermark, so we resume from the low watermark.
+    // We found a gap between the last checkpoint and the low watermark, so we resume from the low
+    // watermark.
     if checkpoint_offset < low_watermark {
         return Ok(Offset::Offset(low_watermark));
     }
@@ -450,7 +455,8 @@ fn compute_next_offset(
     );
 }
 
-/// Converts the raw bytes of the message payload to a `String` skipping corrupted or empty messages.
+/// Converts the raw bytes of the message payload to a `String` skipping corrupted or empty
+/// messages.
 fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
     match message.payload_view::<str>() {
         Some(Ok(payload)) if payload.len() > 0 => {
@@ -581,18 +587,16 @@ mod tests {
 
 #[cfg(all(test, feature = "kafka-broker-external-service"))]
 mod kafka_broker_tests {
-    use super::*;
-    use crate::source::SourceActor;
-    use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::Universe;
+    use quickwit_actors::{create_test_mailbox, Universe};
     use rand::distributions::Alphanumeric;
     use rand::Rng;
-    use rdkafka::admin::TopicReplication;
-    use rdkafka::admin::{AdminClient, AdminOptions, NewTopic};
+    use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;
-    use rdkafka::producer::FutureProducer;
-    use rdkafka::producer::FutureRecord;
+    use rdkafka::producer::{FutureProducer, FutureRecord};
+
+    use super::*;
+    use crate::source::SourceActor;
 
     fn append_random_suffix(string: &str) -> String {
         let rng = rand::thread_rng();
@@ -899,9 +903,9 @@ mod kafka_broker_tests {
         create_topic(&admin_client, &topic, 2).await?;
 
         let consumer = create_consumer(&bootstrap_servers, &group_id, true)?;
-        // Force metadata update for the consumer. Otherwise, `fetch_watermarks` may return `UnknownPartition`
-        // if the broker hasn't received a metadata update since the topic was created.
-        // See also https://issues.apache.org/jira/browse/KAFKA-6829.
+        // Force metadata update for the consumer. Otherwise, `fetch_watermarks` may return
+        // `UnknownPartition` if the broker hasn't received a metadata update since the
+        // topic was created. See also https://issues.apache.org/jira/browse/KAFKA-6829.
         consumer.fetch_metadata(Some(&topic), Duration::from_secs(5))?;
         assert!(fetch_watermarks(&consumer, "topic-does-not-exist", &[0])
             .await

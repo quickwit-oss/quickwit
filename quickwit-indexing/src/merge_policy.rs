@@ -1,22 +1,21 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::cmp::Reverse;
 use std::fmt;
@@ -86,7 +85,8 @@ pub trait MergePolicy: Send + Sync {
 /// As a result, each level interval is at least 3 times larger than the previous one,
 /// forming a logscale over the number of documents.
 ///
-/// Because we stop merging splits reaching a size larger than if it would result in a size larger than `target_num_docs`.
+/// Because we stop merging splits reaching a size larger than if it would result in a size larger
+/// than `target_num_docs`.
 #[derive(Clone)]
 pub struct StableMultitenantWithTimestampMergePolicy {
     pub target_demux_ops: usize,
@@ -295,7 +295,8 @@ mod tests {
     fn create_splits(num_docs_vec: Vec<usize>) -> Vec<SplitMetadata> {
         let num_records_with_timestamp = num_docs_vec
             .into_iter()
-            // we give the same timestamp to all of them and rely on stable sort to keep the split order.
+            // we give the same timestamp to all of them and rely on stable sort to keep the split
+            // order.
             .map(|num_records| (num_records, (1630563067..=1630564067)))
             .collect();
         create_splits_with_timestamps(num_records_with_timestamp)
@@ -453,7 +454,7 @@ mod tests {
         let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
         let mut splits = create_splits(vec![
             100_000, 100_000, 100_000, 100_000, 100_000,
-            10_000_000, /* this split should not interfere with the merging of other splits */
+            10_000_000, // this split should not interfere with the merging of other splits
             100_000, 100_000, 100_000, 100_000, 100_000,
         ]);
         let merge_ops = merge_policy.operations(&mut splits);

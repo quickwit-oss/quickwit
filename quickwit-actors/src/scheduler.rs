@@ -1,44 +1,40 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use async_trait::async_trait;
 use core::fmt;
-use futures::Future;
-use std::cmp::Ordering;
-use std::cmp::Reverse;
+use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
 use std::pin::Pin;
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+use async_trait::async_trait;
+use futures::Future;
 use tokio::sync::oneshot::Sender;
 use tokio::task::JoinHandle;
 use tracing::info;
 
-use crate::Actor;
-use crate::ActorContext;
-use crate::AsyncActor;
+use crate::{Actor, ActorContext, AsyncActor};
 
 pub(crate) struct Callback(pub Pin<Box<dyn Future<Output = ()> + Sync + Send + 'static>>);
 
-// A bug in the rustc requires wrapping Box<...> in order to use it as an argument in an async method.
-// pub(crate) struct Callback(pub BoxFuture<'static, ()>);
+// A bug in the rustc requires wrapping Box<...> in order to use it as an argument in an async
+// method. pub(crate) struct Callback(pub BoxFuture<'static, ()>);
 
 struct TimeoutEvent {
     deadline: Instant,
@@ -198,8 +194,8 @@ impl Scheduler {
         {
             self.advance_by_duration(next_evt_before_deadline - now, ctx)
                 .await;
-            // We leave 100ms for actors to process their messages. A callback on process would not work here,
-            // as callbacks might create extra messages in turn.
+            // We leave 100ms for actors to process their messages. A callback on process would not
+            // work here, as callbacks might create extra messages in turn.
             // A good way could be to wait for the overall actors in the universe to be idle.
             tokio::time::sleep(Duration::from_millis(100)).await;
             let _ = ctx
@@ -281,13 +277,15 @@ impl Scheduler {
 
 #[cfg(test)]
 mod tests {
-    use super::{Callback, Scheduler, SchedulerMessage};
-    use crate::scheduler::{SchedulerCounters, TimeShift};
-    use crate::Universe;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
+
     use tokio::sync::oneshot;
+
+    use super::{Callback, Scheduler, SchedulerMessage};
+    use crate::scheduler::{SchedulerCounters, TimeShift};
+    use crate::Universe;
 
     fn create_test_callback() -> (Arc<AtomicBool>, Callback) {
         let cb_called = Arc::new(AtomicBool::default());

@@ -1,22 +1,21 @@
-//  Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fs;
 use std::net::SocketAddr;
@@ -25,7 +24,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::error::{ClusterError, ClusterResult};
 use quickwit_swim::prelude::{
     ArtilleryError, ArtilleryMember, ArtilleryMemberEvent, ArtilleryMemberState,
     Cluster as ArtilleryCluster, ClusterConfig as ArtilleryClusterConfig,
@@ -34,6 +32,8 @@ use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+
+use crate::error::{ClusterError, ClusterResult};
 
 /// The ID that makes the cluster unique.
 const CLUSTER_ID: &str = "quickwit-cluster";
@@ -259,9 +259,8 @@ fn log_artillery_event(artillery_member_event: ArtilleryMemberEvent) {
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
-    use std::thread;
-    use std::time;
     use std::time::Duration;
+    use std::{thread, time};
 
     use quickwit_swim::prelude::{ArtilleryMember, ArtilleryMemberState};
 

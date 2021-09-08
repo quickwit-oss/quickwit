@@ -1,40 +1,37 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+use std::collections::{HashMap, HashSet};
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::{fmt, io};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::fmt;
-use std::io;
-use std::ops::Range;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use tantivy::directory::error::{LockError, OpenReadError};
-use tantivy::directory::DirectoryLock;
-use tantivy::directory::{FileSlice, OwnedBytes, WatchCallback};
+use tantivy::directory::{
+    DirectoryLock, FileHandle, FileSlice, OwnedBytes, WatchCallback, WatchHandle,
+};
 use tantivy::error::DataCorruption;
-use tantivy::{directory::FileHandle, directory::WatchHandle, HasLen};
-use tantivy::{AsyncIoResult, Directory, Index, IndexReader, ReloadPolicy};
+use tantivy::{AsyncIoResult, Directory, HasLen, Index, IndexReader, ReloadPolicy};
 
 use crate::caching_directory::BytesWrapper;
 use crate::{CachingDirectory, DebugProxyDirectory};
@@ -130,9 +127,7 @@ impl StaticDirectoryCacheBuilder {
 }
 
 fn deserialize_cbor<T>(bytes: &mut OwnedBytes) -> serde_cbor::Result<T>
-where
-    T: serde::de::DeserializeOwned,
-{
+where T: serde::de::DeserializeOwned {
     let len = bytes.read_u64();
     let value = serde_cbor::from_reader(&bytes.as_slice()[..len as usize]);
     bytes.advance(len as usize);

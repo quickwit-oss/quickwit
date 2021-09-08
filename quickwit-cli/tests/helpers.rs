@@ -1,42 +1,34 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::process::{Child, Stdio};
+use std::sync::Arc;
+use std::{fs, io};
 
 use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
 use predicates::str;
 use quickwit_metastore::SingleFileMetastore;
-use quickwit_storage::LocalFileStorage;
-use quickwit_storage::RegionProvider;
-use quickwit_storage::S3CompatibleObjectStorage;
-use quickwit_storage::Storage;
-use std::collections::HashMap;
-use std::fs;
-use std::io;
-use std::path::PathBuf;
-use std::process::Child;
-use std::process::Stdio;
-use std::sync::Arc;
-use tempfile::tempdir;
-use tempfile::TempDir;
+use quickwit_storage::{LocalFileStorage, RegionProvider, S3CompatibleObjectStorage, Storage};
+use tempfile::{tempdir, TempDir};
 
 const PACKAGE_BIN_NAME: &str = "quickwit";
 

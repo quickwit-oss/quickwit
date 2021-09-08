@@ -1,42 +1,37 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+use std::convert::TryFrom;
 
 use anyhow::bail;
 use chrono::{FixedOffset, Utc};
 use itertools::process_results;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
-use std::convert::TryFrom;
-use tantivy::schema::{BytesOptions, FieldType};
 use tantivy::schema::{
-    Cardinality, DocParsingError as TantivyDocParser, IndexRecordOption, IntOptions,
-    TextFieldIndexing, TextOptions, Value,
+    BytesOptions, Cardinality, DocParsingError as TantivyDocParser, FieldType, IndexRecordOption,
+    IntOptions, TextFieldIndexing, TextOptions, Value,
 };
 use thiserror::Error;
 
+use super::{default_as_true, FieldMappingType};
 use crate::default_index_config::is_valid_field_mapping_name;
-
-use super::default_as_true;
-use super::FieldMappingType;
 
 /// A `FieldMappingEntry` defines how a field is indexed, stored,
 /// and mapped from a JSON document to the related index fields.
@@ -617,7 +612,11 @@ impl FieldMappingEntryForSerialization {
             }
             options = options.set_indexing_options(indexing_options);
         } else if self.record.is_some() || self.tokenizer.is_some() {
-            bail!("Error when parsing `{}`: `record` and `tokenizer` parameters are allowed only if indexed is true.", self.name)
+            bail!(
+                "Error when parsing `{}`: `record` and `tokenizer` parameters are allowed only if \
+                 indexed is true.",
+                self.name
+            )
         }
         if self.stored {
             options = options.set_stored();
@@ -706,7 +705,11 @@ impl FieldMappingEntryForSerialization {
 
     fn check_no_text_options(&self) -> anyhow::Result<()> {
         if self.record.is_some() || self.tokenizer.is_some() {
-            bail!("Error when parsing `{}`: `record` and `tokenizer` parameters are for text field only.", self.name)
+            bail!(
+                "Error when parsing `{}`: `record` and `tokenizer` parameters are for text field \
+                 only.",
+                self.name
+            )
         }
         Ok(())
     }
@@ -746,7 +749,6 @@ impl From<TantivyDocParser> for DocParsingError {
 
 #[cfg(test)]
 mod tests {
-    use crate::{default_index_config::FieldMappingType, DocParsingError};
     use anyhow::bail;
     use chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
     use matches::matches;
@@ -754,6 +756,8 @@ mod tests {
     use tantivy::schema::{Cardinality, Value};
 
     use super::FieldMappingEntry;
+    use crate::default_index_config::FieldMappingType;
+    use crate::DocParsingError;
 
     const TEXT_MAPPING_ENTRY_VALUE: &str = r#"
         {
@@ -810,7 +814,11 @@ mod tests {
         );
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert_eq!(error.to_string(), "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are allowed only if indexed is true.");
+        assert_eq!(
+            error.to_string(),
+            "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are allowed \
+             only if indexed is true."
+        );
         Ok(())
     }
 
@@ -859,7 +867,11 @@ mod tests {
         );
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert_eq!(error.to_string(), "Error when parsing field `my_field_name`: object type must have at least one field mapping.");
+        assert_eq!(
+            error.to_string(),
+            "Error when parsing field `my_field_name`: object type must have at least one field \
+             mapping."
+        );
     }
 
     #[test]
@@ -910,7 +922,8 @@ mod tests {
         let error = result.unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are for text field only."
+            "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are for text \
+             field only."
         );
     }
 
@@ -973,7 +986,11 @@ mod tests {
             "#,
         )?;
         let entry_str = serde_json::to_string(&entry)?;
-        assert_eq!(entry_str, "{\"name\":\"my_field_name\",\"type\":\"i64\",\"stored\":true,\"fast\":false,\"indexed\":true}");
+        assert_eq!(
+            entry_str,
+            "{\"name\":\"my_field_name\",\"type\":\"i64\",\"stored\":true,\"fast\":false,\"\
+             indexed\":true}"
+        );
         Ok(())
     }
 
@@ -1048,24 +1065,26 @@ mod tests {
     #[test]
     fn test_deserialize_u64_field_with_wrong_options() {
         let cases = vec![
-            (r#"
+            (
+                r#"
             {
                 "name": "my_field_name",
                 "type": "u64",
                 "tokenizer": "basic"
             }
             "#,
-            "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are for text field only."
-        ),
-        (
-            r#"
+                "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are for \
+                 text field only.",
+            ),
+            (
+                r#"
             {
                 "name": "this is not ok",
                 "type": "i64"
             }
             "#,
-            "Invalid field name: `this is not ok`."
-        )
+                "Invalid field name: `this is not ok`.",
+            ),
         ];
 
         for (json_str, err_str) in cases {
@@ -1135,7 +1154,11 @@ mod tests {
             "#,
         )?;
         let entry_str = serde_json::to_string(&entry)?;
-        assert_eq!(entry_str, "{\"name\":\"my_field_name\",\"type\":\"u64\",\"stored\":true,\"fast\":false,\"indexed\":true}");
+        assert_eq!(
+            entry_str,
+            "{\"name\":\"my_field_name\",\"type\":\"u64\",\"stored\":true,\"fast\":false,\"\
+             indexed\":true}"
+        );
         Ok(())
     }
 

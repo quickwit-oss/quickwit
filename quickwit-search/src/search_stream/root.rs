@@ -1,47 +1,37 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use bytes::Bytes;
 use futures::StreamExt;
-use itertools::Either;
-use itertools::Itertools;
-use quickwit_metastore::SplitMetadataAndFooterOffsets;
-use quickwit_proto::LeafSearchStreamRequest;
-use quickwit_proto::SearchStreamRequest;
-use quickwit_proto::SplitIdAndFooterOffsets;
+use itertools::{Either, Itertools};
+use quickwit_metastore::{Metastore, SplitMetadataAndFooterOffsets};
+use quickwit_proto::{
+    LeafSearchStreamRequest, SearchRequest, SearchStreamRequest, SplitIdAndFooterOffsets,
+};
 use tracing::*;
 
-use quickwit_metastore::Metastore;
-use quickwit_proto::SearchRequest;
-
 use crate::client_pool::Job;
-use crate::list_relevant_splits;
-use crate::root::job_for_splits;
-use crate::root::NodeSearchError;
-use crate::ClientPool;
-use crate::SearchClientPool;
-use crate::SearchError;
+use crate::root::{job_for_splits, NodeSearchError};
+use crate::{list_relevant_splits, ClientPool, SearchClientPool, SearchError};
 
 /// Perform a distributed search stream.
 pub async fn root_search_stream(
@@ -138,16 +128,17 @@ pub async fn root_search_stream(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::ops::Range;
 
-    use crate::MockSearchService;
     use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_indexing::mock_split_meta;
-    use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
+    use quickwit_metastore::checkpoint::Checkpoint;
+    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::OutputFormat;
     use tokio_stream::wrappers::UnboundedReceiverStream;
+
+    use super::*;
+    use crate::MockSearchService;
 
     #[tokio::test]
     async fn test_root_search_stream_single_split() -> anyhow::Result<()> {
@@ -248,7 +239,11 @@ mod tests {
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
         let result = root_search_stream(&request, &metastore, &client_pool).await;
         assert_eq!(result.is_err(), true);
-        assert_eq!(result.unwrap_err().to_string(), "Internal error: `[NodeSearchError { search_error: InternalError(\"error\"), split_ids: [\"split1\"] }]`.");
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Internal error: `[NodeSearchError { search_error: InternalError(\"error\"), \
+             split_ids: [\"split1\"] }]`."
+        );
         Ok(())
     }
 }

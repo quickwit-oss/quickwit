@@ -1,40 +1,41 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
+use std::collections::HashSet;
+use std::convert::TryFrom;
 
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-use super::{default_as_true, SOURCE_FIELD_NAME, TAGS_FIELD_NAME};
-use super::{field_mapping_entry::DocParsingError, FieldMappingEntry, FieldMappingType};
-use crate::query_builder::build_query;
-use crate::{IndexConfig, QueryParserError, SortBy, SortOrder};
 use anyhow::{bail, Context};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
-use std::{collections::HashSet, convert::TryFrom};
-use tantivy::schema::{Cardinality, Value, STRING};
-use tantivy::{
-    query::Query,
-    schema::{FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, STORED},
-    Document,
+use tantivy::query::Query;
+use tantivy::schema::{
+    Cardinality, FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, Value, STORED, STRING,
 };
+use tantivy::Document;
+
+use super::field_mapping_entry::DocParsingError;
+use super::{
+    default_as_true, FieldMappingEntry, FieldMappingType, SOURCE_FIELD_NAME, TAGS_FIELD_NAME,
+};
+use crate::query_builder::build_query;
+use crate::{IndexConfig, QueryParserError, SortBy, SortOrder};
 
 /// DefaultIndexConfigBuilder is here
 /// to create a valid IndexConfig.
@@ -87,14 +88,26 @@ impl DefaultIndexConfigBuilder {
 
             let timestamp_field_entry = schema.get_field_entry(timestamp_field);
             if !timestamp_field_entry.is_fast() {
-                bail!("Timestamp field must be a fast field, please add fast property to your field `{}`.", timestamp_field_name)
+                bail!(
+                    "Timestamp field must be a fast field, please add fast property to your field \
+                     `{}`.",
+                    timestamp_field_name
+                )
             }
             if let FieldType::I64(options) = timestamp_field_entry.field_type() {
                 if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
-                    bail!("Timestamp field cannot be an array, please change your field `{}` from an array to a single value.", timestamp_field_name)
+                    bail!(
+                        "Timestamp field cannot be an array, please change your field `{}` from \
+                         an array to a single value.",
+                        timestamp_field_name
+                    )
                 }
             } else {
-                bail!("Timestamp field must be of type i64, please change your field type `{}` to i64.", timestamp_field_name)
+                bail!(
+                    "Timestamp field must be of type i64, please change your field type `{}` to \
+                     i64.",
+                    timestamp_field_name
+                )
             }
         }
 
@@ -306,13 +319,14 @@ impl IndexConfig for DefaultIndexConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::default_index_config::TAGS_FIELD_NAME;
-    use crate::{default_index_config::default_config::SOURCE_FIELD_NAME, IndexConfig};
-    use crate::{DefaultIndexConfigBuilder, DocParsingError};
+    use std::collections::HashMap;
+
+    use serde_json::{self, Value as JsonValue};
 
     use super::DefaultIndexConfig;
-    use serde_json::{self, Value as JsonValue};
-    use std::collections::HashMap;
+    use crate::default_index_config::default_config::SOURCE_FIELD_NAME;
+    use crate::default_index_config::TAGS_FIELD_NAME;
+    use crate::{DefaultIndexConfigBuilder, DocParsingError, IndexConfig};
 
     const JSON_DOC_VALUE: &str = r#"
         {
@@ -476,7 +490,9 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
-        let expected_msg = "Timestamp field must be a fast field, please add fast property to your field `timestamp`.".to_string();
+        let expected_msg = "Timestamp field must be a fast field, please add fast property to \
+                            your field `timestamp`."
+            .to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
     }
@@ -498,7 +514,9 @@ mod tests {
         }"#;
 
         let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
-        let expected_msg = "Timestamp field cannot be an array, please change your field `timestamp` from an array to a single value.".to_string();
+        let expected_msg = "Timestamp field cannot be an array, please change your field \
+                            `timestamp` from an array to a single value."
+            .to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
     }
@@ -547,7 +565,8 @@ mod tests {
             "image": "invalid base64 data"
         }"#,
         );
-        let expected_msg = "The field 'image' could not be parsed: Expected Base64 string, got 'invalid base64 data'" ;
+        let expected_msg = "The field 'image' could not be parsed: Expected Base64 string, got \
+                            'invalid base64 data'";
         assert_eq!(result.unwrap_err().to_string(), expected_msg);
         Ok(())
     }
@@ -582,7 +601,7 @@ mod tests {
         }"#;
         let document = index_config.doc_from_json(JSON_DOC_VALUE)?;
 
-        //  2 properties, + 1 value for "_source" + 2 values for "_tags"
+        // 2 properties, + 1 value for "_source" + 2 values for "_tags"
         assert_eq!(document.len(), 5);
         let expected_json_paths_and_values: HashMap<String, JsonValue> = serde_json::from_str(
             r#"{

@@ -1,59 +1,47 @@
-/*
- * Copyright (C) 2021 Quickwit Inc.
- *
- * Quickwit is offered under the AGPL v3.0 and as commercial software.
- * For commercial licensing, contact us at hello@quickwit.io.
- *
- * AGPL:
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
-
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use itertools::Itertools;
-use quickwit_metastore::IndexMetadata;
-use quickwit_metastore::SplitMetadataAndFooterOffsets;
-use quickwit_proto::SplitIdAndFooterOffsets;
-use quickwit_proto::SplitSearchError;
-use tantivy::collector::Collector;
-use tantivy::TantivyError;
-use tokio::task::spawn_blocking;
-use tokio::task::JoinHandle;
-use tracing::*;
-
-use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_metastore::{IndexMetadata, Metastore, SplitMetadata, SplitMetadataAndFooterOffsets};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, Hit, LeafSearchRequest, LeafSearchResult, PartialHit,
-    SearchRequest, SearchResult,
+    SearchRequest, SearchResult, SplitIdAndFooterOffsets, SplitSearchError,
 };
+use tantivy::collector::Collector;
+use tantivy::TantivyError;
+use tokio::task::{spawn_blocking, JoinHandle};
+use tracing::*;
 
 use crate::client_pool::Job;
 use crate::collector::make_merge_collector;
-use crate::extract_split_and_footer_offsets;
-use crate::list_relevant_splits;
-use crate::ClientPool;
-use crate::SearchClientPool;
-use crate::SearchError;
-use crate::SearchServiceClient;
+use crate::{
+    extract_split_and_footer_offsets, list_relevant_splits, ClientPool, SearchClientPool,
+    SearchError, SearchServiceClient,
+};
 
 // Measure the cost associated to searching in a given split metadata.
 fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
-    //TODO: Have a smarter cost, by smoothing the number of docs.
+    // TODO: Have a smarter cost, by smoothing the number of docs.
     1
 }
 
@@ -194,7 +182,8 @@ pub(crate) fn job_for_splits(
     split_ids: &HashSet<&String>,
     split_metadata_map: &HashMap<String, SplitMetadataAndFooterOffsets>,
 ) -> Vec<Job> {
-    // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
+    // Create a job for fetching docs and assign the splits that the node is responsible for based
+    // on the job.
     let leaf_search_jobs: Vec<Job> = split_metadata_map
         .iter()
         .filter(|(split_id, _)| split_ids.contains(split_id))
@@ -210,11 +199,10 @@ pub(crate) fn job_for_splits(
 /// It sends a search request over gRPC to multiple leaf nodes and merges the search results.
 ///
 /// Retry Logic:
-/// After a first round of leaf_search requests, we identify the list of failed but retryable splits,
-/// and retry them. Complete failure against nodes are also considered retryable splits.
+/// After a first round of leaf_search requests, we identify the list of failed but retryable
+/// splits, and retry them. Complete failure against nodes are also considered retryable splits.
 /// The leaf nodes which did not return any result are suspected to be unhealthy and are excluded
 /// from this retry round. If all nodes are unhealthy the retry will not exclude any nodes.
-///
 pub async fn root_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
@@ -222,7 +210,8 @@ pub async fn root_search(
 ) -> Result<SearchResult, SearchError> {
     let start_instant = tokio::time::Instant::now();
 
-    // Create a job for leaf node search and assign the splits that the node is responsible for based on the job.
+    // Create a job for leaf node search and assign the splits that the node is responsible for
+    // based on the job.
     let split_metadata_list = list_relevant_splits(search_request, metastore).await?;
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
 
@@ -232,7 +221,8 @@ pub async fn root_search(
         .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
         .collect();
 
-    // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
+    // Create a job for fetching docs and assign the splits that the node is responsible for based
+    // on the job.
     //
     let leaf_search_jobs: Vec<Job> =
         job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
@@ -257,7 +247,8 @@ pub async fn root_search(
 
     let retry_action_opt = analyze_errors(&result_per_node_addr);
     if let Some(retry_action) = retry_action_opt.as_ref() {
-        // Create a job for fetching docs and assign the splits that the node is responsible for based on the job.
+        // Create a job for fetching docs and assign the splits that the node is responsible for
+        // based on the job.
         //
         let leaf_search_jobs: Vec<Job> = job_for_splits(
             &retry_action.retry_split_ids.iter().collect(),
@@ -291,11 +282,16 @@ pub async fn root_search(
             result_per_node_addr.remove(&err_addr);
         }
         // Remove partial, retryable errors
-        // In this step we have only retryable errors, since it aborts with non-retryable errors, so we can just replace them.
+        // In this step we have only retryable errors, since it aborts with non-retryable errors, so
+        // we can just replace them.
         for result in result_per_node_addr.values_mut().flatten() {
             let contains_non_retryable_errors =
                 result.failed_splits.iter().any(|err| !err.retryable_error);
-            assert!(!contains_non_retryable_errors, "Result still contains non-retryable errors, but logic expects to have aborted with non-retryable errors. (this may change if we add partial results) ");
+            assert!(
+                !contains_non_retryable_errors,
+                "Result still contains non-retryable errors, but logic expects to have aborted \
+                 with non-retryable errors. (this may change if we add partial results) "
+            );
 
             result.failed_splits = vec![];
         }
@@ -331,7 +327,8 @@ pub async fn root_search(
         }
     }
 
-    // Find the sum of the number of hits and merge multiple partial hits into a single partial hits.
+    // Find the sum of the number of hits and merge multiple partial hits into a single partial
+    // hits.
     let mut leaf_search_results = Vec::new();
     for (_addr, leaf_search_response) in result_per_node_addr.into_iter() {
         match leaf_search_response {
@@ -462,15 +459,16 @@ pub async fn root_search(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use std::ops::Range;
 
-    use crate::{MockSearchService, SearchResultJson};
     use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_indexing::mock_split_meta;
-    use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
+    use quickwit_metastore::checkpoint::Checkpoint;
+    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::SplitSearchError;
+
+    use super::*;
+    use crate::{MockSearchService, SearchResultJson};
 
     fn mock_partial_hit(
         split_id: &str,
@@ -768,7 +766,7 @@ mod tests {
         );
 
         let search_result = root_search(&search_request, &metastore, &client_pool).await?;
-        //println!("search_result={:?}", search_result);
+        // println!("search_result={:?}", search_result);
 
         let search_result_json = SearchResultJson::from(search_result.clone());
         let search_result_json = serde_json::to_string_pretty(&search_result_json)?;
@@ -900,7 +898,7 @@ mod tests {
         );
 
         let search_result = root_search(&search_request, &metastore, &client_pool).await?;
-        //println!("search_result={:?}", search_result);
+        // println!("search_result={:?}", search_result);
 
         let search_result_json = SearchResultJson::from(search_result.clone());
         let search_result_json = serde_json::to_string_pretty(&search_result_json)?;
@@ -985,7 +983,7 @@ mod tests {
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?);
 
         let search_result = root_search(&search_request, &metastore, &client_pool).await?;
-        //println!("search_result={:?}", search_result);
+        // println!("search_result={:?}", search_result);
 
         let search_result_json = SearchResultJson::from(search_result.clone());
         let search_result_json = serde_json::to_string_pretty(&search_result_json)?;
@@ -1211,7 +1209,7 @@ mod tests {
         );
 
         let search_result = root_search(&search_request, &metastore, &client_pool).await?;
-        //println!("search_result={:?}", search_result);
+        // println!("search_result={:?}", search_result);
 
         let search_result_json = SearchResultJson::from(search_result.clone());
         let search_result_json = serde_json::to_string_pretty(&search_result_json)?;

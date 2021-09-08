@@ -1,68 +1,50 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-use anyhow::bail;
-use anyhow::Context;
-use byte_unit::Byte;
-use crossterm::style::Print;
-use crossterm::style::PrintStyledContent;
-use crossterm::style::Stylize;
-use crossterm::QueueableCommand;
-use json_comments::StripComments;
-use quickwit_actors::ActorExitStatus;
-use quickwit_actors::ActorHandle;
-use quickwit_actors::ObservationType;
-use quickwit_actors::Universe;
-use quickwit_common::extract_index_id_from_index_uri;
-use quickwit_core::reset_index;
-use quickwit_index_config::DefaultIndexConfigBuilder;
-use quickwit_index_config::IndexConfig;
-use quickwit_indexing::actors::IndexerParams;
-use quickwit_indexing::actors::{IndexingPipelineParams, IndexingPipelineSupervisor};
-use quickwit_indexing::models::CommitPolicy;
-use quickwit_indexing::models::IndexingStatistics;
-use quickwit_indexing::models::ScratchDirectory;
-use quickwit_indexing::source::FileSourceParams;
-use quickwit_indexing::source::SourceConfig;
-use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::IndexMetadata;
-use quickwit_metastore::MetastoreUriResolver;
-use quickwit_proto::SearchRequest;
-use quickwit_proto::SearchResult;
-use quickwit_search::single_node_search;
-use quickwit_search::SearchResultJson;
-use quickwit_storage::quickwit_storage_uri_resolver;
-use quickwit_telemetry::payload::TelemetryEvent;
 use std::collections::VecDeque;
-use std::env;
-use std::io::Stdout;
-use std::io::{stdout, Write};
+use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::usize;
-use tracing::debug;
+use std::{env, usize};
 
-use quickwit_core::{create_index, delete_index, garbage_collect_index};
+use anyhow::{bail, Context};
+use byte_unit::Byte;
+use crossterm::style::{Print, PrintStyledContent, Stylize};
+use crossterm::QueueableCommand;
+use json_comments::StripComments;
+use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
+use quickwit_common::extract_index_id_from_index_uri;
+use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
+use quickwit_index_config::{DefaultIndexConfigBuilder, IndexConfig};
+use quickwit_indexing::actors::{
+    IndexerParams, IndexingPipelineParams, IndexingPipelineSupervisor,
+};
+use quickwit_indexing::models::{CommitPolicy, IndexingStatistics, ScratchDirectory};
+use quickwit_indexing::source::{FileSourceParams, SourceConfig};
+use quickwit_metastore::checkpoint::Checkpoint;
+use quickwit_metastore::{IndexMetadata, MetastoreUriResolver};
+use quickwit_proto::{SearchRequest, SearchResult};
+use quickwit_search::{single_node_search, SearchResultJson};
+use quickwit_storage::quickwit_storage_uri_resolver;
+use quickwit_telemetry::payload::TelemetryEvent;
+use tracing::debug;
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
@@ -217,14 +199,22 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
             "windows" => "CTRL+Z",
             _ => "CTRL+D",
         };
-        println!("Please enter your new line delimited json documents one line at a time.\nEnd your input using {}.", eof_shortcut);
+        println!(
+            "Please enter your new line delimited json documents one line at a time.\nEnd your \
+             input using {}.",
+            eof_shortcut
+        );
     }
 
     let statistics =
         start_statistics_reporting_loop(supervisor_handler, args.input_path.clone()).await?;
 
     if statistics.num_published_splits > 0 {
-        println!("You can now query your index with `quickwit search --index-id {} --metastore-uri {} --query \"barack obama\"`" , args.index_id, args.metastore_uri);
+        println!(
+            "You can now query your index with `quickwit search --index-id {} --metastore-uri {} \
+             --query \"barack obama\"`",
+            args.index_id, args.metastore_uri
+        );
     }
     Ok(())
 }
@@ -344,8 +334,9 @@ pub async fn start_statistics_reporting_loop(
     let mut report_interval = tokio::time::interval(Duration::from_secs(1));
 
     loop {
-        // TODO fixme. The way we wait today is a bit lame: if the indexing pipeline exits, we will stil
-        // wait up to an entire heartbeat...  Ideally we should  select between two futures.
+        // TODO fixme. The way we wait today is a bit lame: if the indexing pipeline exits, we will
+        // stil wait up to an entire heartbeat...  Ideally we should  select between two
+        // futures.
         report_interval.tick().await;
         // Try to receive with a timeout of 1 second.
         // 1 second is also the frequency at which we update statistic in the console
@@ -395,7 +386,7 @@ pub async fn start_statistics_reporting_loop(
             is_tty,
         )?;
     }
-    //display end of task report
+    // display end of task report
     println!();
     let elapsed_secs = start_time.elapsed().as_secs();
     if elapsed_secs >= 60 {
@@ -448,7 +439,8 @@ fn display_statistics(
         stdout_handle.queue(Print(format!("{}\n", elapsed_time)))?;
     } else {
         let report_line = format!(
-            "Num docs: {:>7} Parse errs: {:>5} Staged splits: {:>3} Input size: {:>5}MB Thrghput: {:>5.2}MB/s Time: {}\n",
+            "Num docs: {:>7} Parse errs: {:>5} Staged splits: {:>3} Input size: {:>5}MB Thrghput: \
+             {:>5.2}MB/s Time: {}\n",
             statistics.num_docs,
             statistics.num_invalid_docs,
             statistics.num_staged_splits,
