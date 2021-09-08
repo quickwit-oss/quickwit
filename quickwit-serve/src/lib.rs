@@ -155,8 +155,8 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
 mod tests {
     use std::{array::IntoIter, collections::HashMap, ops::Range, sync::Arc};
 
-    use quickwit_core::mock_split_meta;
     use quickwit_index_config::WikipediaIndexConfig;
+    use quickwit_indexing::mock_split_meta;
     use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::{search_service_server::SearchServiceServer, OutputFormat};
     use quickwit_search::{

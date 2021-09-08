@@ -23,12 +23,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::actors::IndexerParams;
+use crate::index_data;
+use crate::models::{CommitPolicy, IndexingStatistics, ScratchDirectory};
+use crate::source::{SourceConfig, VecSourceParams};
 use byte_unit::Byte;
 use quickwit_index_config::IndexConfig;
-use quickwit_indexing::actors::IndexerParams;
-use quickwit_indexing::index_data;
-use quickwit_indexing::models::{CommitPolicy, IndexingStatistics, ScratchDirectory};
-use quickwit_indexing::source::{SourceConfig, VecSourceParams};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{
     IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadata, SplitMetadataAndFooterOffsets,

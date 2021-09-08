@@ -62,7 +62,7 @@ path = '../quickwit-storage'
 
 [dev-dependencies]
 quickwit-proto = { version = "0.1", path = "../quickwit-proto" }
-quickwit-core = { version = "0.1.0", path = "../quickwit-core" }
+quickwit-indexing = { version = "0.1.0", path = "../quickwit-indexing" }
 quickwit-metastore = {path = "../quickwit-metastore", features=["testsuite"]}
 serde_json = "1"
 assert-json-diff = "2"

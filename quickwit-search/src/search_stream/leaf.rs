@@ -199,8 +199,8 @@ fn collect_fast_field_values(
 mod tests {
     use std::{str::from_utf8, sync::Arc};
 
-    use quickwit_core::TestSandbox;
     use quickwit_index_config::DefaultIndexConfigBuilder;
+    use quickwit_indexing::TestSandbox;
 
     use super::*;
     use serde_json::json;
