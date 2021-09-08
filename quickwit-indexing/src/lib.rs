@@ -36,6 +36,10 @@ mod merge_policy;
 pub mod models;
 pub(crate) mod semaphore;
 pub mod source;
+mod test_utils;
+
+pub use test_utils::mock_split_meta;
+pub use test_utils::TestSandbox;
 
 pub use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 

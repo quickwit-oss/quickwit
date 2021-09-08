@@ -467,8 +467,8 @@ mod tests {
     use std::ops::Range;
 
     use crate::{MockSearchService, SearchResultJson};
-    use quickwit_core::mock_split_meta;
     use quickwit_index_config::WikipediaIndexConfig;
+    use quickwit_indexing::mock_split_meta;
     use quickwit_metastore::{checkpoint::Checkpoint, IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::SplitSearchError;
 

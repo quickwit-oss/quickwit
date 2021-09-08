@@ -37,6 +37,7 @@ assert-json-diff = "2.0.1"
 tokio = { version = "1", features = ["full"] }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage", features=["testsuite"]}
 quickwit-core = {path="../quickwit-core"}
+quickwit-indexing= {path="../quickwit-indexing"}
 quickwit-index-config = {path="../quickwit-index-config"}
 
 [dependencies.quickwit-cluster]

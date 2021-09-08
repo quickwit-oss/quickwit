@@ -30,12 +30,9 @@
 */
 
 mod index;
-mod test_utils;
 
 pub use index::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_metastore::SplitMetadataAndFooterOffsets;
-pub use test_utils::mock_split_meta;
-pub use test_utils::TestSandbox;
 
 #[allow(missing_docs)]
 #[derive(Debug)]
@@ -61,8 +58,9 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_index_config::WikipediaIndexConfig;
+    use quickwit_indexing::TestSandbox;
 
-    use super::*;
+    use crate::FileEntry;
 
     #[tokio::test]
     async fn test_file_entry_from_split() -> anyhow::Result<()> {
