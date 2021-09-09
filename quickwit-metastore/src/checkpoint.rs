@@ -25,6 +25,7 @@ use std::cmp::Ordering;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::iter::FromIterator;
 use std::ops::Range;
 use std::sync::Arc;
 use thiserror::Error;
@@ -97,18 +98,26 @@ impl Position {
     }
 }
 
+impl From<i32> for Position {
+    fn from(offset: i32) -> Self {
+        assert!(offset >= 0);
+        let offset_str = format!("{:0>10}", offset);
+        Position::Offset(Arc::new(offset_str))
+    }
+}
+
 impl From<i64> for Position {
-    fn from(position: i64) -> Self {
-        assert!(position >= 0);
-        let position_str = format!("{:0>20}", position);
-        Position::Offset(Arc::new(position_str))
+    fn from(offset: i64) -> Self {
+        assert!(offset >= 0);
+        let offset_str = format!("{:0>20}", offset);
+        Position::Offset(Arc::new(offset_str))
     }
 }
 
 impl From<u64> for Position {
-    fn from(position: u64) -> Self {
-        let position_str = format!("{:0>20}", position);
-        Position::Offset(Arc::new(position_str))
+    fn from(offset: u64) -> Self {
+        let offset_str = format!("{:0>20}", offset);
+        Position::Offset(Arc::new(offset_str))
     }
 }
 
@@ -141,7 +150,7 @@ pub struct Checkpoint {
 
 impl Checkpoint {
     /// Returns the number of partitions covered by the checkpoint.
-    pub fn len(&self) -> usize {
+    pub fn num_partitions(&self) -> usize {
         self.per_partition.len()
     }
 
@@ -151,20 +160,24 @@ impl Checkpoint {
     }
 }
 
-/// Creates a checkpoint from a `Vec` of `(u64, u64)` tuples.
+/// Creates a checkpoint from an iterator of `(PartitionId, Position)` tuples.
 /// ```
-/// use quickwit_metastore::checkpoint::Checkpoint;
-/// let checkpoint: Checkpoint = vec![(0, 0)].into();
+/// use quickwit_metastore::checkpoint::{Checkpoint, PartitionId, Position};
+/// let checkpoint: Checkpoint = vec![(0, 0), (1, 2)]
+///     .into_iter()
+///     .map(|(partition_id, offset)| {
+///         (PartitionId::from(partition_id), Position::from(offset))
+///     })
+///     .collect();
 /// ```
-impl From<Vec<(u64, u64)>> for Checkpoint {
-    fn from(vec_checkpoint: Vec<(u64, u64)>) -> Self {
-        let per_partition = vec_checkpoint
-            .into_iter()
-            .map(|(partition_id, position)| {
-                (PartitionId::from(partition_id), Position::from(position))
-            })
-            .collect();
-        Self { per_partition }
+impl FromIterator<(PartitionId, Position)> for Checkpoint {
+    fn from_iter<I>(iter: I) -> Checkpoint
+    where
+        I: IntoIterator<Item = (PartitionId, Position)>,
+    {
+        Checkpoint {
+            per_partition: iter.into_iter().collect(),
+        }
     }
 }
 
@@ -201,7 +214,7 @@ impl<'de> Deserialize<'de> for Checkpoint {
 /// compatible. ie: the checkpoint delta starts from a point anterior to
 /// the checkpoint.
 #[derive(Error, Debug, PartialEq)]
-#[error("IncompatibleChkpt at partition: {partition_id:?} cur_pos:{current_position:?} delta_pos:{delta_position_from:?}")]
+#[error("IncompatibleChkptDelta at partition: {partition_id:?} cur_pos:{current_position:?} delta_pos:{delta_position_from:?}")]
 pub struct IncompatibleCheckpointDelta {
     /// One PartitionId for which the incompatibility has been detected.
     pub partition_id: PartitionId,
@@ -413,7 +426,7 @@ impl CheckpointDelta {
     }
 
     /// Returns the number of partitions covered by the checkpoint delta.
-    pub fn len(&self) -> usize {
+    pub fn num_partitions(&self) -> usize {
         self.per_partition.len()
     }
 

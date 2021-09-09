@@ -47,26 +47,16 @@ use tracing::{debug, info, warn};
 /// Required parameters for instantiating a `KafkaSource`.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct KafkaSourceParams {
-    bootstrap_servers: String,
-    group_id: String,
-    topic: String,
-    enable_partition_eof: Option<bool>,
-}
-
-impl KafkaSourceParams {
-    pub fn new(
-        bootstrap_servers: String,
-        group_id: String,
-        topic: String,
-        enable_partition_eof: Option<bool>,
-    ) -> Self {
-        KafkaSourceParams {
-            bootstrap_servers,
-            group_id,
-            topic,
-            enable_partition_eof,
-        }
-    }
+    /// Comma-separated list of host and port pairs that provide the initial addresses of Kafka brokers that act as the
+    /// starting point for a Kafka client to discover the full set of alive servers in the cluster.
+    pub bootstrap_servers: String,
+    /// Specifies the name of the consumer group a Kafka consumer belongs to.
+    pub group_id: String,
+    /// Name of the topic that the source consumes.
+    pub topic: String,
+    /// When set to `true`, the source will terminate after reading the last message of each assigned partition.
+    /// Otherwise, it will keep waiting for new incoming messages.
+    pub enable_partition_eof: Option<bool>,
 }
 
 /// Factory for instantiating a `KafkaSource`.
@@ -191,35 +181,6 @@ impl KafkaSource {
             state,
         })
     }
-
-    /// Helper method for sending a batch of messages to the indexer through its mailbox.
-    async fn send_batch(
-        &self,
-        ctx: &SourceContext,
-        batch_sink: &Mailbox<IndexerMessage>,
-        docs: Vec<String>,
-        checkpoint_delta: CheckpointDelta,
-    ) -> Result<(), ActorExitStatus> {
-        let batch = RawDocBatch {
-            docs,
-            checkpoint_delta,
-        };
-        ctx.send_message(batch_sink, IndexerMessage::from(batch))
-            .await?;
-        Ok(())
-    }
-
-    /// Helper method for notifying the indexer about the exhaustion of a topic.
-    async fn send_eof(
-        &self,
-        ctx: &SourceContext,
-        batch_sink: &Mailbox<IndexerMessage>,
-    ) -> Result<(), ActorExitStatus> {
-        info!(topic = &self.topic.as_str(), "Reached end of topic.");
-        ctx.send_message(batch_sink, IndexerMessage::EndOfSource)
-            .await?;
-        Err(ActorExitStatus::Success)
-    }
 }
 
 #[async_trait]
@@ -251,21 +212,14 @@ impl Source for KafkaSource {
                 // FIXME: This is assuming that Kafka errors are not recoverable, it may not be the case.
                 Err(err) => return Err(ActorExitStatus::from(anyhow::anyhow!(err))),
             };
-            debug!(
-                topic = ?message.topic(),
-                partition_id = ?message.partition(),
-                offset = ?message.offset(),
-                timestamp = ?message.timestamp(),
-                num_bytes = ?message.payload_len(),
-                "Message received.",
-            );
-            self.state.num_bytes_processed += message.payload_len() as u64;
-            self.state.num_messages_processed += 1;
             if let Some(doc) = parse_message_payload(&message) {
                 docs.push(doc);
             } else {
                 self.state.num_invalid_messages += 1;
             }
+            self.state.num_bytes_processed += message.payload_len() as u64;
+            self.state.num_messages_processed += 1;
+
             let partition_id = self
                 .state
                 .assigned_partition_ids
@@ -283,25 +237,32 @@ impl Source for KafkaSource {
                 .state
                 .current_positions
                 .insert(message.partition(), current_position.clone())
-                .unwrap_or_else(|| previous_position(message.offset()));
+                .unwrap_or_else(|| previous_position_for_offset(message.offset()));
             checkpoint_delta
                 .record_partition_delta(partition_id, previous_position, current_position)
                 .context("Failed to record partition delta.")?;
         }
-        if checkpoint_delta.len() > 0 {
-            self.send_batch(ctx, batch_sink, docs, checkpoint_delta)
+        if !checkpoint_delta.is_empty() {
+            let batch = RawDocBatch {
+                docs,
+                checkpoint_delta,
+            };
+            ctx.send_message(batch_sink, IndexerMessage::from(batch))
                 .await?;
         }
         if self.state.num_active_partitions == 0 {
-            self.send_eof(ctx, batch_sink).await?;
+            info!(topic = &self.topic.as_str(), "Reached end of topic.");
+            ctx.send_message(batch_sink, IndexerMessage::EndOfSource)
+                .await?;
+            return Err(ActorExitStatus::Success);
         }
         Ok(())
     }
 
     fn observable_state(&self) -> serde_json::Value {
-        let assigned_partition_ids: Vec<_> =
+        let assigned_partition_ids: Vec<&i32> =
             self.state.assigned_partition_ids.keys().sorted().collect();
-        let current_positions: Vec<(_, _)> = self
+        let current_positions: Vec<(&i32, i64)> = self
             .state
             .current_positions
             .iter()
@@ -327,7 +288,8 @@ impl Source for KafkaSource {
     }
 }
 
-fn previous_position(offset: i64) -> Position {
+/// Returns the preceding `Position` for the offset.
+fn previous_position_for_offset(offset: i64) -> Position {
     if offset == 0 {
         Position::Beginning
     } else {
@@ -362,7 +324,7 @@ fn create_consumer(
 
 /// Represents a checkpoint with the Kafka native types: `i32` for partition IDs and `i64` for offsets.
 fn kafka_checkpoint_from_checkpoint(checkpoint: &Checkpoint) -> anyhow::Result<HashMap<i32, i64>> {
-    let mut kafka_checkpoint = HashMap::with_capacity(checkpoint.len());
+    let mut kafka_checkpoint = HashMap::with_capacity(checkpoint.num_partitions());
     for (partition_id, position) in checkpoint.iter() {
         let partition_i32 = partition_id.0.parse::<i32>().with_context(|| {
             format!("Failed to parse partition ID `{}` to i32.", partition_id.0)
@@ -491,7 +453,19 @@ fn compute_next_offset(
 /// Converts the raw bytes of the message payload to a `String` skipping corrupted or empty messages.
 fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
     match message.payload_view::<str>() {
-        Some(Ok(payload)) if payload.len() > 0 => return Some(payload.to_string()),
+        Some(Ok(payload)) if payload.len() > 0 => {
+            let doc = payload.to_string();
+            debug!(
+                topic = ?message.topic(),
+                partition_id = ?message.partition(),
+                offset = ?message.offset(),
+                timestamp = ?message.timestamp(),
+                num_bytes = ?message.payload_len(),
+                doc = ?doc.as_str(),
+                "Message received.",
+            );
+            return Some(doc);
+        }
         Some(Ok(_)) => debug!(
             topic = ?message.topic(),
             partition = ?message.partition(),
@@ -715,11 +689,11 @@ mod kafka_broker_tests {
         Ok(message_map)
     }
 
-    pub fn key_fn(id: i32) -> String {
+    fn key_fn(id: i32) -> String {
         format!("Key {}", id)
     }
 
-    pub fn message_fn(id: i32) -> String {
+    fn message_fn(id: i32) -> String {
         format!("Message #{}", id)
     }
 
@@ -843,7 +817,12 @@ mod kafka_broker_tests {
         }
         {
             let (sink, inbox) = create_test_mailbox();
-            let checkpoint: Checkpoint = vec![(0, 0), (1, 2)].into();
+            let checkpoint: Checkpoint = vec![(0, 0), (1, 2)]
+                .into_iter()
+                .map(|(partition_id, offset)| {
+                    (PartitionId::from(partition_id), Position::from(offset))
+                })
+                .collect();
             let source = KafkaSource::try_new(params.clone(), checkpoint).await?;
             let actor = SourceActor {
                 source: Box::new(source),
