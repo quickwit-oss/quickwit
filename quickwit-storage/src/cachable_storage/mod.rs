@@ -46,6 +46,12 @@ pub struct DiskCapacity {
     max_num_bytes: usize,
 }
 
+impl DiskCapacity {
+    pub fn exceeds_capacity(&self, num_bytes: usize, num_files: usize) -> bool {
+        self.max_num_bytes < num_bytes || self.max_num_files < num_files
+    }
+}
+
 /// CacheState is a struct for serializing/deserializing the cache state.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct CacheState {

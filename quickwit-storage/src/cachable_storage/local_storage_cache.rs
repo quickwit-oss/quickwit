@@ -83,15 +83,21 @@ impl LocalStorageCache {
         ram_capacity: usize,
         disk_capacity: DiskCapacity,
         items: Vec<(PathBuf, usize)>,
-    ) -> Self {
+    ) -> StorageResult<Self> {
         let num_files = items.len();
         let num_bytes = items.iter().map(|(_, size)| *size).sum();
+        if disk_capacity.exceeds_capacity(num_bytes, num_files) {
+            return Err(StorageErrorKind::InternalError.with_error(anyhow::anyhow!(
+                "Initial cache items should not exceed cache capacity.",
+            )));
+        }
+
         let mut disk_cache = LruCache::unbounded();
         for (path, size) in items {
             disk_cache.put(path, size);
         }
 
-        Self {
+        Ok(Self {
             local_storage,
             local_storage_root,
             ram_capacity,
@@ -100,12 +106,12 @@ impl LocalStorageCache {
             disk_cache,
             num_bytes,
             num_files,
-        }
+        })
     }
 
     /// Check if an incomming item will exceed the capacity once inserted.
     fn exceeds_capacity(&self, num_bytes: usize, num_files: usize) -> bool {
-        self.disk_capacity.max_num_bytes < num_bytes || self.disk_capacity.max_num_files < num_files
+        self.disk_capacity.exceeds_capacity(num_bytes, num_files)
     }
 }
 
@@ -262,6 +268,62 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn test_correct_instance_from_state() -> anyhow::Result<()> {
+        let local_storage = Arc::new(RamStorage::default());
+        let local_storage_root = PathBuf::from("/");
+
+        let items = (vec![("foo.split", 8), ("bar.split", 12), ("baz.split", 5)])
+            .into_iter()
+            .map(|(path, size)| (PathBuf::from(path), size as usize))
+            .collect();
+        let disk_capacity = DiskCapacity {
+            max_num_bytes: 300,
+            max_num_files: 5,
+        };
+
+        let cache = LocalStorageCache::from_state(
+            local_storage,
+            local_storage_root,
+            100,
+            disk_capacity,
+            items,
+        )?;
+
+        assert_eq!(cache.exceeds_capacity(300, 1), false);
+        assert_eq!(cache.exceeds_capacity(301, 1), true);
+        assert_eq!(cache.exceeds_capacity(300, 6), true);
+        assert_eq!(cache.num_files, 3);
+        assert_eq!(cache.num_bytes, 25);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_invalid_instance_from_state() -> anyhow::Result<()> {
+        let local_storage = Arc::new(RamStorage::default());
+        let local_storage_root = PathBuf::from("/");
+
+        let items = (vec![("foo.split", 8), ("bar.split", 12)])
+            .into_iter()
+            .map(|(path, size)| (PathBuf::from(path), size as usize))
+            .collect();
+        let disk_capacity = DiskCapacity {
+            max_num_bytes: 15,
+            max_num_files: 5,
+        };
+
+        let result = LocalStorageCache::from_state(
+            local_storage,
+            local_storage_root,
+            100,
+            disk_capacity,
+            items,
+        );
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_cannot_fit_item_in_cache() -> anyhow::Result<()> {
         let local_storage_root = tempdir()?;
         let ram_storage = Arc::new(RamStorage::default());
@@ -383,6 +445,60 @@ mod tests {
 
         let metadata = tokio::fs::metadata(output_path.as_path()).await?;
         assert_eq!(metadata.len(), 3);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_underlying_ram_cache() -> anyhow::Result<()> {
+        let local_storage = Arc::new(RamStorage::default());
+        let local_storage_root = PathBuf::from("/");
+        let mut cache = LocalStorageCache::new(local_storage, local_storage_root, 5, 5, 5);
+
+        {
+            let data = Bytes::from_static(&b"abc"[..]);
+            cache.put_slice(Path::new("3"), 0..3, data).await?;
+            assert_eq!(
+                cache.get_slice(Path::new("3"), 0..3).await?.unwrap(),
+                &b"abc"[..]
+            );
+        }
+        {
+            let data = Bytes::from_static(&b"de"[..]);
+            cache.put_slice(Path::new("2"), 0..2, data).await?;
+            // our first entry should still be here.
+            assert_eq!(
+                cache.get_slice(Path::new("3"), 0..3).await?.unwrap(),
+                &b"abc"[..]
+            );
+            assert_eq!(
+                cache.get_slice(Path::new("2"), 0..2).await?.unwrap(),
+                &b"de"[..]
+            );
+        }
+        {
+            let data = Bytes::from_static(&b"fghij"[..]);
+            cache.put_slice(Path::new("5"), 0..5, data).await?;
+            assert_eq!(
+                cache.get_slice(Path::new("5"), 0..5).await?.unwrap(),
+                &b"fghij"[..]
+            );
+            // our two first entries should have be removed from the cache
+            assert!(cache.get_slice(Path::new("2"), 0..2).await?.is_none());
+            assert!(cache.get_slice(Path::new("3"), 0..3).await?.is_none());
+        }
+        {
+            // The item insertion will be ignored since it's too large
+            let data = Bytes::from_static(&b"klmnop"[..]);
+            cache.put_slice(Path::new("6"), 0..6, data).await?;
+            assert!(cache.get_slice(Path::new("6"), 0..6).await?.is_none());
+
+            // The previous entry should however be remaining.
+            assert_eq!(
+                cache.get_slice(Path::new("5"), 0..5).await?.unwrap(),
+                &b"fghij"[..]
+            );
+        }
+
         Ok(())
     }
 }

@@ -115,7 +115,7 @@ impl StorageWithLocalStorageCache {
             cache_state.ram_capacity,
             cache_state.disk_capacity,
             cache_state.items,
-        );
+        )?;
 
         let (notification_sender, _) = broadcast::channel(10);
         Ok(Self {
