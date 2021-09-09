@@ -44,6 +44,8 @@ use super::{
     local_storage_cache::LocalStorageCache, CacheState, StorageCache, CACHE_STATE_FILE_NAME,
 };
 
+const DOWNLOAD_NOTIFICATION_CAPACITY: usize = 100;
+
 /// A storage with a backing [`Cache`].
 pub struct StorageWithLocalStorageCache {
     remote_storage: Arc<dyn Storage>,
@@ -64,12 +66,12 @@ impl StorageWithLocalStorageCache {
         max_num_files: usize,
         max_num_bytes: usize,
     ) -> StorageResult<Self> {
-        // Extract the local storage root path, also validate that local_storage
+        // Extract the local storage root path, also validate that local storage
         // is of type [`LocalFileStorage]
         let local_storage_root_path =
             LocalFileStorage::extract_root_path_from_uri(&local_storage.uri())?;
 
-        let (notification_sender, _) = broadcast::channel(10);
+        let (notification_sender, _) = broadcast::channel(DOWNLOAD_NOTIFICATION_CAPACITY);
         Ok(Self {
             remote_storage,
             cache: Mutex::new(Box::new(LocalStorageCache::new(
@@ -117,7 +119,7 @@ impl StorageWithLocalStorageCache {
             cache_state.items,
         )?;
 
-        let (notification_sender, _) = broadcast::channel(10);
+        let (notification_sender, _) = broadcast::channel(DOWNLOAD_NOTIFICATION_CAPACITY);
         Ok(Self {
             remote_storage,
             cache: Mutex::new(Box::new(local_storage_cache)),
@@ -138,8 +140,8 @@ impl StorageWithLocalStorageCache {
 
         // Wait for download to complete
         if is_currently_downloading {
-            let mut receiver = self.notification_sender.subscribe();
-            while let Ok((downloaded_path, data)) = receiver.recv().await {
+            let mut notification_receiver = self.notification_sender.subscribe();
+            while let Ok((downloaded_path, data)) = notification_receiver.recv().await {
                 if downloaded_path == path {
                     return Ok((data, false));
                 }
@@ -153,9 +155,14 @@ impl StorageWithLocalStorageCache {
 
         // Donwload & notify
         let data = self.remote_storage.get_all(path).await?;
-        let _send_result = self
-            .notification_sender
-            .send((path.to_path_buf(), data.clone()));
+        if self.notification_sender.receiver_count() > 0 {
+            self.notification_sender
+                .send((path.to_path_buf(), data.clone()))
+                .map_err(|err| {
+                    StorageErrorKind::InternalError
+                        .with_error(anyhow!("Could not send notification: {}.", err))
+                })?;
+        }
 
         self.in_flight_download_requests
             .lock()
@@ -181,8 +188,8 @@ impl StorageWithLocalStorageCache {
 
         // Wait for download to complete
         if is_currently_downloading {
-            let mut receiver = self.notification_sender.subscribe();
-            while let Ok((downloaded_path, data)) = receiver.recv().await {
+            let mut notification_receiver = self.notification_sender.subscribe();
+            while let Ok((downloaded_path, data)) = notification_receiver.recv().await {
                 if downloaded_path == path {
                     return Ok((data, false));
                 }
@@ -261,7 +268,7 @@ impl Storage for StorageWithLocalStorageCache {
             return Ok(bytes);
         }
 
-        //TODO: optimize this to avoid copying whole data in RAM.
+        //TODO: find way to optimize this to avoid copying whole data in RAM.
         let (all_bytes, is_the_downloader) = self.get_all_from_remote_storage(path).await?;
         let data = Bytes::copy_from_slice(&all_bytes[range.start..range.end]);
         if !is_the_downloader {
@@ -272,6 +279,7 @@ impl Storage for StorageWithLocalStorageCache {
         locked_cache
             .put(path, PutPayload::InMemory(all_bytes))
             .await?;
+        locked_cache.put_slice(path, range, data.clone()).await?;
         locked_cache.save_state().await?;
         Ok(data)
     }
@@ -337,9 +345,12 @@ async fn write_all(path: &Path, data: Bytes) -> anyhow::Result<()> {
 /// A struct embedding the cache parameters.
 #[derive(Debug, Clone)]
 pub struct CacheConfig {
-    ram_max_num_bytes: usize,
-    max_num_files: usize,
-    max_num_bytes: usize,
+    /// The maximum bytes allowed for the in-memory cache.
+    pub ram_max_num_bytes: usize,
+    /// The maximum number of files for the local file cache
+    pub max_num_files: usize,
+    /// The maximum size in bytes allowed for the local file cache.
+    pub max_num_bytes: usize,
 }
 
 impl Default for CacheConfig {
