@@ -36,4 +36,4 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 ```bash
 make jaeger-start
 ```
-2. Open your brower [localhost:16686](http://localhost:16686/)
+2. Open your browser [localhost:16686](http://localhost:16686/)
