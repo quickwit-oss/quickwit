@@ -30,3 +30,10 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 3. Install awslocal https://github.com/localstack/awscli-local
 4. Prepare s3 bucket used in tests, execute `./quickwit-cli/tests/prepare_tests.sh`
 5. `QUICKWIT_ENV=LOCAL cargo test --all-features`
+
+## Tracing with jaeger
+1. Start a jaeger instance
+```bash
+make jaeger-start
+```
+2. Open your brower [localhost:16686](http://localhost:16686/)
