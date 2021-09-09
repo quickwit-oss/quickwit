@@ -17,7 +17,7 @@ In that case, simply mark the PR with the tag [WIP] (standing for work in progre
 
 # Signing the CLA
 Quickwit is an opensource project licensed a AGPLv3.
-It is also distributed under a commercial license by Quickwit Inc.
+It is also distributed under a commercial license by Quickwit, Inc.
 
 Contributors are required to sign a Contributor License Agreement.
 The process is simple and fast. Upon your first pull request, you will be prompted to
@@ -25,15 +25,16 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 
 # Development
 ## Setup & run tests
-1. Install docker https://docs.docker.com/engine/install/
-2. Install localstack https://github.com/localstack/localstack#installing
-3. Install awslocal https://github.com/localstack/awscli-local
-4. Prepare s3 bucket used in tests, execute `./quickwit-cli/tests/prepare_tests.sh`
-5. `QUICKWIT_ENV=LOCAL cargo test --all-features`
+1. Install Docker (https://docs.docker.com/engine/install/) and Docker Compose (https://docs.docker.com/compose/install/)
+2. Install awslocal https://github.com/localstack/awscli-local
+3. Start the external services with `make docker-compose-up`
+5. Run `QUICKWIT_ENV=LOCAL cargo test --all-features`
 
-## Tracing with jaeger
-1. Start a jaeger instance
-```bash
-make jaeger-start
-```
-2. Open your browser [localhost:16686](http://localhost:16686/)
+## Running services such as Amazon Kinesis or S3, Kafka, or PostgreSQL locally.
+1. Ensure Docker and Docker Compose are correctly installed on your machine (see above)
+2. Run `make docker-compose-up` to launch all the services or `make docker-compose-up DOCKER_SERVICES=kafka,postgres` to launch a subset of services.
+
+## Tracing with Jaeger
+1. Ensure Docker and Docker Compose are correctly installed on your machine (see above)
+2. Start the Jaeger services (UI, collector, agent, ...) running the command `make docker-compose-up DOCKER_SERVICES=jaeger`
+3. Open your browser and visit [localhost:16686](http://localhost:16686/)
