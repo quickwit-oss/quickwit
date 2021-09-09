@@ -2,26 +2,56 @@ name: coverage
 
 on:
   push:
-    branches: [main]
+    branches: [main, run-coverage-workflow]
 jobs:
   test:
     name: coverage
     runs-on: ubuntu-latest
+    env:
+      AWS_DEFAULT_REGION  : "localhost"
+      AWS_ACCESS_KEY_ID   : "placeholder"
+      AWS_SECRET_ACCESS_KEY: "placeholder"
     services:
       localstack:
         image: localstack/localstack:latest
         ports:
           - "4566:4566"
+        options: >-
+          --name localstack
+          --hostname localstack
         env:
           SERVICES: s3
-    env:
-      AWS_ACCESS_KEY_ID   : "placeholder"
-      AWS_SECRET_ACCESS_KEY: "placeholder"
-      AWS_DEFAULT_REGION  : "localhost"
+      kafka-broker:
+        image: confluentinc/cp-kafka:6.2.0
+        ports:
+          - "9092:9092"
+          - "9101:9101"
+        options: >-
+          --name kafka-broker
+          --hostname kafka-broker
+        env:
+          KAFKA_BROKER_ID: 1
+          KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:29092,PLAINTEXT_HOST://localhost:9092
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_JMX_PORT: 9101
+          KAFKA_JMX_HOSTNAME: localhost
+      zookeeper:
+        image: confluentinc/cp-zookeeper:6.2.0
+        ports:
+          - "2181:2181"
+        options: >-
+          --name zookeeper
+          --hostname zookeeper
+        env:
+          ZOOKEEPER_CLIENT_PORT: 2181
+          ZOOKEEPER_TICK_TIME: 2000
     steps:
       - uses: actions/checkout@v2
-      - name: Wait for localstack
-        run: sleep 30s
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
@@ -30,14 +60,13 @@ jobs:
         run: rustup toolchain install nightly --component llvm-tools-preview
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov
-      - name: install aws local
+      - name: Install awslocal
         run: pip install awscli-local
-      - name: Prepare s3
+      - name: Wait for services
+        run: sleep 30s
+      - name: Prepare LocalStack S3
         run: ./quickwit-cli/tests/prepare_tests.sh 
       - name: Generate code coverage
-        env:
-          AWS_ACCESS_KEY_ID: dummy-access-key
-          AWS_SECRET_ACCESS_KEY: dummy-secret-key
         run: |
           QUICKWIT_ENV=LOCAL cargo +nightly llvm-cov --all-features --workspace --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
@@ -46,4 +75,3 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           files: lcov.info
           fail_ci_if_error: true
-
