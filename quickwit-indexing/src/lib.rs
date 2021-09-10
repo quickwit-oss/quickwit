@@ -20,6 +20,7 @@
 use std::sync::Arc;
 
 use anyhow::bail;
+use chrono::Utc;
 use quickwit_actors::Universe;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
@@ -65,5 +66,20 @@ pub async fn index_data(
 }
 
 pub(crate) fn new_split_id() -> String {
-    ulid::Ulid::new().to_string()
+    format!(
+        "{}-{}",
+        Utc::now().format("%Y%m%dT%H%M%S"),
+        ulid::Ulid::new(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_split_id() {
+        let split_id = new_split_id();
+        assert_eq!(split_id.len(), 42);
+    }
 }
