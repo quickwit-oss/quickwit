@@ -30,6 +30,8 @@ termcolor = "1"
 bytes = "1"
 tokio = { version = "1.7", features = [ "full" ] }
 tokio-stream = "0.1.6"
+opentelemetry = "0.16"
+tracing-opentelemetry = "0.15"
 
 [dev-dependencies]
 mockall = "0.10"

@@ -25,12 +25,15 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
+use opentelemetry::global;
+use opentelemetry::sdk::propagation::TraceContextPropagator;
 use quickwit_cli::*;
 use quickwit_common::to_socket_addr;
 use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::Level;
-use tracing_subscriber::fmt::Subscriber;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, PartialEq)]
 enum CliCommand {
@@ -243,20 +246,31 @@ impl CliCommand {
     }
 }
 
-fn setup_logger(default_level: Level) {
-    if env::var("RUST_LOG").is_ok() {
-        tracing_subscriber::fmt::init();
-        return;
-    }
-    Subscriber::builder()
-        .with_env_filter(format!("quickwit={}", default_level))
+fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
+    let env_filter = env::var("RUST_LOG")
+        .map(|_| EnvFilter::from_default_env())
+        .or_else(|_| EnvFilter::try_new(format!("quickwit={}", level)))
+        .context("Failed to set up tracing env filter.")?;
+
+    global::set_text_map_propagator(TraceContextPropagator::new());
+
+    // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
+    let tracer = opentelemetry_jaeger::new_pipeline()
+        .with_service_name("quickwit")
+        //.install_batch(opentelemetry::runtime::Tokio)
+        .install_simple()
+        .context("Failed to initialize Jaeger exporter.")?;
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(tracing_opentelemetry::layer().with_tracer(tracer))
+        .with(tracing_subscriber::fmt::layer())
         .try_init()
-        .expect("Failed to set up logger.")
+        .context("Failed to set up tracing.")?;
+    Ok(())
 }
 
-#[tracing::instrument]
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
 
@@ -275,7 +289,7 @@ async fn main() {
         }
     };
 
-    setup_logger(command.default_log_level());
+    setup_logging_and_tracing(command.default_log_level())?;
 
     let command_res = match command {
         CliCommand::New(args) => create_index_cli(args).await,
@@ -296,6 +310,7 @@ async fn main() {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::EndCommand { return_code }).await;
 
     telemetry_handle.terminate_telemetry().await;
+    global::shutdown_tracer_provider();
 
     std::process::exit(return_code);
 }

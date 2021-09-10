@@ -34,6 +34,7 @@ use crate::root::{job_for_splits, NodeSearchError};
 use crate::{list_relevant_splits, ClientPool, SearchClientPool, SearchError};
 
 /// Perform a distributed search stream.
+#[instrument(skip(metastore, client_pool))]
 pub async fn root_search_stream(
     search_stream_request: &SearchStreamRequest,
     metastore: &dyn Metastore,
@@ -73,6 +74,10 @@ pub async fn root_search_stream(
                 split_footer_end: job.metadata.footer_offsets.end,
             })
             .collect();
+        let split_ids: Vec<_> = split_metadata_list
+            .iter()
+            .map(|split| split.split_id.clone())
+            .collect();
         let leaf_request = LeafSearchStreamRequest {
             request: Some(search_stream_request.clone()),
             split_metadata: split_metadata_list.clone(),
@@ -80,34 +85,35 @@ pub async fn root_search_stream(
             index_uri: index_metadata.index_uri.to_string(),
         };
         debug!(leaf_request=?leaf_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search stream.");
-        let handle = tokio::spawn(async move {
-            let mut receiver = search_client
-                .leaf_search_stream(leaf_request)
-                .await
-                .map_err(|search_error| NodeSearchError {
-                    search_error,
-                    split_ids: split_metadata_list
-                        .iter()
-                        .map(|split| split.split_id.clone())
-                        .collect(),
-                })?;
+        let span = info_span!(
+            "leaf_node_search_stream",
+            grpc_addr=?search_client.grpc_addr(),
+            split_ids=?split_ids,
+        );
+        let handle = tokio::spawn(
+            async move {
+                let mut receiver = search_client
+                    .leaf_search_stream(leaf_request)
+                    .await
+                    .map_err(|search_error| NodeSearchError {
+                        search_error,
+                        split_ids: split_ids.clone(),
+                    })?;
 
-            let mut leaf_bytes: Vec<Bytes> = Vec::new();
-            while let Some(leaf_result) = receiver.next().await {
-                let leaf_data = leaf_result.map_err(|search_error| NodeSearchError {
-                    search_error,
-                    split_ids: split_metadata_list
-                        .iter()
-                        .map(|split| split.split_id.clone())
-                        .collect(),
-                })?;
-                leaf_bytes.push(Bytes::from(leaf_data.data));
+                let mut leaf_bytes: Vec<Bytes> = Vec::new();
+                while let Some(leaf_result) = receiver.next().await {
+                    let leaf_data = leaf_result.map_err(|search_error| NodeSearchError {
+                        search_error,
+                        split_ids: split_ids.clone(),
+                    })?;
+                    leaf_bytes.push(Bytes::from(leaf_data.data));
+                }
+                Result::<Vec<Bytes>, NodeSearchError>::Ok(leaf_bytes)
             }
-            Result::<Vec<Bytes>, NodeSearchError>::Ok(leaf_bytes)
-        });
+            .instrument(span),
+        );
         handles.push(handle);
     }
-
     let nodes_results = futures::future::try_join_all(handles).await?;
     let (nodes_bytes, errors): (Vec<Vec<Bytes>>, Vec<_>) =
         nodes_results

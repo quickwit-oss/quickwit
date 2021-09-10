@@ -128,6 +128,7 @@ async fn get_searcher_for_split(
 }
 
 /// Fetching docs from a specific split.
+#[tracing::instrument(skip(global_doc_addrs, index_storage, split))]
 #[allow(clippy::needless_lifetimes)]
 async fn fetch_docs_in_split<'a>(
     global_doc_addrs: Vec<GlobalDocAddress<'a>>,
