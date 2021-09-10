@@ -1,7 +1,7 @@
 header:
   license:
-    content: | # <4>
-      Copyright (C) 2021 Quickwit Inc.
+    content: |-
+      Copyright (C) 2021 Quickwit, Inc.
 
       Quickwit is offered under the AGPL v3.0 and as commercial software.
       For commercial licensing, contact us at hello@quickwit.io.
@@ -14,21 +14,19 @@ header:
 
       This program is distributed in the hope that it will be useful,
       but WITHOUT ANY WARRANTY; without even the implied warranty of
-      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
       GNU Affero General Public License for more details.
 
       You should have received a copy of the GNU Affero General Public License
-      along with this program.  If not, see <http://www.gnu.org/licenses/>.
+      along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-  pattern: |
-    Copyright \(C\) 2021 Quickwit Inc\..*commercial.*AGPL
+  paths:
+    - '**/*.rs'
 
   paths-ignore:
     - '**/target/**'
     - 'quickwit-proto/src/cluster.rs'
     - 'quickwit-proto/src/quickwit.rs'
-
-  paths:
-    - '**/*.rs'
+    - 'quickwit-swim/**'
 
   comment: on-failure
