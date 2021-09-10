@@ -1,22 +1,21 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::io;
 use std::ops::RangeInclusive;
@@ -25,25 +24,15 @@ use std::sync::Arc;
 use anyhow::Context;
 use byte_unit::Byte;
 use fail::fail_point;
-use quickwit_actors::Actor;
-use quickwit_actors::ActorContext;
-use quickwit_actors::ActorExitStatus;
-use quickwit_actors::Mailbox;
-use quickwit_actors::QueueCapacity;
-use quickwit_actors::SendError;
-use quickwit_actors::SyncActor;
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SendError, SyncActor,
+};
 use quickwit_index_config::IndexConfig;
-use tantivy::schema::Field;
-use tantivy::schema::Value;
+use tantivy::schema::{Field, Value};
 use tantivy::Document;
-use tracing::info;
-use tracing::warn;
+use tracing::{info, warn};
 
-use crate::models::CommitPolicy;
-use crate::models::IndexedSplit;
-use crate::models::IndexerMessage;
-use crate::models::RawDocBatch;
-use crate::models::ScratchDirectory;
+use crate::models::{CommitPolicy, IndexedSplit, IndexerMessage, RawDocBatch, ScratchDirectory};
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
 pub struct IndexerCounters {
@@ -187,7 +176,7 @@ impl IndexerState {
         let indexed_split = self.get_or_create_current_indexed_split(current_split_opt, ctx)?;
         indexed_split
             .checkpoint_delta
-            .add(batch.checkpoint_delta)
+            .extend(batch.checkpoint_delta)
             .with_context(|| "Batch delta does not follow indexer checkpoint")?;
         for doc_json in batch.docs {
             counters.overall_num_bytes += doc_json.len() as u64;
@@ -400,19 +389,14 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use crate::actors::indexer::record_timestamp;
-    use crate::actors::indexer::IndexerCounters;
-    use crate::actors::IndexerParams;
-    use crate::models::CommitPolicy;
-    use crate::models::IndexerMessage;
-    use crate::models::RawDocBatch;
-    use crate::models::ScratchDirectory;
     use byte_unit::Byte;
-    use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::Universe;
+    use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_metastore::checkpoint::CheckpointDelta;
 
     use super::Indexer;
+    use crate::actors::indexer::{record_timestamp, IndexerCounters};
+    use crate::actors::IndexerParams;
+    use crate::models::{CommitPolicy, IndexerMessage, RawDocBatch, ScratchDirectory};
 
     #[test]
     fn test_record_timestamp() {
@@ -470,7 +454,7 @@ mod tests {
                 num_valid_docs: 2,
                 num_splits_emitted: 0,
                 num_docs_in_split: 2, //< we have not reached the commit limit yet.
-                overall_num_bytes: 103,
+                overall_num_bytes: 103
             }
         );
         universe
@@ -492,7 +476,7 @@ mod tests {
                 num_valid_docs: 3,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0, //< the num docs in split counter has been reset.
-                overall_num_bytes: 146,
+                overall_num_bytes: 146
             }
         );
         let output_messages = inbox.drain_available_message_for_test();
@@ -541,7 +525,7 @@ mod tests {
                 num_valid_docs: 1,
                 num_splits_emitted: 0,
                 num_docs_in_split: 1,
-                overall_num_bytes: 42,
+                overall_num_bytes: 42
             }
         );
         universe.simulate_time_shift(Duration::from_secs(61)).await;
@@ -554,7 +538,7 @@ mod tests {
                 num_valid_docs: 1,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0,
-                overall_num_bytes: 42,
+                overall_num_bytes: 42
             }
         );
         let output_messages = inbox.drain_available_message_for_test();
@@ -600,7 +584,7 @@ mod tests {
                 num_valid_docs: 1,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0,
-                overall_num_bytes: 42,
+                overall_num_bytes: 42
             }
         );
         let output_messages = inbox.drain_available_message_for_test();

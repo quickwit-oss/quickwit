@@ -1,5 +1,5 @@
-use std::io;
-use std::result;
+use std::{io, result};
+
 use thiserror::Error;
 
 /// Result type for operations that could result in an `ArtilleryError`

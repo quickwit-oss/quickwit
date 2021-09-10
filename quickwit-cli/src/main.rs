@@ -1,40 +1,39 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+use std::env;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
+use opentelemetry::global;
+use opentelemetry::sdk::propagation::TraceContextPropagator;
 use quickwit_cli::*;
 use quickwit_common::to_socket_addr;
-use quickwit_serve::serve_cli;
-use quickwit_serve::ServeArgs;
+use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
-use std::env;
-use std::net::SocketAddr;
-use std::path::Path;
-use std::path::PathBuf;
-use std::time::Duration;
 use tracing::Level;
-use tracing_subscriber::fmt::Subscriber;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, PartialEq)]
 enum CliCommand {
@@ -247,20 +246,31 @@ impl CliCommand {
     }
 }
 
-fn setup_logger(default_level: Level) {
-    if env::var("RUST_LOG").is_ok() {
-        tracing_subscriber::fmt::init();
-        return;
-    }
-    Subscriber::builder()
-        .with_env_filter(format!("quickwit={}", default_level))
+fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
+    let env_filter = env::var("RUST_LOG")
+        .map(|_| EnvFilter::from_default_env())
+        .or_else(|_| EnvFilter::try_new(format!("quickwit={}", level)))
+        .context("Failed to set up tracing env filter.")?;
+
+    global::set_text_map_propagator(TraceContextPropagator::new());
+
+    // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
+    let tracer = opentelemetry_jaeger::new_pipeline()
+        .with_service_name("quickwit")
+        //.install_batch(opentelemetry::runtime::Tokio)
+        .install_simple()
+        .context("Failed to initialize Jaeger exporter.")?;
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(tracing_opentelemetry::layer().with_tracer(tracer))
+        .with(tracing_subscriber::fmt::layer())
         .try_init()
-        .expect("Failed to set up logger.")
+        .context("Failed to set up tracing.")?;
+    Ok(())
 }
 
-#[tracing::instrument]
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
 
@@ -279,7 +289,7 @@ async fn main() {
         }
     };
 
-    setup_logger(command.default_log_level());
+    setup_logging_and_tracing(command.default_log_level())?;
 
     let command_res = match command {
         CliCommand::New(args) => create_index_cli(args).await,
@@ -300,13 +310,18 @@ async fn main() {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::EndCommand { return_code }).await;
 
     telemetry_handle.terminate_telemetry().await;
+    global::shutdown_tracer_provider();
 
     std::process::exit(return_code);
 }
 
 /// Return the about text with telemetry info.
 fn about_text() -> String {
-    let mut about_text = format!("Indexing your large dataset on object storage & making it searchable from the command line.\nCommit hash: {}\n", env!("GIT_COMMIT_HASH"));
+    let mut about_text = format!(
+        "Indexing your large dataset on object storage & making it searchable from the command \
+         line.\nCommit hash: {}\n",
+        env!("GIT_COMMIT_HASH")
+    );
     if quickwit_telemetry::is_telemetry_enabled() {
         about_text += "Telemetry Enabled";
     }
@@ -340,17 +355,19 @@ pub fn parse_duration_with_unit(duration: &str) -> anyhow::Result<Duration> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
+    use std::time::Duration;
+
+    use clap::{load_yaml, App, AppSettings};
+    use quickwit_common::to_socket_addr;
+    use quickwit_serve::ServeArgs;
+    use tempfile::NamedTempFile;
+
     use crate::{
         parse_duration_with_unit, CliCommand, CreateIndexArgs, DeleteIndexArgs,
         GarbageCollectIndexArgs, IndexDataArgs, SearchIndexArgs,
     };
-    use clap::{load_yaml, App, AppSettings};
-    use quickwit_common::to_socket_addr;
-    use quickwit_serve::ServeArgs;
-    use std::io::Write;
-    use std::path::{Path, PathBuf};
-    use std::time::Duration;
-    use tempfile::NamedTempFile;
 
     #[test]
     fn test_parse_new_args() -> anyhow::Result<()> {

@@ -1,36 +1,32 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-use crate::default_index_config::TAGS_FIELD_NAME;
-use crate::DocParsingError;
-use dyn_clone::clone_trait_object;
-use dyn_clone::DynClone;
-use quickwit_proto::SearchRequest;
 use std::fmt::Debug;
+
+use dyn_clone::{clone_trait_object, DynClone};
+use quickwit_proto::SearchRequest;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 use tantivy::Document;
 
-use crate::QueryParserError;
+use crate::default_index_config::TAGS_FIELD_NAME;
+use crate::{DocParsingError, QueryParserError};
 
 /// Sorted order (either Ascending or Descending).
 /// To get a regular top-K results search, use `SortOrder::Desc`.
@@ -43,7 +39,8 @@ pub enum SortOrder {
 }
 
 /// Defines the way documents should be sorted.
-/// In case of a tie, the documents are ordered according to descending `(split_id, segment_ord, doc_id)`.
+/// In case of a tie, the documents are ordered according to descending `(split_id, segment_ord,
+/// doc_id)`.
 #[derive(Clone, Debug)]
 pub enum SortBy {
     /// Sort by a specific field.
@@ -65,7 +62,6 @@ pub enum SortBy {
 /// - a way to build a tantivy::Document from a json payload
 /// - a way to build a tantivy::Query from a SearchRequest
 /// - a way to build a tantivy:Schema
-///
 #[typetag::serde(tag = "type")]
 pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     /// Returns the document built from a json string.

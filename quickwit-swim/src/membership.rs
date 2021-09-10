@@ -179,8 +179,6 @@ impl ArtilleryMemberList {
         (new_nodes, changed_nodes)
     }
 
-    ///
-    ///
     /// Random ping enqueuing
     pub fn hosts_for_indirect_ping(
         &self,
@@ -217,7 +215,6 @@ impl ArtilleryMemberList {
         self.members.push(member)
     }
 
-    ///
     /// `get_member` will return artillery member if the given uuid is matches with any of the
     /// member in the cluster.
     pub fn get_member(&self, id: &Uuid) -> Option<ArtilleryMember> {

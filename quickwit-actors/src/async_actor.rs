@@ -1,22 +1,27 @@
-//  Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+use anyhow::Context;
+use async_trait::async_trait;
+use tokio::sync::watch::{self, Sender};
+use tokio::task::JoinHandle;
+use tracing::{debug, error, info};
 
 use crate::actor::{process_command, ActorExitStatus};
 use crate::actor_handle::ActorHandle;
@@ -24,11 +29,6 @@ use crate::actor_state::ActorState;
 use crate::actor_with_state_tx::ActorWithStateTx;
 use crate::mailbox::{CommandOrMessage, Inbox};
 use crate::{Actor, ActorContext, RecvError};
-use anyhow::Context;
-use async_trait::async_trait;
-use tokio::sync::watch::{self, Sender};
-use tokio::task::JoinHandle;
-use tracing::{debug, error, info};
 
 /// An async actor is executed on a regular tokio task.
 ///
@@ -86,14 +86,18 @@ pub(crate) fn spawn_async_actor<A: AsyncActor>(
     ctx: ActorContext<A::Message>,
     inbox: Inbox<A::Message>,
 ) -> ActorHandle<A> {
-    debug!(actor_name=%ctx.actor_instance_id(),"spawning-async-actor");
+    debug!(actor_name = %ctx.actor_instance_id(), "spawning-async-actor");
     let (state_tx, state_rx) = watch::channel(actor.observable_state());
     let ctx_clone = ctx.clone();
     let (exit_status_tx, exit_status_rx) = watch::channel(None);
     let join_handle: JoinHandle<()> = tokio::spawn(async move {
         let actor_instance_id = ctx.actor_instance_id().to_string();
         let exit_status = async_actor_loop(actor, inbox, ctx, state_tx).await;
-        info!(exit_status=%exit_status, actor=actor_instance_id.as_str(), "exit");
+        info!(
+            actor_name = actor_instance_id.as_str(),
+            exit_status = %exit_status,
+            "actor-exit"
+        );
         let _ = exit_status_tx.send(Some(exit_status));
     });
     ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)

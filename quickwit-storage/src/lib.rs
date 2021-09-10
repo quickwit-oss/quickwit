@@ -1,37 +1,33 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
 
-/*! `quickwit-storage` is the abstraction used in quickwit to interface itself
-to different storage:
-- object storages (S3)
-- local filesystem
-- distributed filesystems.
-etc.
-
-- The `BundleStorage` bundles together multiple files into a single file.
-
-*/
+//! `quickwit-storage` is the abstraction used in quickwit to interface itself
+//! to different storage:
+//! - object storages (S3)
+//! - local filesystem
+//! - distributed filesystems.
+//! etc.
+//!
+//! - The `BundleStorage` bundles together multiple files into a single file.
 mod cachable_storage;
 mod cache;
 mod storage;
@@ -49,6 +45,8 @@ mod storage_resolver;
 pub use self::bundle_storage::{
     BundleStorage, BundleStorageBuilder, BundleStorageFileOffsets, BUNDLE_FILENAME,
 };
+#[cfg(any(test, feature = "testsuite"))]
+pub use self::cache::MockCache;
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, RegionProvider, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
@@ -70,19 +68,22 @@ pub use self::cache::MockCache;
 pub use self::storage::MockStorage;
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::storage_resolver::MockStorageFactory;
-
+pub use self::storage_resolver::{
+    quickwit_storage_uri_resolver, StorageFactory, StorageUriResolver,
+};
 #[cfg(feature = "testsuite")]
 pub use self::tests::storage_test_suite;
+pub use crate::cache::{Cache, MemorySizedCache, SliceCache, StorageWithCacheFactory};
+pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 #[cfg(any(test, feature = "testsuite"))]
 pub(crate) mod tests {
 
-    use anyhow::Context;
-
-    use crate::PutPayload;
     use std::path::Path;
 
-    use crate::{Storage, StorageErrorKind};
+    use anyhow::Context;
+
+    use crate::{PutPayload, Storage, StorageErrorKind};
 
     async fn test_get_inexistent_file(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let err = storage

@@ -1,23 +1,21 @@
-/*
- * Copyright (C) 2021 Quickwit Inc.
- *
- * Quickwit is offered under the AGPL v3.0 and as commercial software.
- * For commercial licensing, contact us at hello@quickwit.io.
- *
- * AGPL:
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
@@ -26,17 +24,15 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_cluster::cluster::Cluster;
 use tokio::sync::RwLock;
 use tokio_stream::StreamExt;
 use tracing::*;
 
-use quickwit_cluster::cluster::Cluster;
-
 use crate::client::create_search_service_client;
 use crate::client_pool::{ClientPool, Job};
 use crate::rendezvous_hasher::{sort_by_rendez_vous_hash, Node};
-use crate::swim_addr_to_grpc_addr;
-use crate::SearchServiceClient;
+use crate::{swim_addr_to_grpc_addr, SearchServiceClient};
 
 /// Search client pool implementation.
 #[derive(Clone)]
@@ -233,8 +229,7 @@ mod tests {
     use std::collections::HashSet;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::sync::Arc;
-    use std::thread;
-    use std::time;
+    use std::{thread, time};
 
     use quickwit_cluster::cluster::{read_host_key, Cluster};
     use quickwit_cluster::test_utils::{available_port, test_cluster};
@@ -242,8 +237,7 @@ mod tests {
 
     use crate::client_pool::search_client_pool::create_search_service_client;
     use crate::client_pool::{ClientPool, Job};
-    use crate::swim_addr_to_grpc_addr;
-    use crate::SearchClientPool;
+    use crate::{swim_addr_to_grpc_addr, SearchClientPool};
 
     #[tokio::test]
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {

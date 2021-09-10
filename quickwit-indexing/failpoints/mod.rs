@@ -1,22 +1,21 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 //! Fail points are a form of code instrumentation that allow errors and other behaviors
 //! to be injected dynamically at runtime, primarily for testing purposes. Fail
@@ -36,25 +35,20 @@
 //!
 //! Below we test panics at different steps in the indexing pipeline.
 
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use byte_unit::Byte;
 use fail::FailScenario;
 use quickwit_index_config::default_config_for_tests;
 use quickwit_indexing::actors::IndexerParams;
 use quickwit_indexing::index_data;
-use quickwit_indexing::models::CommitPolicy;
-use quickwit_indexing::models::ScratchDirectory;
+use quickwit_indexing::models::{CommitPolicy, ScratchDirectory};
 use quickwit_indexing::source::SourceConfig;
 use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::IndexMetadata;
-use quickwit_metastore::Metastore;
-use quickwit_metastore::SingleFileMetastore;
-use quickwit_metastore::SplitState;
-use quickwit_storage::quickwit_storage_uri_resolver;
-use quickwit_storage::StorageUriResolver;
+use quickwit_metastore::{IndexMetadata, Metastore, SingleFileMetastore, SplitState};
+use quickwit_storage::{quickwit_storage_uri_resolver, StorageUriResolver};
 use serde_json::json;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::time::Duration;
 
 #[tokio::test]
 async fn test_failpoint_no_failure() -> anyhow::Result<()> {

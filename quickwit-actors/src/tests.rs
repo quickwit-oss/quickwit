@@ -1,33 +1,32 @@
-/*
- * Copyright (C) 2021 Quickwit Inc.
- *
- * Quickwit is offered under the AGPL v3.0 and as commercial software.
- * For commercial licensing, contact us at hello@quickwit.io.
- *
- * AGPL:
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+use std::collections::HashSet;
+
+use async_trait::async_trait;
+
 use crate::mailbox::Command;
 use crate::observation::ObservationType;
-use crate::Actor;
-use crate::ActorHandle;
-use crate::Health;
-use crate::Supervisable;
-use crate::Universe;
-use crate::{ActorContext, ActorExitStatus, AsyncActor, Mailbox, Observation, SyncActor};
-use async_trait::async_trait;
-use std::collections::HashSet;
+use crate::{
+    Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health, Mailbox, Observation,
+    Supervisable, SyncActor, Universe,
+};
 
 // An actor that receives ping messages.
 #[derive(Default)]
@@ -217,7 +216,7 @@ async fn test_ping_actor() {
         ping_recv_handle.process_pending_and_observe().await,
         Observation {
             obs_type: ObservationType::PostMortem,
-            state: 2,
+            state: 2
         }
     );
     assert_eq!(

@@ -1,44 +1,41 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use super::FastFieldCollectorBuilder;
-use crate::leaf::open_index;
-use crate::leaf::warmup;
-use crate::SearchError;
+use std::sync::Arc;
+
 use futures::{FutureExt, StreamExt};
 use quickwit_index_config::IndexConfig;
-use quickwit_proto::LeafSearchStreamResult;
-use quickwit_proto::OutputFormat;
-use quickwit_proto::SearchRequest;
-use quickwit_proto::SearchStreamRequest;
-use quickwit_proto::SplitIdAndFooterOffsets;
+use quickwit_proto::{
+    LeafSearchStreamResult, OutputFormat, SearchRequest, SearchStreamRequest,
+    SplitIdAndFooterOffsets,
+};
 use quickwit_storage::Storage;
-use std::sync::Arc;
 use tantivy::query::Query;
 use tantivy::schema::Type;
-use tantivy::LeasedItem;
-use tantivy::ReloadPolicy;
-use tantivy::Searcher;
+use tantivy::{LeasedItem, ReloadPolicy, Searcher};
 use tokio::task::spawn_blocking;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::error;
+use tracing::*;
+
+use super::FastFieldCollectorBuilder;
+use crate::leaf::{open_index, warmup};
+use crate::SearchError;
 
 // TODO: buffer of 5 seems to be sufficient to do the job locally, needs to be tested on a cluster.
 const CONCURRENT_SPLIT_SEARCH_STREAM: usize = 5;
@@ -57,18 +54,23 @@ pub async fn leaf_search_stream(
     index_config: Arc<dyn IndexConfig>,
 ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>> {
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-    tokio::spawn(async move {
-        let mut stream = leaf_search_results_stream(request, storage, splits, index_config).await;
-        while let Some(item) = stream.next().await {
-            if let Err(error) = result_sender.send(item) {
-                error!(
-                    "Failed to send leaf search stream result. Stop sending. Cause: {}",
-                    error
-                );
-                break;
+    let span = info_span!("leaf_search_stream",);
+    tokio::spawn(
+        async move {
+            let mut stream =
+                leaf_search_results_stream(request, storage, splits, index_config).await;
+            while let Some(item) = stream.next().await {
+                if let Err(error) = result_sender.send(item) {
+                    error!(
+                        "Failed to send leaf search stream result. Stop sending. Cause: {}",
+                        error
+                    );
+                    break;
+                }
             }
         }
-    });
+        .instrument(span),
+    );
     UnboundedReceiverStream::new(result_receiver)
 }
 
@@ -92,6 +94,7 @@ async fn leaf_search_results_stream(
 }
 
 /// Apply a leaf search on a single split.
+#[instrument(fields(split_id = %split.split_id), skip(split, index_config, stream_request, storage))]
 async fn leaf_search_stream_single_split(
     split: SplitIdAndFooterOffsets,
     index_config: Arc<dyn IndexConfig>,
@@ -148,6 +151,12 @@ async fn leaf_search_stream_single_split(
             output_format,
         )
     });
+    let span = info_span!(
+        "collect_fast_field",
+        split_id = %split.split_id,
+        fast_field=%fast_field_to_extract,
+    );
+    let _ = span.enter();
     let buffer = collect_handle.await.map_err(|error| {
         error!(split_id = %split.split_id, fast_field=%fast_field_to_extract, error_message=%error, "Failed to collect fast field");
         SearchError::InternalError(format!("Error when collecting fast field values for split {}: {:?}", split.split_id, error))
@@ -197,13 +206,14 @@ fn collect_fast_field_values(
 
 #[cfg(test)]
 mod tests {
-    use std::{str::from_utf8, sync::Arc};
+    use std::str::from_utf8;
+    use std::sync::Arc;
 
     use quickwit_index_config::DefaultIndexConfigBuilder;
     use quickwit_indexing::TestSandbox;
+    use serde_json::json;
 
     use super::*;
-    use serde_json::json;
 
     #[tokio::test]
     async fn test_leaf_search_stream_to_csv_output_with_filtering() -> anyhow::Result<()> {

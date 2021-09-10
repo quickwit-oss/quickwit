@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) {\d+} Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -17,28 +17,3 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-#![warn(missing_docs)]
-#![allow(clippy::bool_assert_comparison)]
-
-//! `quickwit-metastore` is the abstraction used in quickwit to interface itself to different
-//! metastore:
-//! - single file metastore
-//! etc.
-
-#[macro_use]
-mod tests;
-
-#[allow(missing_docs)]
-pub mod checkpoint;
-mod error;
-mod metastore;
-mod metastore_resolver;
-
-pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
-pub use metastore::single_file_metastore::SingleFileMetastore;
-#[cfg(feature = "testsuite")]
-pub use metastore::MockMetastore;
-pub use metastore::{
-    IndexMetadata, MetadataSet, Metastore, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState,
-};
-pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};

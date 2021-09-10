@@ -1,30 +1,31 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use super::Source;
-use crate::source::SourceConfig;
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::Checkpoint;
-use std::collections::HashMap;
 use thiserror::Error;
+
+use super::Source;
+use crate::source::SourceConfig;
 
 #[async_trait]
 pub trait SourceFactory: 'static + Send + Sync {
@@ -65,7 +66,10 @@ pub struct SourceLoader {
 
 #[derive(Error, Debug)]
 pub enum SourceLoaderError {
-    #[error("Unknown source type `{requested_source_type}` (available source types are {available_source_types}).")]
+    #[error(
+        "Unknown source type `{requested_source_type}` (available source types are \
+         {available_source_types})."
+    )]
     UnknownSourceType {
         requested_source_type: String,
         available_source_types: String, //< a comma separated list with the available source_type.
@@ -115,9 +119,10 @@ impl SourceLoader {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
     use crate::source::quickwit_supported_sources;
-    use serde_json::json;
 
     #[tokio::test]
     async fn test_source_loader_success() -> anyhow::Result<()> {

@@ -1,31 +1,28 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
-
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 pub mod single_file_metastore;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::{Range, RangeInclusive};
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -144,13 +141,13 @@ pub struct MetadataSet {
 ///
 /// The split state goes through the following life cycle:
 /// 1. `New`
-///   - Create new split and start indexing.
+///  - Create new split and start indexing.
 /// 2. `Staged`
-///   - Start uploading the split files.
+///  - Start uploading the split files.
 /// 3. `Published`
-///   - Uploading the split files is complete and the split is searchable.
+///  - Uploading the split files is complete and the split is searchable.
 /// 4. `ScheduledForDeletion`
-///   - Mark the split for deletion.
+///  - Mark the split for deletion.
 ///
 /// If a split has a file in the storage, it MUST be registered in the metastore,
 /// and its state can be as follows:
@@ -158,10 +155,11 @@ pub struct MetadataSet {
 /// - `Published`: The split is ready and published.
 /// - `ScheduledForDeletion`: The split is scheduled for deletion.
 ///
-/// Before creating any file, we need to stage the split. If there is a failure, upon recovery, we schedule for deletion all the staged splits.
-/// A client may not necessarily remove files from storage right after marking it as deleted.
-/// A CLI client may delete files right away, but a more serious deployment should probably
-/// only delete those files after a grace period so that the running search queries can complete.
+/// Before creating any file, we need to stage the split. If there is a failure, upon recovery, we
+/// schedule for deletion all the staged splits. A client may not necessarily remove files from
+/// storage right after marking it as deleted. A CLI client may delete files right away, but a more
+/// serious deployment should probably only delete those files after a grace period so that the
+/// running search queries can complete.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
@@ -233,8 +231,8 @@ pub trait Metastore: Send + Sync + 'static {
     ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>>;
 
     /// Marks a list of splits as deleted.
-    /// This API will change the state to `ScheduledForDeletion` so that it is not referenced by the client.
-    /// It actually does not remove the split from storage.
+    /// This API will change the state to `ScheduledForDeletion` so that it is not referenced by the
+    /// client. It actually does not remove the split from storage.
     /// An error will occur if you specify an index or split that does not exist in the storage.
     async fn mark_splits_as_deleted<'a>(
         &self,
@@ -244,8 +242,9 @@ pub trait Metastore: Send + Sync + 'static {
 
     /// Deletes a list of splits.
     /// This API only takes a split that is in `Staged` or `ScheduledForDeletion` state.
-    /// This removes the split metadata from the metastore, but does not remove the split from storage.
-    /// An error will occur if you specify an index or split that does not exist in the storage.
+    /// This removes the split metadata from the metastore, but does not remove the split from
+    /// storage. An error will occur if you specify an index or split that does not exist in the
+    /// storage.
     async fn delete_splits<'a>(&self, index_id: &str, split_ids: &[&'a str])
         -> MetastoreResult<()>;
 

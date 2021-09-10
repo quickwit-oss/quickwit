@@ -22,6 +22,7 @@ thiserror = "1"
 tonic = '0.5.2'
 tokio-stream = '0.1.6'
 tracing = "0.1"
+tracing-futures = "0.2.5"
 serde_json = "1"
 serde = { version = "1.0", features = ["derive"] }
 hyper = { version = "0.14", features = ["stream", "server", "http1", "http2", "tcp", "client"] }
@@ -30,6 +31,8 @@ quickwit-common = {path="../quickwit-common"}
 lru = "0.6.6"
 once_cell = "1"
 tempfile = "3.2"
+opentelemetry = "0.16"
+tracing-opentelemetry = "0.15"
 
 [dependencies.tantivy]
 git = 'https://github.com/quickwit-inc/tantivy'

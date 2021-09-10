@@ -1,34 +1,34 @@
-/*
-    Quickwit
-    Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-    Quickwit is offered under the AGPL v3.0 and as commercial software.
-    For commercial licensing, contact us at hello@quickwit.io.
-
-    AGPL:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as
-    published by the Free Software Foundation, either version 3 of the
-    License, or (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
-
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
-use crate::FileEntry;
-use futures::StreamExt;
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver};
-use quickwit_metastore::{SplitMetadataAndFooterOffsets, SplitState};
-use quickwit_storage::{quickwit_storage_uri_resolver, StorageUriResolver};
 use std::path::Path;
 use std::time::Duration;
+
+use futures::StreamExt;
+use quickwit_metastore::{
+    IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadataAndFooterOffsets, SplitState,
+};
+use quickwit_storage::{quickwit_storage_uri_resolver, StorageUriResolver};
 use tantivy::chrono::Utc;
 use tracing::warn;
+
+use crate::FileEntry;
 
 pub const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 
@@ -37,7 +37,6 @@ pub const MAX_CONCURRENT_SPLIT_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 ///
 /// * `metastore_uri` - The metastore URI for accessing the metastore.
 /// * `index_metadata` - The metadata used to create the target index.
-///
 pub async fn create_index(
     metastore_uri: &str,
     index_metadata: IndexMetadata,
@@ -99,7 +98,6 @@ pub async fn delete_index(
 /// * `index_id` - The target index Id.
 /// * `grace_period` -  Threshold period after which a staged split can be garbage collected.
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
-///
 pub async fn garbage_collect_index(
     metastore_uri: &str,
     index_id: &str,
@@ -150,7 +148,6 @@ pub async fn garbage_collect_index(
 /// * `metastore_uri` - The target index metastore uri.
 /// * `index_id` - The target index id.
 /// * `storage_resolver` - The storage resolver object.
-///
 pub async fn delete_garbage_files(
     metastore: &dyn Metastore,
     index_id: &str,
@@ -212,7 +209,6 @@ pub async fn delete_garbage_files(
 /// * `index_id` - The target index Id.
 /// * `storage_resolver` - A storage resolver object to access the storage.
 /// * `metastore` - A metastore object for interacting with the metastore.
-///
 pub async fn reset_index(
     metastore: &dyn Metastore,
     index_id: &str,

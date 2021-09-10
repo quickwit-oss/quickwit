@@ -1,20 +1,21 @@
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
+use std::io;
+use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
+
+use mio::net::UdpSocket;
+use mio::{Events, Interest, Poll, Token};
+use serde::*;
+use tracing::{debug, error, info, warn};
+use uuid::Uuid;
+
 use super::cluster_config::ClusterConfig;
 use super::membership::ArtilleryMemberList;
 use crate::errors::*;
 use crate::member::{ArtilleryMember, ArtilleryMemberState, ArtilleryStateChange};
 use crate::prelude::CONST_PACKET_SIZE;
-use mio::net::UdpSocket;
-use mio::{Events, Interest, Poll, Token};
-use serde::*;
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
-use std::io;
-use std::net::SocketAddr;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::time::Instant;
-use tracing::{debug, error, info, warn};
-use uuid::Uuid;
 
 pub type ArtilleryClusterEvent = (Vec<ArtilleryMember>, ArtilleryMemberEvent);
 pub type WaitList = HashMap<SocketAddr, Vec<SocketAddr>>;

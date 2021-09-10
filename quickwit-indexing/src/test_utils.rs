@@ -1,32 +1,26 @@
-/*
- * Copyright (C) 2021 Quickwit Inc.
- *
- * Quickwit is offered under the AGPL v3.0 and as commercial software.
- * For commercial licensing, contact us at hello@quickwit.io.
- *
- * AGPL:
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::actors::IndexerParams;
-use crate::index_data;
-use crate::models::{CommitPolicy, IndexingStatistics, ScratchDirectory};
-use crate::source::{SourceConfig, VecSourceParams};
 use byte_unit::Byte;
 use quickwit_index_config::IndexConfig;
 use quickwit_metastore::checkpoint::Checkpoint;
@@ -35,6 +29,11 @@ use quickwit_metastore::{
     SplitState,
 };
 use quickwit_storage::StorageUriResolver;
+
+use crate::actors::IndexerParams;
+use crate::index_data;
+use crate::models::{CommitPolicy, IndexingStatistics, ScratchDirectory};
+use crate::source::{SourceConfig, VecSourceParams};
 
 /// Creates a Test environment.
 ///
@@ -150,8 +149,9 @@ pub fn mock_split_meta(split_id: &str) -> SplitMetadataAndFooterOffsets {
 mod tests {
     use std::sync::Arc;
 
-    use super::TestSandbox;
     use quickwit_index_config::WikipediaIndexConfig;
+
+    use super::TestSandbox;
 
     #[tokio::test]
     async fn test_test_sandbox() -> anyhow::Result<()> {

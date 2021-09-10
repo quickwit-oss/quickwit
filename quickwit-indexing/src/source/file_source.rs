@@ -1,46 +1,37 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::models::IndexerMessage;
-use crate::models::RawDocBatch;
-use crate::source::Source;
-use crate::source::SourceContext;
-use crate::source::TypedSourceFactory;
-use anyhow::Context;
-use async_trait::async_trait;
-use quickwit_actors::ActorExitStatus;
-use quickwit_actors::Mailbox;
-use quickwit_metastore::checkpoint::CheckpointDelta;
-use quickwit_metastore::checkpoint::PartitionId;
-use quickwit_metastore::checkpoint::Position;
-use serde::{Deserialize, Serialize};
-use std::convert::TryInto;
 use std::io;
 use std::io::SeekFrom;
 use std::path::PathBuf;
+
+use anyhow::Context;
+use async_trait::async_trait;
+use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position};
+use serde::{Deserialize, Serialize};
 use tokio::fs::File;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncRead;
-use tokio::io::AsyncSeekExt;
-use tokio::io::BufReader;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader};
 use tracing::info;
+
+use crate::models::{IndexerMessage, RawDocBatch};
+use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
@@ -90,15 +81,18 @@ impl Source for FileSource {
             self.counters.num_lines_processed += 1;
         }
         if !docs.is_empty() {
-            let mut checkpoint_delta = CheckpointDelta::default();
-            // TODO the filepath should actually probably be part of the checkpoint.
-            if let Some(filepath) = self.params.filepath.as_ref() {
-                checkpoint_delta.add_partition(
-                    PartitionId::from(filepath.to_string_lossy().to_string()),
-                    Position::from(self.counters.previous_offset),
-                    Position::from(self.counters.current_offset),
-                );
-            }
+            let checkpoint_delta = self
+                .params
+                .filepath
+                .as_ref()
+                .map(|filepath| {
+                    CheckpointDelta::from_partition_delta(
+                        PartitionId::from(filepath.to_string_lossy().to_string()),
+                        Position::from(self.counters.previous_offset),
+                        Position::from(self.counters.current_offset),
+                    )
+                })
+                .unwrap_or_else(CheckpointDelta::default);
             let raw_doc_batch = RawDocBatch {
                 docs,
                 checkpoint_delta,
@@ -140,8 +134,12 @@ impl TypedSourceFactory for FileSourceFactory {
         checkpoint: quickwit_metastore::checkpoint::Checkpoint,
     ) -> anyhow::Result<FileSource> {
         params.filepath = if let Some(filepath) = params.filepath {
-            let canonical_path = std::fs::canonicalize(&filepath)
-                .with_context(|| format!("Source file `{}`.", filepath.display()))?;
+            let canonical_path = std::fs::canonicalize(&filepath).with_context(|| {
+                format!(
+                    "Failed to canonicalize source file path `{}`.",
+                    filepath.display()
+                )
+            })?;
             Some(canonical_path)
         } else {
             None
@@ -149,17 +147,19 @@ impl TypedSourceFactory for FileSourceFactory {
         let mut offset = 0;
         let reader: Box<dyn AsyncRead + Send + Sync + Unpin> =
             if let Some(filepath) = &params.filepath {
-                let mut file = File::open(&filepath)
-                    .await
-                    .with_context(|| format!("Source file `{}`", filepath.display()))?;
+                let mut file = File::open(&filepath).await.with_context(|| {
+                    format!("Failed to open source file `{}`.", filepath.display())
+                })?;
                 let partition_id = PartitionId::from(filepath.to_string_lossy().to_string());
-                if let Some(position) = checkpoint.position_for_partition(&partition_id).cloned() {
-                    offset = position.try_into()?;
+                if let Some(Position::Offset(offset_str)) =
+                    checkpoint.position_for_partition(&partition_id).cloned()
+                {
+                    offset = offset_str.parse::<u64>()?;
                     file.seek(SeekFrom::Start(offset)).await?;
                 }
                 Box::new(file)
             } else {
-                // we cannot use the checkpoint.
+                // We cannot use the checkpoint.
                 Box::new(tokio::io::stdin())
             };
         let file_source = FileSource {
@@ -179,12 +179,11 @@ impl TypedSourceFactory for FileSourceFactory {
 mod tests {
     use std::io::Write;
 
-    use crate::source::SourceActor;
+    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_metastore::checkpoint::Checkpoint;
 
     use super::*;
-    use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::Universe;
-    use quickwit_metastore::checkpoint::Checkpoint;
+    use crate::source::SourceActor;
 
     #[tokio::test]
     async fn test_file_source() -> anyhow::Result<()> {
@@ -302,7 +301,6 @@ mod tests {
             filepath: Some(temp_path.as_path().to_path_buf()),
         };
         let mut checkpoint = Checkpoint::default();
-        let mut checkpoint_delta = CheckpointDelta::default();
         let partition_id = PartitionId::from(
             temp_file
                 .path()
@@ -310,7 +308,11 @@ mod tests {
                 .to_string_lossy()
                 .to_string(),
         );
-        checkpoint_delta.add_partition(partition_id, Position::from(0), Position::from(4));
+        let checkpoint_delta = CheckpointDelta::from_partition_delta(
+            partition_id,
+            Position::from(0u64),
+            Position::from(4u64),
+        );
         checkpoint.try_apply_delta(checkpoint_delta)?;
         let source = FileSourceFactory::typed_create_source(params, checkpoint).await?;
         let file_source_actor = SourceActor {

@@ -1,23 +1,21 @@
-/*
- * Copyright (C) 2021 Quickwit Inc.
- *
- * Quickwit is offered under the AGPL v3.0 and as commercial software.
- * For commercial licensing, contact us at hello@quickwit.io.
- *
- * AGPL:
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 //! This projects implements quickwit's search API.
 #![warn(missing_docs)]
@@ -36,7 +34,6 @@ mod search_result_json;
 mod search_stream;
 mod service;
 
-///
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
 
@@ -48,15 +45,12 @@ use anyhow::Context;
 use once_cell::sync::OnceCell;
 use tantivy::DocAddress;
 
-use quickwit_metastore::SplitState;
-use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadataAndFooterOffsets};
-use quickwit_proto::{PartialHit, SearchResult};
-use quickwit_proto::{SearchRequest, SplitIdAndFooterOffsets};
+use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadataAndFooterOffsets, SplitState};
+use quickwit_proto::{PartialHit, SearchRequest, SearchResult, SplitIdAndFooterOffsets};
 use quickwit_storage::{create_cachable_storage, CacheConfig, StorageUriResolver};
 use tempfile::TempDir;
 
-pub use crate::client::create_search_service_client;
-pub use crate::client::SearchServiceClient;
+pub use crate::client::{create_search_service_client, SearchServiceClient};
 pub use crate::client_pool::search_client_pool::SearchClientPool;
 pub use crate::client_pool::ClientPool;
 pub use crate::error::SearchError;
@@ -65,8 +59,7 @@ use crate::leaf::leaf_search;
 pub use crate::root::root_search;
 pub use crate::search_result_json::SearchResultJson;
 pub use crate::search_stream::root_search_stream;
-pub use crate::service::MockSearchService;
-pub use crate::service::{SearchService, SearchServiceImpl};
+pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
 /// Compute the SWIM port from the HTTP port.
 /// Add 1 to the HTTP port to get the SWIM port.
@@ -220,9 +213,9 @@ mod tests {
     use assert_json_diff::assert_json_include;
     use quickwit_index_config::{DefaultIndexConfigBuilder, WikipediaIndexConfig};
     use quickwit_indexing::TestSandbox;
+    use serde_json::json;
 
     use super::*;
-    use serde_json::json;
 
     #[tokio::test]
     async fn test_single_node_simple() -> anyhow::Result<()> {
@@ -262,9 +255,7 @@ mod tests {
 
     // TODO remove me once `Iterator::is_sorted_by_key` is stabilized.
     fn is_sorted<E, I: Iterator<Item = E>>(mut it: I) -> bool
-    where
-        E: Ord,
-    {
+    where E: Ord {
         let mut previous_el = if let Some(first_el) = it.next() {
             first_el
         } else {

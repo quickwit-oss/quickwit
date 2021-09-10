@@ -1,38 +1,34 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use serde::ser::SerializeMap;
-use serde::Deserialize;
-use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 use std::fmt;
-use std::num::ParseIntError;
+use std::iter::FromIterator;
 use std::ops::Range;
-use std::str::FromStr;
 use std::sync::Arc;
+
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::info;
-use tracing::warn;
+use tracing::{info, warn};
 
 /// PartitionId identifies a partition for a given source.
 #[derive(Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -47,6 +43,13 @@ impl From<String> for PartitionId {
 impl From<&str> for PartitionId {
     fn from(partition_id_str: &str) -> Self {
         PartitionId(Arc::new(partition_id_str.to_string()))
+    }
+}
+
+impl From<i32> for PartitionId {
+    fn from(partition_id: i32) -> Self {
+        let partition_id_str = format!("{:0>10}", partition_id);
+        PartitionId(Arc::new(partition_id_str))
     }
 }
 
@@ -77,40 +80,60 @@ impl From<u64> for PartitionId {
 ///
 /// The empty string can be used to represent the beginning of the source,
 /// if no position makes sense. It can be built via `Position::default()`.
-#[derive(Debug, Default, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct Position(pub Arc<String>);
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize)]
+pub enum Position {
+    Beginning,
+    Offset(Arc<String>),
+}
 
 impl Position {
-    /// String representation of the position
+    /// String representation of the position.
     pub fn as_str(&self) -> &str {
-        &self.0
+        match self {
+            Position::Beginning => "",
+            Position::Offset(offset) => offset,
+        }
+    }
+}
+
+impl From<i32> for Position {
+    fn from(offset: i32) -> Self {
+        assert!(offset >= 0);
+        let offset_str = format!("{:0>10}", offset);
+        Position::Offset(Arc::new(offset_str))
+    }
+}
+
+impl From<i64> for Position {
+    fn from(offset: i64) -> Self {
+        assert!(offset >= 0);
+        let offset_str = format!("{:0>20}", offset);
+        Position::Offset(Arc::new(offset_str))
     }
 }
 
 impl From<u64> for Position {
-    fn from(pos: u64) -> Self {
-        let pos_str = format!("{:0>20}", pos);
-        Position(Arc::new(pos_str))
-    }
-}
-
-impl TryInto<u64> for Position {
-    type Error = ParseIntError;
-
-    fn try_into(self) -> Result<u64, Self::Error> {
-        FromStr::from_str(self.0.as_str())
+    fn from(offset: u64) -> Self {
+        let offset_str = format!("{:0>20}", offset);
+        Position::Offset(Arc::new(offset_str))
     }
 }
 
 impl From<String> for Position {
     fn from(position_str: String) -> Self {
-        Position(Arc::new(position_str))
+        match position_str.as_str() {
+            "" => Position::Beginning,
+            _ => Position::Offset(Arc::new(position_str)),
+        }
     }
 }
 
 impl<'a> From<&'a str> for Position {
     fn from(position_str: &'a str) -> Self {
-        Position(Arc::new(position_str.to_string()))
+        match position_str {
+            "" => Position::Beginning,
+            _ => Position::Offset(Arc::new(position_str.to_string())),
+        }
     }
 }
 
@@ -123,14 +146,43 @@ pub struct Checkpoint {
     per_partition: BTreeMap<PartitionId, Position>,
 }
 
+impl Checkpoint {
+    /// Returns the number of partitions covered by the checkpoint.
+    pub fn num_partitions(&self) -> usize {
+        self.per_partition.len()
+    }
+
+    /// Returns `true` if the checkpoint is empty.
+    pub fn is_empty(&self) -> bool {
+        self.per_partition.is_empty()
+    }
+}
+
+/// Creates a checkpoint from an iterator of `(PartitionId, Position)` tuples.
+/// ```
+/// use quickwit_metastore::checkpoint::{Checkpoint, PartitionId, Position};
+/// let checkpoint: Checkpoint = vec![(0, 0), (1, 2)]
+///     .into_iter()
+///     .map(|(partition_id, offset)| {
+///         (PartitionId::from(partition_id), Position::from(offset))
+///     })
+///     .collect();
+/// ```
+impl FromIterator<(PartitionId, Position)> for Checkpoint {
+    fn from_iter<I>(iter: I) -> Checkpoint
+    where I: IntoIterator<Item = (PartitionId, Position)> {
+        Checkpoint {
+            per_partition: iter.into_iter().collect(),
+        }
+    }
+}
+
 impl Serialize for Checkpoint {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
+    where S: serde::Serializer {
         let mut map = serializer.serialize_map(Some(self.per_partition.len()))?;
         for (partition, position) in &self.per_partition {
-            map.serialize_entry(&*partition.0, &*position.0)?;
+            map.serialize_entry(&*partition.0, &*position.as_str())?;
         }
         map.end()
     }
@@ -138,9 +190,7 @@ impl Serialize for Checkpoint {
 
 impl<'de> Deserialize<'de> for Checkpoint {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
+    where D: serde::Deserializer<'de> {
         let string_to_string_map: BTreeMap<String, String> = BTreeMap::deserialize(deserializer)?;
         let per_partition: BTreeMap<PartitionId, Position> = string_to_string_map
             .into_iter()
@@ -156,8 +206,11 @@ impl<'de> Deserialize<'de> for Checkpoint {
 /// compatible. ie: the checkpoint delta starts from a point anterior to
 /// the checkpoint.
 #[derive(Error, Debug, PartialEq)]
-#[error("IncompatibleChkpt at partition: {partition_id:?} cur_pos:{current_position:?} delta_pos:{delta_position_from:?}")]
-pub struct IncompatibleCheckpoint {
+#[error(
+    "IncompatibleChkptDelta at partition: {partition_id:?} cur_pos:{current_position:?} \
+     delta_pos:{delta_position_from:?}"
+)]
+pub struct IncompatibleCheckpointDelta {
     /// One PartitionId for which the incompatibility has been detected.
     pub partition_id: PartitionId,
     /// The current position within this partition.
@@ -167,18 +220,22 @@ pub struct IncompatibleCheckpoint {
 }
 
 impl Checkpoint {
+    /// Returns the position reached for a given partition.
     pub fn position_for_partition(&self, partition_id: &PartitionId) -> Option<&Position> {
         self.per_partition.get(partition_id)
     }
 
-    /// Returns an iterator with the reached position for each given partition.
+    /// Returns an iterator with the reached position for each partition.
     pub fn iter(&self) -> impl Iterator<Item = (PartitionId, Position)> + '_ {
         self.per_partition
             .iter()
             .map(|(partition_id, position)| (partition_id.clone(), position.clone()))
     }
 
-    fn check_compatibility(&self, delta: &CheckpointDelta) -> Result<(), IncompatibleCheckpoint> {
+    fn check_compatibility(
+        &self,
+        delta: &CheckpointDelta,
+    ) -> Result<(), IncompatibleCheckpointDelta> {
         info!(delta=?delta, checkpoint=?self);
         for (delta_partition, delta_position) in &delta.per_partition {
             let position = if let Some(position) = self.per_partition.get(delta_partition) {
@@ -192,7 +249,7 @@ impl Checkpoint {
                     warn!(cur_pos=?position, delta_pos_from=?delta_position.from,partition=?delta_partition, "Some positions were skipped.");
                 }
                 Ordering::Greater => {
-                    return Err(IncompatibleCheckpoint {
+                    return Err(IncompatibleCheckpointDelta {
                         partition_id: delta_partition.clone(),
                         current_position: position.clone(),
                         delta_position_from: delta_position.from.clone(),
@@ -212,17 +269,17 @@ impl Checkpoint {
     /// as gaps may happen. For instance, assuming a Kafka source, if the indexing
     /// pipeline is down for more than the retention period.
     ///
-    ///    |    Checkpoint & Delta        | Outcome                     |
-    ///    |------------------------------|-----------------------------|
-    ///    |  (..a] (b..c] with a = b     | Compatible                  |
-    ///    |  (..a] (b..c] with b > a     | Compatible                  |
-    ///    |  (..a] (b..c] with b < a     | Incompatible                |
+    ///   |    Checkpoint & Delta        | Outcome                     |
+    ///   |------------------------------|-----------------------------|
+    ///   |  (..a] (b..c] with a = b     | Compatible                  |
+    ///   |  (..a] (b..c] with b > a     | Compatible                  |
+    ///   |  (..a] (b..c] with b < a     | Incompatible                |
     ///
     /// If the delta is compatible, returns an error without modifying the original checkpoint.
     pub fn try_apply_delta(
         &mut self,
         delta: CheckpointDelta,
-    ) -> Result<(), IncompatibleCheckpoint> {
+    ) -> Result<(), IncompatibleCheckpointDelta> {
         self.check_compatibility(&delta)?;
         for (partition_id, partition_position) in delta.per_partition {
             self.per_partition
@@ -238,7 +295,7 @@ impl fmt::Debug for Checkpoint {
         for (i, (partition_id, position)) in self.per_partition.iter().enumerate() {
             f.write_str(&partition_id.0)?;
             f.write_str(":")?;
-            f.write_str(&position.0)?;
+            f.write_str(position.as_str())?;
             let is_last = i == self.per_partition.len() - 1;
             if !is_last {
                 f.write_str(" ")?;
@@ -278,7 +335,9 @@ impl fmt::Debug for CheckpointDelta {
             write!(
                 f,
                 "{}:({}..{}]",
-                partition_id.0, partition_delta.from.0, partition_delta.to.0
+                partition_id.0,
+                partition_delta.from.as_str(),
+                partition_delta.to.as_str()
             )?;
             if i != self.per_partition.len() - 1 {
                 f.write_str(" ")?;
@@ -291,64 +350,84 @@ impl fmt::Debug for CheckpointDelta {
 
 impl From<Range<u64>> for CheckpointDelta {
     fn from(range: Range<u64>) -> Self {
-        let mut delta = CheckpointDelta::default();
-        // Checkpoint delta are expressed as (fromt, to] intervals while ranges
+        // Checkpoint delta are expressed as (from, to] intervals while ranges
         // are [start, end) intervals
         let from_position = if range.start == 0 {
-            Position::default()
+            Position::Beginning
         } else {
-            Position::from(range.start as u64 - 1u64)
+            Position::from(range.start as u64 - 1)
         };
         let to_position = if range.end == 0 {
-            Position::default()
+            Position::Beginning
         } else {
-            Position::from(range.end as u64 - 1u64)
+            Position::from(range.end as u64 - 1)
         };
-        delta.add_partition(PartitionId::default(), from_position, to_position);
-        delta
+        CheckpointDelta::from_partition_delta(PartitionId::default(), from_position, to_position)
     }
 }
 
 impl CheckpointDelta {
-    /// Records a `(from, to]` position interval for a given partition.
-    pub fn add_partition(
+    /// Creates a new checkpoint delta initialized with a single partition delta.
+    pub fn from_partition_delta(
+        partition_id: PartitionId,
+        from_position: Position,
+        to_position: Position,
+    ) -> Self {
+        let mut delta = CheckpointDelta::default();
+        let _ = delta.record_partition_delta(partition_id, from_position, to_position);
+        delta
+    }
+
+    /// Records a `(from, to]` partition delta for a given partition.
+    pub fn record_partition_delta(
         &mut self,
         partition_id: PartitionId,
         from_position: Position,
         to_position: Position,
-    ) {
-        assert!(from_position <= to_position);
-        let partition_delta = PartitionDelta {
-            from: from_position,
-            to: to_position,
-        };
-        self.per_partition.insert(partition_id, partition_delta);
+    ) -> Result<(), IncompatibleCheckpointDelta> {
+        let entry = self.per_partition.entry(partition_id);
+        match entry {
+            Entry::Occupied(mut occupied_entry) => {
+                if occupied_entry.get().to == from_position {
+                    occupied_entry.get_mut().to = to_position;
+                } else {
+                    return Err(IncompatibleCheckpointDelta {
+                        partition_id: occupied_entry.key().clone(),
+                        current_position: occupied_entry.get().to.clone(),
+                        delta_position_from: from_position,
+                    });
+                }
+            }
+            Entry::Vacant(vacant_entry) => {
+                assert!(from_position <= to_position);
+                let partition_delta = PartitionDelta {
+                    from: from_position,
+                    to: to_position,
+                };
+                vacant_entry.insert(partition_delta);
+            }
+        }
+        Ok(())
     }
 
     /// Extends the current checkpoint delta in-place with the provided checkpoint delta.
     ///
     /// Contrary to checkpoint update, the two deltas here need to chain perfectly.
-    pub fn add(&mut self, delta: CheckpointDelta) -> Result<(), IncompatibleCheckpoint> {
+    pub fn extend(&mut self, delta: CheckpointDelta) -> Result<(), IncompatibleCheckpointDelta> {
         for (partition_id, partition_delta) in delta.per_partition {
-            let entry = self.per_partition.entry(partition_id);
-            match entry {
-                Entry::Occupied(mut occupied_entry) => {
-                    if occupied_entry.get().to == partition_delta.from {
-                        occupied_entry.get_mut().to = partition_delta.to
-                    } else {
-                        return Err(IncompatibleCheckpoint {
-                            partition_id: occupied_entry.key().clone(),
-                            current_position: occupied_entry.get().to.clone(),
-                            delta_position_from: partition_delta.from,
-                        });
-                    }
-                }
-                Entry::Vacant(vacant_entry) => {
-                    vacant_entry.insert(partition_delta);
-                }
-            }
+            self.record_partition_delta(partition_id, partition_delta.from, partition_delta.to)?;
         }
         Ok(())
+    }
+
+    /// Returns the number of partitions covered by the checkpoint delta.
+    pub fn num_partitions(&self) -> usize {
+        self.per_partition.len()
+    }
+
+    /// Returns `true` if the checkpoint delta is empty.
+    pub fn is_empty(&self) -> bool {
+        self.per_partition.is_empty()
     }
 }
 
@@ -371,21 +450,20 @@ mod tests {
     }
 
     #[test]
-    fn test_checkpoint_simple() {
+    fn test_checkpoint_simple() -> anyhow::Result<()> {
         let mut checkpoint = Checkpoint::default();
         assert_eq!(format!("{:?}", checkpoint), "Ckpt()");
         let delta1 = {
-            let mut delta = CheckpointDelta::default();
-            delta.add_partition(
+            let mut delta = CheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from(123u64),
                 Position::from(128u64),
             );
-            delta.add_partition(
+            delta.record_partition_delta(
                 PartitionId::from("b"),
                 Position::from(60002u64),
                 Position::from(60187u64),
-            );
+            )?;
             delta
         };
         assert!(checkpoint.try_apply_delta(delta1).is_ok());
@@ -393,152 +471,144 @@ mod tests {
             format!("{:?}", checkpoint),
             "Ckpt(a:00000000000000000128 b:00000000000000060187)"
         );
+        Ok(())
     }
 
     #[test]
-    fn test_partially_incompatible_does_not_update() {
+    fn test_partially_incompatible_does_not_update() -> anyhow::Result<()> {
         let mut checkpoint = Checkpoint::default();
         let delta1 = {
-            let mut delta = CheckpointDelta::default();
-            delta.add_partition(
+            let mut delta = CheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from("00123"),
                 Position::from("00128"),
             );
-            delta.add_partition(
+            delta.record_partition_delta(
                 PartitionId::from("b"),
                 Position::from("60002"),
                 Position::from("60187"),
-            );
+            )?;
             delta
         };
         assert!(checkpoint.try_apply_delta(delta1).is_ok());
         let delta2 = {
-            let mut delta = CheckpointDelta::default();
-            delta.add_partition(
+            let mut delta = CheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from("00128"),
                 Position::from("00128"),
             );
-            delta.add_partition(
+            delta.record_partition_delta(
                 PartitionId::from("b"),
                 Position::from("50099"),
                 Position::from("60002"),
-            );
+            )?;
             delta
         };
         assert!(matches!(
             checkpoint.try_apply_delta(delta2),
-            Err(IncompatibleCheckpoint { .. })
+            Err(IncompatibleCheckpointDelta { .. })
         ));
         // checkpoint was unchanged
         assert_eq!(format!("{:?}", checkpoint), "Ckpt(a:00128 b:60187)");
+        Ok(())
     }
 
     #[test]
-    fn test_adding_new_partition() {
+    fn test_adding_new_partition() -> anyhow::Result<()> {
         let mut checkpoint = Checkpoint::default();
         let delta1 = {
-            let mut delta = CheckpointDelta::default();
-            delta.add_partition(
+            let mut delta = CheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from("00123"),
                 Position::from("00128"),
             );
-            delta.add_partition(
+            delta.record_partition_delta(
                 PartitionId::from("b"),
                 Position::from("60002"),
                 Position::from("60187"),
-            );
+            )?;
             delta
         };
         assert!(checkpoint.try_apply_delta(delta1).is_ok());
         let delta3 = {
-            let mut delta = CheckpointDelta::default();
-            delta.add_partition(
+            let mut delta = CheckpointDelta::from_partition_delta(
                 PartitionId::from("b"),
                 Position::from("60187"),
                 Position::from("60190"),
             );
-            delta.add_partition(
+            delta.record_partition_delta(
                 PartitionId::from("c"),
                 Position::from("20001"),
                 Position::from("20008"),
-            );
+            )?;
             delta
         };
         assert!(checkpoint.try_apply_delta(delta3).is_ok());
         assert_eq!(format!("{:?}", checkpoint), "Ckpt(a:00128 b:60190 c:20008)");
+        Ok(())
     }
 
     #[test]
-    fn test_add_checkpoint_delta() -> anyhow::Result<()> {
+    fn test_extend_checkpoint_delta() -> anyhow::Result<()> {
         let mut delta1 = {
-            let mut delta = CheckpointDelta::default();
-            delta.add_partition(
+            let mut delta = CheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from("00123"),
                 Position::from("00128"),
             );
-            delta.add_partition(
+            delta.record_partition_delta(
                 PartitionId::from("b"),
                 Position::from("60002"),
                 Position::from("60187"),
-            );
+            )?;
             delta
         };
         let delta2 = {
-            let mut delta = CheckpointDelta::default();
-            delta.add_partition(
+            let mut delta = CheckpointDelta::from_partition_delta(
                 PartitionId::from("b"),
                 Position::from("60187"),
                 Position::from("60348"),
             );
-            delta.add_partition(
+            delta.record_partition_delta(
                 PartitionId::from("c"),
                 Position::from("20001"),
                 Position::from("20008"),
-            );
+            )?;
             delta
         };
         let delta3 = {
-            let mut delta = CheckpointDelta::default();
-            delta.add_partition(
+            let mut delta = CheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
                 Position::from("00123"),
                 Position::from("00128"),
             );
-            delta.add_partition(
+            delta.record_partition_delta(
                 PartitionId::from("b"),
                 Position::from("60002"),
                 Position::from("60348"),
-            );
-            delta.add_partition(
+            )?;
+            delta.record_partition_delta(
                 PartitionId::from("c"),
                 Position::from("20001"),
                 Position::from("20008"),
-            );
+            )?;
             delta
         };
-        delta1.add(delta2)?;
+        delta1.extend(delta2)?;
         assert_eq!(delta1, delta3);
 
-        let delta4 = {
-            let mut delta = CheckpointDelta::default();
-            delta.add_partition(
-                PartitionId::from("a"),
-                Position::from("00130"),
-                Position::from("00142"),
-            );
-            delta
-        };
-        let result = delta1.add(delta4);
+        let delta4 = CheckpointDelta::from_partition_delta(
+            PartitionId::from("a"),
+            Position::from("00130"),
+            Position::from("00142"),
+        );
+        let result = delta1.extend(delta4);
         assert_eq!(
             result,
-            Err(IncompatibleCheckpoint {
+            Err(IncompatibleCheckpointDelta {
                 partition_id: PartitionId::from("a"),
                 current_position: Position::from("00128"),
-                delta_position_from: Position::from("00130"),
+                delta_position_from: Position::from("00130")
             })
         );
         Ok(())

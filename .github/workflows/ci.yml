@@ -20,19 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
     needs:
-      - license-check
       - lint
       - test
     steps:
       - run: exit 0
-
-  license-check:
-    name: License-check
-    runs-on: ubuntu-latest
-    container: public.ecr.aws/l6o9a3f9/apache-skywalking-eyes:latest
-    steps:
-        - uses: actions/checkout@v2
-        - run: /bin/license-eye -v debug
 
   lint:
     name: Lint (fmt, dependency check, clippy)
@@ -47,7 +38,7 @@ jobs:
             target/
           key: ${{ runner.os }}-cargolint-${{ hashFiles('Cargo.lock') }}
       - name: rustfmt
-        run: cargo fmt --all -- --check
+        run: cargo +nightly fmt --all -- --check
       - uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,12 +1,14 @@
+use std::convert::AsRef;
+use std::net::SocketAddr;
+
+use flume;
+use tracing::debug;
+use uuid::Uuid;
+
 use super::state::ArtilleryEpidemic;
 use crate::cluster_config::ClusterConfig;
 use crate::errors::*;
 use crate::state::{ArtilleryClusterEvent, ArtilleryClusterRequest};
-use flume;
-use std::convert::AsRef;
-use std::net::SocketAddr;
-use tracing::debug;
-use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct Cluster {

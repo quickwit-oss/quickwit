@@ -1,9 +1,10 @@
-use serde::*;
 use std::cmp::Ordering;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
+
+use serde::*;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Copy)]
@@ -204,10 +205,12 @@ pub fn most_uptodate_member_data<'a>(
 
 #[cfg(test)]
 mod test {
-    use super::{ArtilleryMember, ArtilleryMemberState};
     use std::str::FromStr;
     use std::time::{Duration, Instant};
+
     use uuid;
+
+    use super::{ArtilleryMember, ArtilleryMemberState};
 
     #[test]
     fn test_member_encode_decode() {

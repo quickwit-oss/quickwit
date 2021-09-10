@@ -1,25 +1,27 @@
-//  Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::collector::{make_collector_for_split, make_merge_collector, GenericQuickwitCollector};
-use crate::SearchError;
+use std::collections::{BTreeMap, HashSet};
+use std::convert::TryInto;
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use anyhow::Context;
 use bytes::Bytes;
 use futures::future::try_join_all;
@@ -29,13 +31,14 @@ use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{LeafSearchResult, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError};
 use quickwit_storage::{BundleStorage, MemorySizedCache, Storage};
-use std::collections::{BTreeMap, HashSet};
-use std::convert::TryInto;
-use std::path::PathBuf;
-
-use std::sync::Arc;
-use tantivy::{collector::Collector, query::Query, Index, ReloadPolicy, Searcher, Term};
+use tantivy::collector::Collector;
+use tantivy::query::Query;
+use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
+use tracing::*;
+
+use crate::collector::{make_collector_for_split, make_merge_collector, GenericQuickwitCollector};
+use crate::SearchError;
 
 fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
     static INSTANCE: OnceCell<MemorySizedCache<String>> = OnceCell::new();
@@ -109,13 +112,18 @@ pub(crate) async fn open_index(
 ///
 /// The downloaded data depends on the query (which term's posting list is required,
 /// are position required too), and the collector.
+#[instrument(skip(searcher, query, fast_field_names))]
 pub(crate) async fn warmup(
     searcher: &Searcher,
     query: &dyn Query,
     fast_field_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
-    warm_up_terms(searcher, query).await?;
-    warm_up_fastfields(searcher, fast_field_names).await?;
+    warm_up_terms(searcher, query)
+        .instrument(debug_span!("warm_up_terms"))
+        .await?;
+    warm_up_fastfields(searcher, fast_field_names)
+        .instrument(debug_span!("warm_up_fastfields"))
+        .await?;
     Ok(())
 }
 
@@ -176,6 +184,7 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
 }
 
 /// Apply a leaf search on a single split.
+#[instrument(skip(search_request, storage, split, index_config))]
 async fn leaf_search_single_split(
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
@@ -200,6 +209,11 @@ async fn leaf_search_single_split(
         .try_into()?;
     let searcher = reader.searcher();
     warmup(&*searcher, &query, &quickwit_collector.fast_field_names()).await?;
+    let span = info_span!(
+        "search",
+        split_id = %split.split_id,
+    );
+    let _ = span.enter();
     let leaf_search_result = searcher.search(&query, &quickwit_collector)?;
     Ok(leaf_search_result)
 }
@@ -245,6 +259,7 @@ pub async fn leaf_search(
     let merge_collector = make_merge_collector(request);
     let mut merged_search_results =
         spawn_blocking(move || merge_collector.merge_fruits(search_results))
+            .instrument(info_span!("merge_search_results"))
             .await
             .with_context(|| "Merging search on split results failed")??;
 

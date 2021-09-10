@@ -1,52 +1,40 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::actors::Indexer;
-use crate::actors::IndexerParams;
-use crate::actors::Packager;
-use crate::actors::Publisher;
-use crate::actors::Uploader;
-use crate::models::IndexingStatistics;
-use crate::source::quickwit_supported_sources;
-use crate::source::SourceActor;
-use crate::source::SourceConfig;
+use std::sync::Arc;
+use std::time::Duration;
+
 use async_trait::async_trait;
-use quickwit_actors::Actor;
-use quickwit_actors::ActorContext;
-use quickwit_actors::ActorExitStatus;
-use quickwit_actors::ActorHandle;
-use quickwit_actors::AsyncActor;
-use quickwit_actors::Health;
-use quickwit_actors::KillSwitch;
-use quickwit_actors::Supervisable;
+use quickwit_actors::{
+    Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health, KillSwitch, Supervisable,
+};
 use quickwit_metastore::Metastore;
 use quickwit_storage::create_cachable_storage;
 use quickwit_storage::CacheConfig;
 use quickwit_storage::StorageUriResolver;
 use smallvec::SmallVec;
-use std::sync::Arc;
-use std::time::Duration;
 use tokio::join;
-use tracing::debug;
-use tracing::error;
-use tracing::info;
+use tracing::{debug, error, info};
+
+use crate::actors::{Indexer, IndexerParams, Packager, Publisher, Uploader};
+use crate::models::IndexingStatistics;
+use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
 
 pub struct IndexingPipelineHandler {
     pub source: ActorHandle<SourceActor>,
@@ -244,9 +232,9 @@ impl IndexingPipelineSupervisor {
             // TODO Accept errors in spawning. See #463.
             self.spawn_pipeline(ctx).await?;
             // if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
-            //     // only retry n-times.
-            //     error!(err=?spawn_error, "Error while spawning");
-            //     self.terminate().await;
+            //    // only retry n-times.
+            //    error!(err=?spawn_error, "Error while spawning");
+            //    self.terminate().await;
             // }
         } else {
             match self.healthcheck() {
@@ -313,19 +301,17 @@ pub struct IndexingPipelineParams {
 #[cfg(test)]
 mod tests {
 
-    use super::IndexingPipelineParams;
-    use super::IndexingPipelineSupervisor;
-    use crate::actors::IndexerParams;
-    use crate::source::SourceConfig;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use quickwit_actors::Universe;
+    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_storage::StorageUriResolver;
     use serde_json::json;
 
-    use quickwit_actors::Universe;
-    use quickwit_metastore::IndexMetadata;
-    use quickwit_metastore::MockMetastore;
-    use quickwit_metastore::SplitState;
-    use std::path::PathBuf;
-    use std::sync::Arc;
+    use super::{IndexingPipelineParams, IndexingPipelineSupervisor};
+    use crate::actors::IndexerParams;
+    use crate::source::SourceConfig;
 
     #[tokio::test]
     async fn test_indexing_pipeline() -> anyhow::Result<()> {

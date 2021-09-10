@@ -1,39 +1,30 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::TryInto;
-
-use crate::models::IndexerMessage;
-use crate::models::RawDocBatch;
-use crate::source::Source;
-use crate::source::SourceContext;
-use crate::source::TypedSourceFactory;
 use async_trait::async_trait;
-use quickwit_actors::ActorExitStatus;
-use quickwit_actors::Mailbox;
-use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::checkpoint::CheckpointDelta;
-use quickwit_metastore::checkpoint::PartitionId;
-use quickwit_metastore::checkpoint::Position;
+use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_metastore::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
 use serde::{Deserialize, Serialize};
 use tracing::info;
+
+use crate::models::{IndexerMessage, RawDocBatch};
+use crate::source::{Source, SourceContext, TypedSourceFactory};
 
 #[derive(Deserialize, Serialize)]
 pub struct VecSourceParams {
@@ -44,24 +35,11 @@ pub struct VecSourceParams {
 }
 
 pub struct VecSource {
-    next_item_id: usize,
+    next_item_idx: usize,
     params: VecSourceParams,
     partition: PartitionId,
 }
 pub struct VecSourceFactory;
-
-fn extract_next_item_id(partition: &PartitionId, checkpoint: &Checkpoint) -> anyhow::Result<usize> {
-    if let Some(position) = checkpoint.position_for_partition(partition).cloned() {
-        if position.as_str().is_empty() {
-            Ok(0)
-        } else {
-            let last_seen: u64 = position.try_into()?;
-            Ok(last_seen as usize + 1)
-        }
-    } else {
-        Ok(0)
-    }
-}
 
 #[async_trait]
 impl TypedSourceFactory for VecSourceFactory {
@@ -72,20 +50,23 @@ impl TypedSourceFactory for VecSourceFactory {
         checkpoint: Checkpoint,
     ) -> anyhow::Result<Self::Source> {
         let partition = PartitionId::from(params.partition.as_str());
-        let next_item_id = extract_next_item_id(&partition, &checkpoint)?;
+        let next_item_idx = match checkpoint.position_for_partition(&partition) {
+            Some(Position::Offset(offset_str)) => offset_str.parse::<usize>()? + 1,
+            Some(Position::Beginning) | None => 0,
+        };
         Ok(VecSource {
-            next_item_id,
+            next_item_idx,
             params,
             partition,
         })
     }
 }
 
-fn position_from_offset(offset: u64) -> Position {
+fn position_from_offset(offset: usize) -> Position {
     if offset == 0 {
-        return Position::default();
+        return Position::Beginning;
     }
-    Position::from(offset - 1)
+    Position::from(offset as u64 - 1)
 }
 
 #[async_trait]
@@ -95,26 +76,25 @@ impl Source for VecSource {
         batch_sink: &Mailbox<IndexerMessage>,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        let line_docs: Vec<String> = self.params.items[self.next_item_id..]
+        let line_docs: Vec<String> = self.params.items[self.next_item_idx..]
             .iter()
             .take(self.params.batch_num_docs)
             .cloned()
             .collect();
-        let start_item_id = self.next_item_id as u64;
-        self.next_item_id += line_docs.len();
-        let end_item_id = self.next_item_id as u64;
-        let mut checkpoint_delta = CheckpointDelta::default();
-        checkpoint_delta.add_partition(
-            self.partition.clone(),
-            position_from_offset(start_item_id),
-            position_from_offset(end_item_id),
-        );
         if line_docs.is_empty() {
-            info!("End of source");
+            info!("Reached end of source.");
             ctx.send_message(batch_sink, IndexerMessage::EndOfSource)
                 .await?;
             return Err(ActorExitStatus::Success);
         }
+        let from_item_idx = self.next_item_idx;
+        self.next_item_idx += line_docs.len();
+        let to_item_idx = self.next_item_idx;
+        let checkpoint_delta = CheckpointDelta::from_partition_delta(
+            self.partition.clone(),
+            position_from_offset(from_item_idx),
+            position_from_offset(to_item_idx),
+        );
         let batch = RawDocBatch {
             docs: line_docs,
             checkpoint_delta,
@@ -126,18 +106,18 @@ impl Source for VecSource {
 
     fn observable_state(&self) -> serde_json::Value {
         serde_json::json!({
-            "next_item_id": self.next_item_id
+            "next_item_idx": self.next_item_idx,
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use quickwit_actors::{create_test_mailbox, Universe};
+    use serde_json::json;
+
     use super::*;
     use crate::source::SourceActor;
-    use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::Universe;
-    use serde_json::json;
 
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
@@ -162,7 +142,7 @@ mod tests {
             universe.spawn_actor(vec_source_actor).spawn_async();
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
-        assert_eq!(last_observation, json!({"next_item_id": 100}));
+        assert_eq!(last_observation, json!({"next_item_idx": 100}));
         let batches = inbox.drain_available_message_for_test();
         assert_eq!(batches.len(), 35);
         assert!(
@@ -195,7 +175,7 @@ mod tests {
             universe.spawn_actor(vec_source_actor).spawn_async();
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
-        assert_eq!(last_observation, json!({"next_item_id": 10}));
+        assert_eq!(last_observation, json!({"next_item_idx": 10}));
         let messages = inbox.drain_available_message_for_test();
         assert!(
             matches!(&messages[0], &IndexerMessage::Batch(ref raw_batch) if &raw_batch.docs[0] == "2")

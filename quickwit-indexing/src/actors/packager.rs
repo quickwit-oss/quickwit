@@ -1,22 +1,21 @@
-// Quickwit
-//  Copyright (C) 2021 Quickwit Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
-//  Quickwit is offered under the AGPL v3.0 and as commercial software.
-//  For commercial licensing, contact us at hello@quickwit.io.
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
 //
-//  AGPL:
-//  This program is free software: you can redistribute it and/or modify
-//  it under the terms of the GNU Affero General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//  This program is distributed in the hope that it will be useful,
-//  but WITHOUT ANY WARRANTY; without even the implied warranty of
-//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//  GNU Affero General Public License for more details.
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
 //
-//  You should have received a copy of the GNU Affero General Public License
-//  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
 use std::fs::File;
@@ -25,23 +24,16 @@ use std::io::Write;
 use std::ops::Range;
 use std::path::PathBuf;
 
-use crate::models::IndexedSplit;
-use crate::models::PackagedSplit;
-use crate::models::ScratchDirectory;
 use anyhow::Context;
 use fail::fail_point;
-use quickwit_actors::Actor;
-use quickwit_actors::ActorContext;
-use quickwit_actors::Mailbox;
-use quickwit_actors::QueueCapacity;
-use quickwit_actors::SyncActor;
+use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity, SyncActor};
 use quickwit_directories::write_hotcache;
-use quickwit_storage::BundleStorageBuilder;
-use quickwit_storage::BUNDLE_FILENAME;
+use quickwit_storage::{BundleStorageBuilder, BUNDLE_FILENAME};
 use tantivy::common::CountingWriter;
-use tantivy::SegmentId;
-use tantivy::SegmentMeta;
+use tantivy::{SegmentId, SegmentMeta};
 use tracing::*;
+
+use crate::models::{IndexedSplit, PackagedSplit, ScratchDirectory};
 
 /// The role of the packager is to get an index writer and
 /// produce a split file.
@@ -276,19 +268,13 @@ mod tests {
     use std::ops::RangeInclusive;
     use std::time::Instant;
 
-    use quickwit_actors::create_test_mailbox;
-    use quickwit_actors::ObservationType;
-    use quickwit_actors::Universe;
+    use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_metastore::checkpoint::CheckpointDelta;
-    use tantivy::doc;
-    use tantivy::schema::Schema;
-    use tantivy::schema::FAST;
-    use tantivy::schema::TEXT;
-    use tantivy::Index;
-
-    use crate::models::ScratchDirectory;
+    use tantivy::schema::{Schema, FAST, TEXT};
+    use tantivy::{doc, Index};
 
     use super::*;
+    use crate::models::ScratchDirectory;
 
     fn make_indexed_split_for_test(segments_timestamps: &[&[i64]]) -> anyhow::Result<IndexedSplit> {
         let split_scratch_directory = ScratchDirectory::try_new_temp()?;

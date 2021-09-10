@@ -1,7 +1,5 @@
-use std::{
-    net::{SocketAddr, ToSocketAddrs},
-    time::Duration,
-};
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::time::Duration;
 
 // ARTIL = 27845
 /// Default Epidemic Port
