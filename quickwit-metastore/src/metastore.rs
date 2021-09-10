@@ -66,6 +66,7 @@ pub struct SplitMetadata {
     pub split_id: String,
 
     /// Number of records (or documents) in the split.
+    /// TODO make u64
     pub num_records: usize,
 
     /// Sum of the size (in bytes) of the documents in this split.
@@ -74,7 +75,8 @@ pub struct SplitMetadata {
     /// JSON payloads.
     pub size_in_bytes: u64,
 
-    /// If a timestamp field is available, the min / max timestamp in the split.
+    /// If a timestamp field is available, the min / max timestamp in
+    /// the split.
     pub time_range: Option<RangeInclusive<i64>>,
 
     /// The state of the split. This is the only mutable attribute of the split.
@@ -84,6 +86,7 @@ pub struct SplitMetadata {
     pub update_timestamp: i64,
 
     /// A set of tags for categorizing and searching group of splits.
+    #[serde(default)]
     pub tags: HashSet<String>,
 }
 

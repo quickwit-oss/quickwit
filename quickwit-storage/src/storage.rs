@@ -90,6 +90,7 @@ pub trait Storage: Send + Sync + 'static {
     async fn put(&self, path: &Path, payload: PutPayload) -> StorageResult<()>;
 
     /// Downloads an entire file and writes it into a local file.
+    /// `output_path` is expected to be a file path (not a directory path).
     /// TODO Change the API to support multipart download
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()>;
 
