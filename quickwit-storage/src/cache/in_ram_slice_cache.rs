@@ -34,7 +34,7 @@ pub struct SliceAddress {
 
 /// A simple in-resident memory slice cache.
 pub struct SliceCache {
-    //TODO this is a mutex on top of another mutex.
+    // TODO this is a mutex on top of another mutex.
     // maybe we should use [`NeedMutMemorySizedCache`]
     inner: Mutex<MemorySizedCache<SliceAddress>>,
 }

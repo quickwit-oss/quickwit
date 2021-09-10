@@ -25,9 +25,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health, KillSwitch, Supervisable,
 };
 use quickwit_metastore::Metastore;
-use quickwit_storage::create_cachable_storage;
-use quickwit_storage::CacheConfig;
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::{create_cachable_storage, CacheConfig, StorageUriResolver};
 use smallvec::SmallVec;
 use tokio::join;
 use tracing::{debug, error, info};

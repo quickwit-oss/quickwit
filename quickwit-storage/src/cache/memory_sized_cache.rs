@@ -105,9 +105,7 @@ impl<K: Hash + Eq + Clone> NeedMutMemorySizedCache<K> {
 
     // Remome all cache entries for wich the key statisfies the predicate.
     pub fn delete<F>(&mut self, predicate: F)
-    where
-        F: Fn(&K) -> bool,
-    {
+    where F: Fn(&K) -> bool {
         let addrs_to_remove = self
             .lru_cache
             .iter()

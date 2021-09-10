@@ -43,11 +43,10 @@ use std::ops::Range;
 
 use anyhow::Context;
 use once_cell::sync::OnceCell;
-use tantivy::DocAddress;
-
 use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadataAndFooterOffsets, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResult, SplitIdAndFooterOffsets};
 use quickwit_storage::{create_cachable_storage, CacheConfig, StorageUriResolver};
+use tantivy::DocAddress;
 use tempfile::TempDir;
 
 pub use crate::client::{create_search_service_client, SearchServiceClient};

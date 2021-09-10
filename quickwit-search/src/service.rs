@@ -28,18 +28,14 @@ use quickwit_proto::{
     LeafSearchStreamRequest, LeafSearchStreamResult, SearchRequest, SearchResult,
     SearchStreamRequest,
 };
-use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResult, SearchStreamRequest};
 use quickwit_storage::{create_cachable_storage, CacheConfig, StorageUriResolver};
-use std::sync::Arc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
-use crate::leaf_search;
-use crate::root_search;
 use crate::search_stream::{leaf_search_stream, root_search_stream};
-use crate::SearchClientPool;
-use crate::SearchError;
-use crate::{fetch_docs, leaf_search, global_cache_dir, root_search, SearchClientPool, SearchError};
+use crate::{
+    fetch_docs, global_cache_dir, leaf_search, root_search, SearchClientPool, SearchError,
+};
 
 #[derive(Clone)]
 /// The search service implementation.

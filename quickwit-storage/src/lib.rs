@@ -53,17 +53,6 @@ pub use self::object_storage::{
 };
 pub use self::prefix_storage::add_prefix_to_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
-pub use self::storage_resolver::{
-    quickwit_storage_uri_resolver, StorageFactory, StorageUriResolver,
-};
-pub use crate::cachable_storage::{
-    create_cachable_storage, CacheConfig, StorageWithLocalStorageCache,
-};
-pub use crate::cache::{Cache, MemorySizedCache, SliceCache, StorageWithCacheFactory};
-pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
-
-#[cfg(any(test, feature = "testsuite"))]
-pub use self::cache::MockCache;
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::storage::MockStorage;
 #[cfg(any(test, feature = "testsuite"))]
@@ -73,6 +62,9 @@ pub use self::storage_resolver::{
 };
 #[cfg(feature = "testsuite")]
 pub use self::tests::storage_test_suite;
+pub use crate::cachable_storage::{
+    create_cachable_storage, CacheConfig, StorageWithLocalStorageCache,
+};
 pub use crate::cache::{Cache, MemorySizedCache, SliceCache, StorageWithCacheFactory};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 

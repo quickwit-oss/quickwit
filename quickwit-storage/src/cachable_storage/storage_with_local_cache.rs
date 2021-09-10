@@ -1,47 +1,38 @@
-/*
-* Copyright (C) 2021 Quickwit Inc.
-*
-* Quickwit is offered under the AGPL v3.0 and as commercial software.
-* For commercial licensing, contact us at hello@quickwit.io.
-*
-* AGPL:
-* This program is free software: you can redistribute it and/or modify
-* it under the terms of the GNU Affero General Public License as
-* published by the Free Software Foundation, either version 3 of the
-* License, or (at your option) any later version.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU Affero General Public License for more details.
-*
-* You should have received a copy of the GNU Affero General Public License
-* along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+// Copyright (C) 2021 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::{
-    collections::HashSet,
-    ops::Range,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::collections::HashSet;
+use std::ops::Range;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use crate::{
-    LocalFileStorage, PutPayload, Storage, StorageErrorKind, StorageResult, StorageUriResolver,
-};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use bytes::Bytes;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    sync::{
-        broadcast::{self, Sender},
-        Mutex,
-    },
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::broadcast::{self, Sender};
+use tokio::sync::Mutex;
 
-use super::{
-    local_storage_cache::LocalStorageCache, CacheState, StorageCache, CACHE_STATE_FILE_NAME,
+use super::local_storage_cache::LocalStorageCache;
+use super::{CacheState, StorageCache, CACHE_STATE_FILE_NAME};
+use crate::{
+    LocalFileStorage, PutPayload, Storage, StorageErrorKind, StorageResult, StorageUriResolver,
 };
 
 const DOWNLOAD_NOTIFICATION_CAPACITY: usize = 100;
@@ -268,7 +259,7 @@ impl Storage for StorageWithLocalStorageCache {
             return Ok(bytes);
         }
 
-        //TODO: find way to optimize this to avoid copying whole data in RAM.
+        // TODO: find way to optimize this to avoid copying whole data in RAM.
         let (all_bytes, is_the_downloader) = self.get_all_from_remote_storage(path).await?;
         let data = Bytes::copy_from_slice(&all_bytes[range.start..range.end]);
         if !is_the_downloader {
@@ -399,24 +390,19 @@ pub fn create_cachable_storage(
 
 #[cfg(test)]
 mod tests {
-    use crate::cachable_storage::CacheState;
-    use crate::cachable_storage::DiskCapacity;
-    use crate::cachable_storage::CACHE_STATE_FILE_NAME;
-    use crate::LocalFileStorage;
-    use crate::MockStorage;
-    use crate::Storage;
-    use anyhow::Context;
-    use futures::future;
     use std::path::Path;
     use std::sync::Arc;
     use std::time::Duration;
 
+    use anyhow::Context;
     use bytes::Bytes;
+    use futures::future;
     use tempfile::{tempdir, TempDir};
 
     use super::StorageWithLocalStorageCache;
+    use crate::cachable_storage::{CacheState, DiskCapacity, CACHE_STATE_FILE_NAME};
     use crate::tests::storage_test_suite;
-    use crate::PutPayload;
+    use crate::{LocalFileStorage, MockStorage, PutPayload, Storage};
 
     fn create_test_storages() -> anyhow::Result<(TempDir, MockStorage, MockStorage)> {
         let local_dir = tempdir()?;
