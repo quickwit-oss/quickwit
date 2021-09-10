@@ -22,11 +22,12 @@ use std::sync::Arc;
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
-use quickwit_actors::{Actor, ActorContext, AsyncActor, QueueCapacity};
+use quickwit_actors::{Actor, ActorContext, AsyncActor, Mailbox, QueueCapacity};
 use quickwit_metastore::Metastore;
 use tokio::sync::oneshot::Receiver;
+use tracing::info;
 
-use crate::models::UploadedSplit;
+use crate::models::{MergePlannerMessage, PublishOperation, PublisherMessage};
 
 #[derive(Debug, Clone, Default)]
 pub struct PublisherCounters {
@@ -34,20 +35,68 @@ pub struct PublisherCounters {
 }
 pub struct Publisher {
     metastore: Arc<dyn Metastore>,
+    merge_planner_mailbox: Mailbox<MergePlannerMessage>,
     counters: PublisherCounters,
 }
 
 impl Publisher {
-    pub fn new(metastore: Arc<dyn Metastore>) -> Publisher {
+    pub fn new(
+        metastore: Arc<dyn Metastore>,
+        merge_planner_mailbox: Mailbox<MergePlannerMessage>,
+    ) -> Publisher {
         Publisher {
             metastore,
+            merge_planner_mailbox,
             counters: PublisherCounters::default(),
         }
+    }
+
+    pub async fn run_publish_operation(
+        &self,
+        publisher_message: &PublisherMessage,
+    ) -> anyhow::Result<()> {
+        info!(index=publisher_message.index_id.as_str(), op=?publisher_message.operation, "publish-operation");
+        match &publisher_message.operation {
+            PublishOperation::PublishNewSplit {
+                new_split,
+                checkpoint_delta,
+            } => {
+                self.metastore
+                    .publish_splits(
+                        &publisher_message.index_id,
+                        &[&new_split.split_id],
+                        checkpoint_delta.clone(),
+                    )
+                    .await
+                    .with_context(|| "Failed to publish splits")?;
+            }
+            PublishOperation::ReplaceSplits {
+                new_splits: new_split_id,
+                replaced_split_ids,
+            } => {
+                // TODO change the metastore API to take &[String]
+                let new_split_ids_ref_vec: Vec<&str> = new_split_id
+                    .iter()
+                    .map(|split| split.split_id.as_str())
+                    .collect();
+                let replaced_split_ids_ref_vec: Vec<&str> =
+                    replaced_split_ids.iter().map(String::as_str).collect();
+                self.metastore
+                    .replace_splits(
+                        &publisher_message.index_id,
+                        &new_split_ids_ref_vec,
+                        &replaced_split_ids_ref_vec[..],
+                    )
+                    .await
+                    .with_context(|| "Failed to replace splits")?;
+            }
+        }
+        Ok(())
     }
 }
 
 impl Actor for Publisher {
-    type Message = Receiver<UploadedSplit>;
+    type Message = Receiver<PublisherMessage>;
     type ObservableState = PublisherCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
@@ -63,22 +112,31 @@ impl Actor for Publisher {
 impl AsyncActor for Publisher {
     async fn process_message(
         &mut self,
-        uploaded_split_future: Receiver<UploadedSplit>,
-        _ctx: &ActorContext<Receiver<UploadedSplit>>,
+        uploaded_split_future: Receiver<PublisherMessage>,
+        ctx: &ActorContext<Receiver<PublisherMessage>>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         fail_point!("publisher:before");
-        let uploaded_split = uploaded_split_future
-            .await
-            .with_context(|| "Upload apparently failed")?; //< splits must be published in order, so one uploaded failing means we should fail
-                                                           //< entirely.
-        self.metastore
-            .publish_splits(
-                &uploaded_split.index_id,
-                &[&uploaded_split.metadata.split_metadata.split_id],
-                uploaded_split.checkpoint_delta,
+        let publisher_message = {
+            let _protect_guard = ctx.protect_zone();
+            uploaded_split_future
+                .await
+                .with_context(|| "Upload apparently failed")? //< splits must be published in order, so one uploaded failing means we should fail
+                                                              //< entirely.
+        };
+        self.run_publish_operation(&publisher_message).await?;
+
+        let new_splits = publisher_message.operation.extract_new_splits();
+
+        // The merge planner is not necessarily awake and this is not an error.
+        // For instance, when a source reaches its end, and the last "new" split
+        // has been packaged, the packager finalizer sends a message to the merge
+        // in order to stop it.
+        let _ = ctx
+            .send_message(
+                &self.merge_planner_mailbox,
+                MergePlannerMessage::NewSplits(new_splits),
             )
-            .await
-            .with_context(|| "Failed to publish splits")?;
+            .await;
         self.counters.num_published_splits += 1;
         fail_point!("publisher:after");
         Ok(())
@@ -87,9 +145,9 @@ impl AsyncActor for Publisher {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::Universe;
+    use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_metastore::checkpoint::CheckpointDelta;
-    use quickwit_metastore::{MockMetastore, SplitMetadata, SplitMetadataAndFooterOffsets};
+    use quickwit_metastore::{MockMetastore, SplitMetadata};
     use tokio::sync::oneshot;
 
     use super::*;
@@ -116,44 +174,43 @@ mod tests {
             })
             .times(1)
             .returning(|_, _, _| Ok(()));
-        let publisher = Publisher::new(Arc::new(mock_metastore));
+        let (merge_planner_mailbox, _merge_planner_inbox) = create_test_mailbox();
+        let publisher = Publisher::new(Arc::new(mock_metastore), merge_planner_mailbox);
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
-        let (split_future_tx1, split_future_rx1) = oneshot::channel::<UploadedSplit>();
+        let (split_future_tx1, split_future_rx1) = oneshot::channel::<PublisherMessage>();
         assert!(universe
             .send_message(&publisher_mailbox, split_future_rx1)
             .await
             .is_ok());
-        let (split_future_tx2, split_future_rx2) = oneshot::channel::<UploadedSplit>();
+        let (split_future_tx2, split_future_rx2) = oneshot::channel::<PublisherMessage>();
         assert!(universe
             .send_message(&publisher_mailbox, split_future_rx2)
             .await
             .is_ok());
         // note the future is resolved in the inverse of the expected order.
         assert!(split_future_tx2
-            .send(UploadedSplit {
+            .send(PublisherMessage {
                 index_id: "index".to_string(),
-                metadata: SplitMetadataAndFooterOffsets {
-                    split_metadata: SplitMetadata {
+                operation: PublishOperation::PublishNewSplit {
+                    new_split: SplitMetadata {
                         split_id: "split2".to_string(),
                         ..Default::default()
                     },
-                    footer_offsets: 1000..1200
-                },
-                checkpoint_delta: CheckpointDelta::from(3..7)
+                    checkpoint_delta: CheckpointDelta::from(3..7),
+                }
             })
             .is_ok());
         assert!(split_future_tx1
-            .send(UploadedSplit {
+            .send(PublisherMessage {
                 index_id: "index".to_string(),
-                metadata: SplitMetadataAndFooterOffsets {
-                    split_metadata: SplitMetadata {
+                operation: PublishOperation::PublishNewSplit {
+                    new_split: SplitMetadata {
                         split_id: "split1".to_string(),
                         ..Default::default()
                     },
-                    footer_offsets: 1000..1200
+                    checkpoint_delta: CheckpointDelta::from(1..3),
                 },
-                checkpoint_delta: CheckpointDelta::from(1..3)
             })
             .is_ok());
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;

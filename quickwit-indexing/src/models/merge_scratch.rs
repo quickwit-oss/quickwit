@@ -17,12 +17,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_metastore::checkpoint::CheckpointDelta;
-use quickwit_metastore::SplitMetadataAndFooterOffsets;
+use crate::merge_policy::MergeOperation;
+use crate::models::ScratchDirectory;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UploadedSplit {
-    pub index_id: String,
-    pub metadata: SplitMetadataAndFooterOffsets,
-    pub checkpoint_delta: CheckpointDelta,
+#[derive(Debug)]
+pub struct MergeScratch {
+    pub merge_operation: MergeOperation,
+    /// Scratch directory for computing the merge.
+    pub merge_scratch_directory: ScratchDirectory,
+    pub downloaded_splits_directory: ScratchDirectory,
+}
+
+impl MergeScratch {
+    pub fn into_merge_scratch_directory(self) -> ScratchDirectory {
+        self.merge_scratch_directory
+    }
 }

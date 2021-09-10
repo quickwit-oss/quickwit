@@ -22,6 +22,7 @@ use std::fmt;
 use std::ops::Range;
 
 use quickwit_metastore::SplitMetadata;
+use tracing::debug;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum MergeOrDemux {
@@ -103,7 +104,7 @@ impl Default for StableMultitenantWithTimestampMergePolicy {
             target_demux_ops: 1,
             max_merge_docs: 10_000_000,
             min_level_num_docs: 100_000,
-            merge_factor: 10,
+            merge_factor: 8,
             merge_factor_max: 12,
         }
     }
@@ -128,10 +129,7 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
         if splits.is_empty() {
             return Vec::new();
         }
-        assert!(
-            splits.iter().all(|split| split.time_range.is_some()),
-            "This merge policy requires all splits have a time range"
-        );
+        debug!(splits=?splits, "merge policy");
         let original_num_splits = splits.len();
         // First we isolate splits that are too large.
         // We will read them at the end.
@@ -141,8 +139,11 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
         let mut merge_operations: Vec<MergeOperation> = Vec::new();
         // We stable sort the splits, most recent first.
         splits.sort_by_key(|split| {
-            let time_range = split.time_range.as_ref().unwrap();
-            Reverse(*time_range.end())
+            let time_end = split
+                .time_range
+                .as_ref()
+                .map(|time_range| Reverse(*time_range.end()));
+            (time_end, split.num_records)
         });
         // Splits should naturally have an increasing num_merge
         let split_levels = self.build_split_levels(splits);
