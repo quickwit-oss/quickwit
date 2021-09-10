@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use quickwit_proto::{LeafSearchRequest, LeafSearchResult};
 
 use crate::client_pool::Job;
-use crate::{ClientPool, RetryPolicy, SearchError, SearchServiceClient};
+use crate::{ClientPool, RetryPolicy, SearchClientPool, SearchError, SearchServiceClient};
 
 pub struct LeafSearchRetryPolicy {
     attempts: usize,
@@ -98,7 +98,7 @@ impl RetryPolicy<LeafSearchRequest, LeafSearchResult, SearchError> for LeafSearc
     // get a node that is relevant at least for this split.
     async fn retry_client(
         &self,
-        client_pool: &Arc<dyn ClientPool>,
+        client_pool: &Arc<SearchClientPool>,
         client: &SearchServiceClient,
         _result: Result<&LeafSearchResult, &SearchError>,
         retry_request: &LeafSearchRequest,
@@ -114,11 +114,11 @@ impl RetryPolicy<LeafSearchRequest, LeafSearchResult, SearchError> for LeafSearc
 }
 
 pub struct SearchClusterClient {
-    client_pool: Arc<dyn ClientPool>,
+    client_pool: Arc<SearchClientPool>,
 }
 
 impl SearchClusterClient {
-    pub fn new(client_pool: Arc<dyn ClientPool>) -> Self {
+    pub fn new(client_pool: Arc<SearchClientPool>) -> Self {
         Self { client_pool }
     }
 

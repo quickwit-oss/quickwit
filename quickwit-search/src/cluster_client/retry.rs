@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::{ClientPool, SearchServiceClient};
+use crate::{SearchClientPool, SearchServiceClient};
 
 /// A retry policy to evaluate if a request should be retried.
 #[async_trait]
@@ -42,7 +42,7 @@ pub trait RetryPolicy<Request, Response, Error>: Sized {
     /// Returns the `SearchServiceClient` to use for retry.
     async fn retry_client(
         &self,
-        client_pool: &Arc<dyn ClientPool>,
+        client_pool: &Arc<SearchClientPool>,
         client: &SearchServiceClient,
         result: Result<&Response, &Error>,
         retry_request: &Request,
