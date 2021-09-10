@@ -23,9 +23,8 @@ use tantivy::query::Query;
 use tantivy::schema::{Schema, SchemaBuilder, STORED, STRING};
 use tantivy::Document;
 
-use crate::default_index_config::{SOURCE_FIELD_NAME, TAGS_FIELD_NAME};
 use crate::query_builder::build_query;
-use crate::{DocParsingError, IndexConfig, QueryParserError};
+use crate::{DocParsingError, IndexConfig, QueryParserError, SOURCE_FIELD_NAME, TAGS_FIELD_NAME};
 
 /// A config that flatten the document to have all fields at top level.
 #[derive(Clone, Serialize, Deserialize)]

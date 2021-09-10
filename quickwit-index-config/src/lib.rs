@@ -37,6 +37,12 @@ pub use default_index_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, Do
 pub use error::QueryParserError;
 pub use wikipedia_config::WikipediaIndexConfig;
 
+/// Field name reserved for storing the source document.
+pub static SOURCE_FIELD_NAME: &str = "_source";
+
+/// Field name reserved for storing the tags.
+pub static TAGS_FIELD_NAME: &str = "_tags";
+
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]
 pub fn default_config_for_tests() -> DefaultIndexConfig {
