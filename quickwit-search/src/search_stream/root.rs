@@ -30,7 +30,8 @@ use quickwit_proto::{
 use tracing::*;
 
 use crate::client_pool::Job;
-use crate::root::{job_for_splits, NodeSearchError};
+use crate::error::NodeSearchError;
+use crate::root::job_for_splits;
 use crate::{list_relevant_splits, ClientPool, SearchClientPool, SearchError};
 
 /// Perform a distributed search stream.
@@ -69,9 +70,17 @@ pub async fn root_search_stream(
         let split_metadata_list: Vec<SplitIdAndFooterOffsets> = jobs
             .iter()
             .map(|job| SplitIdAndFooterOffsets {
-                split_id: job.metadata.split_metadata.split_id.clone(),
-                split_footer_start: job.metadata.footer_offsets.start,
-                split_footer_end: job.metadata.footer_offsets.end,
+                split_id: job.split_id.clone(),
+                split_footer_start: split_metadata_map
+                    .get(&job.split_id)
+                    .unwrap()
+                    .footer_offsets
+                    .start,
+                split_footer_end: split_metadata_map
+                    .get(&job.split_id)
+                    .unwrap()
+                    .footer_offsets
+                    .end,
             })
             .collect();
         let split_ids: Vec<_> = split_metadata_list

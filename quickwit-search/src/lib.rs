@@ -23,6 +23,7 @@
 
 mod client;
 mod client_pool;
+mod cluster_client;
 mod collector;
 mod error;
 mod fetch_docs;
@@ -50,7 +51,8 @@ use tantivy::DocAddress;
 pub use crate::client::{create_search_service_client, SearchServiceClient};
 pub use crate::client_pool::search_client_pool::SearchClientPool;
 pub use crate::client_pool::ClientPool;
-pub use crate::error::SearchError;
+pub use crate::cluster_client::retry::RetryPolicy;
+pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
 pub use crate::root::root_search;
