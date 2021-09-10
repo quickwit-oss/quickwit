@@ -24,9 +24,8 @@ use tantivy::schema::{Schema, TextFieldIndexing, TextOptions, STRING};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::Document;
 
-use crate::default_index_config::TAGS_FIELD_NAME;
 use crate::query_builder::build_query;
-use crate::{DocParsingError, IndexConfig, QueryParserError};
+use crate::{DocParsingError, IndexConfig, QueryParserError, TAGS_FIELD_NAME};
 
 /// A document config tailored for the wikipedia corpus.
 #[derive(Clone, Serialize, Deserialize)]

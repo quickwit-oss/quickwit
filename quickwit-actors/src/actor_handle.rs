@@ -31,7 +31,7 @@ use crate::actor_state::ActorState;
 use crate::channel_with_priority::Priority;
 use crate::mailbox::Command;
 use crate::observation::ObservationType;
-use crate::{Actor, ActorContext, ActorExitStatus, Observation};
+use crate::{Actor, ActorContext, ActorExitStatus, Mailbox, Observation};
 
 /// An Actor Handle serves as an address to communicate with an actor.
 pub struct ActorHandle<A: Actor> {
@@ -44,7 +44,7 @@ pub struct ActorHandle<A: Actor> {
 /// Describes the health of a given actor.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Health {
-    /// The actor is running an behaving as expected.
+    /// The actor is running and behaving as expected.
     Healthy,
     /// No progress was registered, or the process terminated with an error
     FailureOrUnhealthy,
@@ -271,6 +271,10 @@ impl<A: Actor> ActorHandle<A> {
                 Observation { obs_type, state }
             }
         }
+    }
+
+    pub fn mailbox(&self) -> &Mailbox<A::Message> {
+        self.actor_context.mailbox()
     }
 }
 
