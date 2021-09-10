@@ -32,41 +32,41 @@ use crate::ApiError;
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
-pub struct MembersRequestQueryString {
-    /// The output format.
+pub struct ListMembersRequestQueryString {
+    /// The output format requested.
     #[serde(default)]
     pub format: Format,
 }
 
-/// cluster handler.
+/// Cluster handler.
 pub fn cluster_handler<TClusterService: ClusterService>(
     cluster_service: Arc<TClusterService>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
-    members_filter()
+    list_members_filter()
         .and(warp::any().map(move || cluster_service.clone()))
-        .and_then(members)
+        .and_then(list_members)
 }
 
-fn members_filter() -> impl Filter<Extract = (MembersRequestQueryString,), Error = Rejection> + Clone
-{
+fn list_members_filter(
+) -> impl Filter<Extract = (ListMembersRequestQueryString,), Error = Rejection> + Clone {
     warp::path!("cluster" / "members")
         .and(warp::get())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
-async fn members<TClusterService: ClusterService>(
-    request: MembersRequestQueryString,
+async fn list_members<TClusterService: ClusterService>(
+    request: ListMembersRequestQueryString,
     cluster_service: Arc<TClusterService>,
 ) -> Result<impl warp::Reply, Infallible> {
     Ok(request
         .format
-        .make_reply(members_endpoint(&*cluster_service).await))
+        .make_reply(list_members_endpoint(&*cluster_service).await))
 }
 
-async fn members_endpoint<TClusterService: ClusterService>(
+async fn list_members_endpoint<TClusterService: ClusterService>(
     cluster_service: &TClusterService,
-) -> Result<quickwit_proto::MembersResult, ApiError> {
-    let members_request = quickwit_proto::MembersRequest {};
-    let members_result = cluster_service.members(members_request).await?;
-    Ok(members_result)
+) -> Result<quickwit_proto::ListMembersResponse, ApiError> {
+    let list_members_req = quickwit_proto::ListMembersRequest {};
+    let list_members_resp = cluster_service.list_members(list_members_req).await?;
+    Ok(list_members_resp)
 }
