@@ -29,7 +29,7 @@ use quickwit_storage::Storage;
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{FileHandle, OwnedBytes, WatchCallback, WatchHandle, WritePtr};
 use tantivy::{AsyncIoResult, Directory, HasLen};
-use tracing::error;
+use tracing::{error, instrument};
 
 use crate::caching_directory::BytesWrapper;
 
@@ -60,6 +60,7 @@ impl FileHandle for StorageDirectoryFileHandle {
         Err(unsupported_operation(&self.path))
     }
 
+    #[instrument(level = "debug", fields(path = %self.path.to_string_lossy()), skip(self))]
     async fn read_bytes_async(&self, byte_range: Range<usize>) -> AsyncIoResult<OwnedBytes> {
         if byte_range.is_empty() {
             return Ok(OwnedBytes::empty());

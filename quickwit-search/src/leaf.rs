@@ -35,6 +35,7 @@ use tantivy::collector::Collector;
 use tantivy::query::Query;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
+use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, GenericQuickwitCollector};
 use crate::SearchError;
@@ -111,13 +112,18 @@ pub(crate) async fn open_index(
 ///
 /// The downloaded data depends on the query (which term's posting list is required,
 /// are position required too), and the collector.
+#[instrument(skip(searcher, query, fast_field_names))]
 pub(crate) async fn warmup(
     searcher: &Searcher,
     query: &dyn Query,
     fast_field_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
-    warm_up_terms(searcher, query).await?;
-    warm_up_fastfields(searcher, fast_field_names).await?;
+    warm_up_terms(searcher, query)
+        .instrument(debug_span!("warm_up_terms"))
+        .await?;
+    warm_up_fastfields(searcher, fast_field_names)
+        .instrument(debug_span!("warm_up_fastfields"))
+        .await?;
     Ok(())
 }
 
@@ -178,6 +184,7 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
 }
 
 /// Apply a leaf search on a single split.
+#[instrument(skip(search_request, storage, split, index_config))]
 async fn leaf_search_single_split(
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
@@ -202,6 +209,11 @@ async fn leaf_search_single_split(
         .try_into()?;
     let searcher = reader.searcher();
     warmup(&*searcher, &query, &quickwit_collector.fast_field_names()).await?;
+    let span = info_span!(
+        "search",
+        split_id = %split.split_id,
+    );
+    let _ = span.enter();
     let leaf_search_result = searcher.search(&query, &quickwit_collector)?;
     Ok(leaf_search_result)
 }
@@ -247,6 +259,7 @@ pub async fn leaf_search(
     let merge_collector = make_merge_collector(request);
     let mut merged_search_results =
         spawn_blocking(move || merge_collector.merge_fruits(search_results))
+            .instrument(info_span!("merge_search_results"))
             .await
             .with_context(|| "Merging search on split results failed")??;
 

@@ -12,13 +12,13 @@ use crate::state::{ArtilleryClusterEvent, ArtilleryClusterRequest};
 
 #[derive(Debug)]
 pub struct Cluster {
-    comm: flume::Sender<ArtilleryClusterRequest>
+    comm: flume::Sender<ArtilleryClusterRequest>,
 }
 
 impl Cluster {
     pub fn create_and_start(
         host_key: Uuid,
-        config: ClusterConfig
+        config: ClusterConfig,
     ) -> Result<(Cluster, flume::Receiver<ArtilleryClusterEvent>)> {
         let (event_tx, event_rx) = flume::unbounded::<ArtilleryClusterEvent>();
         let (internal_tx, mut internal_rx) = flume::unbounded::<ArtilleryClusterRequest>();
@@ -44,7 +44,7 @@ impl Cluster {
         self.comm
             .send(ArtilleryClusterRequest::Payload(
                 id,
-                msg.as_ref().to_string()
+                msg.as_ref().to_string(),
             ))
             .unwrap();
     }

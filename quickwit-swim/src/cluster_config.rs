@@ -17,7 +17,7 @@ pub struct ClusterConfig {
     pub network_mtu: usize,
     pub ping_request_host_count: usize,
     pub ping_timeout: Duration,
-    pub listen_addr: SocketAddr
+    pub listen_addr: SocketAddr,
 }
 
 impl Default for ClusterConfig {
@@ -30,7 +30,7 @@ impl Default for ClusterConfig {
             network_mtu: CONST_PACKET_SIZE,
             ping_request_host_count: 3,
             ping_timeout: Duration::from_secs(3),
-            listen_addr: directed.to_socket_addrs().unwrap().next().unwrap()
+            listen_addr: directed.to_socket_addrs().unwrap().next().unwrap(),
         }
     }
 }
