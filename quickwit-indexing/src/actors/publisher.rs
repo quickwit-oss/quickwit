@@ -198,4 +198,41 @@ mod tests {
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 2);
     }
+
+    #[tokio::test]
+    async fn test_publisher_replace_operation() {
+        quickwit_common::setup_logging_for_tests();
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_replace_splits()
+            .withf(|index_id, new_split_ids, replaced_split_ids| {
+                index_id == "index"
+                    && new_split_ids[..] == ["split3"]
+                    && replaced_split_ids[..] == ["split1", "split2"]
+            })
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+        let publisher = Publisher::new(Arc::new(mock_metastore));
+        let universe = Universe::new();
+        let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
+        let (split_future_tx, split_future_rx) = oneshot::channel::<PublisherMessage>();
+        assert!(universe
+            .send_message(&publisher_mailbox, split_future_rx)
+            .await
+            .is_ok());
+        assert!(split_future_tx
+            .send(PublisherMessage {
+                index_id: "index".to_string(),
+                operation: PublishOperation::ReplaceSplits {
+                    new_splits: vec![SplitMetadata {
+                        split_id: "split3".to_string(),
+                        ..Default::default()
+                    }],
+                    replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
+                }
+            })
+            .is_ok());
+        let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
+        assert_eq!(publisher_observation.num_published_splits, 1);
+    }
 }
