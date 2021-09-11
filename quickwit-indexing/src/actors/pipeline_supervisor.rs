@@ -23,26 +23,38 @@ use std::time::Duration;
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health, KillSwitch, Supervisable,
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health,
+    KillSwitch, QueueCapacity, Supervisable,
 };
 use quickwit_index_config::IndexConfig;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{Metastore, SplitState};
 use quickwit_storage::StorageUriResolver;
-use smallvec::SmallVec;
 use tantivy::schema::Field;
 use tokio::join;
 use tracing::{debug, error, info};
 
-use crate::actors::{Indexer, IndexerParams, Packager, Publisher, Uploader};
-use crate::models::IndexingStatistics;
+use crate::actors::merge_split_downloader::MergeSplitDownloader;
+use crate::actors::{
+    Indexer, IndexerParams, MergeExecutor, MergePlanner, Packager, Publisher, Uploader,
+};
+use crate::models::{IndexingStatistics, MergePlannerMessage};
 use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
+use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
 pub struct IndexingPipelineHandler {
+    /// Indexing pipeline
     pub source: ActorHandle<SourceActor>,
     pub indexer: ActorHandle<Indexer>,
     pub packager: ActorHandle<Packager>,
     pub uploader: ActorHandle<Uploader>,
     pub publisher: ActorHandle<Publisher>,
+
+    /// Merging pipeline subpipeline
+    pub merge_planner: ActorHandle<MergePlanner>,
+    pub merge_split_downloader: ActorHandle<MergeSplitDownloader>,
+    pub merge_executor: ActorHandle<MergeExecutor>,
+    pub merge_packager: ActorHandle<Packager>,
+    pub merge_uploader: ActorHandle<Uploader>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -111,28 +123,33 @@ impl IndexingPipelineSupervisor {
         Ok(())
     }
 
-    fn supervisables(&self) -> SmallVec<[&dyn Supervisable; 5]> {
+    fn supervisables(&self) -> Vec<&dyn Supervisable> {
         if let Some(handlers) = self.handlers.as_ref() {
-            SmallVec::from_buf([
+            let supervisables: Vec<&dyn Supervisable> = vec![
                 &handlers.source,
                 &handlers.indexer,
                 &handlers.packager,
                 &handlers.uploader,
                 &handlers.publisher,
-            ])
+                &handlers.merge_planner,
+                &handlers.merge_split_downloader,
+                &handlers.merge_executor,
+                &handlers.merge_packager,
+                &handlers.merge_uploader,
+            ];
+            supervisables
         } else {
-            SmallVec::new()
+            Vec::new()
         }
     }
 
     /// Performs healthcheck on all of the actors in the pipeline,
     /// and consolidates the result.
     fn healthcheck(&self) -> Health {
-        let supervisables = self.supervisables();
-        let mut healthy_actors: SmallVec<[&str; 5]> = Default::default();
-        let mut failure_or_unhealthy_actors: SmallVec<[&str; 5]> = Default::default();
-        let mut success_actors: SmallVec<[&str; 5]> = Default::default();
-        for &supervisable in &supervisables {
+        let mut healthy_actors: Vec<&str> = Default::default();
+        let mut failure_or_unhealthy_actors: Vec<&str> = Default::default();
+        let mut success_actors: Vec<&str> = Default::default();
+        for supervisable in self.supervisables() {
             match supervisable.health() {
                 Health::Healthy => {
                     // At least one other actor is running.
@@ -147,7 +164,7 @@ impl IndexingPipelineSupervisor {
             }
         }
         if failure_or_unhealthy_actors.is_empty() {
-            if success_actors.len() == supervisables.len() {
+            if healthy_actors.is_empty() {
                 // all actors finished successfully.
                 info!("indexing pipeline success!");
                 Health::Success
@@ -176,13 +193,75 @@ impl IndexingPipelineSupervisor {
             .storage_uri_resolver
             .resolve(&index_metadata.index_uri)?;
 
+        let (publisher_mailbox, publisher_inbox) = create_mailbox::<<Publisher as Actor>::Message>(
+            "publisher".to_string(),
+            QueueCapacity::Unbounded,
+        );
+
+        // Merge uploader
+        let merge_uploader = Uploader::new(
+            self.params.metastore.clone(),
+            index_storage.clone(),
+            publisher_mailbox.clone(),
+        );
+        let (merge_uploader_mailbox, merge_uploader_handler) = ctx
+            .spawn_actor(merge_uploader)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_async();
+
         let tags_field = extract_tags_field(index_metadata.index_config.as_ref())?;
 
-        let publisher = Publisher::new(self.params.metastore.clone());
+        // Merge Packager
+        let merge_packager = Packager::new(tags_field, merge_uploader_mailbox, None);
+        let (merge_packager_mailbox, merge_packager_handler) = ctx
+            .spawn_actor(merge_packager)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_sync();
+
+        let merge_executor =
+            MergeExecutor::new(self.params.index_id.clone(), merge_packager_mailbox);
+        let (merge_executor_mailbox, merge_executor_handler) = ctx
+            .spawn_actor(merge_executor)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_sync();
+
+        let merge_split_downloader = MergeSplitDownloader {
+            scratch_directory: self.params.indexer_params.scratch_directory.clone(),
+            storage: index_storage.clone(),
+            merge_executor_mailbox,
+        };
+        let (merge_split_downloader_mailbox, merge_split_downloader_handler) = ctx
+            .spawn_actor(merge_split_downloader)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_async();
+
+        // Merge planner
+        let merge_policy: Arc<dyn MergePolicy> =
+            Arc::new(StableMultitenantWithTimestampMergePolicy::default());
+        let mut merge_planner = MergePlanner::new(merge_policy, merge_split_downloader_mailbox);
+        for split in self
+            .params
+            .metastore
+            .list_splits(&self.params.index_id, SplitState::Published, None, &[])
+            .await?
+        {
+            merge_planner.add_split(split.split_metadata);
+        }
+        let (merge_planner_mailbox, merge_planner_handler) = ctx
+            .spawn_actor(merge_planner)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_sync();
+
+        // Publisher
+        let publisher =
+            Publisher::new(self.params.metastore.clone(), merge_planner_mailbox.clone());
         let (publisher_mailbox, publisher_handler) = ctx
             .spawn_actor(publisher)
             .set_kill_switch(self.kill_switch.clone())
+            .set_mailboxes(publisher_mailbox, publisher_inbox)
             .spawn_async();
+
+        // Uploader
         let uploader = Uploader::new(
             self.params.metastore.clone(),
             index_storage,
@@ -192,12 +271,15 @@ impl IndexingPipelineSupervisor {
             .spawn_actor(uploader)
             .set_kill_switch(self.kill_switch.clone())
             .spawn_async();
-        info!(actor_name=%uploader_mailbox.actor_instance_id());
-        let packager = Packager::new(tags_field, uploader_mailbox);
+
+        // Packager
+        let packager = Packager::new(tags_field, uploader_mailbox, Some(merge_planner_mailbox));
         let (packager_mailbox, packager_handler) = ctx
             .spawn_actor(packager)
             .set_kill_switch(self.kill_switch.clone())
             .spawn_sync();
+
+        // Indexer
         let indexer = Indexer::try_new(
             self.params.index_id.clone(),
             index_metadata.index_config.clone(),
@@ -208,6 +290,8 @@ impl IndexingPipelineSupervisor {
             .spawn_actor(indexer)
             .set_kill_switch(self.kill_switch.clone())
             .spawn_sync();
+
+        // Source
         let source = quickwit_supported_sources()
             .load_source(self.params.source_config.clone(), index_metadata.checkpoint)
             .await?;
@@ -219,12 +303,19 @@ impl IndexingPipelineSupervisor {
             .spawn_actor(actor_source)
             .set_kill_switch(self.kill_switch.clone())
             .spawn_async();
+
         self.handlers = Some(IndexingPipelineHandler {
             source: source_handler,
             indexer: indexer_handler,
             packager: packager_handler,
             uploader: uploader_handler,
             publisher: publisher_handler,
+
+            merge_planner: merge_planner_handler,
+            merge_split_downloader: merge_split_downloader_handler,
+            merge_executor: merge_executor_handler,
+            merge_packager: merge_packager_handler,
+            merge_uploader: merge_uploader_handler,
         });
         Ok(())
     }
@@ -240,7 +331,32 @@ impl IndexingPipelineSupervisor {
             // }
         } else {
             match self.healthcheck() {
-                Health::Healthy => {}
+                Health::Healthy => {
+                    // We stop triggering new merges as soon as there cannot be more splits.
+                    if let Some(handlers) = self.handlers.as_mut() {
+                        // If the uploader has terminated (due to end of source) we want to stop
+                        // merging new splits.
+                        //
+                        // This is done by sending a message to the `MergePlanner`.
+                        // We already send this message in the uploader finalizer, but if the
+                        // uploader panicks, the finalizer may never be
+                        // called, so we defensively send the message if we
+                        // detect that the uploader is not running, while the merge planner is.
+                        if handlers.uploader.health() != Health::Healthy
+                            && handlers.merge_planner.health() == Health::Healthy
+                        {
+                            // Failing to send is fine here.
+                            info!("Stopping the merge planner since the packager is dead.");
+                            // If the message cannot be sent this is not necessarily an error.
+                            let _ = ctx
+                                .send_message(
+                                    handlers.merge_planner.mailbox(),
+                                    MergePlannerMessage::EndWithSuccess,
+                                )
+                                .await;
+                        }
+                    }
+                }
                 Health::FailureOrUnhealthy => {
                     self.terminate().await;
                 }
@@ -262,6 +378,10 @@ impl IndexingPipelineSupervisor {
                 handlers.packager.kill(),
                 handlers.uploader.kill(),
                 handlers.publisher.kill(),
+                handlers.merge_split_downloader.kill(),
+                handlers.merge_executor.kill(),
+                handlers.merge_packager.kill(),
+                handlers.merge_uploader.kill()
             );
         }
     }
@@ -319,6 +439,10 @@ mod tests {
     async fn test_indexing_pipeline() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let mut metastore = MockMetastore::default();
+        metastore
+            .expect_list_splits()
+            .times(1)
+            .returning(|_, _, _, _| Ok(Vec::new()));
         metastore
             .expect_index_metadata()
             .withf(|index_id| index_id == "test-index")
