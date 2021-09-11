@@ -20,7 +20,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_proto::{LeaveRequest, LeaveResult, Member as PMember, MembersRequest, MembersResult};
+use quickwit_proto::{
+    LeaveClusterRequest, LeaveClusterResponse, ListMembersRequest, ListMembersResponse,
+    Member as PMember,
+};
 
 use crate::cluster::{Cluster, Member};
 use crate::error::ClusterError;
@@ -38,8 +41,14 @@ impl From<Member> for PMember {
 
 #[async_trait]
 pub trait ClusterService: 'static + Send + Sync {
-    async fn members(&self, request: MembersRequest) -> Result<MembersResult, ClusterError>;
-    async fn leave(&self, request: LeaveRequest) -> Result<LeaveResult, ClusterError>;
+    async fn list_members(
+        &self,
+        request: ListMembersRequest,
+    ) -> Result<ListMembersResponse, ClusterError>;
+    async fn leave_cluster(
+        &self,
+        request: LeaveClusterRequest,
+    ) -> Result<LeaveClusterResponse, ClusterError>;
 }
 
 /// Cluster service implementation.
@@ -58,20 +67,26 @@ impl ClusterServiceImpl {
 #[tonic::async_trait]
 impl ClusterService for ClusterServiceImpl {
     /// This is the API to get the list of cluster members.
-    async fn members(&self, _request: MembersRequest) -> Result<MembersResult, ClusterError> {
+    async fn list_members(
+        &self,
+        _request: ListMembersRequest,
+    ) -> Result<ListMembersResponse, ClusterError> {
         let members = self
             .cluster
             .members()
             .into_iter()
             .map(PMember::from)
             .collect();
-        Ok(MembersResult { members })
+        Ok(ListMembersResponse { members })
     }
 
     /// This is the API to leave the member from the cluster.
-    async fn leave(&self, _request: LeaveRequest) -> Result<LeaveResult, ClusterError> {
+    async fn leave_cluster(
+        &self,
+        _request: LeaveClusterRequest,
+    ) -> Result<LeaveClusterResponse, ClusterError> {
         self.cluster.leave().await;
-        Ok(LeaveResult {})
+        Ok(LeaveClusterResponse {})
     }
 }
 

@@ -26,50 +26,44 @@ pub enum ClusterError {
     /// Create cluster error.
     #[error("Failed to create cluster: `{message}`")]
     CreateClusterError {
-        /// Message.
+        /// Underlying error message.
         message: String,
     },
 
     /// Port binding error.
-    #[error("Failed to bind UDP port `{port}` for the gossip membership algorithm: `{message}`")]
+    #[error("Failed to bind to UDP port `{port}` for the gossip membership protocol: `{message}`")]
     UDPPortBindingError {
         /// Port number.
         port: u16,
-
-        /// Message.
+        /// Underlying error message.
         message: String,
     },
 
     /// Read host key error.
     #[error("Failed to read host key: `{message}`")]
     ReadHostKeyError {
-        /// Message.
+        /// Underlying error message.
         message: String,
     },
 
     /// Write host key error.
     #[error("Failed to write host key: `{message}`")]
     WriteHostKeyError {
-        /// Message.
+        /// Underlying error message.
         message: String,
     },
 }
 
-impl ClusterError {
-    fn convert_to_tonic_status_code(cluster_error: &ClusterError) -> tonic::Code {
-        match cluster_error {
+impl From<ClusterError> for tonic::Status {
+    fn from(error: ClusterError) -> tonic::Status {
+        let code = match error {
             ClusterError::CreateClusterError { .. } => tonic::Code::Internal,
             ClusterError::UDPPortBindingError { .. } => tonic::Code::PermissionDenied,
             ClusterError::ReadHostKeyError { .. } => tonic::Code::Internal,
             ClusterError::WriteHostKeyError { .. } => tonic::Code::Internal,
-        }
-    }
-
-    pub fn convert_to_tonic_status(cluster_error: ClusterError) -> tonic::Status {
-        let error_json = serde_json::to_string_pretty(&cluster_error)
-            .unwrap_or_else(|_| "Failed to serialize error".to_string());
-        let code = ClusterError::convert_to_tonic_status_code(&cluster_error);
-        tonic::Status::new(code, error_json)
+        };
+        let message = error.to_string();
+        tonic::Status::new(code, message)
     }
 }
 

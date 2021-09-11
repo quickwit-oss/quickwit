@@ -84,10 +84,8 @@ impl Default for QuickwitEnv {
 
 pub fn get_quickwit_env() -> QuickwitEnv {
     match std::env::var("QUICKWIT_ENV") {
-        Ok(val) if val == "LOCAL" => QuickwitEnv::LOCAL,
-        Ok(val) => {
-            panic!("unknown value set for QUICKWIT_ENV {}", val)
-        }
+        Ok(val) if val.to_lowercase().trim() == "local" => QuickwitEnv::LOCAL,
+        Ok(val) => panic!("QUICKWIT_ENV value `{}` is not supported", val),
         Err(_) => QuickwitEnv::UNSET,
     }
 }

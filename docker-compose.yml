@@ -9,25 +9,64 @@ networks:
         gateway: 172.16.7.1
 
 services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:6.2.0
-    hostname: zookeeper
-    container_name: zookeeper
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    profiles:
+      - all
+      - jaeger
     ports:
-      - "2181:2181"
+      - "5775:5775/udp"
+      - "5778:5778"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "14250:14250"
+      - "14268:14268"
+      - "16686:16686"
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566"
+      - "4571:4571"
+      - "8080:8080"
+    profiles:
+      - all
+      - localstack
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+      DATA_DIR: /tmp/localstack/data
+      SERVICES: kinesis,s3
+    volumes:
+      - ".localstack:/docker-entrypoint-initaws.d"
+      - "${TMPDIR:-/tmp}/quickwit/services/localstack:/tmp/localstack"
+
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    profiles:
+      - all
+      - postgres
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_USER: ${POSTGRES_USER:-quickwit-dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quickwit-dev}
+    volumes:
+      - "${TMPDIR:-/tmp}/quickwit/services/postgres:/var/lib/postgresql/data/pgdata"
 
   kafka-broker:
     image: confluentinc/cp-kafka:6.2.0
-    hostname: kafka-broker
     container_name: kafka-broker
     depends_on:
       - zookeeper
     ports:
       - "9092:9092"
       - "9101:9101"
+    profiles:
+      - all
+      - kafka
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
@@ -40,3 +79,14 @@ services:
       KAFKA_JMX_PORT: 9101
       KAFKA_JMX_HOSTNAME: localhost
 
+  zookeeper:
+    image: confluentinc/cp-zookeeper:6.2.0
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    profiles:
+      - all
+      - kafka
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000

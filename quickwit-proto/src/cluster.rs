@@ -17,22 +17,22 @@ pub struct Member {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MembersRequest {}
+pub struct ListMembersRequest {}
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MembersResult {
+pub struct ListMembersResponse {
     #[prost(message, repeated, tag = "1")]
     pub members: ::prost::alloc::vec::Vec<Member>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct LeaveRequest {}
+pub struct LeaveClusterRequest {}
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct LeaveResult {}
+pub struct LeaveClusterResponse {}
 #[doc = r" Generated client implementations."]
 pub mod cluster_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -93,11 +93,11 @@ pub mod cluster_service_client {
             self.inner = self.inner.accept_gzip();
             self
         }
-        #[doc = "/ Retrieves members in the cluster."]
-        pub async fn members(
+        #[doc = "/ Retrieves members of the cluster."]
+        pub async fn list_members(
             &mut self,
-            request: impl tonic::IntoRequest<super::MembersRequest>,
-        ) -> Result<tonic::Response<super::MembersResult>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::ListMembersRequest>,
+        ) -> Result<tonic::Response<super::ListMembersResponse>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
@@ -105,15 +105,15 @@ pub mod cluster_service_client {
                 )
             })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/cluster.ClusterService/Members");
+            let path = http::uri::PathAndQuery::from_static("/cluster.ClusterService/ListMembers");
             self.inner.unary(request.into_request(), path, codec).await
         }
         #[doc = "/ Removes itself from the cluster."]
         #[doc = "/ Removed node will be isolated from the cluster."]
-        pub async fn leave(
+        pub async fn leave_cluster(
             &mut self,
-            request: impl tonic::IntoRequest<super::LeaveRequest>,
-        ) -> Result<tonic::Response<super::LeaveResult>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::LeaveClusterRequest>,
+        ) -> Result<tonic::Response<super::LeaveClusterResponse>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
@@ -121,7 +121,7 @@ pub mod cluster_service_client {
                 )
             })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/cluster.ClusterService/Leave");
+            let path = http::uri::PathAndQuery::from_static("/cluster.ClusterService/LeaveCluster");
             self.inner.unary(request.into_request(), path, codec).await
         }
     }
@@ -133,17 +133,17 @@ pub mod cluster_service_server {
     #[doc = "Generated trait containing gRPC methods that should be implemented for use with ClusterServiceServer."]
     #[async_trait]
     pub trait ClusterService: Send + Sync + 'static {
-        #[doc = "/ Retrieves members in the cluster."]
-        async fn members(
+        #[doc = "/ Retrieves members of the cluster."]
+        async fn list_members(
             &self,
-            request: tonic::Request<super::MembersRequest>,
-        ) -> Result<tonic::Response<super::MembersResult>, tonic::Status>;
+            request: tonic::Request<super::ListMembersRequest>,
+        ) -> Result<tonic::Response<super::ListMembersResponse>, tonic::Status>;
         #[doc = "/ Removes itself from the cluster."]
         #[doc = "/ Removed node will be isolated from the cluster."]
-        async fn leave(
+        async fn leave_cluster(
             &self,
-            request: tonic::Request<super::LeaveRequest>,
-        ) -> Result<tonic::Response<super::LeaveResult>, tonic::Status>;
+            request: tonic::Request<super::LeaveClusterRequest>,
+        ) -> Result<tonic::Response<super::LeaveClusterResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct ClusterServiceServer<T: ClusterService> {
@@ -184,18 +184,20 @@ pub mod cluster_service_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/cluster.ClusterService/Members" => {
+                "/cluster.ClusterService/ListMembers" => {
                     #[allow(non_camel_case_types)]
-                    struct MembersSvc<T: ClusterService>(pub Arc<T>);
-                    impl<T: ClusterService> tonic::server::UnaryService<super::MembersRequest> for MembersSvc<T> {
-                        type Response = super::MembersResult;
+                    struct ListMembersSvc<T: ClusterService>(pub Arc<T>);
+                    impl<T: ClusterService> tonic::server::UnaryService<super::ListMembersRequest>
+                        for ListMembersSvc<T>
+                    {
+                        type Response = super::ListMembersResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::MembersRequest>,
+                            request: tonic::Request<super::ListMembersRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move { (*inner).members(request).await };
+                            let fut = async move { (*inner).list_members(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -204,7 +206,7 @@ pub mod cluster_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = MembersSvc(inner);
+                        let method = ListMembersSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,
@@ -215,18 +217,20 @@ pub mod cluster_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/cluster.ClusterService/Leave" => {
+                "/cluster.ClusterService/LeaveCluster" => {
                     #[allow(non_camel_case_types)]
-                    struct LeaveSvc<T: ClusterService>(pub Arc<T>);
-                    impl<T: ClusterService> tonic::server::UnaryService<super::LeaveRequest> for LeaveSvc<T> {
-                        type Response = super::LeaveResult;
+                    struct LeaveClusterSvc<T: ClusterService>(pub Arc<T>);
+                    impl<T: ClusterService> tonic::server::UnaryService<super::LeaveClusterRequest>
+                        for LeaveClusterSvc<T>
+                    {
+                        type Response = super::LeaveClusterResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::LeaveRequest>,
+                            request: tonic::Request<super::LeaveClusterRequest>,
                         ) -> Self::Future {
                             let inner = self.0.clone();
-                            let fut = async move { (*inner).leave(request).await };
+                            let fut = async move { (*inner).leave_cluster(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -235,7 +239,7 @@ pub mod cluster_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = LeaveSvc(inner);
+                        let method = LeaveClusterSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec).apply_compression_config(
                             accept_compression_encodings,
