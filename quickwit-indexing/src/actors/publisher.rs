@@ -116,7 +116,7 @@ impl AsyncActor for Publisher {
             uploaded_split_future
                 .await
                 .context("Failed to upload split.")? //< splits must be published in order, so one uploaded failing means we should fail
-                                                              //< entirely.
+                                                     //< entirely.
         };
         self.run_publish_operation(&publisher_message).await?;
 
