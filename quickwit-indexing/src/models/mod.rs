@@ -22,15 +22,15 @@ mod indexed_split;
 mod indexer_message;
 mod indexing_statistics;
 mod packaged_split;
+mod publisher_message;
 mod raw_doc_batch;
 mod scratch_directory;
-mod uploaded_split;
 
 pub use commit_policy::CommitPolicy;
 pub use indexed_split::IndexedSplit;
 pub use indexer_message::IndexerMessage;
 pub use indexing_statistics::IndexingStatistics;
 pub use packaged_split::PackagedSplit;
+pub use publisher_message::{PublishOperation, PublisherMessage};
 pub use raw_doc_batch::RawDocBatch;
 pub use scratch_directory::ScratchDirectory;
-pub use uploaded_split::UploadedSplit;
