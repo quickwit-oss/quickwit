@@ -2094,7 +2094,6 @@ dependencies = [
  "rdkafka",
  "serde",
  "serde_json",
- "smallvec",
  "tantivy",
  "tempfile",
  "thiserror",
