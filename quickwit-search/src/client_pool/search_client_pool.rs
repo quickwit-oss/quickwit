@@ -227,12 +227,12 @@ impl ClientPool for SearchClientPool {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::net::SocketAddr;
     use std::sync::Arc;
-    use std::{thread, time};
+    use std::time::Duration;
 
-    use quickwit_cluster::cluster::{read_host_key, Cluster};
-    use quickwit_cluster::test_utils::{available_port, test_cluster};
+    use itertools::Itertools;
+    use quickwit_cluster::cluster::create_cluster_for_test;
     use quickwit_metastore::{SplitMetadata, SplitMetadataAndFooterOffsets};
 
     use crate::client_pool::search_client_pool::create_search_service_client;
@@ -241,65 +241,36 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
-        let tmp_dir = tempfile::tempdir()?;
-
-        let cluster = Arc::new(test_cluster(tmp_dir.path().join("host_key").as_path())?);
-
+        let cluster = Arc::new(create_cluster_for_test()?);
         let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
-
         let clients = client_pool.clients.read().await;
 
-        let mut addrs: Vec<SocketAddr> = clients.clone().into_keys().collect();
-        addrs.sort_by_key(|addr| addr.to_string());
-        println!("addrs={:?}", addrs);
-
-        let mut expected = vec![swim_addr_to_grpc_addr(cluster.listen_addr)];
-        expected.sort_by_key(|addr| addr.to_string());
-        println!("expected={:?}", expected);
-
-        assert_eq!(addrs, expected);
-
-        cluster.leave().await;
-
-        tmp_dir.close()?;
-
+        let addrs: Vec<SocketAddr> = clients.clone().into_keys().collect();
+        let expected_addrs = vec![swim_addr_to_grpc_addr(cluster.listen_addr)];
+        assert_eq!(addrs, expected_addrs);
         Ok(())
     }
 
     #[tokio::test]
     async fn test_search_client_pool_multiple_nodes() -> anyhow::Result<()> {
-        let tmp_dir = tempfile::tempdir()?;
+        let cluster1 = Arc::new(create_cluster_for_test()?);
+        let cluster2 = Arc::new(create_cluster_for_test()?);
 
-        let cluster1 = Arc::new(test_cluster(tmp_dir.path().join("host_key1").as_path())?);
-
-        let cluster2 = Arc::new(test_cluster(tmp_dir.path().join("host_key2").as_path())?);
         cluster2.add_peer_node(cluster1.listen_addr).await;
+        cluster1
+            .wait_for_members(|members| members.len() == 2, Duration::from_secs(5))
+            .await?;
 
-        // Wait for the cluster to be configured.
-        thread::sleep(time::Duration::from_secs(5));
+        let client_pool = Arc::new(SearchClientPool::new(cluster1.clone()).await?);
+        let clients = client_pool.clients.read().await;
 
-        let client_pool1 = Arc::new(SearchClientPool::new(cluster1.clone()).await?);
-
-        let clients1 = client_pool1.clients.read().await;
-
-        let mut addrs: Vec<SocketAddr> = clients1.clone().into_keys().collect();
-        addrs.sort();
-        println!("addrs={:?}", addrs);
-
-        let mut expected = vec![
+        let addrs: Vec<SocketAddr> = clients.clone().into_keys().sorted().collect();
+        let mut expected_addrs = vec![
             swim_addr_to_grpc_addr(cluster1.listen_addr),
             swim_addr_to_grpc_addr(cluster2.listen_addr),
         ];
-        expected.sort();
-        println!("expected={:?}", expected);
-
-        assert_eq!(addrs, expected);
-
-        cluster1.leave().await;
-        cluster2.leave().await;
-
-        tmp_dir.close()?;
-
+        expected_addrs.sort();
+        assert_eq!(addrs, expected_addrs);
         Ok(())
     }
 
@@ -315,13 +286,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_client_pool_single_node_assign_jobs() -> anyhow::Result<()> {
-        let tmp_dir = tempfile::tempdir()?;
-
-        let host_key = read_host_key(tmp_dir.path().join("host_key").as_path())?;
-        let listen_addr =
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), available_port()?);
-        let cluster = Arc::new(Cluster::new(host_key, listen_addr)?);
-
+        let cluster = Arc::new(create_cluster_for_test()?);
         let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
 
         let jobs = vec![
@@ -344,10 +309,8 @@ mod tests {
         ];
 
         let assigned_jobs = client_pool.assign_jobs(jobs, &HashSet::default()).await?;
-        println!("assigned_jobs={:?}", assigned_jobs);
-
-        let expected = vec![(
-            create_search_service_client(swim_addr_to_grpc_addr(listen_addr)).await?,
+        let expected_assigned_jobs = vec![(
+            create_search_service_client(swim_addr_to_grpc_addr(cluster.listen_addr)).await?,
             vec![
                 Job {
                     metadata: mock_bundle_and_split_metadata("split4"),
@@ -367,15 +330,10 @@ mod tests {
                 },
             ],
         )];
-        println!("expected={:?}", expected);
-
-        // compare jobs
-        assert_eq!(assigned_jobs.get(0).unwrap().1, expected.get(0).unwrap().1);
-
-        cluster.leave().await;
-
-        tmp_dir.close()?;
-
+        assert_eq!(
+            assigned_jobs.get(0).unwrap().1,
+            expected_assigned_jobs.get(0).unwrap().1
+        );
         Ok(())
     }
 }

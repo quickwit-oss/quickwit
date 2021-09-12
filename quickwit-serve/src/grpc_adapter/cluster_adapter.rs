@@ -20,7 +20,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_cluster::error::ClusterError;
 use quickwit_cluster::service::{ClusterService, ClusterServiceImpl};
 use quickwit_proto::cluster_service_server as grpc;
 
@@ -35,29 +34,29 @@ impl From<Arc<ClusterServiceImpl>> for GrpcClusterAdapter {
 
 #[async_trait]
 impl grpc::ClusterService for GrpcClusterAdapter {
-    async fn members(
+    async fn list_members(
         &self,
-        request: tonic::Request<quickwit_proto::MembersRequest>,
-    ) -> Result<tonic::Response<quickwit_proto::MembersResult>, tonic::Status> {
-        let members_request = request.into_inner();
-        let members_result = self
+        request: tonic::Request<quickwit_proto::ListMembersRequest>,
+    ) -> Result<tonic::Response<quickwit_proto::ListMembersResponse>, tonic::Status> {
+        let list_members_req = request.into_inner();
+        let list_members_resp = self
             .0
-            .members(members_request)
+            .list_members(list_members_req)
             .await
-            .map_err(ClusterError::convert_to_tonic_status)?;
-        Ok(tonic::Response::new(members_result))
+            .map_err(Into::<tonic::Status>::into)?;
+        Ok(tonic::Response::new(list_members_resp))
     }
 
-    async fn leave(
+    async fn leave_cluster(
         &self,
-        request: tonic::Request<quickwit_proto::LeaveRequest>,
-    ) -> Result<tonic::Response<quickwit_proto::LeaveResult>, tonic::Status> {
-        let leave_request = request.into_inner();
-        let leave_result = self
+        request: tonic::Request<quickwit_proto::LeaveClusterRequest>,
+    ) -> Result<tonic::Response<quickwit_proto::LeaveClusterResponse>, tonic::Status> {
+        let leave_cluster_req = request.into_inner();
+        let leave_cluster_resp = self
             .0
-            .leave(leave_request)
+            .leave_cluster(leave_cluster_req)
             .await
-            .map_err(ClusterError::convert_to_tonic_status)?;
-        Ok(tonic::Response::new(leave_result))
+            .map_err(Into::<tonic::Status>::into)?;
+        Ok(tonic::Response::new(leave_cluster_resp))
     }
 }

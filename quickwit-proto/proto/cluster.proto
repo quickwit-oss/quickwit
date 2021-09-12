@@ -23,12 +23,12 @@ syntax = "proto3";
 package cluster;
 
 service ClusterService {
-  /// Retrieves members in the cluster.
-  rpc Members(MembersRequest) returns (MembersResult);
+  /// Retrieves members of the cluster.
+  rpc ListMembers(ListMembersRequest) returns (ListMembersResponse);
 
   /// Removes itself from the cluster.
   /// Removed node will be isolated from the cluster.
-  rpc Leave(LeaveRequest) returns (LeaveResult);
+  rpc LeaveCluster(LeaveClusterRequest) returns (LeaveClusterResponse);
 }
 
 /// The member information.
@@ -44,15 +44,15 @@ message Member {
   bool is_self = 3;
 }
 
-message MembersRequest {
+message ListMembersRequest {
 }
 
-message MembersResult {
+message ListMembersResponse {
   repeated Member members = 1;
 }
 
-message LeaveRequest {
+message LeaveClusterRequest {
 }
 
-message LeaveResult {
+message LeaveClusterResponse {
 }

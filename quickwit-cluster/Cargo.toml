@@ -11,8 +11,10 @@ documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 anyhow = "1.0"
-quickwit-swim = { version = "0.1", path = "../quickwit-swim" }
 async-trait = "0.1"
+flume = "0.10"
+quickwit-common = { version = "0.1.0", path = "../quickwit-common"}
+quickwit-swim = { version = "0.1", path = "../quickwit-swim" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
@@ -21,9 +23,9 @@ tokio-stream = { version = "0.1.6", features = [ "sync" ] }
 tonic = "0.5.2"
 tracing = "0.1"
 uuid = "0.8"
-flume = "0.10"
 
 quickwit-proto = { version = "0.1.0", path = "../quickwit-proto"}
 
 [dev-dependencies]
-tempfile = "3.2.0"
+itertools = '0.10'
+tempfile = "3"

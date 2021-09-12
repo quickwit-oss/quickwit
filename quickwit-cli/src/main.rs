@@ -28,7 +28,7 @@ use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use quickwit_cli::*;
-use quickwit_common::to_socket_addr;
+use quickwit_common::net::socket_addr_from_str;
 use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::Level;
@@ -179,7 +179,7 @@ impl CliCommand {
             .to_string();
         let port = value_t!(matches, "port", u16)?;
         let rest_addr = format!("{}:{}", host, port);
-        let rest_socket_addr = to_socket_addr(&rest_addr)?;
+        let rest_socket_addr = socket_addr_from_str(&rest_addr)?;
         let host_key_path_prefix = matches
             .value_of("host-key-path-prefix")
             .context("'host-key-path-prefix' has a default  value")?
@@ -191,7 +191,7 @@ impl CliCommand {
         if matches.is_present("peer-seed") {
             if let Some(values) = matches.values_of("peer-seed") {
                 for value in values {
-                    peer_socket_addrs.push(to_socket_addr(value)?);
+                    peer_socket_addrs.push(socket_addr_from_str(value)?);
                 }
             }
         }
@@ -360,10 +360,10 @@ mod tests {
     use std::time::Duration;
 
     use clap::{load_yaml, App, AppSettings};
-    use quickwit_common::to_socket_addr;
     use quickwit_serve::ServeArgs;
     use tempfile::NamedTempFile;
 
+    use super::*;
     use crate::{
         parse_duration_with_unit, CliCommand, CreateIndexArgs, DeleteIndexArgs,
         GarbageCollectIndexArgs, IndexDataArgs, SearchIndexArgs,
@@ -686,7 +686,7 @@ mod tests {
             command,
             Ok(CliCommand::Serve(ServeArgs {
                 rest_socket_addr, host_key_path, peer_socket_addrs, metastore_uri,
-            })) if rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap()] && &metastore_uri == "file:///indexes"
+            })) if rest_socket_addr == socket_addr_from_str("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![socket_addr_from_str("192.168.1.13:9090").unwrap()] && &metastore_uri == "file:///indexes"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -709,7 +709,7 @@ mod tests {
             command,
             Ok(CliCommand::Serve(ServeArgs {
                 rest_socket_addr, host_key_path, peer_socket_addrs, metastore_uri,
-            })) if rest_socket_addr == to_socket_addr("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![to_socket_addr("192.168.1.13:9090").unwrap(), to_socket_addr("192.168.1.14:9090").unwrap()] && &metastore_uri == "file:///indexes"
+            })) if rest_socket_addr == socket_addr_from_str("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![socket_addr_from_str("192.168.1.13:9090").unwrap(), socket_addr_from_str("192.168.1.14:9090").unwrap()] && &metastore_uri == "file:///indexes"
         ));
 
         Ok(())
