@@ -27,7 +27,7 @@ use tokio::task::JoinError;
 
 /// Possible SearchError
 #[allow(missing_docs)]
-#[derive(Error, Debug, Serialize, Deserialize, Clone)]
+#[derive(Error, Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum SearchError {
     #[error("Index `{index_id}` does not exist.")]
     IndexDoesNotExist { index_id: String },

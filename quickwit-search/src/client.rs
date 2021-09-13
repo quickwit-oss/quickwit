@@ -158,22 +158,21 @@ impl SearchServiceClient {
                     "client:leaf_search_stream",
                     grpc_addr=?self.grpc_addr()
                 );
+                let mut tonic_request = Request::new(request);
+                global::get_text_map_propagator(|propagator| {
+                    propagator.inject_context(
+                        &tracing::Span::current().context(),
+                        &mut MetadataMap(tonic_request.metadata_mut()),
+                    )
+                });
+                let mut results_stream = grpc_client_clone
+                    .leaf_search_stream(tonic_request)
+                    .await
+                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
+                    .into_inner()
+                    .map_err(|tonic_error| parse_grpc_error(&tonic_error));
                 tokio::spawn(
                     async move {
-                        let mut tonic_request = Request::new(request);
-                        global::get_text_map_propagator(|propagator| {
-                            propagator.inject_context(
-                                &tracing::Span::current().context(),
-                                &mut MetadataMap(tonic_request.metadata_mut()),
-                            )
-                        });
-                        let mut results_stream = grpc_client_clone
-                            .leaf_search_stream(tonic_request)
-                            .await
-                            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
-                            .into_inner()
-                            .map_err(|tonic_error| parse_grpc_error(&tonic_error));
-
                         while let Some(search_result) = results_stream.next().await {
                             result_sender.send(search_result).map_err(|_| {
                                 SearchError::InternalError(
@@ -181,7 +180,6 @@ impl SearchServiceClient {
                                 )
                             })?;
                         }
-
                         Result::<_, SearchError>::Ok(())
                     }
                     .instrument(span),

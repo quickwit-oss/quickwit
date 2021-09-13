@@ -220,7 +220,9 @@ mod tests {
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
             data: b"123".to_vec(),
         }))?;
-        result_sender.send(Err(SearchError::InternalError("error".to_string())))?;
+        result_sender.send(Err(SearchError::InternalError(
+            "Error on `split1`".to_string(),
+        )))?;
         mock_search_service.expect_leaf_search_stream().return_once(
             |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
                 Ok(UnboundedReceiverStream::new(result_receiver))
@@ -240,8 +242,7 @@ mod tests {
         assert!(search_result.is_err());
         assert_eq!(
             search_result.unwrap_err().to_string(),
-            "Internal error: `[NodeSearchError { search_error: InternalError(\"Internal error: \
-             `error`.\"), split_ids: [\"split1\"] }]`."
+            "Internal error: `Error on `split1``."
         );
         Ok(())
     }
