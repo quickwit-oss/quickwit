@@ -26,7 +26,8 @@ use quickwit_actors::{
     KillSwitch, QueueCapacity, Supervisable,
 };
 use quickwit_metastore::{Metastore, SplitState};
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::{create_storage_with_upload_cache, CacheConfig, StorageUriResolver};
+use smallvec::SmallVec;
 use tokio::join;
 use tracing::{debug, error, info};
 
@@ -203,6 +204,7 @@ impl IndexingPipelineSupervisor {
             .set_kill_switch(self.kill_switch.clone())
             .spawn_async();
 
+<<<<<<< HEAD
         // Merge Packager
         let merge_packager = Packager::new(tags_field, merge_uploader_mailbox, None);
         let (merge_packager_mailbox, merge_packager_handler) = ctx
@@ -247,6 +249,18 @@ impl IndexingPipelineSupervisor {
         // Publisher
         let publisher =
             Publisher::new(self.params.metastore.clone(), merge_planner_mailbox.clone());
+=======
+        // TODO: Make cache path configurable [https://github.com/quickwit-inc/quickwit/issues/520]
+        let cache_directory = self.params.indexer_params.scratch_directory.temp_child()?;
+        let index_storage = create_storage_with_upload_cache(
+            index_storage,
+            &self.params.storage_uri_resolver,
+            cache_directory.path(),
+            CacheConfig::default(),
+        )?;
+
+        let publisher = Publisher::new(self.params.metastore.clone());
+>>>>>>> added a storage with a file system cache on indexing
         let (publisher_mailbox, publisher_handler) = ctx
             .spawn_actor(publisher)
             .set_kill_switch(self.kill_switch.clone())

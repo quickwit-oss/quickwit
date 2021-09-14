@@ -145,7 +145,7 @@ mod tests {
         mock_storage
             .expect_get_all()
             .times(1)
-            .returning(|_path| Ok(Bytes::from_static(&[1, 2, 3])));
+            .returning(|_path| Box::pin(async { Ok(Bytes::from_static(&[1, 2, 3])) }));
 
         let storage_with_cache = StorageWithCache {
             storage: Arc::new(mock_storage),

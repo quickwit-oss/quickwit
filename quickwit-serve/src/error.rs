@@ -64,7 +64,9 @@ impl ApiError {
 // TODO implement nicer serialization of errors.
 impl serde::Serialize for ApiError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         let mut map = serializer.serialize_map(Some(2))?;
         map.serialize_key("error")?;
         map.serialize_value(&self.message())?;

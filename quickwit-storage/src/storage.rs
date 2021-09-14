@@ -83,8 +83,8 @@ impl From<&'static [u8]> for PutPayload {
 /// object storage treat them. This means when directory separators a present
 /// in the storage operation path, the storage implementation should create and remove transparently
 /// these intermediate directories.
-#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
+#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 pub trait Storage: Send + Sync + 'static {
     /// Saves a file into the storage.
     async fn put(&self, path: &Path, payload: PutPayload) -> StorageResult<()>;

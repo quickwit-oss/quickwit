@@ -307,7 +307,9 @@ async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
 }
 
 fn from_simple_list<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
-where D: Deserializer<'de> {
+where
+    D: Deserializer<'de>,
+{
     let str_sequence = String::deserialize(deserializer)?;
     Ok(Some(
         str_sequence

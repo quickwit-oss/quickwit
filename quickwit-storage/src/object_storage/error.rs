@@ -73,7 +73,8 @@ impl<T: StdError> IsRetryable for RusotoErrorWrapper<T> {
 }
 
 impl<T> From<RusotoErrorWrapper<T>> for StorageError
-where T: Send + Sync + std::error::Error + 'static + ToStorageErrorKind
+where
+    T: Send + Sync + std::error::Error + 'static + ToStorageErrorKind,
 {
     fn from(err: RusotoErrorWrapper<T>) -> StorageError {
         let error_kind = match &err.0 {
