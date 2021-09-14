@@ -25,14 +25,14 @@ use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{FileHandle, WatchHandle};
 use tantivy::Directory;
 
-/// A union directory takes a bunch of directory and stack them similarly to UnionFS.
+/// A union directory takes a bunch of directories and stacks them, similarly to UnionFS.
 /// The resulting directory is a virtual view of the union of the different directories.
 ///
 /// If a path exists in all directories, the first of the list containing the path
 /// will shadow the other directories.
 ///
 /// The first directory of the list will receive all write operations.
-/// Delete on the other hand will be applied on all directories containing the file.
+/// Deletes on the other hand will be applied on all directories containing the file.
 #[derive(Debug, Clone)]
 pub struct UnionDirectory {
     directories: Arc<Vec<Box<dyn Directory>>>,
