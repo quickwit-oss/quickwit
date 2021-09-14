@@ -315,15 +315,15 @@ async fn main() -> anyhow::Result<()> {
     std::process::exit(return_code);
 }
 
-/// Return the about text with telemetry info.
+/// Returns the about text with telemetry info.
 fn about_text() -> String {
     let mut about_text = format!(
-        "Indexing your large dataset on object storage & making it searchable from the command \
-         line.\nCommit hash: {}\n",
+        "Index large datasets on object storage & search them from the command line.\n
+         Commit hash: {}\n",
         env!("GIT_COMMIT_HASH")
     );
     if quickwit_telemetry::is_telemetry_enabled() {
-        about_text += "Telemetry Enabled";
+        about_text += "Telemetry enabled";
     }
     about_text
 }
