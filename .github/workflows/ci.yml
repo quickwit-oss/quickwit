@@ -61,18 +61,36 @@ jobs:
     container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
 
     services:
-      # PostgreSQL service container
+      localstack:
+        image: localstack/localstack:latest
+        ports:
+          - "4566:4566"
+          - "4571:4571"
+          - "8080:8080"
+        env:
+          SERVICES: kinesis,s3
+        options: >-
+          --health-cmd "curl -k https://localhost:4566"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+          --name localstack
+          --hostname localstack
+
       postgres:
         image: postgres:latest
+        ports:
+          - "5432:5432"
         env:
           POSTGRES_USER: quickwit-dev
           POSTGRES_PASSWORD: quickwit-dev
-        # Set health checks to wait until postgres has started
         options: >-
           --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
+          --health-interval 5s
+          --health-timeout 3s
           --health-retries 5
+          --name postgres
+          --hostname postgres
 
     steps:
       - uses: actions/checkout@v2

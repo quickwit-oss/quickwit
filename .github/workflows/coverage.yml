@@ -16,12 +16,19 @@ jobs:
       localstack:
         image: localstack/localstack:latest
         ports:
+        ports:
           - "4566:4566"
+          - "4571:4571"
+          - "8080:8080"
         options: >-
+          --health-cmd "curl -k https://localhost:4566"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
           --name localstack
           --hostname localstack
         env:
-          SERVICES: s3
+          SERVICES: kinesis,s3
       kafka-broker:
         image: confluentinc/cp-kafka:6.2.0
         ports:
