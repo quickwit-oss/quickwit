@@ -37,8 +37,7 @@ pub struct FileSliceStream<R> {
 }
 
 impl<R> FileSliceStream<R>
-where
-    R: AsyncRead + AsyncSeek + Unpin,
+where R: AsyncRead + AsyncSeek + Unpin
 {
     pub async fn try_new(mut reader: R, range: Range<u64>) -> io::Result<Self> {
         if range.end < range.start {
@@ -59,8 +58,7 @@ where
 }
 
 impl<R> Stream for FileSliceStream<R>
-where
-    R: AsyncRead + Unpin,
+where R: AsyncRead + Unpin
 {
     type Item = io::Result<Bytes>;
 

@@ -127,9 +127,7 @@ impl StaticDirectoryCacheBuilder {
 }
 
 fn deserialize_cbor<T>(bytes: &mut OwnedBytes) -> serde_cbor::Result<T>
-where
-    T: serde::de::DeserializeOwned,
-{
+where T: serde::de::DeserializeOwned {
     let len = bytes.read_u64();
     let value = serde_cbor::from_reader(&bytes.as_slice()[..len as usize]);
     bytes.advance(len as usize);
