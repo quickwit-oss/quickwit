@@ -328,29 +328,20 @@ fn about_text() -> String {
     about_text
 }
 
-/// Parse duration with unit.
-/// examples: 1s 2m 3h 5d
+/// Parses strings into durations. For instance, `1s`, `2m`, `3h, or `4d`.
 pub fn parse_duration_with_unit(duration: &str) -> anyhow::Result<Duration> {
-    let mut value = "".to_string();
-    let mut unit = "".to_string();
-    for character in duration.chars() {
-        if character.is_numeric() {
-            value.push(character);
-        } else {
-            unit.push(character);
-        }
-    }
-
-    match value.parse::<u64>() {
-        Ok(value) => match unit.as_str() {
-            "s" => Ok(Duration::from_secs(value)),
-            "m" => Ok(Duration::from_secs(value * 60)),
-            "h" => Ok(Duration::from_secs(value * 60 * 60)),
-            "d" => Ok(Duration::from_secs(value * 60 * 60 * 24)),
-            _ => Err(anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]`")),
-        },
-        Err(err) => Err(anyhow::anyhow!(err)),
-    }
+    let (digits, unit): (String, String) = duration.chars().partition(|chr| chr.is_numeric());
+    let secs = match (digits.parse::<u64>(), unit.as_str()) {
+        (Ok(value), "s") => value,
+        (Ok(value), "m") => value * 60,
+        (Ok(value), "d") => value * 60 * 60,
+        (Ok(value), "h") => value * 60 * 60 * 24,
+        _ => bail!(
+            "Failed to parse duration `{}`. Expected format is `[0-9]+[smhd]`.",
+            duration
+        ),
+    };
+    Ok(Duration::from_secs(secs))
 }
 
 #[cfg(test)]
