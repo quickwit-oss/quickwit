@@ -146,9 +146,9 @@ jobs:
       - uses: actions-rs/cargo@v1
         name: cargo test
         with:
-          command: test
+          command: test --all-features
         env:
-          TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/metastore
+          TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/metastore-dev
       # See #473 #472
       # - uses: actions-rs/cargo@v1
       #   name: cargo test failpoints
