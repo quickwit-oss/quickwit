@@ -240,8 +240,8 @@ mod tests {
         assert!(search_result.is_err());
         assert_eq!(
             search_result.unwrap_err().to_string(),
-            "Internal error: `[NodeSearchError { search_error: InternalError(\"error\"), \
-             split_ids: [\"split1\"] }]`."
+            "Internal error: `[NodeSearchError { search_error: InternalError(\"Internal error: \
+             `error`.\"), split_ids: [\"split1\"] }]`."
         );
         Ok(())
     }

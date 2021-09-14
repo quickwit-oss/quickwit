@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::convert::Infallible;
+use std::convert::{Infallible, TryFrom};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -25,9 +25,9 @@ use bytes::Bytes;
 use futures::stream::{self, StreamExt};
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_proto::OutputFormat;
-use quickwit_search::{SearchResultJson, SearchService, SearchServiceImpl};
+use quickwit_search::{SearchResponseRest, SearchService, SearchServiceImpl};
 use serde::{Deserialize, Deserializer};
-use tracing::*;
+use tracing::info;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
@@ -42,7 +42,7 @@ pub async fn start_rest_service(
     search_service: Arc<SearchServiceImpl>,
     cluster_service: Arc<ClusterServiceImpl>,
 ) -> anyhow::Result<()> {
-    info!(rest_addr=?rest_addr, "Start REST service.");
+    info!(rest_addr=?rest_addr, "Starting REST service.");
     let rest_routes = liveness_check_handler()
         .or(cluster_handler(cluster_service))
         .or(search_handler(search_service.clone()))
@@ -148,7 +148,7 @@ async fn search_endpoint<TSearchService: SearchService>(
     index_id: String,
     search_request: SearchRequestQueryString,
     search_service: &TSearchService,
-) -> Result<SearchResultJson, ApiError> {
+) -> Result<SearchResponseRest, ApiError> {
     let search_request = quickwit_proto::SearchRequest {
         index_id,
         query: search_request.query,
@@ -159,9 +159,10 @@ async fn search_endpoint<TSearchService: SearchService>(
         start_offset: search_request.start_offset,
         tags: search_request.tags.unwrap_or_default(),
     };
-    let search_result = search_service.root_search(search_request).await?;
-    let search_result_json = SearchResultJson::from(search_result);
-    Ok(search_result_json)
+    let search_response = search_service.root_search(search_request).await?;
+    let search_response_rest =
+        SearchResponseRest::try_from(search_response).map_err(ApiError::SearchError)?;
+    Ok(search_response_rest)
 }
 
 fn search_filter(
@@ -173,18 +174,18 @@ fn search_filter(
 
 async fn search<TSearchService: SearchService>(
     index_id: String,
-    request: SearchRequestQueryString,
+    search_request: SearchRequestQueryString,
     search_service: Arc<TSearchService>,
 ) -> Result<impl warp::Reply, Infallible> {
-    info!(index_id=%index_id,request=?request, "search");
-    Ok(request
+    info!(index_id = %index_id, request =? search_request, "search");
+    Ok(search_request
         .format
-        .make_reply(search_endpoint(index_id, request, &*search_service).await))
+        .make_reply(search_endpoint(index_id, search_request, &*search_service).await))
 }
 
-/// Rest search handler.
+/// REST search handler.
 ///
-/// It parses the search request from the
+/// Parses the search request from the
 pub fn search_handler<TSearchService: SearchService>(
     search_service: Arc<TSearchService>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = Rejection> + Clone {
@@ -194,26 +195,26 @@ pub fn search_handler<TSearchService: SearchService>(
 }
 
 /// This struct represents the search stream query passed to
-/// the rest API.
+/// the REST API.
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchStreamRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
-    // Fields to search on
+    // Fields to search on.
     #[serde(default)]
     #[serde(rename(deserialize = "searchField"))]
     #[serde(deserialize_with = "from_simple_list")]
     pub search_fields: Option<Vec<String>>,
-    /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
+    /// If set, restricts search to documents with a `timestamp >= start_timestamp`.
     pub start_timestamp: Option<i64>,
-    /// If set, restrict search to documents with a `timestamp < end_timestamp``.
+    /// If set, restricts search to documents with a `timestamp < end_timestamp``.
     pub end_timestamp: Option<i64>,
-    /// The fast field to extract
+    /// The fast field to extract.
     #[serde(default)]
     pub fast_field: String,
-    /// The output format.
+    /// The requested output format.
     #[serde(default)]
     pub output_format: OutputFormat,
     /// The tag filter.
@@ -327,19 +328,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_serialize_search_results() -> anyhow::Result<()> {
-        let search_results = SearchResultJson {
+    fn test_serialize_search_response() -> anyhow::Result<()> {
+        let search_response = SearchResponseRest {
             num_hits: 55,
             hits: Vec::new(),
-            num_microsecs: 0u64,
+            elapsed_time_micros: 0u64,
         };
-        let search_results_json: serde_json::Value = serde_json::to_value(&search_results)?;
-        let expected_json: serde_json::Value = json!({
+        let search_response_json: serde_json::Value = serde_json::to_value(&search_response)?;
+        let expected_search_response_json: serde_json::Value = json!({
             "numHits": 55,
             "hits": [],
-            "numMicrosecs": 0,
+            "elapsedTimeMicros": 0,
         });
-        assert_json_include!(actual: search_results_json, expected: expected_json);
+        assert_json_include!(
+            actual: search_response_json,
+            expected: expected_search_response_json
+        );
         Ok(())
     }
 
@@ -443,7 +447,7 @@ mod tests {
     async fn test_rest_search_api_route_serialize_with_results() -> anyhow::Result<()> {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_root_search().returning(|_| {
-            Ok(quickwit_proto::SearchResult {
+            Ok(quickwit_proto::SearchResponse {
                 hits: Vec::new(),
                 num_hits: 10,
                 elapsed_time_micros: 16,
@@ -461,7 +465,7 @@ mod tests {
         let expected_response_json = serde_json::json!({
             "numHits": 10,
             "hits": [],
-            "numMicrosecs": 16,
+            "elapsedTimeMicros": 16,
         });
         assert_json_include!(actual: resp_json, expected: expected_response_json);
         Ok(())

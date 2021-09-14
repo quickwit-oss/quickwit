@@ -18,11 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::VecDeque;
+use std::convert::TryFrom;
+use std::env;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::{env, usize};
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
@@ -40,8 +41,8 @@ use quickwit_indexing::models::{CommitPolicy, IndexingStatistics, ScratchDirecto
 use quickwit_indexing::source::{FileSourceParams, SourceConfig};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, MetastoreUriResolver};
-use quickwit_proto::{SearchRequest, SearchResult};
-use quickwit_search::{single_node_search, SearchResultJson};
+use quickwit_proto::{SearchRequest, SearchResponse};
+use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
@@ -230,7 +231,7 @@ fn create_source_config_from_args(input_path_opt: Option<PathBuf>) -> SourceConf
     }
 }
 
-pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResult> {
+pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponse> {
     debug!(args = ?args, "search-index");
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = MetastoreUriResolver::default();
@@ -245,18 +246,16 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResult>
         start_offset: args.start_offset as u64,
         tags: args.tags.unwrap_or_default(),
     };
-    let search_result: SearchResult =
+    let search_response: SearchResponse =
         single_node_search(&search_request, &*metastore, storage_uri_resolver.clone()).await?;
-    Ok(search_result)
+    Ok(search_response)
 }
 
 pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
-    let search_result: SearchResult = search_index(args).await?;
-
-    let search_result_json = SearchResultJson::from(search_result);
-
-    let search_result_json = serde_json::to_string_pretty(&search_result_json)?;
-    println!("{}", search_result_json);
+    let search_response: SearchResponse = search_index(args).await?;
+    let search_response_rest = SearchResponseRest::try_from(search_response)?;
+    let search_response_rest_json = serde_json::to_string_pretty(&search_response_rest)?;
+    println!("{}", search_response_rest_json);
     Ok(())
 }
 
