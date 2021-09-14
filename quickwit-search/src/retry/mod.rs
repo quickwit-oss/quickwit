@@ -18,11 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 pub mod search;
+pub mod search_stream;
 
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_proto::{FetchDocsRequest, LeafSearchRequest, LeafSearchStreamRequest};
 
@@ -30,68 +30,29 @@ use crate::client_pool::Job;
 use crate::{ClientPool, SearchClientPool, SearchServiceClient};
 
 /// A retry policy to evaluate if a request should be retried.
-#[async_trait]
-pub trait RetryPolicy<Request, Response, Error>: Sized + Sync + Send
-where
-    Request: RequestOnSplit + Clone + Send + Sync,
-    Response: Send + Sync,
-    Error: Send + Sync,
+pub trait RetryPolicy<Request, Response, Error>: Sized
+where Request: RequestOnSplit + Clone
 {
     /// Checks the policy if a certain request should be retried.
-    /// If the request should not be retried, returns `None`.
-    /// If the request should be retried, return the
-    /// policy that would apply for the next request attempt.
-    async fn retry(&self, req: &Request, result: Result<&Response, &Error>) -> Option<Self>;
+    fn should_retry(&self, req: &Request, result: Result<&Response, &Error>) -> bool;
 
     /// Returns the request to use for retry.
-    /// By default, clone the original request on error.
-    async fn retry_request(
-        &self,
-        req: &Request,
-        result: Result<&Response, &Error>,
-    ) -> anyhow::Result<Request> {
-        match result {
-            Ok(_) => {
-                anyhow::bail!("Retry request must be called when there are some errors.")
-            }
-            Err(_) => Ok(req.clone()),
-        }
+    /// By default, clone the original request.
+    fn retry_request(&self, req: &Request, _result: Result<&Response, &Error>) -> Request {
+        req.clone()
     }
 }
 
-/// Default retry policy that limits the number of attempts.
-/// All responses are treated as success.
-/// All errors are treated as failures and will lead to a retry.
-pub struct DefaultRetryPolicy {
-    attempts: usize,
-}
+/// Default retry policy:
+/// - All responses are treated as success.
+/// - All errors are retryable.
+pub struct DefaultRetryPolicy {}
 
-impl Default for DefaultRetryPolicy {
-    fn default() -> Self {
-        Self { attempts: 1 }
-    }
-}
-
-#[async_trait]
 impl<Request, Response, Error> RetryPolicy<Request, Response, Error> for DefaultRetryPolicy
-where
-    Request: RequestOnSplit + Clone + Send + Sync,
-    Response: Send + Sync,
-    Error: Send + Sync,
+where Request: RequestOnSplit + Clone
 {
-    async fn retry(&self, _req: &Request, result: Result<&Response, &Error>) -> Option<Self> {
-        match result {
-            Ok(_) => None,
-            Err(_) => {
-                if self.attempts > 0 {
-                    Some(Self {
-                        attempts: self.attempts - 1,
-                    })
-                } else {
-                    None
-                }
-            }
-        }
+    fn should_retry(&self, _req: &Request, result: Result<&Response, &Error>) -> bool {
+        result.is_err()
     }
 }
 
@@ -120,8 +81,7 @@ where
     client_pool.assign_job(job, &exclude_addresses).await
 }
 
-/// Split based request.
-/// All requests end to leaves are split based:
+/// Split based request. This includes:
 /// - FetchDocsRequest
 /// - LeafSearchRequest
 /// - LeafSearchStreamRequest
@@ -179,34 +139,23 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_should_retry_and_attempts_should_decrease() -> anyhow::Result<()> {
-        let retry_policy = DefaultRetryPolicy::default();
+    #[test]
+    fn test_should_retry_on_error() -> anyhow::Result<()> {
+        let retry_policy = DefaultRetryPolicy {};
         let request = mock_doc_request();
         let result = Result::<(), SearchError>::Err(SearchError::InternalError("test".to_string()));
-        let retry = retry_policy.retry(&request, result.as_ref()).await;
-        assert!(retry.is_some());
-        assert_eq!(retry.unwrap().attempts, 0);
+        let retry = retry_policy.should_retry(&request, result.as_ref());
+        assert!(retry);
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_should_not_retry_if_attempts_is_0() -> anyhow::Result<()> {
-        let retry_policy = DefaultRetryPolicy { attempts: 0 };
-        let request = mock_doc_request();
-        let result = Result::<(), SearchError>::Err(SearchError::InternalError("test".to_string()));
-        let retry = retry_policy.retry(&request, result.as_ref()).await;
-        assert!(retry.is_none());
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_should_not_retry_if_result_is_ok() -> anyhow::Result<()> {
-        let retry_policy = DefaultRetryPolicy::default();
+    #[test]
+    fn test_should_not_retry_if_result_is_ok() -> anyhow::Result<()> {
+        let retry_policy = DefaultRetryPolicy {};
         let request = mock_doc_request();
         let result = Result::<FetchDocsResult, SearchError>::Ok(FetchDocsResult { hits: vec![] });
-        let retry = retry_policy.retry(&request, result.as_ref()).await;
-        assert!(retry.is_none());
+        let retry = retry_policy.should_retry(&request, result.as_ref());
+        assert_eq!(retry, false);
         Ok(())
     }
 

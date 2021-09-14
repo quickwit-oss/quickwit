@@ -17,44 +17,60 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_proto::{LeafSearchRequest, LeafSearchResult};
+use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResult};
+use tokio::sync::mpsc::error::SendError;
 
 use super::RetryPolicy;
 use crate::SearchError;
 
-/// Retry policy for LeafSearchRequest.
-/// A retry is made either on an error or if there are some failing splits.
-/// In the last case, a retry request is built on failing splits only.
-pub struct LeafSearchRetryPolicy {}
+/// Retry policy for consuming the result stream of a LeafSearchStreamRequest.
+/// A retry is only made if there are some missing splits.
+/// As errors only come from a closed receiver, we ignore them.
+pub struct LeafSearchStreamRetryPolicy {}
 
-impl RetryPolicy<LeafSearchRequest, LeafSearchResult, SearchError> for LeafSearchRetryPolicy {
-    // Retry either on error or if there are failing split ids AND if attempts > 0.
+pub type SuccessFullSplitIds = Vec<String>;
+
+impl
+    RetryPolicy<
+        LeafSearchStreamRequest,
+        SuccessFullSplitIds,
+        SendError<Result<LeafSearchStreamResult, SearchError>>,
+    > for LeafSearchStreamRetryPolicy
+{
+    // Retry only if there are failing split ids.
+    // Errors are only happening if the result receiver is closed and
+    // retrying in this case is useless.
     fn should_retry(
         &self,
-        _request: &LeafSearchRequest,
-        result: Result<&LeafSearchResult, &SearchError>,
+        request: &LeafSearchStreamRequest,
+        result: Result<
+            &SuccessFullSplitIds,
+            &SendError<Result<LeafSearchStreamResult, SearchError>>,
+        >,
     ) -> bool {
         match result {
-            Ok(response) => !response.failed_splits.is_empty(),
-            Err(_) => true,
+            Ok(response) => response.len() != request.split_metadata.len(),
+            Err(_) => false,
         }
     }
 
-    // Build a retry request on failing split ids only.
+    // Builds a retry request on failing split ids only.
     fn retry_request(
         &self,
-        request: &LeafSearchRequest,
-        result: Result<&LeafSearchResult, &SearchError>,
-    ) -> LeafSearchRequest {
+        request: &LeafSearchStreamRequest,
+        result: Result<
+            &SuccessFullSplitIds,
+            &SendError<Result<LeafSearchStreamResult, SearchError>>,
+        >,
+    ) -> LeafSearchStreamRequest {
         let mut request_clone = request.clone();
         match result {
             Ok(response) => {
-                if !response.failed_splits.is_empty() {
+                if response.len() != request.split_metadata.len() {
                     request_clone.split_metadata.retain(|split_metadata| {
-                        response
-                            .failed_splits
+                        !response
                             .iter()
-                            .any(|failed_split| failed_split.split_id == split_metadata.split_id)
+                            .any(|split_id| *split_id == split_metadata.split_id)
                     });
                 }
                 request_clone
@@ -128,7 +144,7 @@ mod tests {
         };
         let result = Result::<LeafSearchResult, SearchError>::Ok(leaf_response);
         let retry = retry_policy.should_retry(&request, result.as_ref());
-        assert!(!retry);
+        assert_eq!(retry, false);
         Ok(())
     }
 

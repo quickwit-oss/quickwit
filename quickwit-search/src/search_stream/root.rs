@@ -35,14 +35,14 @@ use crate::{
 };
 
 /// Perform a distributed search stream.
-#[instrument(skip(metastore, client_pool))]
+#[instrument(skip(metastore, cluster_client, client_pool))]
 pub async fn root_search_stream(
     search_stream_request: &SearchStreamRequest,
     metastore: &dyn Metastore,
+    cluster_client: &ClusterClient,
     client_pool: &Arc<SearchClientPool>,
 ) -> Result<Vec<Bytes>, SearchError> {
     let start_instant = tokio::time::Instant::now();
-    let cluster_client = ClusterClient::new(client_pool.clone());
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
     let search_request = SearchRequest::from(search_stream_request.clone());
@@ -77,7 +77,7 @@ pub async fn root_search_stream(
             cluster_client.leaf_search_stream((leaf_request, client))
         })
         .buffer_unordered(MAX_CONCURRENT_LEAF_TASKS)
-        .try_flatten()
+        .flatten()
         .map_ok(|response| Bytes::from(response.data))
         .try_collect()
         .await?;
@@ -153,9 +153,11 @@ mod tests {
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
             data: b"123".to_vec(),
+            split_id: "1".to_string(),
         }))?;
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
             data: b"456".to_vec(),
+            split_id: "2".to_string(),
         }))?;
         mock_search_service.expect_leaf_search_stream().return_once(
             |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
@@ -166,7 +168,9 @@ mod tests {
         drop(result_sender);
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
-        let result: Vec<Bytes> = root_search_stream(&request, &metastore, &client_pool).await?;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let result: Vec<Bytes> =
+            root_search_stream(&request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(result.len(), 2);
         assert_eq!(&result[0], &b"123"[..]);
         assert_eq!(&result[1], &b"456"[..]);
@@ -200,24 +204,39 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| {
+                Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
+            },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
             data: b"123".to_vec(),
+            split_id: "split1".to_string(),
         }))?;
         result_sender.send(Err(SearchError::InternalError("error".to_string())))?;
-        mock_search_service.expect_leaf_search_stream().return_once(
-            |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
-                Ok(UnboundedReceiverStream::new(result_receiver))
-            },
-        );
+        mock_search_service
+            .expect_leaf_search_stream()
+            .withf(|request| request.split_metadata.len() == 2) // First request.
+            .return_once(
+                |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                    Ok(UnboundedReceiverStream::new(result_receiver))
+                },
+            );
+        mock_search_service
+            .expect_leaf_search_stream()
+            .withf(|request| request.split_metadata.len() == 1) // Retry request on the failed split.
+            .return_once(
+                |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                    Err(SearchError::InternalError("error".to_string()))
+                },
+            );
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
-        let result = root_search_stream(&request, &metastore, &client_pool).await;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let result = root_search_stream(&request, &metastore, &cluster_client, &client_pool).await;
         assert_eq!(result.is_err(), true);
         assert_eq!(result.unwrap_err().to_string(), "Internal error: `error`.");
         Ok(())

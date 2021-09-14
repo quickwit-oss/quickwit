@@ -241,6 +241,9 @@ pub struct LeafSearchStreamResult {
     /// Row of data serialized in bytes.
     #[prost(bytes = "vec", tag = "1")]
     pub data: ::prost::alloc::vec::Vec<u8>,
+    /// Split id.
+    #[prost(string, tag = "2")]
+    pub split_id: ::prost::alloc::string::String,
 }
 // -- Stream -------------------
 

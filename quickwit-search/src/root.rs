@@ -47,15 +47,15 @@ pub const MAX_CONCURRENT_LEAF_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 /// 2. Merges the search results.
 /// 3. Sends fetch docs requests to multiple leaf nodes.
 /// 4. Builds the response with docs and returns.
-#[instrument(skip(search_request, client_pool, metastore))]
+#[instrument(skip(search_request, cluster_client, client_pool, metastore))]
 pub async fn root_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
+    cluster_client: &ClusterClient,
     client_pool: &Arc<SearchClientPool>,
 ) -> Result<SearchResponse, SearchError> {
     let start_instant = tokio::time::Instant::now();
     // TODO: inject cluster client in search service directly.
-    let cluster_client = ClusterClient::new(client_pool.clone());
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let index_config_str = serde_json::to_string(&index_metadata.index_config)
         .map_err(|error| SearchError::InternalError(error.to_string()))?;
@@ -334,8 +334,9 @@ mod tests {
         );
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
-
-        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 3);
         assert_eq!(search_response.hits.len(), 3);
         Ok(())
@@ -418,7 +419,9 @@ mod tests {
             ])
             .await?,
         );
-        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 3);
         assert_eq!(search_response.hits.len(), 3);
         Ok(())
@@ -528,12 +531,11 @@ mod tests {
             ])
             .await?,
         );
-        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 3);
         assert_eq!(search_response.hits.len(), 3);
-
-        let search_response_rest = SearchResponseRest::try_from(search_response)?;
-        let _search_response_rest_json = serde_json::to_string_pretty(&search_response_rest)?;
         Ok(())
     }
     #[tokio::test]
@@ -655,12 +657,11 @@ mod tests {
             ])
             .await?,
         );
-        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 3);
         assert_eq!(search_response.hits.len(), 3);
-
-        let search_response_rest = SearchResponseRest::try_from(search_response)?;
-        let _search_response_rest_json = serde_json::to_string_pretty(&search_response_rest)?;
         Ok(())
     }
 
@@ -730,13 +731,11 @@ mod tests {
         );
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?);
-
-        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 1);
         assert_eq!(search_response.hits.len(), 1);
-
-        let search_response_rest = SearchResponseRest::try_from(search_response)?;
-        let _search_response_rest_json = serde_json::to_string_pretty(&search_response_rest)?;
         Ok(())
     }
 
@@ -793,8 +792,10 @@ mod tests {
         );
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?);
-        let search_result = root_search(&search_request, &metastore, &client_pool).await;
-        assert!(search_result.is_err());
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await;
+        assert!(search_response.is_err());
         Ok(())
     }
 
@@ -876,12 +877,11 @@ mod tests {
             ])
             .await?,
         );
-        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 1);
         assert_eq!(search_response.hits.len(), 1);
-
-        let search_response_rest = SearchResponseRest::try_from(search_response)?;
-        let _search_result_rest_json = serde_json::to_string_pretty(&search_response_rest)?;
         Ok(())
     }
 
@@ -954,12 +954,11 @@ mod tests {
             ])
             .await?,
         );
-        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 1);
         assert_eq!(search_response.hits.len(), 1);
-
-        let search_response_rest = SearchResponseRest::try_from(search_response)?;
-        let _search_response_rest_json = serde_json::to_string_pretty(&search_response_rest)?;
         Ok(())
     }
 }
