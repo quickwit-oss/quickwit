@@ -3,6 +3,7 @@ name: coverage
 on:
   push:
     branches: [main, run-coverage-workflow]
+
 jobs:
   test:
     name: coverage
