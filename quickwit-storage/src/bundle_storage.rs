@@ -110,12 +110,12 @@ impl BundleStorageFileOffsets {
         Ok(bundle_storage_file_offsets)
     }
 
-    /// Return file offsets for given path.
+    /// Returns file offsets for given path.
     pub fn get(&self, path: &Path) -> Option<Range<usize>> {
         self.files.get(path).cloned()
     }
 
-    /// Return if file exists in metadata.
+    /// Returns whether file exists in metadata.
     pub fn exists(&self, path: &Path) -> bool {
         self.files.contains_key(path)
     }
