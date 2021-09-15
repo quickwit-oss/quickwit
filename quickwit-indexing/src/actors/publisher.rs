@@ -99,6 +99,10 @@ impl Actor for Publisher {
     type Message = Receiver<PublisherMessage>;
     type ObservableState = PublisherCounters;
 
+    fn name(&self) -> String {
+        "publisher".to_string()
+    }
+
     fn observable_state(&self) -> Self::ObservableState {
         self.counters.clone()
     }

@@ -41,6 +41,10 @@ impl Actor for MergePlanner {
 
     type ObservableState = ();
 
+    fn name(&self) -> String {
+        "merge_planner".to_string()
+    }
+
     fn observable_state(&self) -> Self::ObservableState {}
 }
 

@@ -376,26 +376,26 @@ pub(crate) fn process_command<A: Actor>(
     command: Command,
     ctx: &mut ActorContext<A::Message>,
     state_tx: &Sender<A::ObservableState>,
-) -> Option<ActorExitStatus> {
+) -> Result<(), ActorExitStatus> {
     match command {
         Command::Pause => {
             ctx.pause();
-            None
+            Ok(())
         }
-        Command::Success => Some(ActorExitStatus::Success),
-        Command::Quit => Some(ActorExitStatus::Quit),
-        Command::Kill => Some(ActorExitStatus::Killed),
+        Command::Success => Err(ActorExitStatus::Success),
+        Command::Quit => Err(ActorExitStatus::Quit),
+        Command::Kill => Err(ActorExitStatus::Killed),
         Command::Resume => {
             ctx.resume();
-            None
+            Ok(())
         }
-        Command::Observe(cb) => {
+        Command::Observe(callback) => {
             let state = actor.observable_state();
             let _ = state_tx.send(state.clone());
             // We voluntarily ignore the error here. (An error only occurs if the
             // sender dropped its receiver.)
-            let _ = cb.send(Box::new(state));
-            None
+            let _ = callback.send(Box::new(state));
+            Ok(())
         }
     }
 }

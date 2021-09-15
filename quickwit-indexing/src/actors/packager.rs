@@ -73,6 +73,10 @@ impl Actor for Packager {
 
     type ObservableState = ();
 
+    fn name(&self) -> String {
+        "packager".to_string()
+    }
+
     #[allow(clippy::unused_unit)]
     fn observable_state(&self) -> Self::ObservableState {
         ()

@@ -17,17 +17,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::async_actor::spawn_async_actor;
-use crate::mailbox::Inbox;
+use tokio::sync::watch;
+use tokio::task::{spawn_blocking, JoinHandle};
+use tracing::{debug, info};
+
+use crate::async_actor::async_actor_loop;
+use crate::mailbox::{create_mailboxes, Inbox};
 use crate::scheduler::SchedulerMessage;
-use crate::sync_actor::spawn_sync_actor;
+use crate::sync_actor::sync_actor_loop;
 use crate::{
-    create_mailbox, Actor, ActorContext, ActorHandle, AsyncActor, KillSwitch, Mailbox, SyncActor,
+    create_mailbox, Actor, ActorContext, ActorHandle, AsyncActor, KillSwitch, Mailbox,
+    ParallelActor, QueueCapacity, SyncActor,
 };
 
 /// `SpawnBuilder` makes it possible to configure misc parameters before spawning an actor.
 pub struct SpawnBuilder<A: Actor> {
-    actor: A,
+    actor: Option<A>,
     scheduler_mailbox: Mailbox<SchedulerMessage>,
     kill_switch: KillSwitch,
     #[allow(clippy::type_complexity)]
@@ -41,7 +46,7 @@ impl<A: Actor> SpawnBuilder<A> {
         kill_switch: KillSwitch,
     ) -> Self {
         SpawnBuilder {
-            actor,
+            actor: Some(actor),
             scheduler_mailbox,
             kill_switch,
             mailboxes: None,
@@ -71,37 +76,172 @@ impl<A: Actor> SpawnBuilder<A> {
 
     fn create_actor_context_and_inbox(
         mut self,
-    ) -> (A, ActorContext<A::Message>, Inbox<A::Message>) {
-        let (mailbox, inbox) = self.mailboxes.take().unwrap_or_else(|| {
-            let actor_name = self.actor.name();
-            let queue_capacity = self.actor.queue_capacity();
-            create_mailbox(actor_name, queue_capacity)
+        actor_name: String,
+        queue_capacity: QueueCapacity,
+    ) -> (ActorContext<A::Message>, Inbox<A::Message>) {
+        let (mailbox, inbox) = self
+            .mailboxes
+            .take()
+            .unwrap_or_else(move || create_mailbox(actor_name, queue_capacity));
+        let ctx = ActorContext::new(mailbox, self.kill_switch.clone(), self.scheduler_mailbox);
+        (ctx, inbox)
+    }
+}
+
+/// Spawnable is an internal trait that helps us factorizing the logic between
+/// sync and async actors.
+trait Spawnable<A: Actor> {
+    fn actor(&self) -> &A;
+    fn spawn(self, ctx: ActorContext<A::Message>, inbox: Inbox<A::Message>) -> ActorHandle<A>;
+}
+
+// Ideally we would have prefered to have `impl<T: AsyncActor> Spawnable for T`,
+/// but there is no way to inform rust type system that no type can implement both
+/// AsyncActor and SyncActor.
+///
+/// `SpawnableSync` and `SpawnableAsync` are just wrappers to helps the compiler with
+/// the disambiguation, and factorize the spawning code.
+#[derive(Clone)]
+struct SpawnableSync<A: SyncActor + Actor>(A);
+
+impl<A: SyncActor> Spawnable<A> for SpawnableSync<A> {
+    fn actor(&self) -> &A {
+        &self.0
+    }
+
+    fn spawn(self, ctx: ActorContext<A::Message>, inbox: Inbox<A::Message>) -> ActorHandle<A> {
+        let actor = self.0;
+        debug!(actor=%ctx.actor_instance_id(),"spawning-sync-actor");
+        let (state_tx, state_rx) = watch::channel(actor.observable_state());
+        let ctx_clone = ctx.clone();
+        let (exit_status_tx, exit_status_rx) = watch::channel(None);
+        let join_handle: JoinHandle<()> = spawn_blocking(move || {
+            let actor_instance_id = ctx.actor_instance_id().to_string();
+            let exit_status = sync_actor_loop(actor, inbox, ctx, state_tx);
+            info!(exit_status=%exit_status, actor=actor_instance_id.as_str(), "exit");
+            let _ = exit_status_tx.send(Some(exit_status));
         });
-        let ctx = ActorContext::new(
-            mailbox,
+        ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)
+    }
+}
+
+#[derive(Clone)]
+struct SpawnableAsync<A: AsyncActor + Actor>(A);
+
+impl<A: AsyncActor> Spawnable<A> for SpawnableAsync<A> {
+    fn actor(&self) -> &A {
+        &self.0
+    }
+
+    fn spawn(self, ctx: ActorContext<A::Message>, inbox: Inbox<A::Message>) -> ActorHandle<A> {
+        {
+            let actor = self.0;
+            let ctx = ctx;
+            debug!(actor_name = %ctx.actor_instance_id(), "spawning-async-actor");
+            let (state_tx, state_rx) = watch::channel(actor.observable_state());
+            let ctx_clone = ctx.clone();
+            let (exit_status_tx, exit_status_rx) = watch::channel(None);
+            let join_handle: JoinHandle<()> = tokio::spawn(async move {
+                let actor_instance_id = ctx.actor_instance_id().to_string();
+                let exit_status = async_actor_loop(actor, inbox, ctx, state_tx).await;
+                info!(
+                    actor_name = actor_instance_id.as_str(),
+                    exit_status = %exit_status,
+                    "actor-exit"
+                );
+                let _ = exit_status_tx.send(Some(exit_status));
+            });
+            ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)
+        }
+    }
+}
+
+impl<A: Actor> SpawnBuilder<A> {
+    /// Spawns an async actor.
+    fn spawn_actor<S: Spawnable<A>>(self, spawnable: S) -> (Mailbox<A::Message>, ActorHandle<A>) {
+        let actor_name = spawnable.actor().name();
+        let queue_capacity = spawnable.actor().queue_capacity();
+        let (ctx, inbox) = self.create_actor_context_and_inbox(actor_name, queue_capacity);
+        let mailbox = ctx.mailbox().clone();
+        let actor_handle = spawnable.spawn(ctx, inbox);
+        (mailbox, actor_handle)
+    }
+}
+
+impl<A: Actor + Clone> SpawnBuilder<A> {
+    /// Spawns an async actor.
+    fn spawn_parallel_actor<S: Spawnable<A> + Clone>(
+        self,
+        actor: S,
+        num_actors: usize,
+    ) -> (Mailbox<A::Message>, ActorHandle<ParallelActor<A>>) {
+        let actor_name = actor.actor().name();
+        let queue_capacity = actor.actor().queue_capacity();
+        let mailboxes_and_inboxes: Vec<(Mailbox<_>, Inbox<_>)> =
+            create_mailboxes(actor_name.clone(), queue_capacity, num_actors);
+        let kill_switch = self.kill_switch.clone();
+        let mut mailboxes = Vec::new();
+        let handles: Vec<ActorHandle<A>> = mailboxes_and_inboxes
+            .into_iter()
+            .map(|(mailbox, inbox)| {
+                mailboxes.push(mailbox.clone());
+                let ctx =
+                    ActorContext::new(mailbox, kill_switch.clone(), self.scheduler_mailbox.clone());
+                actor.clone().spawn(ctx, inbox)
+            })
+            .collect();
+        let parallel_actor = ParallelActor::new(actor_name, handles, mailboxes);
+        let (supervisor_mailbox, supervisor_inbox) =
+            create_mailbox(parallel_actor.name(), parallel_actor.queue_capacity());
+        let parallel_actor_ctx = ActorContext::new(
+            supervisor_mailbox.clone(),
             self.kill_switch.clone(),
-            self.scheduler_mailbox.clone(),
+            self.scheduler_mailbox,
         );
-        (self.actor, ctx, inbox)
+        let supervisor_handle =
+            SpawnableAsync(parallel_actor).spawn(parallel_actor_ctx, supervisor_inbox);
+        (supervisor_mailbox, supervisor_handle)
     }
 }
 
 impl<A: AsyncActor> SpawnBuilder<A> {
     /// Spawns an async actor.
-    pub fn spawn_async(self) -> (Mailbox<A::Message>, ActorHandle<A>) {
-        let (actor, ctx, inbox) = self.create_actor_context_and_inbox();
-        let mailbox = ctx.mailbox().clone();
-        let actor_handle = spawn_async_actor(actor, ctx, inbox);
-        (mailbox, actor_handle)
+    pub fn spawn_async(mut self) -> (Mailbox<A::Message>, ActorHandle<A>) {
+        let actor = self.actor.take().unwrap();
+        let spawnable_actor = SpawnableAsync(actor);
+        self.spawn_actor(spawnable_actor)
     }
 }
 
 impl<A: SyncActor> SpawnBuilder<A> {
     /// Spawns an async actor.
-    pub fn spawn_sync(self) -> (Mailbox<A::Message>, ActorHandle<A>) {
-        let (actor, ctx, inbox) = self.create_actor_context_and_inbox();
-        let mailbox = ctx.mailbox().clone();
-        let actor_handle = spawn_sync_actor(actor, ctx, inbox);
-        (mailbox, actor_handle)
+    pub fn spawn_sync(mut self) -> (Mailbox<A::Message>, ActorHandle<A>) {
+        let actor = self.actor.take().unwrap();
+        let spawnable_actor = SpawnableSync(actor);
+        self.spawn_actor(spawnable_actor)
+    }
+}
+
+impl<A: AsyncActor + Clone> SpawnBuilder<A> {
+    /// Spawns an async actor.
+    pub fn spawn_parallel_async(
+        mut self,
+        num_actors: usize,
+    ) -> (Mailbox<A::Message>, ActorHandle<ParallelActor<A>>) {
+        let actor = self.actor.take().unwrap();
+        let spawnable_actor = SpawnableAsync(actor);
+        self.spawn_parallel_actor(spawnable_actor, num_actors)
+    }
+}
+
+impl<A: SyncActor + Clone> SpawnBuilder<A> {
+    /// Spawns an async actor.
+    pub fn spawn_parallel_sync(
+        mut self,
+        num_actors: usize,
+    ) -> (Mailbox<A::Message>, ActorHandle<ParallelActor<A>>) {
+        let actor = self.actor.take().unwrap();
+        let spawnable_actor = SpawnableSync(actor);
+        self.spawn_parallel_actor(spawnable_actor, num_actors)
     }
 }

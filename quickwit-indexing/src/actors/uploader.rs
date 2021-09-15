@@ -17,13 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::mem;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox, QueueCapacity};
@@ -31,18 +29,15 @@ use quickwit_metastore::{Metastore, SplitMetadata, SplitMetadataAndFooterOffsets
 use quickwit_storage::{PutPayload, Storage, BUNDLE_FILENAME};
 use tantivy::chrono::Utc;
 use tokio::sync::oneshot::Receiver;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::models::{PackagedSplit, PublishOperation, PublisherMessage};
-use crate::semaphore::Semaphore;
 
-pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 3;
-
+#[derive(Clone)]
 pub struct Uploader {
     metastore: Arc<dyn Metastore>,
     index_storage: Arc<dyn Storage>,
     publisher_mailbox: Mailbox<Receiver<PublisherMessage>>,
-    concurrent_upload_permits: Semaphore,
     counters: UploaderCounters,
 }
 
@@ -56,7 +51,6 @@ impl Uploader {
             metastore,
             index_storage,
             publisher_mailbox,
-            concurrent_upload_permits: Semaphore::new(MAX_CONCURRENT_SPLIT_UPLOAD),
             counters: Default::default(),
         }
     }
@@ -64,14 +58,18 @@ impl Uploader {
 
 #[derive(Clone, Debug, Default)]
 pub struct UploaderCounters {
-    pub num_staged_splits: Arc<AtomicU64>,
-    pub num_uploaded_splits: Arc<AtomicU64>,
+    pub num_staged_splits: u64,
+    pub num_uploaded_splits: u64,
 }
 
 impl Actor for Uploader {
     type Message = PackagedSplit;
 
     type ObservableState = UploaderCounters;
+
+    fn name(&self) -> String {
+        "uploader".to_string()
+    }
 
     #[allow(clippy::unused_unit)]
     fn observable_state(&self) -> Self::ObservableState {
@@ -154,7 +152,7 @@ async fn stage_and_upload_split(
     packaged_split: PackagedSplit,
     index_storage: &dyn Storage,
     metastore: &dyn Metastore,
-    counters: UploaderCounters,
+    counters: &mut UploaderCounters,
 ) -> anyhow::Result<PublisherMessage> {
     let split_metadata_and_footer_offsets = create_split_metadata(&packaged_split);
     let index_id = packaged_split.index_id.clone();
@@ -162,9 +160,9 @@ async fn stage_and_upload_split(
     metastore
         .stage_split(&index_id, split_metadata_and_footer_offsets)
         .await?;
-    counters.num_staged_splits.fetch_add(1, Ordering::SeqCst);
+    counters.num_staged_splits += 1;
     put_split_file_to_storage(&packaged_split, &*index_storage).await?;
-    counters.num_uploaded_splits.fetch_add(1, Ordering::SeqCst);
+    counters.num_uploaded_splits += 1;
     let publish_operation = make_publish_operation(split_metadata, packaged_split);
     Ok(PublisherMessage {
         index_id,
@@ -188,38 +186,23 @@ impl AsyncActor for Uploader {
         ctx.send_message(&self.publisher_mailbox, split_uploaded_rx)
             .await?;
 
-        // The permit will be added back manually to the semaphore the task after it is finished.
-        let permit_guard = self.concurrent_upload_permits.acquire().await;
-
-        let kill_switch = ctx.kill_switch().clone();
-        let metastore = self.metastore.clone();
-        let index_storage = self.index_storage.clone();
-
-        let counters = self.counters.clone();
-
-        tokio::spawn(async move {
-            fail_point!("uploader:intask:before");
-            let stage_and_upload_res: anyhow::Result<()> =
-                stage_and_upload_split(split, &*index_storage, &*metastore, counters)
-                    .await
-                    .and_then(|publisher_message| {
-                        if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
-                            bail!(
-                                "Failed to send upload split `{:?}`. The publisher is probably \
-                                 dead.",
-                                &publisher_message
-                            );
-                        }
-                        Ok(())
-                    });
-            if let Err(cause) = stage_and_upload_res {
-                warn!(cause=%cause, "Failed to upload split. Killing!");
-                kill_switch.kill();
-            }
-
-            // we explicitely drop it in order to force move the permit guard into the async task.
-            mem::drop(permit_guard);
-        });
+        fail_point!("uploader:intask:before");
+        let publisher_message: PublisherMessage = stage_and_upload_split(
+            split,
+            &*self.index_storage,
+            &*self.metastore,
+            &mut self.counters,
+        )
+        .await?;
+        split_uploaded_tx
+            .send(publisher_message)
+            .map_err(|publisher_message| {
+                anyhow::anyhow!(
+                    "Failed to resolve oneshot with after split upload (index={}). The publisher \
+                     is probably dead",
+                    &publisher_message.index_id,
+                )
+            })?;
         fail_point!("uploader:intask:after");
         Ok(())
     }

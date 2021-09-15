@@ -17,15 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use tokio::sync::watch::{self, Sender};
-use tokio::task::{spawn_blocking, JoinHandle};
-use tracing::{debug, error, info};
+use tokio::sync::watch::Sender;
+use tracing::{debug, error};
 
-use crate::actor::{process_command, ActorExitStatus};
+use crate::actor::ActorExitStatus;
 use crate::actor_state::ActorState;
 use crate::actor_with_state_tx::ActorWithStateTx;
-use crate::mailbox::{CommandOrMessage, Inbox};
-use crate::{Actor, ActorContext, ActorHandle, RecvError};
+use crate::mailbox::{Command, CommandOrMessage, Inbox};
+use crate::{Actor, ActorContext, RecvError};
 
 /// An sync actor is executed on a tokio blocking task.
 ///
@@ -51,6 +50,18 @@ pub trait SyncActor: Actor + Sized {
         ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus>;
 
+    /// Makes it possible to override the default behavior of
+    /// handling command. (At your own risk!)
+    #[doc(hidden)]
+    fn process_command(
+        &mut self,
+        command: Command,
+        ctx: &mut ActorContext<Self::Message>,
+        state_tx: &Sender<Self::ObservableState>,
+    ) -> Result<(), ActorExitStatus> {
+        crate::actor::process_command(self, command, ctx, state_tx)
+    }
+
     /// Hook that can be set up to define what should happen upon actor exit.
     /// This hook is called only once.
     ///
@@ -66,24 +77,6 @@ pub trait SyncActor: Actor + Sized {
     ) -> anyhow::Result<()> {
         Ok(())
     }
-}
-
-pub(crate) fn spawn_sync_actor<A: SyncActor>(
-    actor: A,
-    ctx: ActorContext<A::Message>,
-    inbox: Inbox<A::Message>,
-) -> ActorHandle<A> {
-    debug!(actor=%ctx.actor_instance_id(),"spawning-sync-actor");
-    let (state_tx, state_rx) = watch::channel(actor.observable_state());
-    let ctx_clone = ctx.clone();
-    let (exit_status_tx, exit_status_rx) = watch::channel(None);
-    let join_handle: JoinHandle<()> = spawn_blocking(move || {
-        let actor_instance_id = ctx.actor_instance_id().to_string();
-        let exit_status = sync_actor_loop(actor, inbox, ctx, state_tx);
-        info!(exit_status=%exit_status, actor=actor_instance_id.as_str(), "exit");
-        let _ = exit_status_tx.send(Some(exit_status));
-    });
-    ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)
 }
 
 /// Process a given message.
@@ -114,9 +107,12 @@ fn process_msg<A: Actor + SyncActor>(
         return Some(ActorExitStatus::Killed);
     }
     match command_or_msg_recv_res {
-        Ok(CommandOrMessage::Command(cmd)) => process_command(actor, cmd, ctx, state_tx),
+        Ok(CommandOrMessage::Command(cmd)) => {
+            debug!(cmd=?cmd, actor=%ctx.actor_instance_id(),"command-received");
+            actor.process_command(cmd, ctx, state_tx).err()
+        }
         Ok(CommandOrMessage::Message(msg)) => {
-            debug!(msg=?msg, actor=%actor.name(),"message-received");
+            debug!(msg=?msg, actor=%ctx.actor_instance_id(),"message-received");
             actor.process_message(msg, ctx).err()
         }
         Err(RecvError::Timeout) => {
@@ -130,7 +126,7 @@ fn process_msg<A: Actor + SyncActor>(
     }
 }
 
-fn sync_actor_loop<A: SyncActor>(
+pub(crate) fn sync_actor_loop<A: SyncActor>(
     actor: A,
     mut inbox: Inbox<A::Message>,
     mut ctx: ActorContext<A::Message>,

@@ -23,7 +23,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use quickwit_actors::{
     create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health,
-    KillSwitch, QueueCapacity, Supervisable,
+    KillSwitch, ParallelActorHandle, QueueCapacity, Supervisable,
 };
 use quickwit_metastore::{Metastore, SplitState};
 use quickwit_storage::StorageUriResolver;
@@ -38,12 +38,14 @@ use crate::models::IndexingStatistics;
 use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
+pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 3;
+
 pub struct IndexingPipelineHandler {
     /// Indexing pipeline
     pub source: ActorHandle<SourceActor>,
     pub indexer: ActorHandle<Indexer>,
     pub packager: ActorHandle<Packager>,
-    pub uploader: ActorHandle<Uploader>,
+    pub uploader: ParallelActorHandle<Uploader>,
     pub publisher: ActorHandle<Publisher>,
 
     /// Merging pipeline subpipeline
@@ -260,7 +262,7 @@ impl IndexingPipelineSupervisor {
         let (uploader_mailbox, uploader_handler) = ctx
             .spawn_actor(uploader)
             .set_kill_switch(self.kill_switch.clone())
-            .spawn_async();
+            .spawn_parallel_async(MAX_CONCURRENT_SPLIT_UPLOAD);
 
         // Packager
         let packager = Packager::new(tags_field, uploader_mailbox, Some(merge_planner_mailbox));
@@ -337,8 +339,9 @@ impl IndexingPipelineSupervisor {
                         {
                             // Failing to send is fine here.
                             info!("Stopping the merge planner since the packager is dead.");
+                            let _guard = ctx.protect_zone();
                             // If the message cannot be sent this is not necessarily an error.
-                            let _ = ctx.send_success(handlers.merge_planner.mailbox()).await;
+                            let _merge_planner_mailbox = handlers.merge_planner.success().await;
                         }
                     }
                 }
