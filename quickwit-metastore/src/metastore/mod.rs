@@ -281,18 +281,13 @@ pub trait Metastore: Send + Sync + 'static {
 // Returns true if filter_tags is empty (unspecified),
 // or if filter_tags is specified and split_tags contains at least one of the tags in filter_tags.
 pub fn match_tags_filter(split_tags: &[String], filter_tags: &[String]) -> bool {
-    let mut match_tag = false;
-
     if filter_tags.is_empty() {
-        match_tag = true;
-    } else {
-        for filter_tag in filter_tags {
-            if split_tags.contains(filter_tag) {
-                match_tag = true;
-                break;
-            }
+        return true;
+    }
+    for filter_tag in filter_tags {
+        if split_tags.contains(filter_tag) {
+            return true;
         }
     }
-
-    match_tag
+    false
 }

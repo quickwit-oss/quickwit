@@ -103,6 +103,26 @@ fn initialize_db(pool: &Pool<ConnectionManager<PgConnection>>) -> anyhow::Result
     }
 }
 
+/// Check the difference between the given split IDs to be modified and the actual modified split
+/// IDs. If there is a difference, it returns SplitDoesNotExist.
+fn check_all_splits_were_modified<'a>(
+    split_ids_to_modify: &[&'a str],
+    modified_split_ids: &[&'a str],
+) -> Result<(), MetastoreError> {
+    for split_id in split_ids_to_modify.iter() {
+        if !modified_split_ids
+            .iter()
+            .any(|modified_split_id| modified_split_id == split_id)
+        {
+            return Err(MetastoreError::SplitDoesNotExist {
+                split_id: split_id.to_string(),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 /// PostgreSQL metastore implementation.
 #[derive(Clone)]
 pub struct PostgresqlMetastore {
@@ -215,18 +235,22 @@ impl PostgresqlMetastore {
             }
 
             // Deserialize the target split metadata.
-            let mut split_metadata_and_footer_offsets =
-                match model_split.make_split_metadata_and_footer_offsets() {
-                    Ok(split_metadata_and_footer_offsets) => split_metadata_and_footer_offsets,
-                    Err(err) => {
-                        error!(
-                            "Failed to deserialize JSON to SplitMetadataAndFooterOffsets \
-                             split_id={:?} {:?}",
-                            model_split.split_id, err
-                        );
-                        continue;
-                    }
-                };
+            let mut split_metadata_and_footer_offsets = match model_split
+                .make_split_metadata_and_footer_offsets()
+            {
+                Ok(split_metadata_and_footer_offsets) => split_metadata_and_footer_offsets,
+                Err(err) => {
+                    let msg = format!(
+                        "Failed to deserialize JSON to SplitMetadataAndFooterOffsets split_id={:?}",
+                        model_split.split_id
+                    );
+                    error!("{:?} {:?}", msg, err);
+                    return Err(MetastoreError::InternalError {
+                        message: msg,
+                        cause: anyhow::anyhow!(err),
+                    });
+                }
+            };
 
             // Update its split_state and update_timestamp.
             split_metadata_and_footer_offsets.split_metadata.split_state = SplitState::Published;
@@ -239,12 +263,16 @@ impl PostgresqlMetastore {
                 match serde_json::to_string(&split_metadata_and_footer_offsets) {
                     Ok(json_str) => json_str,
                     Err(err) => {
-                        error!(
+                        let msg = format!(
                             "Failed to serialize from JSON to SplitMetadataAndFooterOffsets \
-                             split_id={:?} {:?}",
-                            model_split.split_id, err
+                             split_id={:?}",
+                            model_split.split_id
                         );
-                        continue;
+                        error!("{:?} {:?}", msg, err);
+                        return Err(MetastoreError::InternalError {
+                            message: msg,
+                            cause: anyhow::anyhow!(err),
+                        });
                     }
                 };
 
@@ -296,18 +324,22 @@ impl PostgresqlMetastore {
         let mut succeeded_split_ids = Vec::new();
         for model_split in model_splits {
             // Deserialize the target split metadata.
-            let mut split_metadata_and_footer_offsets =
-                match model_split.make_split_metadata_and_footer_offsets() {
-                    Ok(split_metadata_and_footer_offsets) => split_metadata_and_footer_offsets,
-                    Err(err) => {
-                        error!(
-                            "Failed to deserialize JSON to SplitMetadataAndFooterOffsets \
-                             split_id={:?} {:?}",
-                            model_split.split_id, err
-                        );
-                        continue;
-                    }
-                };
+            let mut split_metadata_and_footer_offsets = match model_split
+                .make_split_metadata_and_footer_offsets()
+            {
+                Ok(split_metadata_and_footer_offsets) => split_metadata_and_footer_offsets,
+                Err(err) => {
+                    let msg = format!(
+                        "Failed to deserialize JSON to SplitMetadataAndFooterOffsets split_id={:?}",
+                        model_split.split_id
+                    );
+                    error!("{:?} {:?}", msg, err);
+                    return Err(MetastoreError::InternalError {
+                        message: msg,
+                        cause: anyhow::anyhow!(err),
+                    });
+                }
+            };
 
             // Update its split_state and update_timestamp.
             split_metadata_and_footer_offsets.split_metadata.split_state =
@@ -321,12 +353,16 @@ impl PostgresqlMetastore {
                 match serde_json::to_string(&split_metadata_and_footer_offsets) {
                     Ok(json_str) => json_str,
                     Err(err) => {
-                        error!(
+                        let msg = format!(
                             "Failed to serialize from JSON to SplitMetadataAndFooterOffsets \
-                             split_id={:?} {:?}",
-                            model_split.split_id, err
+                             split_id={:?}",
+                            model_split.split_id
                         );
-                        continue;
+                        error!("{:?} {:?}", msg, err);
+                        return Err(MetastoreError::InternalError {
+                            message: msg,
+                            cause: anyhow::anyhow!(err),
+                        });
                     }
                 };
 
@@ -622,21 +658,15 @@ impl Metastore for PostgresqlMetastore {
             // Publish splits.
             let published_split_ids = self.publish_splits(&conn, index_id, split_ids)?;
 
-            // Find out the ID of the update error and return an error if there is one.
-            let mut error_split_id = "";
             if published_split_ids.len() < split_ids.len() {
-                for split_id in split_ids.iter() {
-                    if !published_split_ids
+                // Return an error if there are any splits that could not be published.
+                check_all_splits_were_modified(
+                    split_ids,
+                    &published_split_ids
                         .iter()
-                        .any(|published_split_id| published_split_id == *split_id)
-                    {
-                        error_split_id = split_id;
-                        break;
-                    }
-                }
-                return Err(MetastoreError::SplitDoesNotExist {
-                    split_id: error_split_id.to_string(),
-                });
+                        .map(String::as_str)
+                        .collect::<Vec<_>>(),
+                )?
             }
 
             Ok(())
@@ -670,42 +700,30 @@ impl Metastore for PostgresqlMetastore {
             // Publish splits.
             let published_split_ids = self.publish_splits(&conn, index_id, new_split_ids)?;
 
-            // Find out the ID of the update error and return an error if there is one.
-            let mut publish_error_split_id = "";
             if published_split_ids.len() < new_split_ids.len() {
-                for split_id in new_split_ids.iter() {
-                    if !published_split_ids
+                // Return an error if there are any splits that could not be published.
+                check_all_splits_were_modified(
+                    new_split_ids,
+                    &published_split_ids
                         .iter()
-                        .any(|published_split_id| published_split_id == *split_id)
-                    {
-                        publish_error_split_id = split_id;
-                        break;
-                    }
-                }
-                return Err(MetastoreError::SplitDoesNotExist {
-                    split_id: publish_error_split_id.to_string(),
-                });
+                        .map(String::as_str)
+                        .collect::<Vec<_>>(),
+                )?
             }
 
             // Mark as deleted.
             let mark_as_deleted_split_ids =
                 self.mark_as_deleted(&conn, index_id, replaced_split_ids)?;
 
-            // Find out the ID of the update error and return an error if there is one.
-            let mut mark_as_delete_error_split_id = "";
             if mark_as_deleted_split_ids.len() < replaced_split_ids.len() {
-                for split_id in replaced_split_ids.iter() {
-                    if !mark_as_deleted_split_ids
+                // Return an error if there are any splits that could not be marked as deleted.
+                check_all_splits_were_modified(
+                    replaced_split_ids,
+                    &mark_as_deleted_split_ids
                         .iter()
-                        .any(|mark_as_deleted_split_id| mark_as_deleted_split_id == *split_id)
-                    {
-                        mark_as_delete_error_split_id = split_id;
-                        break;
-                    }
-                }
-                return Err(MetastoreError::SplitDoesNotExist {
-                    split_id: mark_as_delete_error_split_id.to_string(),
-                });
+                        .map(String::as_str)
+                        .collect::<Vec<_>>(),
+                )?
             }
 
             Ok(())
@@ -772,8 +790,15 @@ impl Metastore for PostgresqlMetastore {
                 match model_split.make_split_metadata_and_footer_offsets() {
                     Ok(metadata) => metadata,
                     Err(err) => {
-                        error!("Failed to make split metadata and footer offsets {:?}", err);
-                        continue;
+                        let msg = format!(
+                            "Failed to make split metadata and footer offsets split_id={:?}",
+                            model_split.split_id
+                        );
+                        error!("{:?} {:?}", msg, err);
+                        return Err(MetastoreError::InternalError {
+                            message: msg,
+                            cause: err,
+                        });
                     }
                 };
             let split_tags = split_metadata_and_footer_offsets
@@ -824,8 +849,15 @@ impl Metastore for PostgresqlMetastore {
                 match model_split.make_split_metadata_and_footer_offsets() {
                     Ok(metadata) => metadata,
                     Err(err) => {
-                        error!("Failed to make split metadata and footer offsets {:?}", err);
-                        continue;
+                        let msg = format!(
+                            "Failed to make split metadata and footer offsets split_id={:?}",
+                            model_split.split_id
+                        );
+                        error!("{:?} {:?}", msg, err);
+                        return Err(MetastoreError::InternalError {
+                            message: msg,
+                            cause: err,
+                        });
                     }
                 };
             split_metadata_footer_offset_list.push(split_metadata_and_footer_offsets);
@@ -858,21 +890,15 @@ impl Metastore for PostgresqlMetastore {
             // Mark as deleted.
             let mark_as_deleted_split_ids = self.mark_as_deleted(&conn, index_id, split_ids)?;
 
-            // Find out the ID of the update error and return an error if there is one.
-            let mut error_split_id = "";
             if mark_as_deleted_split_ids.len() < split_ids.len() {
-                for split_id in split_ids.iter() {
-                    if !mark_as_deleted_split_ids
+                // Return an error if there are any splits that could not be marked as deleted.
+                check_all_splits_were_modified(
+                    split_ids,
+                    &mark_as_deleted_split_ids
                         .iter()
-                        .any(|mark_as_deleted_split_id| mark_as_deleted_split_id == *split_id)
-                    {
-                        error_split_id = split_id;
-                        break;
-                    }
-                }
-                return Err(MetastoreError::SplitDoesNotExist {
-                    split_id: error_split_id.to_string(),
-                });
+                        .map(String::as_str)
+                        .collect::<Vec<_>>(),
+                )?
             }
 
             Ok(())
@@ -948,23 +974,15 @@ impl Metastore for PostgresqlMetastore {
                 .get_results(&*conn)
                 .map_err(MetastoreError::DbError)?;
 
-            // Splits that are not deleted are treated as errors because they are non-existent
-            // splits.
-            let mut error_split_id = "";
             if deleted_splits.len() < split_ids.len() {
-                for split_id in split_ids.iter() {
-                    if !deleted_splits
+                // Return an error if there are any splits that could not be deleted.
+                check_all_splits_were_modified(
+                    split_ids,
+                    &deleted_splits
                         .iter()
-                        .map(|deleted_split| deleted_split.split_id.clone())
-                        .any(|x| x == *split_id)
-                    {
-                        error_split_id = split_id;
-                        break;
-                    }
-                }
-                return Err(MetastoreError::SplitDoesNotExist {
-                    split_id: error_split_id.to_string(),
-                });
+                        .map(|split| split.split_id.as_str())
+                        .collect::<Vec<_>>(),
+                )?
             }
 
             Ok(())
