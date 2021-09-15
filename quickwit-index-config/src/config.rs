@@ -105,8 +105,10 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     }
 
     /// Returns the special tags field if any.
-    fn tags_field(&self, split_schema: &Schema) -> Option<Field> {
-        split_schema.get_field(TAGS_FIELD_NAME)
+    fn tags_field(&self, split_schema: &Schema) -> Field {
+        split_schema
+            .get_field(TAGS_FIELD_NAME)
+            .expect("Tags field must exist in the schema.")
     }
 }
 

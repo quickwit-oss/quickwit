@@ -20,16 +20,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health, KillSwitch, Supervisable,
 };
-use quickwit_index_config::IndexConfig;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 use smallvec::SmallVec;
-use tantivy::schema::Field;
 use tokio::join;
 use tracing::{debug, error, info};
 
@@ -69,14 +66,6 @@ impl Actor for IndexingPipelineSupervisor {
     fn observable_state(&self) -> Self::ObservableState {
         self.statistics.clone()
     }
-}
-
-fn extract_tags_field(index_config: &dyn IndexConfig) -> anyhow::Result<Field> {
-    let schema = index_config.schema();
-    let tags_field = index_config
-        .tags_field(&schema)
-        .with_context(|| "Could not find special field `_tags` in the schema.".to_string())?;
-    Ok(tags_field)
 }
 
 impl IndexingPipelineSupervisor {
@@ -175,9 +164,9 @@ impl IndexingPipelineSupervisor {
             .params
             .storage_uri_resolver
             .resolve(&index_metadata.index_uri)?;
-
-        let tags_field = extract_tags_field(index_metadata.index_config.as_ref())?;
-
+        let tags_field = index_metadata
+            .index_config
+            .tags_field(&index_metadata.index_config.schema());
         let publisher = Publisher::new(self.params.metastore.clone());
         let (publisher_mailbox, publisher_handler) = ctx
             .spawn_actor(publisher)
