@@ -33,7 +33,7 @@ use crate::{
     LocalFileStorage, PutPayload, Storage, StorageErrorKind, StorageResult, StorageUriResolver,
 };
 
-const CACHE_STATE_FILE_NAME: &str = "cache-sate.json";
+const CACHE_STATE_FILE_NAME: &str = "cache-state.json";
 
 /// Capacity encapsulates the maximum number of items a cache can hold.
 /// We need to account for the number of items as well as the size of each item.
@@ -53,9 +53,7 @@ impl DiskCapacity {
 
 /// CacheState is a struct for serializing/deserializing the cache state.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub(crate) struct CacheState {
-    /// Uri of the local storage.
-    pub local_storage_uri: String,
+pub struct CacheState {
     /// The disk capacity
     pub disk_capacity: DiskCapacity,
     /// The list of items in the cache.
@@ -74,9 +72,9 @@ impl CacheState {
 }
 
 /// A struct to wrap the lru cache and its info.
-pub struct WrappedCache {
+pub struct CacheWithMeta {
     /// Underlying L.R.U cache.
-    pub lru: LruCache<PathBuf, usize>,
+    pub cache: LruCache<PathBuf, usize>,
     /// Current number of bytes in the cache.
     pub num_bytes: usize,
     /// Current number of files in the cache.
@@ -84,17 +82,23 @@ pub struct WrappedCache {
 }
 
 /// A storage with a backing file system cache.
+///
+/// This storage is meant to be use during indexing where `put` and `copy_to_file`
+/// are most relevant.
+/// It only interract with the cache for `put`, `copy_to_file` and `delete`
+/// operation.
+/// Other operations directly interract with the underlying remote storage.
 pub struct StorageWithUploadCache {
     /// The remote storage.
     remote_storage: Arc<dyn Storage>,
     /// The backing local storage.
-    local_storage: Arc<dyn Storage>,
+    local_cache_storage: Arc<dyn Storage>,
     /// The localstorage root.
     local_storage_root: PathBuf,
     /// The capacity of the cache.
     disk_capacity: DiskCapacity,
     /// The underlying cache.
-    disk_cache: Mutex<WrappedCache>,
+    disk_cache: Mutex<CacheWithMeta>,
 }
 
 impl StorageWithUploadCache {
@@ -115,14 +119,14 @@ impl StorageWithUploadCache {
 
         Ok(Self {
             remote_storage,
-            local_storage,
+            local_cache_storage: local_storage,
             local_storage_root: local_storage_root_path,
             disk_capacity: DiskCapacity {
                 max_num_files,
                 max_num_bytes,
             },
-            disk_cache: Mutex::new(WrappedCache {
-                lru: LruCache::unbounded(),
+            disk_cache: Mutex::new(CacheWithMeta {
+                cache: LruCache::unbounded(),
                 num_bytes: 0,
                 num_files: 0,
             }),
@@ -136,23 +140,15 @@ impl StorageWithUploadCache {
     pub fn from_path(
         remote_storage: Arc<dyn Storage>,
         storage_uri_resolver: &StorageUriResolver,
-        path: &Path,
+        cache_dir: &Path,
     ) -> StorageResult<Self> {
-        let cache_state = CacheState::from_path(path)?;
-        let local_storage = storage_uri_resolver
-            .resolve(&cache_state.local_storage_uri)
+        let cache_state = CacheState::from_path(cache_dir)?;
+        let local_cache_storage_uri = format!("file://{}", cache_dir.to_string_lossy());
+        let local_cache_storage = storage_uri_resolver
+            .resolve(&local_cache_storage_uri)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
-
-        // Verify that the provided `root_path` and extracted `root_path` match.
-        let local_storage_root_path =
-            LocalFileStorage::extract_root_path_from_uri(&cache_state.local_storage_uri)?;
-        if local_storage_root_path != path.to_path_buf() {
-            return Err(StorageErrorKind::InternalError.with_error(anyhow::anyhow!(
-                "Invalid root path: {}, but {} expected ",
-                path.to_string_lossy(),
-                local_storage_root_path.to_string_lossy()
-            )));
-        }
+        let local_storage_root =
+            LocalFileStorage::extract_root_path_from_uri(&local_cache_storage_uri)?;
 
         let num_files = cache_state.items.len();
         let num_bytes = cache_state.items.iter().map(|(_, size)| *size).sum();
@@ -172,11 +168,11 @@ impl StorageWithUploadCache {
 
         Ok(Self {
             remote_storage,
-            local_storage,
-            local_storage_root: local_storage_root_path,
+            local_cache_storage,
+            local_storage_root,
             disk_capacity: cache_state.disk_capacity,
-            disk_cache: Mutex::new(WrappedCache {
-                lru: LruCache::unbounded(),
+            disk_cache: Mutex::new(CacheWithMeta {
+                cache: LruCache::unbounded(),
                 num_bytes,
                 num_files,
             }),
@@ -184,8 +180,13 @@ impl StorageWithUploadCache {
     }
 
     /// Check if an incomming item will exceed the capacity once inserted.
-    fn exceeds_capacity(&self, num_bytes: usize, num_files: usize) -> bool {
-        self.disk_capacity.exceeds_capacity(num_bytes, num_files)
+    fn exceeds_capacity(
+        &self,
+        total_bytes_after_insert: usize,
+        total_files_after_insert: usize,
+    ) -> bool {
+        self.disk_capacity
+            .exceeds_capacity(total_bytes_after_insert, total_files_after_insert)
     }
 
     /// Persist the state of the entire cache.
@@ -193,15 +194,14 @@ impl StorageWithUploadCache {
     /// Takes a previously locked guard for easier mutext management.
     async fn save_state<'a>(
         &self,
-        wrapped_cache: &MutexGuard<'_, WrappedCache>,
+        wrapped_cache: &MutexGuard<'_, CacheWithMeta>,
     ) -> StorageResult<()> {
         let mut cache_items = vec![];
-        for (path, size) in wrapped_cache.lru.iter() {
+        for (path, size) in wrapped_cache.cache.iter() {
             cache_items.push((path.clone(), *size));
         }
 
         let cache_state = CacheState {
-            local_storage_uri: self.local_storage.uri(),
             disk_capacity: self.disk_capacity,
             items: cache_items,
         };
@@ -221,12 +221,13 @@ impl Storage for StorageWithUploadCache {
 
         let mut locked_disk_cache = self.disk_cache.lock().await;
         let payload_length = payload.len().await? as usize;
-        if self.exceeds_capacity(payload_length, locked_disk_cache.num_files + 1) {
+        // Ignore storing an item that cannot fit in the cache.
+        if self.exceeds_capacity(payload_length, locked_disk_cache.num_files) {
             return Ok(());
         }
 
-        if let Some(item_num_bytes) = locked_disk_cache.lru.pop(&path.to_path_buf()) {
-            if self.local_storage.delete(path).await.is_err() {
+        if let Some(item_num_bytes) = locked_disk_cache.cache.pop(&path.to_path_buf()) {
+            if self.local_cache_storage.delete(path).await.is_err() {
                 return Ok(());
             }
             locked_disk_cache.num_bytes -= item_num_bytes;
@@ -237,9 +238,9 @@ impl Storage for StorageWithUploadCache {
             locked_disk_cache.num_bytes + payload_length,
             locked_disk_cache.num_files + 1,
         ) {
-            if let Some((item_path, item_num_bytes)) = locked_disk_cache.lru.pop_lru() {
+            if let Some((item_path, item_num_bytes)) = locked_disk_cache.cache.pop_lru() {
                 if self
-                    .local_storage
+                    .local_cache_storage
                     .delete(item_path.as_path())
                     .await
                     .is_err()
@@ -251,11 +252,11 @@ impl Storage for StorageWithUploadCache {
             }
         }
 
-        self.local_storage.put(path, payload).await?;
+        self.local_cache_storage.put(path, payload).await?;
         locked_disk_cache.num_bytes += payload_length;
         locked_disk_cache.num_files += 1;
         locked_disk_cache
-            .lru
+            .cache
             .put(path.to_path_buf(), payload_length);
         let _ = self.save_state(&locked_disk_cache).await;
         Ok(())
@@ -263,40 +264,29 @@ impl Storage for StorageWithUploadCache {
 
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
         let mut locked_disk_cache = self.disk_cache.lock().await;
-        if locked_disk_cache.lru.get(&path.to_path_buf()).is_none() {
+        if locked_disk_cache.cache.get(&path.to_path_buf()).is_none() {
             return self.remote_storage.copy_to_file(path, output_path).await;
         }
 
-        let _ = self.save_state(&locked_disk_cache).await;
-        self.local_storage.copy_to_file(path, output_path).await
+        self.local_cache_storage
+            .copy_to_file(path, output_path)
+            .await
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
-        let mut locked_disk_cache = self.disk_cache.lock().await;
-        if locked_disk_cache.lru.get(&path.to_path_buf()).is_none() {
-            return self.remote_storage.get_slice(path, range).await;
-        }
-
-        let _ = self.save_state(&locked_disk_cache).await;
-        self.local_storage.get_slice(path, range).await
+        self.remote_storage.get_slice(path, range).await
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<Bytes> {
-        let mut locked_disk_cache = self.disk_cache.lock().await;
-        if locked_disk_cache.lru.get(&path.to_path_buf()).is_none() {
-            return self.remote_storage.get_all(path).await;
-        }
-
-        let _ = self.save_state(&locked_disk_cache).await;
-        self.local_storage.get_all(path).await
+        self.remote_storage.get_all(path).await
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         self.remote_storage.delete(path).await?;
 
         let mut locked_disk_cache = self.disk_cache.lock().await;
-        if let Some(item_num_bytes) = locked_disk_cache.lru.pop(&path.to_path_buf()) {
-            if self.local_storage.delete(path).await.is_err() {
+        if let Some(item_num_bytes) = locked_disk_cache.cache.pop(&path.to_path_buf()) {
+            if self.local_cache_storage.delete(path).await.is_err() {
                 return Ok(());
             }
             locked_disk_cache.num_bytes -= item_num_bytes;
@@ -359,18 +349,14 @@ impl Default for CacheConfig {
 pub fn create_storage_with_upload_cache(
     remote_storage: Arc<dyn Storage>,
     storage_uri_resolver: &StorageUriResolver,
-    local_storage_root_path: &Path,
+    cache_dir: &Path,
     config: CacheConfig,
 ) -> crate::StorageResult<Arc<dyn Storage>> {
-    let cache_state_file_path = local_storage_root_path.join(CACHE_STATE_FILE_NAME);
+    let cache_state_file_path = cache_dir.join(CACHE_STATE_FILE_NAME);
     let storage = if cache_state_file_path.exists() {
-        StorageWithUploadCache::from_path(
-            remote_storage,
-            storage_uri_resolver,
-            local_storage_root_path,
-        )?
+        StorageWithUploadCache::from_path(remote_storage, storage_uri_resolver, cache_dir)?
     } else {
-        let local_storage_uri = format!("file://{}", local_storage_root_path.to_string_lossy());
+        let local_storage_uri = format!("file://{}", cache_dir.to_string_lossy());
         let local_storage = storage_uri_resolver
             .resolve(&local_storage_uri)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
@@ -404,7 +390,6 @@ mod tests {
     struct TestEnv {
         #[allow(dead_code)]
         local_dir: TempDir,
-        local_storage_uri: String,
         local_storage_root: PathBuf,
         cache: StorageWithUploadCache,
     }
@@ -447,7 +432,6 @@ mod tests {
 
         Ok(TestEnv {
             local_dir,
-            local_storage_uri,
             local_storage_root,
             cache,
         })
@@ -473,7 +457,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_put_and_get_all_calls_both_storages_appropriately() -> anyhow::Result<()> {
+    async fn test_put_and_copy_to_file_calls_both_storages_appropriately() -> anyhow::Result<()> {
         let (local_dir, mut remote_storage, mut local_storage) = create_mock_storages()?;
         let local_storage_uri = format!("file://{}", local_dir.path().to_string_lossy());
         let moved_local_storage_uri = local_storage_uri.clone();
@@ -485,14 +469,18 @@ mod tests {
                 assert_eq!(path, Path::new("foo"));
                 Box::pin(async { Ok(()) })
             });
-        remote_storage.expect_get_all().times(1).returning(|path| {
-            assert_eq!(path, Path::new("bar"));
-            Box::pin(async { Ok(Bytes::from(b"data".to_vec())) })
-        });
+        remote_storage
+            .expect_copy_to_file()
+            .times(1)
+            .returning(|path, output_path| {
+                assert_eq!(path, Path::new("bar"));
+                assert_eq!(output_path, Path::new("bar_copy"));
+                Box::pin(async { Ok(()) })
+            });
 
         local_storage
             .expect_uri()
-            .times(3)
+            .times(1)
             .returning(move || moved_local_storage_uri.clone());
         local_storage
             .expect_put()
@@ -501,10 +489,14 @@ mod tests {
                 assert_eq!(path, Path::new("foo"));
                 Box::pin(async { Ok(()) })
             });
-        local_storage.expect_get_all().times(1).returning(|path| {
-            assert_eq!(path, Path::new("foo"));
-            Box::pin(async { Ok(Bytes::from(b"data".to_vec())) })
-        });
+        local_storage
+            .expect_copy_to_file()
+            .times(1)
+            .returning(|path, output_path| {
+                assert_eq!(path, Path::new("foo"));
+                assert_eq!(output_path, Path::new("foo_copy"));
+                Box::pin(async { Ok(()) })
+            });
 
         let cached_storage = StorageWithUploadCache::create(
             Arc::new(remote_storage),
@@ -519,12 +511,16 @@ mod tests {
             )
             .await?;
         assert_eq!(
-            cached_storage.get_all(Path::new("bar")).await?,
-            &b"data"[..]
+            cached_storage
+                .copy_to_file(Path::new("bar"), Path::new("bar_copy"))
+                .await?,
+            ()
         );
         assert_eq!(
-            cached_storage.get_all(Path::new("foo")).await?,
-            &b"data"[..]
+            cached_storage
+                .copy_to_file(Path::new("foo"), Path::new("foo_copy"))
+                .await?,
+            ()
         );
 
         // Check cache state is good.
@@ -535,7 +531,6 @@ mod tests {
             let cache_state: CacheState = serde_json::from_reader(reader)
                 .with_context(|| "Could not deserialise state".to_string())?;
 
-            assert_eq!(cache_state.local_storage_uri, local_storage_uri);
             assert_eq!(cache_state.items.len(), 1);
             assert_eq!(
                 cache_state
@@ -558,7 +553,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_slice_calls_both_storages_appropriately() -> anyhow::Result<()> {
+    async fn test_get_slice_only_calls_remote_storage() -> anyhow::Result<()> {
         let (local_dir, mut remote_storage, mut local_storage) = create_mock_storages()?;
         let local_strage_uri = format!("file://{}", local_dir.path().to_string_lossy());
 
@@ -571,23 +566,19 @@ mod tests {
             });
         remote_storage
             .expect_get_slice()
-            .times(1)
+            .times(4)
             .returning(|path, _range| {
-                assert_eq!(path, Path::new("bar"));
+                assert!(path == Path::new("foo") || path == Path::new("bar"));
+                if path == Path::new("foo") {
+                    return Box::pin(async { Ok(Bytes::from(b"foo".to_vec())) });
+                }
                 Box::pin(async { Ok(Bytes::from(b"data".to_vec())) })
             });
 
         local_storage
             .expect_uri()
-            .times(5)
+            .times(1)
             .returning(move || local_strage_uri.clone());
-        local_storage
-            .expect_get_slice()
-            .times(3)
-            .returning(|path, _range| {
-                assert_eq!(path, Path::new("foo"));
-                Box::pin(async { Ok(Bytes::from(b"foo".to_vec())) })
-            });
         local_storage
             .expect_put()
             .times(1)
@@ -675,7 +666,7 @@ mod tests {
 
         local_storage
             .expect_uri()
-            .times(3)
+            .times(1)
             .returning(move || moved_local_strage_uri.clone());
         local_storage
             .expect_put()
@@ -710,7 +701,6 @@ mod tests {
         let reader = std::io::BufReader::new(json_file);
         let cache_state: CacheState = serde_json::from_reader(reader)
             .with_context(|| "Could not deserialise state".to_string())?;
-        assert_eq!(cache_state.local_storage_uri, local_strage_uri);
         assert_eq!(cache_state.items.len(), 0);
         assert_eq!(
             cache_state
@@ -756,7 +746,6 @@ mod tests {
 
         let state = CacheState::from_path(test_env.local_storage_root.as_path()).unwrap();
         assert_eq!(state.items.len(), 1);
-        assert_eq!(state.local_storage_uri, test_env.local_storage_uri);
         assert_eq!(
             state.disk_capacity,
             DiskCapacity {

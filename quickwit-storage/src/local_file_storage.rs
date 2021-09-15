@@ -233,14 +233,6 @@ impl StorageFactory for LocalFileStorageFactory {
     }
 
     fn resolve(&self, uri: &str) -> StorageResult<Arc<dyn Storage>> {
-        if !uri.starts_with("file://") {
-            let err_msg = anyhow::anyhow!(
-                "{:?} is an invalid file storage uri. Only file:// is accepted.",
-                uri
-            );
-            return Err(StorageErrorKind::DoesNotExist.with_error(err_msg));
-        }
-
         let storage = LocalFileStorage::from_uri(uri)?;
         Ok(Arc::new(storage))
     }
