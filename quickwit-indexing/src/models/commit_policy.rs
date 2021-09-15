@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-const DEFAULT_COMMIT_TIMEOUT: Duration = Duration::from_secs(60);
+const DEFAULT_COMMIT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_NUM_DOCS_COMMIT_THRESHOLD: u64 = 10_000_000;
 
 use std::time::Duration;

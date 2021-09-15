@@ -22,12 +22,12 @@ use std::sync::Arc;
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
-use quickwit_actors::{Actor, ActorContext, AsyncActor, QueueCapacity};
+use quickwit_actors::{Actor, ActorContext, AsyncActor, Mailbox, QueueCapacity};
 use quickwit_metastore::Metastore;
 use tokio::sync::oneshot::Receiver;
 use tracing::info;
 
-use crate::models::{PublishOperation, PublisherMessage};
+use crate::models::{MergePlannerMessage, PublishOperation, PublisherMessage};
 
 #[derive(Debug, Clone, Default)]
 pub struct PublisherCounters {
@@ -35,13 +35,18 @@ pub struct PublisherCounters {
 }
 pub struct Publisher {
     metastore: Arc<dyn Metastore>,
+    merge_planner_mailbox: Mailbox<MergePlannerMessage>,
     counters: PublisherCounters,
 }
 
 impl Publisher {
-    pub fn new(metastore: Arc<dyn Metastore>) -> Publisher {
+    pub fn new(
+        metastore: Arc<dyn Metastore>,
+        merge_planner_mailbox: Mailbox<MergePlannerMessage>,
+    ) -> Publisher {
         Publisher {
             metastore,
+            merge_planner_mailbox,
             counters: PublisherCounters::default(),
         }
     }
@@ -116,10 +121,22 @@ impl AsyncActor for Publisher {
             uploaded_split_future
                 .await
                 .context("Failed to upload split.")? //< splits must be published in order, so one uploaded failing means we should fail
-                                                              //< entirely.
+                                                     //< entirely.
         };
         self.run_publish_operation(&publisher_message).await?;
 
+        let new_splits = publisher_message.operation.extract_new_splits();
+
+        // The merge planner is not necessarily awake and this is not an error.
+        // For instance, when a source reaches its end, and the last "new" split
+        // has been packaged, the packager finalizer sends a message to the merge
+        // planner in order to stop it.
+        let _ = ctx
+            .send_message(
+                &self.merge_planner_mailbox,
+                MergePlannerMessage::NewSplits(new_splits),
+            )
+            .await;
         self.counters.num_published_splits += 1;
         fail_point!("publisher:after");
         Ok(())
@@ -128,7 +145,7 @@ impl AsyncActor for Publisher {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::Universe;
+    use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use quickwit_metastore::{MockMetastore, SplitMetadata};
     use tokio::sync::oneshot;
@@ -157,7 +174,8 @@ mod tests {
             })
             .times(1)
             .returning(|_, _, _| Ok(()));
-        let publisher = Publisher::new(Arc::new(mock_metastore));
+        let (merge_planner_mailbox, _merge_planner_inbox) = create_test_mailbox();
+        let publisher = Publisher::new(Arc::new(mock_metastore), merge_planner_mailbox);
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
         let (split_future_tx1, split_future_rx1) = oneshot::channel::<PublisherMessage>();
@@ -212,7 +230,8 @@ mod tests {
             })
             .times(1)
             .returning(|_, _, _| Ok(()));
-        let publisher = Publisher::new(Arc::new(mock_metastore));
+        let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
+        let publisher = Publisher::new(Arc::new(mock_metastore), merge_planner_mailbox);
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
         let (split_future_tx, split_future_rx) = oneshot::channel::<PublisherMessage>();
@@ -234,5 +253,11 @@ mod tests {
             .is_ok());
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 1);
+        let mut merge_planner_msgs = merge_planner_inbox.drain_available_message_for_test();
+        assert_eq!(merge_planner_msgs.len(), 1);
+        let merge_planner_msg = merge_planner_msgs.pop().unwrap();
+        assert!(
+            matches!(merge_planner_msg, MergePlannerMessage::NewSplits(splits) if splits.len() == 1)
+        )
     }
 }
