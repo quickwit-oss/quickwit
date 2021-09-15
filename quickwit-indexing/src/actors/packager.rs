@@ -280,7 +280,7 @@ impl SyncActor for Packager {
     ) -> anyhow::Result<()> {
         if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
             // We are trying to stop the merge planner.
-            // If merge planner is already dead, this is not an error.
+            // If the merge planner is already dead, this is not an error.
             let _ = ctx
                 .send_message_blocking(merge_planner_mailbox, MergePlannerMessage::EndWithSuccess);
         }

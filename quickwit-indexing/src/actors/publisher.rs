@@ -130,7 +130,7 @@ impl AsyncActor for Publisher {
         // The merge planner is not necessarily awake and this is not an error.
         // For instance, when a source reaches its end, and the last "new" split
         // has been packaged, the packager finalizer sends a message to the merge
-        // in order to stop it.
+        // planner in order to stop it.
         let _ = ctx
             .send_message(
                 &self.merge_planner_mailbox,
