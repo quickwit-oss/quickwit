@@ -391,6 +391,59 @@ impl PostgresqlMetastore {
         Ok(succeeded_split_ids)
     }
 
+    fn delete_splits(
+        &self,
+        conn: &PooledConnection<ConnectionManager<PgConnection>>,
+        index_id: &str,
+        split_ids: &[&str],
+    ) -> MetastoreResult<Vec<String>> {
+        // Select splits to delete.
+        let select_splits_statement = schema::splits::dsl::splits.filter(
+            schema::splits::dsl::index_id
+                .eq(index_id)
+                .and(schema::splits::dsl::split_id.eq_any(split_ids)),
+        );
+        debug!(sql=%debug_query::<Pg, _>(&select_splits_statement).to_string());
+        let model_splits: Vec<model::Split> = select_splits_statement
+            .get_results(conn)
+            .map_err(MetastoreError::DbError)?;
+
+        let mut succeeded_split_ids = Vec::new();
+        for model_split in model_splits {
+            // Check for the inclusion of non-deletable split IDs.
+            // Except for SplitState::Staged and SplitState::ScheduledForDeletion, you cannot delete.
+            if model_split.split_state != SplitState::Staged.to_string()
+                && model_split.split_state != SplitState::ScheduledForDeletion.to_string()
+            {
+                return Err(MetastoreError::Forbidden {
+                    message: format!(
+                        "This split {:?} is not in a deletable state",
+                        model_split.split_id
+                    ),
+                });
+            }
+
+            // Update database.
+            let delete_splits_statement = diesel::delete(
+                schema::splits::dsl::splits.filter(
+                    schema::splits::dsl::index_id
+                        .eq(index_id)
+                        .and(schema::splits::dsl::split_id.eq(model_split.split_id)),
+                ),
+            );
+            debug!(sql=%debug_query::<Pg, _>(&delete_splits_statement).to_string());
+            let deleted_split: model::Split = delete_splits_statement
+                .get_result(&*conn)
+                .map_err(MetastoreError::DbError)?;
+
+            succeeded_split_ids.push(deleted_split.split_id);
+        }
+
+        debug!(index_id=?index_id, split_ids=?succeeded_split_ids, "Deleted");
+
+        Ok(succeeded_split_ids)
+    }
+
     /// Apply checkpoint delta.
     fn apply_checkpoint_delta(
         &self,
@@ -957,30 +1010,16 @@ impl Metastore for PostgresqlMetastore {
         }
 
         conn.transaction::<_, MetastoreError, _>(|| {
-            let delete_splits_statement = diesel::delete(
-                schema::splits::dsl::splits.filter(
-                    schema::splits::dsl::index_id.eq(index_id).and(
-                        schema::splits::dsl::split_id.eq_any(split_ids).and(
-                            schema::splits::dsl::split_state
-                                .eq(SplitState::ScheduledForDeletion.to_string())
-                                .or(schema::splits::dsl::split_state
-                                    .eq(SplitState::Staged.to_string())),
-                        ),
-                    ),
-                ),
-            );
-            debug!(sql=%debug_query::<Pg, _>(&delete_splits_statement).to_string());
-            let deleted_splits: Vec<model::Split> = delete_splits_statement
-                .get_results(&*conn)
-                .map_err(MetastoreError::DbError)?;
+            // Delete splits.
+            let deleted_split_ids = self.delete_splits(&conn, index_id, split_ids)?;
 
-            if deleted_splits.len() < split_ids.len() {
+            if deleted_split_ids.len() < split_ids.len() {
                 // Return an error if there are any splits that could not be deleted.
                 check_all_splits_were_modified(
                     split_ids,
-                    &deleted_splits
+                    &deleted_split_ids
                         .iter()
-                        .map(|split| split.split_id.as_str())
+                        .map(String::as_str)
                         .collect::<Vec<_>>(),
                 )?
             }
