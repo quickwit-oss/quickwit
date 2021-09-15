@@ -411,7 +411,8 @@ impl PostgresqlMetastore {
         let mut succeeded_split_ids = Vec::new();
         for model_split in model_splits {
             // Check for the inclusion of non-deletable split IDs.
-            // Except for SplitState::Staged and SplitState::ScheduledForDeletion, you cannot delete.
+            // Except for SplitState::Staged and SplitState::ScheduledForDeletion, you cannot
+            // delete.
             if model_split.split_state != SplitState::Staged.to_string()
                 && model_split.split_state != SplitState::ScheduledForDeletion.to_string()
             {
