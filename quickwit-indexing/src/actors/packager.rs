@@ -34,7 +34,7 @@ use tantivy::schema::Field;
 use tantivy::{ReloadPolicy, SegmentId, SegmentMeta};
 use tracing::*;
 
-use crate::models::{IndexedSplit, PackagedSplit, ScratchDirectory};
+use crate::models::{IndexedSplit, MergePlannerMessage, PackagedSplit, ScratchDirectory};
 
 /// The role of the packager is to get an index writer and
 /// produce a split file.
@@ -49,14 +49,20 @@ use crate::models::{IndexedSplit, PackagedSplit, ScratchDirectory};
 /// The split format is described in `internals/split-format.md`
 pub struct Packager {
     uploader_mailbox: Mailbox<PackagedSplit>,
+    merge_planner_mailbox_opt: Option<Mailbox<MergePlannerMessage>>,
     /// The special field for extracting tags.
     tags_field: Field,
 }
 
 impl Packager {
-    pub fn new(tags_field: Field, uploader_mailbox: Mailbox<PackagedSplit>) -> Packager {
+    pub fn new(
+        tags_field: Field,
+        uploader_mailbox: Mailbox<PackagedSplit>,
+        merge_planner_mailbox_opt: Option<Mailbox<MergePlannerMessage>>,
+    ) -> Packager {
         Packager {
             uploader_mailbox,
+            merge_planner_mailbox_opt,
             tags_field,
         }
     }
@@ -266,10 +272,25 @@ impl SyncActor for Packager {
         fail_point!("packager:after");
         Ok(())
     }
+
+    fn finalize(
+        &mut self,
+        _exit_status: &quickwit_actors::ActorExitStatus,
+        ctx: &ActorContext<Self::Message>,
+    ) -> anyhow::Result<()> {
+        if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
+            // We are trying to stop the merge planner.
+            // If the merge planner is already dead, this is not an error.
+            let _ = ctx
+                .send_message_blocking(merge_planner_mailbox, MergePlannerMessage::EndWithSuccess);
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::mem;
     use std::ops::RangeInclusive;
     use std::time::Instant;
 
@@ -347,7 +368,7 @@ mod tests {
             .schema()
             .get_field(quickwit_index_config::TAGS_FIELD_NAME)
             .unwrap();
-        let packager = Packager::new(tags_field, mailbox);
+        let packager = Packager::new(tags_field, mailbox, None);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(&packager_mailbox, indexed_split)
@@ -372,7 +393,7 @@ mod tests {
             .schema()
             .get_field(quickwit_index_config::TAGS_FIELD_NAME)
             .unwrap();
-        let packager = Packager::new(tags_field, mailbox);
+        let packager = Packager::new(tags_field, mailbox, None);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(&packager_mailbox, indexed_split)
@@ -383,6 +404,32 @@ mod tests {
         );
         let packaged_splits = inbox.drain_available_message_for_test();
         assert_eq!(packaged_splits.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_packager_stop_merge_planner_on_finalize() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let (mailbox, _inbox) = create_test_mailbox();
+        let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
+
+        let packager = Packager::new(
+            Field::from_field_id(0u32),
+            mailbox,
+            Some(merge_planner_mailbox),
+        );
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
+        // That way the packager will terminate
+        mem::drop(packager_mailbox);
+        packager_handle.join().await;
+        let merge_planner_msgs = merge_planner_inbox.drain_available_message_for_test();
+        assert_eq!(merge_planner_msgs.len(), 1);
+        let merge_planner_msg = merge_planner_msgs.into_iter().next().unwrap();
+        assert!(matches!(
+            merge_planner_msg,
+            MergePlannerMessage::EndWithSuccess
+        ));
         Ok(())
     }
 }

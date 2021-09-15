@@ -17,24 +17,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod commit_policy;
-mod indexed_split;
-mod indexer_message;
-mod indexing_statistics;
-mod merge_planner_message;
-mod merge_scratch;
-mod packaged_split;
-mod publisher_message;
-mod raw_doc_batch;
-mod scratch_directory;
+use crate::merge_policy::MergeOperation;
+use crate::models::ScratchDirectory;
 
-pub use commit_policy::CommitPolicy;
-pub use indexed_split::IndexedSplit;
-pub use indexer_message::IndexerMessage;
-pub use indexing_statistics::IndexingStatistics;
-pub use merge_planner_message::MergePlannerMessage;
-pub use merge_scratch::MergeScratch;
-pub use packaged_split::PackagedSplit;
-pub use publisher_message::{PublishOperation, PublisherMessage};
-pub use raw_doc_batch::RawDocBatch;
-pub use scratch_directory::ScratchDirectory;
+#[derive(Debug)]
+pub struct MergeScratch {
+    pub merge_operation: MergeOperation,
+    /// Scratch directory for computing the merge.
+    pub merge_scratch_directory: ScratchDirectory,
+    pub downloaded_splits_directory: ScratchDirectory,
+}
+
+impl MergeScratch {
+    pub fn into_merge_scratch_directory(self) -> ScratchDirectory {
+        self.merge_scratch_directory
+    }
+}
