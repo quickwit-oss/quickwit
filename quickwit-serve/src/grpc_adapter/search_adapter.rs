@@ -26,8 +26,8 @@ use opentelemetry::propagation::Extractor;
 use quickwit_proto::{
     search_service_server as grpc, LeafSearchStreamRequest, LeafSearchStreamResult,
 };
-use quickwit_search::{SearchError, SearchService, SearchServiceImpl};
-use tracing::*;
+use quickwit_search::{SearchService, SearchServiceImpl};
+use tracing::{instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 struct MetadataMap<'a>(&'a tonic::metadata::MetadataMap);
@@ -73,17 +73,17 @@ impl grpc::SearchService for GrpcSearchAdapter {
     async fn root_search(
         &self,
         request: tonic::Request<quickwit_proto::SearchRequest>,
-    ) -> Result<tonic::Response<quickwit_proto::SearchResult>, tonic::Status> {
+    ) -> Result<tonic::Response<quickwit_proto::SearchResponse>, tonic::Status> {
         let parent_cx =
             global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
         Span::current().set_parent(parent_cx);
         let search_request = request.into_inner();
-        let search_result = self
+        let search_response = self
             .0
             .root_search(search_request)
             .await
-            .map_err(SearchError::convert_to_tonic_status)?;
-        Ok(tonic::Response::new(search_result))
+            .map_err(Into::<tonic::Status>::into)?;
+        Ok(tonic::Response::new(search_response))
     }
 
     #[instrument(skip(self, request))]
@@ -99,7 +99,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
             .0
             .leaf_search(leaf_search_request)
             .await
-            .map_err(SearchError::convert_to_tonic_status)?;
+            .map_err(Into::<tonic::Status>::into)?;
         Ok(tonic::Response::new(leaf_search_result))
     }
 
@@ -116,7 +116,7 @@ impl grpc::SearchService for GrpcSearchAdapter {
             .0
             .fetch_docs(fetch_docs_request)
             .await
-            .map_err(SearchError::convert_to_tonic_status)?;
+            .map_err(Into::<tonic::Status>::into)?;
         Ok(tonic::Response::new(fetch_docs_result))
     }
 
@@ -138,8 +138,8 @@ impl grpc::SearchService for GrpcSearchAdapter {
             .0
             .leaf_search_stream(leaf_search_request)
             .await
-            .map_err(SearchError::convert_to_tonic_status)?
-            .map_err(SearchError::convert_to_tonic_status);
+            .map_err(Into::<tonic::Status>::into)?
+            .map_err(Into::<tonic::Status>::into);
         Ok(tonic::Response::new(Box::pin(leaf_search_result)))
     }
 }

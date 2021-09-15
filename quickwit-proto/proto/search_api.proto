@@ -28,7 +28,7 @@ service SearchService {
   // and dispatch the several calls to `LeafSearch`.
   //
   // It is also in charge of merging back the results.
-  rpc RootSearch(SearchRequest) returns (SearchResult);
+  rpc RootSearch(SearchRequest) returns (SearchResponse);
 
   // Perform a leaf search on a given set of splits.
   //
@@ -77,7 +77,7 @@ message SearchRequest {
   repeated string tags = 8;
 }
 
-message SearchResult {
+message SearchResponse {
   // Number of hits matching the query.
   uint64 num_hits = 1;
   // Matched hits

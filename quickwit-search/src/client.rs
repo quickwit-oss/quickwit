@@ -107,7 +107,7 @@ impl SearchServiceClient {
     pub async fn root_search(
         &mut self,
         request: quickwit_proto::SearchRequest,
-    ) -> Result<quickwit_proto::SearchResult, SearchError> {
+    ) -> Result<quickwit_proto::SearchResponse, SearchError> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);

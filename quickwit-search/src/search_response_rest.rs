@@ -17,39 +17,45 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use serde::Serialize;
-use tracing::error;
+use std::convert::TryFrom;
 
-/// SearchResultsJson represents the result returned by the rest search API
-/// and is meant to be serialized into Json.
+use serde::Serialize;
+
+use crate::error::SearchError;
+
+/// SearchResponseRest represents the response returned by the REST search API
+/// and is meant to be serialized into JSON.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SearchResultJson {
-    /// Overall number of document matching the query.
+pub struct SearchResponseRest {
+    /// Overall number of documents matching the query.
     pub num_hits: u64,
     /// List of hits returned.
     pub hits: Vec<serde_json::Value>,
     /// Elapsed time.
-    pub num_microsecs: u64,
+    pub elapsed_time_micros: u64,
 }
 
-impl From<quickwit_proto::SearchResult> for SearchResultJson {
-    fn from(search_result: quickwit_proto::SearchResult) -> Self {
-        let hits: Vec<serde_json::Value> = search_result
+impl TryFrom<quickwit_proto::SearchResponse> for SearchResponseRest {
+    type Error = SearchError;
+
+    fn try_from(search_response: quickwit_proto::SearchResponse) -> Result<Self, Self::Error> {
+        let hits = search_response
             .hits
             .into_iter()
-            .map(|hit| match serde_json::from_str(&hit.json) {
-                Ok(hit_json) => hit_json,
-                Err(invalid_json) => {
-                    error!(err=?invalid_json, "Invalid json in hit");
-                    serde_json::json!({})
-                }
+            .map(|hit| {
+                serde_json::from_str(&hit.json).map_err(|err| {
+                    SearchError::InternalError(format!(
+                        "Failed to serialize document `{}` to JSON: `{}`.",
+                        hit.json, err
+                    ))
+                })
             })
-            .collect();
-        SearchResultJson {
-            num_hits: search_result.num_hits,
+            .collect::<crate::Result<Vec<serde_json::Value>>>()?;
+        Ok(SearchResponseRest {
+            num_hits: search_response.num_hits,
             hits,
-            num_microsecs: search_result.elapsed_time_micros,
-        }
+            elapsed_time_micros: search_response.elapsed_time_micros,
+        })
     }
 }

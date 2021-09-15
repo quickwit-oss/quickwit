@@ -30,7 +30,7 @@ mod filters;
 mod leaf;
 mod rendezvous_hasher;
 mod root;
-mod search_result_json;
+mod search_response_rest;
 mod search_stream;
 mod service;
 
@@ -43,7 +43,7 @@ use std::ops::Range;
 
 use anyhow::Context;
 use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadataAndFooterOffsets, SplitState};
-use quickwit_proto::{PartialHit, SearchRequest, SearchResult, SplitIdAndFooterOffsets};
+use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
 use tantivy::DocAddress;
 
@@ -54,7 +54,7 @@ pub use crate::error::SearchError;
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
 pub use crate::root::root_search;
-pub use crate::search_result_json::SearchResultJson;
+pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 
@@ -156,7 +156,7 @@ pub async fn single_node_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
     storage_resolver: StorageUriResolver,
-) -> Result<SearchResult> {
+) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let index_storage = storage_resolver.resolve(&index_metadata.index_uri)?;
@@ -171,16 +171,16 @@ pub async fn single_node_search(
         index_config,
     )
     .await
-    .with_context(|| "leaf_search")?;
+    .context("Failed to perform leaf search.")?;
     let fetch_docs_result = fetch_docs(
         leaf_search_result.partial_hits,
         index_storage,
         &split_metadata,
     )
     .await
-    .with_context(|| "fetch_request")?;
+    .context("Failed to perform fetch docs.")?;
     let elapsed = start_instant.elapsed();
-    Ok(SearchResult {
+    Ok(SearchResponse {
         num_hits: leaf_search_result.num_hits,
         hits: fetch_docs_result.hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
@@ -332,16 +332,16 @@ mod tests {
             start_offset: 0,
             tags: vec![],
         };
-        let single_node_result = single_node_search(
+        let single_node_response = single_node_search(
             &search_request,
             &*test_sandbox.metastore(),
             test_sandbox.storage_uri_resolver(),
         )
         .await?;
-        assert_eq!(single_node_result.num_hits, 10);
-        assert_eq!(single_node_result.hits.len(), 10);
-        assert!(&single_node_result.hits[0].json.contains("t:19"));
-        assert!(&single_node_result.hits[9].json.contains("t:10"));
+        assert_eq!(single_node_response.num_hits, 10);
+        assert_eq!(single_node_response.hits.len(), 10);
+        assert!(&single_node_response.hits[0].json.contains("t:19"));
+        assert!(&single_node_response.hits[9].json.contains("t:10"));
 
         // filter on time range [i64::MIN 20[ should only hit first 19 docs because of filtering
         let search_request = SearchRequest {
@@ -354,16 +354,16 @@ mod tests {
             start_offset: 0,
             tags: vec![],
         };
-        let single_node_result = single_node_search(
+        let single_node_response = single_node_search(
             &search_request,
             &*test_sandbox.metastore(),
             test_sandbox.storage_uri_resolver(),
         )
         .await?;
-        assert_eq!(single_node_result.num_hits, 19);
-        assert_eq!(single_node_result.hits.len(), 19);
-        assert!(&single_node_result.hits[0].json.contains("t:19"));
-        assert!(&single_node_result.hits[18].json.contains("t:1"));
+        assert_eq!(single_node_response.num_hits, 19);
+        assert_eq!(single_node_response.hits.len(), 19);
+        assert!(&single_node_response.hits[0].json.contains("t:19"));
+        assert!(&single_node_response.hits[18].json.contains("t:1"));
 
         // filter on tag, should not return any hit since no split is tagged
         let search_request = SearchRequest {
@@ -376,14 +376,14 @@ mod tests {
             start_offset: 0,
             tags: vec!["foo".to_string()],
         };
-        let single_node_result = single_node_search(
+        let single_node_response = single_node_search(
             &search_request,
             &*test_sandbox.metastore(),
             test_sandbox.storage_uri_resolver(),
         )
         .await?;
-        assert_eq!(single_node_result.num_hits, 0);
-        assert_eq!(single_node_result.hits.len(), 0);
+        assert_eq!(single_node_response.num_hits, 0);
+        assert_eq!(single_node_response.hits.len(), 0);
 
         Ok(())
     }

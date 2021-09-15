@@ -35,7 +35,7 @@ pub struct SearchRequest {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SearchResult {
+pub struct SearchResponse {
     /// Number of hits matching the query.
     #[prost(uint64, tag = "1")]
     pub num_hits: u64,
@@ -326,7 +326,7 @@ pub mod search_service_client {
         pub async fn root_search(
             &mut self,
             request: impl tonic::IntoRequest<super::SearchRequest>,
-        ) -> Result<tonic::Response<super::SearchResult>, tonic::Status> {
+        ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
@@ -412,7 +412,7 @@ pub mod search_service_server {
         async fn root_search(
             &self,
             request: tonic::Request<super::SearchRequest>,
-        ) -> Result<tonic::Response<super::SearchResult>, tonic::Status>;
+        ) -> Result<tonic::Response<super::SearchResponse>, tonic::Status>;
         #[doc = " Perform a leaf search on a given set of splits."]
         #[doc = ""]
         #[doc = " It is like a regular search except that:"]
@@ -484,7 +484,7 @@ pub mod search_service_server {
                     #[allow(non_camel_case_types)]
                     struct RootSearchSvc<T: SearchService>(pub Arc<T>);
                     impl<T: SearchService> tonic::server::UnaryService<super::SearchRequest> for RootSearchSvc<T> {
-                        type Response = super::SearchResult;
+                        type Response = super::SearchResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
