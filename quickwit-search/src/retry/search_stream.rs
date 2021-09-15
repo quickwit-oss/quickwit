@@ -23,59 +23,46 @@ use tokio::sync::mpsc::error::SendError;
 use super::RetryPolicy;
 use crate::SearchError;
 
+pub struct SuccessfullSplitIds(pub Vec<String>);
+
 /// Retry policy for consuming the result stream of a LeafSearchStreamRequest.
 /// A retry is only made if there are some missing splits.
 /// As errors only come from a closed receiver, we ignore them.
 pub struct LeafSearchStreamRetryPolicy {}
 
-pub type SuccessFullSplitIds = Vec<String>;
-
 impl
     RetryPolicy<
         LeafSearchStreamRequest,
-        SuccessFullSplitIds,
+        SuccessfullSplitIds,
         SendError<Result<LeafSearchStreamResult, SearchError>>,
     > for LeafSearchStreamRetryPolicy
 {
-    // Retry only if there are failing split ids.
-    // Errors are only happening if the result receiver is closed and
-    // retrying in this case is useless.
-    fn should_retry(
-        &self,
-        request: &LeafSearchStreamRequest,
-        result: Result<
-            &SuccessFullSplitIds,
-            &SendError<Result<LeafSearchStreamResult, SearchError>>,
-        >,
-    ) -> bool {
-        match result {
-            Ok(response) => response.len() != request.split_metadata.len(),
-            Err(_) => false,
-        }
-    }
-
-    // Builds a retry request on failing split ids only.
+    // Returns a retry request that is either:
+    // - a clone of the initial request on error
+    // - or a request on failing split ids only.
     fn retry_request(
         &self,
         request: &LeafSearchStreamRequest,
         result: Result<
-            &SuccessFullSplitIds,
+            &SuccessfullSplitIds,
             &SendError<Result<LeafSearchStreamResult, SearchError>>,
         >,
-    ) -> LeafSearchStreamRequest {
-        let mut request_clone = request.clone();
+    ) -> Option<LeafSearchStreamRequest> {
         match result {
             Ok(response) => {
-                if response.len() != request.split_metadata.len() {
-                    request_clone.split_metadata.retain(|split_metadata| {
-                        !response
-                            .iter()
-                            .any(|split_id| *split_id == split_metadata.split_id)
-                    });
+                if response.0.len() == request.split_metadata.len() {
+                    return None;
                 }
-                request_clone
+                let mut request_clone = request.clone();
+                request_clone.split_metadata.retain(|split_metadata| {
+                    !response
+                        .0
+                        .iter()
+                        .any(|split_id| *split_id == split_metadata.split_id)
+                });
+                Some(request_clone)
             }
-            Err(_) => request_clone,
+            Err(_) => Some(request.clone()),
         }
     }
 }
@@ -127,7 +114,9 @@ mod tests {
         let result = Result::<LeafSearchResult, SearchError>::Err(SearchError::InternalError(
             "test".to_string(),
         ));
-        let retry = retry_policy.should_retry(&request, result.as_ref());
+        let retry = retry_policy
+            .retry_request(&request, result.as_ref())
+            .is_some();
         assert!(retry);
         Ok(())
     }
@@ -143,7 +132,9 @@ mod tests {
             num_attempted_splits: 1,
         };
         let result = Result::<LeafSearchResult, SearchError>::Ok(leaf_response);
-        let retry = retry_policy.should_retry(&request, result.as_ref());
+        let retry = retry_policy
+            .retry_request(&request, result.as_ref())
+            .is_some();
         assert_eq!(retry, false);
         Ok(())
     }
@@ -166,10 +157,9 @@ mod tests {
             num_attempted_splits: 1,
         };
         let result = Result::<LeafSearchResult, SearchError>::Ok(leaf_response);
-        let retry = retry_policy.should_retry(&request, result.as_ref());
         let retry_request = retry_policy.retry_request(&request, result.as_ref());
-        assert!(retry);
-        assert_eq!(retry_request, expected_retry_request);
+        assert!(retry_request.is_some());
+        assert_eq!(retry_request.unwrap(), expected_retry_request);
         Ok(())
     }
 }

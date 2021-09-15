@@ -164,36 +164,33 @@ impl SearchServiceClient {
                         &mut MetadataMap(tonic_request.metadata_mut()),
                     )
                 });
-                let tonic_result = grpc_client_clone
-                    .leaf_search_stream(tonic_request)
-                    .await
-                    .map_err(|tonic_error| parse_grpc_error(&tonic_error));
                 let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-                // Propagate the tonic error with the channel.
-                // This may sound quirky but this makes errors handling easier when you want to
-                // retry on a stream.
-                if tonic_result.is_err() {
-                    // Receiver cannot be closed here, ignore error.
-                    let _ = result_sender.send(Err(tonic_result.unwrap_err()));
-                } else {
-                    tokio::spawn(
-                        async move {
-                            let mut results_stream = tonic_result
-                                .unwrap()
-                                .into_inner()
-                                .map_err(|tonic_error| parse_grpc_error(&tonic_error));
-                            while let Some(search_result) = results_stream.next().await {
-                                result_sender.send(search_result).map_err(|_| {
-                                    SearchError::InternalError(
-                                        "Sender closed, could not send leaf result.".into(),
-                                    )
-                                })?;
-                            }
-                            Result::<_, SearchError>::Ok(())
+                tokio::spawn(
+                    async move {
+                        let tonic_result = grpc_client_clone
+                            .leaf_search_stream(tonic_request)
+                            .await
+                            .map_err(|tonic_error| parse_grpc_error(&tonic_error));
+                        // If the grpc client fails, send the error in the channel and stop.
+                        if let Err(error) = tonic_result {
+                            // It is ok to ignore error sending error.
+                            let _ = result_sender.send(Err(error));
+                            return;
                         }
-                        .instrument(span),
-                    );
-                }
+                        let mut results_stream = tonic_result
+                            .unwrap()
+                            .into_inner()
+                            .map_err(|tonic_error| parse_grpc_error(&tonic_error));
+                        while let Some(search_result) = results_stream.next().await {
+                            let send_result = result_sender.send(search_result);
+                            // If we get a sending error, stop consuming the stream.
+                            if send_result.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                    .instrument(span),
+                );
                 UnboundedReceiverStream::new(result_receiver)
             }
             SearchServiceClientImpl::Local(service) => {

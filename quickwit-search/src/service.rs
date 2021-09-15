@@ -113,10 +113,7 @@ fn deserialize_index_config(index_config_str: &str) -> crate::Result<Arc<dyn Ind
 
 #[async_trait]
 impl SearchService for SearchServiceImpl {
-    async fn root_search(
-        &self,
-        search_request: SearchRequest,
-    ) -> crate::Result<SearchResponse> {
+    async fn root_search(&self, search_request: SearchRequest) -> crate::Result<SearchResponse> {
         let search_result = root_search(
             &search_request,
             self.metastore.as_ref(),

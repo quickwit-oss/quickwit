@@ -30,17 +30,12 @@ use crate::client_pool::Job;
 use crate::{ClientPool, SearchClientPool, SearchServiceClient};
 
 /// A retry policy to evaluate if a request should be retried.
+/// A retry can be made either on an error or on a partial success.
 pub trait RetryPolicy<Request, Response, Error>: Sized
 where Request: RequestOnSplit + Clone
 {
-    /// Checks the policy if a certain request should be retried.
-    fn should_retry(&self, req: &Request, result: Result<&Response, &Error>) -> bool;
-
-    /// Returns the request to use for retry.
-    /// By default, clone the original request.
-    fn retry_request(&self, req: &Request, _result: Result<&Response, &Error>) -> Request {
-        req.clone()
-    }
+    /// Returns a retry request in case of retry.
+    fn retry_request(&self, req: &Request, _result: Result<&Response, &Error>) -> Option<Request>;
 }
 
 /// Default retry policy:
@@ -51,8 +46,11 @@ pub struct DefaultRetryPolicy {}
 impl<Request, Response, Error> RetryPolicy<Request, Response, Error> for DefaultRetryPolicy
 where Request: RequestOnSplit + Clone
 {
-    fn should_retry(&self, _req: &Request, result: Result<&Response, &Error>) -> bool {
-        result.is_err()
+    fn retry_request(&self, req: &Request, result: Result<&Response, &Error>) -> Option<Request> {
+        match result {
+            Ok(_) => None,
+            Err(_) => Some(req.clone()),
+        }
     }
 }
 
@@ -144,7 +142,9 @@ mod tests {
         let retry_policy = DefaultRetryPolicy {};
         let request = mock_doc_request();
         let result = Result::<(), SearchError>::Err(SearchError::InternalError("test".to_string()));
-        let retry = retry_policy.should_retry(&request, result.as_ref());
+        let retry = retry_policy
+            .retry_request(&request, result.as_ref())
+            .is_some();
         assert!(retry);
         Ok(())
     }
@@ -154,7 +154,9 @@ mod tests {
         let retry_policy = DefaultRetryPolicy {};
         let request = mock_doc_request();
         let result = Result::<FetchDocsResult, SearchError>::Ok(FetchDocsResult { hits: vec![] });
-        let retry = retry_policy.should_retry(&request, result.as_ref());
+        let retry = retry_policy
+            .retry_request(&request, result.as_ref())
+            .is_some();
         assert_eq!(retry, false);
         Ok(())
     }

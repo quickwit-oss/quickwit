@@ -30,7 +30,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::debug;
 
 use crate::retry::search::LeafSearchRetryPolicy;
-use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessFullSplitIds};
+use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfullSplitIds};
 use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
 use crate::{SearchClientPool, SearchError, SearchServiceClient};
 
@@ -56,8 +56,7 @@ impl ClusterClient {
         let (request, mut client) = placed_request;
         let mut result = client.fetch_docs(request.clone()).await;
         let retry_policy = DefaultRetryPolicy {};
-        if retry_policy.should_retry(&request, result.as_ref()) {
-            let retry_request = retry_policy.retry_request(&request, result.as_ref());
+        if let Some(retry_request) = retry_policy.retry_request(&request, result.as_ref()) {
             client = retry_client(&self.client_pool, &client, &retry_request).await?;
             debug!(
                 "Fetch docs response error: `{:?}`. Retry once to execute {:?} with {:?}",
@@ -76,8 +75,7 @@ impl ClusterClient {
         let (request, mut client) = placed_request;
         let mut result = client.leaf_search(request.clone()).await;
         let retry_policy = LeafSearchRetryPolicy {};
-        if retry_policy.should_retry(&request, result.as_ref()) {
-            let retry_request = retry_policy.retry_request(&request, result.as_ref());
+        if let Some(retry_request) = retry_policy.retry_request(&request, result.as_ref()) {
             client = retry_client(&self.client_pool, &client, &retry_request).await?;
             debug!(
                 "Leaf search response error: `{:?}`. Retry once to execute {:?} with {:?}",
@@ -100,11 +98,13 @@ impl ClusterClient {
         let client_pool = self.client_pool.clone();
         let retry_policy = LeafSearchStreamRetryPolicy {};
         tokio::spawn(async move {
-            let results_stream = client.leaf_search_stream(request.clone()).await;
+            let result_stream = client.leaf_search_stream(request.clone()).await;
+            // Forward only ok(response) to the sender as we will retry on failing splits.
             let forward_result =
-                forward_leaf_search_stream(results_stream, result_sender.clone(), true).await;
-            if retry_policy.should_retry(&request, forward_result.as_ref()) {
-                let retry_request = retry_policy.retry_request(&request, forward_result.as_ref());
+                forward_leaf_search_stream(result_stream, result_sender.clone(), false).await;
+            if let Some(retry_request) =
+                retry_policy.retry_request(&request, forward_result.as_ref())
+            {
                 let retry_client_opt = retry_client(&client_pool, &client, &retry_request).await;
                 // Propagates the error if we cannot get a new client and stops the task.
                 if let Err(error) = retry_client_opt {
@@ -117,9 +117,10 @@ impl ClusterClient {
                     retry_request, client
                 );
                 let retry_results_stream = retry_client.leaf_search_stream(retry_request).await;
+                // Forward all results to the result_sender as we won't do another retry.
                 // It is ok to ignore send errors, there is nothing else to do.
                 let _ =
-                    forward_leaf_search_stream(retry_results_stream, result_sender.clone(), false)
+                    forward_leaf_search_stream(retry_results_stream, result_sender.clone(), true)
                         .await;
             }
         });
@@ -153,28 +154,30 @@ fn merge_leaf_search_result(
     }
 }
 
+// Forward leaf search stream results into a sender and
+// returns the split ids of Ok(response).
+// If `send_error` is false, errors are ignored and not forwarded. This is
+// useful if you want to make a retry before propagating errors.
 async fn forward_leaf_search_stream(
     mut stream: UnboundedReceiverStream<Result<LeafSearchStreamResult, SearchError>>,
     sender: UnboundedSender<Result<LeafSearchStreamResult, SearchError>>,
-    stop_on_error: bool,
-) -> Result<SuccessFullSplitIds, SendError<Result<LeafSearchStreamResult, SearchError>>> {
-    let mut sucessful_split_ids: Vec<String> = Vec::new();
+    send_error: bool,
+) -> Result<SuccessfullSplitIds, SendError<Result<LeafSearchStreamResult, SearchError>>> {
+    let mut successful_split_ids: Vec<String> = Vec::new();
     while let Some(result) = stream.next().await {
         match result {
             Ok(response) => {
-                sucessful_split_ids.push(response.split_id.clone());
+                successful_split_ids.push(response.split_id.clone());
                 sender.send(Ok(response))?;
             }
             Err(error) => {
-                if stop_on_error {
-                    break;
-                } else {
+                if send_error {
                     sender.send(Err(error))?;
                 }
             }
         }
     }
-    Ok(sucessful_split_ids)
+    Ok(SuccessfullSplitIds(successful_split_ids))
 }
 
 #[cfg(test)]

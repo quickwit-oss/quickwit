@@ -55,7 +55,6 @@ pub async fn root_search(
     client_pool: &Arc<SearchClientPool>,
 ) -> Result<SearchResponse, SearchError> {
     let start_instant = tokio::time::Instant::now();
-    // TODO: inject cluster client in search service directly.
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let index_config_str = serde_json::to_string(&index_metadata.index_config)
         .map_err(|error| SearchError::InternalError(error.to_string()))?;
@@ -241,7 +240,6 @@ fn jobs_to_fetch_docs_request(
 
 #[cfg(test)]
 mod tests {
-    use std::convert::TryFrom;
     use std::ops::Range;
 
     use quickwit_index_config::WikipediaIndexConfig;
@@ -251,7 +249,7 @@ mod tests {
     use quickwit_proto::SplitSearchError;
 
     use super::*;
-    use crate::{MockSearchService, SearchResponseRest};
+    use crate::MockSearchService;
 
     fn mock_partial_hit(
         split_id: &str,

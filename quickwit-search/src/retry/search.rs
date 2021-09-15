@@ -28,38 +28,27 @@ use crate::SearchError;
 pub struct LeafSearchRetryPolicy {}
 
 impl RetryPolicy<LeafSearchRequest, LeafSearchResult, SearchError> for LeafSearchRetryPolicy {
-    // Retry either on error or if there are failing split ids AND if attempts > 0.
-    fn should_retry(
-        &self,
-        _request: &LeafSearchRequest,
-        result: Result<&LeafSearchResult, &SearchError>,
-    ) -> bool {
-        match result {
-            Ok(response) => !response.failed_splits.is_empty(),
-            Err(_) => true,
-        }
-    }
-
     // Build a retry request on failing split ids only.
     fn retry_request(
         &self,
         request: &LeafSearchRequest,
         result: Result<&LeafSearchResult, &SearchError>,
-    ) -> LeafSearchRequest {
-        let mut request_clone = request.clone();
+    ) -> Option<LeafSearchRequest> {
         match result {
             Ok(response) => {
-                if !response.failed_splits.is_empty() {
-                    request_clone.split_metadata.retain(|split_metadata| {
-                        response
-                            .failed_splits
-                            .iter()
-                            .any(|failed_split| failed_split.split_id == split_metadata.split_id)
-                    });
+                if response.failed_splits.is_empty() {
+                    return None;
                 }
-                request_clone
+                let mut request_clone = request.clone();
+                request_clone.split_metadata.retain(|split_metadata| {
+                    response
+                        .failed_splits
+                        .iter()
+                        .any(|failed_split| failed_split.split_id == split_metadata.split_id)
+                });
+                Some(request_clone)
             }
-            Err(_) => request_clone,
+            Err(_) => Some(request.clone()),
         }
     }
 }
@@ -111,7 +100,9 @@ mod tests {
         let result = Result::<LeafSearchResult, SearchError>::Err(SearchError::InternalError(
             "test".to_string(),
         ));
-        let retry = retry_policy.should_retry(&request, result.as_ref());
+        let retry = retry_policy
+            .retry_request(&request, result.as_ref())
+            .is_some();
         assert!(retry);
         Ok(())
     }
@@ -127,7 +118,9 @@ mod tests {
             num_attempted_splits: 1,
         };
         let result = Result::<LeafSearchResult, SearchError>::Ok(leaf_response);
-        let retry = retry_policy.should_retry(&request, result.as_ref());
+        let retry = retry_policy
+            .retry_request(&request, result.as_ref())
+            .is_some();
         assert!(!retry);
         Ok(())
     }
@@ -150,10 +143,9 @@ mod tests {
             num_attempted_splits: 1,
         };
         let result = Result::<LeafSearchResult, SearchError>::Ok(leaf_response);
-        let retry = retry_policy.should_retry(&request, result.as_ref());
         let retry_request = retry_policy.retry_request(&request, result.as_ref());
-        assert!(retry);
-        assert_eq!(retry_request, expected_retry_request);
+        assert!(retry_request.is_some());
+        assert_eq!(retry_request.unwrap(), expected_retry_request);
         Ok(())
     }
 }
