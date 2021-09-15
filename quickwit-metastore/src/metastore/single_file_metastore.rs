@@ -133,6 +133,16 @@ impl SingleFileMetastore {
         let metadata_set = serde_json::from_slice::<MetadataSet>(&content[..])
             .map_err(|serde_err| MetastoreError::InvalidManifest { cause: serde_err })?;
 
+        if metadata_set.index.index_id != index_id {
+            return Err(MetastoreError::InternalError {
+                message: "Inconsistent manifest: index_id mismatch.".to_string(),
+                cause: anyhow::anyhow!(format!(
+                    "Expected index_id `{}`, but found `{}`",
+                    index_id, metadata_set.index.index_id
+                )),
+            });
+        }
+
         // Finally, update the cache accordingly
         let mut cache = self.cache.write().await;
         cache.insert(index_id.to_string(), metadata_set.clone());
