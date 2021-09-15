@@ -230,7 +230,8 @@ mod tests {
             })
             .times(1)
             .returning(|_, _, _| Ok(()));
-        let publisher = Publisher::new(Arc::new(mock_metastore));
+        let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
+        let publisher = Publisher::new(Arc::new(mock_metastore), merge_planner_mailbox);
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
         let (split_future_tx, split_future_rx) = oneshot::channel::<PublisherMessage>();
@@ -252,5 +253,11 @@ mod tests {
             .is_ok());
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 1);
+        let mut merge_planner_msgs = merge_planner_inbox.drain_available_message_for_test();
+        assert_eq!(merge_planner_msgs.len(), 1);
+        let merge_planner_msg = merge_planner_msgs.pop().unwrap();
+        assert!(
+            matches!(merge_planner_msg, MergePlannerMessage::NewSplits(splits) if splits.len() == 1)
+        )
     }
 }
