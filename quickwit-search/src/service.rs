@@ -25,7 +25,7 @@ use quickwit_index_config::IndexConfig;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult,
-    LeafSearchStreamRequest, LeafSearchStreamResult, SearchRequest, SearchResult,
+    LeafSearchStreamRequest, LeafSearchStreamResult, SearchRequest, SearchResponse,
     SearchStreamRequest,
 };
 use quickwit_storage::StorageUriResolver;
@@ -45,51 +45,45 @@ pub struct SearchServiceImpl {
 
 /// Trait representing a search service.
 ///
-/// It mirrors the grpc service SearchService, but with a more concrete
-/// error type that can be converted into API Error.
-/// The rest API relies directly on the SearchService.
+/// It mirrors the gRPC service `SearchService`, but with a more concrete
+/// error type that can be converted into an API Error.
+/// The REST API relies directly on the `SearchService`.
 /// Also, it is mockable.
 #[mockall::automock]
 #[async_trait]
 pub trait SearchService: 'static + Send + Sync {
     /// Root search API.
     /// This RPC identifies the set of splits on which the query should run on,
-    /// and dispatch the several calls to `LeafSearch`.
+    /// and dispatches the multiple calls to `LeafSearch`.
     ///
-    /// It is also in charge of merging back the results.
-    async fn root_search(&self, request: SearchRequest) -> Result<SearchResult, SearchError>;
+    /// It is also in charge of merging back the responses.
+    async fn root_search(&self, request: SearchRequest) -> crate::Result<SearchResponse>;
 
-    /// Perform a leaf search on a given set of splits.
+    /// Performs a leaf search on a given set of splits.
     ///
     /// It is like a regular search except that:
     /// - the node should perform the search locally instead of dispatching
     /// it to other nodes.
     /// - it should be applied on the given subset of splits
-    /// - Hit content is not fetched, and we instead return so called `PartialHit`.
-    async fn leaf_search(
-        &self,
-        _request: LeafSearchRequest,
-    ) -> Result<LeafSearchResult, SearchError>;
+    /// - hit content is not fetched, and we instead return a so-called `PartialHit`.
+    async fn leaf_search(&self, request: LeafSearchRequest) -> crate::Result<LeafSearchResult>;
 
     /// Fetches the documents contents from the document store.
     /// This methods takes `PartialHit`s and returns `Hit`s.
-    async fn fetch_docs(&self, _request: FetchDocsRequest) -> Result<FetchDocsResult, SearchError>;
+    async fn fetch_docs(&self, request: FetchDocsRequest) -> crate::Result<FetchDocsResult>;
 
-    /// Perfomrs a root search returning a receiver for streaming
-    async fn root_search_stream(
-        &self,
-        _request: SearchStreamRequest,
-    ) -> Result<Vec<Bytes>, SearchError>;
+    /// Performs a root search returning a receiver for streaming
+    async fn root_search_stream(&self, request: SearchStreamRequest) -> crate::Result<Vec<Bytes>>;
 
-    /// Perform a leaf search on a given set of splits and return a stream.
+    /// Performs a leaf search on a given set of splits and returns a stream.
     async fn leaf_search_stream(
         &self,
-        _request: LeafSearchStreamRequest,
+        request: LeafSearchStreamRequest,
     ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>>>;
 }
 
 impl SearchServiceImpl {
-    /// Create search service
+    /// Creates a new search service.
     pub fn new(
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
@@ -103,11 +97,11 @@ impl SearchServiceImpl {
     }
 }
 
-fn deserialize_index_config(index_config_str: &str) -> Result<Arc<dyn IndexConfig>, SearchError> {
+fn deserialize_index_config(index_config_str: &str) -> crate::Result<Arc<dyn IndexConfig>> {
     let index_config =
         serde_json::from_str::<Arc<dyn IndexConfig>>(index_config_str).map_err(|err| {
             SearchError::InternalError(format!(
-                "Could not deserialize index config {}",
+                "Failed to deserialize index config: `{}`",
                 err.to_string()
             ))
         })?;
@@ -116,20 +110,16 @@ fn deserialize_index_config(index_config_str: &str) -> Result<Arc<dyn IndexConfi
 
 #[async_trait]
 impl SearchService for SearchServiceImpl {
-    async fn root_search(
-        &self,
-        search_request: SearchRequest,
-    ) -> Result<SearchResult, SearchError> {
-        let search_result =
+    async fn root_search(&self, search_request: SearchRequest) -> crate::Result<SearchResponse> {
+        let search_response =
             root_search(&search_request, self.metastore.as_ref(), &self.client_pool).await?;
-
-        Ok(search_result)
+        Ok(search_response)
     }
 
     async fn leaf_search(
         &self,
         leaf_search_request: LeafSearchRequest,
-    ) -> Result<LeafSearchResult, SearchError> {
+    ) -> crate::Result<LeafSearchResult> {
         let search_request = leaf_search_request
             .search_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
@@ -154,7 +144,7 @@ impl SearchService for SearchServiceImpl {
     async fn fetch_docs(
         &self,
         fetch_docs_request: FetchDocsRequest,
-    ) -> Result<FetchDocsResult, SearchError> {
+    ) -> crate::Result<FetchDocsResult> {
         let storage = self
             .storage_resolver
             .resolve(&fetch_docs_request.index_uri)?;
@@ -172,7 +162,7 @@ impl SearchService for SearchServiceImpl {
     async fn root_search_stream(
         &self,
         stream_request: SearchStreamRequest,
-    ) -> Result<Vec<Bytes>, SearchError> {
+    ) -> crate::Result<Vec<Bytes>> {
         let data =
             root_search_stream(&stream_request, self.metastore.as_ref(), &self.client_pool).await?;
         Ok(data)

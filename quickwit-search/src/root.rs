@@ -25,12 +25,12 @@ use itertools::Itertools;
 use quickwit_metastore::{IndexMetadata, Metastore, SplitMetadata, SplitMetadataAndFooterOffsets};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResult, Hit, LeafSearchRequest, LeafSearchResult, PartialHit,
-    SearchRequest, SearchResult, SplitIdAndFooterOffsets, SplitSearchError,
+    SearchRequest, SearchResponse, SplitIdAndFooterOffsets, SplitSearchError,
 };
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
 use tokio::task::{spawn_blocking, JoinHandle};
-use tracing::*;
+use tracing::{debug, error, info, info_span, instrument, Instrument};
 
 use crate::client_pool::Job;
 use crate::collector::make_merge_collector;
@@ -215,7 +215,7 @@ pub async fn root_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
     client_pool: &Arc<SearchClientPool>,
-) -> Result<SearchResult, SearchError> {
+) -> Result<SearchResponse, SearchError> {
     let start_instant = tokio::time::Instant::now();
 
     // Create a job for leaf node search and assign the splits that the node is responsible for
@@ -459,7 +459,7 @@ pub async fn root_search(
 
     let elapsed = start_instant.elapsed();
 
-    Ok(SearchResult {
+    Ok(SearchResponse {
         num_hits: leaf_search_result.num_hits,
         hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
@@ -469,6 +469,7 @@ pub async fn root_search(
 
 #[cfg(test)]
 mod tests {
+    use std::convert::TryFrom;
     use std::ops::Range;
 
     use quickwit_index_config::WikipediaIndexConfig;
@@ -478,7 +479,7 @@ mod tests {
     use quickwit_proto::SplitSearchError;
 
     use super::*;
-    use crate::{MockSearchService, SearchResultJson};
+    use crate::{MockSearchService, SearchResponseRest};
 
     fn mock_partial_hit(
         split_id: &str,
@@ -520,8 +521,6 @@ mod tests {
             start_offset: 0,
             tags: vec![],
         };
-        println!("search_request={:?}", search_request);
-
         let mut metastore = MockMetastore::new();
         metastore
             .expect_index_metadata()
@@ -539,7 +538,6 @@ mod tests {
              _time_range: Option<Range<i64>>,
              _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
-
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
@@ -562,16 +560,12 @@ mod tests {
                 })
             },
         );
-
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
 
-        let search_result = root_search(&search_request, &metastore, &client_pool).await?;
-        println!("search_result={:?}", search_result);
-
-        assert_eq!(search_result.num_hits, 3);
-        assert_eq!(search_result.hits.len(), 3);
-
+        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        assert_eq!(search_response.num_hits, 3);
+        assert_eq!(search_response.hits.len(), 3);
         Ok(())
     }
 
@@ -587,8 +581,6 @@ mod tests {
             start_offset: 0,
             tags: vec![],
         };
-        println!("search_request={:?}", search_request);
-
         let mut metastore = MockMetastore::new();
         metastore
             .expect_index_metadata()
@@ -608,7 +600,6 @@ mod tests {
                 Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
             },
         );
-
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
@@ -630,7 +621,6 @@ mod tests {
                 })
             },
         );
-
         let mut mock_search_service2 = MockSearchService::new();
         mock_search_service2.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
@@ -649,7 +639,6 @@ mod tests {
                 })
             },
         );
-
         let client_pool = Arc::new(
             SearchClientPool::from_mocks(vec![
                 Arc::new(mock_search_service1),
@@ -657,13 +646,9 @@ mod tests {
             ])
             .await?,
         );
-
-        let search_result = root_search(&search_request, &metastore, &client_pool).await?;
-        println!("search_result={:?}", search_result);
-
-        assert_eq!(search_result.num_hits, 3);
-        assert_eq!(search_result.hits.len(), 3);
-
+        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        assert_eq!(search_response.num_hits, 3);
+        assert_eq!(search_response.hits.len(), 3);
         Ok(())
     }
 
@@ -679,8 +664,6 @@ mod tests {
             start_offset: 0,
             tags: vec![],
         };
-        println!("search_request={:?}", search_request);
-
         let mut metastore = MockMetastore::new();
         metastore
             .expect_index_metadata()
@@ -766,7 +749,6 @@ mod tests {
                 })
             },
         );
-
         let client_pool = Arc::new(
             SearchClientPool::from_mocks(vec![
                 Arc::new(mock_search_service1),
@@ -774,17 +756,12 @@ mod tests {
             ])
             .await?,
         );
+        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        assert_eq!(search_response.num_hits, 3);
+        assert_eq!(search_response.hits.len(), 3);
 
-        let search_result = root_search(&search_request, &metastore, &client_pool).await?;
-        // println!("search_result={:?}", search_result);
-
-        let search_result_json = SearchResultJson::from(search_result.clone());
-        let search_result_json = serde_json::to_string_pretty(&search_result_json)?;
-        println!("{}", search_result_json);
-
-        assert_eq!(search_result.num_hits, 3);
-        assert_eq!(search_result.hits.len(), 3);
-
+        let search_response_rest = SearchResponseRest::try_from(search_response)?;
+        let _search_response_rest_json = serde_json::to_string_pretty(&search_response_rest)?;
         Ok(())
     }
     #[tokio::test]
@@ -799,8 +776,6 @@ mod tests {
             start_offset: 0,
             tags: vec![],
         };
-        println!("search_request={:?}", search_request);
-
         let mut metastore = MockMetastore::new();
         metastore
             .expect_index_metadata()
@@ -820,7 +795,6 @@ mod tests {
                 Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
             },
         );
-
         let mut first_call = true;
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1
@@ -849,7 +823,6 @@ mod tests {
                     })
                 }
             });
-
         mock_search_service1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResult {
@@ -857,7 +830,6 @@ mod tests {
                 })
             },
         );
-
         let mut first_call = true;
         let mut mock_search_service2 = MockSearchService::new();
         mock_search_service2
@@ -898,7 +870,6 @@ mod tests {
                 })
             },
         );
-
         let client_pool = Arc::new(
             SearchClientPool::from_mocks(vec![
                 Arc::new(mock_search_service1),
@@ -906,17 +877,12 @@ mod tests {
             ])
             .await?,
         );
+        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        assert_eq!(search_response.num_hits, 3);
+        assert_eq!(search_response.hits.len(), 3);
 
-        let search_result = root_search(&search_request, &metastore, &client_pool).await?;
-        // println!("search_result={:?}", search_result);
-
-        let search_result_json = SearchResultJson::from(search_result.clone());
-        let search_result_json = serde_json::to_string_pretty(&search_result_json)?;
-        println!("{}", search_result_json);
-
-        assert_eq!(search_result.num_hits, 3);
-        assert_eq!(search_result.hits.len(), 3);
-
+        let search_response_rest = SearchResponseRest::try_from(search_response)?;
+        let _search_response_rest_json = serde_json::to_string_pretty(&search_response_rest)?;
         Ok(())
     }
 
@@ -932,8 +898,6 @@ mod tests {
             start_offset: 0,
             tags: vec![],
         };
-        println!("search_request={:?}", search_request);
-
         let mut metastore = MockMetastore::new();
         metastore
             .expect_index_metadata()
@@ -951,7 +915,6 @@ mod tests {
              _time_range: Option<Range<i64>>,
              _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
-
         let mut first_call = true;
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1
@@ -980,7 +943,6 @@ mod tests {
                     })
                 }
             });
-
         mock_search_service1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResult {
@@ -988,20 +950,15 @@ mod tests {
                 })
             },
         );
-
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?);
 
-        let search_result = root_search(&search_request, &metastore, &client_pool).await?;
-        // println!("search_result={:?}", search_result);
+        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        assert_eq!(search_response.num_hits, 1);
+        assert_eq!(search_response.hits.len(), 1);
 
-        let search_result_json = SearchResultJson::from(search_result.clone());
-        let search_result_json = serde_json::to_string_pretty(&search_result_json)?;
-        println!("{}", search_result_json);
-
-        assert_eq!(search_result.num_hits, 1);
-        assert_eq!(search_result.hits.len(), 1);
-
+        let search_response_rest = SearchResponseRest::try_from(search_response)?;
+        let _search_response_rest_json = serde_json::to_string_pretty(&search_response_rest)?;
         Ok(())
     }
 
@@ -1018,8 +975,6 @@ mod tests {
             start_offset: 0,
             tags: vec![],
         };
-        println!("search_request={:?}", search_request);
-
         let mut metastore = MockMetastore::new();
         metastore
             .expect_index_metadata()
@@ -1037,7 +992,6 @@ mod tests {
              _time_range: Option<Range<i64>>,
              _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
-
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1
             .expect_leaf_search()
@@ -1060,13 +1014,10 @@ mod tests {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
-
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?);
-
         let search_result = root_search(&search_request, &metastore, &client_pool).await;
         assert!(search_result.is_err());
-
         Ok(())
     }
     #[tokio::test]
@@ -1081,8 +1032,6 @@ mod tests {
             start_offset: 0,
             tags: vec![],
         };
-        println!("search_request={:?}", search_request);
-
         let mut metastore = MockMetastore::new();
         metastore
             .expect_index_metadata()
@@ -1117,19 +1066,15 @@ mod tests {
                     num_attempted_splits: 1,
                 })
             });
-
         mock_search_service1.expect_fetch_docs().returning(
             |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
-
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?);
-
         let search_result = root_search(&search_request, &metastore, &client_pool).await;
         assert!(search_result.is_err());
-
         Ok(())
     }
 
@@ -1146,8 +1091,6 @@ mod tests {
             start_offset: 0,
             tags: vec![],
         };
-        println!("search_request={:?}", search_request);
-
         let mut metastore = MockMetastore::new();
         metastore
             .expect_index_metadata()
@@ -1165,8 +1108,7 @@ mod tests {
              _time_range: Option<Range<i64>>,
              _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
-
-        // service1 - broken node
+        // Service1 - broken node.
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1.expect_leaf_search().returning(
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
@@ -1179,7 +1121,6 @@ mod tests {
                 })
             },
         );
-
         mock_search_service1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResult {
@@ -1187,8 +1128,7 @@ mod tests {
                 })
             },
         );
-
-        // service2 - working node
+        // Service2 - working node.
         let mut mock_search_service2 = MockSearchService::new();
         mock_search_service2.expect_leaf_search().returning(
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
@@ -1209,7 +1149,6 @@ mod tests {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
-
         let client_pool = Arc::new(
             SearchClientPool::from_mocks(vec![
                 Arc::new(mock_search_service1),
@@ -1217,17 +1156,12 @@ mod tests {
             ])
             .await?,
         );
+        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        assert_eq!(search_response.num_hits, 1);
+        assert_eq!(search_response.hits.len(), 1);
 
-        let search_result = root_search(&search_request, &metastore, &client_pool).await?;
-        // println!("search_result={:?}", search_result);
-
-        let search_result_json = SearchResultJson::from(search_result.clone());
-        let search_result_json = serde_json::to_string_pretty(&search_result_json)?;
-        println!("{}", search_result_json);
-
-        assert_eq!(search_result.num_hits, 1);
-        assert_eq!(search_result.hits.len(), 1);
-
+        let search_response_rest = SearchResponseRest::try_from(search_response)?;
+        let _search_result_rest_json = serde_json::to_string_pretty(&search_response_rest)?;
         Ok(())
     }
 
@@ -1244,8 +1178,6 @@ mod tests {
             start_offset: 0,
             tags: vec![],
         };
-        println!("search_request={:?}", search_request);
-
         let mut metastore = MockMetastore::new();
         metastore
             .expect_index_metadata()
@@ -1264,7 +1196,7 @@ mod tests {
              _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
         );
 
-        // service1 - working node
+        // Service1 - working node.
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1.expect_leaf_search().returning(
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
@@ -1276,7 +1208,6 @@ mod tests {
                 })
             },
         );
-
         mock_search_service1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResult {
@@ -1284,8 +1215,7 @@ mod tests {
                 })
             },
         );
-
-        // service2 - broken node
+        // Service2 - broken node.
         let mut mock_search_service2 = MockSearchService::new();
         mock_search_service2.expect_leaf_search().returning(
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
@@ -1297,7 +1227,6 @@ mod tests {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
-
         let client_pool = Arc::new(
             SearchClientPool::from_mocks(vec![
                 Arc::new(mock_search_service1),
@@ -1305,16 +1234,12 @@ mod tests {
             ])
             .await?,
         );
+        let search_response = root_search(&search_request, &metastore, &client_pool).await?;
+        assert_eq!(search_response.num_hits, 1);
+        assert_eq!(search_response.hits.len(), 1);
 
-        let search_result = root_search(&search_request, &metastore, &client_pool).await?;
-
-        let search_result_json = SearchResultJson::from(search_result.clone());
-        let search_result_json = serde_json::to_string_pretty(&search_result_json)?;
-        println!("{}", search_result_json);
-
-        assert_eq!(search_result.num_hits, 1);
-        assert_eq!(search_result.hits.len(), 1);
-
+        let search_response_rest = SearchResponseRest::try_from(search_response)?;
+        let _search_response_rest_json = serde_json::to_string_pretty(&search_response_rest)?;
         Ok(())
     }
 }
