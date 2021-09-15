@@ -85,10 +85,15 @@ pub struct WrappedCache {
 
 /// A storage with a backing file system cache.
 pub struct StorageWithUploadCache {
+    /// The remote storage.
     remote_storage: Arc<dyn Storage>,
+    /// The backing local storage.
     local_storage: Arc<dyn Storage>,
+    /// The localstorage root.
     local_storage_root: PathBuf,
+    /// The capacity of the cache.
     disk_capacity: DiskCapacity,
+    /// The underlying cache.
     disk_cache: Mutex<WrappedCache>,
 }
 
@@ -184,6 +189,8 @@ impl StorageWithUploadCache {
     }
 
     /// Persist the state of the entire cache.
+    ///
+    /// Takes a previously locked guard for easier mutext management.
     async fn save_state<'a>(
         &self,
         wrapped_cache: &MutexGuard<'_, WrappedCache>,
@@ -330,7 +337,7 @@ fn atomic_write(path: &Path, content: &[u8]) -> io::Result<()> {
 /// A struct embedding the cache parameters.
 #[derive(Debug, Clone)]
 pub struct CacheConfig {
-    /// The maximum number of files for the local file cache
+    /// The maximum number of files for the local file cache.
     pub max_num_files: usize,
     /// The maximum size in bytes allowed for the local file cache.
     pub max_num_bytes: usize,
