@@ -465,7 +465,7 @@ mod tests {
             .returning(|_, _, _| Ok(()));
         let universe = Universe::new();
         let source_config = SourceConfig {
-            id: "test-source".to_string(),
+            source_id: "test-source".to_string(),
             source_type: "file".to_string(),
             params: json!({ "filepath": PathBuf::from("data/test_corpus.json") }),
         };

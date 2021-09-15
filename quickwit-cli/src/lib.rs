@@ -20,6 +20,7 @@
 use std::collections::VecDeque;
 use std::convert::TryFrom;
 use std::env;
+use std::fs::File;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -102,6 +103,7 @@ pub struct IndexDataArgs {
     pub metastore_uri: String,
     pub index_id: String,
     pub input_path: Option<PathBuf>,
+    pub source_config_path: Option<PathBuf>,
     pub temp_dir: Option<PathBuf>,
     pub heap_size: Byte,
     pub overwrite: bool,
@@ -155,11 +157,13 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
 }
 
 pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
-    debug!(args=?args, "indexing");
+    debug!(args = ?args, "index-data");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::IndexStart).await;
 
-    let input_path = args.input_path.clone();
-    let source_config = create_source_config_from_args(input_path.clone());
+    let source_config_path_opt = args.source_config_path.as_ref();
+    let input_path_opt = args.input_path.as_ref();
+    let source_config =
+        create_source_config_from_args(source_config_path_opt, input_path_opt).await?;
     let scratch_directory = if let Some(scratch_root_path) = args.temp_dir.as_ref() {
         ScratchDirectory::new_in_path(scratch_root_path.clone())
     } else {
@@ -195,7 +199,7 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         universe.spawn_actor(indexing_supervisor).spawn_async();
 
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
-    if args.input_path.is_none() && is_stdin_atty {
+    if args.source_config_path.is_none() && args.input_path.is_none() && is_stdin_atty {
         let eof_shortcut = match env::consts::OS {
             "windows" => "CTRL+Z",
             _ => "CTRL+D",
@@ -206,7 +210,6 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
             eof_shortcut
         );
     }
-
     let statistics =
         start_statistics_reporting_loop(supervisor_handler, args.input_path.clone()).await?;
 
@@ -220,15 +223,48 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn create_source_config_from_args(input_path_opt: Option<PathBuf>) -> SourceConfig {
-    let params = FileSourceParams {
-        filepath: input_path_opt,
-    };
-    SourceConfig {
-        id: "cli_source".to_string(),
-        source_type: "file".to_string(),
-        params: serde_json::to_value(params).unwrap(),
+/// Inspects the CLI arguments and creates the appropriate [`SourceConfig`]. When a source config
+/// path is provided, the source config is loaded from file. Otherwise, a source config for a
+/// [`quickwit_indexing::source::FileSource`] is returned.
+async fn create_source_config_from_args(
+    source_config_path_opt: Option<&PathBuf>,
+    input_path_opt: Option<&PathBuf>,
+) -> anyhow::Result<SourceConfig> {
+    if source_config_path_opt.is_some() && input_path_opt.is_some() {
+        bail!(
+            "The `source-config-path` and `input-path` options are mutually exclusive but both \
+             were provided."
+        );
     }
+    if let Some(source_config_path) = source_config_path_opt {
+        let source_config_file = File::open(source_config_path).with_context(|| {
+            format!(
+                "Failed to open source config file `{}`.",
+                source_config_path.display()
+            )
+        })?;
+        let source_config: SourceConfig = serde_json::from_reader(source_config_file)
+            .with_context(|| {
+                format!(
+                    "Failed to parse source config file `{}`.",
+                    source_config_path.display()
+                )
+            })?;
+        return Ok(source_config);
+    }
+    let source_id = input_path_opt
+        .map(|_| "file-source")
+        .unwrap_or("stdin-source")
+        .to_string();
+    let file_source_params = serde_json::to_value(FileSourceParams {
+        filepath: input_path_opt.cloned(),
+    })?;
+    let source_config = SourceConfig {
+        source_id,
+        source_type: "file".to_string(),
+        params: file_source_params,
+    };
+    Ok(source_config)
 }
 
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponse> {
@@ -489,6 +525,56 @@ impl ThroughputCalculator {
 
     pub fn elapsed_time(&self) -> Duration {
         self.start_time.elapsed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_create_source_config_from_input_path() -> anyhow::Result<()> {
+        {
+            let source_config = create_source_config_from_args(None, None).await?;
+            assert_eq!(source_config.source_id, "stdin-source");
+            assert_eq!(source_config.source_type, "file");
+            assert_eq!(
+                source_config.params.get("filepath"),
+                Some(&json!(None::<&str>))
+            );
+        }
+        {
+            let input_path = PathBuf::from("path/to/file");
+            let source_config = create_source_config_from_args(None, Some(&input_path)).await?;
+            assert_eq!(source_config.source_id, "file-source");
+            assert_eq!(source_config.source_type, "file");
+            assert_eq!(
+                source_config.params.get("filepath"),
+                Some(&json!("path/to/file"))
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_source_config_from_source_config_file() -> anyhow::Result<()> {
+        let source_config_file = tempfile::NamedTempFile::new()?;
+        let source_config_path = source_config_file.path().to_path_buf();
+        let source_config_json = json!({
+            "source_id": "foo-source",
+            "source_type": "foo",
+            "params": {
+                "foo": "bar",
+            },
+        });
+        serde_json::to_writer(source_config_file.as_file(), &source_config_json)?;
+        let source_config = create_source_config_from_args(Some(&source_config_path), None).await?;
+        assert_eq!(source_config.source_id, "foo-source");
+        assert_eq!(source_config.source_type, "foo");
+        assert_eq!(source_config.params.get("foo"), Some(&json!("bar")));
+        Ok(())
     }
 }
 

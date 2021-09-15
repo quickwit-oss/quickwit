@@ -41,6 +41,12 @@ subcommands:
                 help: Location of the source dataset
                 long: input-path
                 value_name: INPUT PATH
+            - source-config-path:
+                help: Location of the source config file
+                long: source-config-path
+                value_name: SOURCE CONFIG PATH
+                conflicts_with:
+                    - input-path
             - temp-dir:
                 help: Creates intermediate files in this local directory. By default, the OS temp directory will be used.
                 long: temp-dir

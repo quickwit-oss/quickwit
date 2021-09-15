@@ -596,7 +596,8 @@ mod kafka_broker_tests {
     use rdkafka::producer::{FutureProducer, FutureRecord};
 
     use super::*;
-    use crate::source::SourceActor;
+    use crate::source::{quickwit_supported_sources, SourceActor};
+    use crate::SourceConfig;
 
     fn append_random_suffix(string: &str) -> String {
         let rng = rand::thread_rng();
@@ -714,18 +715,25 @@ mod kafka_broker_tests {
         let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 3).await?;
 
-        let params = KafkaSourceParams {
-            bootstrap_servers: bootstrap_servers.clone(),
-            group_id: group_id.clone(),
-            topic: topic.clone(),
-            enable_partition_eof: Some(true),
+        let source_config = SourceConfig {
+            source_id: "kafka-test-source".to_string(),
+            source_type: "kafka".to_string(),
+            params: json!({
+                "bootstrap_servers": bootstrap_servers,
+                "group_id": group_id,
+                "topic": topic,
+                "enable_partition_eof": true,
+            }),
         };
+        let source_loader = quickwit_supported_sources();
         {
             let (sink, inbox) = create_test_mailbox();
             let checkpoint = Checkpoint::default();
-            let source = KafkaSource::try_new(params.clone(), checkpoint).await?;
+            let source = source_loader
+                .load_source(source_config.clone(), checkpoint)
+                .await?;
             let actor = SourceActor {
-                source: Box::new(source),
+                source,
                 batch_sink: sink.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
@@ -770,9 +778,11 @@ mod kafka_broker_tests {
         {
             let (sink, inbox) = create_test_mailbox();
             let checkpoint = Checkpoint::default();
-            let source = KafkaSource::try_new(params.clone(), checkpoint).await?;
+            let source = source_loader
+                .load_source(source_config.clone(), checkpoint)
+                .await?;
             let actor = SourceActor {
-                source: Box::new(source),
+                source,
                 batch_sink: sink.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
@@ -827,9 +837,11 @@ mod kafka_broker_tests {
                     (PartitionId::from(partition_id), Position::from(offset))
                 })
                 .collect();
-            let source = KafkaSource::try_new(params.clone(), checkpoint).await?;
+            let source = source_loader
+                .load_source(source_config.clone(), checkpoint)
+                .await?;
             let actor = SourceActor {
-                source: Box::new(source),
+                source,
                 batch_sink: sink.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
