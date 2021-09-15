@@ -324,15 +324,15 @@ impl IndexingPipelineSupervisor {
                 Health::Healthy => {
                     // We stop triggering new merges as soon as there cannot be more splits.
                     if let Some(handlers) = self.handlers.as_mut() {
-                        // If the uploader has terminated (due to end of source) we want to stop
+                        // If the packager has terminated (due to end of source) we want to stop
                         // merging new splits.
                         //
                         // This is done by sending a message to the `MergePlanner`.
-                        // We already send this message in the uploader finalizer, but if the
-                        // uploader panicks, the finalizer may never be
+                        // We already send this message in the packager finalizer, but if the
+                        // packager panics, the finalizer may never be
                         // called, so we defensively send the message if we
-                        // detect that the uploader is not running, while the merge planner is.
-                        if handlers.uploader.health() != Health::Healthy
+                        // detect that the packager is not running, while the merge planner is.
+                        if handlers.packager.health() != Health::Healthy
                             && handlers.merge_planner.health() == Health::Healthy
                         {
                             // Failing to send is fine here.
