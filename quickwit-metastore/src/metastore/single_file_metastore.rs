@@ -161,7 +161,10 @@ impl SingleFileMetastore {
                     message: "The request credentials do not allow for this operation.".to_string(),
                 },
                 _ => MetastoreError::InternalError {
-                    message: "Failed to put metadata set back into storage.".to_string(),
+                    message: format!(
+                        "Failed to write metastore file to `{}`.",
+                        metadata_path.display()
+                    ),
                     cause: anyhow::anyhow!(storage_err),
                 },
             })?;
@@ -502,8 +505,7 @@ impl MetastoreFactory for SingleFileMetastoreFactory {
                 }
                 StorageResolverError::FailedToOpenStorage { kind, message } => {
                     MetastoreResolverError::FailedToOpenMetastore(MetastoreError::InternalError {
-                        message: "Failed to open storage hosting the single file metastore."
-                            .to_string(),
+                        message: format!("Failed to open metastore file `{}`.", uri),
                         cause: anyhow::anyhow!("StorageError {:?}: {}.", kind, message),
                     })
                 }
