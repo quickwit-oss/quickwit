@@ -164,7 +164,9 @@ impl IndexingPipelineSupervisor {
             .params
             .storage_uri_resolver
             .resolve(&index_metadata.index_uri)?;
-
+        let tags_field = index_metadata
+            .index_config
+            .tags_field(&index_metadata.index_config.schema());
         let publisher = Publisher::new(self.params.metastore.clone());
         let (publisher_mailbox, publisher_handler) = ctx
             .spawn_actor(publisher)
@@ -180,7 +182,7 @@ impl IndexingPipelineSupervisor {
             .set_kill_switch(self.kill_switch.clone())
             .spawn_async();
         info!(actor_name=%uploader_mailbox.actor_instance_id());
-        let packager = Packager::new(uploader_mailbox);
+        let packager = Packager::new(tags_field, uploader_mailbox);
         let (packager_mailbox, packager_handler) = ctx
             .spawn_actor(packager)
             .set_kill_switch(self.kill_switch.clone())
