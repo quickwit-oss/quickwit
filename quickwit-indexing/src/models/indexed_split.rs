@@ -24,7 +24,7 @@ use std::time::Instant;
 
 use quickwit_metastore::checkpoint::CheckpointDelta;
 use tantivy::merge_policy::NoMergePolicy;
-use tantivy::schema::{Field, Schema};
+use tantivy::schema::Schema;
 
 use crate::actors::IndexerParams;
 use crate::models::ScratchDirectory;
@@ -33,6 +33,8 @@ use crate::new_split_id;
 pub struct IndexedSplit {
     pub split_id: String,
     pub index_id: String,
+    pub replaced_split_ids: Vec<String>,
+
     pub time_range: Option<RangeInclusive<i64>>,
 
     /// Number of valid documents in the split.
@@ -43,7 +45,11 @@ pub struct IndexedSplit {
     // invalid.
     pub docs_size_in_bytes: u64,
 
-    /// Instant of the instant of the first document in the split.
+    /// Instant of reception of the first document in the indexer.
+    ///
+    /// This is mostly useful to understand part of the time to search.
+    /// However, note that the document may have been waiting for a long time in the source
+    /// before actually reaching the indexer.
     pub start_time: Instant,
 
     pub checkpoint_delta: CheckpointDelta,
@@ -51,8 +57,6 @@ pub struct IndexedSplit {
     pub index: tantivy::Index,
     pub index_writer: tantivy::IndexWriter,
     pub split_scratch_directory: ScratchDirectory,
-    /// The special field for extracting tags.
-    pub tags_field: Field,
 }
 
 impl fmt::Debug for IndexedSplit {
@@ -71,7 +75,6 @@ impl IndexedSplit {
         index_id: String,
         indexer_params: &IndexerParams,
         schema: Schema,
-        tags_field: Field,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
@@ -85,6 +88,7 @@ impl IndexedSplit {
         Ok(IndexedSplit {
             split_id,
             index_id,
+            replaced_split_ids: Vec::new(),
             time_range: None,
             docs_size_in_bytes: 0,
             num_docs: 0,
@@ -93,7 +97,6 @@ impl IndexedSplit {
             index_writer,
             split_scratch_directory,
             checkpoint_delta: CheckpointDelta::default(),
-            tags_field,
         })
     }
 
