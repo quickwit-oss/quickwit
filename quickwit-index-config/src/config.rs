@@ -108,7 +108,7 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     fn tags_field(&self, split_schema: &Schema) -> Field {
         split_schema
             .get_field(TAGS_FIELD_NAME)
-            .expect("Tags field must exist on the schema.")
+            .expect("Tags field must exist in the schema.")
     }
 }
 
