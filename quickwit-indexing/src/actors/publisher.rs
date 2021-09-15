@@ -63,7 +63,7 @@ impl Publisher {
                         checkpoint_delta.clone(),
                     )
                     .await
-                    .with_context(|| "Failed to publish splits")?;
+                    .context("Failed to publish splits.")?;
             }
             PublishOperation::ReplaceSplits {
                 new_splits: new_split_id,
@@ -83,7 +83,7 @@ impl Publisher {
                         &replaced_split_ids_ref_vec[..],
                     )
                     .await
-                    .with_context(|| "Failed to replace splits")?;
+                    .context("Failed to replace splits.")?;
             }
         }
         Ok(())
@@ -115,7 +115,7 @@ impl AsyncActor for Publisher {
             let _protect_guard = ctx.protect_zone();
             uploaded_split_future
                 .await
-                .with_context(|| "Upload apparently failed")? //< splits must be published in order, so one uploaded failing means we should fail
+                .context("Failed to upload split.")? //< splits must be published in order, so one uploaded failing means we should fail
                                                               //< entirely.
         };
         self.run_publish_operation(&publisher_message).await?;

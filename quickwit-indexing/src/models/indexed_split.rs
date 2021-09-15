@@ -48,7 +48,7 @@ pub struct IndexedSplit {
     /// Instant of reception of the first document in the indexer.
     ///
     /// This is mostly useful to understand part of the time to search.
-    /// Note however, the document may have been waiting for a long time in the source
+    /// However, note that the document may have been waiting for a long time in the source
     /// before actually reaching the indexer.
     pub start_time: Instant,
 
