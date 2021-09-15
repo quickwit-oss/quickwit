@@ -94,12 +94,16 @@ impl ClusterClient {
         placed_request: (LeafSearchStreamRequest, SearchServiceClient),
     ) -> UnboundedReceiverStream<Result<LeafSearchStreamResult, SearchError>> {
         let (request, mut client) = placed_request;
+        // We need a dedicated channel to send results with retry. First we send only the successful
+        // responses and and ignore errors. If there are some errors, we make one retry and
+        // in this case we send all results.
         let (result_sender, result_receiver) = unbounded_channel();
         let client_pool = self.client_pool.clone();
         let retry_policy = LeafSearchStreamRetryPolicy {};
         tokio::spawn(async move {
             let result_stream = client.leaf_search_stream(request.clone()).await;
-            // Forward only ok(response) to the sender as we will retry on failing splits.
+            // Forward only responses and not errors to the sender as we will make one retry on
+            // errors.
             let forward_result =
                 forward_leaf_search_stream(result_stream, result_sender.clone(), false).await;
             if let Some(retry_request) =

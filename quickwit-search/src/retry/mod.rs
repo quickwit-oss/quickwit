@@ -40,7 +40,7 @@ where Request: RequestOnSplit + Clone
 
 /// Default retry policy:
 /// - All responses are treated as success.
-/// - All errors are retryable.
+/// - All errors are retryable and the retry request is the same as the original one.
 pub struct DefaultRetryPolicy {}
 
 impl<Request, Response, Error> RetryPolicy<Request, Response, Error> for DefaultRetryPolicy
