@@ -22,7 +22,7 @@ use std::fs::File;
 use std::io;
 use std::io::Write;
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use fail::fail_point;
@@ -30,7 +30,8 @@ use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity, SyncActor};
 use quickwit_directories::write_hotcache;
 use quickwit_storage::{BundleStorageBuilder, BUNDLE_FILENAME};
 use tantivy::common::CountingWriter;
-use tantivy::{SegmentId, SegmentMeta};
+use tantivy::schema::Field;
+use tantivy::{ReloadPolicy, SegmentId, SegmentMeta};
 use tracing::*;
 
 use crate::models::{IndexedSplit, PackagedSplit, ScratchDirectory};
@@ -48,11 +49,16 @@ use crate::models::{IndexedSplit, PackagedSplit, ScratchDirectory};
 /// The split format is described in `internals/split-format.md`
 pub struct Packager {
     uploader_mailbox: Mailbox<PackagedSplit>,
+    /// The special field for extracting tags.
+    tags_field: Field,
 }
 
 impl Packager {
-    pub fn new(uploader_mailbox: Mailbox<PackagedSplit>) -> Self {
-        Packager { uploader_mailbox }
+    pub fn new(tags_field: Field, uploader_mailbox: Mailbox<PackagedSplit>) -> Packager {
+        Packager {
+            uploader_mailbox,
+            tags_field,
+        }
     }
 }
 
@@ -158,8 +164,9 @@ fn merge_segments_if_required(
             .into_iter()
             .map(|segment_meta| segment_meta.id())
             .collect();
+
+        info!(segment_ids=?segment_ids,"merging-segments");
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
-        info!(segment_ids=?segment_ids, "merge");
         let _protected_zone_guard = ctx.protect_zone();
         futures::executor::block_on(split.index_writer.merge(&segment_ids))?;
     }
@@ -167,11 +174,8 @@ fn merge_segments_if_required(
     Ok(segment_metas_after_merge)
 }
 
-fn build_hotcache<W: io::Write>(
-    scratch_dir: &ScratchDirectory,
-    split_file: &mut W,
-) -> anyhow::Result<()> {
-    let mmap_directory = tantivy::directory::MmapDirectory::open(scratch_dir.path())?;
+fn build_hotcache<W: io::Write>(split_path: &Path, split_file: &mut W) -> anyhow::Result<()> {
+    let mmap_directory = tantivy::directory::MmapDirectory::open(split_path)?;
     write_hotcache(mmap_directory, split_file)?;
     Ok(())
 }
@@ -179,6 +183,7 @@ fn build_hotcache<W: io::Write>(
 fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
+    tags_field: Field,
     ctx: &ActorContext<IndexedSplit>,
 ) -> anyhow::Result<PackagedSplit> {
     info!(split = ?split, "create-packaged-split");
@@ -202,16 +207,15 @@ fn create_packaged_split(
         .map(|segment_meta| segment_meta.num_docs() as u64)
         .sum();
 
-    let segment_ids: Vec<SegmentId> = segment_metas
-        .iter()
-        .map(|segment_meta| segment_meta.id())
-        .collect();
-
     // Extracts tag values from `_tags` special fields.
     let mut tags = HashSet::default();
-    let index_reader = split.index.reader()?;
+    let index_reader = split
+        .index
+        .reader_builder()
+        .reload_policy(ReloadPolicy::Manual)
+        .try_into()?;
     for reader in index_reader.searcher().segment_readers() {
-        let inv_index = reader.inverted_index(split.tags_field)?;
+        let inv_index = reader.inverted_index(tags_field)?;
         let mut terms_streamer = inv_index.terms().stream()?;
         while let Some((term_data, _)) = terms_streamer.next() {
             tags.insert(String::from_utf8_lossy(term_data).to_string());
@@ -221,24 +225,24 @@ fn create_packaged_split(
 
     debug!(split = ?split, "build-hotcache");
     let hotcache_offset_start = split_file.written_bytes();
-    build_hotcache(&split.split_scratch_directory, &mut split_file)?;
+    build_hotcache(split.split_scratch_directory.path(), &mut split_file)?;
     let hotcache_offset_end = split_file.written_bytes();
     let hotcache_num_bytes = hotcache_offset_end - hotcache_offset_start;
     ctx.record_progress();
 
-    info!(split = ?split, "split-write-all");
+    debug!(split = ?split, "split-write-all");
     split_file.write_all(&hotcache_num_bytes.to_le_bytes())?;
     split_file.flush()?;
 
     let footer_end = split_file.written_bytes();
 
     let packaged_split = PackagedSplit {
-        index_id: split.index_id,
         split_id: split.split_id.to_string(),
-        checkpoint_delta: split.checkpoint_delta,
+        replaced_split_ids: split.replaced_split_ids,
+        index_id: split.index_id,
+        checkpoint_deltas: vec![split.checkpoint_delta],
         split_scratch_directory: split.split_scratch_directory,
         num_docs,
-        segment_ids,
         time_range: split.time_range,
         size_in_bytes: split.docs_size_in_bytes,
         tags,
@@ -256,7 +260,8 @@ impl SyncActor for Packager {
         fail_point!("packager:before");
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
-        let packaged_split = create_packaged_split(&segment_metas[..], split, ctx)?;
+        let packaged_split =
+            create_packaged_split(&segment_metas[..], split, self.tags_field, ctx)?;
         ctx.send_message_blocking(&self.uploader_mailbox, packaged_split)?;
         fail_point!("packager:after");
         Ok(())
@@ -270,7 +275,7 @@ mod tests {
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_metastore::checkpoint::CheckpointDelta;
-    use tantivy::schema::{Schema, FAST, TEXT};
+    use tantivy::schema::{Schema, FAST, STRING, TEXT};
     use tantivy::{doc, Index};
 
     use super::*;
@@ -281,6 +286,8 @@ mod tests {
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field("text", TEXT);
         let timestamp_field = schema_builder.add_u64_field("timestamp", FAST);
+        let _tags_field =
+            schema_builder.add_text_field(quickwit_index_config::TAGS_FIELD_NAME, STRING);
         let schema = schema_builder.build();
         let index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
         let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
@@ -323,7 +330,7 @@ mod tests {
             index_writer,
             split_scratch_directory,
             checkpoint_delta: CheckpointDelta::from(10..20),
-            tags_field: tantivy::schema::Field::from_field_id(0),
+            replaced_split_ids: Vec::new(),
         };
         Ok(indexed_split)
     }
@@ -333,9 +340,15 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-        let packager = Packager::new(mailbox);
-        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
+
         let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]])?;
+        let tags_field = indexed_split
+            .index
+            .schema()
+            .get_field(quickwit_index_config::TAGS_FIELD_NAME)
+            .unwrap();
+        let packager = Packager::new(tags_field, mailbox);
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(&packager_mailbox, indexed_split)
             .await?;
@@ -353,9 +366,14 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-        let packager = Packager::new(mailbox);
-        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
+        let tags_field = indexed_split
+            .index
+            .schema()
+            .get_field(quickwit_index_config::TAGS_FIELD_NAME)
+            .unwrap();
+        let packager = Packager::new(tags_field, mailbox);
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(&packager_mailbox, indexed_split)
             .await?;

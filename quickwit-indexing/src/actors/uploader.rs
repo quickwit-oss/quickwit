@@ -33,7 +33,7 @@ use tantivy::chrono::Utc;
 use tokio::sync::oneshot::Receiver;
 use tracing::{info, warn};
 
-use crate::models::{PackagedSplit, UploadedSplit};
+use crate::models::{PackagedSplit, PublishOperation, PublisherMessage};
 use crate::semaphore::Semaphore;
 
 pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 3;
@@ -41,7 +41,7 @@ pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 3;
 pub struct Uploader {
     metastore: Arc<dyn Metastore>,
     index_storage: Arc<dyn Storage>,
-    publisher_mailbox: Mailbox<Receiver<UploadedSplit>>,
+    publisher_mailbox: Mailbox<Receiver<PublisherMessage>>,
     concurrent_upload_permits: Semaphore,
     counters: UploaderCounters,
 }
@@ -50,7 +50,7 @@ impl Uploader {
     pub fn new(
         metastore: Arc<dyn Metastore>,
         index_storage: Arc<dyn Storage>,
-        publisher_mailbox: Mailbox<Receiver<UploadedSplit>>,
+        publisher_mailbox: Mailbox<Receiver<PublisherMessage>>,
     ) -> Uploader {
         Uploader {
             metastore,
@@ -110,7 +110,7 @@ async fn put_split_file_to_storage(
         split_size_in_megabytes = %split_size_in_megabytes,
         elapsed_ms = %elapsed_ms,
         throughput_mb_s = %throughput_mb_s,
-        "Uploaded split to storage"
+        "upload-split-bundle-end"
     );
 
     Ok(())
@@ -131,23 +131,44 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets
     }
 }
 
+fn make_publish_operation(
+    split_metadata: SplitMetadata,
+    mut packaged_split: PackagedSplit,
+) -> PublishOperation {
+    if packaged_split.replaced_split_ids.is_empty() {
+        assert_eq!(packaged_split.checkpoint_deltas.len(), 1);
+        let checkpoint_delta = packaged_split.checkpoint_deltas.pop().unwrap();
+        PublishOperation::PublishNewSplit {
+            new_split: split_metadata,
+            checkpoint_delta,
+        }
+    } else {
+        PublishOperation::ReplaceSplits {
+            new_splits: vec![split_metadata],
+            replaced_split_ids: packaged_split.replaced_split_ids,
+        }
+    }
+}
+
 async fn stage_and_upload_split(
-    split: PackagedSplit,
+    packaged_split: PackagedSplit,
     index_storage: &dyn Storage,
     metastore: &dyn Metastore,
     counters: UploaderCounters,
-) -> anyhow::Result<UploadedSplit> {
-    let metadata = create_split_metadata(&split);
+) -> anyhow::Result<PublisherMessage> {
+    let split_metadata_and_footer_offsets = create_split_metadata(&packaged_split);
+    let index_id = packaged_split.index_id.clone();
+    let split_metadata = split_metadata_and_footer_offsets.split_metadata.clone();
     metastore
-        .stage_split(&split.index_id, metadata.clone())
+        .stage_split(&index_id, split_metadata_and_footer_offsets)
         .await?;
     counters.num_staged_splits.fetch_add(1, Ordering::SeqCst);
-    put_split_file_to_storage(&split, &*index_storage).await?;
+    put_split_file_to_storage(&packaged_split, &*index_storage).await?;
     counters.num_uploaded_splits.fetch_add(1, Ordering::SeqCst);
-    Ok(UploadedSplit {
-        index_id: split.index_id,
-        metadata,
-        checkpoint_delta: split.checkpoint_delta,
+    let publish_operation = make_publish_operation(split_metadata, packaged_split);
+    Ok(PublisherMessage {
+        index_id,
+        operation: publish_operation,
     })
 }
 
@@ -181,11 +202,12 @@ impl AsyncActor for Uploader {
             let stage_and_upload_res: anyhow::Result<()> =
                 stage_and_upload_split(split, &*index_storage, &*metastore, counters)
                     .await
-                    .and_then(|uploaded_split| {
-                        if let Err(uploaded_split) = split_uploaded_tx.send(uploaded_split) {
+                    .and_then(|publisher_message| {
+                        if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
                             bail!(
-                                "Failed to send upload split `{}`. The publisher is probably dead.",
-                                &uploaded_split.metadata.split_metadata.split_id
+                                "Failed to send upload split `{:?}`. The publisher is probably \
+                                 dead.",
+                                &publisher_message
                             );
                         }
                         Ok(())
@@ -209,7 +231,6 @@ mod tests {
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use quickwit_metastore::MockMetastore;
     use quickwit_storage::RamStorage;
-    use tantivy::SegmentId;
 
     use super::*;
     use crate::models::ScratchDirectory;
@@ -239,27 +260,20 @@ mod tests {
             split_scratch_directory.path().join(BUNDLE_FILENAME),
             &b"bubu"[..],
         )?;
-        std::fs::write(
-            split_scratch_directory.path().join("anyfile2"),
-            &b"bubu2"[..],
-        )?;
-        let segment_ids = vec![SegmentId::from_uuid_string(
-            "f45425f4-f67c-417e-9de7-8a8327115d47",
-        )?];
         universe
             .send_message(
                 &uploader_mailbox,
                 PackagedSplit {
                     split_id: "test-split".to_string(),
                     index_id: "test-index".to_string(),
-                    checkpoint_delta: CheckpointDelta::from(3..15),
+                    checkpoint_deltas: vec![CheckpointDelta::from(3..15)],
                     time_range: Some(1_628_203_589i64..=1_628_203_640i64),
                     size_in_bytes: 1_000,
                     footer_offsets: 1000..2000,
-                    segment_ids,
                     split_scratch_directory,
                     num_docs: 10,
                     tags: Default::default(),
+                    replaced_split_ids: Vec::new(),
                 },
             )
             .await?;
@@ -270,15 +284,102 @@ mod tests {
         let publish_futures = inbox.drain_available_message_for_test();
         assert_eq!(publish_futures.len(), 1);
         let publish_future = publish_futures.into_iter().next().unwrap();
-        let uploaded_split = publish_future.await?;
+        let publisher_message = publish_future.await?;
+        assert_eq!(&publisher_message.index_id, "test-index");
+        if let PublishOperation::PublishNewSplit {
+            new_split,
+            checkpoint_delta,
+        } = publisher_message.operation
+        {
+            assert_eq!(&new_split.split_id, "test-split");
+            assert_eq!(checkpoint_delta, CheckpointDelta::from(3..15));
+        } else {
+            panic!("Expected publish new split operation");
+        }
+        let mut files = ram_storage.list_files().await;
+        files.sort();
+        assert_eq!(&files, &[PathBuf::from("test-split.split")]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_uploader_emits_replace() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let (mailbox, inbox) = create_test_mailbox();
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_stage_split()
+            .withf(move |index_id, metadata| -> bool {
+                (index_id == "test-index")
+                    && &metadata.split_metadata.split_id == "test-split"
+                    && metadata.split_metadata.time_range == Some(1628203589..=1628203640)
+                    && metadata.split_metadata.split_state == SplitState::New
+            })
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let ram_storage = RamStorage::default();
+        let index_storage: Arc<dyn Storage> = Arc::new(ram_storage.clone());
+        let uploader = Uploader::new(Arc::new(mock_metastore), index_storage.clone(), mailbox);
+        let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
+        let split_scratch_directory = ScratchDirectory::try_new_temp()?;
+        std::fs::write(
+            split_scratch_directory.path().join(BUNDLE_FILENAME),
+            &b"bubu"[..],
+        )?;
+        std::fs::write(
+            split_scratch_directory.path().join("anyfile2"),
+            &b"bubu2"[..],
+        )?;
+        universe
+            .send_message(
+                &uploader_mailbox,
+                PackagedSplit {
+                    split_id: "test-split".to_string(),
+                    index_id: "test-index".to_string(),
+                    checkpoint_deltas: vec![
+                        CheckpointDelta::from(3..15),
+                        CheckpointDelta::from(16..18),
+                    ],
+                    time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+                    size_in_bytes: 1_000,
+                    footer_offsets: 1000..2000,
+                    split_scratch_directory,
+                    num_docs: 10,
+                    tags: Default::default(),
+                    replaced_split_ids: vec![
+                        "replaced-split-1".to_string(),
+                        "replaced-split-2".to_string(),
+                    ],
+                },
+            )
+            .await?;
         assert_eq!(
-            uploaded_split.metadata.split_metadata.split_id,
-            "test-split".to_string()
+            uploader_handle.process_pending_and_observe().await.obs_type,
+            ObservationType::Alive
         );
-        assert_eq!(
-            uploaded_split.checkpoint_delta,
-            CheckpointDelta::from(3..15),
-        );
+        let publish_futures = inbox.drain_available_message_for_test();
+        assert_eq!(publish_futures.len(), 1);
+        let publish_future = publish_futures.into_iter().next().unwrap();
+        let publisher_message = publish_future.await?;
+        assert_eq!(&publisher_message.index_id, "test-index");
+        if let PublishOperation::ReplaceSplits {
+            new_splits,
+            replaced_split_ids,
+        } = publisher_message.operation
+        {
+            assert_eq!(new_splits.len(), 1);
+            assert_eq!(new_splits[0].split_id, "test-split");
+            assert_eq!(
+                &replaced_split_ids,
+                &[
+                    "replaced-split-1".to_string(),
+                    "replaced-split-2".to_string()
+                ]
+            );
+        } else {
+            panic!("Expected publish new split operation");
+        }
         let mut files = ram_storage.list_files().await;
         files.sort();
         assert_eq!(&files, &[PathBuf::from("test-split.split")]);

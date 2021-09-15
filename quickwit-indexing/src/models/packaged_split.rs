@@ -21,19 +21,18 @@ use std::collections::HashSet;
 use std::ops::{Range, RangeInclusive};
 
 use quickwit_metastore::checkpoint::CheckpointDelta;
-use tantivy::SegmentId;
 
 use crate::models::ScratchDirectory;
 
 #[derive(Debug)]
 pub struct PackagedSplit {
     pub split_id: String,
+    pub replaced_split_ids: Vec<String>,
     pub index_id: String,
-    pub checkpoint_delta: CheckpointDelta,
+    pub checkpoint_deltas: Vec<CheckpointDelta>,
     pub time_range: Option<RangeInclusive<i64>>,
     pub size_in_bytes: u64,
     pub footer_offsets: Range<u64>,
-    pub segment_ids: Vec<SegmentId>,
     pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,
     pub tags: HashSet<String>,
