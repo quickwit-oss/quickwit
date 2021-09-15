@@ -79,7 +79,7 @@ impl CreateIndexArgs {
         let builder: DefaultIndexConfigBuilder = serde_json::from_reader(strip_comment_reader)
             .with_context(|| {
                 format!(
-                    "index-config-path {:?} is not a valid json file",
+                    "index-config-path {:?} is not a valid JSON file",
                     index_config_path
                 )
             })?;
