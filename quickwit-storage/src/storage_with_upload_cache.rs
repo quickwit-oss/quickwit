@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::io::{self, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -28,6 +29,7 @@ use lru::LruCache;
 use serde::{Deserialize, Serialize};
 use tempfile::Builder;
 use tokio::sync::{Mutex, MutexGuard};
+use tracing::warn;
 
 use crate::{
     LocalFileStorage, PutPayload, Storage, StorageErrorKind, StorageResult, StorageUriResolver,
@@ -91,10 +93,10 @@ pub struct CacheWithMeta {
 pub struct StorageWithUploadCache {
     /// The remote storage.
     remote_storage: Arc<dyn Storage>,
-    /// The backing local storage.
-    local_cache_storage: Arc<dyn Storage>,
-    /// The localstorage root.
-    local_storage_root: PathBuf,
+    /// The backing storage.
+    cache_storage: Arc<dyn Storage>,
+    /// The cache storage root.
+    cache_storage_root: PathBuf,
     /// The capacity of the cache.
     disk_capacity: DiskCapacity,
     /// The underlying cache.
@@ -104,23 +106,23 @@ pub struct StorageWithUploadCache {
 impl StorageWithUploadCache {
     /// Create an instance of [`StorageWithUploadCache`]
     ///
-    /// It needs both the remote and local storage to work with.
+    /// It needs both the remote and cache storage to work with.
     /// max_item_count and max_num_bytes are used for the cache [`Capacity`].
     pub fn create(
         remote_storage: Arc<dyn Storage>,
-        local_storage: Arc<dyn Storage>,
+        cache_storage: Arc<dyn Storage>,
         max_num_files: usize,
         max_num_bytes: usize,
     ) -> StorageResult<Self> {
-        // Extract the local storage root path, also validate that local storage
+        // Extract the cache storage root path, also validate that cache storage
         // is of type [`LocalFileStorage]
-        let local_storage_root_path =
-            LocalFileStorage::extract_root_path_from_uri(&local_storage.uri())?;
+        let cache_storage_root_path =
+            LocalFileStorage::extract_root_path_from_uri(&cache_storage.uri())?;
 
         Ok(Self {
             remote_storage,
-            local_cache_storage: local_storage,
-            local_storage_root: local_storage_root_path,
+            cache_storage,
+            cache_storage_root: cache_storage_root_path,
             disk_capacity: DiskCapacity {
                 max_num_files,
                 max_num_bytes,
@@ -143,12 +145,11 @@ impl StorageWithUploadCache {
         cache_dir: &Path,
     ) -> StorageResult<Self> {
         let cache_state = CacheState::from_path(cache_dir)?;
-        let local_cache_storage_uri = format!("file://{}", cache_dir.to_string_lossy());
-        let local_cache_storage = storage_uri_resolver
-            .resolve(&local_cache_storage_uri)
+        let cache_storage_uri = format!("file://{}", cache_dir.to_string_lossy());
+        let cache_storage = storage_uri_resolver
+            .resolve(&cache_storage_uri)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
-        let local_storage_root =
-            LocalFileStorage::extract_root_path_from_uri(&local_cache_storage_uri)?;
+        let cache_storage_root = LocalFileStorage::extract_root_path_from_uri(&cache_storage_uri)?;
 
         let num_files = cache_state.items.len();
         let num_bytes = cache_state.items.iter().map(|(_, size)| *size).sum();
@@ -168,8 +169,8 @@ impl StorageWithUploadCache {
 
         Ok(Self {
             remote_storage,
-            local_cache_storage,
-            local_storage_root,
+            cache_storage,
+            cache_storage_root,
             disk_capacity: cache_state.disk_capacity,
             disk_cache: Mutex::new(CacheWithMeta {
                 cache: LruCache::unbounded(),
@@ -179,23 +180,10 @@ impl StorageWithUploadCache {
         })
     }
 
-    /// Check if an incomming item will exceed the capacity once inserted.
-    fn exceeds_capacity(
-        &self,
-        total_bytes_after_insert: usize,
-        total_files_after_insert: usize,
-    ) -> bool {
-        self.disk_capacity
-            .exceeds_capacity(total_bytes_after_insert, total_files_after_insert)
-    }
-
     /// Persist the state of the entire cache.
     ///
-    /// Takes a previously locked guard for easier mutext management.
-    async fn save_state<'a>(
-        &self,
-        wrapped_cache: &MutexGuard<'_, CacheWithMeta>,
-    ) -> StorageResult<()> {
+    /// Takes a previously locked guard for easier mutex management.
+    async fn save_state(&self, wrapped_cache: &MutexGuard<'_, CacheWithMeta>) -> StorageResult<()> {
         let mut cache_items = vec![];
         for (path, size) in wrapped_cache.cache.iter() {
             cache_items.push((path.clone(), *size));
@@ -206,7 +194,7 @@ impl StorageWithUploadCache {
             items: cache_items,
         };
 
-        let file_path = self.local_storage_root.join(CACHE_STATE_FILE_NAME);
+        let file_path = self.cache_storage_root.join(CACHE_STATE_FILE_NAME);
         let content: Vec<u8> = serde_json::to_vec(&cache_state)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
         atomic_write(&file_path, &content)?;
@@ -222,37 +210,55 @@ impl Storage for StorageWithUploadCache {
         let mut locked_disk_cache = self.disk_cache.lock().await;
         let payload_length = payload.len().await? as usize;
         // Ignore storing an item that cannot fit in the cache.
-        if self.exceeds_capacity(payload_length, locked_disk_cache.num_files) {
+        if self
+            .disk_capacity
+            .exceeds_capacity(payload_length, locked_disk_cache.num_files)
+        {
             return Ok(());
         }
 
         if let Some(item_num_bytes) = locked_disk_cache.cache.pop(&path.to_path_buf()) {
-            if self.local_cache_storage.delete(path).await.is_err() {
-                return Ok(());
+            if let Err(error) = self.cache_storage.delete(path).await {
+                if error.kind() != StorageErrorKind::DoesNotExist {
+                    warn!(file_path = %path.to_string_lossy(), "Could not replace file from cache.");
+                    locked_disk_cache
+                        .cache
+                        .put(path.to_path_buf(), item_num_bytes);
+                    return Ok(());
+                }
             }
             locked_disk_cache.num_bytes -= item_num_bytes;
             locked_disk_cache.num_files -= 1;
         }
 
-        while self.exceeds_capacity(
+        let mut undable_to_delete = HashSet::new();
+        while self.disk_capacity.exceeds_capacity(
             locked_disk_cache.num_bytes + payload_length,
             locked_disk_cache.num_files + 1,
         ) {
             if let Some((item_path, item_num_bytes)) = locked_disk_cache.cache.pop_lru() {
-                if self
-                    .local_cache_storage
-                    .delete(item_path.as_path())
-                    .await
-                    .is_err()
-                {
+                // check for cycle
+                if undable_to_delete.contains(&item_path) {
+                    // save cache state, because we may have succeeeded in deleting items
+                    // while trying to make room.
+                    locked_disk_cache.cache.put(item_path, item_num_bytes);
+                    let _ = self.save_state(&locked_disk_cache).await;
                     return Ok(());
+                }
+                if let Err(error) = self.cache_storage.delete(item_path.as_path()).await {
+                    if error.kind() != StorageErrorKind::DoesNotExist {
+                        warn!(file_path = %item_path.to_string_lossy(), "Could not remove file from cache.");
+                        undable_to_delete.insert(item_path.clone());
+                        locked_disk_cache.cache.put(item_path, item_num_bytes);
+                        continue;
+                    }
                 }
                 locked_disk_cache.num_bytes -= item_num_bytes;
                 locked_disk_cache.num_files -= 1;
             }
         }
 
-        self.local_cache_storage.put(path, payload).await?;
+        self.cache_storage.put(path, payload).await?;
         locked_disk_cache.num_bytes += payload_length;
         locked_disk_cache.num_files += 1;
         locked_disk_cache
@@ -268,9 +274,7 @@ impl Storage for StorageWithUploadCache {
             return self.remote_storage.copy_to_file(path, output_path).await;
         }
 
-        self.local_cache_storage
-            .copy_to_file(path, output_path)
-            .await
+        self.cache_storage.copy_to_file(path, output_path).await
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
@@ -286,9 +290,16 @@ impl Storage for StorageWithUploadCache {
 
         let mut locked_disk_cache = self.disk_cache.lock().await;
         if let Some(item_num_bytes) = locked_disk_cache.cache.pop(&path.to_path_buf()) {
-            if self.local_cache_storage.delete(path).await.is_err() {
-                return Ok(());
+            if let Err(error) = self.cache_storage.delete(path).await {
+                if error.kind() != StorageErrorKind::DoesNotExist {
+                    warn!(file_path = %path.to_string_lossy(), "Could not remove file from cache.");
+                    locked_disk_cache
+                        .cache
+                        .put(path.to_path_buf(), item_num_bytes);
+                    return Ok(());
+                }
             }
+
             locked_disk_cache.num_bytes -= item_num_bytes;
             locked_disk_cache.num_files -= 1;
             let _ = self.save_state(&locked_disk_cache).await;
@@ -356,13 +367,13 @@ pub fn create_storage_with_upload_cache(
     let storage = if cache_state_file_path.exists() {
         StorageWithUploadCache::from_path(remote_storage, storage_uri_resolver, cache_dir)?
     } else {
-        let local_storage_uri = format!("file://{}", cache_dir.to_string_lossy());
-        let local_storage = storage_uri_resolver
-            .resolve(&local_storage_uri)
+        let cache_storage_uri = format!("file://{}", cache_dir.to_string_lossy());
+        let cache_storage = storage_uri_resolver
+            .resolve(&cache_storage_uri)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
         StorageWithUploadCache::create(
             remote_storage,
-            local_storage,
+            cache_storage,
             config.max_num_files,
             config.max_num_bytes,
         )?
@@ -510,18 +521,14 @@ mod tests {
                 PutPayload::InMemory(Bytes::from(b"foo".to_vec())),
             )
             .await?;
-        assert_eq!(
-            cached_storage
-                .copy_to_file(Path::new("bar"), Path::new("bar_copy"))
-                .await?,
-            ()
-        );
-        assert_eq!(
-            cached_storage
-                .copy_to_file(Path::new("foo"), Path::new("foo_copy"))
-                .await?,
-            ()
-        );
+        assert!(cached_storage
+            .copy_to_file(Path::new("bar"), Path::new("bar_copy"))
+            .await
+            .is_ok());
+        assert!(cached_storage
+            .copy_to_file(Path::new("foo"), Path::new("foo_copy"))
+            .await
+            .is_ok());
 
         // Check cache state is good.
         {
