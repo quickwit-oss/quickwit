@@ -60,7 +60,7 @@ impl CliCommand {
     fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches_opt) = matches.subcommand();
         let submatches =
-            submatches_opt.ok_or_else(|| anyhow::anyhow!("Unable to parse sub matches"))?;
+            submatches_opt.ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
 
         match subcommand {
             "new" => Self::parse_new_args(submatches),
@@ -100,22 +100,25 @@ impl CliCommand {
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
+            .expect("`metastore-uri` is a required arg.");
         let index_id = matches
             .value_of("index-id")
-            .context("index-id is a required arg")?
+            .expect("`index-id` is a required arg.")
             .to_string();
         let input_path: Option<PathBuf> = matches.value_of("input-path").map(PathBuf::from);
+        let source_config_path: Option<PathBuf> =
+            matches.value_of("source-config-path").map(PathBuf::from);
         let temp_dir: Option<PathBuf> = matches.value_of("temp-dir").map(PathBuf::from);
         let heap_size_str = matches
             .value_of("heap-size")
-            .context("heap-size has a default value")?;
+            .expect("`heap-size` has a default value.");
         let heap_size = Byte::from_str(heap_size_str)?;
         let overwrite = matches.is_present("overwrite");
 
         Ok(CliCommand::Index(IndexDataArgs {
             index_id,
             input_path,
+            source_config_path,
             temp_dir,
             heap_size,
             metastore_uri,
@@ -459,11 +462,14 @@ mod tests {
             Ok(CliCommand::Index(IndexDataArgs {
                 index_id,
                 input_path: None,
+                source_config_path: None,
                 temp_dir: None,
                 heap_size,
                 metastore_uri,
                 overwrite: false,
-            })) if &index_id == "wikipedia" && &metastore_uri == "file:///indexes" && heap_size.get_bytes() == 2_000_000_000
+            })) if &index_id == "wikipedia"
+                    && &metastore_uri == "file:///indexes"
+                    && heap_size.get_bytes() == 2_000_000_000
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -472,8 +478,8 @@ mod tests {
             "index",
             "--index-id",
             "wikipedia",
-            "--input-path",
-            "/data/wikipedia.json",
+            "--source-config-path",
+            "/conf/source_config.json",
             "--temp-dir",
             "./tmp",
             "--heap-size",
@@ -487,15 +493,38 @@ mod tests {
             command,
             Ok(CliCommand::Index(IndexDataArgs {
                 index_id,
-                input_path: Some(input_path),
+                input_path: None,
+                source_config_path: Some(source_config_path),
                 temp_dir,
                 heap_size,
                 metastore_uri,
                 overwrite: true,
-            })) if &index_id == "wikipedia" && input_path == Path::new("/data/wikipedia.json") && temp_dir == Some(PathBuf::from("./tmp")) && &metastore_uri == "file:///indexes"
-                && heap_size.get_bytes() == 4_294_967_296
+            })) if &index_id == "wikipedia"
+                    && source_config_path == Path::new("/conf/source_config.json")
+                    && temp_dir == Some(PathBuf::from("./tmp"))
+                    && &metastore_uri == "file:///indexes"
+                    && heap_size.get_bytes() == 4_294_967_296
         ));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_source_config_path_and_input_path_args_are_mutually_exclusive() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "index",
+            "--index-id",
+            "wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
+            "--input-path",
+            "/data/wikipedia.json",
+            "--source-config-path",
+            "/conf/source_config.json",
+        ]);
+        assert!(matches.is_err());
         Ok(())
     }
 

@@ -99,10 +99,10 @@ impl SourceLoader {
             .get(&source_config.source_type)
             .ok_or_else(|| SourceLoaderError::UnknownSourceType {
                 requested_source_type: source_config.source_type.clone(),
-                available_source_types: self.type_to_factory.keys().join(","),
+                available_source_types: self.type_to_factory.keys().join(", "),
             })?;
         let SourceConfig {
-            id,
+            source_id,
             source_type,
             params,
         } = source_config;
@@ -110,8 +110,8 @@ impl SourceLoader {
             .create_source(params, checkpoint)
             .await
             .map_err(|error| SourceLoaderError::FailedToCreateSource {
-                source_id: id,
-                source_type: source_type.clone(),
+                source_id,
+                source_type,
                 error,
             })
     }
@@ -128,7 +128,7 @@ mod tests {
     async fn test_source_loader_success() -> anyhow::Result<()> {
         let source_loader = quickwit_supported_sources();
         let source_config = SourceConfig {
-            id: "test-source".to_string(),
+            source_id: "test-source".to_string(),
             source_type: "vec".to_string(),
             params: json!({"items": [], "batch_num_docs": 3}),
         };
@@ -142,7 +142,7 @@ mod tests {
     async fn test_source_loader_missing_type() {
         let source_loader = quickwit_supported_sources();
         let source_config = SourceConfig {
-            id: "test-source".to_string(),
+            source_id: "test-source".to_string(),
             source_type: "vec2".to_string(),
             params: json!({"items": []}),
         };
@@ -159,7 +159,7 @@ mod tests {
     async fn test_source_loader_invalid_params() -> anyhow::Result<()> {
         let source_loader = quickwit_supported_sources();
         let source_config = SourceConfig {
-            id: "test-source".to_string(),
+            source_id: "test-source".to_string(),
             source_type: "vec".to_string(),
             params: json!({"item": [], "batch_num_docs": 3}), //< item is misspelled
         };
