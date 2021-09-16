@@ -28,7 +28,7 @@ use quickwit_storage::{
     quickwit_storage_uri_resolver, PutPayload, Storage, StorageErrorKind, StorageResolverError,
     StorageUriResolver,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Mutex};
 
 use crate::checkpoint::CheckpointDelta;
 use crate::metastore::match_tags_filter;
@@ -55,6 +55,7 @@ fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
 pub struct SingleFileMetastore {
     storage: Arc<dyn Storage>,
     cache: Arc<RwLock<HashMap<String, MetadataSet>>>,
+    lock: Arc<Mutex<()>>,
 }
 
 #[allow(dead_code)]
@@ -71,6 +72,7 @@ impl SingleFileMetastore {
         SingleFileMetastore {
             storage,
             cache: Arc::new(RwLock::new(HashMap::new())),
+            lock: Arc::new(Mutex::new(())),
         }
     }
 
@@ -253,6 +255,8 @@ impl SingleFileMetastore {
 #[async_trait]
 impl Metastore for SingleFileMetastore {
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
+        let _guard = self.lock.lock().await;
+
         // Check for the existence of index.
         let exists = self.index_exists(&index_metadata.index_id).await?;
 
@@ -272,6 +276,8 @@ impl Metastore for SingleFileMetastore {
     }
 
     async fn delete_index(&self, index_id: &str) -> MetastoreResult<()> {
+        let _guard = self.lock.lock().await;
+
         // Check whether the index exists.
         let exists = self.index_exists(index_id).await?;
 
@@ -312,6 +318,8 @@ impl Metastore for SingleFileMetastore {
         index_id: &str,
         mut metadata: SplitMetadataAndFooterOffsets,
     ) -> MetastoreResult<()> {
+        let _guard = self.lock.lock().await;
+
         let mut metadata_set = self.get_index(index_id).await?;
 
         // Check whether the split exists.
@@ -347,6 +355,8 @@ impl Metastore for SingleFileMetastore {
         split_ids: &[&'a str],
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
+        let _guard = self.lock.lock().await;
+
         let mut metadata_set = self.get_index(index_id).await?;
         metadata_set
             .index
@@ -364,6 +374,8 @@ impl Metastore for SingleFileMetastore {
         new_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
+        let _guard = self.lock.lock().await;
+
         let mut metadata_set = self.get_index(index_id).await?;
 
         // Try to publish splits.
@@ -429,6 +441,8 @@ impl Metastore for SingleFileMetastore {
         index_id: &str,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
+        let _guard = self.lock.lock().await;
+
         let mut metadata_set = self.get_index(index_id).await?;
 
         let is_modified =
@@ -445,6 +459,8 @@ impl Metastore for SingleFileMetastore {
         index_id: &str,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
+        let _guard = self.lock.lock().await;
+
         let mut metadata_set = self.get_index(index_id).await?;
 
         for &split_id in split_ids {
