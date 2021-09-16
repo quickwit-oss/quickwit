@@ -952,7 +952,7 @@ impl Metastore for PostgresqlMetastore {
                         .iter()
                         .map(String::as_str)
                         .collect::<Vec<_>>(),
-                )?
+                )?;
             }
 
             Ok(())
@@ -993,7 +993,7 @@ impl Metastore for PostgresqlMetastore {
                         .iter()
                         .map(String::as_str)
                         .collect::<Vec<_>>(),
-                )?
+                )?;
             }
 
             Ok(())
