@@ -43,7 +43,7 @@ mod storage_resolver;
 mod storage_with_upload_cache;
 
 pub use storage_with_upload_cache::{
-    create_storage_with_upload_cache, CacheConfig, StorageWithUploadCache,
+    create_storage_with_upload_cache, DiskCapacity, StorageWithUploadCache,
 };
 
 pub use self::bundle_storage::{

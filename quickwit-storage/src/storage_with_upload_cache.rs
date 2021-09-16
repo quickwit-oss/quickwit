@@ -53,6 +53,15 @@ impl DiskCapacity {
     }
 }
 
+impl Default for DiskCapacity {
+    fn default() -> Self {
+        Self {
+            max_num_files: 1000,
+            max_num_bytes: 10_000_000_000, // 10GB
+        }
+    }
+}
+
 /// CacheState is a struct for serializing/deserializing the cache state.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CacheState {
@@ -75,7 +84,7 @@ impl CacheState {
 
 /// A struct to wrap the lru cache and its info.
 pub struct CacheWithMeta {
-    /// Underlying L.R.U cache.
+    /// Underlying LRU cache.
     pub cache: LruCache<PathBuf, usize>,
     /// Current number of bytes in the cache.
     pub num_bytes: usize,
@@ -173,7 +182,7 @@ impl StorageWithUploadCache {
             cache_storage_root,
             disk_capacity: cache_state.disk_capacity,
             disk_cache: Mutex::new(CacheWithMeta {
-                cache: LruCache::unbounded(),
+                cache: disk_cache,
                 num_bytes,
                 num_files,
             }),
@@ -210,11 +219,9 @@ impl Storage for StorageWithUploadCache {
         let mut locked_disk_cache = self.disk_cache.lock().await;
         let payload_length = payload.len().await? as usize;
         // Ignore storing an item that cannot fit in the cache.
-        if self
-            .disk_capacity
-            .exceeds_capacity(payload_length, locked_disk_cache.num_files)
-        {
-            return Ok(());
+        if payload_length > self.disk_capacity.max_num_bytes {
+            warn!("Failed to cache file: file size exceeds total cache capacity.");
+            return Ok(())
         }
 
         if let Some(item_num_bytes) = locked_disk_cache.cache.pop(&path.to_path_buf()) {
@@ -335,23 +342,6 @@ fn atomic_write(path: &Path, content: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-/// A struct embedding the cache parameters.
-#[derive(Debug, Clone)]
-pub struct CacheConfig {
-    /// The maximum number of files for the local file cache.
-    pub max_num_files: usize,
-    /// The maximum size in bytes allowed for the local file cache.
-    pub max_num_bytes: usize,
-}
-
-impl Default for CacheConfig {
-    fn default() -> Self {
-        Self {
-            max_num_files: 1000,
-            max_num_bytes: 10_000_000_000, // 10GB
-        }
-    }
-}
 
 /// Creates an instance of [`StorageWithUploadCache`].
 ///
@@ -361,7 +351,7 @@ pub fn create_storage_with_upload_cache(
     remote_storage: Arc<dyn Storage>,
     storage_uri_resolver: &StorageUriResolver,
     cache_dir: &Path,
-    config: CacheConfig,
+    capacity: DiskCapacity,
 ) -> crate::StorageResult<Arc<dyn Storage>> {
     let cache_state_file_path = cache_dir.join(CACHE_STATE_FILE_NAME);
     let storage = if cache_state_file_path.exists() {
@@ -374,8 +364,8 @@ pub fn create_storage_with_upload_cache(
         StorageWithUploadCache::create(
             remote_storage,
             cache_storage,
-            config.max_num_files,
-            config.max_num_bytes,
+            capacity.max_num_files,
+            capacity.max_num_bytes,
         )?
     };
 

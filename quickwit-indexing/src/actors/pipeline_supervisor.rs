@@ -26,7 +26,7 @@ use quickwit_actors::{
     KillSwitch, QueueCapacity, Supervisable,
 };
 use quickwit_metastore::{Metastore, SplitState};
-use quickwit_storage::{create_storage_with_upload_cache, CacheConfig, StorageUriResolver};
+use quickwit_storage::{create_storage_with_upload_cache, DiskCapacity, StorageUriResolver};
 use tokio::join;
 use tracing::{debug, error, info};
 
@@ -190,7 +190,7 @@ impl IndexingPipelineSupervisor {
             index_storage,
             &self.params.storage_uri_resolver,
             cache_directory.path(),
-            CacheConfig::default(),
+            DiskCapacity::default(),
         )?;
 
         let tags_field = index_metadata
