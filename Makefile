@@ -20,5 +20,5 @@ license-fix:
 	docker run -it --rm -v $(shell pwd):/github/workspace ghcr.io/apache/skywalking-eyes/license-eye header fix
 
 fmt:
-	@echo "Formatting Rust files..."
-	@(rustup toolchain list | not grep nightly -q && echo "Toolchain 'nightly' is not installed. Please install using 'rustup toolchain install nightly'.") || cargo +nightly fmt
+	@echo "Formatting Rust files"
+	@cargo +nightly fmt 
