@@ -148,6 +148,10 @@ mod tests {
 
         let bundle_dir = BundleDirectory::open_bundle(bundle_file_slice)?;
 
+        assert!(bundle_dir.exists(Path::new("f1")).unwrap());
+        assert!(bundle_dir.exists(Path::new("f2")).unwrap());
+        assert!(!bundle_dir.exists(Path::new("f3")).unwrap());
+
         let f1_data = bundle_dir.atomic_read(Path::new("f1"))?;
         assert_eq!(&*f1_data, &[123u8, 76u8]);
 
