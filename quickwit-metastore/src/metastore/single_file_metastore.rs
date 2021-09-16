@@ -59,14 +59,14 @@ pub struct SingleFileMetastore {
 
 #[allow(dead_code)]
 impl SingleFileMetastore {
-    /// Create a SingleFileMetastore for tests.
+    /// Creates a [`SingleFileMetastore`] for tests.
     #[doc(hidden)]
     pub fn for_test() -> Self {
         use quickwit_storage::RamStorage;
         SingleFileMetastore::new(Arc::new(RamStorage::default()))
     }
 
-    /// Creates a meta store given a storage.
+    /// Creates a [`SingleFileMetastore`] for a specified storage.
     pub fn new(storage: Arc<dyn Storage>) -> Self {
         SingleFileMetastore {
             storage,
@@ -143,7 +143,7 @@ impl SingleFileMetastore {
     /// Serializes the metadata set and stores the data on the storage.
     async fn put_index(&self, metadata_set: MetadataSet) -> MetastoreResult<()> {
         // Serialize metadata set.
-        let content: Vec<u8> = serde_json::to_vec(&metadata_set).map_err(|serde_err| {
+        let content: Vec<u8> = serde_json::to_vec_pretty(&metadata_set).map_err(|serde_err| {
             MetastoreError::InternalError {
                 message: "Failed to serialize Metadata set".to_string(),
                 cause: anyhow::anyhow!(serde_err),
@@ -162,7 +162,10 @@ impl SingleFileMetastore {
                     message: "The request credentials do not allow for this operation.".to_string(),
                 },
                 _ => MetastoreError::InternalError {
-                    message: "Failed to put metadata set back into storage.".to_string(),
+                    message: format!(
+                        "Failed to write metastore file to `{}`.",
+                        metadata_path.display()
+                    ),
                     cause: anyhow::anyhow!(storage_err),
                 },
             })?;
@@ -500,8 +503,7 @@ impl MetastoreFactory for SingleFileMetastoreFactory {
                 }
                 StorageResolverError::FailedToOpenStorage { kind, message } => {
                     MetastoreResolverError::FailedToOpenMetastore(MetastoreError::InternalError {
-                        message: "Failed to open storage hosting the single file metastore."
-                            .to_string(),
+                        message: format!("Failed to open metastore file `{}`.", uri),
                         cause: anyhow::anyhow!("StorageError {:?}: {}.", kind, message),
                     })
                 }
