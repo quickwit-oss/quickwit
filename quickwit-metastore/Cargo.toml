@@ -43,4 +43,4 @@ tempfile = '3'
 [features]
 testsuite = ["mockall", "tempfile"]
 ci-test = []
-postgresql = [ "diesel", "diesel_migrations" ]
+postgres = [ "diesel", "diesel_migrations" ]

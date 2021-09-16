@@ -57,9 +57,12 @@ jobs:
       # PostgreSQL service container
       postgres:
         image: postgres:latest
+        ports:
+          - 5432:5432
         env:
           POSTGRES_USER: quickwit-dev
           POSTGRES_PASSWORD: quickwit-dev
+          POSTGRES_DB: quickwit-metastore-dev
         # Set health checks to wait until postgres has started
         options: >-
           --health-cmd pg_isready
@@ -79,8 +82,9 @@ jobs:
         name: cargo test
         with:
           command: test
+          args: --features=postgres
         env:
-          TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/metastore
+          TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/quickwit-metastore-dev
       # See #473 #472
       # - uses: actions-rs/cargo@v1
       #   name: cargo test failpoints

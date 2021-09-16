@@ -1788,7 +1788,7 @@ macro_rules! metastore_test_suite {
     };
 }
 
-#[cfg(feature = "postgresql")]
+#[cfg(feature = "postgres")]
 macro_rules! metastore_test_suite_for_postgresql {
     ($metastore_type:ty) => {
         #[cfg(test)]
