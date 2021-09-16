@@ -7,7 +7,7 @@ help:
 # `make docker-compose-up` starts all the services.
 # `make docker-compose-up DOCKER_SERVICES='jaeger,localstack'` starts the subset of services matching the profiles.
 docker-compose-up:
-	@echo "Launching ${DOCKER_SERVICES} Docker service(s)..."
+	@echo "Launching ${DOCKER_SERVICES} Docker service(s)"
 	COMPOSE_PROFILES=$(DOCKER_SERVICES) docker-compose -f docker-compose.yml up --remove-orphans
 
 docker-compose-down:
@@ -21,4 +21,4 @@ license-fix:
 
 fmt:
 	@echo "Formatting Rust files"
-	@cargo +nightly fmt 
+	@(rustup toolchain list | ( ! grep -q nightly && echo "Toolchain 'nightly' is not installed. Please install using 'rustup toolchain install nightly'.") ) || cargo +nightly fmt
