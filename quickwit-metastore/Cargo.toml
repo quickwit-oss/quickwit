@@ -14,14 +14,16 @@ documentation = "https://quickwit.io/docs/"
 anyhow = "1.0"
 async-trait = "0.1"
 chrono = "0.4"
-quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
-quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
+diesel = { version = "1.4", features = ["postgres", "chrono", "extras"], optional = true }
+diesel_migrations =  { version = "1.4", optional = true }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 thiserror = "1.0"
 tokio = { version = "1.6", features = ["full"]}
 tracing = "0.1"
 
+quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
+quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
 
 [dependencies.mockall]
 version = "0.9"
@@ -32,9 +34,13 @@ version = "3"
 optional = true
 
 [dev-dependencies]
+dotenv = "0.15"
 mockall = '0.9'
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage", features=["testsuite"]}
+quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config", features=["testsuite"] }
 tempfile = '3'
 
 [features]
 testsuite = ["mockall", "tempfile"]
+ci-test = []
+postgresql = [ "diesel", "diesel_migrations" ]

@@ -27,6 +27,9 @@ use crate::checkpoint::IncompatibleCheckpointDelta;
 #[allow(missing_docs)]
 #[derive(Debug, Error)]
 pub enum MetastoreError {
+    #[error("Connection error: `{message}`.")]
+    ConnectionError { message: String },
+
     #[error("Index `{index_id}` already exists.")]
     IndexAlreadyExists { index_id: String },
 
@@ -57,8 +60,19 @@ pub enum MetastoreError {
     #[error("Split `{split_id}` is not staged.")]
     SplitIsNotStaged { split_id: String },
 
-    #[error("Published checkpoint delta overlaps with current checkpoint: {0:?}.")]
+    #[error("Publish checkpoint delta overlaps with the current checkpoint: {0:?}.")]
     IncompatibleCheckpointDelta(#[from] IncompatibleCheckpointDelta),
+
+    #[cfg(feature = "postgresql")]
+    #[error("Database error: {0:?}.")]
+    DbError(diesel::result::Error),
+}
+
+#[cfg(feature = "postgresql")]
+impl From<diesel::result::Error> for MetastoreError {
+    fn from(err: diesel::result::Error) -> MetastoreError {
+        MetastoreError::DbError(err)
+    }
 }
 
 /// Generic Result type for metastore operations.
