@@ -60,16 +60,16 @@ $ cargo test
 ```
 
 To test including PostgresqlMetastore, you need to start PostgreSQL beforehand.
-Start PostgreSQL for testing with the following command.
+Start PostgreSQL for testing with the following command in `quickwit` project root.
 
 ```
-$ docker-compose up --force-recreate -d
+$ make docker-compose-up DOCKER_SERVICES=postgres
 ```
 
 Once PostgreSQL is up and running, you can run tests including PostgresqlMetastore with the following command.
 
 ```
-$ cargo test --features=postgresql
+$ cargo test --features=postgres
 ```
 
 You can stop PostgreSQL with the following command.
