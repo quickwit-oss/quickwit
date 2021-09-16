@@ -981,35 +981,6 @@ impl Metastore for PostgresqlMetastore {
             });
         }
 
-        // Checks if the given sjplit IDs contains a split ID that cannot be deleted.
-        let select_non_deletable_splits_statement = schema::splits::dsl::splits.filter(
-            schema::splits::dsl::index_id.eq(index_id).and(
-                schema::splits::dsl::split_id.eq_any(split_ids).and(
-                    schema::splits::dsl::split_state
-                        .ne(SplitState::Staged.to_string())
-                        .and(
-                            schema::splits::dsl::split_state
-                                .ne(SplitState::ScheduledForDeletion.to_string()),
-                        ),
-                ),
-            ),
-        );
-        debug!(sql=%debug_query::<Pg, _>(&select_non_deletable_splits_statement).to_string());
-        let non_deletable_splits: Vec<model::Split> = select_non_deletable_splits_statement
-            .get_results(&conn)
-            .map_err(MetastoreError::DbError)?;
-        if !non_deletable_splits.is_empty() {
-            let mut non_deletable_split_id = "".to_string();
-            if let Some(non_deletable_split) = non_deletable_splits.first() {
-                non_deletable_split_id = non_deletable_split.split_id.clone();
-            }
-            let message: String = format!(
-                "This split {:?} is not in a deletable state",
-                non_deletable_split_id
-            );
-            return Err(MetastoreError::Forbidden { message });
-        }
-
         conn.transaction::<_, MetastoreError, _>(|| {
             // Delete splits.
             let deleted_split_ids = self.delete_splits(&conn, index_id, split_ids)?;
