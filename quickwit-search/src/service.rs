@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -74,7 +75,10 @@ pub trait SearchService: 'static + Send + Sync {
     async fn fetch_docs(&self, request: FetchDocsRequest) -> crate::Result<FetchDocsResponse>;
 
     /// Performs a root search returning a receiver for streaming
-    async fn root_search_stream(&self, request: SearchStreamRequest) -> crate::Result<Vec<Bytes>>;
+    async fn root_search_stream(
+        &self,
+        request: SearchStreamRequest,
+    ) -> crate::Result<Pin<Box<dyn futures::Stream<Item = crate::Result<Bytes>> + Send>>>;
 
     /// Performs a leaf search on a given set of splits and returns a stream.
     async fn leaf_search_stream(
@@ -171,15 +175,15 @@ impl SearchService for SearchServiceImpl {
     async fn root_search_stream(
         &self,
         stream_request: SearchStreamRequest,
-    ) -> crate::Result<Vec<Bytes>> {
+    ) -> crate::Result<Pin<Box<dyn futures::Stream<Item = crate::Result<Bytes>> + Send>>> {
         let data = root_search_stream(
-            &stream_request,
+            stream_request,
             self.metastore.as_ref(),
-            &self.cluster_client,
+            self.cluster_client.clone(),
             &self.client_pool,
         )
         .await?;
-        Ok(data)
+        Ok(Box::pin(data))
     }
 
     async fn leaf_search_stream(

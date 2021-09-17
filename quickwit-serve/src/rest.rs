@@ -21,8 +21,9 @@ use std::convert::{Infallible, TryFrom};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use bytes::Bytes;
-use futures::stream::{self, StreamExt};
+use futures::stream::StreamExt;
+use hyper::header::HeaderValue;
+use hyper::HeaderMap;
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_common::metrics;
 use quickwit_proto::OutputFormat;
@@ -250,9 +251,29 @@ async fn search_stream_endpoint<TSearchService: SearchService>(
         tags: search_request.tags.unwrap_or_default(),
         partition_by_field: search_request.partition_by_field,
     };
-    let data = search_service.root_search_stream(request).await?;
-    let stream = stream::iter(data).map(Result::<Bytes, std::io::Error>::Ok);
-    let body = hyper::Body::wrap_stream(stream);
+    let mut data = search_service.root_search_stream(request).await?;
+    let (mut sender, body) = hyper::Body::channel();
+    tokio::spawn(async move {
+        while let Some(result) = data.next().await {
+            match result {
+                Ok(bytes) => {
+                    if sender.send_data(bytes).await.is_err() {
+                        break;
+                    }
+                }
+                Err(_) => {
+                    // Add trailer to signal to the client that there is an error.
+                    // TODO: a test with curl don't show the trailers, report the issue to
+                    // hyper/warp projects.
+                    let header_value = HeaderValue::from_static("search stream error");
+                    let mut trailers = HeaderMap::new();
+                    trailers.insert("X-Stream-Error", header_value);
+                    let _ = sender.send_trailers(trailers).await;
+                    break;
+                }
+            };
+        }
+    });
     Ok(body)
 }
 
@@ -333,6 +354,7 @@ where D: Deserializer<'de> {
 #[cfg(test)]
 mod tests {
     use assert_json_diff::assert_json_include;
+    use bytes::Bytes;
     use mockall::predicate;
     use quickwit_search::{MockSearchService, SearchError};
     use serde_json::json;
@@ -571,7 +593,12 @@ mod tests {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
             .expect_root_search_stream()
-            .return_once(|_| Ok(vec![Bytes::from("first row\n"), Bytes::from("second row")]));
+            .return_once(|_| {
+                Ok(Box::pin(futures::stream::iter(vec![
+                    Ok(Bytes::from("first row\n")),
+                    Ok(Bytes::from("second row")),
+                ])))
+            });
         let rest_search_stream_api_handler =
             super::search_stream_handler(Arc::new(mock_search_service)).recover(recover_fn);
         let response = warp::test::request()

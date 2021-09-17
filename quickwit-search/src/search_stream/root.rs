@@ -37,12 +37,11 @@ use crate::{
 /// Perform a distributed search stream.
 #[instrument(skip(metastore, cluster_client, client_pool))]
 pub async fn root_search_stream(
-    search_stream_request: &SearchStreamRequest,
+    search_stream_request: SearchStreamRequest,
     metastore: &dyn Metastore,
-    cluster_client: &ClusterClient,
+    cluster_client: ClusterClient,
     client_pool: &Arc<SearchClientPool>,
-) -> Result<Vec<Bytes>, SearchError> {
-    let start_instant = tokio::time::Instant::now();
+) -> crate::Result<impl futures::Stream<Item = crate::Result<Bytes>>> {
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
     let search_request = SearchRequest::from(search_stream_request.clone());
@@ -66,25 +65,30 @@ pub async fn root_search_stream(
     let index_config_str = serde_json::to_string(&index_metadata.index_config).map_err(|err| {
         SearchError::InternalError(format!("Could not serialize index config {}", err))
     })?;
-    let bytes: Vec<_> = futures::stream::iter(assigned_leaf_search_jobs.into_iter())
-        .map(|(client, client_jobs)| {
-            let leaf_request = jobs_to_leaf_request(
-                search_stream_request,
-                &index_config_str,
-                &index_metadata.index_uri,
-                &split_metadata_map,
-                &client_jobs,
-            );
-            cluster_client.leaf_search_stream((leaf_request, client))
+    let result_stream = futures::stream::iter(assigned_leaf_search_jobs.into_iter())
+        .map(move |(client, client_jobs)| {
+            (
+                jobs_to_leaf_request(
+                    &search_stream_request,
+                    &index_config_str,
+                    &index_metadata.index_uri,
+                    &split_metadata_map,
+                    &client_jobs,
+                ),
+                client,
+                cluster_client.clone(),
+            )
+        })
+        .map(|(leaf_request, client, cluster_client)| async move {
+            let result = cluster_client
+                .leaf_search_stream((leaf_request, client))
+                .await;
+            result
         })
         .buffer_unordered(MAX_CONCURRENT_LEAF_TASKS)
         .flatten()
-        .map_ok(|response| Bytes::from(response.data))
-        .try_collect()
-        .await?;
-    let elapsed = start_instant.elapsed();
-    info!("Root search stream completed in {:?}", elapsed);
-    Ok(bytes)
+        .map_ok(|response| Bytes::from(response.data));
+    Ok(result_stream)
 }
 
 fn jobs_to_leaf_request(
@@ -230,8 +234,8 @@ mod tests {
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
         let cluster_client = ClusterClient::new(client_pool.clone());
-        let result: Vec<Bytes> =
-            root_search_stream(&request, &metastore, &cluster_client, &client_pool).await?;
+        let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
+        let result: Vec<_> = stream.try_collect().await?;
         assert_eq!(result.len(), 2);
         assert_eq!(&result[0], &b"123"[..]);
         assert_eq!(&result[1], &b"456"[..]);
@@ -298,7 +302,8 @@ mod tests {
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
         let cluster_client = ClusterClient::new(client_pool.clone());
-        let result = root_search_stream(&request, &metastore, &cluster_client, &client_pool).await;
+        let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
+        let result: Result<Vec<_>, SearchError> = stream.try_collect().await;
         assert_eq!(result.is_err(), true);
         assert_eq!(result.unwrap_err().to_string(), "Internal error: `error`.");
         Ok(())
