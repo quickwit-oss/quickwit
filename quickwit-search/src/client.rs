@@ -111,11 +111,11 @@ impl SearchServiceClient {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);
-                let tonic_result = grpc_client
+                let tonic_response = grpc_client
                     .root_search(tonic_request)
                     .await
                     .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-                Ok(tonic_result.into_inner())
+                Ok(tonic_response.into_inner())
             }
             SearchServiceClientImpl::Local(service) => service.root_search(request).await,
         }
@@ -125,7 +125,7 @@ impl SearchServiceClient {
     pub async fn leaf_search(
         &mut self,
         request: quickwit_proto::LeafSearchRequest,
-    ) -> Result<quickwit_proto::LeafSearchResult, SearchError> {
+    ) -> Result<quickwit_proto::LeafSearchResponse, SearchError> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let mut tonic_request = Request::new(request);
@@ -135,11 +135,11 @@ impl SearchServiceClient {
                         &mut MetadataMap(tonic_request.metadata_mut()),
                     )
                 });
-                let tonic_result = grpc_client
+                let tonic_response = grpc_client
                     .leaf_search(tonic_request)
                     .await
                     .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-                Ok(tonic_result.into_inner())
+                Ok(tonic_response.into_inner())
             }
             SearchServiceClientImpl::Local(service) => service.leaf_search(request).await,
         }
@@ -219,11 +219,11 @@ impl SearchServiceClient {
                         &mut MetadataMap(tonic_request.metadata_mut()),
                     )
                 });
-                let tonic_result = grpc_client
+                let tonic_response = grpc_client
                     .fetch_docs(tonic_request)
                     .await
                     .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-                Ok(tonic_result.into_inner())
+                Ok(tonic_response.into_inner())
             }
             SearchServiceClientImpl::Local(service) => service.fetch_docs(request).await,
         }
@@ -240,14 +240,11 @@ pub async fn create_search_service_client(
         .authority(grpc_addr.to_string().as_str())
         .path_and_query("/")
         .build()?;
-
     // Create a channel with connect_lazy to automatically reconnect to the node.
     let channel = Endpoint::from(uri).connect_lazy()?;
-
     let client = SearchServiceClient::from_grpc_client(
         quickwit_proto::search_service_client::SearchServiceClient::new(channel),
         grpc_addr,
     );
-
     Ok(client)
 }

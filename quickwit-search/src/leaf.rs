@@ -29,7 +29,9 @@ use itertools::{Either, Itertools};
 use once_cell::sync::OnceCell;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_index_config::IndexConfig;
-use quickwit_proto::{LeafSearchResult, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError};
+use quickwit_proto::{
+    LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError,
+};
 use quickwit_storage::{BundleStorage, MemorySizedCache, Storage};
 use tantivy::collector::Collector;
 use tantivy::query::Query;
@@ -190,7 +192,7 @@ async fn leaf_search_single_split(
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
     index_config: Arc<dyn IndexConfig>,
-) -> crate::Result<LeafSearchResult> {
+) -> crate::Result<LeafSearchResponse> {
     let split_id = split.split_id.to_string();
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
@@ -214,8 +216,8 @@ async fn leaf_search_single_split(
         split_id = %split.split_id,
     );
     let _ = span.enter();
-    let leaf_search_result = searcher.search(&query, &quickwit_collector)?;
-    Ok(leaf_search_result)
+    let leaf_search_response = searcher.search(&query, &quickwit_collector)?;
+    Ok(leaf_search_response)
 }
 
 /// `leaf` step of search.
@@ -228,7 +230,7 @@ pub async fn leaf_search(
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
     index_config: Arc<dyn IndexConfig>,
-) -> Result<LeafSearchResult, SearchError> {
+) -> Result<LeafSearchResponse, SearchError> {
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
         .map(|split| {
@@ -248,27 +250,27 @@ pub async fn leaf_search(
         .collect();
     let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
 
-    let (search_results, errors): (Vec<LeafSearchResult>, Vec<(String, SearchError)>) =
+    let (split_search_responses, errors): (Vec<LeafSearchResponse>, Vec<(String, SearchError)>) =
         split_search_results
             .into_iter()
             .partition_map(|split_search_res| match split_search_res {
-                Ok(search_res) => Either::Left(search_res),
+                Ok(split_search_resp) => Either::Left(split_search_resp),
                 Err(err) => Either::Right(err),
             });
 
     let merge_collector = make_merge_collector(request);
-    let mut merged_search_results =
-        spawn_blocking(move || merge_collector.merge_fruits(search_results))
-            .instrument(info_span!("merge_search_results"))
+    let mut merged_search_response =
+        spawn_blocking(move || merge_collector.merge_fruits(split_search_responses))
+            .instrument(info_span!("merge_search_responses"))
             .await
-            .with_context(|| "Merging search on split results failed")??;
+            .context("Failed to merge split search responses.")??;
 
-    merged_search_results
+    merged_search_response
         .failed_splits
         .extend(errors.iter().map(|(split_id, err)| SplitSearchError {
             split_id: split_id.to_string(),
             error: format!("{:?}", err),
             retryable_error: true,
         }));
-    Ok(merged_search_results)
+    Ok(merged_search_response)
 }

@@ -167,7 +167,7 @@ pub async fn single_node_search(
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();
     let index_config = index_metadata.index_config;
-    let leaf_search_result = leaf_search(
+    let leaf_search_response = leaf_search(
         search_request,
         index_storage.clone(),
         &split_metadata[..],
@@ -176,7 +176,7 @@ pub async fn single_node_search(
     .await
     .context("Failed to perform leaf search.")?;
     let fetch_docs_result = fetch_docs(
-        leaf_search_result.partial_hits,
+        leaf_search_response.partial_hits,
         index_storage,
         &split_metadata,
     )
@@ -184,7 +184,7 @@ pub async fn single_node_search(
     .context("Failed to perform fetch docs.")?;
     let elapsed = start_instant.elapsed();
     Ok(SearchResponse {
-        num_hits: leaf_search_result.num_hits,
+        num_hits: leaf_search_response.num_hits,
         hits: fetch_docs_result.hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
         errors: vec![],

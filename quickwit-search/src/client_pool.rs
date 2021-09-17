@@ -30,7 +30,7 @@ use crate::SearchServiceClient;
 /// The unit in which distributed search is performed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
-    /// Split id.
+    /// Split ID.
     pub split_id: String,
 
     /// The cost of the job. This is used to sort jobs.
@@ -44,25 +44,30 @@ pub trait ClientPool: Send + Sync + 'static {
     /// Assign the given job to the clients.
     /// Returns a list of pair (SearchServiceClient, Vec<Job>)
     ///
-    /// When exclude_addresses filters all clients it is ignored.
+    /// Excluded addresses are ignored when they include all the clients.
     async fn assign_jobs(
         &self,
         jobs: Vec<Job>,
-        exclude_addresses: &HashSet<SocketAddr>,
+        excluded_addresses: &HashSet<SocketAddr>,
     ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<Job>)>>;
 
-    /// Assign only one job to clients and return a pair
-    /// (SearchServiceClient, Job).
+    /// Assigns one job to a client.
     async fn assign_job(
         &self,
         job: Job,
-        exclude_addresses: &HashSet<SocketAddr>,
+        excluded_addresses: &HashSet<SocketAddr>,
     ) -> anyhow::Result<SearchServiceClient> {
-        let result = self.assign_jobs(vec![job], exclude_addresses).await?;
-        result
+        self.assign_jobs(vec![job], excluded_addresses)
+            .await?
             .into_iter()
             .next()
             .map(|(client, _jobs)| client)
-            .ok_or_else(|| anyhow::anyhow!("Assign jobs must return at least one client."))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "`assign_jobs` with {} excluded addresses failed to return at least one \
+                     client.",
+                    excluded_addresses.len()
+                )
+            })
     }
 }

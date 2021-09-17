@@ -143,14 +143,14 @@ pub struct PartialHit {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct LeafSearchResult {
+pub struct LeafSearchResponse {
     /// Total number of documents matched by the query.
     #[prost(uint64, tag = "1")]
     pub num_hits: u64,
     /// List of the best top-K candidates for the given leaf query.
     #[prost(message, repeated, tag = "2")]
     pub partial_hits: ::prost::alloc::vec::Vec<PartialHit>,
-    /// The list of splits that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
+    /// The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
     #[prost(message, repeated, tag = "3")]
     pub failed_splits: ::prost::alloc::vec::Vec<SplitSearchError>,
     /// Total number of splits the leaf(s) were in charge of.
@@ -350,7 +350,7 @@ pub mod search_service_client {
         pub async fn leaf_search(
             &mut self,
             request: impl tonic::IntoRequest<super::LeafSearchRequest>,
-        ) -> Result<tonic::Response<super::LeafSearchResult>, tonic::Status> {
+        ) -> Result<tonic::Response<super::LeafSearchResponse>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
@@ -426,7 +426,7 @@ pub mod search_service_server {
         async fn leaf_search(
             &self,
             request: tonic::Request<super::LeafSearchRequest>,
-        ) -> Result<tonic::Response<super::LeafSearchResult>, tonic::Status>;
+        ) -> Result<tonic::Response<super::LeafSearchResponse>, tonic::Status>;
         #[doc = "/ Fetches the documents contents from the document store."]
         #[doc = "/ This methods takes `PartialHit`s and returns `Hit`s."]
         async fn fetch_docs(
@@ -518,7 +518,7 @@ pub mod search_service_server {
                     #[allow(non_camel_case_types)]
                     struct LeafSearchSvc<T: SearchService>(pub Arc<T>);
                     impl<T: SearchService> tonic::server::UnaryService<super::LeafSearchRequest> for LeafSearchSvc<T> {
-                        type Response = super::LeafSearchResult;
+                        type Response = super::LeafSearchResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
