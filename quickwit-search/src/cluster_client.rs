@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult,
+    FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResponse,
     LeafSearchStreamRequest, LeafSearchStreamResult,
 };
 use tokio::sync::mpsc::error::SendError;
@@ -71,7 +71,7 @@ impl ClusterClient {
     pub async fn leaf_search(
         &self,
         placed_request: (LeafSearchRequest, SearchServiceClient),
-    ) -> Result<LeafSearchResult, SearchError> {
+    ) -> Result<LeafSearchResponse, SearchError> {
         let (request, mut client) = placed_request;
         let mut result = client.leaf_search(request.clone()).await;
         let retry_policy = LeafSearchRetryPolicy {};
@@ -82,9 +82,8 @@ impl ClusterClient {
                 result, retry_request, client
             );
             let retry_result = client.leaf_search(retry_request).await;
-            result = merge_leaf_search_result(result, retry_result);
+            result = merge_leaf_search_results(result, retry_result);
         }
-
         result
     }
 
@@ -134,25 +133,25 @@ impl ClusterClient {
 }
 
 // Merge initial leaf search results with results obtained from a retry.
-fn merge_leaf_search_result(
-    result: Result<LeafSearchResult, SearchError>,
-    retry_result: Result<LeafSearchResult, SearchError>,
-) -> Result<LeafSearchResult, SearchError> {
-    match (result, retry_result) {
-        (Ok(mut response), Ok(mut retry_response)) => {
-            response
+fn merge_leaf_search_results(
+    initial_response_result: Result<LeafSearchResponse, SearchError>,
+    retry_response_result: Result<LeafSearchResponse, SearchError>,
+) -> Result<LeafSearchResponse, SearchError> {
+    match (initial_response_result, retry_response_result) {
+        (Ok(mut initial_response), Ok(mut retry_response)) => {
+            initial_response
                 .partial_hits
                 .append(&mut retry_response.partial_hits);
-            let merged_response = LeafSearchResult {
-                num_hits: response.num_hits + retry_response.num_hits,
-                num_attempted_splits: response.num_attempted_splits
+            let merged_response = LeafSearchResponse {
+                num_hits: initial_response.num_hits + retry_response.num_hits,
+                num_attempted_splits: initial_response.num_attempted_splits
                     + retry_response.num_attempted_splits,
                 failed_splits: retry_response.failed_splits,
-                partial_hits: response.partial_hits,
+                partial_hits: initial_response.partial_hits,
             };
             Ok(merged_response)
         }
-        (Ok(response), Err(_)) => Ok(response),
+        (Ok(initial_response), Err(_)) => Ok(initial_response),
         (Err(_), Ok(retry_response)) => Ok(retry_response),
         (Err(error), Err(_)) => Err(error),
     }
@@ -192,14 +191,14 @@ mod tests {
 
     use futures::StreamExt;
     use quickwit_proto::{
-        FetchDocsRequest, LeafSearchRequest, LeafSearchResult, LeafSearchStreamRequest,
+        FetchDocsRequest, LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest,
         LeafSearchStreamResult, PartialHit, SearchRequest, SearchStreamRequest,
         SplitIdAndFooterOffsets, SplitSearchError,
     };
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
     use crate::client_pool::Job;
-    use crate::cluster_client::{merge_leaf_search_result, ClusterClient};
+    use crate::cluster_client::{merge_leaf_search_results, ClusterClient};
     use crate::{ClientPool, MockSearchService, SearchClientPool, SearchError};
 
     fn mock_partial_hit(split_id: &str, sorting_field_value: u64, doc_id: u32) -> PartialHit {
@@ -369,7 +368,7 @@ mod tests {
         mock_service
             .expect_leaf_search()
             .return_once(|_: LeafSearchRequest| {
-                Ok(LeafSearchResult {
+                Ok(LeafSearchResponse {
                     num_hits: 0,
                     partial_hits: vec![],
                     failed_splits: vec![],
@@ -401,7 +400,7 @@ mod tests {
             .expect_leaf_search()
             .withf(|request| request.split_metadata[0].split_id == "split_1")
             .return_once(|_: LeafSearchRequest| {
-                Ok(LeafSearchResult {
+                Ok(LeafSearchResponse {
                     num_hits: 1,
                     partial_hits: vec![],
                     failed_splits: vec![SplitSearchError {
@@ -416,7 +415,7 @@ mod tests {
             .expect_leaf_search()
             .withf(|request| request.split_metadata[0].split_id == "split_2")
             .return_once(|_: LeafSearchRequest| {
-                Ok(LeafSearchResult {
+                Ok(LeafSearchResponse {
                     num_hits: 1,
                     partial_hits: vec![],
                     failed_splits: vec![SplitSearchError {
@@ -452,24 +451,24 @@ mod tests {
             split_id: "split_2".to_string(),
             retryable_error: true,
         };
-        let leaf_response = LeafSearchResult {
+        let leaf_response = LeafSearchResponse {
             num_hits: 1,
             partial_hits: vec![mock_partial_hit("split_1", 3, 1)],
             failed_splits: vec![split_error],
             num_attempted_splits: 1,
         };
-        let leaf_response_retry = LeafSearchResult {
+        let leaf_response_retry = LeafSearchResponse {
             num_hits: 1,
             partial_hits: vec![mock_partial_hit("split_2", 3, 1)],
             failed_splits: vec![],
             num_attempted_splits: 1,
         };
-        let merged_result =
-            merge_leaf_search_result(Ok(leaf_response), Ok(leaf_response_retry)).unwrap();
-        assert_eq!(merged_result.num_attempted_splits, 2);
-        assert_eq!(merged_result.num_hits, 2);
-        assert_eq!(merged_result.partial_hits.len(), 2);
-        assert_eq!(merged_result.failed_splits.len(), 0);
+        let merged_leaf_search_response =
+            merge_leaf_search_results(Ok(leaf_response), Ok(leaf_response_retry)).unwrap();
+        assert_eq!(merged_leaf_search_response.num_attempted_splits, 2);
+        assert_eq!(merged_leaf_search_response.num_hits, 2);
+        assert_eq!(merged_leaf_search_response.partial_hits.len(), 2);
+        assert_eq!(merged_leaf_search_response.failed_splits.len(), 0);
         Ok(())
     }
 
@@ -480,13 +479,13 @@ mod tests {
             split_id: "split_2".to_string(),
             retryable_error: true,
         };
-        let leaf_response = LeafSearchResult {
+        let leaf_response = LeafSearchResponse {
             num_hits: 1,
             partial_hits: vec![mock_partial_hit("split_1", 3, 1)],
             failed_splits: vec![split_error],
             num_attempted_splits: 1,
         };
-        let merged_result = merge_leaf_search_result(
+        let merged_result = merge_leaf_search_results(
             Err(SearchError::InternalError("error".to_string())),
             Ok(leaf_response),
         )
@@ -500,7 +499,7 @@ mod tests {
 
     #[test]
     fn test_merge_leaf_search_retry_error_on_error() -> anyhow::Result<()> {
-        let merge_error = merge_leaf_search_result(
+        let merge_error = merge_leaf_search_results(
             Err(SearchError::InternalError("error".to_string())),
             Err(SearchError::InternalError("retry error".to_string())),
         )

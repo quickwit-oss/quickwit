@@ -90,17 +90,17 @@ impl grpc::SearchService for GrpcSearchAdapter {
     async fn leaf_search(
         &self,
         request: tonic::Request<quickwit_proto::LeafSearchRequest>,
-    ) -> Result<tonic::Response<quickwit_proto::LeafSearchResult>, tonic::Status> {
+    ) -> Result<tonic::Response<quickwit_proto::LeafSearchResponse>, tonic::Status> {
         let parent_cx =
             global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
         Span::current().set_parent(parent_cx);
         let leaf_search_request = request.into_inner();
-        let leaf_search_result = self
+        let leaf_search_response = self
             .0
             .leaf_search(leaf_search_request)
             .await
             .map_err(Into::<tonic::Status>::into)?;
-        Ok(tonic::Response::new(leaf_search_result))
+        Ok(tonic::Response::new(leaf_search_response))
     }
 
     #[instrument(skip(self, request))]

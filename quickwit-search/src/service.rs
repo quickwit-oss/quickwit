@@ -24,7 +24,7 @@ use bytes::Bytes;
 use quickwit_index_config::IndexConfig;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult,
+    FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResponse,
     LeafSearchStreamRequest, LeafSearchStreamResult, SearchRequest, SearchResponse,
     SearchStreamRequest,
 };
@@ -67,7 +67,7 @@ pub trait SearchService: 'static + Send + Sync {
     /// it to other nodes.
     /// - it should be applied on the given subset of splits
     /// - hit content is not fetched, and we instead return a so-called `PartialHit`.
-    async fn leaf_search(&self, request: LeafSearchRequest) -> crate::Result<LeafSearchResult>;
+    async fn leaf_search(&self, request: LeafSearchRequest) -> crate::Result<LeafSearchResponse>;
 
     /// Fetches the documents contents from the document store.
     /// This methods takes `PartialHit`s and returns `Hit`s.
@@ -128,7 +128,7 @@ impl SearchService for SearchServiceImpl {
     async fn leaf_search(
         &self,
         leaf_search_request: LeafSearchRequest,
-    ) -> crate::Result<LeafSearchResult> {
+    ) -> crate::Result<LeafSearchResponse> {
         let search_request = leaf_search_request
             .search_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
@@ -139,7 +139,7 @@ impl SearchService for SearchServiceImpl {
         let split_ids = leaf_search_request.split_metadata;
         let index_config = deserialize_index_config(&leaf_search_request.index_config)?;
 
-        let leaf_search_result = leaf_search(
+        let leaf_search_response = leaf_search(
             &search_request,
             storage.clone(),
             &split_ids[..],
@@ -147,7 +147,7 @@ impl SearchService for SearchServiceImpl {
         )
         .await?;
 
-        Ok(leaf_search_result)
+        Ok(leaf_search_response)
     }
 
     async fn fetch_docs(

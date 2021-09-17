@@ -37,7 +37,7 @@ service SearchService {
   // it to other nodes.
   // - it should be applied on the given subset of splits
   // - Hit content is not fetched, and we instead return so called `PartialHit`.
-  rpc LeafSearch(LeafSearchRequest) returns (LeafSearchResult);
+  rpc LeafSearch(LeafSearchRequest) returns (LeafSearchResponse);
 
   /// Fetches the documents contents from the document store.
   /// This methods takes `PartialHit`s and returns `Hit`s.
@@ -164,14 +164,14 @@ message PartialHit {
   uint32 doc_id = 4;
 }
 
-message LeafSearchResult {
+message LeafSearchResponse {
   // Total number of documents matched by the query.
   uint64 num_hits = 1;
 
   // List of the best top-K candidates for the given leaf query.
   repeated PartialHit partial_hits = 2;
 
-  // The list of splits that failed. LeafSearchResult can be an aggregation of results, so there may be multiple.
+  // The list of splits that failed. LeafSearchResponse can be an aggregation of results, so there may be multiple.
   repeated SplitSearchError failed_splits = 3;
 
   // Total number of splits the leaf(s) were in charge of.

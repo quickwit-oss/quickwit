@@ -22,7 +22,7 @@ use std::collections::{BinaryHeap, HashSet};
 
 use itertools::Itertools;
 use quickwit_index_config::{IndexConfig, SortBy, SortOrder};
-use quickwit_proto::{LeafSearchResult, PartialHit, SearchRequest};
+use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest};
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader};
 use tantivy::schema::{Field, Schema};
@@ -175,7 +175,7 @@ impl QuickwitSegmentCollector {
 }
 
 impl SegmentCollector for QuickwitSegmentCollector {
-    type Fruit = LeafSearchResult;
+    type Fruit = LeafSearchResponse;
 
     fn collect(&mut self, doc_id: DocId, _score: Score) {
         if !self.accept_document(doc_id) {
@@ -186,7 +186,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
         self.collect_top_k(doc_id);
     }
 
-    fn harvest(self) -> LeafSearchResult {
+    fn harvest(self) -> LeafSearchResponse {
         let segment_ord = self.segment_ord;
         // TODO use into_iter_sorted() once it gets stable.
         let split_id = self.split_id;
@@ -201,7 +201,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
                 split_id: split_id.clone(),
             })
             .collect();
-        LeafSearchResult {
+        LeafSearchResponse {
             num_hits: self.num_hits,
             partial_hits,
             failed_splits: vec![],
@@ -239,7 +239,7 @@ impl GenericQuickwitCollector for QuickwitCollector {
 
 impl Collector for QuickwitCollector {
     type Child = QuickwitSegmentCollector;
-    type Fruit = LeafSearchResult;
+    type Fruit = LeafSearchResponse;
 
     fn for_segment(
         &self,
@@ -280,46 +280,52 @@ impl Collector for QuickwitCollector {
         false
     }
 
-    fn merge_fruits(&self, segment_fruits: Vec<LeafSearchResult>) -> tantivy::Result<Self::Fruit> {
+    fn merge_fruits(
+        &self,
+        segment_fruits: Vec<LeafSearchResponse>,
+    ) -> tantivy::Result<Self::Fruit> {
         // We want the hits in [start_offset..start_offset + max_hits).
         // All leaves will return their top [0..max_hits) documents.
         // We compute the overall [0..start_offset + max_hits) documents ...
         let num_hits = self.start_offset + self.max_hits;
-        let mut merged_leaf_result = merge_leaf_results(segment_fruits, num_hits);
+        let mut merged_leaf_response = merge_leaf_responses(segment_fruits, num_hits);
         // ... and drop the first [..start_offets) hits.
-        merged_leaf_result
+        merged_leaf_response
             .partial_hits
             .drain(0..self.start_offset)
             .count(); //< we just use count as a way to consume the entire iterator.
-        Ok(merged_leaf_result)
+        Ok(merged_leaf_response)
     }
 }
 
 /// Merges a set of Leaf Results.
-fn merge_leaf_results(leaf_results: Vec<LeafSearchResult>, max_hits: usize) -> LeafSearchResult {
+fn merge_leaf_responses(
+    leaf_responses: Vec<LeafSearchResponse>,
+    max_hits: usize,
+) -> LeafSearchResponse {
     // Optimization: No merging needed if there is only one result.
-    if leaf_results.len() == 1 {
-        return leaf_results.into_iter().next().unwrap_or_default(); //< default is actually never called
+    if leaf_responses.len() == 1 {
+        return leaf_responses.into_iter().next().unwrap_or_default(); //< default is actually never called
     }
-    let num_attempted_splits = leaf_results
+    let num_attempted_splits = leaf_responses
         .iter()
-        .map(|res| res.num_attempted_splits)
+        .map(|leaf_response| leaf_response.num_hits)
         .sum();
-    let num_hits: u64 = leaf_results
+    let num_hits: u64 = leaf_responses
         .iter()
-        .map(|leaf_result| leaf_result.num_hits)
+        .map(|leaf_response| leaf_response.num_hits)
         .sum();
-    let failed_splits = leaf_results
+    let failed_splits = leaf_responses
         .iter()
-        .flat_map(|res| res.failed_splits.iter().cloned())
+        .flat_map(|leaf_response| leaf_response.failed_splits.iter().cloned())
         .collect_vec();
-    let all_partial_hits: Vec<PartialHit> = leaf_results
+    let all_partial_hits: Vec<PartialHit> = leaf_responses
         .into_iter()
-        .flat_map(|leaf_result| leaf_result.partial_hits)
+        .flat_map(|leaf_response| leaf_response.partial_hits)
         .collect();
     // TODO optimize
     let top_k_partial_hits = top_k_partial_hits(all_partial_hits, max_hits);
-    LeafSearchResult {
+    LeafSearchResponse {
         num_hits,
         partial_hits: top_k_partial_hits,
         failed_splits,
