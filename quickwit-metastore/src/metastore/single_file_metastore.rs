@@ -136,10 +136,11 @@ impl SingleFileMetastore {
         if metadata_set.index.index_id != index_id {
             return Err(MetastoreError::InternalError {
                 message: "Inconsistent manifest: index_id mismatch.".to_string(),
-                cause: anyhow::anyhow!(format!(
+                cause: anyhow::anyhow!(
                     "Expected index_id `{}`, but found `{}`",
-                    index_id, metadata_set.index.index_id
-                )),
+                    index_id,
+                    metadata_set.index.index_id
+                ),
             });
         }
 
@@ -536,17 +537,19 @@ metastore_test_suite!(crate::SingleFileMetastore);
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::ops::RangeInclusive;
     use std::path::Path;
     use std::sync::Arc;
 
     use chrono::Utc;
     use quickwit_index_config::AllFlattenIndexConfig;
-    use quickwit_storage::{MockStorage, StorageErrorKind};
+    use quickwit_storage::{MockStorage, PutPayload, StorageErrorKind};
 
     use crate::checkpoint::{Checkpoint, CheckpointDelta};
+    use crate::metastore::single_file_metastore::meta_path;
     use crate::{
-        IndexMetadata, Metastore, MetastoreError, SingleFileMetastore, SplitMetadata,
+        IndexMetadata, MetadataSet, Metastore, MetastoreError, SingleFileMetastore, SplitMetadata,
         SplitMetadataAndFooterOffsets, SplitState,
     };
 
@@ -700,5 +703,36 @@ mod tests {
             .await
             .unwrap();
         assert!(!split.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_single_file_metastore_get_index_checks_for_inconsistent_index_id() {
+        let metastore = SingleFileMetastore::for_test();
+        let index_id = "my-index";
+
+        // put inconsitent index into storage
+        let metadata_set = MetadataSet {
+            index: IndexMetadata {
+                index_id: "inconsistent_index_id".to_string(),
+                index_uri: "ram://indexes/my-index".to_string(),
+                index_config: Arc::new(AllFlattenIndexConfig::default()),
+                checkpoint: Checkpoint::default(),
+            },
+            splits: HashMap::new(),
+        };
+        let content: Vec<u8> = serde_json::to_vec(&metadata_set).unwrap();
+        let metadata_path = meta_path(index_id);
+        metastore
+            .storage
+            .put(&metadata_path, PutPayload::from(content))
+            .await
+            .unwrap();
+
+        // getting metadatset with inconsistent indexi_id should raise an error.
+        let metastore_error = metastore.get_index(index_id).await.unwrap_err();
+        assert!(matches!(
+            metastore_error,
+            MetastoreError::InternalError { .. }
+        ));
     }
 }
