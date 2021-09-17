@@ -30,7 +30,7 @@ use crate::SearchServiceClient;
 /// The unit in which distributed search is performed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
-    /// SplitMetadataAndFooterOffsets
+    /// Split id.
     pub split_id: String,
 
     /// The cost of the job. This is used to sort jobs.
