@@ -641,14 +641,17 @@ mod tests {
 
         mock_storage // remove this if we end up changing the semantics of create.
             .expect_exists()
-            .returning(|_| Ok(false));
+            .returning(|_| Box::pin(async { Ok(false) }));
+
         mock_storage.expect_put().times(2).returning(|uri, _| {
             assert_eq!(uri, Path::new("my-index/quickwit.json"));
-            Ok(())
+            Box::pin(async { Ok(()) })
         });
         mock_storage.expect_put().times(1).returning(|_uri, _| {
-            Err(StorageErrorKind::Io
-                .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
+            Box::pin(async {
+                Err(StorageErrorKind::Io
+                    .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
+            })
         });
 
         let metastore = SingleFileMetastore::new(Arc::new(mock_storage));

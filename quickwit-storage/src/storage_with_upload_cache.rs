@@ -48,8 +48,14 @@ pub struct DiskCapacity {
 }
 
 impl DiskCapacity {
-    pub fn exceeds_capacity(&self, num_bytes: usize, num_files: usize) -> bool {
-        self.max_num_bytes < num_bytes || self.max_num_files < num_files
+    /// Check if an incomming item will exceed the capacity once inserted.  
+    pub fn exceeds_capacity(
+        &self,
+        total_bytes_after_insert: usize,
+        total_files_after_insert: usize,
+    ) -> bool {
+        self.max_num_bytes < total_bytes_after_insert
+            || self.max_num_files < total_files_after_insert
     }
 }
 
@@ -82,7 +88,7 @@ impl CacheState {
     }
 }
 
-/// A struct to wrap the lru cache and its info.
+/// A struct to wrap the LRU cache and its info.
 pub struct CacheWithMeta {
     /// Underlying LRU cache.
     pub cache: LruCache<PathBuf, usize>,
@@ -116,26 +122,30 @@ impl StorageWithUploadCache {
     /// Create an instance of [`StorageWithUploadCache`]
     ///
     /// It needs both the remote and cache storage to work with.
-    /// max_item_count and max_num_bytes are used for the cache [`Capacity`].
     pub fn create(
         remote_storage: Arc<dyn Storage>,
         cache_storage: Arc<dyn Storage>,
-        max_num_files: usize,
-        max_num_bytes: usize,
+        disk_capacity: DiskCapacity,
     ) -> StorageResult<Self> {
         // Extract the cache storage root path, also validate that cache storage
         // is of type [`LocalFileStorage]
-        let cache_storage_root_path =
+        let cache_storage_root =
             LocalFileStorage::extract_root_path_from_uri(&cache_storage.uri())?;
+
+        // write initial state
+        write_cache_state(
+            cache_storage_root.as_path(),
+            CacheState {
+                disk_capacity,
+                items: vec![],
+            },
+        )?;
 
         Ok(Self {
             remote_storage,
             cache_storage,
-            cache_storage_root: cache_storage_root_path,
-            disk_capacity: DiskCapacity {
-                max_num_files,
-                max_num_bytes,
-            },
+            cache_storage_root,
+            disk_capacity,
             disk_cache: Mutex::new(CacheWithMeta {
                 cache: LruCache::unbounded(),
                 num_bytes: 0,
@@ -146,8 +156,9 @@ impl StorageWithUploadCache {
 
     /// Create an instance of [`StorageWithUploadCache`] from a path.
     ///
-    /// It needs a folder `path` previously used by an instance of [`StorageWithUploadCache`].
-    /// Lastly, the file at `{path}/[`CACHE_STATE_FILE_NAME`]` should be present with valid content.
+    /// It needs a folder `cache_dir` previously used by an instance of [`StorageWithUploadCache`].
+    /// Lastly, the file at `{cache_dir}/[`CACHE_STATE_FILE_NAME`]` should be present with valid
+    /// content.
     pub fn from_path(
         remote_storage: Arc<dyn Storage>,
         storage_uri_resolver: &StorageUriResolver,
@@ -203,11 +214,7 @@ impl StorageWithUploadCache {
             items: cache_items,
         };
 
-        let file_path = self.cache_storage_root.join(CACHE_STATE_FILE_NAME);
-        let content: Vec<u8> = serde_json::to_vec(&cache_state)
-            .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
-        atomic_write(&file_path, &content)?;
-        Ok(())
+        write_cache_state(self.cache_storage_root.as_path(), cache_state)
     }
 }
 
@@ -221,7 +228,7 @@ impl Storage for StorageWithUploadCache {
         // Ignore storing an item that cannot fit in the cache.
         if payload_length > self.disk_capacity.max_num_bytes {
             warn!("Failed to cache file: file size exceeds total cache capacity.");
-            return Ok(())
+            return Ok(());
         }
 
         if let Some(item_num_bytes) = locked_disk_cache.cache.pop(&path.to_path_buf()) {
@@ -277,11 +284,17 @@ impl Storage for StorageWithUploadCache {
 
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
         let mut locked_disk_cache = self.disk_cache.lock().await;
-        if locked_disk_cache.cache.get(&path.to_path_buf()).is_none() {
-            return self.remote_storage.copy_to_file(path, output_path).await;
+        if locked_disk_cache.cache.get(&path.to_path_buf()).is_some()
+            && self
+                .cache_storage
+                .copy_to_file(path, output_path)
+                .await
+                .is_ok()
+        {
+            return Ok(());
         }
 
-        self.cache_storage.copy_to_file(path, output_path).await
+        self.remote_storage.copy_to_file(path, output_path).await
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
@@ -342,6 +355,14 @@ fn atomic_write(path: &Path, content: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
+/// Serialises and writes a [`CacheState`] file in a cache directory
+fn write_cache_state(cache_dir: &Path, cache_state: CacheState) -> StorageResult<()> {
+    let file_path = cache_dir.join(CACHE_STATE_FILE_NAME);
+    let content: Vec<u8> = serde_json::to_vec(&cache_state)
+        .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
+    atomic_write(&file_path, &content)?;
+    Ok(())
+}
 
 /// Creates an instance of [`StorageWithUploadCache`].
 ///
@@ -351,7 +372,7 @@ pub fn create_storage_with_upload_cache(
     remote_storage: Arc<dyn Storage>,
     storage_uri_resolver: &StorageUriResolver,
     cache_dir: &Path,
-    capacity: DiskCapacity,
+    disk_capacity: DiskCapacity,
 ) -> crate::StorageResult<Arc<dyn Storage>> {
     let cache_state_file_path = cache_dir.join(CACHE_STATE_FILE_NAME);
     let storage = if cache_state_file_path.exists() {
@@ -361,12 +382,7 @@ pub fn create_storage_with_upload_cache(
         let cache_storage = storage_uri_resolver
             .resolve(&cache_storage_uri)
             .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
-        StorageWithUploadCache::create(
-            remote_storage,
-            cache_storage,
-            capacity.max_num_files,
-            capacity.max_num_bytes,
-        )?
+        StorageWithUploadCache::create(remote_storage, cache_storage, disk_capacity)?
     };
 
     Ok(Arc::new(storage))
@@ -384,12 +400,11 @@ mod tests {
     use super::{CacheState, DiskCapacity, StorageWithUploadCache, CACHE_STATE_FILE_NAME};
     use crate::tests::storage_test_suite;
     use crate::{
-        quickwit_storage_uri_resolver, LocalFileStorage, MockStorage, PutPayload, RamStorage,
-        Storage,
+        create_storage_with_upload_cache, quickwit_storage_uri_resolver, LocalFileStorage,
+        MockStorage, PutPayload, RamStorage, Storage, StorageError, StorageErrorKind,
     };
 
     struct TestEnv {
-        #[allow(dead_code)]
         local_dir: TempDir,
         local_storage_root: PathBuf,
         cache: StorageWithUploadCache,
@@ -402,7 +417,10 @@ mod tests {
         Ok((local_dir, remote_storage, local_storage))
     }
 
-    async fn create_test_env(max_num_file: usize, max_num_bytes: usize) -> anyhow::Result<TestEnv> {
+    async fn create_test_env(
+        max_num_files: usize,
+        max_num_bytes: usize,
+    ) -> anyhow::Result<TestEnv> {
         let storage_resolver = quickwit_storage_uri_resolver().clone();
 
         let local_dir = tempdir()?;
@@ -427,8 +445,10 @@ mod tests {
         let cache = StorageWithUploadCache::create(
             remote_storage,
             local_storage,
-            max_num_file,
-            max_num_bytes,
+            DiskCapacity {
+                max_num_files,
+                max_num_bytes,
+            },
         )?;
 
         Ok(TestEnv {
@@ -452,7 +472,7 @@ mod tests {
         ))?);
 
         let mut storage_with_cache =
-            StorageWithUploadCache::create(remote_storage, local_storage, 500, 3_000_000)?;
+            StorageWithUploadCache::create(remote_storage, local_storage, DiskCapacity::default())?;
         storage_test_suite(&mut storage_with_cache).await?;
         Ok(())
     }
@@ -502,8 +522,10 @@ mod tests {
         let cached_storage = StorageWithUploadCache::create(
             Arc::new(remote_storage),
             Arc::new(local_storage),
-            10,
-            10,
+            DiskCapacity {
+                max_num_files: 10,
+                max_num_bytes: 10,
+            },
         )?;
         cached_storage
             .put(
@@ -587,8 +609,10 @@ mod tests {
         let cached_storage = StorageWithUploadCache::create(
             Arc::new(remote_storage),
             Arc::new(local_storage),
-            5,
-            5,
+            DiskCapacity {
+                max_num_files: 5,
+                max_num_bytes: 5,
+            },
         )?;
         cached_storage
             .put(
@@ -635,8 +659,10 @@ mod tests {
         let cached_storage = StorageWithUploadCache::create(
             Arc::new(remote_storage),
             Arc::new(local_storage),
-            5,
-            5,
+            DiskCapacity {
+                max_num_files: 5,
+                max_num_bytes: 5,
+            },
         )?;
         cached_storage.delete(Path::new("foo")).await?;
 
@@ -680,8 +706,10 @@ mod tests {
         let cached_storage = StorageWithUploadCache::create(
             Arc::new(remote_storage),
             Arc::new(local_storage),
-            10,
-            10,
+            DiskCapacity {
+                max_num_files: 10,
+                max_num_bytes: 10,
+            },
         )?;
         cached_storage
             .put(
@@ -796,6 +824,13 @@ mod tests {
             let state = CacheState::from_path(test_env.local_storage_root.as_path()).unwrap();
             assert_eq!(state.items.len(), 1);
             assert_eq!(state.items, vec![(PathBuf::from("5"), 5)]);
+
+            // our first two entries should have been removed from the file system as well
+            let is_item_2_exists_on_fs = test_env.local_storage_root.join("2").as_path().exists();
+            assert!(!is_item_2_exists_on_fs);
+
+            let is_item_3_exists_on_fs = test_env.local_storage_root.join("3").as_path().exists();
+            assert!(!is_item_3_exists_on_fs);
         }
         Ok(())
     }
@@ -866,6 +901,271 @@ mod tests {
 
         let metadata = tokio::fs::metadata(output_path.as_path()).await?;
         assert_eq!(metadata.len(), 3);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cache_state_is_recovered_from_previous_state() -> anyhow::Result<()> {
+        let cache_dir = {
+            let test_env = create_test_env(2, 5).await?;
+            test_env
+                .cache
+                .put(
+                    Path::new("2"),
+                    PutPayload::InMemory(Bytes::from(b"ab".to_vec())),
+                )
+                .await?;
+            test_env
+                .cache
+                .put(
+                    Path::new("3"),
+                    PutPayload::InMemory(Bytes::from(b"cde".to_vec())),
+                )
+                .await?;
+            test_env
+                .cache
+                .put(
+                    Path::new("8"),
+                    PutPayload::InMemory(Bytes::from(b"abcdefgh".to_vec())),
+                )
+                .await?;
+            // replace item in storage
+            test_env
+                .cache
+                .put(
+                    Path::new("2"),
+                    PutPayload::InMemory(Bytes::from(b"yz".to_vec())),
+                )
+                .await?;
+
+            test_env.local_dir
+        };
+
+        // A cache from previous cacheDir should have the previous items.
+        let remote_storage = Arc::new(RamStorage::default());
+        let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
+        let cache_from_previous_state = StorageWithUploadCache::from_path(
+            remote_storage.clone(),
+            &storage_uri_resolver,
+            cache_dir.path(),
+        )?;
+        assert_eq!(remote_storage.uri(), cache_from_previous_state.uri());
+
+        let dest_dir = tempdir()?;
+        let output_path_2 = dest_dir.path().join("2");
+        let output_path_3 = dest_dir.path().join("3");
+
+        assert!(cache_from_previous_state
+            .copy_to_file(Path::new("2"), output_path_2.as_path())
+            .await
+            .is_ok());
+        let metadata = tokio::fs::metadata(output_path_2.as_path()).await?;
+        assert_eq!(metadata.len(), 2);
+
+        assert!(cache_from_previous_state
+            .copy_to_file(Path::new("3"), output_path_3.as_path())
+            .await
+            .is_ok());
+        let metadata = tokio::fs::metadata(output_path_3.as_path()).await?;
+        assert_eq!(metadata.len(), 3);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_storage_with_upload_cache() -> anyhow::Result<()> {
+        let remote_storage = Arc::new(RamStorage::default());
+        let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
+        let cache_dir = tempdir()?;
+        let dest_dir = tempdir()?;
+
+        {
+            let cache_storage = create_storage_with_upload_cache(
+                remote_storage.clone(),
+                &storage_uri_resolver,
+                cache_dir.path(),
+                DiskCapacity {
+                    max_num_files: 2,
+                    max_num_bytes: 10,
+                },
+            )?;
+            // nothing should be in the freshly created cache
+            let result = cache_storage
+                .copy_to_file(Path::new("8"), dest_dir.path().join("8").as_path())
+                .await;
+            matches!(
+                result,
+                Err(StorageError {
+                    kind: StorageErrorKind::DoesNotExist,
+                    ..
+                })
+            );
+        }
+
+        {
+            // disk capacity is ignored when creating from previous state
+            let disk_capacity = DiskCapacity {
+                max_num_files: 0,
+                max_num_bytes: 0,
+            };
+            let cache_storage = create_storage_with_upload_cache(
+                remote_storage.clone(),
+                &storage_uri_resolver,
+                cache_dir.path(),
+                disk_capacity,
+            )?;
+
+            // we still have no item in the cache
+            let result = cache_storage
+                .copy_to_file(Path::new("8"), dest_dir.path().join("8").as_path())
+                .await;
+            matches!(
+                result,
+                Err(StorageError {
+                    kind: StorageErrorKind::DoesNotExist,
+                    ..
+                })
+            );
+
+            cache_storage
+                .put(
+                    Path::new("3"),
+                    PutPayload::InMemory(Bytes::from(b"abc".to_vec())),
+                )
+                .await?;
+
+            // should make entry `3` go away
+            cache_storage
+                .put(
+                    Path::new("8"),
+                    PutPayload::InMemory(Bytes::from(b"abcdefgh".to_vec())),
+                )
+                .await?;
+
+            // should be ignored by the cache
+            cache_storage
+                .put(
+                    Path::new("12"),
+                    PutPayload::InMemory(Bytes::from(b"abcdefghijkl".to_vec())),
+                )
+                .await?;
+
+            // should be added in the cache
+            cache_storage
+                .put(
+                    Path::new("2"),
+                    PutPayload::InMemory(Bytes::from(b"ab".to_vec())),
+                )
+                .await?;
+
+            // `3` & `12` should still be accessed from the remote storage
+            assert!(cache_storage
+                .copy_to_file(Path::new("3"), dest_dir.path().join("3").as_path())
+                .await
+                .is_ok());
+            assert!(cache_storage
+                .copy_to_file(Path::new("12"), dest_dir.path().join("12").as_path())
+                .await
+                .is_ok());
+        }
+
+        {
+            let remote_storage = Arc::new(RamStorage::default());
+            let cache_storage = create_storage_with_upload_cache(
+                remote_storage,
+                &storage_uri_resolver,
+                cache_dir.path(),
+                DiskCapacity {
+                    max_num_files: 2,
+                    max_num_bytes: 10,
+                },
+            )?;
+
+            // `3` & `12` should not be found (we plugged a new remote storage)
+            let result = cache_storage
+                .copy_to_file(Path::new("3"), dest_dir.path().join("3").as_path())
+                .await;
+            matches!(
+                result,
+                Err(StorageError {
+                    kind: StorageErrorKind::DoesNotExist,
+                    ..
+                })
+            );
+
+            let result = cache_storage
+                .copy_to_file(Path::new("12"), dest_dir.path().join("12").as_path())
+                .await;
+            matches!(
+                result,
+                Err(StorageError {
+                    kind: StorageErrorKind::DoesNotExist,
+                    ..
+                })
+            );
+
+            // `2` & `8` should be found from the recovered cache
+            assert!(cache_storage
+                .copy_to_file(Path::new("2"), dest_dir.path().join("2").as_path())
+                .await
+                .is_ok());
+            assert!(cache_storage
+                .copy_to_file(Path::new("8"), dest_dir.path().join("8").as_path())
+                .await
+                .is_ok());
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_delete_item_no_longer_on_fs() -> anyhow::Result<()> {
+        let remote_storage = Arc::new(RamStorage::default());
+        let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
+        let cache_dir = tempdir()?;
+        let dest_dir = tempdir()?;
+
+        let cache_storage = create_storage_with_upload_cache(
+            remote_storage.clone(),
+            &storage_uri_resolver,
+            cache_dir.path(),
+            DiskCapacity {
+                max_num_files: 2,
+                max_num_bytes: 10,
+            },
+        )?;
+
+        assert!(cache_storage
+            .put(
+                Path::new("4"),
+                PutPayload::InMemory(Bytes::from(b"abcd".to_vec())),
+            )
+            .await
+            .is_ok());
+
+        // remove the file from the file system
+        std::fs::remove_file(cache_dir.path().join("4").as_path()).unwrap();
+
+        // we should be able to copy it from remote storage
+        assert!(cache_storage
+            .copy_to_file(Path::new("4"), dest_dir.path().join("4").as_path())
+            .await
+            .is_ok());
+
+        // deleting should be ok despite the file not existing on file system
+        assert!(cache_storage.delete(Path::new("4")).await.is_ok());
+
+        // file should no longer be available
+        let result = cache_storage
+            .copy_to_file(Path::new("4"), dest_dir.path().join("4").as_path())
+            .await;
+        matches!(
+            result,
+            Err(StorageError {
+                kind: StorageErrorKind::DoesNotExist,
+                ..
+            })
+        );
+
         Ok(())
     }
 }
