@@ -28,7 +28,7 @@ use quickwit_storage::{
     quickwit_storage_uri_resolver, PutPayload, Storage, StorageErrorKind, StorageResolverError,
     StorageUriResolver,
 };
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::{Mutex, RwLock};
 
 use crate::checkpoint::CheckpointDelta;
 use crate::metastore::match_tags_filter;
