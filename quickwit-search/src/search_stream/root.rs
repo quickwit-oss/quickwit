@@ -21,23 +21,25 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use futures::StreamExt;
-use itertools::{Either, Itertools};
+use futures::{StreamExt, TryStreamExt};
 use quickwit_metastore::{Metastore, SplitMetadataAndFooterOffsets};
-use quickwit_proto::{
-    LeafSearchStreamRequest, SearchRequest, SearchStreamRequest, SplitIdAndFooterOffsets,
-};
+use quickwit_proto::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
 use tracing::*;
 
 use crate::client_pool::Job;
-use crate::root::{job_for_splits, NodeSearchError};
-use crate::{list_relevant_splits, ClientPool, SearchClientPool, SearchError};
+use crate::cluster_client::ClusterClient;
+use crate::root::{job_for_splits, MAX_CONCURRENT_LEAF_TASKS};
+use crate::{
+    extract_split_and_footer_offsets, list_relevant_splits, ClientPool, SearchClientPool,
+    SearchError,
+};
 
 /// Perform a distributed search stream.
-#[instrument(skip(metastore, client_pool))]
+#[instrument(skip(metastore, cluster_client, client_pool))]
 pub async fn root_search_stream(
     search_stream_request: &SearchStreamRequest,
     metastore: &dyn Metastore,
+    cluster_client: &ClusterClient,
     client_pool: &Arc<SearchClientPool>,
 ) -> Result<Vec<Bytes>, SearchError> {
     let start_instant = tokio::time::Instant::now();
@@ -63,73 +65,45 @@ pub async fn root_search_stream(
     let index_config_str = serde_json::to_string(&index_metadata.index_config).map_err(|err| {
         SearchError::InternalError(format!("Could not serialize index config {}", err))
     })?;
-
-    let mut handles = Vec::new();
-    for (mut search_client, jobs) in assigned_leaf_search_jobs {
-        let split_metadata_list: Vec<SplitIdAndFooterOffsets> = jobs
-            .iter()
-            .map(|job| SplitIdAndFooterOffsets {
-                split_id: job.metadata.split_metadata.split_id.clone(),
-                split_footer_start: job.metadata.footer_offsets.start,
-                split_footer_end: job.metadata.footer_offsets.end,
-            })
-            .collect();
-        let split_ids: Vec<_> = split_metadata_list
-            .iter()
-            .map(|split| split.split_id.clone())
-            .collect();
-        let leaf_request = LeafSearchStreamRequest {
-            request: Some(search_stream_request.clone()),
-            split_metadata: split_metadata_list.clone(),
-            index_config: index_config_str.to_string(),
-            index_uri: index_metadata.index_uri.to_string(),
-        };
-        debug!(leaf_request=?leaf_request, grpc_addr=?search_client.grpc_addr(), "Leaf node search stream.");
-        let span = info_span!(
-            "leaf_node_search_stream",
-            grpc_addr=?search_client.grpc_addr(),
-            split_ids=?split_ids,
-        );
-        let handle = tokio::spawn(
-            async move {
-                let mut receiver = search_client
-                    .leaf_search_stream(leaf_request)
-                    .await
-                    .map_err(|search_error| NodeSearchError {
-                        search_error,
-                        split_ids: split_ids.clone(),
-                    })?;
-
-                let mut leaf_bytes: Vec<Bytes> = Vec::new();
-                while let Some(leaf_result) = receiver.next().await {
-                    let leaf_data = leaf_result.map_err(|search_error| NodeSearchError {
-                        search_error,
-                        split_ids: split_ids.clone(),
-                    })?;
-                    leaf_bytes.push(Bytes::from(leaf_data.data));
-                }
-                Result::<Vec<Bytes>, NodeSearchError>::Ok(leaf_bytes)
-            }
-            .instrument(span),
-        );
-        handles.push(handle);
-    }
-    let nodes_results = futures::future::try_join_all(handles).await?;
-    let (nodes_bytes, errors): (Vec<Vec<Bytes>>, Vec<_>) =
-        nodes_results
-            .into_iter()
-            .partition_map(|result| match result {
-                Ok(bytes) => Either::Left(bytes),
-                Err(error) => Either::Right(error),
-            });
-    let overall_bytes: Vec<Bytes> = itertools::concat(nodes_bytes);
-    if !errors.is_empty() {
-        error!(error=?errors, "Some leaf requests have failed");
-        return Err(SearchError::InternalError(format!("{:?}", errors)));
-    }
+    let bytes: Vec<_> = futures::stream::iter(assigned_leaf_search_jobs.into_iter())
+        .map(|(client, client_jobs)| {
+            let leaf_request = jobs_to_leaf_request(
+                search_stream_request,
+                &index_config_str,
+                &index_metadata.index_uri,
+                &split_metadata_map,
+                &client_jobs,
+            );
+            cluster_client.leaf_search_stream((leaf_request, client))
+        })
+        .buffer_unordered(MAX_CONCURRENT_LEAF_TASKS)
+        .flatten()
+        .map_ok(|response| Bytes::from(response.data))
+        .try_collect()
+        .await?;
     let elapsed = start_instant.elapsed();
     info!("Root search stream completed in {:?}", elapsed);
-    Ok(overall_bytes)
+    Ok(bytes)
+}
+
+fn jobs_to_leaf_request(
+    request: &SearchStreamRequest,
+    index_config_str: &str,
+    index_uri: &str,
+    split_metadata_map: &HashMap<String, SplitMetadataAndFooterOffsets>,
+    jobs: &[Job],
+) -> LeafSearchStreamRequest {
+    LeafSearchStreamRequest {
+        request: Some(request.clone()),
+        split_metadata: jobs
+            .iter()
+            .map(|job| {
+                extract_split_and_footer_offsets(split_metadata_map.get(&job.split_id).unwrap())
+            })
+            .collect(),
+        index_config: index_config_str.to_string(),
+        index_uri: index_uri.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -179,9 +153,11 @@ mod tests {
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
             data: b"123".to_vec(),
+            split_id: "1".to_string(),
         }))?;
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
             data: b"456".to_vec(),
+            split_id: "2".to_string(),
         }))?;
         mock_search_service.expect_leaf_search_stream().return_once(
             |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
@@ -192,7 +168,9 @@ mod tests {
         drop(result_sender);
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
-        let result: Vec<Bytes> = root_search_stream(&request, &metastore, &client_pool).await?;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let result: Vec<Bytes> =
+            root_search_stream(&request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(result.len(), 2);
         assert_eq!(&result[0], &b"123"[..]);
         assert_eq!(&result[1], &b"456"[..]);
@@ -226,30 +204,41 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| {
+                Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
+            },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
             data: b"123".to_vec(),
+            split_id: "split1".to_string(),
         }))?;
         result_sender.send(Err(SearchError::InternalError("error".to_string())))?;
-        mock_search_service.expect_leaf_search_stream().return_once(
-            |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
-                Ok(UnboundedReceiverStream::new(result_receiver))
-            },
-        );
+        mock_search_service
+            .expect_leaf_search_stream()
+            .withf(|request| request.split_metadata.len() == 2) // First request.
+            .return_once(
+                |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                    Ok(UnboundedReceiverStream::new(result_receiver))
+                },
+            );
+        mock_search_service
+            .expect_leaf_search_stream()
+            .withf(|request| request.split_metadata.len() == 1) // Retry request on the failed split.
+            .return_once(
+                |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                    Err(SearchError::InternalError("error".to_string()))
+                },
+            );
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
         let client_pool =
             Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
-        let result = root_search_stream(&request, &metastore, &client_pool).await;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let result = root_search_stream(&request, &metastore, &cluster_client, &client_pool).await;
         assert_eq!(result.is_err(), true);
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Internal error: `[NodeSearchError { search_error: InternalError(\"error\"), \
-             split_ids: [\"split1\"] }]`."
-        );
+        assert_eq!(result.unwrap_err().to_string(), "Internal error: `error`.");
         Ok(())
     }
 }

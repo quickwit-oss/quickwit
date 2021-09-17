@@ -25,6 +25,7 @@ use itertools::Itertools;
 use quickwit_proto::{FetchDocsResult, Hit, PartialHit, SplitIdAndFooterOffsets};
 use quickwit_storage::Storage;
 use tantivy::{IndexReader, ReloadPolicy};
+use tracing::error;
 
 use crate::leaf::open_index;
 use crate::GlobalDocAddress;
@@ -63,10 +64,22 @@ async fn fetch_docs_to_map<'a>(
         ));
     }
 
-    let split_fetch_docs: Vec<Vec<(GlobalDocAddress, String)>> =
-        futures::future::try_join_all(split_fetch_docs_futures)
-            .await
-            .with_context(|| "split-fetch-docs")?;
+    let split_fetch_docs: Vec<Vec<(GlobalDocAddress, String)>> = futures::future::try_join_all(
+        split_fetch_docs_futures,
+    )
+    .await
+    .map_err(|error| {
+        let split_ids = splits
+            .iter()
+            .map(|split| split.split_id.clone())
+            .collect_vec();
+        error!(split_ids = ?split_ids, error = ?error, "Error when fetching docs in splits.");
+        anyhow::anyhow!(
+            "Error when fetching docs for splits {:?}: {:?}.",
+            split_ids,
+            error
+        )
+    })?;
 
     let global_doc_addr_to_doc_json: HashMap<GlobalDocAddress, String> = split_fetch_docs
         .into_iter()

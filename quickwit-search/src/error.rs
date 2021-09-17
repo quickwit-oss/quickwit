@@ -52,6 +52,7 @@ impl From<SearchError> for tonic::Status {
     }
 }
 
+/// Parse tonic error and returns `SearchError`.
 pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
     serde_json::from_str(grpc_error.message())
         .unwrap_or_else(|_| SearchError::InternalError(grpc_error.message().to_string()))
@@ -90,4 +91,10 @@ impl From<JoinError> for SearchError {
     fn from(join_error: JoinError) -> SearchError {
         SearchError::InternalError(format!("Spawned task in root join failed: {}", join_error))
     }
+}
+
+#[derive(Debug)]
+pub struct NodeSearchError {
+    pub search_error: SearchError,
+    pub split_ids: Vec<String>,
 }

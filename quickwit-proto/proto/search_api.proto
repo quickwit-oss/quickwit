@@ -260,4 +260,7 @@ message LeafSearchStreamRequest {
 message LeafSearchStreamResult {
   // Row of data serialized in bytes.
   bytes data = 1;
+
+  // Split id.
+  string split_id = 2;
 }

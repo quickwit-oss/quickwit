@@ -33,13 +33,14 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::info;
 
 use crate::search_stream::{leaf_search_stream, root_search_stream};
-use crate::{fetch_docs, leaf_search, root_search, SearchClientPool, SearchError};
+use crate::{fetch_docs, leaf_search, root_search, ClusterClient, SearchClientPool, SearchError};
 
 #[derive(Clone)]
 /// The search service implementation.
 pub struct SearchServiceImpl {
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageUriResolver,
+    cluster_client: ClusterClient,
     client_pool: Arc<SearchClientPool>,
 }
 
@@ -87,11 +88,13 @@ impl SearchServiceImpl {
     pub fn new(
         metastore: Arc<dyn Metastore>,
         storage_resolver: StorageUriResolver,
+        cluster_client: ClusterClient,
         client_pool: Arc<SearchClientPool>,
     ) -> Self {
         SearchServiceImpl {
             metastore,
             storage_resolver,
+            cluster_client,
             client_pool,
         }
     }
@@ -111,9 +114,15 @@ fn deserialize_index_config(index_config_str: &str) -> crate::Result<Arc<dyn Ind
 #[async_trait]
 impl SearchService for SearchServiceImpl {
     async fn root_search(&self, search_request: SearchRequest) -> crate::Result<SearchResponse> {
-        let search_response =
-            root_search(&search_request, self.metastore.as_ref(), &self.client_pool).await?;
-        Ok(search_response)
+        let search_result = root_search(
+            &search_request,
+            self.metastore.as_ref(),
+            &self.cluster_client,
+            &self.client_pool,
+        )
+        .await?;
+
+        Ok(search_result)
     }
 
     async fn leaf_search(
@@ -163,8 +172,13 @@ impl SearchService for SearchServiceImpl {
         &self,
         stream_request: SearchStreamRequest,
     ) -> crate::Result<Vec<Bytes>> {
-        let data =
-            root_search_stream(&stream_request, self.metastore.as_ref(), &self.client_pool).await?;
+        let data = root_search_stream(
+            &stream_request,
+            self.metastore.as_ref(),
+            &self.cluster_client,
+            &self.client_pool,
+        )
+        .await?;
         Ok(data)
     }
 

@@ -34,7 +34,8 @@ use quickwit_cluster::cluster::{read_or_create_host_key, Cluster};
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_search::{
-    http_addr_to_grpc_addr, http_addr_to_swim_addr, SearchClientPool, SearchServiceImpl,
+    http_addr_to_grpc_addr, http_addr_to_swim_addr, ClusterClient, SearchClientPool,
+    SearchServiceImpl,
 };
 use quickwit_storage::{
     LocalFileStorageFactory, RegionProvider, S3CompatibleObjectStorageFactory, StorageUriResolver,
@@ -123,10 +124,11 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
     }
 
     let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
-
+    let cluster_client = ClusterClient::new(client_pool.clone());
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore,
         storage_resolver,
+        cluster_client,
         client_pool,
     ));
 
@@ -213,19 +215,37 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| {
+                Ok(vec![mock_split_meta("split_1"), mock_split_meta("split_2")])
+            },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
             data: b"123".to_vec(),
+            split_id: "split_1".to_string(),
         }))?;
-        result_sender.send(Err(SearchError::InternalError("error".to_string())))?;
-        mock_search_service.expect_leaf_search_stream().return_once(
-            |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
-                Ok(UnboundedReceiverStream::new(result_receiver))
-            },
-        );
+        result_sender.send(Err(SearchError::InternalError(
+            "Error on `split2`".to_string(),
+        )))?;
+        mock_search_service
+            .expect_leaf_search_stream()
+            .withf(|request| request.split_metadata.len() == 2) // First request.
+            .return_once(
+                |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                    Ok(UnboundedReceiverStream::new(result_receiver))
+                },
+            );
+        mock_search_service
+            .expect_leaf_search_stream()
+            .withf(|request| request.split_metadata.len() == 1) // Retry request on the failing split.
+            .return_once(
+                |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                    Err(SearchError::InternalError(
+                        "Error again on `split2`".to_string(),
+                    ))
+                },
+            );
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
 
@@ -236,12 +256,13 @@ mod tests {
         let client_pool = Arc::new(SearchClientPool {
             clients: Arc::new(RwLock::new(clients)),
         });
-        let search_result = root_search_stream(&request, &metastore, &client_pool).await;
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_result =
+            root_search_stream(&request, &metastore, &cluster_client, &client_pool).await;
         assert!(search_result.is_err());
         assert_eq!(
             search_result.unwrap_err().to_string(),
-            "Internal error: `[NodeSearchError { search_error: InternalError(\"Internal error: \
-             `error`.\"), split_ids: [\"split1\"] }]`."
+            "Internal error: `Internal error: `Error again on `split2``.`."
         );
         Ok(())
     }
