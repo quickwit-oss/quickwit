@@ -161,7 +161,10 @@ async fn leaf_search_stream_single_split(
         error!(split_id = %split.split_id, fast_field=%fast_field_to_extract, error_message=%error, "Failed to collect fast field");
         SearchError::InternalError(format!("Error when collecting fast field values for split {}: {:?}", split.split_id, error))
     })??;
-    Ok(LeafSearchStreamResult { data: buffer })
+    Ok(LeafSearchStreamResult {
+        data: buffer,
+        split_id: split.split_id.clone(),
+    })
 }
 
 fn collect_fast_field_values(

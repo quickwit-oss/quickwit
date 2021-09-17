@@ -149,47 +149,59 @@ impl SearchServiceClient {
     pub async fn leaf_search_stream(
         &mut self,
         request: quickwit_proto::LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>>> {
+    ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let mut grpc_client_clone = grpc_client.clone();
-                let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
                 let span = info_span!(
                     "client:leaf_search_stream",
                     grpc_addr=?self.grpc_addr()
                 );
+                let mut tonic_request = Request::new(request);
+                global::get_text_map_propagator(|propagator| {
+                    propagator.inject_context(
+                        &tracing::Span::current().context(),
+                        &mut MetadataMap(tonic_request.metadata_mut()),
+                    )
+                });
+                let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
                 tokio::spawn(
                     async move {
-                        let mut tonic_request = Request::new(request);
-                        global::get_text_map_propagator(|propagator| {
-                            propagator.inject_context(
-                                &tracing::Span::current().context(),
-                                &mut MetadataMap(tonic_request.metadata_mut()),
-                            )
-                        });
-                        let mut results_stream = grpc_client_clone
+                        let tonic_result = grpc_client_clone
                             .leaf_search_stream(tonic_request)
                             .await
-                            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
+                            .map_err(|tonic_error| parse_grpc_error(&tonic_error));
+                        // If the grpc client fails, send the error in the channel and stop.
+                        if let Err(error) = tonic_result {
+                            // It is ok to ignore error sending error.
+                            let _ = result_sender.send(Err(error));
+                            return;
+                        }
+                        let mut results_stream = tonic_result
+                            .unwrap()
                             .into_inner()
                             .map_err(|tonic_error| parse_grpc_error(&tonic_error));
-
                         while let Some(search_result) = results_stream.next().await {
-                            result_sender.send(search_result).map_err(|_| {
-                                SearchError::InternalError(
-                                    "Sender closed, could not send leaf result.".into(),
-                                )
-                            })?;
+                            let send_result = result_sender.send(search_result);
+                            // If we get a sending error, stop consuming the stream.
+                            if send_result.is_err() {
+                                break;
+                            }
                         }
-
-                        Result::<_, SearchError>::Ok(())
                     }
                     .instrument(span),
                 );
-
-                Ok(UnboundedReceiverStream::new(result_receiver))
+                UnboundedReceiverStream::new(result_receiver)
             }
-            SearchServiceClientImpl::Local(service) => service.leaf_search_stream(request).await,
+            SearchServiceClientImpl::Local(service) => {
+                let stream_result = service.leaf_search_stream(request).await;
+                stream_result.unwrap_or_else(|error| {
+                    let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
+                    // Receiver cannot be closed here, ignore error.
+                    let _ = result_sender.send(Err(error));
+                    UnboundedReceiverStream::new(result_receiver)
+                })
+            }
         }
     }
 

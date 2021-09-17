@@ -23,7 +23,6 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 
 use async_trait::async_trait;
-use quickwit_metastore::SplitMetadataAndFooterOffsets;
 
 use crate::SearchServiceClient;
 
@@ -31,8 +30,8 @@ use crate::SearchServiceClient;
 /// The unit in which distributed search is performed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Job {
-    /// SplitMetadataAndFooterOffsets
-    pub metadata: SplitMetadataAndFooterOffsets,
+    /// Split id.
+    pub split_id: String,
 
     /// The cost of the job. This is used to sort jobs.
     pub cost: u32,
@@ -43,7 +42,7 @@ pub struct Job {
 #[async_trait]
 pub trait ClientPool: Send + Sync + 'static {
     /// Assign the given job to the clients.
-    /// Returns a list of pair (SocketAddr, Vec<Job>)
+    /// Returns a list of pair (SearchServiceClient, Vec<Job>)
     ///
     /// When exclude_addresses filters all clients it is ignored.
     async fn assign_jobs(
@@ -51,4 +50,19 @@ pub trait ClientPool: Send + Sync + 'static {
         jobs: Vec<Job>,
         exclude_addresses: &HashSet<SocketAddr>,
     ) -> anyhow::Result<Vec<(SearchServiceClient, Vec<Job>)>>;
+
+    /// Assign only one job to clients and return a pair
+    /// (SearchServiceClient, Job).
+    async fn assign_job(
+        &self,
+        job: Job,
+        exclude_addresses: &HashSet<SocketAddr>,
+    ) -> anyhow::Result<SearchServiceClient> {
+        let result = self.assign_jobs(vec![job], exclude_addresses).await?;
+        result
+            .into_iter()
+            .next()
+            .map(|(client, _jobs)| client)
+            .ok_or_else(|| anyhow::anyhow!("Assign jobs must return at least one client."))
+    }
 }
