@@ -98,6 +98,7 @@ pub(crate) struct Inner<Message> {
 /// They are similar to UNIX signals.
 ///
 /// They are treated with a higher priority than regular actor messages.
+#[doc(hidden)]
 pub enum Command {
     /// Temporarily pauses the actor. A paused actor only checks
     /// on its high priority channel and still shows "progress". It appears as
@@ -160,8 +161,8 @@ impl fmt::Debug for Command {
         match self {
             Command::Pause => write!(f, "Pause"),
             Command::Resume => write!(f, "Resume"),
-            Command::Observe(_) => write!(f, "Observe"),
             Command::Success => write!(f, "Success"),
+            Command::Observe(_) => write!(f, "Observe"),
             Command::Quit => write!(f, "Quit"),
             Command::Kill => write!(f, "Kill"),
         }
@@ -240,7 +241,9 @@ pub struct Inbox<Message> {
 }
 
 impl<Message: fmt::Debug> Inbox<Message> {
-    pub(crate) async fn recv_timeout(&mut self) -> Result<CommandOrMessage<Message>, RecvError> {
+    pub(crate) async fn recv_timeout(
+        &mut self,
+    ) -> Result<(Priority, CommandOrMessage<Message>), RecvError> {
         self.rx.recv_timeout(crate::message_timeout()).await
     }
 
@@ -301,6 +304,30 @@ pub fn create_mailbox<M>(
     };
     let inbox = Inbox { rx };
     (mailbox, inbox)
+}
+
+pub fn create_mailboxes<M>(
+    actor_name: String,
+    queue_capacity: QueueCapacity,
+    num_mailboxes: usize,
+) -> Vec<(Mailbox<M>, Inbox<M>)> {
+    let channels = crate::channel_with_priority::channels_with_shared_low_priority(
+        queue_capacity,
+        num_mailboxes,
+    );
+    channels
+        .into_iter()
+        .map(|(tx, rx)| {
+            let mailbox = Mailbox {
+                inner: Arc::new(Inner {
+                    tx,
+                    instance_id: quickwit_common::new_coolid(&actor_name),
+                }),
+            };
+            let inbox = Inbox { rx };
+            (mailbox, inbox)
+        })
+        .collect()
 }
 
 pub fn create_test_mailbox<M>() -> (Mailbox<M>, Inbox<M>) {

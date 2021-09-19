@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::atomic::Ordering;
-
 use crate::actors::{IndexerCounters, PublisherCounters, UploaderCounters};
 
 /// A Struct that holds all statistical data about indexing
@@ -46,15 +44,17 @@ impl IndexingStatistics {
     pub fn add_actor_counters(
         mut self,
         indexer_counters: &IndexerCounters,
-        uploader_counters: &UploaderCounters,
+        uploaders_counters: &[UploaderCounters],
         publisher_counters: &PublisherCounters,
     ) -> Self {
         self.num_docs += indexer_counters.num_processed_docs();
         self.num_invalid_docs += indexer_counters.num_invalid_docs();
         self.num_local_splits += indexer_counters.num_splits_emitted;
         self.total_bytes_processed += indexer_counters.overall_num_bytes;
-        self.num_staged_splits += uploader_counters.num_staged_splits.load(Ordering::SeqCst);
-        self.num_uploaded_splits += uploader_counters.num_uploaded_splits.load(Ordering::SeqCst);
+        for uploader_counters in uploaders_counters {
+            self.num_staged_splits += uploader_counters.num_staged_splits;
+            self.num_uploaded_splits += uploader_counters.num_uploaded_splits;
+        }
         self.num_published_splits += publisher_counters.num_published_splits;
         self
     }

@@ -31,7 +31,6 @@ use crate::source::SourceConfig;
 pub mod actors;
 mod merge_policy;
 pub mod models;
-pub(crate) mod semaphore;
 pub mod source;
 mod test_utils;
 

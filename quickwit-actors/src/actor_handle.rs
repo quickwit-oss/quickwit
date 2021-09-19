@@ -31,7 +31,8 @@ use crate::actor_state::ActorState;
 use crate::channel_with_priority::Priority;
 use crate::mailbox::Command;
 use crate::observation::ObservationType;
-use crate::{Actor, ActorContext, ActorExitStatus, Mailbox, Observation};
+use crate::progress::Progress;
+use crate::{Actor, ActorContext, ActorExitStatus, CommandOrMessage, Observation, SendError};
 
 /// An Actor Handle serves as an address to communicate with an actor.
 pub struct ActorHandle<A: Actor> {
@@ -109,6 +110,18 @@ impl<A: Actor> ActorHandle<A> {
             join_handle,
             actor_exit_status,
         }
+    }
+
+    pub(crate) fn progress(&self) -> &Progress {
+        self.actor_context.progress()
+    }
+
+    #[doc(hidden)]
+    pub async fn success(&self) -> Result<(), SendError> {
+        self.actor_context
+            .mailbox()
+            .send_with_priority(CommandOrMessage::Command(Command::Success), Priority::Low)
+            .await
     }
 
     /// Process all of the pending messages, and returns a snapshot of
@@ -271,10 +284,6 @@ impl<A: Actor> ActorHandle<A> {
                 Observation { obs_type, state }
             }
         }
-    }
-
-    pub fn mailbox(&self) -> &Mailbox<A::Message> {
-        self.actor_context.mailbox()
     }
 }
 

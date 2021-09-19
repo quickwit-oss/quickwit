@@ -19,15 +19,14 @@
 
 use anyhow::Context;
 use async_trait::async_trait;
-use tokio::sync::watch::{self, Sender};
-use tokio::task::JoinHandle;
-use tracing::{debug, error, info};
+use tokio::sync::watch::Sender;
+use tracing::{debug, error};
 
-use crate::actor::{process_command, ActorExitStatus};
-use crate::actor_handle::ActorHandle;
+use crate::actor::ActorExitStatus;
 use crate::actor_state::ActorState;
 use crate::actor_with_state_tx::ActorWithStateTx;
-use crate::mailbox::{CommandOrMessage, Inbox};
+use crate::channel_with_priority::Priority;
+use crate::mailbox::{Command, CommandOrMessage, Inbox};
 use crate::{Actor, ActorContext, RecvError};
 
 /// An async actor is executed on a regular tokio task.
@@ -64,6 +63,19 @@ pub trait AsyncActor: Actor + Sized {
         ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus>;
 
+    /// Makes it possible to override the default behavior of
+    /// handling command. (At your own risk!)
+    #[doc(hidden)]
+    async fn process_command(
+        &mut self,
+        command: Command,
+        _priority: Priority,
+        ctx: &mut ActorContext<Self::Message>,
+        state_tx: &Sender<Self::ObservableState>,
+    ) -> Result<(), ActorExitStatus> {
+        crate::actor::process_command(self, command, ctx, state_tx)
+    }
+
     /// Hook  that can be set up to define what should happen upon actor exit.
     /// This hook is called only once.
     ///
@@ -81,28 +93,6 @@ pub trait AsyncActor: Actor + Sized {
     }
 }
 
-pub(crate) fn spawn_async_actor<A: AsyncActor>(
-    actor: A,
-    ctx: ActorContext<A::Message>,
-    inbox: Inbox<A::Message>,
-) -> ActorHandle<A> {
-    debug!(actor_name = %ctx.actor_instance_id(), "spawning-async-actor");
-    let (state_tx, state_rx) = watch::channel(actor.observable_state());
-    let ctx_clone = ctx.clone();
-    let (exit_status_tx, exit_status_rx) = watch::channel(None);
-    let join_handle: JoinHandle<()> = tokio::spawn(async move {
-        let actor_instance_id = ctx.actor_instance_id().to_string();
-        let exit_status = async_actor_loop(actor, inbox, ctx, state_tx).await;
-        info!(
-            actor_name = actor_instance_id.as_str(),
-            exit_status = %exit_status,
-            "actor-exit"
-        );
-        let _ = exit_status_tx.send(Some(exit_status));
-    });
-    ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)
-}
-
 async fn process_msg<A: Actor + AsyncActor>(
     actor: &mut A,
     inbox: &mut Inbox<A::Message>,
@@ -118,7 +108,10 @@ async fn process_msg<A: Actor + AsyncActor>(
         inbox.recv_timeout().await
     } else {
         // The actor is paused. We only process command and scheduled message.
-        inbox.recv_timeout_cmd_and_scheduled_msg_only().await
+        inbox
+            .recv_timeout_cmd_and_scheduled_msg_only()
+            .await
+            .map(|cmd_or_msg| (Priority::High, cmd_or_msg))
     };
 
     ctx.progress().record_progress();
@@ -127,9 +120,15 @@ async fn process_msg<A: Actor + AsyncActor>(
     }
 
     match command_or_msg_recv_res {
-        Ok(CommandOrMessage::Command(cmd)) => process_command(actor, cmd, ctx, state_tx),
-        Ok(CommandOrMessage::Message(msg)) => {
-            debug!(msg=?msg, actor=%actor.name(),"message-received");
+        Ok((priority, CommandOrMessage::Command(cmd))) => {
+            debug!(cmd=?cmd, actor=%ctx.actor_instance_id(), "command-received");
+            actor
+                .process_command(cmd, priority, ctx, state_tx)
+                .await
+                .err()
+        }
+        Ok((_, CommandOrMessage::Message(msg))) => {
+            debug!(msg=?msg, actor=%ctx.actor_instance_id(),"message-received");
             actor.process_message(msg, ctx).await.err()
         }
         Err(RecvError::Disconnected) => Some(ActorExitStatus::Success),
@@ -145,7 +144,7 @@ async fn process_msg<A: Actor + AsyncActor>(
     }
 }
 
-async fn async_actor_loop<A: AsyncActor>(
+pub(crate) async fn async_actor_loop<A: AsyncActor>(
     actor: A,
     mut inbox: Inbox<A::Message>,
     mut ctx: ActorContext<A::Message>,

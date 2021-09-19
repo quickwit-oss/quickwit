@@ -211,6 +211,10 @@ impl Actor for Indexer {
 
     type ObservableState = IndexerCounters;
 
+    fn name(&self) -> String {
+        "indexer".to_string()
+    }
+
     fn observable_state(&self) -> Self::ObservableState {
         self.counters.clone()
     }

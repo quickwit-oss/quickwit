@@ -46,6 +46,10 @@ impl Actor for MergeExecutor {
 
     type ObservableState = ();
 
+    fn name(&self) -> String {
+        "merge_executor".to_string()
+    }
+
     fn observable_state(&self) -> Self::ObservableState {}
 }
 
