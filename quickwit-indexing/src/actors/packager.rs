@@ -281,8 +281,7 @@ impl SyncActor for Packager {
         if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
             // We are trying to stop the merge planner.
             // If the merge planner is already dead, this is not an error.
-            let _ = ctx
-                .send_message_blocking(merge_planner_mailbox, MergePlannerMessage::EndWithSuccess);
+            let _ = ctx.send_success_blocking(merge_planner_mailbox);
         }
         Ok(())
     }
@@ -294,7 +293,9 @@ mod tests {
     use std::ops::RangeInclusive;
     use std::time::Instant;
 
-    use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
+    use quickwit_actors::{
+        create_test_mailbox, Command, CommandOrMessage, ObservationType, Universe,
+    };
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use tantivy::schema::{Schema, FAST, STRING, TEXT};
     use tantivy::{doc, Index};
@@ -423,12 +424,12 @@ mod tests {
         // That way the packager will terminate
         mem::drop(packager_mailbox);
         packager_handle.join().await;
-        let merge_planner_msgs = merge_planner_inbox.drain_available_message_for_test();
+        let merge_planner_msgs = merge_planner_inbox.drain_available_message_or_command_for_test();
         assert_eq!(merge_planner_msgs.len(), 1);
         let merge_planner_msg = merge_planner_msgs.into_iter().next().unwrap();
         assert!(matches!(
             merge_planner_msg,
-            MergePlannerMessage::EndWithSuccess
+            CommandOrMessage::Command(Command::Success)
         ));
         Ok(())
     }

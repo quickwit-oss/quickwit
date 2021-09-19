@@ -19,6 +19,8 @@
 
 use std::time::Duration;
 
+use crate::channel_with_priority::Priority;
+use crate::mailbox::{Command, CommandOrMessage};
 use crate::scheduler::{SchedulerMessage, TimeShift};
 use crate::spawn_builder::SpawnBuilder;
 use crate::{Actor, KillSwitch, Mailbox, QueueCapacity, Scheduler};
@@ -89,6 +91,13 @@ impl Universe {
         msg: M,
     ) -> Result<(), crate::SendError> {
         mailbox.send_message(msg).await
+    }
+
+    /// `async` version of `send_success`
+    pub async fn send_success<M>(&self, mailbox: &Mailbox<M>) -> Result<(), crate::SendError> {
+        mailbox
+            .send_with_priority(CommandOrMessage::Command(Command::Success), Priority::Low)
+            .await
     }
 }
 

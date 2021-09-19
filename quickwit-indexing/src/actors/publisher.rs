@@ -134,7 +134,7 @@ impl AsyncActor for Publisher {
         let _ = ctx
             .send_message(
                 &self.merge_planner_mailbox,
-                MergePlannerMessage::NewSplits(new_splits),
+                MergePlannerMessage { new_splits },
             )
             .await;
         self.counters.num_published_splits += 1;
@@ -257,7 +257,7 @@ mod tests {
         assert_eq!(merge_planner_msgs.len(), 1);
         let merge_planner_msg = merge_planner_msgs.pop().unwrap();
         assert!(
-            matches!(merge_planner_msg, MergePlannerMessage::NewSplits(splits) if splits.len() == 1)
+            matches!(merge_planner_msg, MergePlannerMessage { new_splits } if new_splits.len() == 1)
         )
     }
 }

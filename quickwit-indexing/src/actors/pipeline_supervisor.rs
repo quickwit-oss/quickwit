@@ -34,7 +34,7 @@ use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::{
     Indexer, IndexerParams, MergeExecutor, MergePlanner, Packager, Publisher, Uploader,
 };
-use crate::models::{IndexingStatistics, MergePlannerMessage};
+use crate::models::IndexingStatistics;
 use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
@@ -338,12 +338,7 @@ impl IndexingPipelineSupervisor {
                             // Failing to send is fine here.
                             info!("Stopping the merge planner since the packager is dead.");
                             // If the message cannot be sent this is not necessarily an error.
-                            let _ = ctx
-                                .send_message(
-                                    handlers.merge_planner.mailbox(),
-                                    MergePlannerMessage::EndWithSuccess,
-                                )
-                                .await;
+                            let _ = ctx.send_success(handlers.merge_planner.mailbox()).await;
                         }
                     }
                 }

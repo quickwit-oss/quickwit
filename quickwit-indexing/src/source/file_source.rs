@@ -102,8 +102,7 @@ impl Source for FileSource {
         }
         if reached_eof {
             info!("EOF");
-            ctx.send_message(batch_sink, IndexerMessage::EndOfSource)
-                .await?;
+            ctx.send_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(())
@@ -179,7 +178,7 @@ impl TypedSourceFactory for FileSourceFactory {
 mod tests {
     use std::io::Write;
 
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::{create_test_mailbox, Command, CommandOrMessage, Universe};
     use quickwit_metastore::checkpoint::Checkpoint;
 
     use super::*;
@@ -211,8 +210,11 @@ mod tests {
                 "num_lines_processed": 4
             })
         );
-        let batch = inbox.drain_available_message_for_test();
-        assert!(matches!(batch[1], IndexerMessage::EndOfSource));
+        let batch = inbox.drain_available_message_or_command_for_test();
+        assert!(matches!(
+            batch[1],
+            CommandOrMessage::Command(Command::Success)
+        ));
         assert_eq!(batch.len(), 2);
         Ok(())
     }
@@ -250,14 +252,14 @@ mod tests {
                 "num_lines_processed": 20_000
             })
         );
-        let indexer_msgs = inbox.drain_available_message_for_test();
+        let indexer_msgs = inbox.drain_available_message_or_command_for_test();
         assert_eq!(indexer_msgs.len(), 3);
         let mut msgs_it = indexer_msgs.into_iter();
         let msg1 = msgs_it.next().unwrap();
         let msg2 = msgs_it.next().unwrap();
         let msg3 = msgs_it.next().unwrap();
-        let batch1 = extract_batch_from_indexer_message(msg1).unwrap();
-        let batch2 = extract_batch_from_indexer_message(msg2).unwrap();
+        let batch1 = extract_batch_from_indexer_message(msg1.message().unwrap()).unwrap();
+        let batch2 = extract_batch_from_indexer_message(msg2.message().unwrap()).unwrap();
         assert_eq!(
             &extract_position_delta(&batch1.checkpoint_delta).unwrap(),
             "00000000000000000000..00000000000000500010"
@@ -266,7 +268,10 @@ mod tests {
             &extract_position_delta(&batch2.checkpoint_delta).unwrap(),
             "00000000000000500010..00000000000000700000"
         );
-        assert!(matches!(&msg3, &IndexerMessage::EndOfSource));
+        assert!(matches!(
+            &msg3,
+            &CommandOrMessage::Command(Command::Success)
+        ));
         Ok(())
     }
 

@@ -50,15 +50,8 @@ impl SyncActor for MergePlanner {
         message: MergePlannerMessage,
         ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
-        match message {
-            MergePlannerMessage::NewSplits(splits) => {
-                for split in splits {
-                    self.process_new_split(split, ctx)?;
-                }
-            }
-            MergePlannerMessage::EndWithSuccess => {
-                self.process_stop_starting_new_merges(ctx)?;
-            }
+        for split in message.new_splits {
+            self.process_new_split(split, ctx)?;
         }
         Ok(())
     }
@@ -94,13 +87,6 @@ impl MergePlanner {
             ctx.send_message_blocking(&self.merge_split_downloader_mailbox, merge_operation)?;
         }
         Ok(())
-    }
-
-    fn process_stop_starting_new_merges(
-        &mut self,
-        _ctx: &ActorContext<MergePlannerMessage>,
-    ) -> Result<(), ActorExitStatus> {
-        Err(ActorExitStatus::Success)
     }
 
     pub fn add_split(&mut self, split: SplitMetadata) {
@@ -206,7 +192,9 @@ mod tests {
             universe
                 .send_message(
                     &merge_planner_mailbox,
-                    MergePlannerMessage::NewSplits(vec![split]),
+                    MergePlannerMessage {
+                        new_splits: vec![split],
+                    },
                 )
                 .await?;
             loop {
@@ -221,7 +209,9 @@ mod tests {
                     universe
                         .send_message(
                             &merge_planner_mailbox,
-                            MergePlannerMessage::NewSplits(vec![split_metadata]),
+                            MergePlannerMessage {
+                                new_splits: vec![split_metadata],
+                            },
                         )
                         .await?;
                 }

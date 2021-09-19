@@ -285,6 +285,14 @@ impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
         mailbox.send_message_blocking(msg)
     }
 
+    /// Blocking version of `send_success`. See `send_success`.
+    pub fn send_success_blocking<M>(&self, mailbox: &Mailbox<M>) -> Result<(), crate::SendError> {
+        let _guard = self.protect_zone();
+        debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
+        mailbox
+            .send_with_priority_blocking(CommandOrMessage::Command(Command::Success), Priority::Low)
+    }
+
     /// Sends a message to itself.
     ///
     /// Since it is very easy to deadlock an actor, the behavior is quite
@@ -317,7 +325,7 @@ impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
 }
 
 impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
-    /// `async` version of `send_message`
+    /// `async` version of `send_message_blocking`
     pub async fn send_message<M: fmt::Debug>(
         &self,
         mailbox: &Mailbox<M>,
@@ -326,6 +334,18 @@ impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg);
         mailbox.send_message(msg).await
+    }
+
+    /// Send the Success message to terminate the destination actor with the Success exit status.
+    ///
+    /// The message is queued like any regular messages, so that pending message will be processed
+    /// first.
+    pub async fn send_success<M>(&self, mailbox: &Mailbox<M>) -> Result<(), crate::SendError> {
+        let _guard = self.protect_zone();
+        debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
+        mailbox
+            .send_with_priority(CommandOrMessage::Command(Command::Success), Priority::Low)
+            .await
     }
 
     /// `async` version of `send_self_message`
@@ -362,6 +382,7 @@ pub(crate) fn process_command<A: Actor>(
             ctx.pause();
             None
         }
+        Command::Success => Some(ActorExitStatus::Success),
         Command::Quit => Some(ActorExitStatus::Quit),
         Command::Kill => Some(ActorExitStatus::Killed),
         Command::Resume => {

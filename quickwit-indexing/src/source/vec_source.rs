@@ -83,8 +83,7 @@ impl Source for VecSource {
             .collect();
         if line_docs.is_empty() {
             info!("Reached end of source.");
-            ctx.send_message(batch_sink, IndexerMessage::EndOfSource)
-                .await?;
+            ctx.send_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
         let from_item_idx = self.next_item_idx;
@@ -113,7 +112,7 @@ impl Source for VecSource {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_actors::{create_test_mailbox, Command, CommandOrMessage, Universe};
     use serde_json::json;
 
     use super::*;
@@ -143,12 +142,15 @@ mod tests {
         let (actor_termination, last_observation) = vec_source_handle.join().await;
         assert!(actor_termination.is_success());
         assert_eq!(last_observation, json!({"next_item_idx": 100}));
-        let batches = inbox.drain_available_message_for_test();
+        let batches = inbox.drain_available_message_or_command_for_test();
         assert_eq!(batches.len(), 35);
         assert!(
-            matches!(&batches[1], &IndexerMessage::Batch(ref raw_batch) if format!("{:?}", raw_batch.checkpoint_delta) == "∆(partition:(00000000000000000002..00000000000000000005])")
+            matches!(&batches[1], &CommandOrMessage::Message(IndexerMessage::Batch(ref raw_batch)) if format!("{:?}", raw_batch.checkpoint_delta) == "∆(partition:(00000000000000000002..00000000000000000005])")
         );
-        assert!(matches!(&batches[34], &IndexerMessage::EndOfSource));
+        assert!(matches!(
+            &batches[34],
+            &CommandOrMessage::Command(Command::Success)
+        ));
         Ok(())
     }
 
