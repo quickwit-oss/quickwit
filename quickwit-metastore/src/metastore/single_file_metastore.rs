@@ -543,7 +543,7 @@ mod tests {
     use std::sync::Arc;
 
     use chrono::Utc;
-    use quickwit_index_config::AllFlattenIndexConfig;
+    use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_storage::{MockStorage, PutPayload, StorageErrorKind};
 
     use crate::checkpoint::{Checkpoint, CheckpointDelta};
@@ -567,7 +567,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Arc::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(WikipediaIndexConfig::default()),
                 checkpoint: Checkpoint::default(),
             };
 
@@ -595,7 +595,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Arc::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(WikipediaIndexConfig::default()),
                 checkpoint: Checkpoint::default(),
             };
 
@@ -620,7 +620,7 @@ mod tests {
 
             assert_eq!(
                 format!("{:?}", created_index.index.index_config),
-                "AllFlattenIndexConfig".to_string()
+                "WikipediaIndexConfig".to_string()
             );
 
             // Open a non-existent index.
@@ -715,7 +715,7 @@ mod tests {
             index: IndexMetadata {
                 index_id: "inconsistent_index_id".to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Arc::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(WikipediaIndexConfig::default()),
                 checkpoint: Checkpoint::default(),
             },
             splits: HashMap::new(),

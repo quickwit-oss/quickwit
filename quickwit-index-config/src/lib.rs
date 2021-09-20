@@ -24,14 +24,12 @@
 //! to convert a json like documents to a document indexable by tantivy
 //! engine, aka tantivy::Document.
 
-mod all_flatten_config;
 mod config;
 mod default_index_config;
 mod error;
 mod query_builder;
 mod wikipedia_config;
 
-pub use all_flatten_config::AllFlattenIndexConfig;
 pub use config::{IndexConfig, SortBy, SortOrder};
 pub use default_index_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
 pub use error::QueryParserError;
