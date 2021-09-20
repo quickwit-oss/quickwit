@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_proto::{LeafSearchRequest, LeafSearchResult};
+use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
 
 use super::RetryPolicy;
 use crate::SearchError;
@@ -27,12 +27,12 @@ use crate::SearchError;
 /// In the last case, a retry request is built on failing splits only.
 pub struct LeafSearchRetryPolicy {}
 
-impl RetryPolicy<LeafSearchRequest, LeafSearchResult, SearchError> for LeafSearchRetryPolicy {
+impl RetryPolicy<LeafSearchRequest, LeafSearchResponse, SearchError> for LeafSearchRetryPolicy {
     // Build a retry request on failing split ids only.
     fn retry_request(
         &self,
         request: &LeafSearchRequest,
-        result: Result<&LeafSearchResult, &SearchError>,
+        result: Result<&LeafSearchResponse, &SearchError>,
     ) -> Option<LeafSearchRequest> {
         match result {
             Ok(response) => {
@@ -56,7 +56,7 @@ impl RetryPolicy<LeafSearchRequest, LeafSearchResult, SearchError> for LeafSearc
 #[cfg(test)]
 mod tests {
     use quickwit_proto::{
-        LeafSearchRequest, LeafSearchResult, SearchRequest, SplitIdAndFooterOffsets,
+        LeafSearchRequest, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
         SplitSearchError,
     };
 
@@ -97,7 +97,7 @@ mod tests {
     fn test_should_retry_on_error() -> anyhow::Result<()> {
         let retry_policy = LeafSearchRetryPolicy {};
         let request = mock_leaf_search_request();
-        let result = Result::<LeafSearchResult, SearchError>::Err(SearchError::InternalError(
+        let result = Result::<LeafSearchResponse, SearchError>::Err(SearchError::InternalError(
             "test".to_string(),
         ));
         let retry = retry_policy
@@ -111,13 +111,13 @@ mod tests {
     fn test_should_not_retry_if_result_is_ok_and_no_failing_splits() -> anyhow::Result<()> {
         let retry_policy = LeafSearchRetryPolicy {};
         let request = mock_leaf_search_request();
-        let leaf_response = LeafSearchResult {
+        let leaf_response = LeafSearchResponse {
             num_hits: 0,
             partial_hits: vec![],
             failed_splits: vec![],
             num_attempted_splits: 1,
         };
-        let result = Result::<LeafSearchResult, SearchError>::Ok(leaf_response);
+        let result = Result::<LeafSearchResponse, SearchError>::Ok(leaf_response);
         let retry = retry_policy
             .retry_request(&request, result.as_ref())
             .is_some();
@@ -136,13 +136,13 @@ mod tests {
             split_id: "split_2".to_string(),
             retryable_error: true,
         };
-        let leaf_response = LeafSearchResult {
+        let leaf_response = LeafSearchResponse {
             num_hits: 0,
             partial_hits: vec![],
             failed_splits: vec![split_error],
             num_attempted_splits: 1,
         };
-        let result = Result::<LeafSearchResult, SearchError>::Ok(leaf_response);
+        let result = Result::<LeafSearchResponse, SearchError>::Ok(leaf_response);
         let retry_request = retry_policy.retry_request(&request, result.as_ref());
         assert!(retry_request.is_some());
         assert_eq!(retry_request.unwrap(), expected_retry_request);

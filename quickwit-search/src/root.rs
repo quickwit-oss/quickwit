@@ -24,7 +24,7 @@ use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitMetadataAndFooterOffsets};
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResult, PartialHit,
+    FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResponse, PartialHit,
     SearchRequest, SearchResponse,
 };
 use tantivy::collector::Collector;
@@ -66,7 +66,7 @@ pub async fn root_search(
     let jobs: Vec<Job> = job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
     let assigned_leaf_search_jobs = client_pool.assign_jobs(jobs, &HashSet::default()).await?;
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
-    let leaf_search_results: Vec<LeafSearchResult> =
+    let leaf_search_responses: Vec<LeafSearchResponse> =
         futures::stream::iter(assigned_leaf_search_jobs.into_iter())
             .map(|(client, client_jobs)| {
                 let leaf_request = jobs_to_leaf_request(
@@ -83,25 +83,25 @@ pub async fn root_search(
             .await?;
 
     let merge_collector = make_merge_collector(search_request);
-    let leaf_search_result =
-        spawn_blocking(move || merge_collector.merge_fruits(leaf_search_results))
+    let leaf_search_response =
+        spawn_blocking(move || merge_collector.merge_fruits(leaf_search_responses))
             .await?
             .map_err(|merge_error: TantivyError| {
                 crate::SearchError::InternalError(format!("{}", merge_error))
             })?;
-    debug!(leaf_search_result=?leaf_search_result, "Merged leaf search result.");
+    debug!(leaf_search_response = ?leaf_search_response, "Merged leaf search response.");
 
-    if !leaf_search_result.failed_splits.is_empty() {
-        error!(error=?leaf_search_result.failed_splits, "Leaf request contains failed splits");
+    if !leaf_search_response.failed_splits.is_empty() {
+        error!(failed_splits = ?leaf_search_response.failed_splits, "Leaf search response contains at least one failed split.");
         return Err(SearchError::InternalError(format!(
             "{:?}",
-            leaf_search_result.failed_splits
+            leaf_search_response.failed_splits
         )));
     }
 
     // Create a hash map of PartialHit with split as a key.
     let mut partial_hits_map: HashMap<String, Vec<PartialHit>> = HashMap::new();
-    for partial_hit in leaf_search_result.partial_hits.iter() {
+    for partial_hit in leaf_search_response.partial_hits.iter() {
         partial_hits_map
             .entry(partial_hit.split_id.clone())
             .or_insert_with(Vec::new)
@@ -158,7 +158,7 @@ pub async fn root_search(
     let elapsed = start_instant.elapsed();
 
     Ok(SearchResponse {
-        num_hits: leaf_search_result.num_hits,
+        num_hits: leaf_search_response.num_hits,
         hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
         errors: vec![],
@@ -311,7 +311,7 @@ mod tests {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResult {
+                Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 3,
                     partial_hits: vec![
                         mock_partial_hit("split1", 3, 1),
@@ -374,7 +374,7 @@ mod tests {
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResult {
+                Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 2,
                     partial_hits: vec![
                         mock_partial_hit("split1", 3, 1),
@@ -395,7 +395,7 @@ mod tests {
         let mut mock_search_service2 = MockSearchService::new();
         mock_search_service2.expect_leaf_search().returning(
             |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResult {
+                Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 1,
                     partial_hits: vec![mock_partial_hit("split2", 2, 2)],
                     failed_splits: Vec::new(),
@@ -462,7 +462,7 @@ mod tests {
             .expect_leaf_search()
             .times(1)
             .returning(|_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResult {
+                Ok(quickwit_proto::LeafSearchResponse {
                     // requests from split 2 arrive here - simulate failure
                     num_hits: 0,
                     partial_hits: vec![],
@@ -494,7 +494,7 @@ mod tests {
                     .map(|metadata| metadata.split_id.to_string())
                     .collect_vec();
                 if split_ids == vec!["split1".to_string()] {
-                    Ok(quickwit_proto::LeafSearchResult {
+                    Ok(quickwit_proto::LeafSearchResponse {
                         num_hits: 2,
                         partial_hits: vec![
                             mock_partial_hit("split1", 3, 1),
@@ -505,7 +505,7 @@ mod tests {
                     })
                 } else if split_ids == vec!["split2".to_string()] {
                     // RETRY REQUEST!
-                    Ok(quickwit_proto::LeafSearchResult {
+                    Ok(quickwit_proto::LeafSearchResponse {
                         num_hits: 1,
                         partial_hits: vec![mock_partial_hit("split2", 2, 2)],
                         failed_splits: Vec::new(),
@@ -575,7 +575,7 @@ mod tests {
                 println!("request from service1 split2?");
                 // requests from split 2 arrive here - simulate failure.
                 // a retry will be made on the second service.
-                Ok(quickwit_proto::LeafSearchResult {
+                Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 0,
                     partial_hits: vec![],
                     failed_splits: vec![SplitSearchError {
@@ -592,7 +592,7 @@ mod tests {
             .return_once(|_| {
                 println!("request from service1 split1?");
                 // RETRY REQUEST from split1
-                Ok(quickwit_proto::LeafSearchResult {
+                Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 2,
                     partial_hits: vec![
                         mock_partial_hit("split1", 3, 1),
@@ -616,7 +616,7 @@ mod tests {
             .return_once(|_| {
                 println!("request from service2 split2?");
                 // retry for split 2 arrive here, simulate success.
-                Ok(quickwit_proto::LeafSearchResult {
+                Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 1,
                     partial_hits: vec![mock_partial_hit("split2", 2, 2)],
                     failed_splits: Vec::new(),
@@ -629,7 +629,7 @@ mod tests {
             .return_once(|_| {
                 println!("request from service2 split1?");
                 // requests from split 1 arrive here - simulate failure, then success.
-                Ok(quickwit_proto::LeafSearchResult {
+                Ok(quickwit_proto::LeafSearchResponse {
                     // requests from split 2 arrive here - simulate failure
                     num_hits: 0,
                     partial_hits: vec![],
@@ -701,7 +701,7 @@ mod tests {
                 // requests from split 2 arrive here - simulate failure, then success
                 if first_call {
                     first_call = false;
-                    Ok(quickwit_proto::LeafSearchResult {
+                    Ok(quickwit_proto::LeafSearchResponse {
                         num_hits: 0,
                         partial_hits: vec![],
                         failed_splits: vec![SplitSearchError {
@@ -712,7 +712,7 @@ mod tests {
                         num_attempted_splits: 1,
                     })
                 } else {
-                    Ok(quickwit_proto::LeafSearchResult {
+                    Ok(quickwit_proto::LeafSearchResponse {
                         num_hits: 1,
                         partial_hits: vec![mock_partial_hit("split1", 2, 2)],
                         failed_splits: Vec::new(),
@@ -772,7 +772,7 @@ mod tests {
             .expect_leaf_search()
             .times(2)
             .returning(move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResult {
+                Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 0,
                     partial_hits: vec![],
                     failed_splits: vec![SplitSearchError {
@@ -832,7 +832,7 @@ mod tests {
         mock_search_service1.expect_leaf_search().returning(
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
                 // retry requests from split 1 arrive here
-                Ok(quickwit_proto::LeafSearchResult {
+                Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 1,
                     partial_hits: vec![mock_partial_hit("split1", 2, 2)],
                     failed_splits: Vec::new(),
@@ -851,7 +851,7 @@ mod tests {
         let mut mock_search_service2 = MockSearchService::new();
         mock_search_service2.expect_leaf_search().returning(
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResult {
+                Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 0,
                     partial_hits: vec![],
                     failed_splits: vec![SplitSearchError {
@@ -918,7 +918,7 @@ mod tests {
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1.expect_leaf_search().returning(
             move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResult {
+                Ok(quickwit_proto::LeafSearchResponse {
                     num_hits: 1,
                     partial_hits: vec![mock_partial_hit("split1", 2, 2)],
                     failed_splits: Vec::new(),
