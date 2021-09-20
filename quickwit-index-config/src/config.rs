@@ -31,7 +31,7 @@ use crate::{DocParsingError, QueryParserError, TAGS_FIELD_NAME};
 /// Sorted order (either Ascending or Descending).
 /// To get a regular top-K results search, use `SortOrder::Desc`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")] 
+#[serde(rename_all = "lowercase")]
 pub enum SortOrder {
     /// Descending. This is the default to get Top-K results.
     Desc,

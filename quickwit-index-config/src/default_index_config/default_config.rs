@@ -103,8 +103,8 @@ impl DefaultIndexConfigBuilder {
             let timestamp_field_entry = schema.get_field_entry(timestamp_field);
             if !timestamp_field_entry.is_fast() {
                 bail!(
-                    "Timestamp field must be a fast field, please add the fast property to your field \
-                     `{}`.",
+                    "Timestamp field must be a fast field, please add the fast property to your \
+                     field `{}`.",
                     timestamp_field_name
                 )
             }
@@ -138,8 +138,8 @@ impl DefaultIndexConfigBuilder {
             let sort_by_field_entry = schema.get_field_entry(sort_by_field);
             if !sort_by_field_entry.is_fast() {
                 bail!(
-                    "Sort by field must be a fast field, please add the fast property to your field \
-                     `{}`.",
+                    "Sort by field must be a fast field, please add the fast property to your \
+                     field `{}`.",
                     sort_by_config.field_name
                 )
             }
@@ -368,7 +368,10 @@ mod tests {
     use serde_json::{self, Value as JsonValue};
 
     use super::DefaultIndexConfig;
-    use crate::{DefaultIndexConfigBuilder, DocParsingError, IndexConfig, SOURCE_FIELD_NAME, SortBy, SortOrder, TAGS_FIELD_NAME};
+    use crate::{
+        DefaultIndexConfigBuilder, DocParsingError, IndexConfig, SortBy, SortOrder,
+        SOURCE_FIELD_NAME, TAGS_FIELD_NAME,
+    };
 
     const JSON_DOC_VALUE: &str = r#"
         {
@@ -430,8 +433,14 @@ mod tests {
             config_after_serialization.default_search_field_names
         );
         assert_eq!(config.schema, config_after_serialization.schema);
-        assert_eq!(config.timestamp_field_name, config_after_serialization.timestamp_field_name);
-        assert_eq!(config.sort_by.unwrap(), config_after_serialization.sort_by.unwrap());
+        assert_eq!(
+            config.timestamp_field_name,
+            config_after_serialization.timestamp_field_name
+        );
+        assert_eq!(
+            config.sort_by.unwrap(),
+            config_after_serialization.sort_by.unwrap()
+        );
         Ok(())
     }
 
@@ -723,17 +732,18 @@ mod tests {
         }"#;
         let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
         match builder.sort_by() {
-            SortBy::SortByFastField { field_name, order} => {
+            SortBy::SortByFastField { field_name, order } => {
                 assert_eq!(field_name, "timestamp");
                 assert_eq!(order, SortOrder::Asc);
-            },
-            _ => bail!("Sort by must be a SortByFastField.")
+            }
+            _ => bail!("Sort by must be a SortByFastField."),
         };
         Ok(())
     }
 
     #[test]
-    fn test_build_index_config_with_sort_by_doc_id_when_no_sort_field_is_specified() -> anyhow::Result<()> {
+    fn test_build_index_config_with_sort_by_doc_id_when_no_sort_field_is_specified(
+    ) -> anyhow::Result<()> {
         let index_config = r#"{
             "type": "default",
             "default_search_fields": [],
@@ -749,7 +759,7 @@ mod tests {
         let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
         match builder.sort_by() {
             SortBy::DocId => (),
-            _ => bail!("Sort by must be DocId.")
+            _ => bail!("Sort by must be DocId."),
         };
         Ok(())
     }
