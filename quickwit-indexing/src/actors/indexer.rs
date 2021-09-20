@@ -27,9 +27,9 @@ use fail::fail_point;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SendError, SyncActor,
 };
-use quickwit_index_config::IndexConfig;
+use quickwit_index_config::{IndexConfig, SortBy, SortOrder};
 use tantivy::schema::{Field, Value};
-use tantivy::Document;
+use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField, Order};
 use tracing::{info, warn};
 
 use crate::models::{CommitPolicy, IndexedSplit, IndexerMessage, RawDocBatch, ScratchDirectory};
@@ -93,8 +93,24 @@ enum PrepareDocumentOutcome {
 impl IndexerState {
     fn create_indexed_split(&self) -> anyhow::Result<IndexedSplit> {
         let schema = self.index_config.schema();
+        let mut index_settings = IndexSettings::default();
+        let sort_by_field = match self.index_config.sort_by() {
+            SortBy::DocId => None,
+            SortBy::SortByFastField { field_name, order } => {
+                let tantivy_order = match order {
+                    SortOrder::Asc => Order::Asc,
+                    SortOrder::Desc => Order::Desc,
+                };
+                Some(IndexSortByField {
+                    field: field_name,
+                    order: tantivy_order,
+                })
+            }
+        };
+        index_settings.sort_by_field = sort_by_field;
+        let index_builder = IndexBuilder::new().settings(index_settings).schema(schema);
         let indexed_split =
-            IndexedSplit::new_in_dir(self.index_id.clone(), &self.indexer_params, schema)?;
+            IndexedSplit::new_in_dir(self.index_id.clone(), &self.indexer_params, index_builder)?;
         Ok(indexed_split)
     }
 
@@ -472,6 +488,10 @@ mod tests {
         let output_messages = inbox.drain_available_message_for_test();
         assert_eq!(output_messages.len(), 1);
         assert_eq!(output_messages[0].num_docs, 3);
+        let sort_by_field = output_messages[0].index.settings().sort_by_field.as_ref();
+        assert!(sort_by_field.is_some());
+        assert_eq!(sort_by_field.unwrap().field, "timestamp");
+        assert!(sort_by_field.unwrap().order.is_desc());
         Ok(())
     }
 

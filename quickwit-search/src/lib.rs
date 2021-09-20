@@ -300,6 +300,10 @@ mod tests {
         let index_config = r#"{
             "default_search_fields": ["body"],
             "timestamp_field": "ts",
+            "sort_by": {
+                "field_name": "ts",
+                "order": "desc"
+            },
             "tag_fields": [],
             "field_mappings": [
                 {
