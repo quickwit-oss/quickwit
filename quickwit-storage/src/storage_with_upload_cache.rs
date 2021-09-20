@@ -89,22 +89,23 @@ impl CacheState {
 }
 
 /// A struct to wrap the LRU cache and its info.
-pub struct CacheWithMeta {
+struct CacheWithMeta {
     /// Underlying LRU cache.
-    pub cache: LruCache<PathBuf, usize>,
+    cache: LruCache<PathBuf, usize>,
     /// Current number of bytes in the cache.
-    pub num_bytes: usize,
+    num_bytes: usize,
     /// Current number of files in the cache.
-    pub num_files: usize,
+    num_files: usize,
 }
 
-/// A storage with a backing file system cache.
+/// A storage keeping the most recently uploaded files on local disk.
 ///
-/// This storage is meant to be use during indexing where `put` and `copy_to_file`
-/// are most relevant.
-/// It only interract with the cache for `put`, `copy_to_file` and `delete`
-/// operation.
-/// Other operations directly interract with the underlying remote storage.
+/// This storage is meant to be used during indexing and merging where the `put` and `copy_to_file`
+/// methods are the most utilized.
+/// As a result, only the methods `put`, `copy_to_file`, and `delete` interact with the local file
+/// system.
+/// Other operations, such as `get_all` or `get_slice,` directly interact with the underlying remote
+/// storage.
 pub struct StorageWithUploadCache {
     /// The remote storage.
     remote_storage: Arc<dyn Storage>,
@@ -245,15 +246,20 @@ impl Storage for StorageWithUploadCache {
             locked_disk_cache.num_files -= 1;
         }
 
-        let mut undable_to_delete = HashSet::new();
+        // There is a risk of having one or a few items in the cache
+        // that cannot be deleted from disk. This will cause an infinite loop.
+        // This hashset is used to detect that we have looped around by checking if
+        // an item that failed deletion has already been seen.
+        let mut failed_to_delete_items = HashSet::new();
+
         while self.disk_capacity.exceeds_capacity(
             locked_disk_cache.num_bytes + payload_length,
             locked_disk_cache.num_files + 1,
         ) {
             if let Some((item_path, item_num_bytes)) = locked_disk_cache.cache.pop_lru() {
-                // check for cycle
-                if undable_to_delete.contains(&item_path) {
-                    // save cache state, because we may have succeeeded in deleting items
+                // Check if the failed to delete item has already been encountered.
+                if failed_to_delete_items.contains(&item_path) {
+                    // Save cache state, because we may have succeeeded in deleting some items
                     // while trying to make room.
                     locked_disk_cache.cache.put(item_path, item_num_bytes);
                     let _ = self.save_state(&locked_disk_cache).await;
@@ -262,7 +268,7 @@ impl Storage for StorageWithUploadCache {
                 if let Err(error) = self.cache_storage.delete(item_path.as_path()).await {
                     if error.kind() != StorageErrorKind::DoesNotExist {
                         warn!(file_path = %item_path.to_string_lossy(), "Could not remove file from cache.");
-                        undable_to_delete.insert(item_path.clone());
+                        failed_to_delete_items.insert(item_path.clone());
                         locked_disk_cache.cache.put(item_path, item_num_bytes);
                         continue;
                     }
@@ -368,6 +374,8 @@ fn write_cache_state(cache_dir: &Path, cache_state: CacheState) -> StorageResult
 ///
 /// It tries to construct an instance from a previously saved state if it exists,
 /// otherwise it will construct a new instance from the given parameters.
+/// Note: For a cache constructed from a previous state, the `disk_capacity`
+/// parameter is just ignored.
 pub fn create_storage_with_upload_cache(
     remote_storage: Arc<dyn Storage>,
     storage_uri_resolver: &StorageUriResolver,
