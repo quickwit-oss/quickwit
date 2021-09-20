@@ -108,20 +108,23 @@ impl DefaultIndexConfigBuilder {
                     timestamp_field_name
                 )
             }
-            if let FieldType::I64(options) = timestamp_field_entry.field_type() {
-                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
+            match timestamp_field_entry.field_type() {
+                FieldType::I64(options) | FieldType::U64(options) => {
+                    if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
+                        bail!(
+                            "Timestamp field cannot be an array, please change your field `{}` \
+                             from an array to a single value.",
+                            timestamp_field_name
+                        )
+                    }
+                }
+                _ => {
                     bail!(
-                        "Timestamp field cannot be an array, please change your field `{}` from \
-                         an array to a single value.",
+                        "Timestamp field must be either of type i64 or u64, please change your \
+                         field type `{}` to i64 or u64.",
                         timestamp_field_name
                     )
                 }
-            } else {
-                bail!(
-                    "Timestamp field must be of type i64, please change your field type `{}` to \
-                     i64.",
-                    timestamp_field_name
-                )
             }
         }
 
@@ -221,7 +224,7 @@ impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
             .map(|sort_by| match sort_by {
                 SortBy::SortByFastField { field_name, order } => Some(SortByConfig {
                     field_name: field_name.clone(),
-                    order: order.clone(),
+                    order: *order,
                 }),
                 SortBy::DocId => None,
             })
@@ -352,7 +355,7 @@ impl IndexConfig for DefaultIndexConfig {
     }
 
     fn sort_by(&self) -> crate::SortBy {
-        self.sort_by.clone().unwrap_or_else(|| crate::SortBy::DocId)
+        self.sort_by.clone().unwrap_or(crate::SortBy::DocId)
     }
 
     fn tag_field_names(&self) -> Vec<String> {
@@ -761,6 +764,24 @@ mod tests {
             SortBy::DocId => (),
             _ => bail!("Sort by must be DocId."),
         };
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_config_with_a_u64_timestamp_field_is_valid() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "u64",
+                    "fast": true
+                }
+            ]
+        }"#;
+        let _ = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
         Ok(())
     }
 }
