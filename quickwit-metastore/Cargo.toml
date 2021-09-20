@@ -35,6 +35,7 @@ optional = true
 
 [dev-dependencies]
 dotenv = "0.15"
+futures = '0.3'
 mockall = '0.9'
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage", features=["testsuite"]}
 quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config", features=["testsuite"] }
