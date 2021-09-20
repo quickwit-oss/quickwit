@@ -353,7 +353,7 @@ fn extract_fast_field_names(index_config: &dyn IndexConfig) -> HashSet<String> {
     if let Some(timestamp_field) = index_config.timestamp_field_name() {
         fast_fields.insert(timestamp_field);
     }
-    if let SortBy::SortByFastField { field_name, .. } = index_config.default_sort_by() {
+    if let SortBy::SortByFastField { field_name, .. } = index_config.sort_by() {
         fast_fields.insert(field_name);
     }
     fast_fields
@@ -370,7 +370,7 @@ pub fn make_collector_for_split(
         split_id,
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
-        sort_by: index_config.default_sort_by(),
+        sort_by: index_config.sort_by(),
         fast_field_names: extract_fast_field_names(index_config),
         timestamp_field_opt: index_config.timestamp_field(split_schema),
         start_timestamp_opt: search_request.start_timestamp,

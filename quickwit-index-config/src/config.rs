@@ -21,6 +21,7 @@ use std::fmt::Debug;
 
 use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_proto::SearchRequest;
+use serde::{Deserialize, Serialize};
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 use tantivy::Document;
@@ -29,7 +30,8 @@ use crate::{DocParsingError, QueryParserError, TAGS_FIELD_NAME};
 
 /// Sorted order (either Ascending or Descending).
 /// To get a regular top-K results search, use `SortOrder::Desc`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")] 
 pub enum SortOrder {
     /// Descending. This is the default to get Top-K results.
     Desc,
@@ -37,10 +39,16 @@ pub enum SortOrder {
     Asc,
 }
 
+impl Default for SortOrder {
+    fn default() -> Self {
+        Self::Desc
+    }
+}
+
 /// Defines the way documents should be sorted.
 /// In case of a tie, the documents are ordered according to descending `(split_id, segment_ord,
 /// doc_id)`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SortBy {
     /// Sort by a specific field.
     SortByFastField {
@@ -82,7 +90,7 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     ) -> Result<Box<dyn Query>, QueryParserError>;
 
     /// Returns the default sort
-    fn default_sort_by(&self) -> SortBy {
+    fn sort_by(&self) -> SortBy {
         SortBy::DocId
     }
 

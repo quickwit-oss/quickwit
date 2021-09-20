@@ -51,6 +51,10 @@ pub fn default_config_for_tests() -> DefaultIndexConfig {
                 "body", "attributes.server", "attributes.server.status"
             ],
             "timestamp_field": "timestamp",
+            "sort_by": {
+                "field_name": "timestamp",
+                "order": "desc"
+            },
             "tag_fields": ["owner"],
             "field_mappings": [
                 {
