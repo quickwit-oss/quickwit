@@ -30,10 +30,12 @@ use anyhow::{bail, Context};
 use byte_unit::Byte;
 use crossterm::style::{Print, PrintStyledContent, Stylize};
 use crossterm::QueueableCommand;
+use humansize::{file_size_opts, FileSize};
 use json_comments::StripComments;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_common::extract_index_id_from_index_uri;
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
+use quickwit_directories::BundleDirectory;
 use quickwit_index_config::{DefaultIndexConfigBuilder, IndexConfig};
 use quickwit_indexing::actors::{
     IndexerParams, IndexingPipelineParams, IndexingPipelineSupervisor,
@@ -50,6 +52,23 @@ use tracing::debug;
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct ReadSplitArgs {
+    metastore_uri: String,
+    index_id: String,
+    split_id: String,
+}
+
+impl ReadSplitArgs {
+    pub fn new(metastore_uri: String, index_id: String, split_id: String) -> anyhow::Result<Self> {
+        Ok(Self {
+            metastore_uri,
+            index_id,
+            split_id,
+        })
+    }
+}
 
 #[derive(Debug)]
 pub struct CreateIndexArgs {
@@ -135,6 +154,30 @@ pub struct GarbageCollectIndexArgs {
     pub index_id: String,
     pub grace_period: Duration,
     pub dry_run: bool,
+}
+
+pub async fn create_read_split_cli(args: ReadSplitArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "read-split");
+
+    let split_file = PathBuf::from(format!("{}.split", args.split_id));
+
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+
+    let index_metadata = metastore.index_metadata(&args.index_id).await?;
+
+    let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
+
+    let bundle = index_storage.get_all(split_file.as_path()).await?;
+    let stats = BundleDirectory::get_stats_split(bundle)?;
+
+    for (path, size) in stats {
+        let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
+        println!("{:?} {}", path, readable_size);
+    }
+
+    Ok(())
 }
 
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {

@@ -226,14 +226,8 @@ impl Storage for LocalFileStorage {
 }
 
 /// A File storage resolver
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LocalFileStorageFactory {}
-
-impl Default for LocalFileStorageFactory {
-    fn default() -> Self {
-        LocalFileStorageFactory {}
-    }
-}
 
 impl StorageFactory for LocalFileStorageFactory {
     fn protocol(&self) -> String {

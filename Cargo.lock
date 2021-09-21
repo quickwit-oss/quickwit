@@ -1118,6 +1118,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6456b8a6c8f33fee7d958fcd1b60d55b11940a79e63ae87013e6d22e26034440"
 
 [[package]]
+name = "humansize"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02296996cb8796d7c6e3bc2d9211b7802812d36999a51bb754123ead7d37d026"
+
+[[package]]
 name = "humantime"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1736,11 +1742,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "ownedbytes"
-version = "0.1.0"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=a622e2f#a622e2f31dcc8a44fd7c4c93c4a489007dde349e"
+name = "parking_lot"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3a704eb390aafdc107b0e392f56a82b668e3a71366993b5340f5833fd62505e"
 dependencies = [
- "stable_deref_trait",
+ "lock_api 0.3.4",
+ "parking_lot_core 0.7.2",
 ]
 
 [[package]]
@@ -2038,6 +2046,7 @@ dependencies = [
  "chrono",
  "clap",
  "crossterm",
+ "humansize",
  "json_comments",
  "once_cell",
  "opentelemetry",
@@ -2046,6 +2055,7 @@ dependencies = [
  "quickwit-actors",
  "quickwit-common",
  "quickwit-core",
+ "quickwit-directories",
  "quickwit-index-config",
  "quickwit-indexing",
  "quickwit-metastore",

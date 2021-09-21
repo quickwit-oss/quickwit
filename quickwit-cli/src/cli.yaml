@@ -3,6 +3,24 @@ about: Index and search structured or unstructured data
 author: Quickwit, Inc. <hello@quickwit.io>
 
 subcommands:
+    - read-split:
+        about: Gets file information from a split
+        args:
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
+                required: true
+            - index-id:
+                help: Index id
+                long: index-id
+                value_name: INDEX ID
+                required: true
+            - split-id:
+                help: Id of the split
+                long: split-id
+                value_name: SPLIT ID
+                required: true
     - new:
         about: Creates an index
         args:

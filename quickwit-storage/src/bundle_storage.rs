@@ -98,8 +98,13 @@ impl BundleStorageFileOffsets {
     /// Read metadata from a file.
     pub fn open_from_file_slice(file: FileSlice) -> io::Result<Self> {
         let (body_and_footer, footer_num_bytes_data) = file.split_from_end(8);
-        let footer_num_bytes: u64 =
-            u64::from_le_bytes(footer_num_bytes_data.read_bytes()?.as_slice().try_into().unwrap());
+        let footer_num_bytes: u64 = u64::from_le_bytes(
+            footer_num_bytes_data
+                .read_bytes()?
+                .as_slice()
+                .try_into()
+                .unwrap(),
+        );
 
         let bundle_storage_file_offsets_data = body_and_footer
             .slice_from_end(footer_num_bytes as usize)

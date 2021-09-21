@@ -19,6 +19,7 @@ byte-unit = "4"
 clap = { version = "2", features = ["yaml"] }
 quickwit-actors = { version = "0.1.0", path = "../quickwit-actors" }
 quickwit-core = { version = "0.1.0", path = "../quickwit-core" }
+quickwit-directories = { version = "0.1.0", path = "../quickwit-directories" }
 quickwit-common = { version = "0.1.0", path = "../quickwit-common" }
 quickwit-metastore = { version = "0.1.0", path = "../quickwit-metastore" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
@@ -42,6 +43,7 @@ serde_json = "1.0"
 tempfile = "3"
 json_comments = "0.2"
 chrono = "0.4"
+humansize = "1.1.1"
 
 [dev-dependencies]
 assert_cmd = "1"

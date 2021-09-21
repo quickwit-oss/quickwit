@@ -17,15 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::{fmt, io};
 
+use bytes::Bytes;
 use quickwit_storage::BundleStorageFileOffsets;
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
-use tantivy::directory::{FileHandle, FileSlice, WatchCallback, WatchHandle, WritePtr};
+use tantivy::directory::{FileHandle, FileSlice, OwnedBytes, WatchCallback, WatchHandle, WritePtr};
 use tantivy::{Directory, HasLen};
 
 /// BundleDirectory is a read-only directory that makes it possible to
@@ -53,19 +53,20 @@ fn split_footer(file_slice: FileSlice) -> io::Result<(FileSlice, FileSlice)> {
 
 impl BundleDirectory {
     /// Get files and their sizes in a split.
-    pub fn get_stats_split(split_file: FileSlice) -> io::Result<HashMap<PathBuf, usize>> {
-        // First we remove the hotcache from our file slice.
+    pub fn get_stats_split(data: Bytes) -> io::Result<Vec<(PathBuf, usize)>> {
+        let split = OwnedBytes::new(data.to_vec());
+        let split_file = FileSlice::new(Box::new(split));
         let (body_and_bundle_metadata, hot_cache) = split_footer(split_file)?;
         let file_offsets =
             BundleStorageFileOffsets::open_from_file_slice(body_and_bundle_metadata)?;
 
-        let mut files_and_size: HashMap<_, _> = file_offsets
+        let mut files_and_size: Vec<(_, _)> = file_offsets
             .files
             .into_iter()
             .map(|(file, range)| (file, range.end - range.start))
             .collect();
 
-        files_and_size.insert(PathBuf::from("hotcache".to_string()), hot_cache.len());
+        files_and_size.push((PathBuf::from("hotcache".to_string()), hot_cache.len()));
         Ok(files_and_size)
     }
 
@@ -177,23 +178,13 @@ mod tests {
         split_file.write_all(&hotcache_num_bytes.to_le_bytes())?;
 
         let buffer = fs::read(test_bundle_path)?;
-        let bundle_file_slice = FileSlice::from(buffer);
 
         // check stats
-        let stats = BundleDirectory::get_stats_split(bundle_file_slice)?;
+        let stats = BundleDirectory::get_stats_split(Bytes::from(buffer))?;
 
-        assert_eq!(
-            *stats.get(&PathBuf::from("hotcache".to_string())).unwrap(),
-            18_usize
-        );
-        assert_eq!(
-            *stats.get(&PathBuf::from("f1".to_string())).unwrap(),
-            2_usize
-        );
-        assert_eq!(
-            *stats.get(&PathBuf::from("f2".to_string())).unwrap(),
-            3_usize
-        );
+        assert_eq!(stats[0], (PathBuf::from("f1".to_string()), 2_usize));
+        assert_eq!(stats[1], (PathBuf::from("f2".to_string()), 3_usize));
+        assert_eq!(stats[2], (PathBuf::from("hotcache".to_string()), 18_usize));
 
         Ok(())
     }
@@ -221,7 +212,7 @@ mod tests {
         let buffer = fs::read(test_bundle_path)?;
         let bundle_file_slice = FileSlice::from(buffer);
 
-        let bundle_dir = BundleDirectory::open_bundle(bundle_file_slice.clone())?;
+        let bundle_dir = BundleDirectory::open_bundle(bundle_file_slice)?;
 
         assert!(bundle_dir.exists(Path::new("f1")).unwrap());
         assert!(bundle_dir.exists(Path::new("f2")).unwrap());
