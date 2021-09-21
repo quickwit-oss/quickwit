@@ -29,25 +29,6 @@
 mod index;
 
 pub use index::{create_index, delete_index, garbage_collect_index, reset_index};
-use quickwit_metastore::SplitMetadataAndFooterOffsets;
-
-#[allow(missing_docs)]
-#[derive(Debug)]
-pub struct FileEntry {
-    /// The file_name is a file name, within an index directory.
-    pub file_name: String,
-    /// File size in bytes.
-    pub file_size_in_bytes: u64, //< TODO switch to `byte_unit::Byte`.
-}
-
-impl From<&SplitMetadataAndFooterOffsets> for FileEntry {
-    fn from(split: &SplitMetadataAndFooterOffsets) -> Self {
-        FileEntry {
-            file_name: quickwit_common::split_file(&split.split_metadata.split_id),
-            file_size_in_bytes: split.footer_offsets.end,
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -55,9 +36,7 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_index_config::WikipediaIndexConfig;
-    use quickwit_indexing::TestSandbox;
-
-    use crate::FileEntry;
+    use quickwit_indexing::{FileEntry, TestSandbox};
 
     #[tokio::test]
     async fn test_file_entry_from_split() -> anyhow::Result<()> {

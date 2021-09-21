@@ -17,29 +17,30 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::StreamExt;
 use quickwit_actors::{Actor, ActorContext, AsyncActor};
-use quickwit_metastore::{Metastore, SplitMetadataAndFooterOffsets, SplitState};
+use quickwit_metastore::Metastore;
 use quickwit_storage::Storage;
-use tantivy::chrono::Utc;
-use tracing::{info, warn};
+use tracing::info;
 
-// TODO: discuss & settle on best default for this
-// https://aws.amazon.com/premiumsupport/knowledge-center/s3-request-limit-avoid-throttling/
-const MAX_CONCURRENT_STORAGE_REQUESTS: usize = 1000;
+use crate::run_garbage_collect;
 
-const RUN_INTERVAL_IN_SECONDS: u64 = 10 * 60; // 10 minutes
-const GRACE_PERIOD_IN_SECONDS: u64 = 2 * 60; // 2 minutes
+const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
+const GRACE_PERIOD: Duration = Duration::from_secs(2 * 60); // 2 minutes
 
 #[derive(Debug, Clone, Default)]
 pub struct GarbageCollectorCounters {
-    // Denotes the number of passes the garbage collector has performed.
-    pub num_passes: u64,
+    /// The number of passes the garbage collector has performed.
+    pub num_passes: usize,
+    /// The number of deleted files.
+    pub num_deleted_files: usize,
+    /// The number of bytes deleted.
+    pub num_deleted_bytes: usize,
+    /// The number of failed to delete files.
+    pub num_failed_files: usize,
 }
 
 /// An actor for collecting garbage periodically from an index.
@@ -62,45 +63,6 @@ impl GarbageCollector {
             metastore,
             counters: GarbageCollectorCounters::default(),
         }
-    }
-
-    pub async fn run_garbage_collect_operation(&mut self) -> anyhow::Result<()> {
-        info!(index = %self.index_id, "garbage-collect-operation");
-        self.counters.num_passes += 1;
-
-        // Select staged splits with staging timestamp older than grace period timestamp.
-        let grace_period_timestamp = Utc::now().timestamp() - GRACE_PERIOD_IN_SECONDS as i64;
-        let staged_splits = self
-            .metastore
-            .list_splits(&self.index_id, SplitState::Staged, None, &[])
-            .await?
-            .into_iter()
-            // TODO: Update metastore API and push this filter down.
-            .filter(|meta| meta.split_metadata.update_timestamp < grace_period_timestamp)
-            .collect::<Vec<_>>();
-
-        // Schedule all eligible staged splits for delete
-        let split_ids = staged_splits
-            .iter()
-            .map(|meta| meta.split_metadata.split_id.as_str())
-            .collect::<Vec<_>>();
-        self.metastore
-            .mark_splits_as_deleted(&self.index_id, &split_ids)
-            .await?;
-
-        // Select split to deletes
-        let splits_to_delete = self
-            .metastore
-            .list_splits(&self.index_id, SplitState::ScheduledForDeletion, None, &[])
-            .await?;
-
-        delete_splits_with_files(
-            &self.index_id,
-            splits_to_delete,
-            self.metastore.clone(),
-            self.index_storage.clone(),
-        )
-        .await
     }
 }
 
@@ -127,64 +89,40 @@ impl AsyncActor for GarbageCollector {
         _: (),
         ctx: &ActorContext<Self::Message>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        self.run_garbage_collect_operation().await?;
-        ctx.schedule_self_msg(Duration::from_secs(RUN_INTERVAL_IN_SECONDS), ())
-            .await;
+        info!(index = %self.index_id, "garbage-collect-operation");
+        self.counters.num_passes += 1;
+
+        let deletion_stats = run_garbage_collect(
+            &self.index_id,
+            self.index_storage.clone(),
+            self.metastore.clone(),
+            GRACE_PERIOD,
+            false,
+        )
+        .await?;
+
+        self.counters.num_deleted_files += deletion_stats.deleted_entries.len();
+        self.counters.num_deleted_bytes += deletion_stats
+            .deleted_entries
+            .iter()
+            .map(|entry| entry.file_size_in_bytes as usize)
+            .sum::<usize>();
+        self.counters.num_failed_files +=
+            deletion_stats.candidate_entries.len() - deletion_stats.deleted_entries.len();
+
+        ctx.schedule_self_msg(RUN_INTERVAL, ()).await;
         Ok(())
     }
 }
 
-/// Delete a list of splits from the storage and the metastore.
-/// It should leave the index and the metastore in good state.
-///
-/// * `index_id` - The target index id.
-/// * `splits`  - The list of splits to delete.
-/// * `metastore` - The metastore managing the target index.
-/// * `storage - The storage managing the target index.
-pub async fn delete_splits_with_files(
-    index_id: &str,
-    splits: Vec<SplitMetadataAndFooterOffsets>,
-    metastore: Arc<dyn Metastore>,
-    storage: Arc<dyn Storage>,
-) -> anyhow::Result<()> {
-    let mut deleted_split_ids: Vec<String> = Vec::new();
-    let mut failed_to_delete_split_ids: Vec<String> = Vec::new();
-
-    let mut delete_splits_results_stream = tokio_stream::iter(splits.into_iter())
-        .map(|meta| {
-            let moved_storage = storage.clone();
-            async move {
-                let file_name = quickwit_common::split_file(&meta.split_metadata.split_id);
-                let delete_result = moved_storage.delete(Path::new(&file_name)).await;
-                (meta.split_metadata.split_id.clone(), delete_result.is_ok())
-            }
-        })
-        .buffer_unordered(MAX_CONCURRENT_STORAGE_REQUESTS);
-
-    while let Some((split_id, is_success)) = delete_splits_results_stream.next().await {
-        if is_success {
-            deleted_split_ids.push(split_id);
-        } else {
-            failed_to_delete_split_ids.push(split_id);
-        }
-    }
-
-    if !failed_to_delete_split_ids.is_empty() {
-        warn!(splits=?failed_to_delete_split_ids, "Some splits were not deleted");
-    }
-
-    if !deleted_split_ids.is_empty() {
-        let split_ids: Vec<&str> = deleted_split_ids.iter().map(String::as_str).collect();
-        metastore.delete_splits(index_id, &split_ids).await?;
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use quickwit_actors::Universe;
-    use quickwit_metastore::{MockMetastore, SplitMetadata};
+    use quickwit_metastore::{
+        MockMetastore, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState,
+    };
     use quickwit_storage::{MockStorage, StorageErrorKind};
 
     use super::*;
@@ -195,7 +133,7 @@ mod tests {
                 split_id: id.to_string(),
                 ..Default::default()
             },
-            footer_offsets: 2..6,
+            footer_offsets: 5..20,
         }
     }
 
@@ -260,12 +198,9 @@ mod tests {
 
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);
-
-        // universe.simulate_time_shift(Duration::from_secs(200)).await;
-        // let count_after_advance_time = handler.process_pending_and_observe().await.state;
-        // Note the count is 2 here and not 1 + 3  = 4.
-        // See comment on `universe.simulate_advance_time`.
-        // assert_eq!(count_after_advance_time, 4);
+        assert_eq!(state_after_initialization.num_deleted_files, 2);
+        assert_eq!(state_after_initialization.num_deleted_bytes, 40);
+        assert_eq!(state_after_initialization.num_failed_files, 1);
     }
 
     #[tokio::test]
@@ -318,6 +253,9 @@ mod tests {
 
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);
+        assert_eq!(state_after_initialization.num_deleted_files, 2);
+        assert_eq!(state_after_initialization.num_deleted_bytes, 40);
+        assert_eq!(state_after_initialization.num_failed_files, 0);
 
         // 5 minutes later
         universe
@@ -325,12 +263,16 @@ mod tests {
             .await;
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);
+        assert_eq!(state_after_initialization.num_deleted_files, 2);
+        assert_eq!(state_after_initialization.num_deleted_bytes, 40);
+        assert_eq!(state_after_initialization.num_failed_files, 0);
 
         // 15 minutes later
-        universe
-            .simulate_time_shift(Duration::from_secs(RUN_INTERVAL_IN_SECONDS))
-            .await;
+        universe.simulate_time_shift(RUN_INTERVAL).await;
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 2);
+        assert_eq!(state_after_initialization.num_deleted_files, 4);
+        assert_eq!(state_after_initialization.num_deleted_bytes, 80);
+        assert_eq!(state_after_initialization.num_failed_files, 0);
     }
 }
