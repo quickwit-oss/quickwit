@@ -67,6 +67,8 @@ impl BundleDirectory {
             .collect();
 
         files_and_size.push((PathBuf::from("hotcache".to_string()), hot_cache.len()));
+
+        files_and_size.sort();
         Ok(files_and_size)
     }
 
