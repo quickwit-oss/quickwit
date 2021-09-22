@@ -86,6 +86,14 @@ impl LocalFileStorage {
         }
         Ok(pathbuf)
     }
+
+    /// Moves a file from a source to a destination.
+    pub async fn move_to(&self, from: &Path, to: &Path) -> crate::StorageResult<()> {
+        let from_full_path = self.root.join(from);
+        let to_full_path = self.root.join(to);
+        fs::rename(from_full_path, to_full_path).await?;
+        Ok(())
+    }
 }
 
 /// Delete empty directories starting from `{root}/{path}` directory and stopping at `{root}`
