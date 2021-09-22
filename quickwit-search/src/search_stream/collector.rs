@@ -17,8 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::hash::Hash;
 use std::marker::PhantomData;
 
@@ -196,7 +196,6 @@ impl FastFieldCollectorBuilder {
     }
 }
 
-
 #[derive(Clone)]
 pub struct PartionnedFastFieldCollectorBuilder {
     fast_field_value_type: Type,
@@ -248,16 +247,14 @@ impl PartionnedFastFieldCollectorBuilder {
         )
     }
 
-    pub fn fast_field_to_warm(&self) -> Vec<String> {
+    pub fn fast_field_to_warm(&self) -> HashSet<String> {
+        let mut set = HashSet::new();
+        set.insert(self.fast_field_name.clone());
         if let Some(timestamp_field_name) = &self.timestamp_field_name {
-            vec![
-                timestamp_field_name.clone(),
-                self.fast_field_name.clone(),
-                self.partition_by_fast_field_name.clone(),
-            ]
-        } else {
-            vec![self.fast_field_name.clone()]
+            set.insert(timestamp_field_name.clone());
+            set.insert(self.partition_by_fast_field_name.clone());
         }
+        set
     }
 
     pub fn typed_build<TFastValue: FastValue, TPartitionValue: FastValue>(
