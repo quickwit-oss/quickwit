@@ -4,7 +4,7 @@ author: Quickwit, Inc. <hello@quickwit.io>
 
 subcommands:
     - read-split:
-        about: Gets file information from a split
+        about: Displays file information for a split
         args:
             - metastore-uri:
                 help: Location of the metastore
@@ -12,12 +12,12 @@ subcommands:
                 value_name: METASTORE URI
                 required: true
             - index-id:
-                help: Index id
+                help: Index ID
                 long: index-id
                 value_name: INDEX ID
                 required: true
             - split-id:
-                help: Id of the split
+                help: ID of the split
                 long: split-id
                 value_name: SPLIT ID
                 required: true
