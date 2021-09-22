@@ -3,7 +3,7 @@ about: Index and search structured or unstructured data
 author: Quickwit, Inc. <hello@quickwit.io>
 
 subcommands:
-    - read-split:
+    - inspect-split:
         about: Displays file information for a split
         args:
             - metastore-uri:

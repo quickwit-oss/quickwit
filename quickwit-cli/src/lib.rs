@@ -54,13 +54,13 @@ use tracing::debug;
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct ReadSplitArgs {
+pub struct InspectSplitArgs {
     metastore_uri: String,
     index_id: String,
     split_id: String,
 }
 
-impl ReadSplitArgs {
+impl InspectSplitArgs {
     pub fn new(metastore_uri: String, index_id: String, split_id: String) -> anyhow::Result<Self> {
         Ok(Self {
             metastore_uri,
@@ -156,19 +156,16 @@ pub struct GarbageCollectIndexArgs {
     pub dry_run: bool,
 }
 
-pub async fn create_read_split_cli(args: ReadSplitArgs) -> anyhow::Result<()> {
-    debug!(args = ?args, "read-split");
-
-    let split_file = PathBuf::from(format!("{}.split", args.split_id));
+pub async fn create_inspect_split_cli(args: InspectSplitArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "read-inspect");
 
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
-
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
-
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
 
+    let split_file = PathBuf::from(format!("{}.split", args.split_id));
     let bundle = index_storage.get_all(split_file.as_path()).await?;
     let stats = BundleDirectory::get_stats_split(bundle)?;
 

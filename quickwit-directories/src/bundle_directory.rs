@@ -224,9 +224,6 @@ mod tests {
         let f2_data = bundle_dir.atomic_read(Path::new("f2"))?;
         assert_eq!(&f2_data[..], &[99, 55, 44]);
 
-        // check stats
-        // let stats = BundleDirectory::get_stats_split(bundle_file_slice)?;
-
         Ok(())
     }
 }

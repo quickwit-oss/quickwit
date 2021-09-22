@@ -37,7 +37,7 @@ use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, PartialEq)]
 enum CliCommand {
-    ReadSplit(ReadSplitArgs),
+    InspectSplit(InspectSplitArgs),
     New(CreateIndexArgs),
     Index(IndexDataArgs),
     Search(SearchIndexArgs),
@@ -49,7 +49,7 @@ enum CliCommand {
 impl CliCommand {
     fn default_log_level(&self) -> Level {
         match self {
-            CliCommand::ReadSplit(_) => Level::INFO,
+            CliCommand::InspectSplit(_) => Level::INFO,
             CliCommand::New(_) => Level::WARN,
             CliCommand::Index(_) => Level::WARN,
             CliCommand::Search(_) => Level::WARN,
@@ -71,7 +71,7 @@ impl CliCommand {
             "serve" => Self::parse_serve_args(submatches),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
-            "read-split" => Self::parse_read_split_args(submatches),
+            "inspect-split" => Self::parse_inspect_split_args(submatches),
             _ => bail!("Subcommand '{}' is not implemented", subcommand),
         }
     }
@@ -99,7 +99,7 @@ impl CliCommand {
         )?))
     }
 
-    fn parse_read_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_inspect_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .value_of("index-id")
             .context("'index-id' is a required arg")?
@@ -113,7 +113,7 @@ impl CliCommand {
             .map(|metastore_uri_str| metastore_uri_str.to_string())
             .context("'metastore-uri' is a required arg")?;
 
-        Ok(CliCommand::ReadSplit(ReadSplitArgs::new(
+        Ok(CliCommand::InspectSplit(InspectSplitArgs::new(
             metastore_uri,
             index_id,
             split_id,
@@ -319,7 +319,7 @@ async fn main() -> anyhow::Result<()> {
     setup_logging_and_tracing(command.default_log_level())?;
 
     let command_res = match command {
-        CliCommand::ReadSplit(args) => create_read_split_cli(args).await,
+        CliCommand::InspectSplit(args) => create_inspect_split_cli(args).await,
         CliCommand::New(args) => create_index_cli(args).await,
         CliCommand::Index(args) => index_data_cli(args).await,
         CliCommand::Search(args) => search_index_cli(args).await,
