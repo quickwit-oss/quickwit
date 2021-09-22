@@ -42,6 +42,7 @@ pub fn serialize<TFastValue: FastValue + Display>(
     match format {
         OutputFormat::Csv => serialize_csv(values, buffer),
         OutputFormat::ClickHouseRowBinary => serialize_click_house_row_binary(values, buffer),
+        OutputFormat::PartitionnedClickhouseRowBinary => panic!("Not covered yes")
     }
 }
 
