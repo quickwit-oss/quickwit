@@ -27,9 +27,7 @@ use quickwit_storage::Storage;
 use tantivy::chrono::Utc;
 use tracing::warn;
 
-// TODO: discuss & settle on best default for this
-// https://aws.amazon.com/premiumsupport/knowledge-center/s3-request-limit-avoid-throttling/
-pub const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 1000 };
+const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
 
 /// A struct holding splits deletion statistics.
 #[derive(Default)]
