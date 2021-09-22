@@ -28,6 +28,8 @@ use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{FileHandle, FileSlice, OwnedBytes, WatchCallback, WatchHandle, WritePtr};
 use tantivy::{Directory, HasLen};
 
+use crate::caching_directory::BytesWrapper;
+
 /// BundleDirectory is a read-only directory that makes it possible to
 /// open a split and serve the file it contains via tantivy's `Directory`.
 ///
@@ -54,7 +56,7 @@ fn split_footer(file_slice: FileSlice) -> io::Result<(FileSlice, FileSlice)> {
 impl BundleDirectory {
     /// Get files and their sizes in a split.
     pub fn get_stats_split(data: Bytes) -> io::Result<Vec<(PathBuf, usize)>> {
-        let split = OwnedBytes::new(data.to_vec());
+        let split = OwnedBytes::new(BytesWrapper(data));
         let split_file = FileSlice::new(Box::new(split));
         let (body_and_bundle_metadata, hot_cache) = split_footer(split_file)?;
         let file_offsets =
