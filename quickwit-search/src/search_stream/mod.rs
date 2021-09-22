@@ -34,15 +34,18 @@ use tantivy::fastfield::FastValue;
 /// Serialize the values into the `buffer` as bytes.
 ///
 /// Please note that the `buffer` is always cleared.
-pub fn serialize<TFastValue: FastValue + Display>(
+pub fn serialize<TFastValue: FastValue + Display, TPartitionValue: FastValue>(
     values: &[TFastValue],
     buffer: &mut Vec<u8>,
     format: OutputFormat,
+    partition: Option<TPartitionValue>,
 ) -> io::Result<()> {
     match format {
         OutputFormat::Csv => serialize_csv(values, buffer),
         OutputFormat::ClickHouseRowBinary => serialize_click_house_row_binary(values, buffer),
-        OutputFormat::PartitionnedClickhouseRowBinary => panic!("Not covered yes")
+        OutputFormat::PartitionnedClickhouseRowBinary => {
+            serialize_partitionned_click_house_row_binary(values, buffer, partition.unwrap())
+        }
     }
 }
 
@@ -53,6 +56,24 @@ fn serialize_csv<TFastValue: FastValue + Display>(
     buffer.clear();
     for value in values {
         writeln!(buffer, "{}", value)?;
+    }
+    Ok(())
+}
+
+fn serialize_partitionned_click_house_row_binary<
+    TFastValue: FastValue + Display,
+    TPartitionValue: FastValue,
+>(
+    values: &[TFastValue],
+    buffer: &mut Vec<u8>,
+    partition: TPartitionValue,
+) -> io::Result<()> {
+    let values_byte_size: u64 = (std::mem::size_of::<TFastValue>() * values.len()) as u64;
+    buffer.reserve_exact(std::mem::size_of::<TFastValue>() * values.len() + 8);
+    buffer.extend(partition.as_u64().to_le_bytes());
+    buffer.extend(values_byte_size.to_le_bytes());
+    for value in values {
+        buffer.extend(value.as_u64().to_le_bytes());
     }
     Ok(())
 }
