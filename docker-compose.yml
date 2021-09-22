@@ -53,6 +53,7 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
       POSTGRES_USER: ${POSTGRES_USER:-quickwit-dev}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quickwit-dev}
+      POSTGRES_DB: ${POSTGRES_DB:-quickwit-metastore-dev}
     volumes:
       - "${TMPDIR:-/tmp}/quickwit/services/postgres:/var/lib/postgresql/data/pgdata"
 
