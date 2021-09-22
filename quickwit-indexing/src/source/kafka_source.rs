@@ -192,7 +192,7 @@ impl Source for KafkaSource {
         let mut docs = Vec::new();
         let mut checkpoint_delta = CheckpointDelta::default();
 
-        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
+        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT * 4 / 5);
         let mut message_stream = Box::pin(self.consumer.stream().take_until(deadline));
 
         while let Some(message_res) = message_stream.next().await {
@@ -702,6 +702,20 @@ mod kafka_broker_tests {
         format!("Message #{}", id)
     }
 
+    fn merge_messages(messages: Vec<IndexerMessage>) -> anyhow::Result<RawDocBatch> {
+        let mut merged_batch = RawDocBatch::default();
+        for message in messages {
+            if let IndexerMessage::Batch(batch) = message {
+                merged_batch.docs.extend(batch.docs);
+                merged_batch
+                    .checkpoint_delta
+                    .extend(batch.checkpoint_delta)?;
+            }
+        }
+        merged_batch.docs.sort();
+        Ok(merged_batch)
+    }
+
     #[tokio::test]
     async fn test_kafka_source() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
@@ -789,33 +803,30 @@ mod kafka_broker_tests {
             let (exit_status, state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let mut messages = inbox.drain_available_message_for_test();
-            assert_eq!(messages.len(), 2);
-            assert!(matches!(messages[0], IndexerMessage::Batch(_)));
-            assert!(matches!(messages[1], IndexerMessage::EndOfSource));
+            let messages = inbox.drain_available_message_for_test();
+            assert!(messages.len() >= 2);
+            assert!(matches!(messages.last(), Some(IndexerMessage::EndOfSource)));
 
-            if let IndexerMessage::Batch(batch) = &mut messages[0] {
-                batch.docs.sort();
-                let expected_docs = vec![
-                    "Message #000",
-                    "Message #002",
-                    "Message #100",
-                    "Message #102",
-                    "Message #200",
-                    "Message #202",
-                ];
-                assert_eq!(batch.docs, expected_docs);
+            let batch = merge_messages(messages)?;
+            let expected_docs = vec![
+                "Message #000",
+                "Message #002",
+                "Message #100",
+                "Message #102",
+                "Message #200",
+                "Message #202",
+            ];
+            assert_eq!(batch.docs, expected_docs);
 
-                let mut expected_checkpoint_delta = CheckpointDelta::default();
-                for partition in 0..3 {
-                    expected_checkpoint_delta.record_partition_delta(
-                        PartitionId::from(partition),
-                        Position::Beginning,
-                        Position::from(2u64),
-                    )?;
-                }
-                assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
-            };
+            let mut expected_checkpoint_delta = CheckpointDelta::default();
+            for partition in 0..3 {
+                expected_checkpoint_delta.record_partition_delta(
+                    PartitionId::from(partition),
+                    Position::Beginning,
+                    Position::from(2u64),
+                )?;
+            }
+            assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
 
             let expected_state = json!({
                 "group_id": group_id,
@@ -848,29 +859,27 @@ mod kafka_broker_tests {
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let mut messages = inbox.drain_available_message_for_test();
-            assert_eq!(messages.len(), 2);
-            assert!(matches!(messages[0], IndexerMessage::Batch(_)));
-            assert!(matches!(messages[1], IndexerMessage::EndOfSource));
+            let messages = inbox.drain_available_message_for_test();
+            assert!(messages.len() >= 2);
+            assert!(matches!(messages.last(), Some(IndexerMessage::EndOfSource)));
 
-            if let IndexerMessage::Batch(batch) = &mut messages[0] {
-                batch.docs.sort();
-                let expected_docs = vec!["Message #002", "Message #200", "Message #202"];
-                assert_eq!(batch.docs, expected_docs);
+            let batch = merge_messages(messages)?;
+            let expected_docs = vec!["Message #002", "Message #200", "Message #202"];
+            assert_eq!(batch.docs, expected_docs);
 
-                let mut expected_checkpoint_delta = CheckpointDelta::default();
-                expected_checkpoint_delta.record_partition_delta(
-                    PartitionId::from(0),
-                    Position::from(0u64),
-                    Position::from(2u64),
-                )?;
-                expected_checkpoint_delta.record_partition_delta(
-                    PartitionId::from(2),
-                    Position::Beginning,
-                    Position::from(2u64),
-                )?;
-                assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta,);
-            };
+            let mut expected_checkpoint_delta = CheckpointDelta::default();
+            expected_checkpoint_delta.record_partition_delta(
+                PartitionId::from(0),
+                Position::from(0u64),
+                Position::from(2u64),
+            )?;
+            expected_checkpoint_delta.record_partition_delta(
+                PartitionId::from(2),
+                Position::Beginning,
+                Position::from(2u64),
+            )?;
+            assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta,);
+
             let expected_exit_state = json!({
                 "group_id": group_id,
                 "topic":  topic,
