@@ -212,6 +212,8 @@ enum OutputFormat {
     /// Format data by row in ClickHouse binary format.
     /// https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
     CLICK_HOUSE_ROW_BINARY = 1;
+    ///
+    PARTITIONNED_CLICKHOUSE_ROW_BINARY = 2;
 }
 
 message SearchStreamRequest {
@@ -236,6 +238,9 @@ message SearchStreamRequest {
 
   // Split tag filter
   repeated string tags = 8;
+
+  // The field by which we want to partition
+  optional string partition_by_field = 9;
 }
 
 message LeafSearchStreamRequest {

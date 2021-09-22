@@ -217,6 +217,8 @@ pub struct SearchStreamRequestQueryString {
     /// The requested output format.
     #[serde(default)]
     pub output_format: OutputFormat,
+    #[serde(default)]
+    pub partition_by_field: Option<String>,
     /// The tag filter.
     #[serde(default)]
     #[serde(deserialize_with = "from_simple_list")]
@@ -237,6 +239,7 @@ async fn search_stream_endpoint<TSearchService: SearchService>(
         fast_field: search_request.fast_field,
         output_format: search_request.output_format as i32,
         tags: search_request.tags.unwrap_or_default(),
+        partition_by_field: search_request.partition_by_field,
     };
     let data = search_service.root_search_stream(request).await?;
     let stream = stream::iter(data).map(Result::<Bytes, std::io::Error>::Ok);
@@ -267,6 +270,7 @@ async fn search_stream<TSearchService: SearchService>(
     info!(index_id=%index_id,request=?request, "search_stream");
     let content_type = match request.output_format {
         OutputFormat::ClickHouseRowBinary => "application/octet-stream",
+        OutputFormat::PartitionnedClickhouseRowBinary => "application/octet-stream",
         OutputFormat::Csv => "text/csv",
     };
     let reply =
