@@ -31,6 +31,7 @@ pub use file_source::{FileSource, FileSourceFactory, FileSourceParams};
 pub use kafka_source::{KafkaSource, KafkaSourceFactory, KafkaSourceParams};
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox};
+use serde::{Deserialize, Serialize};
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 pub use vec_source::{VecSource, VecSourceFactory, VecSourceParams};
 
@@ -161,9 +162,27 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
     })
 }
 
-#[derive(Clone)]
+/// A `SourceConfig` describes the properties of a source. A source config can be created
+/// dynamically or loaded from a file consisting of a JSON object with 3 mandatory properties:
+/// - `source_id`, a name identifying the source uniquely;
+/// - `source_type`, the type of the target source, for instance, `file` or `kafka`;
+/// - `params`, an arbitrary object whose keys and values are specific to the source type.
+///
+/// For instance, a valid source config JSON object for a Kafka source is:
+/// ```json
+/// {
+///     "source_id": "my-kafka-source",
+///     "source_type": "kafka",
+///     "params": {
+///         "bootstrap_servers": "localhost:9092",
+///         "group_id": "my-kafka-source-consumer-group",
+///         "topic": "my-kafka-source-topic"
+///     }
+/// }
+/// ```
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SourceConfig {
-    pub id: String,
+    pub source_id: String,
     pub source_type: String,
     pub params: serde_json::Value,
 }

@@ -92,7 +92,7 @@ impl TestSandbox {
             .map(|doc_json| doc_json.to_string())
             .collect();
         let source_config = SourceConfig {
-            id: self.index_id.clone(),
+            source_id: self.index_id.clone(),
             source_type: "vec".to_string(),
             params: serde_json::to_value(VecSourceParams {
                 items: docs,
