@@ -24,7 +24,7 @@ quickwit-directories = {path = "../quickwit-directories"}
 quickwit-index-config = {path = "../quickwit-index-config", features=["testsuite"]}
 quickwit-metastore = {path = "../quickwit-metastore" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
-rdkafka = { version = "0.26", features = ["cmake-build"], optional = true }
+rdkafka = { version = "0.26", features = ["cmake-build", "ssl"], optional = true }
 serde = "1"
 serde_json = "1"
 tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="a622e2f"}
