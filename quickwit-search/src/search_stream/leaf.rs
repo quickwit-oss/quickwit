@@ -107,12 +107,9 @@ async fn leaf_search_stream_single_split(
 ) -> crate::Result<LeafSearchStreamResult> {
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
-    let fast_field_to_extract = FastFieldAndType::new(&stream_request.fast_field, &split_schema)?;
-    let partition_by_fast_field_o = stream_request
-        .partition_by_field
-        .as_deref()
-        .map(|pff| FastFieldAndType::new(pff, &split_schema))
-        .transpose()?;
+    let fast_field_to_extract = TypedFastField::new(&stream_request.fast_field, &split_schema)?;
+    let partition_by_fast_field_o =
+        TypedFastField::from_option(stream_request.partition_by_field.as_deref(), &split_schema)?;
 
     if let Some(partition_by_fast_field) = partition_by_fast_field_o {
         leaf_search_stream_single_split_partitionned(
@@ -144,7 +141,7 @@ async fn leaf_search_stream_single_split_non_partitionned(
     stream_request: &SearchStreamRequest,
     index: Index,
     split_schema: Schema,
-    fast_field: FastFieldAndType<'_>,
+    fast_field: TypedFastField<'_>,
 ) -> crate::Result<LeafSearchStreamResult> {
     let fast_field_collector_builder = FastFieldCollectorBuilder::new(
         fast_field.field_type.value_type(),
@@ -245,8 +242,8 @@ async fn leaf_search_stream_single_split_partitionned<'a>(
     stream_request: &SearchStreamRequest,
     index: Index,
     split_schema: Schema,
-    fast_field: FastFieldAndType<'a>,
-    partition_fast_field: FastFieldAndType<'a>,
+    fast_field: TypedFastField<'a>,
+    partition_fast_field: TypedFastField<'a>,
 ) -> crate::Result<LeafSearchStreamResult> {
     let fast_field_collector_builder = PartionnedFastFieldCollectorBuilder::new(
         fast_field.field_type.value_type(),
@@ -290,7 +287,6 @@ async fn leaf_search_stream_single_split_partitionned<'a>(
         (Type::I64, Type::I64) => {
             let fast_field_collector = fast_field_collector_builder.build_i64_i64();
             let fast_field_values = searcher.search(query.as_ref(), &fast_field_collector)?;
-            // TODO write the serialization part
             for part in &fast_field_values {
                 super::serialize::<i64, i64>(
                     part.fast_field_values.as_slice(),
@@ -367,7 +363,10 @@ async fn leaf_search_stream_single_split_partitionned<'a>(
             )));
         }
     }
-    Ok(LeafSearchStreamResult{data: buffer, split_id: split.split_id})
+    Ok(LeafSearchStreamResult {
+        data: buffer,
+        split_id: split.split_id,
+    })
 }
 
 #[cfg(test)]
@@ -456,19 +455,27 @@ mod tests {
 }
 
 #[derive(Debug, Clone)]
-struct FastFieldAndType<'a> {
+struct TypedFastField<'a> {
     pub field_name: &'a str,
     pub field_type: &'a FieldType,
 }
-impl<'a> FastFieldAndType<'a> {
-    pub fn new(field_name: &'a str, schema: &'a Schema) -> crate::Result<FastFieldAndType<'a>> {
+impl<'a> TypedFastField<'a> {
+    pub fn from_option(
+        field_name: Option<&'a str>,
+        schema: &'a Schema,
+    ) -> crate::Result<Option<TypedFastField<'a>>> {
+        field_name
+            .map(|e| TypedFastField::new(e, schema))
+            .transpose()
+    }
+    pub fn new(field_name: &'a str, schema: &'a Schema) -> crate::Result<TypedFastField<'a>> {
         // TODO fail if the provided field is not a fast field
         let field = schema.get_field(field_name).ok_or_else(|| {
             SearchError::InvalidQuery(format!("Fast field `{}` does not exist.", field_name))
         })?;
         if schema.get_field_entry(field).is_fast() {
             let field_type = schema.get_field_entry(field).field_type();
-            Ok(FastFieldAndType {
+            Ok(TypedFastField {
                 field_type,
                 field_name,
             })
