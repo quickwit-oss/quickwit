@@ -35,7 +35,7 @@ tracing-opentelemetry = "0.15"
 
 [dependencies.tantivy]
 git = 'https://github.com/quickwit-inc/tantivy'
-rev = 'c1d1d84'
+rev = 'a622e2f'
 
 [dependencies.quickwit-cluster]
 path = '../quickwit-cluster'

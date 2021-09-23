@@ -19,8 +19,8 @@ once_cell = "1.4"
 regex = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="c1d1d84" }
-tantivy-query-grammar = { git= "https://github.com/quickwit-inc/tantivy/", rev="c1d1d84" }
+tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="a622e2f" }
+tantivy-query-grammar = { git= "https://github.com/quickwit-inc/tantivy/", rev="a622e2f" }
 thiserror = "1.0"
 typetag = "0.1"
 
