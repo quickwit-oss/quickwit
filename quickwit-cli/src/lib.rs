@@ -175,7 +175,12 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
 
     if args.overwrite {
-        reset_index(&*metastore, &args.index_id, storage_uri_resolver.clone()).await?;
+        reset_index(
+            metastore.clone(),
+            &args.index_id,
+            storage_uri_resolver.clone(),
+        )
+        .await?;
     }
 
     let indexer_params = IndexerParams {
