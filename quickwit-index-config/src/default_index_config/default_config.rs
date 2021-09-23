@@ -53,6 +53,7 @@ pub struct DefaultIndexConfigBuilder {
 struct SortByConfig {
     /// Sort field name in the index schema.
     pub field_name: String,
+    /// Sort order of the field.
     pub order: SortOrder,
 }
 
@@ -63,6 +64,28 @@ impl From<SortByConfig> for SortBy {
             order: sort_by_config.order,
         }
     }
+}
+
+fn resolve_sort_field(
+    sort_config_opt: Option<SortByConfig>,
+    schema: &Schema,
+) -> anyhow::Result<Option<SortBy>> {
+    if let Some(sort_by_config) = sort_config_opt {
+        let sort_by_field = schema
+            .get_field(&sort_by_config.field_name)
+            .with_context(|| format!("Unknown sort by field: `{}`", sort_by_config.field_name))?;
+
+        let sort_by_field_entry = schema.get_field_entry(sort_by_field);
+        if !sort_by_field_entry.is_fast() {
+            bail!(
+                "Sort by field must be a fast field, please add the fast property to your field \
+                 `{}`.",
+                sort_by_config.field_name
+            )
+        }
+        return Ok(Some(SortBy::from(sort_by_config)));
+    }
+    Ok(None)
 }
 
 impl DefaultIndexConfigBuilder {
@@ -129,25 +152,7 @@ impl DefaultIndexConfigBuilder {
         }
 
         // Resolve sort field
-        let mut sort_by = None;
-        if let Some(sort_by_config) = self.sort_by {
-            let sort_by_field =
-                schema
-                    .get_field(&sort_by_config.field_name)
-                    .with_context(|| {
-                        format!("Unknown sort by field: `{}`", sort_by_config.field_name)
-                    })?;
-
-            let sort_by_field_entry = schema.get_field_entry(sort_by_field);
-            if !sort_by_field_entry.is_fast() {
-                bail!(
-                    "Sort by field must be a fast field, please add the fast property to your \
-                     field `{}`.",
-                    sort_by_config.field_name
-                )
-            }
-            sort_by = Some(SortBy::from(sort_by_config))
-        }
+        let sort_by = resolve_sort_field(self.sort_by, &schema)?;
 
         // Resolve tag fields
         let mut tag_field_names = Vec::new();

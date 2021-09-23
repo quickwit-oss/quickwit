@@ -24,7 +24,7 @@ use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
-use tantivy::Document;
+use tantivy::{Document, Order};
 
 use crate::{DocParsingError, QueryParserError, TAGS_FIELD_NAME};
 
@@ -42,6 +42,15 @@ pub enum SortOrder {
 impl Default for SortOrder {
     fn default() -> Self {
         Self::Desc
+    }
+}
+
+impl From<SortOrder> for Order {
+    fn from(order: SortOrder) -> Self {
+        match order {
+            SortOrder::Asc => Order::Asc,
+            SortOrder::Desc => Order::Desc,
+        }
     }
 }
 

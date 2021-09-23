@@ -27,9 +27,9 @@ use fail::fail_point;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SendError, SyncActor,
 };
-use quickwit_index_config::{IndexConfig, SortBy, SortOrder};
+use quickwit_index_config::{IndexConfig, SortBy};
 use tantivy::schema::{Field, Value};
-use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField, Order};
+use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tracing::{info, warn};
 
 use crate::models::{CommitPolicy, IndexedSplit, IndexerMessage, RawDocBatch, ScratchDirectory};
@@ -96,16 +96,10 @@ impl IndexerState {
         let mut index_settings = IndexSettings::default();
         let sort_by_field = match self.index_config.sort_by() {
             SortBy::DocId => None,
-            SortBy::SortByFastField { field_name, order } => {
-                let tantivy_order = match order {
-                    SortOrder::Asc => Order::Asc,
-                    SortOrder::Desc => Order::Desc,
-                };
-                Some(IndexSortByField {
-                    field: field_name,
-                    order: tantivy_order,
-                })
-            }
+            SortBy::SortByFastField { field_name, order } => Some(IndexSortByField {
+                field: field_name,
+                order: order.into(),
+            }),
         };
         index_settings.sort_by_field = sort_by_field;
         let index_builder = IndexBuilder::new().settings(index_settings).schema(schema);
