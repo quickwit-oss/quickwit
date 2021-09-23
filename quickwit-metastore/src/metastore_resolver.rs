@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-#[cfg(feature = "postgresql")]
+#[cfg(feature = "postgres")]
 use crate::metastore::postgresql_metastore::PostgresqlMetastoreFactory;
 use crate::metastore::single_file_metastore::SingleFileMetastoreFactory;
 use crate::{Metastore, MetastoreResolverError};
@@ -68,9 +68,9 @@ impl Default for MetastoreUriResolver {
             .register("file", SingleFileMetastoreFactory::default())
             .register("s3", SingleFileMetastoreFactory::default())
             .register("s3+localstack", SingleFileMetastoreFactory::default());
-        #[cfg(feature = "postgresql")]
+        #[cfg(feature = "postgres")]
         {
-            builder = builder.register("postgresql", PostgresqlMetastoreFactory::default());
+            builder = builder.register("postgres", PostgresqlMetastoreFactory::default());
         }
 
         builder.build()

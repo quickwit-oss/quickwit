@@ -63,12 +63,12 @@ pub enum MetastoreError {
     #[error("Publish checkpoint delta overlaps with the current checkpoint: {0:?}.")]
     IncompatibleCheckpointDelta(#[from] IncompatibleCheckpointDelta),
 
-    #[cfg(feature = "postgresql")]
+    #[cfg(feature = "postgres")]
     #[error("Database error: {0:?}.")]
     DbError(diesel::result::Error),
 }
 
-#[cfg(feature = "postgresql")]
+#[cfg(feature = "postgres")]
 impl From<diesel::result::Error> for MetastoreError {
     fn from(err: diesel::result::Error) -> MetastoreError {
         MetastoreError::DbError(err)

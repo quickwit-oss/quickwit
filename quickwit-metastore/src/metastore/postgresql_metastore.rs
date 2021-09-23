@@ -1091,5 +1091,5 @@ impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
     }
 }
 
-#[cfg(feature = "postgresql")]
+#[cfg(feature = "postgres")]
 metastore_test_suite_for_postgresql!(crate::PostgresqlMetastore);

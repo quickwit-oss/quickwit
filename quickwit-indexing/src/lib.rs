@@ -29,6 +29,7 @@ use crate::models::IndexingStatistics;
 use crate::source::SourceConfig;
 
 pub mod actors;
+mod garbage_collection;
 mod merge_policy;
 pub mod models;
 pub(crate) mod semaphore;
@@ -37,6 +38,9 @@ mod test_utils;
 
 pub use test_utils::{mock_split_meta, TestSandbox};
 
+pub use self::garbage_collection::{
+    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionStats,
+};
 pub use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
 pub async fn index_data(
