@@ -25,23 +25,25 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::{LocalFileStorage, PutPayload, Storage, StorageErrorKind, StorageResult};
 
-// TODO(asking): could we make it hidden with `.quickwit-cache`
+/// An intermediate folder created at `cache_dir/INTERNAL_CACHE_DIR_NAME`
+/// to hold the local files.
 const INTERNAL_CACHE_DIR_NAME: &str = "quickwit-cache";
+
+/// An extension of temporary file names.
+/// It's used to denote that a file is being worked on.
 const CACHE_TEMP_FILE_EXTENSION: &str = "_quickwit_cache_temp_file";
 
-/// Capacity encapsulates the maximum number of items a cache can hold.
-/// We need to account for the number of items as well as the size of each item.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+/// CacheParams encapsulates the various contraints of the cache.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CacheParams {
-    /// Maximum of number of files.
+    /// Maximum of number of files allowed in the cache.
     max_num_files: usize,
-    /// Maximum size in bytes.
+    /// Maximum size in bytes allowed in the cache.
     max_num_bytes: usize,
     /// Maximum allowed size of a single file.
     max_file_size: usize,
@@ -57,7 +59,7 @@ impl Default for CacheParams {
     }
 }
 
-/// A storage keeping the most recently uploaded files on local disk.
+/// A storage that keeps file around on the local disk.
 ///
 /// This storage is meant to be used during indexing and merging where the `put` and `copy_to_file`
 /// methods are the most utilized.
@@ -79,7 +81,10 @@ pub struct StorageWithUploadCache {
 impl StorageWithUploadCache {
     /// Create an instance of [`StorageWithUploadCache`]
     ///
-    /// It needs both the remote to work with.
+    /// It needs the remote storage to work with.
+    /// Tries to create a folder `cache_dir/INTERNAL_CACHE_DIR_NAME` if it does not exist.
+    /// List the content of `cache_dir/INTERNAL_CACHE_DIR_NAME` as initial cache content.
+    /// Removes and ignores all files ending with `CACHE_TEMP_FILE_EXTENSION`
     pub fn create(
         remote_storage: Arc<dyn Storage>,
         cache_dir: &Path,
@@ -93,13 +98,22 @@ impl StorageWithUploadCache {
             let dir_entry = dir_entry_result?;
             let path = dir_entry.path();
             if path.is_file() {
+                // remove and ignore temp files
+                if path.to_string_lossy().ends_with(CACHE_TEMP_FILE_EXTENSION) {
+                    fs::remove_file(path)?;
+                    continue;
+                }
+
+                let file_size = dir_entry.metadata()?.len() as usize;
+                if file_size > cache_params.max_file_size {
+                    return Err(StorageErrorKind::InternalError.with_error(anyhow::anyhow!(
+                        "An existing file size exceeds the maximum size per file allowed.",
+                    )));
+                }
+
                 let relative_file_path = path
                     .strip_prefix(local_storage_root.as_path())
                     .map_err(|err| StorageErrorKind::InternalError.with_error(err))?;
-                let file_size = dir_entry.metadata()?.len() as usize;
-
-                // TODO: check if special temp file and remove it
-
                 total_size_in_bytes += file_size;
                 file_entries.insert(relative_file_path.to_path_buf(), file_size);
             }
@@ -129,7 +143,7 @@ impl StorageWithUploadCache {
         })
     }
 
-    /// takes a snapshot of the cache view (only used for testing)
+    /// Takes a snapshot of the cache view (only used for testing)
     #[cfg(test)]
     async fn inspect(&self) -> HashMap<PathBuf, usize> {
         self.cache_items.lock().await.clone()
@@ -140,6 +154,11 @@ impl StorageWithUploadCache {
 impl Storage for StorageWithUploadCache {
     async fn put(&self, path: &Path, payload: PutPayload) -> StorageResult<()> {
         self.remote_storage.put(path, payload.clone()).await?;
+
+        // Ignore if path ends with `CACHE_TEMP_FILE_EXTENSION`
+        if path.to_string_lossy().ends_with(CACHE_TEMP_FILE_EXTENSION) {
+            return Ok(());
+        }
 
         let (num_entries, size_in_bytes_entries) = {
             let locked_cache_item = self.cache_items.lock().await;
@@ -159,20 +178,15 @@ impl Storage for StorageWithUploadCache {
         }
 
         let payload_length = payload.len().await? as usize;
-        // Ignore storing item whose size exeeds the size in bytes per item.
+        // Ignore storing file whose size exeeds the size in bytes per file.
         if payload_length > self.cache_params.max_file_size {
             warn!("Failed to cache file: maximum size in bytes per file exceeded.");
             return Ok(());
         }
 
-        // Ignore storing an item that cannot fit in the cache.
+        // Ignore storing a file that cannot fit in the cache.
         if payload_length + size_in_bytes_entries > self.cache_params.max_num_bytes {
             warn!("Failed to cache file: maximum size in bytes of cache exceeded.");
-            return Ok(());
-        }
-
-        // Ignore if path ends with `CACHE_TEMP_FILE_EXTENSION`
-        if path.to_string_lossy().ends_with(CACHE_TEMP_FILE_EXTENSION) {
             return Ok(());
         }
 
@@ -196,13 +210,17 @@ impl Storage for StorageWithUploadCache {
             return self.remote_storage.copy_to_file(path, output_path).await;
         }
 
-        let locked_cache_items = self.cache_items.lock().await;
-        if locked_cache_items.contains_key(&path.to_path_buf()) {
+        let is_file_exist_in_cache = self
+            .cache_items
+            .lock()
+            .await
+            .contains_key(&path.to_path_buf());
+        if is_file_exist_in_cache {
             let copy_to_result = self.local_storage.copy_to_file(path, output_path).await;
             match copy_to_result {
                 Ok(_) => return Ok(()),
                 Err(error) => {
-                    warn!(file_path = %path.to_string_lossy(), error = %error, "Could not copy file from local storage.");
+                    error!(file_path = %path.to_string_lossy(), error = %error, "Could not copy file from local storage.");
                 }
             }
         }
@@ -224,7 +242,7 @@ impl Storage for StorageWithUploadCache {
         if locked_cache_item.contains_key(&path.to_path_buf()) {
             if let Err(error) = self.local_storage.delete(path).await {
                 if error.kind() != StorageErrorKind::DoesNotExist {
-                    warn!(file_path = %path.to_string_lossy(), error = %error, "Could not remove file from local storage.");
+                    error!(file_path = %path.to_string_lossy(), error = %error, "Could not remove file from local storage.");
                 }
             }
             locked_cache_item.remove(&path.to_path_buf());
@@ -253,7 +271,7 @@ pub fn create_storage_with_upload_cache(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
     use bytes::Bytes;
@@ -269,17 +287,14 @@ mod tests {
         StorageErrorKind,
     };
 
-    #[tokio::test]
-    async fn test_storage_play() -> anyhow::Result<()> {
-        let local_dir = Path::new("./zero");
-        let remote_storage = Arc::new(RamStorage::default());
-
-        let _storage =
-            create_storage_with_upload_cache(remote_storage, local_dir, CacheParams::default());
-
-        // TODO: test
-
-        Ok(())
+    fn list_files(path: PathBuf) -> Vec<PathBuf> {
+        std::fs::read_dir(path)
+            .unwrap()
+            .filter_map(|result| match result {
+                Ok(entry) if entry.path().is_file() => Some(entry.path()),
+                _ => None,
+            })
+            .collect()
     }
 
     #[tokio::test]
@@ -350,8 +365,115 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_create_should_error_with_a_file_size_exeeding_constraint() -> anyhow::Result<()> {
+        let local_dir = tempdir()?;
+        let root_path = local_dir.path().join(INTERNAL_CACHE_DIR_NAME);
+        fs::create_dir_all(root_path.to_path_buf()).await?;
+        fs::write(root_path.join("b.split"), b"abcd").await?;
+        fs::write(root_path.join("a.split"), b"abcdefgh").await?;
+
+        let cache_params = CacheParams {
+            max_num_files: 100,
+            max_num_bytes: 100,
+            max_file_size: 4,
+        };
+        let remote_storage = Arc::new(RamStorage::default());
+        let result =
+            create_storage_with_upload_cache(remote_storage, local_dir.path(), cache_params);
+        assert!(matches!(
+            result,
+            Err(StorageError {
+                kind: StorageErrorKind::InternalError,
+                ..
+            })
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_create_should_fill_cache_with_dir_entries() -> anyhow::Result<()> {
-        // TODO
+        // setup dir
+        let local_dir = tempdir()?;
+        let root_path = local_dir.path().join(INTERNAL_CACHE_DIR_NAME);
+        let foo_temp_file = root_path.join(format!("foo.split{}", CACHE_TEMP_FILE_EXTENSION));
+        let bar_temp_file = root_path.join(format!("bar.split{}", CACHE_TEMP_FILE_EXTENSION));
+
+        {
+            let remote_storage = Arc::new(RamStorage::default());
+            let cache = StorageWithUploadCache::create(
+                remote_storage.clone(),
+                local_dir.path(),
+                CacheParams::default(),
+            )?;
+            assert_eq!(cache.uri(), remote_storage.uri());
+
+            cache
+                .put(
+                    root_path.join("a5.split").as_path(),
+                    PutPayload::InMemory(Bytes::from(b"aaaaa".to_vec())),
+                )
+                .await?;
+            cache
+                .put(
+                    root_path.join("b3.split").as_path(),
+                    PutPayload::InMemory(Bytes::from(b"bbb".to_vec())),
+                )
+                .await?;
+            cache
+                .put(
+                    root_path.join("c6.split").as_path(),
+                    PutPayload::InMemory(Bytes::from(b"cccccc".to_vec())),
+                )
+                .await?;
+
+            fs::write(foo_temp_file.as_path(), b"corrupted").await?;
+            fs::write(bar_temp_file.as_path(), b"corrupted").await?;
+        }
+
+        {
+            // directory should contain temp file
+            let files = list_files(root_path.clone());
+            assert_eq!(files.len(), 5);
+            assert!(files.contains(&foo_temp_file));
+            assert!(files.contains(&bar_temp_file));
+
+            let remote_storage = Arc::new(RamStorage::default());
+            let cache = StorageWithUploadCache::create(
+                remote_storage,
+                local_dir.path(),
+                CacheParams::default(),
+            )?;
+
+            // directory should not contain temp files
+            let files = list_files(root_path);
+            assert_eq!(files.len(), 3);
+            assert!(!files.contains(&foo_temp_file));
+            assert!(!files.contains(&bar_temp_file));
+
+            let output_dir = tempdir()?;
+            cache
+                .copy_to_file(
+                    Path::new("b3.split"),
+                    output_dir.path().join("b3_copy.split").as_path(),
+                )
+                .await?;
+
+            let cache_items_snapshot = cache.inspect().await;
+            assert_eq!(cache_items_snapshot.len(), 3);
+            assert_eq!(
+                cache_items_snapshot.get(Path::new("a5.split")),
+                Some(&5usize)
+            );
+            assert_eq!(
+                cache_items_snapshot.get(Path::new("b3.split")),
+                Some(&3usize)
+            );
+            assert_eq!(
+                cache_items_snapshot.get(Path::new("c6.split")),
+                Some(&6usize)
+            );
+        }
+
         Ok(())
     }
 
@@ -508,7 +630,7 @@ mod tests {
             )
             .await?;
 
-        let cache = StorageWithUploadCache::create(
+        let cache = create_storage_with_upload_cache(
             remote_storage,
             local_dir.path(),
             CacheParams::default(),
