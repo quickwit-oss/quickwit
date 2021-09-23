@@ -91,23 +91,16 @@ impl<Item: FastValue> Collector for FastFieldCollector<Item> {
         _segment_ord: SegmentOrdinal,
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<Self::Child> {
-        let timestamp_filter_opt = if let Some(timestamp_field) = self.timestamp_field_opt {
-            TimestampFilter::new(
-                timestamp_field,
-                self.start_timestamp_opt,
-                self.end_timestamp_opt,
-                segment_reader,
-            )?
-        } else {
-            None
-        };
-        let field = segment_reader
-            .schema()
-            .get_field(&self.fast_field_to_collect)
-            .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
-        // TODO: would be nice to access directly to typed_fast_field_reader
-        let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
-        let fast_field_reader = DynamicFastFieldReader::open(fast_field_slice)?;
+        let timestamp_filter_opt = helpers::make_timestamp_filter(
+            segment_reader,
+            self.timestamp_field_opt,
+            self.start_timestamp_opt,
+            self.end_timestamp_opt,
+        )?;
+
+        let fast_field_reader =
+            helpers::make_fast_field_reader::<Item>(segment_reader, &self.fast_field_to_collect)?;
+
         Ok(FastFieldSegmentCollector::new(
             fast_field_reader,
             timestamp_filter_opt,
@@ -319,34 +312,20 @@ impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash> Collector
         _segment_ord: SegmentOrdinal,
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<Self::Child> {
-        let timestamp_filter_opt = if let Some(timestamp_field) = self.timestamp_field_opt {
-            TimestampFilter::new(
-                timestamp_field,
-                self.start_timestamp_opt,
-                self.end_timestamp_opt,
-                segment_reader,
-            )?
-        } else {
-            None
-        };
-        let field = segment_reader
-            .schema()
-            .get_field(&self.fast_field_to_collect)
-            .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
-        // TODO: would be nice to access directly to typed_fast_field_reader
-        let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
-        let fast_field_reader = DynamicFastFieldReader::open(fast_field_slice)?;
+        let timestamp_filter_opt = helpers::make_timestamp_filter(
+            segment_reader,
+            self.timestamp_field_opt,
+            self.start_timestamp_opt,
+            self.end_timestamp_opt,
+        )?;
 
-        let partition_field = segment_reader
-            .schema()
-            .get_field(&self.partition_by_fast_field)
-            .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
-        let partition_by_fast_field_slice = segment_reader
-            .fast_fields()
-            .fast_field_data(partition_field, 0)?;
+        let fast_field_reader =
+            helpers::make_fast_field_reader::<Item>(segment_reader, &self.fast_field_to_collect)?;
 
-        let partition_by_fast_field_reader =
-            DynamicFastFieldReader::open(partition_by_fast_field_slice)?;
+        let partition_by_fast_field_reader = helpers::make_fast_field_reader::<PartitionItem>(
+            segment_reader,
+            &self.partition_by_fast_field,
+        )?;
 
         Ok(PartitionnedFastFieldSegmentCollector::new(
             fast_field_reader,
@@ -431,6 +410,40 @@ impl<Item: FastValue, PartitionItem: FastValue + Hash + Eq> SegmentCollector
 
     fn harvest(self) -> Self::Fruit {
         self.fast_field_values
+    }
+}
+
+mod helpers {
+    use super::*;
+
+    pub fn make_fast_field_reader<T: FastValue>(
+        segment_reader: &SegmentReader,
+        fast_field_to_collect: &str,
+    ) -> tantivy::Result<DynamicFastFieldReader<T>> {
+        let field = segment_reader
+            .schema()
+            .get_field(fast_field_to_collect)
+            .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
+        let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
+        DynamicFastFieldReader::open(fast_field_slice)
+    }
+
+    pub fn make_timestamp_filter(
+        segment_reader: &SegmentReader,
+        timestamp_field_opt: Option<Field>,
+        start_timestamp_opt: Option<i64>,
+        end_timestamp_opt: Option<i64>,
+    ) -> tantivy::Result<Option<TimestampFilter>> {
+        if let Some(timestamp_field) = timestamp_field_opt {
+            TimestampFilter::new(
+                timestamp_field,
+                start_timestamp_opt,
+                end_timestamp_opt,
+                segment_reader,
+            )
+        } else {
+            Ok(None)
+        }
     }
 }
 
