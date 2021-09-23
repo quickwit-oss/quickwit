@@ -270,11 +270,7 @@ fn should_activate_kill_switch(exit_status: &ActorExitStatus) -> bool {
 }
 
 impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
-    /// Sends a message in the actor's mailbox.
-    ///
-    /// This method hides logic to prevent an actor from being identified
-    /// as frozen if the destination actor channel is saturated, and we
-    /// are simply experiencing back pressure.
+    /// Blocking version version of `send_message`. See `.send_message(...)`.
     pub fn send_message_blocking<M: fmt::Debug>(
         &self,
         mailbox: &Mailbox<M>,
@@ -285,12 +281,17 @@ impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
         mailbox.send_message_blocking(msg)
     }
 
-    /// Blocking version of `send_success`. See `send_success`.
-    pub fn send_success_blocking<M>(&self, mailbox: &Mailbox<M>) -> Result<(), crate::SendError> {
+    /// Blocking version of `send_exit_with_success`. See `send_exit_with_success`.
+    pub fn send_exit_with_success_blocking<M>(
+        &self,
+        mailbox: &Mailbox<M>,
+    ) -> Result<(), crate::SendError> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
-        mailbox
-            .send_with_priority_blocking(CommandOrMessage::Command(Command::Success), Priority::Low)
+        mailbox.send_with_priority_blocking(
+            CommandOrMessage::Command(Command::ExitWithSuccess),
+            Priority::Low,
+        )
     }
 
     /// Sends a message to itself.
@@ -325,7 +326,14 @@ impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
 }
 
 impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
-    /// `async` version of `send_message_blocking`
+    /// Posts a message in an actor's mailbox.
+    ///
+    /// Regular messages (as opposed to commands) are queued and guaranteed
+    /// to be processed in FIFO order.
+    ///
+    /// This method hides logic to prevent an actor from being identified
+    /// as frozen if the destination actor channel is saturated, and we
+    /// are simply experiencing back pressure.
     pub async fn send_message<M: fmt::Debug>(
         &self,
         mailbox: &Mailbox<M>,
@@ -340,11 +348,17 @@ impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
     ///
     /// The message is queued like any regular message, so that pending messages will be processed
     /// first.
-    pub async fn send_success<M>(&self, mailbox: &Mailbox<M>) -> Result<(), crate::SendError> {
+    pub async fn send_exit_with_success<M>(
+        &self,
+        mailbox: &Mailbox<M>,
+    ) -> Result<(), crate::SendError> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
         mailbox
-            .send_with_priority(CommandOrMessage::Command(Command::Success), Priority::Low)
+            .send_with_priority(
+                CommandOrMessage::Command(Command::ExitWithSuccess),
+                Priority::Low,
+            )
             .await
     }
 
@@ -382,7 +396,7 @@ pub(crate) fn process_command<A: Actor>(
             ctx.pause();
             None
         }
-        Command::Success => Some(ActorExitStatus::Success),
+        Command::ExitWithSuccess => Some(ActorExitStatus::Success),
         Command::Quit => Some(ActorExitStatus::Quit),
         Command::Kill => Some(ActorExitStatus::Killed),
         Command::Resume => {

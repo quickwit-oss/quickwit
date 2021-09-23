@@ -116,8 +116,12 @@ pub enum Command {
 
     /// Stops the actor with a success exit status code.
     ///
+    /// Upstream `actors` that terminates should send the `ExitWithSuccess`
+    /// command to downstream actors to inform them that there are no more
+    /// incoming messages.
+    ///
     /// It is similar to `Quit`, except for the resulting exit status.
-    Success,
+    ExitWithSuccess,
 
     /// Asks the actor to update its ObservableState.
     /// Since it is a command, it will be treated with a higher priority than
@@ -161,7 +165,7 @@ impl fmt::Debug for Command {
             Command::Pause => write!(f, "Pause"),
             Command::Resume => write!(f, "Resume"),
             Command::Observe(_) => write!(f, "Observe"),
-            Command::Success => write!(f, "Success"),
+            Command::ExitWithSuccess => write!(f, "Success"),
             Command::Quit => write!(f, "Quit"),
             Command::Kill => write!(f, "Kill"),
         }

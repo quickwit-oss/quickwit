@@ -338,7 +338,9 @@ impl IndexingPipelineSupervisor {
                             // Failing to send is fine here.
                             info!("Stopping the merge planner since the packager is dead.");
                             // If the message cannot be sent this is not necessarily an error.
-                            let _ = ctx.send_success(handlers.merge_planner.mailbox()).await;
+                            let _ = ctx
+                                .send_exit_with_success(handlers.merge_planner.mailbox())
+                                .await;
                         }
                     }
                 }

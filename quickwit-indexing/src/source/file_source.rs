@@ -102,7 +102,7 @@ impl Source for FileSource {
         }
         if reached_eof {
             info!("EOF");
-            ctx.send_success(batch_sink).await?;
+            ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(())
@@ -213,7 +213,7 @@ mod tests {
         let batch = inbox.drain_available_message_or_command_for_test();
         assert!(matches!(
             batch[1],
-            CommandOrMessage::Command(Command::Success)
+            CommandOrMessage::Command(Command::ExitWithSuccess)
         ));
         assert_eq!(batch.len(), 2);
         Ok(())
@@ -270,7 +270,7 @@ mod tests {
         );
         assert!(matches!(
             &msg3,
-            &CommandOrMessage::Command(Command::Success)
+            &CommandOrMessage::Command(Command::ExitWithSuccess)
         ));
         Ok(())
     }

@@ -83,7 +83,7 @@ impl Source for VecSource {
             .collect();
         if line_docs.is_empty() {
             info!("Reached end of source.");
-            ctx.send_success(batch_sink).await?;
+            ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
         let from_item_idx = self.next_item_idx;
@@ -149,7 +149,7 @@ mod tests {
         );
         assert!(matches!(
             &batches[34],
-            &CommandOrMessage::Command(Command::Success)
+            &CommandOrMessage::Command(Command::ExitWithSuccess)
         ));
         Ok(())
     }

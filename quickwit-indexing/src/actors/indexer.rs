@@ -561,7 +561,7 @@ mod tests {
                 .into(),
             )
             .await?;
-        universe.send_success(&indexer_mailbox).await?;
+        universe.send_exit_with_success(&indexer_mailbox).await?;
         let (exit_status, indexer_counters) = indexer_handle.join().await;
         assert!(exit_status.is_success());
         assert_eq!(

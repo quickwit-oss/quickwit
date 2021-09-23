@@ -281,7 +281,7 @@ impl SyncActor for Packager {
         if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
             // We are trying to stop the merge planner.
             // If the merge planner is already dead, this is not an error.
-            let _ = ctx.send_success_blocking(merge_planner_mailbox);
+            let _ = ctx.send_exit_with_success_blocking(merge_planner_mailbox);
         }
         Ok(())
     }
@@ -429,7 +429,7 @@ mod tests {
         let merge_planner_msg = merge_planner_msgs.into_iter().next().unwrap();
         assert!(matches!(
             merge_planner_msg,
-            CommandOrMessage::Command(Command::Success)
+            CommandOrMessage::Command(Command::ExitWithSuccess)
         ));
         Ok(())
     }

@@ -93,10 +93,17 @@ impl Universe {
         mailbox.send_message(msg).await
     }
 
-    /// `async` version of `send_success`
-    pub async fn send_success<M>(&self, mailbox: &Mailbox<M>) -> Result<(), crate::SendError> {
+    /// Inform an actor to process pending message and then stop processing new messages
+    /// and exit successfully.
+    pub async fn send_exit_with_success<M>(
+        &self,
+        mailbox: &Mailbox<M>,
+    ) -> Result<(), crate::SendError> {
         mailbox
-            .send_with_priority(CommandOrMessage::Command(Command::Success), Priority::Low)
+            .send_with_priority(
+                CommandOrMessage::Command(Command::ExitWithSuccess),
+                Priority::Low,
+            )
             .await
     }
 }
