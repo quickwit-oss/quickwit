@@ -188,7 +188,6 @@ impl IndexingPipelineSupervisor {
         let cache_directory = self.params.indexer_params.scratch_directory.temp_child()?;
         let index_storage = create_storage_with_upload_cache(
             index_storage,
-            // &self.params.storage_uri_resolver,
             cache_directory.path(),
             CacheParams::default(),
         )?;

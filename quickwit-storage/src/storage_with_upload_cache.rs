@@ -41,11 +41,11 @@ const CACHE_TEMP_FILE_EXTENSION: &str = "_quickwit_cache_temp_file";
 /// CacheParams encapsulates the various contraints of the cache.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CacheParams {
-    /// Maximum of number of files allowed in the cache.
+    /// Maximum number of files allowed in the cache.
     max_num_files: usize,
     /// Maximum size in bytes allowed in the cache.
     max_num_bytes: usize,
-    /// Maximum allowed size of a single file.
+    /// Maximum size allowed per file.
     max_file_size: usize,
 }
 
@@ -59,7 +59,7 @@ impl Default for CacheParams {
     }
 }
 
-/// A storage that keeps file around on the local disk.
+/// A storage that keeps files around on the local disk.
 ///
 /// This storage is meant to be used during indexing and merging where the `put` and `copy_to_file`
 /// methods are the most utilized.
@@ -98,7 +98,7 @@ impl StorageWithUploadCache {
             let dir_entry = dir_entry_result?;
             let path = dir_entry.path();
             if path.is_file() {
-                // remove and ignore temp files
+                // Remove and ignore temp files.
                 if path.to_string_lossy().ends_with(CACHE_TEMP_FILE_EXTENSION) {
                     fs::remove_file(path)?;
                     continue;
@@ -143,7 +143,7 @@ impl StorageWithUploadCache {
         })
     }
 
-    /// Takes a snapshot of the cache view (only used for testing)
+    /// Takes a snapshot of the cache view (only used for testing).
     #[cfg(test)]
     async fn inspect(&self) -> HashMap<PathBuf, usize> {
         self.cache_items.lock().await.clone()
@@ -155,7 +155,7 @@ impl Storage for StorageWithUploadCache {
     async fn put(&self, path: &Path, payload: PutPayload) -> StorageResult<()> {
         self.remote_storage.put(path, payload.clone()).await?;
 
-        // Ignore if path ends with `CACHE_TEMP_FILE_EXTENSION`
+        // Ignore if path ends with `CACHE_TEMP_FILE_EXTENSION`.
         if path.to_string_lossy().ends_with(CACHE_TEMP_FILE_EXTENSION) {
             return Ok(());
         }
@@ -178,7 +178,7 @@ impl Storage for StorageWithUploadCache {
         }
 
         let payload_length = payload.len().await? as usize;
-        // Ignore storing file whose size exeeds the size in bytes per file.
+        // Ignore storing a file whose size exceeds the max file size.
         if payload_length > self.cache_params.max_file_size {
             warn!("Failed to cache file: maximum size in bytes per file exceeded.");
             return Ok(());
@@ -190,7 +190,7 @@ impl Storage for StorageWithUploadCache {
             return Ok(());
         }
 
-        // safely copy using intermediate temp file.
+        // Safely copy using intermediate temp file.
         let temp_file_path = format!("{}{}", path.to_string_lossy(), CACHE_TEMP_FILE_EXTENSION);
         self.local_storage
             .put(Path::new(&temp_file_path), payload)
@@ -205,7 +205,7 @@ impl Storage for StorageWithUploadCache {
     }
 
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
-        // Ignore cache if path ends with `CACHE_TEMP_FILE_EXTENSION`
+        // Ignore cache if path ends with `CACHE_TEMP_FILE_EXTENSION`.
         if path.to_string_lossy().ends_with(CACHE_TEMP_FILE_EXTENSION) {
             return self.remote_storage.copy_to_file(path, output_path).await;
         }
