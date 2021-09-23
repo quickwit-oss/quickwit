@@ -21,7 +21,6 @@ use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use tantivy::query::Query;
 use tantivy::schema::{Schema, TextFieldIndexing, TextOptions, STRING};
-use tantivy::tokenizer::TokenizerManager;
 use tantivy::Document;
 
 use crate::query_builder::build_query;
@@ -32,8 +31,6 @@ use crate::{DocParsingError, IndexConfig, QueryParserError, TAGS_FIELD_NAME};
 pub struct WikipediaIndexConfig {
     #[serde(skip_serializing, default = "WikipediaIndexConfig::default_schema")]
     schema: Schema,
-    #[serde(skip_deserializing, skip_serializing, default)]
-    tokenizer_manager: TokenizerManager,
 }
 
 impl std::fmt::Debug for WikipediaIndexConfig {
@@ -47,7 +44,6 @@ impl WikipediaIndexConfig {
     pub fn new() -> Self {
         WikipediaIndexConfig {
             schema: Self::default_schema(),
-            tokenizer_manager: Default::default(),
         }
     }
 
