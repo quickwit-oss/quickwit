@@ -261,9 +261,6 @@ impl SyncActor for Indexer {
             IndexerMessage::CommitTimeout { split_id } => {
                 self.process_commit_timeout(&split_id, ctx)?;
             }
-            IndexerMessage::EndOfSource => {
-                return Err(ActorExitStatus::Success);
-            }
         }
         Ok(())
     }
@@ -389,7 +386,7 @@ mod tests {
     use super::Indexer;
     use crate::actors::indexer::{record_timestamp, IndexerCounters};
     use crate::actors::IndexerParams;
-    use crate::models::{CommitPolicy, IndexerMessage, RawDocBatch, ScratchDirectory};
+    use crate::models::{CommitPolicy, RawDocBatch, ScratchDirectory};
 
     #[test]
     fn test_record_timestamp() {
@@ -564,9 +561,7 @@ mod tests {
                 .into(),
             )
             .await?;
-        universe
-            .send_message(&indexer_mailbox, IndexerMessage::EndOfSource)
-            .await?;
+        universe.send_exit_with_success(&indexer_mailbox).await?;
         let (exit_status, indexer_counters) = indexer_handle.join().await;
         assert!(exit_status.is_success());
         assert_eq!(

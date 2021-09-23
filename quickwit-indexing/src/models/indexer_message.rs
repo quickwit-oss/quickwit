@@ -23,7 +23,6 @@ use crate::models::RawDocBatch;
 pub enum IndexerMessage {
     Batch(RawDocBatch),
     CommitTimeout { split_id: String },
-    EndOfSource,
 }
 
 impl From<RawDocBatch> for IndexerMessage {

@@ -19,6 +19,8 @@
 
 use std::time::Duration;
 
+use crate::channel_with_priority::Priority;
+use crate::mailbox::{Command, CommandOrMessage};
 use crate::scheduler::{SchedulerMessage, TimeShift};
 use crate::spawn_builder::SpawnBuilder;
 use crate::{Actor, KillSwitch, Mailbox, QueueCapacity, Scheduler};
@@ -89,6 +91,20 @@ impl Universe {
         msg: M,
     ) -> Result<(), crate::SendError> {
         mailbox.send_message(msg).await
+    }
+
+    /// Inform an actor to process pending message and then stop processing new messages
+    /// and exit successfully.
+    pub async fn send_exit_with_success<M>(
+        &self,
+        mailbox: &Mailbox<M>,
+    ) -> Result<(), crate::SendError> {
+        mailbox
+            .send_with_priority(
+                CommandOrMessage::Command(Command::ExitWithSuccess),
+                Priority::Low,
+            )
+            .await
     }
 }
 

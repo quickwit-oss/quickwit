@@ -61,9 +61,25 @@ impl<Message> Mailbox<Message> {
     }
 }
 
-pub(crate) enum CommandOrMessage<Message> {
+pub enum CommandOrMessage<Message> {
     Message(Message),
     Command(Command),
+}
+
+impl<Message> CommandOrMessage<Message> {
+    pub fn message(self) -> Option<Message> {
+        match self {
+            CommandOrMessage::Message(message) => Some(message),
+            CommandOrMessage::Command(_) => None,
+        }
+    }
+
+    pub fn command(self) -> Option<Command> {
+        match self {
+            CommandOrMessage::Message(_) => None,
+            CommandOrMessage::Command(command) => Some(command),
+        }
+    }
 }
 
 impl<Message> From<Command> for CommandOrMessage<Message> {
@@ -82,7 +98,7 @@ pub(crate) struct Inner<Message> {
 /// They are similar to UNIX signals.
 ///
 /// They are treated with a higher priority than regular actor messages.
-pub(crate) enum Command {
+pub enum Command {
     /// Temporarily pauses the actor. A paused actor only checks
     /// on its high priority channel and still shows "progress". It appears as
     /// healthy to the supervisor.
@@ -97,6 +113,15 @@ pub(crate) enum Command {
     ///
     /// Semantically, it is similar to SIGCONT.
     Resume,
+
+    /// Stops the actor with a success exit status code.
+    ///
+    /// Upstream `actors` that terminates should send the `ExitWithSuccess`
+    /// command to downstream actors to inform them that there are no more
+    /// incoming messages.
+    ///
+    /// It is similar to `Quit`, except for the resulting exit status.
+    ExitWithSuccess,
 
     /// Asks the actor to update its ObservableState.
     /// Since it is a command, it will be treated with a higher priority than
@@ -140,8 +165,9 @@ impl fmt::Debug for Command {
             Command::Pause => write!(f, "Pause"),
             Command::Resume => write!(f, "Resume"),
             Command::Observe(_) => write!(f, "Observe"),
+            Command::ExitWithSuccess => write!(f, "Success"),
             Command::Quit => write!(f, "Quit"),
-            Command::Kill => todo!(),
+            Command::Kill => write!(f, "Kill"),
         }
     }
 }
@@ -255,6 +281,14 @@ impl<Message: fmt::Debug> Inbox<Message> {
                 CommandOrMessage::Command(_) => None,
             })
             .collect()
+    }
+
+    /// Destroys the inbox and returns the list of pending messages or commands.
+    ///
+    /// Warning this iterator might never be exhausted if there is a living
+    /// mailbox associated to it.
+    pub fn drain_available_message_or_command_for_test(mut self) -> Vec<CommandOrMessage<Message>> {
+        self.rx.drain_all()
     }
 }
 
