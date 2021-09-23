@@ -253,8 +253,7 @@ impl Source for KafkaSource {
         }
         if self.state.num_active_partitions == 0 {
             info!(topic = &self.topic.as_str(), "Reached end of topic.");
-            ctx.send_message(batch_sink, IndexerMessage::EndOfSource)
-                .await?;
+            ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(())
@@ -755,8 +754,7 @@ mod kafka_broker_tests {
             assert!(exit_status.is_success());
 
             let messages = inbox.drain_available_message_for_test();
-            assert_eq!(messages.len(), 1);
-            assert!(matches!(messages[0], IndexerMessage::EndOfSource));
+            assert!(messages.is_empty());
 
             let expected_current_positions: Vec<(i32, i64)> = vec![];
             let expected_state = json!({
@@ -804,8 +802,7 @@ mod kafka_broker_tests {
             assert!(exit_status.is_success());
 
             let messages = inbox.drain_available_message_for_test();
-            assert!(messages.len() >= 2);
-            assert!(matches!(messages.last(), Some(IndexerMessage::EndOfSource)));
+            assert!(messages.len() >= 1);
 
             let batch = merge_messages(messages)?;
             let expected_docs = vec![
@@ -860,8 +857,7 @@ mod kafka_broker_tests {
             assert!(exit_status.is_success());
 
             let messages = inbox.drain_available_message_for_test();
-            assert!(messages.len() >= 2);
-            assert!(matches!(messages.last(), Some(IndexerMessage::EndOfSource)));
+            assert!(messages.len() >= 1);
 
             let batch = merge_messages(messages)?;
             let expected_docs = vec!["Message #002", "Message #200", "Message #202"];
