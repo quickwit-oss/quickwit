@@ -32,7 +32,8 @@ use tracing::{debug, error, info};
 
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::{
-    Indexer, IndexerParams, MergeExecutor, MergePlanner, Packager, Publisher, Uploader,
+    GarbageCollector, Indexer, IndexerParams, MergeExecutor, MergePlanner, Packager, Publisher,
+    Uploader,
 };
 use crate::models::{IndexingStatistics, MergePlannerMessage};
 use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
@@ -45,6 +46,7 @@ pub struct IndexingPipelineHandler {
     pub packager: ActorHandle<Packager>,
     pub uploader: ActorHandle<Uploader>,
     pub publisher: ActorHandle<Publisher>,
+    pub garbage_collector: ActorHandle<GarbageCollector>,
 
     /// Merging pipeline subpipeline
     pub merge_planner: ActorHandle<MergePlanner>,
@@ -254,7 +256,7 @@ impl IndexingPipelineSupervisor {
         // Uploader
         let uploader = Uploader::new(
             self.params.metastore.clone(),
-            index_storage,
+            index_storage.clone(),
             publisher_mailbox,
         );
         let (uploader_mailbox, uploader_handler) = ctx
@@ -294,12 +296,23 @@ impl IndexingPipelineSupervisor {
             .set_kill_switch(self.kill_switch.clone())
             .spawn_async();
 
+        let garbage_collector = GarbageCollector::new(
+            self.params.index_id.clone(),
+            index_storage,
+            self.params.metastore.clone(),
+        );
+        let (_garbage_collect_mailbox, garbage_collect_handler) = ctx
+            .spawn_actor(garbage_collector)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_async();
+
         self.handlers = Some(IndexingPipelineHandler {
             source: source_handler,
             indexer: indexer_handler,
             packager: packager_handler,
             uploader: uploader_handler,
             publisher: publisher_handler,
+            garbage_collector: garbage_collect_handler,
 
             merge_planner: merge_planner_handler,
             merge_split_downloader: merge_split_downloader_handler,
@@ -368,6 +381,7 @@ impl IndexingPipelineSupervisor {
                 handlers.packager.kill(),
                 handlers.uploader.kill(),
                 handlers.publisher.kill(),
+                handlers.garbage_collector.kill(),
                 handlers.merge_split_downloader.kill(),
                 handlers.merge_executor.kill(),
                 handlers.merge_packager.kill(),
