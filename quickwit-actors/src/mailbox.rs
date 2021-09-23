@@ -114,9 +114,9 @@ pub enum Command {
     /// Semantically, it is similar to SIGCONT.
     Resume,
 
-    /// Stop the actor with a success exit statuscode.
+    /// Stops the actor with a success exit status code.
     ///
-    /// It is similar with `Quit`, except for the resulting exit status.
+    /// It is similar to `Quit`, except for the resulting exit status.
     Success,
 
     /// Asks the actor to update its ObservableState.
@@ -279,7 +279,7 @@ impl<Message: fmt::Debug> Inbox<Message> {
             .collect()
     }
 
-    /// Destroys the inbox and returns the list of pending messages or command.
+    /// Destroys the inbox and returns the list of pending messages or commands.
     ///
     /// Warning this iterator might never be exhausted if there is a living
     /// mailbox associated to it.

@@ -338,7 +338,7 @@ impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
 
     /// Send the Success message to terminate the destination actor with the Success exit status.
     ///
-    /// The message is queued like any regular messages, so that pending message will be processed
+    /// The message is queued like any regular message, so that pending messages will be processed
     /// first.
     pub async fn send_success<M>(&self, mailbox: &Mailbox<M>) -> Result<(), crate::SendError> {
         let _guard = self.protect_zone();
@@ -348,7 +348,7 @@ impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
             .await
     }
 
-    /// `async` version of `send_self_message`
+    /// `async` version of `send_self_message`.
     pub async fn send_self_message(&self, msg: Message) -> Result<(), crate::SendError> {
         debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
         self.self_mailbox.send_message(msg).await

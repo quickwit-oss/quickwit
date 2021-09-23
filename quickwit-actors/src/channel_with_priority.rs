@@ -253,7 +253,7 @@ impl<T> Receiver<T> {
         messages
     }
 
-    /// Drain all of the pending low priority messages and return them.
+    /// Drains all the pending low priority messages and returns them.
     pub fn drain_all(&mut self) -> Vec<T> {
         let mut messages = Vec::new();
         let timeout = Duration::from_millis(10);
