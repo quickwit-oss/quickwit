@@ -181,6 +181,12 @@ impl StaticDirectoryCache {
     pub fn get_file_length(&self, path: &Path) -> Option<u64> {
         self.file_lengths.get(path).map(u64::clone)
     }
+
+    /// return the files and their cached lengths
+    pub fn get_stats(&self) -> HashMap<PathBuf, usize> {
+        self.slices.iter().map(|(path, cache)| (path.to_owned(), cache.len()) ).collect()
+    }
+
 }
 
 /// A SliceCache is a static toring
@@ -232,6 +238,10 @@ impl StaticSliceCache {
             return Some(self.bytes.slice(start..start + byte_range.len()));
         }
         None
+    }
+
+    pub fn len(&self) -> usize {
+        self.bytes.len()
     }
 }
 
@@ -341,6 +351,12 @@ impl HotDirectory {
                 cache: Arc::new(static_cache),
             }),
         })
+    }
+    /// Get files and their cached sizes.
+    pub fn get_stats_per_file(hot_cache_bytes: Bytes)-> tantivy::Result<HashMap<PathBuf, usize>>  {
+        let static_cache =
+            StaticDirectoryCache::open(OwnedBytes::new(BytesWrapper(hot_cache_bytes)))?;
+        Ok(static_cache.get_stats())
     }
 }
 
@@ -681,6 +697,10 @@ mod tests {
         assert_eq!(directory_cache.get_file_length(two_path), Some(200));
         assert_eq!(directory_cache.get_file_length(three_path), Some(300));
         assert_eq!(directory_cache.get_file_length(four_path), None);
+
+        let stats = directory_cache.get_stats();
+        assert_eq!(*stats.get(one_path).unwrap(), 8);
+        assert_eq!(*stats.get(two_path).unwrap(), 7);
 
         assert_eq!(
             directory_cache
