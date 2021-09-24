@@ -184,6 +184,10 @@ enum MergeCandidateSize {
     /// The split candidate is good to go.
     ValidSplit,
     /// We should not add an extra split in this candidate.
+    /// This can happen for any of the two following reasons:
+    /// - the number of splits involved already reached `merge_factor_max`.
+    /// - the overall number of docs that will end up in the merged segment already
+    /// exceeds `max_merge_docs`.
     OneMoreSplitWouldBeTooBig,
 }
 
@@ -208,17 +212,13 @@ impl StableMultitenantWithTimestampMergePolicy {
 
         let mut split_levels: Vec<Range<usize>> = Vec::new();
         let mut current_level_start_ord = 0;
-        let mut current_level_max_docs =
-            (splits[0].num_records * 3).clamp(self.min_level_num_docs, self.max_merge_docs);
+        let mut current_level_max_docs = (splits[0].num_records * 3).max(self.min_level_num_docs);
 
         for (split_ord, split) in splits.iter().enumerate() {
             if split.num_records >= current_level_max_docs {
                 split_levels.push(current_level_start_ord..split_ord);
                 current_level_start_ord = split_ord;
-                current_level_max_docs = (3 * split.num_records).min(self.max_merge_docs);
-                if split.num_records >= self.max_merge_docs {
-                    return split_levels;
-                }
+                current_level_max_docs = 3 * split.num_records;
             }
         }
         split_levels.push(current_level_start_ord..splits.len());
