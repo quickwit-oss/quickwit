@@ -12,6 +12,7 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
+backoff = { version = "0.3", features = ["tokio"] }
 byte-unit = "4"
 fail = "0.4"
 flume = "0.10"
