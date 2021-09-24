@@ -2,7 +2,12 @@ name: Code coverage
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "main"
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "quickwit-*/**"
 
 env:
   AWS_DEFAULT_REGION  : "localhost"
