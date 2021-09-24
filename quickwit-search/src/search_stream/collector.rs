@@ -18,17 +18,15 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::hash::Hash;
 use std::marker::PhantomData;
 
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader, FastValue};
-use tantivy::schema::{Field, Type};
+use tantivy::schema::Field;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
 use crate::filters::TimestampFilter;
-use crate::SearchError;
 
 #[derive(Clone)]
 pub struct FastFieldSegmentCollector<Item: FastValue> {
@@ -79,7 +77,7 @@ pub struct FastFieldCollector<Item: FastValue> {
     pub timestamp_field_opt: Option<Field>,
     pub start_timestamp_opt: Option<i64>,
     pub end_timestamp_opt: Option<i64>,
-    _marker: PhantomData<Item>,
+    pub _marker: PhantomData<Item>,
 }
 
 impl<Item: FastValue> Collector for FastFieldCollector<Item> {
@@ -118,182 +116,13 @@ impl<Item: FastValue> Collector for FastFieldCollector<Item> {
 }
 
 #[derive(Clone)]
-pub struct FastFieldCollectorBuilder {
-    fast_field_value_type: Type,
-    fast_field_name: String,
-    timestamp_field_name: Option<String>,
-    timestamp_field: Option<Field>,
-    start_timestamp: Option<i64>,
-    end_timestamp: Option<i64>,
-}
-
-impl FastFieldCollectorBuilder {
-    pub fn new(
-        fast_field_value_type: Type,
-        fast_field_name: String,
-        timestamp_field_name: Option<String>,
-        timestamp_field: Option<Field>,
-        start_timestamp: Option<i64>,
-        end_timestamp: Option<i64>,
-    ) -> crate::Result<Self> {
-        match fast_field_value_type {
-            Type::U64 | Type::I64 => (),
-            _ => {
-                return Err(SearchError::InvalidQuery(format!(
-                    "Fast field type `{:?}` not supported",
-                    fast_field_value_type
-                )));
-            }
-        }
-        Ok(Self {
-            fast_field_value_type,
-            fast_field_name,
-            timestamp_field_name,
-            timestamp_field,
-            start_timestamp,
-            end_timestamp,
-        })
-    }
-
-    pub fn value_type(&self) -> Type {
-        self.fast_field_value_type
-    }
-
-    pub fn fast_field_to_warm(&self) -> HashSet<String> {
-        let mut fields = HashSet::new();
-        fields.insert(self.fast_field_name.clone());
-        if let Some(timestamp_field_name) = &self.timestamp_field_name {
-            fields.insert(timestamp_field_name.clone());
-        }
-        fields
-    }
-
-    pub fn typed_build<TFastValue: FastValue>(&self) -> FastFieldCollector<TFastValue> {
-        FastFieldCollector::<TFastValue> {
-            fast_field_to_collect: self.fast_field_name.clone(),
-            timestamp_field_opt: self.timestamp_field,
-            start_timestamp_opt: self.start_timestamp,
-            end_timestamp_opt: self.end_timestamp,
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn build_i64(&self) -> FastFieldCollector<i64> {
-        // TODO: check type
-        self.typed_build::<i64>()
-    }
-
-    pub fn build_u64(&self) -> FastFieldCollector<u64> {
-        // TODO: check type
-        self.typed_build::<u64>()
-    }
-}
-
-#[derive(Clone)]
-pub struct PartionnedFastFieldCollectorBuilder {
-    fast_field_value_type: Type,
-    fast_field_name: String,
-    partition_by_fast_field_value_type: Type,
-    partition_by_fast_field_name: String,
-    timestamp_field_name: Option<String>,
-    timestamp_field: Option<Field>,
-    start_timestamp: Option<i64>,
-    end_timestamp: Option<i64>,
-}
-
-impl PartionnedFastFieldCollectorBuilder {
-    pub fn new(
-        fast_field_value_type: Type,
-        fast_field_name: String,
-        timestamp_field_name: Option<String>,
-        timestamp_field: Option<Field>,
-        start_timestamp: Option<i64>,
-        end_timestamp: Option<i64>,
-        partition_by_fast_field_value_type: Type,
-        partition_by_fast_field_name: String,
-    ) -> crate::Result<Self> {
-        match fast_field_value_type {
-            Type::U64 | Type::I64 => (),
-            _ => {
-                return Err(SearchError::InvalidQuery(format!(
-                    "Fast field type `{:?}` not supported",
-                    fast_field_value_type
-                )));
-            }
-        }
-        Ok(Self {
-            fast_field_value_type,
-            fast_field_name,
-            partition_by_fast_field_value_type,
-            partition_by_fast_field_name,
-            timestamp_field_name,
-            timestamp_field,
-            start_timestamp,
-            end_timestamp,
-        })
-    }
-
-    pub fn value_type(&self) -> (Type, Type) {
-        (
-            self.fast_field_value_type,
-            self.partition_by_fast_field_value_type,
-        )
-    }
-
-    pub fn fast_field_to_warm(&self) -> HashSet<String> {
-        let mut set = HashSet::new();
-        set.insert(self.fast_field_name.clone());
-        if let Some(timestamp_field_name) = &self.timestamp_field_name {
-            set.insert(timestamp_field_name.clone());
-            set.insert(self.partition_by_fast_field_name.clone());
-        }
-        set
-    }
-
-    pub fn typed_build<TFastValue: FastValue, TPartitionValue: FastValue>(
-        &self,
-    ) -> PartionnedFastFieldCollector<TFastValue, TPartitionValue> {
-        PartionnedFastFieldCollector::<TFastValue, TPartitionValue> {
-            fast_field_to_collect: self.fast_field_name.clone(),
-            partition_by_fast_field: self.partition_by_fast_field_name.clone(),
-            timestamp_field_opt: self.timestamp_field,
-            start_timestamp_opt: self.start_timestamp,
-            end_timestamp_opt: self.end_timestamp,
-            _marker: PhantomData,
-            _marker2: PhantomData,
-        }
-    }
-
-    pub fn build_i64_i64(&self) -> PartionnedFastFieldCollector<i64, i64> {
-        // TODO: check type
-        self.typed_build::<i64, i64>()
-    }
-
-    pub fn build_u64_u64(&self) -> PartionnedFastFieldCollector<u64, u64> {
-        // TODO: check type
-        self.typed_build::<u64, u64>()
-    }
-
-    pub fn build_i64_u64(&self) -> PartionnedFastFieldCollector<i64, u64> {
-        // TODO: check type
-        self.typed_build::<i64, u64>()
-    }
-
-    pub fn build_u64_i64(&self) -> PartionnedFastFieldCollector<u64, i64> {
-        // TODO: check type
-        self.typed_build::<u64, i64>()
-    }
-}
-
-#[derive(Clone)]
 pub struct PartionnedFastFieldCollector<Item: FastValue, PartitionItem: FastValue> {
     pub fast_field_to_collect: String,
     pub partition_by_fast_field: String,
     pub timestamp_field_opt: Option<Field>,
     pub start_timestamp_opt: Option<i64>,
     pub end_timestamp_opt: Option<i64>,
-    _marker: PhantomData<Item>,
-    _marker2: PhantomData<PartitionItem>,
+    pub _marker: PhantomData<(Item, PartitionItem)>,
 }
 
 pub struct PartitionValues<Item: FastValue, PartitionItem: FastValue> {
@@ -447,38 +276,3 @@ mod helpers {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::iter::FromIterator;
-
-    use super::*;
-
-    #[test]
-    fn test_fast_field_collector_builder() -> anyhow::Result<()> {
-        let builder = FastFieldCollectorBuilder::new(
-            Type::U64,
-            "field_name".to_string(),
-            Some("field_name".to_string()),
-            None,
-            None,
-            None,
-        )?;
-        assert_eq!(
-            builder.fast_field_to_warm(),
-            HashSet::from_iter(["field_name".to_string()])
-        );
-        let builder = FastFieldCollectorBuilder::new(
-            Type::U64,
-            "field_name".to_string(),
-            Some("timestamp_field_name".to_string()),
-            None,
-            None,
-            None,
-        )?;
-        assert_eq!(
-            builder.fast_field_to_warm(),
-            HashSet::from_iter(["field_name".to_string(), "timestamp_field_name".to_string()])
-        );
-        Ok(())
-    }
-}

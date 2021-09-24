@@ -263,8 +263,6 @@ pub enum OutputFormat {
     //// Format data by row in ClickHouse binary format.
     //// https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
     ClickHouseRowBinary = 1,
-    ////
-    PartitionnedClickhouseRowBinary = 2,
 }
 #[doc = r" Generated client implementations."]
 pub mod search_service_client {

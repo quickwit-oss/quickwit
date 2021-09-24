@@ -270,7 +270,6 @@ async fn search_stream<TSearchService: SearchService>(
     info!(index_id=%index_id,request=?request, "search_stream");
     let content_type = match request.output_format {
         OutputFormat::ClickHouseRowBinary => "application/octet-stream",
-        OutputFormat::PartitionnedClickhouseRowBinary => "application/octet-stream",
         OutputFormat::Csv => "text/csv",
     };
     let reply =

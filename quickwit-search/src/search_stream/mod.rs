@@ -25,28 +25,37 @@ use std::fmt::Display;
 use std::io;
 use std::io::Write;
 
-pub use collector::{FastFieldCollector, FastFieldCollectorBuilder};
+pub use collector::FastFieldCollector;
 pub use leaf::leaf_search_stream;
 use quickwit_proto::OutputFormat;
 pub use root::root_search_stream;
 use tantivy::fastfield::FastValue;
 
+use self::collector::PartitionValues;
+
 /// Serialize the values into the `buffer` as bytes.
 ///
 /// Please note that the `buffer` is always cleared.
-pub fn serialize<TFastValue: FastValue + Display, TPartitionValue: FastValue>(
+pub fn serialize<TFastValue: FastValue + Display>(
     values: &[TFastValue],
     buffer: &mut Vec<u8>,
     format: OutputFormat,
-    partition: Option<TPartitionValue>,
 ) -> io::Result<()> {
     match format {
         OutputFormat::Csv => serialize_csv(values, buffer),
         OutputFormat::ClickHouseRowBinary => serialize_click_house_row_binary(values, buffer),
-        OutputFormat::PartitionnedClickhouseRowBinary => {
-            serialize_partitionned_click_house_row_binary(values, buffer, partition.unwrap())
-        }
     }
+}
+
+// TODO
+pub fn serialize_partitions<TFastValue: FastValue + Display, TPartitionFastValue: FastValue>(
+    values: &[PartitionValues<u64, u64>],
+    buffer: &mut Vec<u8>,
+) -> io::Result<()> {
+    for partition in values {
+        // TODO
+    }
+    Ok(())
 }
 
 fn serialize_csv<TFastValue: FastValue + Display>(
@@ -56,24 +65,6 @@ fn serialize_csv<TFastValue: FastValue + Display>(
     buffer.clear();
     for value in values {
         writeln!(buffer, "{}", value)?;
-    }
-    Ok(())
-}
-
-fn serialize_partitionned_click_house_row_binary<
-    TFastValue: FastValue + Display,
-    TPartitionValue: FastValue,
->(
-    values: &[TFastValue],
-    buffer: &mut Vec<u8>,
-    partition: TPartitionValue,
-) -> io::Result<()> {
-    let values_byte_size: u64 = (std::mem::size_of::<TFastValue>() * values.len()) as u64;
-    buffer.reserve_exact(std::mem::size_of::<TFastValue>() * values.len() + 8);
-    buffer.extend(partition.as_u64().to_le_bytes());
-    buffer.extend(values_byte_size.to_le_bytes());
-    for value in values {
-        buffer.extend(value.as_u64().to_le_bytes());
     }
     Ok(())
 }
