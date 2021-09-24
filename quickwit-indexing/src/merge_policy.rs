@@ -249,7 +249,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         Some(merge_candidate_start..merge_candidate_end)
     }
 
-    /// Returns true iff we should stop adding extra split into this
+    /// Returns `MergeCandidateSize` iff we should stop adding extra split into this
     /// merge candidate.
     fn merge_candidate_size(&self, splits: &[SplitMetadata]) -> MergeCandidateSize {
         // We don't perform merge with a single segment. We
@@ -264,7 +264,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         }
         let num_docs_in_merge: usize = splits.iter().map(|split| split.num_records).sum();
 
-        // The resulting split will already exceed `max_merge_docs`.
+        // The resulting split will exceed `max_merge_docs`.
         if num_docs_in_merge >= self.max_merge_docs {
             return MergeCandidateSize::OneMoreSplitWouldBeTooBig;
         }
