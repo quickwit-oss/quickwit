@@ -1086,7 +1086,6 @@ pub async fn get_or_init_postgresql_metastore_for_test() -> &'static PostgresqlM
 impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
     async fn default_for_test() -> Self {
         let metastore = get_or_init_postgresql_metastore_for_test().await;
-
         (*metastore).clone()
     }
 }
