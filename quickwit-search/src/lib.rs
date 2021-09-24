@@ -175,7 +175,7 @@ pub async fn single_node_search(
     )
     .await
     .context("Failed to perform leaf search.")?;
-    let fetch_docs_result = fetch_docs(
+    let fetch_docs_response = fetch_docs(
         leaf_search_response.partial_hits,
         index_storage,
         &split_metadata,
@@ -185,7 +185,7 @@ pub async fn single_node_search(
     let elapsed = start_instant.elapsed();
     Ok(SearchResponse {
         num_hits: leaf_search_response.num_hits,
-        hits: fetch_docs_result.hits,
+        hits: fetch_docs_response.hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
         errors: vec![],
     })
