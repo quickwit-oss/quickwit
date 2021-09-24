@@ -19,12 +19,13 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
 use backoff::ExponentialBackoff;
-use futures::StreamExt;
+use futures::{StreamExt, TryFutureExt};
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_metastore::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
@@ -39,6 +40,7 @@ use rdkafka::util::Timeout;
 use rdkafka::{ClientContext, Message, Offset};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tokio::task::spawn_blocking;
 use tracing::{debug, info, warn};
 
 use crate::models::RawDocBatch;
@@ -117,7 +119,7 @@ pub struct KafkaSource {
     bootstrap_servers: String,
     group_id: String,
     topic: String,
-    consumer: KafkaSourceConsumer,
+    consumer: Arc<KafkaSourceConsumer>,
     state: KafkaSourceState,
 }
 
@@ -143,7 +145,7 @@ impl KafkaSource {
             params.enable_partition_eof.unwrap_or(false),
         )?;
         let topic = params.topic.as_str();
-        let partition_ids = fetch_partition_ids(&consumer, topic).await?;
+        let partition_ids = fetch_partition_ids(consumer.clone(), topic).await?;
         let assigned_partition_ids = partition_ids
             .iter()
             .map(|partition_id| {
@@ -154,7 +156,7 @@ impl KafkaSource {
             })
             .collect();
         let timeout = Duration::from_secs(30);
-        let watermarks = fetch_watermarks(&consumer, topic, &partition_ids, timeout).await?;
+        let watermarks = fetch_watermarks(consumer.clone(), topic, &partition_ids, timeout).await?;
         let kafka_checkpoint = kafka_checkpoint_from_checkpoint(&checkpoint)?;
         let assignment = compute_assignment(topic, &partition_ids, &kafka_checkpoint, &watermarks)?;
 
@@ -305,7 +307,7 @@ fn create_consumer(
     bootstrap_servers: &str,
     group_id: &str,
     enable_partition_eof: bool,
-) -> anyhow::Result<KafkaSourceConsumer> {
+) -> anyhow::Result<Arc<KafkaSourceConsumer>> {
     let consumer: KafkaSourceConsumer = ClientConfig::new()
         .set("bootstrap.servers", bootstrap_servers)
         .set("group.id", group_id)
@@ -322,7 +324,7 @@ fn create_consumer(
                 bootstrap_servers, group_id,
             )
         })?;
-    Ok(consumer)
+    Ok(Arc::new(consumer))
 }
 
 /// Represents a checkpoint with the Kafka native types: `i32` for partition IDs and `i64` for
@@ -346,16 +348,17 @@ fn kafka_checkpoint_from_checkpoint(checkpoint: &Checkpoint) -> anyhow::Result<H
 
 /// Retrieves the list of all partition IDs of a given topic.
 async fn fetch_partition_ids(
-    consumer: &KafkaSourceConsumer,
+    consumer: Arc<KafkaSourceConsumer>,
     topic: &str,
 ) -> anyhow::Result<Vec<i32>> {
-    let cluster_metadata = async move {
-        let timeout = Timeout::After(Duration::from_secs(5));
+    let timeout = Timeout::After(Duration::from_secs(5));
+    let topic_clone = topic.to_string();
+    let cluster_metadata = spawn_blocking(move || {
         consumer
-            .fetch_metadata(Some(topic), timeout)
-            .with_context(|| format!("Failed to fetch metadata for topic `{}`.", topic))
-    }
-    .await?;
+            .fetch_metadata(Some(&topic_clone), timeout)
+            .with_context(|| format!("Failed to fetch metadata for topic `{}`.", topic_clone))
+    })
+    .await??;
 
     if cluster_metadata.topics().is_empty() {
         bail!("Topic `{}` does not exist.", topic);
@@ -383,22 +386,45 @@ async fn fetch_partition_ids(
 /// The high watermark is the offset of the latest message in the partition available for
 /// consumption + 1.
 async fn fetch_watermarks(
-    consumer: &KafkaSourceConsumer,
+    consumer: Arc<KafkaSourceConsumer>,
     topic: &str,
     partition_ids: &[i32],
     timeout: Duration,
 ) -> anyhow::Result<HashMap<i32, (i64, i64)>> {
+    let tasks = partition_ids.iter().map(|&partition_id| {
+        fetch_watermarks_for_partition_id(
+            consumer.clone(),
+            topic.to_string(),
+            partition_id,
+            timeout,
+        )
+        .map_ok(move |watermarks| (partition_id, watermarks))
+    });
+    let watermarks = futures::future::try_join_all(tasks)
+        .await?
+        .into_iter()
+        .collect();
+    Ok(watermarks)
+}
+
+/// Fetches the low and high watermarks for the given topic and partition ID.
+async fn fetch_watermarks_for_partition_id(
+    consumer: Arc<KafkaSourceConsumer>,
+    topic: String,
+    partition_id: i32,
+    timeout: Duration,
+) -> anyhow::Result<(i64, i64)> {
     let attempt_timeout = Duration::from_secs(5).min(timeout);
-    let tasks = partition_ids.iter().map(|&partition_id| async move {
-        let backoff = ExponentialBackoff {
-            max_interval: Duration::from_secs(5),
-            max_elapsed_time: Some(timeout),
-            ..Default::default()
-        };
+    let backoff = ExponentialBackoff {
+        max_interval: Duration::from_secs(5),
+        max_elapsed_time: Some(timeout),
+        ..Default::default()
+    };
+    spawn_blocking(move ||
         backoff::retry(backoff, || {
             debug!(topic = ?topic, partition_id = ?partition_id, "Fetching watermarks");
             consumer
-                .fetch_watermarks(topic, partition_id, attempt_timeout)
+                .fetch_watermarks(&topic, partition_id, attempt_timeout)
                 .map_err(|err| {
                     debug!(topic = ?topic, partition_id = ?partition_id, error = ?err, "Failed to fetch watermarks");
                     if let KafkaError::MetadataFetch(RDKafkaErrorCode::UnknownPartition) = err {
@@ -407,20 +433,14 @@ async fn fetch_watermarks(
                         backoff::Error::Permanent(err)
                     }
                 })
-        })
-        .map(|watermarks| (partition_id, watermarks))
-        .with_context(|| {
-            format!(
-                "Failed to fetch watermarks for topic `{}` and partition `{}`.",
-                topic, partition_id
-            )
-        })
-    });
-    let watermarks = futures::future::try_join_all(tasks)
-        .await?
-        .into_iter()
-        .collect();
-    Ok(watermarks)
+            })
+            .with_context(|| {
+                format!(
+                    "Failed to fetch watermarks for topic `{}` and partition `{}`.",
+                    topic, partition_id
+                )
+            })
+    ).await?
 }
 
 /// Given a checkpoint, computes the next offset from which to start reading messages for the
@@ -921,11 +941,13 @@ mod kafka_broker_tests {
         create_topic(&admin_client, &topic, 2).await?;
 
         let consumer = create_consumer(&bootstrap_servers, &group_id, true)?;
-        assert!(fetch_partition_ids(&consumer, "topic-does-not-exist")
-            .await
-            .is_err());
+        assert!(
+            fetch_partition_ids(consumer.clone(), "topic-does-not-exist")
+                .await
+                .is_err()
+        );
 
-        let partition_ids = fetch_partition_ids(&consumer, &topic).await?;
+        let partition_ids = fetch_partition_ids(consumer.clone(), &topic).await?;
         assert_eq!(&partition_ids, &[0, 1]);
         Ok(())
     }
@@ -942,17 +964,17 @@ mod kafka_broker_tests {
         let consumer = create_consumer(&bootstrap_servers, &group_id, true)?;
         let timeout = Duration::from_secs(1);
         assert!(
-            fetch_watermarks(&consumer, "topic-does-not-exist", &[0], timeout)
+            fetch_watermarks(consumer.clone(), "topic-does-not-exist", &[0], timeout)
                 .await
                 .is_err()
         );
         {
-            let watermarks = fetch_watermarks(&consumer, &topic, &[0], timeout).await?;
+            let watermarks = fetch_watermarks(consumer.clone(), &topic, &[0], timeout).await?;
             let expected_watermarks = vec![(0, (0, 0))].into_iter().collect();
             assert_eq!(watermarks, expected_watermarks);
         }
         {
-            let watermarks = fetch_watermarks(&consumer, &topic, &[0, 1], timeout).await?;
+            let watermarks = fetch_watermarks(consumer.clone(), &topic, &[0, 1], timeout).await?;
             let expected_watermarks = vec![(0, (0, 0)), (1, (0, 0))].into_iter().collect();
             assert_eq!(watermarks, expected_watermarks);
         }
@@ -969,7 +991,7 @@ mod kafka_broker_tests {
             .await?;
         }
         {
-            let watermarks = fetch_watermarks(&consumer, &topic, &[0, 1], timeout).await?;
+            let watermarks = fetch_watermarks(consumer.clone(), &topic, &[0, 1], timeout).await?;
             let expected_watermarks = vec![(0, (0, 1)), (1, (0, 1))].into_iter().collect();
             assert_eq!(watermarks, expected_watermarks);
         }
