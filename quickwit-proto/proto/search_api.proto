@@ -41,7 +41,7 @@ service SearchService {
 
   /// Fetches the documents contents from the document store.
   /// This methods takes `PartialHit`s and returns `Hit`s.
-  rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResult);
+  rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResponse);
 
   // Perform a leaf stream on a given set of splits.
   rpc LeafSearchStream(LeafSearchStreamRequest) returns (stream LeafSearchStreamResult);
@@ -197,7 +197,7 @@ message FetchDocsRequest {
   string index_uri = 4;
 }
 
-message FetchDocsResult {
+message FetchDocsResponse {
   // List of complete hits.
   repeated Hit hits = 1;
 }

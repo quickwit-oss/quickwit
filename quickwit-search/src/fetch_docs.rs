@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use itertools::Itertools;
-use quickwit_proto::{FetchDocsResult, Hit, PartialHit, SplitIdAndFooterOffsets};
+use quickwit_proto::{FetchDocsResponse, Hit, PartialHit, SplitIdAndFooterOffsets};
 use quickwit_storage::Storage;
 use tantivy::{IndexReader, ReloadPolicy};
 use tracing::error;
@@ -30,7 +30,7 @@ use tracing::error;
 use crate::leaf::open_index;
 use crate::GlobalDocAddress;
 
-/// Given a list of global doc address, fetch all of the documents and
+/// Given a list of global doc address, fetches all the documents and
 /// returns them as a hashmap.
 #[allow(clippy::needless_lifetimes)]
 async fn fetch_docs_to_map<'a>(
@@ -98,7 +98,7 @@ pub async fn fetch_docs(
     partial_hits: Vec<PartialHit>,
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
-) -> anyhow::Result<FetchDocsResult> {
+) -> anyhow::Result<FetchDocsResponse> {
     let global_doc_addrs: Vec<GlobalDocAddress> = partial_hits
         .iter()
         .map(GlobalDocAddress::from_partial_hit)
@@ -121,7 +121,7 @@ pub async fn fetch_docs(
             }
         })
         .collect();
-    Ok(FetchDocsResult { hits })
+    Ok(FetchDocsResponse { hits })
 }
 
 async fn get_searcher_for_split(
@@ -149,18 +149,16 @@ async fn fetch_docs_in_split<'a>(
     split: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Vec<(GlobalDocAddress<'a>, String)>> {
     let index_reader = get_searcher_for_split(global_doc_addrs.len(), index_storage, split).await?;
-    let mut doc_futures = Vec::new();
-    for global_doc_addr in global_doc_addrs {
+    let doc_futures = global_doc_addrs.into_iter().map(|global_doc_addr| {
         let searcher = index_reader.searcher();
-        let doc_future = async move {
+        async move {
             let doc = searcher
                 .doc_async(global_doc_addr.doc_addr)
                 .await
-                .with_context(|| "searcher-doc-async")?;
+                .context("searcher-doc-async")?;
             let doc_json = searcher.schema().to_json(&doc);
             Ok((global_doc_addr, doc_json))
-        };
-        doc_futures.push(doc_future);
-    }
+        }
+    });
     futures::future::try_join_all(doc_futures).await
 }

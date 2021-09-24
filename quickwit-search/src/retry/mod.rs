@@ -119,7 +119,7 @@ mod tests {
     use std::net::SocketAddr;
     use std::sync::Arc;
 
-    use quickwit_proto::{FetchDocsRequest, FetchDocsResult, SplitIdAndFooterOffsets};
+    use quickwit_proto::{FetchDocsRequest, FetchDocsResponse, SplitIdAndFooterOffsets};
 
     use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
     use crate::{MockSearchService, SearchClientPool, SearchError};
@@ -141,7 +141,7 @@ mod tests {
     fn test_should_retry_on_error() -> anyhow::Result<()> {
         let retry_policy = DefaultRetryPolicy {};
         let request = mock_doc_request();
-        let result = Result::<(), SearchError>::Err(SearchError::InternalError("test".to_string()));
+        let result = crate::Result::<()>::Err(SearchError::InternalError("test".to_string()));
         let retry = retry_policy
             .retry_request(&request, result.as_ref())
             .is_some();
@@ -153,7 +153,7 @@ mod tests {
     fn test_should_not_retry_if_result_is_ok() -> anyhow::Result<()> {
         let retry_policy = DefaultRetryPolicy {};
         let request = mock_doc_request();
-        let result = Result::<FetchDocsResult, SearchError>::Ok(FetchDocsResult { hits: vec![] });
+        let result = crate::Result::<FetchDocsResponse>::Ok(FetchDocsResponse { hits: vec![] });
         let retry = retry_policy
             .retry_request(&request, result.as_ref())
             .is_some();
