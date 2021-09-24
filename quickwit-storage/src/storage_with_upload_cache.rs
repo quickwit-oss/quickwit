@@ -106,9 +106,7 @@ impl StorageWithUploadCache {
 
                 let file_size = dir_entry.metadata()?.len() as usize;
                 if file_size > cache_params.max_file_size {
-                    return Err(StorageErrorKind::InternalError.with_error(anyhow::anyhow!(
-                        "An existing file size exceeds the maximum size per file allowed.",
-                    )));
+                    warn!("An existing file size exceeds the maximum size per file allowed.");
                 }
 
                 let relative_file_path = path
@@ -171,7 +169,7 @@ impl Storage for StorageWithUploadCache {
             )
         };
 
-        // Ingore storing when maximum number of files is reached.
+        // Avoid storing in the cache when the maximum number of cached files is reached.
         if num_entries + 1 > self.cache_params.max_num_files {
             warn!("Failed to cache file: maximum number of files exceeded.");
             return Ok(());
@@ -241,9 +239,7 @@ impl Storage for StorageWithUploadCache {
         let mut locked_cache_item = self.cache_items.lock().await;
         if locked_cache_item.contains_key(&path.to_path_buf()) {
             if let Err(error) = self.local_storage.delete(path).await {
-                if error.kind() != StorageErrorKind::DoesNotExist {
-                    error!(file_path = %path.to_string_lossy(), error = %error, "Could not remove file from local storage.");
-                }
+                warn!(file_path = %path.to_string_lossy(), error = %error, "Could not remove file from local storage.");
             }
             locked_cache_item.remove(&path.to_path_buf());
         }
@@ -365,7 +361,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_should_error_with_a_file_size_exeeding_constraint() -> anyhow::Result<()> {
+    async fn test_create_should_accept_a_file_size_exeeding_constraint() -> anyhow::Result<()> {
         let local_dir = tempdir()?;
         let root_path = local_dir.path().join(INTERNAL_CACHE_DIR_NAME);
         fs::create_dir_all(root_path.to_path_buf()).await?;
@@ -380,13 +376,7 @@ mod tests {
         let remote_storage = Arc::new(RamStorage::default());
         let result =
             create_storage_with_upload_cache(remote_storage, local_dir.path(), cache_params);
-        assert!(matches!(
-            result,
-            Err(StorageError {
-                kind: StorageErrorKind::InternalError,
-                ..
-            })
-        ));
+        assert!(result.is_ok());
         Ok(())
     }
 

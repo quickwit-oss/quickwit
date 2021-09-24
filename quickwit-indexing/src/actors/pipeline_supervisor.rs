@@ -185,10 +185,12 @@ impl IndexingPipelineSupervisor {
             .resolve(&index_metadata.index_uri)?;
 
         // TODO: Make cache path configurable [https://github.com/quickwit-inc/quickwit/issues/520]
-        let cache_directory = self.params.indexer_params.scratch_directory.temp_child()?;
+        // Using the scratch_directory directly is fine since the cache storage will create its own
+        // folder to work with.
+        let cache_directory = self.params.indexer_params.scratch_directory.path();
         let index_storage = create_storage_with_upload_cache(
             index_storage,
-            cache_directory.path(),
+            cache_directory,
             CacheParams::default(),
         )?;
 
