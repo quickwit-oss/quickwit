@@ -1,3 +1,5 @@
+name: CI
+
 on:
   pull_request:
   push:
@@ -8,7 +10,6 @@ on:
       - "Cargo.toml"
       - "quickwit-*/**"
 
-name: CI
 
 env:
   RUSTFLAGS: -Dwarnings
