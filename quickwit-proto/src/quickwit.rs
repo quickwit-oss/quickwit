@@ -213,9 +213,6 @@ pub struct SearchStreamRequest {
     /// Split tag filter
     #[prost(string, repeated, tag = "8")]
     pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// The field by which we want to partition
-    #[prost(string, optional, tag = "9")]
-    pub partition_by_field: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

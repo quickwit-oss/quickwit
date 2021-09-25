@@ -183,10 +183,16 @@ impl StaticDirectoryCache {
     }
 
     /// return the files and their cached lengths
-    pub fn get_stats(&self) -> HashMap<PathBuf, usize> {
-        self.slices.iter().map(|(path, cache)| (path.to_owned(), cache.len()) ).collect()
-    }
+    pub fn get_stats(&self) -> Vec<(PathBuf, usize)> {
+        let mut entries = self
+            .slices
+            .iter()
+            .map(|(path, cache)| (path.to_owned(), cache.len()))
+            .collect::<Vec<_>>();
 
+        entries.sort();
+        entries
+    }
 }
 
 /// A SliceCache is a static toring
@@ -353,7 +359,7 @@ impl HotDirectory {
         })
     }
     /// Get files and their cached sizes.
-    pub fn get_stats_per_file(hot_cache_bytes: Bytes)-> tantivy::Result<HashMap<PathBuf, usize>>  {
+    pub fn get_stats_per_file(hot_cache_bytes: Bytes) -> tantivy::Result<Vec<(PathBuf, usize)>> {
         let static_cache =
             StaticDirectoryCache::open(OwnedBytes::new(BytesWrapper(hot_cache_bytes)))?;
         Ok(static_cache.get_stats())

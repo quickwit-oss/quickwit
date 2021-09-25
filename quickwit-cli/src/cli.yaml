@@ -21,6 +21,10 @@ subcommands:
                 long: split-id
                 value_name: SPLIT ID
                 required: true
+            - verbose:
+                help: More details like hotcache content
+                long: verbose
+
     - new:
         about: Creates an index
         args:

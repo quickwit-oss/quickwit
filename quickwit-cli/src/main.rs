@@ -113,10 +113,13 @@ impl CliCommand {
             .map(|metastore_uri_str| metastore_uri_str.to_string())
             .context("'metastore-uri' is a required arg")?;
 
+        let verbose = matches.is_present("verbose");
+
         Ok(CliCommand::InspectSplit(InspectSplitArgs::new(
             metastore_uri,
             index_id,
             split_id,
+            verbose,
         )?))
     }
 

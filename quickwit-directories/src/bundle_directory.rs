@@ -20,10 +20,11 @@
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::{fmt, io};
 
 use bytes::Bytes;
-use quickwit_storage::BundleStorageFileOffsets;
+use quickwit_storage::{BundleStorageFileOffsets, Storage, StorageResult};
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{FileHandle, FileSlice, OwnedBytes, WatchCallback, WatchHandle, WritePtr};
 use tantivy::{Directory, HasLen};
@@ -44,6 +45,27 @@ impl Debug for BundleDirectory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "BundleDirectory")
     }
+}
+
+/// Loads the split footer from a storage and path.
+pub async fn load_split_footer(storage: Arc<dyn Storage>, path: &Path) -> StorageResult<Bytes> {
+    let file_len = storage.file_num_bytes(path).await? as usize;
+
+    let footer_len_bytes = storage.get_slice(path, file_len - 8..file_len).await?;
+    let footer_len = u64::from_le_bytes(footer_len_bytes.as_ref().try_into().unwrap()) as usize;
+
+    let second_footer_start = file_len - 8 - footer_len - 8;
+    let second_footer_bytes = storage
+        .get_slice(path, second_footer_start..second_footer_start + 8)
+        .await?;
+    let second_footer_len =
+        u64::from_le_bytes(second_footer_bytes.as_ref().try_into().unwrap()) as usize;
+
+    let actual_footer = storage
+        .get_slice(path, second_footer_start - second_footer_len - 8..file_len)
+        .await?;
+
+    Ok(actual_footer)
 }
 
 /// Return two slices for given split: [body and bundle meta data] [hotcache]

@@ -35,9 +35,9 @@ use json_comments::StripComments;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_common::extract_index_id_from_index_uri;
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
-use quickwit_directories::BundleDirectory;
-use quickwit_directories::get_hotcache_from_split;
-use quickwit_directories::HotDirectory;
+use quickwit_directories::{
+    get_hotcache_from_split, load_split_footer, BundleDirectory, HotDirectory,
+};
 use quickwit_index_config::{DefaultIndexConfigBuilder, IndexConfig};
 use quickwit_indexing::actors::{
     IndexerParams, IndexingPipelineParams, IndexingPipelineSupervisor,
@@ -60,14 +60,21 @@ pub struct InspectSplitArgs {
     metastore_uri: String,
     index_id: String,
     split_id: String,
+    verbose: bool,
 }
 
 impl InspectSplitArgs {
-    pub fn new(metastore_uri: String, index_id: String, split_id: String) -> anyhow::Result<Self> {
+    pub fn new(
+        metastore_uri: String,
+        index_id: String,
+        split_id: String,
+        verbose: bool,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             metastore_uri,
             index_id,
             split_id,
+            verbose,
         })
     }
 }
@@ -168,7 +175,7 @@ pub async fn create_inspect_split_cli(args: InspectSplitArgs) -> anyhow::Result<
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
 
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
-    let bundle = index_storage.get_all(split_file.as_path()).await?;
+    let bundle = load_split_footer(index_storage, &split_file).await?;
 
     let stats = BundleDirectory::get_stats_split(bundle.clone())?;
     let hotcache_bytes = get_hotcache_from_split(bundle)?;
@@ -178,12 +185,13 @@ pub async fn create_inspect_split_cli(args: InspectSplitArgs) -> anyhow::Result<
         println!("{:?} {}", path, readable_size);
     }
 
-    let hotcache_stats = HotDirectory::get_stats_per_file(hotcache_bytes.into())?;
-    for (path, size) in hotcache_stats {
-        let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
-        println!("HotCache {:?} {}", path, readable_size);
+    if args.verbose {
+        let hotcache_stats = HotDirectory::get_stats_per_file(hotcache_bytes.into())?;
+        for (path, size) in hotcache_stats {
+            let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
+            println!("HotCache {:?} {}", path, readable_size);
+        }
     }
-
     Ok(())
 }
 
