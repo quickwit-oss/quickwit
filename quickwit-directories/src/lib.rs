@@ -21,7 +21,7 @@
 //!
 //! - The `StorageDirectory` justs wraps a `Storage` trait to make it compatible with tantivy's
 //!   Directory API.
-//! - The `BundleDirectory` bundles multipe files into a single file.
+//! - The `BundleDirectory` bundles multiple files into a single file.
 //! - The `HotDirectory` wraps another directory with a static cache.
 //! - The `CachingDirectory` wraps a Directory with a dynamic cache.
 //! - The `DebugDirectory` acts as a proxy to another directory to instrument it and record all of

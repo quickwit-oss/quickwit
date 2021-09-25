@@ -108,8 +108,7 @@ pub fn get_hotcache_bytes_from_split_footer(mut footer_data: Bytes) -> Bytes {
     let hotcache_num_bytes =
         u64::from_le_bytes((&*hotcache_len_bytes).try_into().unwrap()) as usize;
 
-    let hotcache_bytes = footer_data.split_off(footer_data.len() - hotcache_num_bytes);
-    hotcache_bytes
+    footer_data.split_off(footer_data.len() - hotcache_num_bytes)
 }
 
 /// Tantivy search does not make it possible to fetch data asynchronously during
