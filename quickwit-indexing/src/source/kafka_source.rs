@@ -697,6 +697,18 @@ mod kafka_broker_tests {
         Ok(())
     }
 
+    fn create_consumer_for_test(
+        bootstrap_servers: &str,
+        group_id: &str,
+    ) -> anyhow::Result<Arc<KafkaSourceConsumer>> {
+        let client_params = json!({
+            "bootstrap.servers": bootstrap_servers,
+            "group.id": group_id,
+            "enable.partition.eof": true,
+        });
+        create_consumer(Some("info".to_string()), client_params)
+    }
+
     async fn populate_topic<K, M, J, Q>(
         bootstrap_servers: &str,
         topic: &str,
@@ -953,7 +965,7 @@ mod kafka_broker_tests {
         let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 2).await?;
 
-        let consumer = create_consumer(&bootstrap_servers, &group_id, true)?;
+        let consumer = create_consumer_for_test(&bootstrap_servers, &group_id)?;
         assert!(
             fetch_partition_ids(consumer.clone(), "topic-does-not-exist")
                 .await
@@ -974,7 +986,7 @@ mod kafka_broker_tests {
         let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 2).await?;
 
-        let consumer = create_consumer(&bootstrap_servers, &group_id, true)?;
+        let consumer = create_consumer_for_test(&bootstrap_servers, &group_id)?;
         let timeout = Duration::from_secs(1);
         assert!(
             fetch_watermarks(consumer.clone(), "topic-does-not-exist", &[0], timeout)
