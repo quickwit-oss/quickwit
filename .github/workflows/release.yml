@@ -32,7 +32,7 @@ jobs:
         with:
           toolchain: stable
       - name: Build binary
-        run: cargo build --release
+        run: cargo build --release --features release-feature-set
       - name: Rename artifact
         run: mv target/release/${{ matrix.artifact_name }} ${{ env.ASSET_FULL_NAME }}
       - name: Compress artifact
@@ -62,8 +62,8 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           use-cross: true
-          command: build 
-          args: --release --target aarch64-unknown-linux-gnu
+          command: build
+          args: --release --features release-feature-set --target aarch64-unknown-linux-gnu
       - name: Rename artifact
         run: mv target/aarch64-unknown-linux-gnu/release/quickwit ${{ env.ASSET_FULL_NAME }}
       - name: Compress artifact
@@ -94,7 +94,7 @@ jobs:
         with:
           use-cross: true
           command: build
-          args: --release --target x86_64-unknown-linux-musl
+          args: --release --features release-feature-set --target x86_64-unknown-linux-musl
       - name: Rename artifact
         run: mv target/x86_64-unknown-linux-musl/release/quickwit ${{ env.ASSET_FULL_NAME }}
       - name: Compress artifact
@@ -125,7 +125,7 @@ jobs:
         with:
           use-cross: true
           command: build
-          args: --release --target aarch64-unknown-linux-musl
+          args: --release --features release-feature-set --target aarch64-unknown-linux-musl
       - name: Rename artifact
         run: mv target/aarch64-unknown-linux-musl/release/quickwit ${{ env.ASSET_FULL_NAME }}
       - name: Compress artifact
@@ -156,7 +156,7 @@ jobs:
         with:
           use-cross: true
           command: build
-          args: --release --target armv7-unknown-linux-gnueabihf
+          args: --release --features release-feature-set --target armv7-unknown-linux-gnueabihf
       - name: Rename artifact
         run: mv target/armv7-unknown-linux-gnueabihf/release/quickwit ${{ env.ASSET_FULL_NAME }}
       - name: Compress artifact
@@ -187,7 +187,7 @@ jobs:
         with:
           use-cross: true
           command: build
-          args: --release --target armv7-unknown-linux-musleabihf
+          args: --release --features release-feature-set --target armv7-unknown-linux-musleabihf
       - name: Rename artifact
         run: mv target/armv7-unknown-linux-musleabihf/release/quickwit ${{ env.ASSET_FULL_NAME }}
       - name: Compress artifact
@@ -218,7 +218,7 @@ jobs:
         with:
           use-cross: true
           command: build
-          args: --release --target x86_64-unknown-linux-gnu
+          args: --release --features release-feature-set --target x86_64-unknown-linux-gnu
       - name: Rename artifact
         run: mv target/x86_64-unknown-linux-gnu/release/quickwit ${{ env.ASSET_FULL_NAME }}
       - name: Compress artifact
