@@ -24,7 +24,7 @@ WORKDIR /quickwit
 
 RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
     && cargo build \
-        $(echo "--features $CARGO_FEATURES") \
+        --features $CARGO_FEATURES \
         $(test "$CARGO_PROFILE" = "release" && echo "--release") \
     && echo "Copying binaries to /quickwit/bin" \
     && mkdir -p /quickwit/bin \
