@@ -81,14 +81,6 @@ impl IndexedSplit {
         // and avoid possible race conditions.
         let split_scratch_directory = indexer_params.scratch_directory.temp_child()?;
         let index = index_builder.create_in_dir(split_scratch_directory.path())?;
-        println!(
-            "sort by {:?}",
-            index
-                .settings()
-                .sort_by_field
-                .as_ref()
-                .map(|value| value.field.clone())
-        );
         let index_writer =
             index.writer_with_num_threads(1, indexer_params.heap_size.get_bytes() as usize)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
