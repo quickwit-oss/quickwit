@@ -174,9 +174,12 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
 ///     "source_id": "my-kafka-source",
 ///     "source_type": "kafka",
 ///     "params": {
-///         "bootstrap_servers": "localhost:9092",
-///         "group_id": "my-kafka-source-consumer-group",
-///         "topic": "my-kafka-source-topic"
+///         "topic": "my-kafka-source-topic",
+///         "client_log_level": "warn",
+///         "client_params": {
+///             "bootstrap.servers": "localhost:9092",
+///             "group.id": "my-kafka-source-consumer-group"
+///         }
 ///     }
 /// }
 /// ```

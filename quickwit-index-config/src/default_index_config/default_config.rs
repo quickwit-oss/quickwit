@@ -42,10 +42,12 @@ pub struct DefaultIndexConfigBuilder {
     #[serde(default = "default_as_true")]
     store_source: bool,
     default_search_fields: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     timestamp_field: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     sort_by: Option<SortByConfig>,
     field_mappings: Vec<FieldMappingEntry>,
+    #[serde(default)]
     tag_fields: Vec<String>,
 }
 

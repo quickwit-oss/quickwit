@@ -49,17 +49,12 @@ use crate::source::{IndexerMessage, Source, SourceContext, TypedSourceFactory};
 /// Required parameters for instantiating a `KafkaSource`.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct KafkaSourceParams {
-    /// Comma-separated list of host and port pairs that provide the initial addresses of Kafka
-    /// brokers that act as the starting point for a Kafka client to discover the full set of
-    /// alive servers in the cluster.
-    pub bootstrap_servers: String,
-    /// Specifies the name of the consumer group a Kafka consumer belongs to.
-    pub group_id: String,
     /// Name of the topic that the source consumes.
     pub topic: String,
-    /// When set to `true`, the source will terminate after reading the last message of each
-    /// assigned partition. Otherwise, it will keep waiting for new incoming messages.
-    pub enable_partition_eof: Option<bool>,
+    /// Kafka client log level. Valid values are `debug`, `info`, `warn`, and `error`.
+    pub client_log_level: Option<String>,
+    /// Kafka client configuration parameters.
+    pub client_params: serde_json::Value,
 }
 
 /// Factory for instantiating a `KafkaSource`.
@@ -116,8 +111,6 @@ pub struct KafkaSourceState {
 
 /// A `KafkaSource` consumes a topic and forwards its messages to an `Indexer`.
 pub struct KafkaSource {
-    bootstrap_servers: String,
-    group_id: String,
     topic: String,
     consumer: Arc<KafkaSourceConsumer>,
     state: KafkaSourceState,
@@ -125,11 +118,7 @@ pub struct KafkaSource {
 
 impl fmt::Debug for KafkaSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "KafkaSource {{ bootstrap_servers: {}, group_id: {}, topic:{} }}",
-            self.bootstrap_servers, self.group_id, self.topic
-        )
+        write!(f, "KafkaSource {{ topic:{} }}", self.topic)
     }
 }
 
@@ -139,13 +128,9 @@ impl KafkaSource {
         params: KafkaSourceParams,
         checkpoint: Checkpoint,
     ) -> anyhow::Result<KafkaSource> {
-        let consumer = create_consumer(
-            params.bootstrap_servers.as_str(),
-            params.group_id.as_str(),
-            params.enable_partition_eof.unwrap_or(false),
-        )?;
-        let topic = params.topic.as_str();
-        let partition_ids = fetch_partition_ids(consumer.clone(), topic).await?;
+        let topic = params.topic;
+        let consumer = create_consumer(params.client_log_level, params.client_params)?;
+        let partition_ids = fetch_partition_ids(consumer.clone(), &topic).await?;
         let assigned_partition_ids = partition_ids
             .iter()
             .map(|partition_id| {
@@ -156,18 +141,17 @@ impl KafkaSource {
             })
             .collect();
         let timeout = Duration::from_secs(30);
-        let watermarks = fetch_watermarks(consumer.clone(), topic, &partition_ids, timeout).await?;
+        let watermarks =
+            fetch_watermarks(consumer.clone(), &topic, &partition_ids, timeout).await?;
         let kafka_checkpoint = kafka_checkpoint_from_checkpoint(&checkpoint)?;
-        let assignment = compute_assignment(topic, &partition_ids, &kafka_checkpoint, &watermarks)?;
+        let assignment =
+            compute_assignment(&topic, &partition_ids, &kafka_checkpoint, &watermarks)?;
 
         debug!(
-            bootstrap_servers = ?params.bootstrap_servers.as_str(),
-            group_id = ?params.group_id.as_str(),
-            topic = ?params.topic.as_str(),
+            topic = ?topic,
             assignment = ?assignment,
             "Starting Kafka source."
         );
-
         consumer
             .assign(&assignment)
             .context("Failed to resume from checkpoint.")?;
@@ -178,9 +162,7 @@ impl KafkaSource {
             ..Default::default()
         };
         Ok(KafkaSource {
-            bootstrap_servers: params.bootstrap_servers,
-            group_id: params.group_id,
-            topic: params.topic,
+            topic,
             consumer,
             state,
         })
@@ -281,8 +263,7 @@ impl Source for KafkaSource {
             .sorted()
             .collect();
         json!({
-            "group_id": self.group_id,
-            "topic":  self.topic,
+            "topic": self.topic,
             "assigned_partition_ids": assigned_partition_ids,
             "current_positions": current_positions,
             "num_active_partitions": self.state.num_active_partitions,
@@ -304,27 +285,59 @@ fn previous_position_for_offset(offset: i64) -> Position {
 
 /// Creates a new `KafkaSourceConsumer`.
 fn create_consumer(
-    bootstrap_servers: &str,
-    group_id: &str,
-    enable_partition_eof: bool,
+    client_log_level: Option<String>,
+    client_params: serde_json::Value,
 ) -> anyhow::Result<Arc<KafkaSourceConsumer>> {
-    let consumer: KafkaSourceConsumer = ClientConfig::new()
-        .set("bootstrap.servers", bootstrap_servers)
-        .set("group.id", group_id)
-        .set("enable.partition.eof", enable_partition_eof.to_string())
-        .set("session.timeout.ms", "6000")
-        .set("enable.auto.commit", "false")
-        //.set("statistics.interval.ms", "30000")
-        //.set("auto.offset.reset", "smallest")
-        .set_log_level(RDKafkaLogLevel::Info) // TODO: read log level from env variable.
+    let log_level = parse_client_log_level(client_log_level)?;
+    let mut client_config = parse_client_params(client_params)?;
+    let consumer: KafkaSourceConsumer = client_config
+        .set_log_level(log_level)
         .create_with_context(KafkaSourceContext)
-        .with_context(|| {
-            format!(
-                "Failed to create consumer with bootstrap servers `{}` and group ID `{}`.",
-                bootstrap_servers, group_id,
-            )
-        })?;
+        .context("Failed to create Kafka consumer.")?;
     Ok(Arc::new(consumer))
+}
+
+fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RDKafkaLogLevel> {
+    let log_level = match client_log_level
+        .map(|log_level| log_level.to_lowercase())
+        .as_deref()
+    {
+        Some("debug") => RDKafkaLogLevel::Debug,
+        Some("info") | None => RDKafkaLogLevel::Info,
+        Some("warn") | Some("warning") => RDKafkaLogLevel::Warning,
+        Some("error") => RDKafkaLogLevel::Error,
+        Some(level) => bail!(
+            "Failed to parse Kafka client log level. Value `{}` is not supported.",
+            level
+        ),
+    };
+    Ok(log_level)
+}
+
+fn parse_client_params(client_params: serde_json::Value) -> anyhow::Result<ClientConfig> {
+    let params = if let serde_json::Value::Object(params) = client_params {
+        params
+    } else {
+        bail!("Failed to parse Kafka client parameters. `client_params` must be a JSON object.");
+    };
+    let mut client_config = ClientConfig::new();
+    for (key, value_json) in params {
+        let value = match value_json {
+            serde_json::Value::Bool(value_bool) => value_bool.to_string(),
+            serde_json::Value::Number(value_number) => value_number.to_string(),
+            serde_json::Value::String(value_string) => value_string,
+            serde_json::Value::Null => continue,
+            serde_json::Value::Array(_) | serde_json::Value::Object(_) => bail!(
+                "Failed to parse Kafka client parameters. `client_params.{}` must be a boolean, \
+                 number, or string.",
+                key
+            ),
+        };
+        client_config.set(key, value);
+    }
+    // We manage offsets ourselves: we always want this value to be `false`.
+    client_config.set("enable.auto.commit", "false");
+    Ok(client_config)
 }
 
 /// Represents a checkpoint with the Kafka native types: `i32` for partition IDs and `i64` for
@@ -772,10 +785,13 @@ mod kafka_broker_tests {
             source_id: "kafka-test-source".to_string(),
             source_type: "kafka".to_string(),
             params: json!({
-                "bootstrap_servers": bootstrap_servers,
-                "group_id": group_id,
                 "topic": topic,
-                "enable_partition_eof": true,
+                "client_log_level": "info",
+                "client_params": json!({
+                    "bootstrap.servers": bootstrap_servers,
+                    "group.id": group_id,
+                    "enable.partition.eof": true,
+                }),
             }),
         };
         let source_loader = quickwit_supported_sources();
@@ -798,7 +814,6 @@ mod kafka_broker_tests {
 
             let expected_current_positions: Vec<(i32, i64)> = vec![];
             let expected_state = json!({
-                "group_id": group_id,
                 "topic":  topic,
                 "assigned_partition_ids": vec![0, 1, 2],
                 "current_positions":  expected_current_positions,
@@ -866,7 +881,6 @@ mod kafka_broker_tests {
             assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
 
             let expected_state = json!({
-                "group_id": group_id,
                 "topic":  topic,
                 "assigned_partition_ids": vec![0, 1, 2],
                 "current_positions":  vec![(0, 2), (1, 2), (2, 2)],
@@ -917,7 +931,6 @@ mod kafka_broker_tests {
             assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta,);
 
             let expected_exit_state = json!({
-                "group_id": group_id,
                 "topic":  topic,
                 "assigned_partition_ids": vec![0, 1, 2],
                 "current_positions":  vec![(0, 2), (2, 2)],
