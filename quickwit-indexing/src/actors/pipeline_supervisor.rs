@@ -22,8 +22,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health,
-    KillSwitch, QueueCapacity, Supervisable,
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, AsyncActor,
+    Health, KillSwitch, QueueCapacity, Supervisable,
 };
 use quickwit_metastore::{Metastore, SplitState};
 use quickwit_storage::StorageUriResolver;
@@ -345,8 +345,9 @@ impl IndexingPipelineSupervisor {
                         // packager panics, the finalizer may never be
                         // called, so we defensively send the message if we
                         // detect that the packager is not running, while the merge planner is.
-                        if handlers.packager.health() != Health::Healthy
-                            && handlers.merge_planner.health() == Health::Healthy
+
+                        if handlers.packager.state() != ActorState::Running
+                            && handlers.merge_planner.state() == ActorState::Running
                         {
                             // Failing to send is fine here.
                             info!("Stopping the merge planner since the packager is dead.");
