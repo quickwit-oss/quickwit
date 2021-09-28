@@ -132,9 +132,9 @@ pub trait Actor: Send + Sync + 'static {
         QueueCapacity::Unbounded
     }
 
-    /// Extracts an observable state. Useful for unit test, and admin UI.
+    /// Extracts an observable state. Useful for unit tests, and admin UI.
     ///
-    /// This function should return fast.
+    /// This function should return quickly.
     fn observable_state(&self) -> Self::ObservableState;
 }
 
