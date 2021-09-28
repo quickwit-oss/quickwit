@@ -72,7 +72,7 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
     }
 
     fn health(&self) -> Health {
-        let actor_state = self.actor_context.state();
+        let actor_state = self.state();
         if actor_state == ActorState::Exit {
             let actor_exit_status = self
                 .actor_exit_status
@@ -111,6 +111,10 @@ impl<A: Actor> ActorHandle<A> {
             join_handle,
             actor_exit_status,
         }
+    }
+
+    pub fn state(&self) -> ActorState {
+        self.actor_context.state()
     }
 
     /// Process all of the pending messages, and returns a snapshot of
