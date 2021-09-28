@@ -82,6 +82,7 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
             if actor_exit_status.is_success() {
                 Health::Success
             } else {
+                error!(actor=self.name(), exit_status=?actor_exit_status, "actor-exit-without-success");
                 Health::FailureOrUnhealthy
             }
         } else if self
@@ -91,6 +92,7 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
         {
             Health::Healthy
         } else {
+            error!(actor = self.name(), "actor-timeout");
             Health::FailureOrUnhealthy
         }
     }
