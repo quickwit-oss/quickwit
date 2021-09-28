@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use tracing::info;
+
 use crate::async_actor::spawn_async_actor;
 use crate::mailbox::Inbox;
 use crate::scheduler::SchedulerMessage;
@@ -90,6 +92,7 @@ impl<A: AsyncActor> SpawnBuilder<A> {
     /// Spawns an async actor.
     pub fn spawn_async(self) -> (Mailbox<A::Message>, ActorHandle<A>) {
         let (actor, ctx, inbox) = self.create_actor_context_and_inbox();
+        info!(actor = ctx.actor_instance_id(), "spawn-async");
         let mailbox = ctx.mailbox().clone();
         let actor_handle = spawn_async_actor(actor, ctx, inbox);
         (mailbox, actor_handle)
@@ -100,6 +103,7 @@ impl<A: SyncActor> SpawnBuilder<A> {
     /// Spawns an async actor.
     pub fn spawn_sync(self) -> (Mailbox<A::Message>, ActorHandle<A>) {
         let (actor, ctx, inbox) = self.create_actor_context_and_inbox();
+        info!(actor = ctx.actor_instance_id(), "spawn-sync");
         let mailbox = ctx.mailbox().clone();
         let actor_handle = spawn_sync_actor(actor, ctx, inbox);
         (mailbox, actor_handle)
