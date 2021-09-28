@@ -246,6 +246,10 @@ impl Source for KafkaSource {
         Ok(())
     }
 
+    fn name(&self) -> String {
+        "kafka-source".to_string()
+    }
+
     fn observable_state(&self) -> serde_json::Value {
         let assigned_partition_ids: Vec<&i32> =
             self.state.assigned_partition_ids.keys().sorted().collect();
