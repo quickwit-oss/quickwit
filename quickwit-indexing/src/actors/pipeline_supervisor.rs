@@ -189,13 +189,13 @@ impl IndexingPipelineSupervisor {
         let merge_policy: Arc<dyn MergePolicy> =
             Arc::new(StableMultitenantWithTimestampMergePolicy::default());
 
-        // TODO: Make cache path configurable [https://github.com/quickwit-inc/quickwit/issues/520]
-        // Using the scratch_directory directly is fine since the cache storage will create its own
-        // folder to work with.
-        let scratch_directory = self.params.indexer_params.scratch_directory.path();
         let split_store = IndexingSplitStore::create_with_local_store(
             index_storage,
-            scratch_directory,
+            self.params
+                .indexer_params
+                .indexing_directory
+                .cache_directory
+                .as_path(),
             IndexingSplitStoreParams::default(),
             merge_policy.clone(),
         )?;
@@ -235,7 +235,12 @@ impl IndexingPipelineSupervisor {
             .spawn_sync();
 
         let merge_split_downloader = MergeSplitDownloader {
-            scratch_directory: self.params.indexer_params.scratch_directory.clone(),
+            scratch_directory: self
+                .params
+                .indexer_params
+                .indexing_directory
+                .scratch_directory
+                .clone(),
             storage: split_store.clone(),
             merge_executor_mailbox,
         };
@@ -518,7 +523,7 @@ mod tests {
             source_type: "file".to_string(),
             params: json!({ "filepath": PathBuf::from("data/test_corpus.json") }),
         };
-        let indexer_params = IndexerParams::for_test()?;
+        let indexer_params = IndexerParams::for_test().await?;
         let indexing_pipeline_params = IndexingPipelineParams {
             index_id: "test-index".to_string(),
             source_config,

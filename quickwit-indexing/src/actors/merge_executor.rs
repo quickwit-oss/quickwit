@@ -269,7 +269,7 @@ mod tests {
             .map(|split_and_footer_offsets| split_and_footer_offsets.split_metadata)
             .collect();
         assert_eq!(splits.len(), 4);
-        let merge_scratch_directory = ScratchDirectory::try_new_temp()?;
+        let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory = merge_scratch_directory.temp_child()?;
         let storage = test_index_builder.index_storage(index_id)?;
         for split in &splits {

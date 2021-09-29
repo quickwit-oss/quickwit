@@ -305,7 +305,7 @@ mod tests {
     use crate::models::ScratchDirectory;
 
     fn make_indexed_split_for_test(segments_timestamps: &[&[i64]]) -> anyhow::Result<IndexedSplit> {
-        let split_scratch_directory = ScratchDirectory::try_new_temp()?;
+        let split_scratch_directory = ScratchDirectory::for_test()?;
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field("text", TEXT);
         let timestamp_field = schema_builder.add_u64_field("timestamp", FAST);

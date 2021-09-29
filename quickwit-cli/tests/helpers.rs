@@ -110,9 +110,11 @@ pub fn spawn_command(arguments: &str) -> io::Result<Child> {
 /// A struct to hold few info about the test environement.
 pub struct TestEnv {
     /// The temporary directory of the test.
-    pub local_directory: TempDir,
-    /// Path of the temporary directory of the test.
-    pub local_directory_path: PathBuf,
+    _tempdir: TempDir,
+    /// Path of the directory where indexing directory are created.
+    pub data_dir_path: PathBuf,
+    /// Path of the directory where indexes are stored.
+    pub indexes_dir_path: PathBuf,
     /// Resource files needed for the test.
     pub resource_files: HashMap<&'static str, PathBuf>,
     /// The metastore uri.
@@ -138,13 +140,19 @@ pub enum TestStorageType {
 
 /// Creates all necessary artifacts in a test environement.
 pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
-    let local_directory = tempdir()?;
-    let local_directory_path = local_directory.path().to_path_buf();
+    let tempdir = tempdir()?;
+    let data_dir_path = tempdir.path().join("data");
+    let indexes_dir_path = tempdir.path().join("indexes");
+    let resources_dir_path = tempdir.path().join("resources");
+
+    for dir_path in [&data_dir_path, &indexes_dir_path, &resources_dir_path] {
+        fs::create_dir(dir_path)?;
+    }
 
     // TODO: refactor when we have a singleton storage resolver.
     let (metastore_uri, storage) = match storage_type {
         TestStorageType::LocalFileSystem => {
-            let metastore_uri = format!("file://{}", local_directory_path.display());
+            let metastore_uri = format!("file://{}", indexes_dir_path.display());
             let storage: Arc<dyn Storage> = Arc::new(LocalFileStorage::from_uri(&metastore_uri)?);
             (metastore_uri, storage)
         }
@@ -158,11 +166,11 @@ pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv>
         }
     };
 
-    let config_path = local_directory.path().join("config.json");
+    let config_path = resources_dir_path.join("config.json");
     fs::write(&config_path, DEFAULT_INDEX_CONFIG)?;
-    let log_docs_path = local_directory.path().join("logs.json");
+    let log_docs_path = resources_dir_path.join("logs.json");
     fs::write(&log_docs_path, LOGS_JSON_DOCS)?;
-    let wikipedia_docs_path = local_directory.path().join("wikis.json");
+    let wikipedia_docs_path = resources_dir_path.join("wikis.json");
     fs::write(&wikipedia_docs_path, WIKI_JSON_DOCS)?;
 
     let mut resource_files = HashMap::new();
@@ -171,8 +179,9 @@ pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv>
     resource_files.insert("wiki", wikipedia_docs_path);
 
     Ok(TestEnv {
-        local_directory,
-        local_directory_path,
+        _tempdir: tempdir,
+        data_dir_path,
+        indexes_dir_path,
         resource_files,
         metastore_uri,
         storage,

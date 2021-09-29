@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
@@ -32,7 +31,7 @@ use tantivy::schema::{Field, Value};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tracing::{info, warn};
 
-use crate::models::{CommitPolicy, IndexedSplit, IndexerMessage, RawDocBatch, ScratchDirectory};
+use crate::models::{CommitPolicy, IndexedSplit, IndexerMessage, IndexingDirectory, RawDocBatch};
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
 pub struct IndexerCounters {
@@ -248,16 +247,16 @@ fn record_timestamp(timestamp: i64, time_range: &mut Option<RangeInclusive<i64>>
 
 #[derive(Clone)]
 pub struct IndexerParams {
-    pub scratch_directory: ScratchDirectory,
+    pub indexing_directory: IndexingDirectory,
     pub heap_size: Byte,
     pub commit_policy: CommitPolicy,
 }
 
 impl IndexerParams {
-    pub fn for_test() -> io::Result<Self> {
-        let scratch_directory = ScratchDirectory::try_new_temp()?;
+    pub async fn for_test() -> anyhow::Result<Self> {
+        let indexing_directory = IndexingDirectory::for_test().await?;
         Ok(IndexerParams {
-            scratch_directory,
+            indexing_directory,
             heap_size: Byte::from_str("30MB").unwrap(),
             commit_policy: Default::default(),
         })
@@ -402,7 +401,7 @@ mod tests {
     use super::Indexer;
     use crate::actors::indexer::{record_timestamp, IndexerCounters};
     use crate::actors::IndexerParams;
-    use crate::models::{CommitPolicy, RawDocBatch, ScratchDirectory};
+    use crate::models::{CommitPolicy, IndexingDirectory, RawDocBatch};
 
     #[test]
     fn test_record_timestamp() {
@@ -424,8 +423,8 @@ mod tests {
                 timeout: Duration::from_secs(60),
                 num_docs_threshold: 3,
             },
-            scratch_directory: ScratchDirectory::try_new_temp()?,
             heap_size: Byte::from_str("30MB").unwrap(),
+            indexing_directory: IndexingDirectory::for_test().await?,
         };
         let (mailbox, inbox) = create_test_mailbox();
         let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
@@ -504,8 +503,8 @@ mod tests {
                 timeout: Duration::from_secs(60),
                 num_docs_threshold: 10_000_000,
             },
-            scratch_directory: ScratchDirectory::try_new_temp()?,
             heap_size: Byte::from_str("30MB").unwrap(),
+            indexing_directory: IndexingDirectory::for_test().await?,
         };
         let (mailbox, inbox) = create_test_mailbox();
         let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
@@ -563,7 +562,7 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
-        let indexer_params = IndexerParams::for_test()?;
+        let indexer_params = IndexerParams::for_test().await?;
         let indexer = Indexer::try_new(
             "test-index".to_string(),
             index_config,

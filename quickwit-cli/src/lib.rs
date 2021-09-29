@@ -41,7 +41,7 @@ use quickwit_index_config::{DefaultIndexConfigBuilder, IndexConfig};
 use quickwit_indexing::actors::{
     IndexerParams, IndexingPipelineParams, IndexingPipelineSupervisor,
 };
-use quickwit_indexing::models::{CommitPolicy, IndexingStatistics, ScratchDirectory};
+use quickwit_indexing::models::{CommitPolicy, IndexingDirectory, IndexingStatistics};
 use quickwit_indexing::source::{FileSourceParams, SourceConfig};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, MetastoreUriResolver};
@@ -163,7 +163,7 @@ pub struct IndexDataArgs {
     pub index_id: String,
     pub input_path: Option<PathBuf>,
     pub source_config_path: Option<PathBuf>,
-    pub temp_dir: Option<PathBuf>,
+    pub data_dir_path: PathBuf,
     pub heap_size: Byte,
     pub overwrite: bool,
 }
@@ -278,12 +278,8 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let input_path_opt = args.input_path.as_ref();
     let source_config =
         create_source_config_from_args(source_config_path_opt, input_path_opt).await?;
-    let scratch_directory = if let Some(scratch_root_path) = args.temp_dir.as_ref() {
-        ScratchDirectory::new_in_path(scratch_root_path.clone())
-    } else {
-        ScratchDirectory::try_new_temp()
-            .with_context(|| "Failed to create a tempdir for the indexer")?
-    };
+    let indexing_directory_path = args.data_dir_path.join(args.index_id.as_str());
+    let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
@@ -298,7 +294,7 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     }
 
     let indexer_params = IndexerParams {
-        scratch_directory,
+        indexing_directory,
         heap_size: args.heap_size,
         commit_policy: CommitPolicy::default(), //< TODO make the commit policy configurable
     };
@@ -424,7 +420,6 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
             println!("Only the index will be deleted since it does not contains any data file.");
             return Ok(());
         }
-
         println!(
             "The following files will be removed from the index `{}`",
             args.index_id
@@ -434,7 +429,6 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         }
         return Ok(());
     }
-
     println!("Index `{}` successfully deleted.", args.index_id);
     Ok(())
 }
