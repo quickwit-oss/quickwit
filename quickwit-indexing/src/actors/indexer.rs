@@ -183,7 +183,11 @@ impl IndexerState {
         for doc_json in batch.docs {
             counters.overall_num_bytes += doc_json.len() as u64;
             indexed_split.docs_size_in_bytes += doc_json.len() as u64;
-            match self.prepare_document(&doc_json) {
+            let prepared_doc = {
+                let _protect_zone = ctx.protect_zone();
+                self.prepare_document(&doc_json)
+            };
+            match prepared_doc {
                 PrepareDocumentOutcome::ParsingError => {
                     counters.num_parse_errors += 1;
                 }
@@ -200,6 +204,7 @@ impl IndexerState {
                     if let Some(timestamp) = timestamp_opt {
                         record_timestamp(timestamp, &mut indexed_split.time_range);
                     }
+                    let _protect_guard = ctx.protect_zone();
                     indexed_split.index_writer.add_document(document);
                 }
             }
