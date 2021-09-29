@@ -125,6 +125,7 @@ pub struct PartionnedFastFieldCollector<Item: FastValue, PartitionItem: FastValu
     pub _marker: PhantomData<(Item, PartitionItem)>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct PartitionValues<Item: FastValue, PartitionItem: FastValue> {
     pub partition_value: PartitionItem,
     pub fast_field_values: Vec<Item>,

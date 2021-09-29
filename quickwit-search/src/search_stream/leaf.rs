@@ -366,7 +366,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::search_stream::serialize_partitions;
 
     #[tokio::test]
     async fn test_leaf_search_stream_to_csv_output_with_filtering() -> anyhow::Result<()> {
@@ -499,16 +498,13 @@ mod tests {
             }
         }
         test_sandbox.add_documents(docs).await?;
-        let expected_output: Vec<PartitionValues<u64, u64>> = expected_output_tmp
+        let mut expected_output: Vec<PartitionValues<u64, u64>> = expected_output_tmp
             .iter()
             .map(|(key, value)| PartitionValues {
                 partition_value: *key,
                 fast_field_values: value.to_vec(),
             })
             .collect();
-
-        let mut serialized_output: Vec<u8> = Vec::default();
-        serialize_partitions(&expected_output, &mut serialized_output)?;
 
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
@@ -541,7 +537,40 @@ mod tests {
         )
         .await;
         let res = single_node_stream.next().await.expect("no leaf result")?;
-        assert_eq!(&res.data, &serialized_output);
+        let mut deserialized_output = deserialize_partitions(res.data);
+        expected_output.sort_by(|l, r| l.partition_value.cmp(&r.partition_value));
+        deserialized_output.sort_by(|l, r| l.partition_value.cmp(&r.partition_value));
+        assert_eq!(expected_output, deserialized_output);
         Ok(())
+    }
+
+    fn deserialize_partitions(buffer: Vec<u8>) -> Vec<PartitionValues<u64, u64>> {
+        // Note: this function is only meant to be used with valid payloads for testing purposes
+        let mut cursor = 0;
+        let mut partitions_values = vec![];
+        while cursor < buffer.len() {
+            let partition_slice: [u8; 8] = buffer[cursor..cursor + 8].try_into().unwrap();
+            let partition = u64::from_le_bytes(partition_slice.try_into().unwrap());
+            cursor += 8;
+
+            let payload_size_slice: [u8; 8] = buffer[cursor..cursor + 8].try_into().unwrap();
+            let payload_size = u64::from_le_bytes(payload_size_slice);
+            let nb_values: usize = (payload_size / 8).try_into().unwrap();
+            cursor += 8;
+
+            let mut partition_value = PartitionValues {
+                partition_value: partition,
+                fast_field_values: Vec::with_capacity(nb_values),
+            };
+
+            for _ in 0..nb_values {
+                let value_slice: [u8; 8] = buffer[cursor..cursor + 8].try_into().unwrap();
+                let value = u64::from_le_bytes(value_slice);
+                cursor += 8;
+                partition_value.fast_field_values.push(value);
+            }
+            partitions_values.push(partition_value);
+        }
+        partitions_values
     }
 }
