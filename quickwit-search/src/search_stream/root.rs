@@ -113,10 +113,8 @@ mod tests {
 
     use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_indexing::mock_split_meta;
-    use quickwit_metastore::{
-        checkpoint::Checkpoint, IndexMetadata, MockMetastore,
-        SplitState,
-    };
+    use quickwit_metastore::checkpoint::Checkpoint;
+    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::OutputFormat;
     use tokio_stream::wrappers::UnboundedReceiverStream;
 

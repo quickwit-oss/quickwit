@@ -310,9 +310,7 @@ async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
 }
 
 fn from_simple_list<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     let str_sequence = String::deserialize(deserializer)?;
     Ok(Some(
         str_sequence
@@ -643,7 +641,8 @@ mod tests {
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
         assert_eq!(
             parse_error.to_string(),
-            "failed with reason: unknown variant `click_house_row_binary`, expected one of `csv`, `clickHouseRowBinary`, `partitionnedClickhouseRowBinary`"
+            "failed with reason: unknown variant `click_house_row_binary`, expected one of `csv`, \
+             `clickHouseRowBinary`, `partitionnedClickhouseRowBinary`"
         );
     }
 }

@@ -22,13 +22,6 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use super::collector::PartionnedFastFieldCollector;
-use super::collector::PartitionValues;
-use super::FastFieldCollector;
-use crate::leaf::open_index;
-use crate::leaf::warmup;
-use crate::Result;
-use crate::SearchError;
 use futures::{FutureExt, StreamExt};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{
@@ -38,15 +31,16 @@ use quickwit_proto::{
 use quickwit_storage::Storage;
 use tantivy::fastfield::FastValue;
 use tantivy::query::Query;
-use tantivy::schema::Field;
-use tantivy::schema::FieldEntry;
-use tantivy::schema::FieldType;
-use tantivy::schema::Schema;
-use tantivy::schema::Type;
+use tantivy::schema::{Field, Schema, Type};
 use tantivy::{LeasedItem, ReloadPolicy, Searcher};
 use tokio::task::spawn_blocking;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::*;
+
+use super::collector::{PartionnedFastFieldCollector, PartitionValues};
+use super::FastFieldCollector;
+use crate::leaf::{open_index, warmup};
+use crate::{Result, SearchError};
 
 // TODO: buffer of 5 seems to be sufficient to do the job locally, needs to be tested on a cluster.
 const CONCURRENT_SPLIT_SEARCH_STREAM: usize = 5;
@@ -129,7 +123,9 @@ async fn leaf_search_stream_single_split(
         && output_format != OutputFormat::ClickHouseRowBinary
     {
         return Err(SearchError::InternalError(
-            "Invalid output format specified, only ClickHouseRowBinary is allowed when you provide a parition-by field.".to_string(),
+            "Invalid output format specified, only ClickHouseRowBinary is allowed when you \
+             provide a parition-by field."
+                .to_string(),
         ));
     }
 
@@ -293,11 +289,11 @@ impl<'a> SearchStreamRequestFields {
             )));
         }
 
-        let timestamp_field = index_config.timestamp_field(&schema);
+        let timestamp_field = index_config.timestamp_field(schema);
         let partition_by_fast_field = stream_request
             .partition_by_field
             .as_deref()
-            .and_then(|field_name| schema.get_field(&field_name));
+            .and_then(|field_name| schema.get_field(field_name));
 
         if partition_by_fast_field.is_some()
             && !Self::is_fast_field(schema, &partition_by_fast_field.unwrap())
@@ -369,9 +365,8 @@ mod tests {
     use quickwit_indexing::TestSandbox;
     use serde_json::json;
 
-    use crate::search_stream::serialize_partitions;
-
     use super::*;
+    use crate::search_stream::serialize_partitions;
 
     #[tokio::test]
     async fn test_leaf_search_stream_to_csv_output_with_filtering() -> anyhow::Result<()> {
