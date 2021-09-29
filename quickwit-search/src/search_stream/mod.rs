@@ -124,7 +124,9 @@ mod helpers {
 
 #[cfg(test)]
 mod tests {
-    use crate::search_stream::{serialize_click_house_row_binary, serialize_csv};
+    use crate::search_stream::{
+        collector::PartitionValues, serialize_click_house_row_binary, serialize_csv,
+    };
 
     #[test]
     fn test_serialize_row_binary() {
@@ -142,5 +144,33 @@ mod tests {
         let mut buffer = Vec::new();
         serialize_csv::<i64>(&[-10i64], &mut buffer).unwrap();
         assert_eq!(buffer, "-10\n".as_bytes());
+    }
+
+    #[test]
+    fn test_serialize_partitions() {
+        let mut buffer = Vec::new();
+        let partition_1 = PartitionValues {
+            partition_value: 1u64,
+            fast_field_values: vec![3u64, 4u64],
+        };
+        let partition_2 = PartitionValues {
+            partition_value: 2u64,
+            fast_field_values: vec![5u64],
+        };
+        super::serialize_partitions::<u64, u64>(&vec![partition_1, partition_2], &mut buffer)
+            .unwrap();
+        let expected_buffer: Vec<u8> = vec![
+            1u64.to_le_bytes(),
+            16usize.to_le_bytes(),
+            3u64.to_le_bytes(),
+            4u64.to_le_bytes(),
+            2u64.to_le_bytes(),
+            8usize.to_le_bytes(),
+            5u64.to_le_bytes(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        assert_eq!(buffer, expected_buffer);
     }
 }
