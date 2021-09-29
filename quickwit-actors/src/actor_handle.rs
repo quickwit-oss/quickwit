@@ -72,7 +72,7 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
     }
 
     fn health(&self) -> Health {
-        let actor_state = self.actor_context.state();
+        let actor_state = self.state();
         if actor_state == ActorState::Exit {
             let actor_exit_status = self
                 .actor_exit_status
@@ -82,6 +82,7 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
             if actor_exit_status.is_success() {
                 Health::Success
             } else {
+                error!(actor=self.name(), exit_status=?actor_exit_status, "actor-exit-without-success");
                 Health::FailureOrUnhealthy
             }
         } else if self
@@ -91,6 +92,7 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
         {
             Health::Healthy
         } else {
+            error!(actor = self.name(), "actor-timeout");
             Health::FailureOrUnhealthy
         }
     }
@@ -109,6 +111,10 @@ impl<A: Actor> ActorHandle<A> {
             join_handle,
             actor_exit_status,
         }
+    }
+
+    pub fn state(&self) -> ActorState {
+        self.actor_context.state()
     }
 
     /// Process all of the pending messages, and returns a snapshot of
