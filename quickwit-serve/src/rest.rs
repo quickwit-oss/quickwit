@@ -641,8 +641,8 @@ mod tests {
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
         assert_eq!(
             parse_error.to_string(),
-            "failed with reason: unknown variant `click_house_row_binary`, expected one of `csv`, \
-             `clickHouseRowBinary`, `partitionnedClickhouseRowBinary`"
+            "failed with reason: unknown variant `click_house_row_binary`, expected `csv` or \
+             `clickHouseRowBinary`"
         );
     }
 }
