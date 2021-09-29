@@ -22,11 +22,12 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use super::FastFieldCollector;
 use super::collector::PartionnedFastFieldCollector;
 use super::collector::PartitionValues;
+use super::FastFieldCollector;
 use crate::leaf::open_index;
 use crate::leaf::warmup;
+use crate::Result;
 use crate::SearchError;
 use futures::{FutureExt, StreamExt};
 use quickwit_index_config::IndexConfig;
@@ -38,6 +39,7 @@ use quickwit_storage::Storage;
 use tantivy::fastfield::FastValue;
 use tantivy::query::Query;
 use tantivy::schema::Field;
+use tantivy::schema::FieldEntry;
 use tantivy::schema::FieldType;
 use tantivy::schema::Schema;
 use tantivy::schema::Type;
@@ -112,19 +114,26 @@ async fn leaf_search_stream_single_split(
 ) -> crate::Result<LeafSearchStreamResult> {
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
-    let fast_field = TypedFastField::new(&stream_request.fast_field, &split_schema)?;
-    let timestamp_field = index_config.timestamp_field(&split_schema);
-    let partition_by_fast_field =
-        TypedFastField::from_option(stream_request.partition_by_field.as_deref(), &split_schema)?;
+
+    let request_fields = Arc::new(SearchStreamRequestFields::from_request(
+        &stream_request,
+        &split_schema,
+        index_config.as_ref(),
+    )?);
+
     let output_format = OutputFormat::from_i32(stream_request.output_format).ok_or_else(|| {
         SearchError::InternalError("Invalid output format specified.".to_string())
     })?;
-    if partition_by_fast_field.is_some() && output_format != OutputFormat::ClickHouseRowBinary {
+
+    if request_fields.partition_by_fast_field.is_some()
+        && output_format != OutputFormat::ClickHouseRowBinary
+    {
         return Err(SearchError::InternalError(
             "Invalid output format specified, only ClickHouseRowBinary is allowed when you provide a parition-by field.".to_string(),
         ));
     }
-    let search_request = SearchRequest::from(stream_request.clone());
+
+    let search_request = Arc::new(SearchRequest::from(stream_request.clone()));
     let query = index_config.query(split_schema.clone(), &search_request)?;
     let reader = index
         .reader_builder()
@@ -135,58 +144,58 @@ async fn leaf_search_stream_single_split(
     warmup(
         &*searcher,
         query.as_ref(),
-        &HashSet::new(), // FIXME: pass the right vec.
+        &request_fields.fast_fields_for_request(), // FIXME: pass the right vec.
     )
     .await?;
-    let fast_field_name = fast_field.field_name.to_string();
+
     let span = info_span!(
         "collect_fast_field",
         split_id = %split.split_id,
-        fast_field=%fast_field_name,
+        request_fields=%request_fields,
     );
+
     let _ = span.enter();
+    let m_request_fields = request_fields.clone();
     let collect_handle = spawn_blocking(move || {
         let mut buffer = Vec::new();
-        match (fast_field.field_type.value_type(), partition_by_fast_field.as_ref().map(|ff| ff.field_type.value_type())) {
+        match m_request_fields.fast_field_types() {
             (Type::I64, None) => {
-                let collected_values = collect_values::<i64>(
-                    &fast_field,
-                    timestamp_field,
+                let collected_values = collect_values::<u64>(
+                    &m_request_fields,
                     stream_request.start_timestamp,
                     stream_request.end_timestamp,
                     searcher,
                     query.as_ref(),
                 )?;
-                super::serialize::<i64>(&collected_values, &mut buffer, output_format)
-                    .map_err(|_| {
+                super::serialize::<u64>(&collected_values, &mut buffer, output_format).map_err(
+                    |_| {
                         SearchError::InternalError(
                             "Error when serializing i64 during export".to_owned(),
                         )
-                    })?;
+                    },
+                )?;
             }
             (Type::U64, Some(Type::U64)) => {
                 let collected_values = collect_partitioned_values::<u64, u64>(
-                    &fast_field,
-                    partition_by_fast_field.clone().unwrap(),
-                    timestamp_field,
+                    &m_request_fields,
                     stream_request.start_timestamp,
                     stream_request.end_timestamp,
                     searcher,
                     query.as_ref(),
                 )?;
-                super::serialize_partitions::<i64, u64>(&collected_values, &mut buffer)
+                super::serialize_partitions::<u64, u64>(collected_values.as_slice(), &mut buffer)
                     .map_err(|_| {
-                        SearchError::InternalError(
-                            "Error when serializing i64 during export".to_owned(),
-                        )
-                    })?;
+                    SearchError::InternalError(
+                        "Error when serializing i64 during export".to_owned(),
+                    )
+                })?;
             }
-            _ => ()
+            _ => (),
         };
-        Result::<Vec<u8>, SearchError>::Ok(buffer)
+        Result::<Vec<u8>>::Ok(buffer)
     });
     let buffer = collect_handle.await.map_err(|error| {
-        error!(split_id = %split.split_id, fast_field=%fast_field_name, error_message=%error, "Failed to collect fast field");
+        error!(split_id = %split.split_id, request_fields=%request_fields, error_message=%error, "Failed to collect fast field");
         SearchError::InternalError(format!("Error when collecting fast field values for split {}: {:?}", split.split_id, error))
     })??;
 
@@ -197,16 +206,15 @@ async fn leaf_search_stream_single_split(
 }
 
 fn collect_values<TFastValue: FastValue>(
-    fast_field: &TypedFastField, 
-    timestamp_field_opt: Option<Field>, 
+    request_fields: &SearchStreamRequestFields,
     start_timestamp: Option<i64>,
     end_timestamp: Option<i64>,
     searcher: LeasedItem<Searcher>,
     query: &dyn Query,
-) -> Result<Vec<TFastValue>, SearchError> {
+) -> crate::Result<Vec<TFastValue>> {
     let collector = FastFieldCollector::<TFastValue> {
-        fast_field_to_collect: fast_field.field_name.to_string(),
-        timestamp_field_opt,
+        fast_field_to_collect: request_fields.fast_field_name().to_string(),
+        timestamp_field_opt: request_fields.timestamp_field,
         start_timestamp_opt: start_timestamp,
         end_timestamp_opt: end_timestamp,
         _marker: PhantomData,
@@ -216,18 +224,19 @@ fn collect_values<TFastValue: FastValue>(
 }
 
 fn collect_partitioned_values<TFastValue: FastValue, TPartitionValue: FastValue + Eq + Hash>(
-    fast_field: &TypedFastField,
-    partition_fast_field: TypedFastField,
-    timestamp_field_opt: Option<Field>, 
+    request_fields: &SearchStreamRequestFields,
     start_timestamp_opt: Option<i64>,
     end_timestamp_opt: Option<i64>,
     searcher: LeasedItem<Searcher>,
     query: &dyn Query,
-) -> Result<Vec<PartitionValues<TFastValue, TPartitionValue>>, SearchError> {
+) -> crate::Result<Vec<PartitionValues<TFastValue, TPartitionValue>>> {
     let collector = PartionnedFastFieldCollector::<TFastValue, TPartitionValue> {
-        fast_field_to_collect: fast_field.field_name.to_string(),
-        partition_by_fast_field: partition_fast_field.field_name.to_string(),
-        timestamp_field_opt,
+        fast_field_to_collect: request_fields.fast_field_name().to_string(),
+        partition_by_fast_field: request_fields
+            .partition_by_fast_field_name()
+            .expect("Please report a bug here, the partition_by_fast_field should be defined")
+            .to_string(),
+        timestamp_field_opt: request_fields.timestamp_field,
         start_timestamp_opt,
         end_timestamp_opt,
         _marker: PhantomData,
@@ -236,14 +245,131 @@ fn collect_partitioned_values<TFastValue: FastValue, TPartitionValue: FastValue 
     Ok(result)
 }
 
+#[derive(Debug)]
+// TODO move to owned values, implement Send + Sync
+struct SearchStreamRequestFields {
+    fast_field: Field,
+    partition_by_fast_field: Option<Field>,
+    timestamp_field: Option<Field>,
+    schema: Schema,
+}
+
+impl<'a> std::fmt::Display for SearchStreamRequestFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fast_field: {},", self.fast_field_name())?;
+        write!(
+            f,
+            "timestamp_field: {},",
+            self.timestamp_field_name().unwrap_or("None")
+        )?;
+        write!(
+            f,
+            "partition_by_fast_field: {}",
+            self.partition_by_fast_field_name().unwrap_or("None")
+        )
+    }
+}
+
+impl<'a> SearchStreamRequestFields {
+    pub fn from_request(
+        stream_request: &SearchStreamRequest,
+        schema: &'a Schema,
+        index_config: &dyn IndexConfig,
+    ) -> crate::Result<SearchStreamRequestFields> {
+        // TODO make sure it's a fast field
+        let fast_field = schema
+            .get_field(&stream_request.fast_field)
+            .ok_or_else(|| {
+                SearchError::InvalidQuery(format!(
+                    "Field `{}` does not exist in schema",
+                    &stream_request.fast_field
+                ))
+            })?;
+
+        if !Self::is_fast_field(schema, &fast_field) {
+            return Err(SearchError::InvalidQuery(format!(
+                "Field `{}` is not a fast field",
+                &stream_request.fast_field
+            )));
+        }
+
+        let timestamp_field = index_config.timestamp_field(&schema);
+        let partition_by_fast_field = stream_request
+            .partition_by_field
+            .as_deref()
+            .and_then(|field_name| schema.get_field(&field_name));
+
+        if partition_by_fast_field.is_some()
+            && !Self::is_fast_field(schema, &partition_by_fast_field.unwrap())
+        {
+            return Err(SearchError::InvalidQuery(format!(
+                "Field `{}` is not a fast field",
+                &stream_request.partition_by_field.as_deref().unwrap()
+            )));
+        }
+
+        Ok(SearchStreamRequestFields {
+            schema: schema.to_owned(),
+            fast_field,
+            partition_by_fast_field,
+            timestamp_field,
+        })
+    }
+
+    pub fn fast_field_types(&self) -> (Type, Option<Type>) {
+        (
+            self.schema
+                .get_field_entry(self.fast_field)
+                .field_type()
+                .value_type(),
+            self.partition_by_fast_field
+                .map(|field| self.schema.get_field_entry(field).field_type().value_type()),
+        )
+    }
+
+    pub fn fast_fields_for_request(&self) -> HashSet<String> {
+        let mut set = HashSet::new();
+        set.insert(self.fast_field_name().to_string());
+        if let Some(timestamp_field) = self.timestamp_field_name() {
+            set.insert(timestamp_field.to_string());
+        }
+        if let Some(partition_by_fast_field) = self.partition_by_fast_field_name() {
+            set.insert(partition_by_fast_field.to_string());
+        }
+        set
+    }
+
+    pub fn timestamp_field_name(&self) -> Option<&str> {
+        self.timestamp_field
+            .map(|field| self.schema.get_field_name(field))
+    }
+
+    pub fn fast_field_name(&self) -> &str {
+        self.schema.get_field_name(self.fast_field)
+    }
+
+    pub fn partition_by_fast_field_name(&self) -> Option<&str> {
+        self.partition_by_fast_field
+            .map(|field| self.schema.get_field_name(field))
+    }
+
+    fn is_fast_field(schema: &Schema, field: &Field) -> bool {
+        schema.get_field_entry(*field).is_fast()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::convert::TryInto;
     use std::str::from_utf8;
     use std::sync::Arc;
 
     use quickwit_index_config::DefaultIndexConfigBuilder;
     use quickwit_indexing::TestSandbox;
     use serde_json::json;
+
+    use crate::search_stream::serialize_partitions;
 
     use super::*;
 
@@ -319,38 +445,108 @@ mod tests {
         );
         Ok(())
     }
-}
 
-#[derive(Debug, Clone)]
-struct TypedFastField {
-    pub field_name: String,
-    pub field_type: FieldType,
-}
-impl TypedFastField {
-    pub fn from_option(
-        field_name: Option<&str>,
-        schema: &Schema,
-    ) -> crate::Result<Option<TypedFastField>> {
-        field_name
-            .map(|e| TypedFastField::new(e, schema))
-            .transpose()
-    }
-    pub fn new(field_name: &str, schema: &Schema) -> crate::Result<TypedFastField> {
-        // TODO fail if the provided field is not a fast field
-        let field = schema.get_field(field_name).ok_or_else(|| {
-            SearchError::InvalidQuery(format!("Fast field `{}` does not exist.", field_name))
-        })?;
-        if schema.get_field_entry(field).is_fast() {
-            let field_type = schema.get_field_entry(field).field_type();
-            Ok(TypedFastField {
-                field_type: field_type.clone(),
-                field_name: field_name.to_string(),
-            })
-        } else {
-            Err(SearchError::InvalidQuery(format!(
-                "Field `{}` is not a fast field",
-                field_name
-            )))
+    #[tokio::test]
+    async fn test_leaf_search_stream_to_partitionned_clickhouse_binary_output_with_filtering(
+    ) -> anyhow::Result<()> {
+        let index_config = r#"{
+            "default_search_fields": ["body"],
+            "timestamp_field": "ts",
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "body",
+                    "type": "text"
+                },
+                {
+                    "name": "ts",
+                    "type": "i64",
+                    "fast": true
+                },
+                {
+                    "name": "partition_by_fast_field",
+                    "type": "u64",
+                    "fast": true
+                },
+                {
+                    "name": "fast_field",
+                    "type": "u64",
+                    "fast": true
+                }
+
+            ]
+        }"#;
+        let index_config =
+            Arc::new(serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?);
+        let index_id = "single-node-simple";
+        let test_sandbox = TestSandbox::create("single-node-simple", index_config.clone()).await?;
+
+        let mut docs = vec![];
+        let partition_by_fast_field_values = vec![1, 2, 3, 4, 5];
+        let mut expected_output_tmp: HashMap<u64, Vec<u64>> = HashMap::new();
+        let end_timestamp: i64 = 20;
+        for i in 0..30 {
+            let body = format!("info @ t:{}", i + 1);
+            let partition_number = partition_by_fast_field_values[i % 5];
+            let fast_field: u64 = (i * 2).try_into().unwrap();
+            docs.push(json!({
+                "body": body,
+                "ts": i+1,
+                "partition_by_fast_field": partition_number,
+                "fast_field": fast_field,
+            }));
+            if i + 1 < end_timestamp.try_into().unwrap() {
+                if let Some(values_for_partition) = expected_output_tmp.get_mut(&partition_number) {
+                    values_for_partition.push(fast_field)
+                } else {
+                    expected_output_tmp.insert(partition_number, vec![fast_field]);
+                }
+            }
         }
+        test_sandbox.add_documents(docs).await?;
+        let expected_output: Vec<PartitionValues<u64, u64>> = expected_output_tmp
+            .iter()
+            .map(|(key, value)| PartitionValues {
+                partition_value: *key,
+                fast_field_values: value.to_vec(),
+            })
+            .collect();
+
+        let mut serialized_output: Vec<u8> = Vec::default();
+        serialize_partitions(&expected_output, &mut serialized_output)?;
+
+        let request = SearchStreamRequest {
+            index_id: index_id.to_string(),
+            query: "info".to_string(),
+            search_fields: vec![],
+            start_timestamp: None,
+            end_timestamp: Some(end_timestamp),
+            fast_field: "fast_field".to_string(),
+            output_format: 1,
+            partition_by_field: Some(String::from("partition_by_fast_field")),
+            tags: vec![],
+        };
+        let index_metadata = test_sandbox.metastore().index_metadata(index_id).await?;
+        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits_offsets = splits
+            .into_iter()
+            .map(|split_meta| SplitIdAndFooterOffsets {
+                split_id: split_meta.split_metadata.split_id,
+                split_footer_start: split_meta.footer_offsets.start,
+                split_footer_end: split_meta.footer_offsets.end,
+            })
+            .collect();
+        let mut single_node_stream = leaf_search_stream(
+            request,
+            test_sandbox
+                .storage_uri_resolver()
+                .resolve(&index_metadata.index_uri)?,
+            splits_offsets,
+            index_config,
+        )
+        .await;
+        let res = single_node_stream.next().await.expect("no leaf result")?;
+        assert_eq!(&res.data, &serialized_output);
+        Ok(())
     }
 }

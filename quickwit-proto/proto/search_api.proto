@@ -212,8 +212,6 @@ enum OutputFormat {
     /// Format data by row in ClickHouse binary format.
     /// https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
     CLICK_HOUSE_ROW_BINARY = 1;
-    ///
-    PARTITIONNED_CLICKHOUSE_ROW_BINARY = 2;
 }
 
 message SearchStreamRequest {

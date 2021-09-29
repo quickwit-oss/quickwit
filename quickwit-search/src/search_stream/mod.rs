@@ -47,13 +47,23 @@ pub fn serialize<TFastValue: FastValue + Display>(
     }
 }
 
-// TODO
 pub fn serialize_partitions<TFastValue: FastValue + Display, TPartitionFastValue: FastValue>(
-    values: &[PartitionValues<u64, u64>],
+    p_values: &[PartitionValues<TFastValue, TPartitionFastValue>],
     buffer: &mut Vec<u8>,
 ) -> io::Result<()> {
-    for partition in values {
-        // TODO
+    let buf_size = helpers::partitions_size_in_bytes(p_values);
+    buffer.clear();
+    buffer.reserve_exact(buf_size);
+    for partition in p_values {
+        let values_byte_size =
+            std::mem::size_of::<TFastValue>() * partition.fast_field_values.len();
+
+        buffer.extend(partition.partition_value.as_u64().to_le_bytes());
+        buffer.extend(values_byte_size.to_le_bytes());
+
+        for value in &partition.fast_field_values {
+            buffer.extend(value.as_u64().to_le_bytes());
+        }
     }
     Ok(())
 }
@@ -79,6 +89,37 @@ fn serialize_click_house_row_binary<TFastValue: FastValue + Display>(
         buffer.extend(value.as_u64().to_le_bytes());
     }
     Ok(())
+}
+
+mod helpers {
+    use std::fmt::Display;
+
+    use tantivy::fastfield::FastValue;
+
+    use super::collector::PartitionValues;
+
+    #[inline(always)]
+    pub fn partitions_size_in_bytes<
+        TFastValue: FastValue + Display,
+        TPartitionFastValue: FastValue,
+    >(
+        partitions: &[PartitionValues<TFastValue, TPartitionFastValue>],
+    ) -> usize {
+        let mut size = 0;
+        for partition in partitions {
+            size += partition_size_in_bytes(partition);
+        }
+        size
+    }
+
+    #[inline(always)]
+    fn partition_size_in_bytes<TFastValue: FastValue + Display, TPartitionFastValue: FastValue>(
+        partition: &PartitionValues<TFastValue, TPartitionFastValue>,
+    ) -> usize {
+        std::mem::size_of::<TFastValue>() * partition.fast_field_values.len()
+            + std::mem::size_of::<u64>()
+            + std::mem::size_of::<TPartitionFastValue>()
+    }
 }
 
 #[cfg(test)]
