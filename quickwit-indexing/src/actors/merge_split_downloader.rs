@@ -111,7 +111,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_split_downloader() -> anyhow::Result<()> {
-        let scratch_directory = ScratchDirectory::try_new_temp()?;
+        let scratch_directory = ScratchDirectory::for_test()?;
         let splits_to_merge: Vec<SplitMetadata> = iter::repeat_with(|| {
             let split_id = new_split_id();
             SplitMetadata {

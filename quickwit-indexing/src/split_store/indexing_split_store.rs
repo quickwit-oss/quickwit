@@ -30,7 +30,7 @@ use tokio::sync::Mutex;
 use tracing::info;
 
 use super::LocalSplitStore;
-use crate::split_store::INTERNAL_CACHE_DIR_NAME;
+use crate::split_store::SPLIT_CACHE_DIR_NAME;
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
 /// `IndexingSplitStoreParams` encapsulates the various contraints of the cache.
@@ -89,11 +89,11 @@ impl IndexingSplitStore {
     /// It needs the remote storage to work with.
     pub fn create_with_local_store(
         remote_storage: Arc<dyn Storage>,
-        scratch_dir: &Path,
+        cache_directory: &Path,
         cache_params: IndexingSplitStoreParams,
         merge_policy: Arc<dyn MergePolicy>,
     ) -> StorageResult<Self> {
-        let local_storage_root = scratch_dir.join(INTERNAL_CACHE_DIR_NAME);
+        let local_storage_root = cache_directory.join(SPLIT_CACHE_DIR_NAME);
         std::fs::create_dir_all(&local_storage_root)?;
         let local_split_store = LocalSplitStore::open(local_storage_root, cache_params)?;
         Ok(Self {
@@ -231,13 +231,13 @@ mod tests {
     use tokio::fs;
 
     use super::{IndexingSplitStore, IndexingSplitStoreParams};
-    use crate::split_store::INTERNAL_CACHE_DIR_NAME;
+    use crate::split_store::SPLIT_CACHE_DIR_NAME;
     use crate::StableMultitenantWithTimestampMergePolicy;
 
     #[tokio::test]
     async fn test_create_should_error_with_wrong_num_files() -> anyhow::Result<()> {
         let local_dir = tempdir()?;
-        let root_path = local_dir.path().join(INTERNAL_CACHE_DIR_NAME);
+        let root_path = local_dir.path().join(SPLIT_CACHE_DIR_NAME);
         fs::create_dir_all(root_path.to_path_buf()).await?;
         fs::write(root_path.join("a.split"), b"a").await?;
         fs::write(root_path.join("b.split"), b"b").await?;
@@ -268,7 +268,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_should_error_with_wrong_num_bytes() -> anyhow::Result<()> {
         let local_dir = tempdir()?;
-        let root_path = local_dir.path().join(INTERNAL_CACHE_DIR_NAME);
+        let root_path = local_dir.path().join(SPLIT_CACHE_DIR_NAME);
         fs::create_dir_all(root_path.to_path_buf()).await?;
         fs::write(root_path.join("a.split"), b"abcdefgh").await?;
         fs::write(root_path.join("b.split"), b"abcdefgh").await?;
@@ -297,7 +297,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_should_accept_a_file_size_exeeding_constraint() -> anyhow::Result<()> {
         let local_dir = tempdir()?;
-        let root_path = local_dir.path().join(INTERNAL_CACHE_DIR_NAME);
+        let root_path = local_dir.path().join(SPLIT_CACHE_DIR_NAME);
         fs::create_dir_all(root_path.to_path_buf()).await?;
         fs::write(root_path.join("b.split"), b"abcd").await?;
         fs::write(root_path.join("a.split"), b"abcdefgh").await?;
@@ -347,7 +347,8 @@ mod tests {
             assert!(!bundle_path.exists());
             assert!(split_cache_dir
                 .path()
-                .join("split-cache/split1.split")
+                .join(SPLIT_CACHE_DIR_NAME)
+                .join("split1.split")
                 .exists());
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
@@ -363,7 +364,8 @@ mod tests {
             assert!(!bundle_path.exists());
             assert!(split_cache_dir
                 .path()
-                .join("split-cache/split2.split")
+                .join(SPLIT_CACHE_DIR_NAME)
+                .join("split2.split")
                 .exists());
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 2);
@@ -414,7 +416,8 @@ mod tests {
             assert!(!bundle_path.exists());
             assert!(split_cache_dir
                 .path()
-                .join("split-cache/split1.split")
+                .join(SPLIT_CACHE_DIR_NAME)
+                .join("split1.split")
                 .exists());
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
@@ -429,7 +432,8 @@ mod tests {
             assert!(!bundle_path.exists());
             assert!(!split_cache_dir
                 .path()
-                .join("split-cache/split2.split")
+                .join(SPLIT_CACHE_DIR_NAME)
+                .join("split2.split")
                 .exists());
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
@@ -472,7 +476,8 @@ mod tests {
             assert!(!bundle_path.exists());
             assert!(split_cache_dir
                 .path()
-                .join("split-cache/split1.split")
+                .join(SPLIT_CACHE_DIR_NAME)
+                .join("split1.split")
                 .exists());
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
@@ -488,7 +493,8 @@ mod tests {
             assert!(!bundle_path.exists());
             assert!(!split_cache_dir
                 .path()
-                .join("split-cache/split2.split")
+                .join(SPLIT_CACHE_DIR_NAME)
+                .join("split2.split")
                 .exists());
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
@@ -524,7 +530,8 @@ mod tests {
             assert!(!bundle_path.exists());
             assert!(split_cache_dir
                 .path()
-                .join("split-cache/split1.split")
+                .join(SPLIT_CACHE_DIR_NAME)
+                .join("split1.split")
                 .exists());
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);

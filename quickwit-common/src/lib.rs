@@ -57,6 +57,54 @@ pub fn split_file(split_id: &str) -> String {
     format!("{}.split", split_id)
 }
 
+pub mod fs {
+    use std::path::Path;
+
+    use tokio;
+
+    /// Deletes the contents of a directory.
+    pub async fn empty_dir<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
+        let mut entries = tokio::fs::read_dir(path).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            if entry.file_type().await?.is_dir() {
+                tokio::fs::remove_dir_all(entry.path()).await?
+            } else {
+                tokio::fs::remove_file(entry.path()).await?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use tempfile;
+
+        use super::*;
+
+        #[tokio::test]
+        async fn test_empty_dir() -> anyhow::Result<()> {
+            let tempdir = tempfile::tempdir()?;
+
+            let file_path = tempdir.path().join("file");
+            tokio::fs::File::create(file_path).await?;
+
+            let subdir = tempdir.path().join("subdir");
+            tokio::fs::create_dir(&subdir).await?;
+
+            let subfile_path = subdir.join("subfile");
+            tokio::fs::File::create(subfile_path).await?;
+
+            empty_dir(tempdir.path()).await?;
+            assert!(tokio::fs::read_dir(tempdir.path())
+                .await?
+                .next_entry()
+                .await?
+                .is_none());
+            Ok(())
+        }
+    }
+}
+
 pub mod net {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, ToSocketAddrs};
 
@@ -74,5 +122,36 @@ pub mod net {
             .to_socket_addrs()?
             .next()
             .ok_or_else(|| anyhow::anyhow!("Failed to resolve address `{}`.", addr_str))
+    }
+}
+
+pub mod rand {
+    use rand::distributions::Alphanumeric;
+    use rand::Rng;
+
+    /// Appends a random suffix composed of a hyphen and five random alphanumeric characters.
+    pub fn append_random_suffix(string: &str) -> String {
+        let rng = rand::thread_rng();
+        let slug: String = rng
+            .sample_iter(&Alphanumeric)
+            .take(5)
+            .map(char::from)
+            .collect();
+        format!("{}-{}", string, slug)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::append_random_suffix;
+
+        #[test]
+        fn test_append_random_suffix() -> anyhow::Result<()> {
+            let randomized = append_random_suffix("");
+            let mut chars = randomized.chars();
+            assert_eq!(chars.next(), Some('-'));
+            assert_eq!(chars.clone().count(), 5);
+            assert!(chars.all(|ch| ch.is_ascii_alphanumeric()));
+            Ok(())
+        }
     }
 }

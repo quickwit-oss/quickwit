@@ -663,8 +663,7 @@ mod tests {
 #[cfg(all(test, feature = "kafka-broker-external-service"))]
 mod kafka_broker_tests {
     use quickwit_actors::{create_test_mailbox, Universe};
-    use rand::distributions::Alphanumeric;
-    use rand::Rng;
+    use quickwit_common::rand::append_random_suffix;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;
@@ -673,16 +672,6 @@ mod kafka_broker_tests {
     use super::*;
     use crate::source::{quickwit_supported_sources, SourceActor};
     use crate::SourceConfig;
-
-    fn append_random_suffix(string: &str) -> String {
-        let rng = rand::thread_rng();
-        let slug: String = rng
-            .sample_iter(&Alphanumeric)
-            .take(4)
-            .map(char::from)
-            .collect();
-        format!("{}-{}", string, slug)
-    }
 
     fn create_admin_client(
         bootstrap_servers: &str,
