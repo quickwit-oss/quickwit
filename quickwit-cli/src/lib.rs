@@ -33,6 +33,7 @@ use crossterm::QueueableCommand;
 use json_comments::StripComments;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_common::extract_index_id_from_index_uri;
+use quickwit_common::fs::empty_dir;
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_index_config::{DefaultIndexConfigBuilder, IndexConfig};
 use quickwit_indexing::actors::{
@@ -165,10 +166,16 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let source_config =
         create_source_config_from_args(source_config_path_opt, input_path_opt).await?;
     let scratch_directory = if let Some(scratch_root_path) = args.temp_dir.as_ref() {
+        empty_dir(scratch_root_path).await.with_context(|| {
+            format!(
+                "Failed to empty scratch directory `{}`.",
+                scratch_root_path.display()
+            )
+        })?;
         ScratchDirectory::new_in_path(scratch_root_path.clone())
     } else {
         ScratchDirectory::try_new_temp()
-            .with_context(|| "Failed to create a tempdir for the indexer")?
+            .context("Failed to create a scratch directory for the indexer.")?
     };
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = MetastoreUriResolver::default();

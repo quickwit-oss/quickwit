@@ -92,6 +92,54 @@ pub fn split_file(split_id: &str) -> String {
     format!("{}.split", split_id)
 }
 
+pub mod fs {
+    use std::path::Path;
+
+    use tokio;
+
+    /// Deletes the contents of a directory.
+    pub async fn empty_dir<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
+        let mut entries = tokio::fs::read_dir(path).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            if entry.file_type().await?.is_dir() {
+                tokio::fs::remove_dir_all(entry.path()).await?
+            } else {
+                tokio::fs::remove_file(entry.path()).await?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use tempfile;
+
+        use super::*;
+
+        #[tokio::test]
+        async fn test_empty_dir() -> anyhow::Result<()> {
+            let tempdir = tempfile::tempdir()?;
+
+            let foo_path = tempdir.path().join("foo");
+            tokio::fs::File::create(foo_path).await?;
+
+            let subdir = tempdir.path().join("subdir");
+            tokio::fs::create_dir(&subdir).await?;
+
+            let bar_path = subdir.join("bar");
+            tokio::fs::File::create(bar_path).await?;
+
+            empty_dir(tempdir.path()).await?;
+            assert!(tokio::fs::read_dir(tempdir.path())
+                .await?
+                .next_entry()
+                .await?
+                .is_none());
+            Ok(())
+        }
+    }
+}
+
 pub mod net {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, ToSocketAddrs};
 
