@@ -124,9 +124,8 @@ mod helpers {
 
 #[cfg(test)]
 mod tests {
-    use crate::search_stream::{
-        collector::PartitionValues, serialize_click_house_row_binary, serialize_csv,
-    };
+    use crate::search_stream::collector::PartitionValues;
+    use crate::search_stream::{serialize_click_house_row_binary, serialize_csv};
 
     #[test]
     fn test_serialize_row_binary() {
