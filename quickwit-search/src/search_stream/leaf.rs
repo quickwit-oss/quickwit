@@ -140,7 +140,7 @@ async fn leaf_search_stream_single_split(
     warmup(
         &*searcher,
         query.as_ref(),
-        &request_fields.fast_fields_for_request(), // FIXME: pass the right vec.
+        &request_fields.fast_fields_for_request(),
     )
     .await?;
 
