@@ -74,13 +74,11 @@ impl MergePlanner {
         split: SplitMetadata,
         ctx: &ActorContext<MergePlannerMessage>,
     ) -> Result<(), ActorExitStatus> {
-        info!("process-new-split");
         if self.merge_policy.is_mature(&split) {
-            info!("split is mature");
+            info!(split_id=%split.split_id, num_records=split.num_records, size_in_bytes=split.size_in_bytes, "mature-split");
             return Ok(());
         }
         self.add_split(split);
-        info!("considering-merge");
         let merge_candidates = self.merge_policy.operations(&mut self.young_splits);
         for merge_operation in merge_candidates {
             info!(merge_operation=?merge_operation, "planning-merge");
@@ -106,7 +104,6 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use super::*;
-    use crate::merge_policy::MergeOrDemux;
     use crate::{new_split_id, StableMultitenantWithTimestampMergePolicy};
 
     fn merged_timestamp(splits: &[SplitMetadata]) -> Option<RangeInclusive<i64>> {
@@ -167,11 +164,11 @@ mod tests {
         split_index: &mut HashMap<String, usize>,
         merge_op: &MergeOperation,
     ) -> SplitMetadata {
-        assert_eq!(merge_op.op_type, MergeOrDemux::Merge);
-        for split in &merge_op.splits {
+        assert!(matches!(merge_op, &MergeOperation::Merge { .. }));
+        for split in merge_op.splits() {
             assert!(split_index.remove(&split.split_id).is_some());
         }
-        let merge_split = fake_merge(&merge_op.splits);
+        let merge_split = fake_merge(merge_op.splits());
         split_index.insert(merge_split.split_id.clone(), merge_split.num_records);
         merge_split
     }

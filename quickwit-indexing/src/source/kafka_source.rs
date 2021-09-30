@@ -190,7 +190,8 @@ impl Source for KafkaSource {
         let mut docs = Vec::new();
         let mut checkpoint_delta = CheckpointDelta::default();
 
-        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT * 4 / 5);
+        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
+
 
         let mut message_stream = Box::pin(self.consumer.stream().take_until(deadline));
 
@@ -245,8 +246,7 @@ impl Source for KafkaSource {
                 .record_partition_delta(partition_id, previous_position, current_position)
                 .context("Failed to record partition delta.")?;
 
-            // Above
-            if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
+          if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
                 break;
             }
         }
@@ -264,6 +264,10 @@ impl Source for KafkaSource {
             return Err(ActorExitStatus::Success);
         }
         Ok(())
+    }
+
+    fn name(&self) -> String {
+        "kafka-source".to_string()
     }
 
     fn observable_state(&self) -> serde_json::Value {

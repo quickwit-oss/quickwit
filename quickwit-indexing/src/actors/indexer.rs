@@ -105,6 +105,7 @@ impl IndexerState {
         let index_builder = IndexBuilder::new().settings(index_settings).schema(schema);
         let indexed_split =
             IndexedSplit::new_in_dir(self.index_id.clone(), &self.indexer_params, index_builder)?;
+        info!(split_id=%indexed_split.split_id, "new-split");
         Ok(indexed_split)
     }
 
