@@ -301,15 +301,15 @@ impl PostgresqlMetastore {
         Ok(succeeded_split_ids)
     }
 
-    /// Mark splits as deleted.
-    /// Returns the successful split IDs.
-    fn mark_as_deleted(
+    /// Mark splits for deletion.
+    /// Returns the IDs of the splits that were successfully marked for deletion.
+    fn mark_splits_for_deletion(
         &self,
         conn: &PooledConnection<ConnectionManager<PgConnection>>,
         index_id: &str,
         split_ids: &[&str],
     ) -> MetastoreResult<Vec<String>> {
-        // Select splits to matk as deleted.
+        // Select splits to mark for deletion.
         let select_splits_statement = schema::splits::dsl::splits.filter(
             schema::splits::dsl::index_id
                 .eq(index_id)
@@ -386,7 +386,7 @@ impl PostgresqlMetastore {
             succeeded_split_ids.push(updated_split.split_id);
         }
 
-        debug!(succeeded_split_ids=?succeeded_split_ids, "Mark as deleted");
+        debug!(succeeded_split_ids=?succeeded_split_ids, "Mark for deletion");
 
         Ok(succeeded_split_ids)
     }
@@ -765,15 +765,15 @@ impl Metastore for PostgresqlMetastore {
                 )?;
             }
 
-            // Mark as deleted.
-            let mark_as_deleted_split_ids =
-                self.mark_as_deleted(&conn, index_id, replaced_split_ids)?;
+            // Mark for deletion.
+            let mark_for_deletion_split_ids =
+                self.mark_splits_for_deletion(&conn, index_id, replaced_split_ids)?;
 
-            if mark_as_deleted_split_ids.len() < replaced_split_ids.len() {
-                // Return an error if there are any splits that could not be marked as deleted.
+            if mark_for_deletion_split_ids.len() < replaced_split_ids.len() {
+                // Return an error if there are any splits that could not be marked for deletion.
                 check_all_splits_were_modified(
                     replaced_split_ids,
-                    &mark_as_deleted_split_ids
+                    &mark_for_deletion_split_ids
                         .iter()
                         .map(String::as_str)
                         .collect::<Vec<_>>(),
@@ -920,7 +920,7 @@ impl Metastore for PostgresqlMetastore {
         Ok(split_metadata_footer_offset_list)
     }
 
-    async fn mark_splits_as_deleted<'a>(
+    async fn mark_splits_for_deletion<'a>(
         &self,
         index_id: &str,
         split_ids: &[&'a str],
@@ -941,23 +941,22 @@ impl Metastore for PostgresqlMetastore {
         }
 
         conn.transaction::<_, MetastoreError, _>(|| {
-            // Mark as deleted.
-            let mark_as_deleted_split_ids = self.mark_as_deleted(&conn, index_id, split_ids)?;
+            // Mark for deletion.
+            let mark_for_deletion_split_ids =
+                self.mark_splits_for_deletion(&conn, index_id, split_ids)?;
 
-            if mark_as_deleted_split_ids.len() < split_ids.len() {
-                // Return an error if there are any splits that could not be marked as deleted.
+            if mark_for_deletion_split_ids.len() < split_ids.len() {
+                // Return an error if there are any splits that could not be marked for deletion.
                 check_all_splits_were_modified(
                     split_ids,
-                    &mark_as_deleted_split_ids
+                    &mark_for_deletion_split_ids
                         .iter()
                         .map(String::as_str)
                         .collect::<Vec<_>>(),
                 )?;
             }
-
             Ok(())
         })?;
-
         Ok(())
     }
 

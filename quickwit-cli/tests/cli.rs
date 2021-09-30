@@ -371,7 +371,7 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
 
     let split_ids = &[splits[0].split_metadata.split_id.as_str()];
     metastore
-        .mark_splits_as_deleted(index_id, split_ids)
+        .mark_splits_for_deletion(index_id, split_ids)
         .await?;
     make_command(
         format!(
@@ -466,7 +466,7 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     // without deleting the files.
     let split_ids = vec![splits[0].split_metadata.split_id.as_str()];
     metastore
-        .mark_splits_as_deleted(index_id, &split_ids)
+        .mark_splits_for_deletion(index_id, &split_ids)
         .await?;
     metastore.delete_splits(index_id, &split_ids).await?;
     let mut meta = splits[0].clone();
