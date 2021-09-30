@@ -236,6 +236,9 @@ message SearchStreamRequest {
 
   // Split tag filter
   repeated string tags = 8;
+
+  // The field by which we want to partition
+  optional string partition_by_field = 9;
 }
 
 message LeafSearchStreamRequest {

@@ -262,6 +262,7 @@ mod tests {
             end_timestamp: None,
             fast_field: "fast".to_string(),
             output_format: 0,
+            partition_by_field: None,
             tags: vec![],
         };
         LeafSearchStreamRequest {

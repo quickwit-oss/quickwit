@@ -198,6 +198,7 @@ mod tests {
             end_timestamp: None,
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
+            partition_by_field: None,
             tags: vec![],
         };
         let mut metastore = MockMetastore::new();
