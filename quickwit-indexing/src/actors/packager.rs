@@ -253,6 +253,7 @@ fn create_packaged_split(
         size_in_bytes: split.docs_size_in_bytes,
         tags,
         footer_offsets: footer_start..footer_end,
+        split_date_of_birth: split.split_date_of_birth,
     };
     Ok(packaged_split)
 }
@@ -347,7 +348,7 @@ mod tests {
             time_range: timerange_opt,
             num_docs,
             docs_size_in_bytes: num_docs * 15, //< bogus number
-            start_time: Instant::now(),
+            split_date_of_birth: Instant::now(),
             index,
             index_writer,
             split_scratch_directory,

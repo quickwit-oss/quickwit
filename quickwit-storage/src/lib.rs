@@ -40,6 +40,11 @@ mod prefix_storage;
 mod ram_storage;
 mod retry;
 mod storage_resolver;
+mod storage_with_upload_cache;
+
+pub use storage_with_upload_cache::{
+    create_storage_with_upload_cache, CacheParams, StorageWithUploadCache,
+};
 
 pub use self::bundle_storage::{
     BundleStorage, BundleStorageBuilder, BundleStorageFileOffsets, BUNDLE_FILENAME,

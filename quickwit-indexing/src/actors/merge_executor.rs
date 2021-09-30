@@ -32,9 +32,8 @@ use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::{Directory, Index, IndexMeta, SegmentId};
 use tracing::{debug, info};
 
-use crate::merge_policy::MergeOrDemux;
-use crate::models::{IndexedSplit, MergeScratch};
-use crate::new_split_id;
+use crate::merge_policy::MergeOperation;
+use crate::models::{IndexedSplit, MergeScratch, ScratchDirectory};
 
 pub struct MergeExecutor {
     index_id: String,
@@ -92,12 +91,20 @@ impl SyncActor for MergeExecutor {
         merge_scratch: MergeScratch,
         ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
-        match merge_scratch.merge_operation.op_type {
-            MergeOrDemux::Merge => self.process_merge(merge_scratch, ctx)?,
-            MergeOrDemux::Demux => {
-                // ...
-                unimplemented!();
+        match merge_scratch.merge_operation {
+            MergeOperation::Merge {
+                merge_split_id: split_id,
+                splits,
+            } => {
+                self.process_merge(
+                    split_id,
+                    splits,
+                    merge_scratch.merge_scratch_directory,
+                    merge_scratch.downloaded_splits_directory,
+                    ctx,
+                )?;
             }
+            MergeOperation::Demux { .. } => unimplemented!(),
         }
         Ok(())
     }
@@ -166,41 +173,38 @@ impl MergeExecutor {
 
     fn process_merge(
         &mut self,
-        merge_scratch: MergeScratch,
+        split_merge_id: String,
+        splits: Vec<SplitMetadata>,
+        merge_scratch_directory: ScratchDirectory,
+        downloaded_splits_directory: ScratchDirectory,
         ctx: &ActorContext<MergeScratch>,
     ) -> anyhow::Result<()> {
-        let replaced_split_ids: Vec<String> = merge_scratch
-            .merge_operation
-            .splits
-            .iter()
-            .map(|split| split.split_id.clone())
-            .collect();
-        let (union_index_meta, split_directories) = open_split_directories(
-            merge_scratch.downloaded_splits_directory.path(),
-            &replaced_split_ids,
-        )?;
+        let start = Instant::now();
+        info!(split_merge_id=%split_merge_id, "merge-start");
+        let replaced_split_ids: Vec<String> =
+            splits.iter().map(|split| split.split_id.clone()).collect();
+        let (union_index_meta, split_directories) =
+            open_split_directories(downloaded_splits_directory.path(), &replaced_split_ids)?;
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         let merged_directory = {
             let _protected_zone_guard = ctx.protect_zone();
             merge_split_directories(
                 union_index_meta,
                 split_directories,
-                merge_scratch.merge_scratch_directory.path(),
+                merge_scratch_directory.path(),
             )?
         };
         // This will have the side effect of deleting the directory containing the downloaded
         // splits.
-        let time_range = merge_time_range(&merge_scratch.merge_operation.splits);
-        let docs_size_in_bytes = sum_doc_sizes_in_bytes(&merge_scratch.merge_operation.splits);
-        let num_docs = sum_num_docs(&merge_scratch.merge_operation.splits);
+        let time_range = merge_time_range(&splits);
+        let docs_size_in_bytes = sum_doc_sizes_in_bytes(&splits);
+        let num_docs = sum_num_docs(&splits);
 
-        let merged_split_scratch_directory = merge_scratch.into_merge_scratch_directory();
         let merged_index = Index::open(merged_directory)?;
         let index_writer = merged_index.writer_with_num_threads(1, 3_000_000)?;
-        let split_id = new_split_id();
-        info!(split_id=split_id.as_str(), index_id=self.index_id.as_str(), indexed_split=?"sending-merge-split-to-package");
+        info!(split_merge_id=%split_merge_id, elapsed_secs=start.elapsed().as_secs_f32(), "merge-stop");
         let indexed_split = IndexedSplit {
-            split_id,
+            split_id: split_merge_id,
             index_id: self.index_id.clone(),
             replaced_split_ids,
 
@@ -208,11 +212,11 @@ impl MergeExecutor {
             num_docs,
             docs_size_in_bytes,
             // start_time is not very interesting here.
-            start_time: Instant::now(),
+            split_date_of_birth: Instant::now(),
             checkpoint_delta: CheckpointDelta::default(), //< TODO fixme
             index: merged_index,
             index_writer,
-            split_scratch_directory: merged_split_scratch_directory,
+            split_scratch_directory: merge_scratch_directory,
         };
         ctx.send_message_blocking(&self.merge_packager_mailbox, indexed_split)?;
         Ok(())
@@ -228,7 +232,7 @@ mod tests {
     use quickwit_metastore::SplitMetadata;
 
     use super::*;
-    use crate::merge_policy::{MergeOperation, MergeOrDemux};
+    use crate::merge_policy::MergeOperation;
     use crate::models::ScratchDirectory;
     use crate::TestSandbox;
 
@@ -272,9 +276,9 @@ mod tests {
                 .await?;
         }
         let merge_scratch = MergeScratch {
-            merge_operation: MergeOperation {
+            merge_operation: MergeOperation::Merge {
+                merge_split_id: crate::new_split_id(),
                 splits,
-                op_type: MergeOrDemux::Merge,
             },
             merge_scratch_directory,
             downloaded_splits_directory,

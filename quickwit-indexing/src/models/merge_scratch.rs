@@ -27,9 +27,3 @@ pub struct MergeScratch {
     pub merge_scratch_directory: ScratchDirectory,
     pub downloaded_splits_directory: ScratchDirectory,
 }
-
-impl MergeScratch {
-    pub fn into_merge_scratch_directory(self) -> ScratchDirectory {
-        self.merge_scratch_directory
-    }
-}

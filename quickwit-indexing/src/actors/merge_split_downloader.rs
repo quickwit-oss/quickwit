@@ -65,7 +65,7 @@ impl MergeSplitDownloader {
         let merge_scratch_directory = self.scratch_directory.temp_child()?;
         let downloaded_splits_directory = merge_scratch_directory.temp_child()?;
         self.download_splits(
-            &merge_operation.splits,
+            merge_operation.splits(),
             downloaded_splits_directory.path(),
             ctx,
         )
@@ -109,7 +109,6 @@ mod tests {
     use quickwit_storage::RamStorageBuilder;
 
     use super::*;
-    use crate::merge_policy::MergeOrDemux;
     use crate::new_split_id;
 
     #[tokio::test]
@@ -144,10 +143,7 @@ mod tests {
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) =
             universe.spawn_actor(merge_split_downloader).spawn_async();
-        let merge_operation = MergeOperation {
-            splits: splits_to_merge,
-            op_type: MergeOrDemux::Merge,
-        };
+        let merge_operation = MergeOperation::new_merge_operation(splits_to_merge);
         universe
             .send_message(&merge_split_downloader_mailbox, merge_operation)
             .await?;
@@ -157,9 +153,12 @@ mod tests {
         let merge_scratchs = merge_executor_inbox.drain_available_message_for_test();
         assert_eq!(merge_scratchs.len(), 1);
         let merge_scratch = merge_scratchs.into_iter().next().unwrap();
-        assert_eq!(merge_scratch.merge_operation.op_type, MergeOrDemux::Merge);
-        assert_eq!(merge_scratch.merge_operation.splits.len(), 10);
-        for split in &merge_scratch.merge_operation.splits {
+        assert!(matches!(
+            merge_scratch.merge_operation,
+            MergeOperation::Merge { .. }
+        ));
+        assert_eq!(merge_scratch.merge_operation.splits().len(), 10);
+        for split in merge_scratch.merge_operation.splits() {
             let split_filename = split_file(&split.split_id);
             let split_filepath = merge_scratch
                 .downloaded_splits_directory

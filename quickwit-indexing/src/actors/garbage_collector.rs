@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -29,7 +30,7 @@ use tracing::info;
 use crate::run_garbage_collect;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
-const GRACE_PERIOD: Duration = Duration::from_secs(2 * 60); // 2 minutes
+const GRACE_PERIOD: Duration = Duration::from_secs(60 * 60); // 1 hour
 
 #[derive(Debug, Clone, Default)]
 pub struct GarbageCollectorCounters {
@@ -100,6 +101,21 @@ impl AsyncActor for GarbageCollector {
             false,
         )
         .await?;
+
+        if !deletion_stats.candidate_entries.is_empty() {
+            let deletion_success: HashSet<&str> = deletion_stats
+                .deleted_entries
+                .iter()
+                .map(|deleted_entry| deleted_entry.file_name.as_str())
+                .collect();
+            let deletion_failures: Vec<&str> = deletion_stats
+                .candidate_entries
+                .iter()
+                .map(|file_entry| file_entry.file_name.as_str())
+                .filter(|file_name| !deletion_success.contains(file_name))
+                .collect();
+            info!(deletion_success=?deletion_success, deletion_failures=?deletion_failures, "gc-delete");
+        }
 
         self.counters.num_deleted_files += deletion_stats.deleted_entries.len();
         self.counters.num_deleted_bytes += deletion_stats
@@ -172,7 +188,7 @@ mod tests {
             },
         );
         mock_metastore
-            .expect_mark_splits_as_deleted()
+            .expect_mark_splits_for_deletion()
             .times(1)
             .returning(|index_id, split_ids| {
                 assert_eq!(index_id, "foo-index");
@@ -227,7 +243,7 @@ mod tests {
             },
         );
         mock_metastore
-            .expect_mark_splits_as_deleted()
+            .expect_mark_splits_for_deletion()
             .times(2)
             .returning(|index_id, split_ids| {
                 assert_eq!(index_id, "foo-index");
