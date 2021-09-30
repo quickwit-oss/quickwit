@@ -156,7 +156,7 @@ async fn leaf_search_stream_single_split(
         let mut buffer = Vec::new();
         match m_request_fields.fast_field_types() {
             (Type::I64, None) => {
-                let collected_values = collect_values::<u64>(
+                let collected_values = collect_values::<i64>(
                     &m_request_fields,
                     stream_request.start_timestamp,
                     stream_request.end_timestamp,
