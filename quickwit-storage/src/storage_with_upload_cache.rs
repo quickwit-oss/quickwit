@@ -53,8 +53,8 @@ impl Default for CacheParams {
     fn default() -> Self {
         Self {
             max_num_files: 1000,
-            max_num_bytes: 10_000_000_000, // 10GB
-            max_file_size: 2_500_000_000,  // 2.5GB
+            max_num_bytes: 40_000_000_000, // 40GB
+            max_file_size: 10_000_000_000, // 10GB
         }
     }
 }
