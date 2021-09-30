@@ -155,7 +155,6 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
         if splits.is_empty() {
             return Vec::new();
         }
-        debug!(splits=?splits, "merge policy");
         let original_num_splits = splits.len();
         // First we isolate splits that are too large.
         // We will read them at the end.
@@ -171,9 +170,12 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
                 .map(|time_range| Reverse(*time_range.end()));
             (time_end, split.num_records)
         });
+        debug!(splits=?splits, "merge-policy-run");
+
         // Splits should naturally have an increasing num_merge
         let split_levels = self.build_split_levels(splits);
         for split_range in split_levels.into_iter().rev() {
+            debug!(splits=?&splits[split_range.clone()]);
             if let Some(merge_range) = self.merge_candidate_from_level(splits, split_range) {
                 let splits_in_merge: Vec<SplitMetadata> = splits.drain(merge_range).collect();
                 let merge_operation = MergeOperation::new_merge_operation(splits_in_merge);
@@ -237,13 +239,16 @@ impl StableMultitenantWithTimestampMergePolicy {
         let mut current_level_start_ord = 0;
         let mut current_level_max_docs = (splits[0].num_records * 3).max(self.min_level_num_docs);
 
+        let mut levels = vec![(0..current_level_max_docs)]; // for logging only
         for (split_ord, split) in splits.iter().enumerate() {
             if split.num_records >= current_level_max_docs {
                 split_levels.push(current_level_start_ord..split_ord);
                 current_level_start_ord = split_ord;
                 current_level_max_docs = 3 * split.num_records;
+                levels.push(split.num_records..current_level_max_docs)
             }
         }
+        debug!(levels=?levels);
         split_levels.push(current_level_start_ord..splits.len());
         split_levels
     }
