@@ -550,7 +550,7 @@ mod tests {
         let mut partitions_values = vec![];
         while cursor < buffer.len() {
             let partition_slice: [u8; 8] = buffer[cursor..cursor + 8].try_into().unwrap();
-            let partition = u64::from_le_bytes(partition_slice.try_into().unwrap());
+            let partition = u64::from_le_bytes(partition_slice);
             cursor += 8;
 
             let payload_size_slice: [u8; 8] = buffer[cursor..cursor + 8].try_into().unwrap();

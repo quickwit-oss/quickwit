@@ -156,7 +156,7 @@ mod tests {
             partition_value: 2u64,
             fast_field_values: vec![5u64],
         };
-        super::serialize_partitions::<u64, u64>(&vec![partition_1, partition_2], &mut buffer)
+        super::serialize_partitions::<u64, u64>(&[partition_1, partition_2], &mut buffer)
             .unwrap();
         let expected_buffer: Vec<u8> = vec![
             1u64.to_le_bytes(),
