@@ -163,7 +163,7 @@ async fn leaf_search_stream_single_split(
                     searcher,
                     query.as_ref(),
                 )?;
-                super::serialize::<u64>(&collected_values, &mut buffer, output_format).map_err(
+                super::serialize::<i64>(&collected_values, &mut buffer, output_format).map_err(
                     |_| {
                         SearchError::InternalError(
                             "Error when serializing i64 during export".to_owned(),
