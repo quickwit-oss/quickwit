@@ -119,7 +119,6 @@ fn check_all_splits_were_modified<'a>(
             });
         }
     }
-
     Ok(())
 }
 
@@ -129,6 +128,8 @@ pub struct PostgresqlMetastore {
     uri: String,
     connection_pool: Arc<Pool<ConnectionManager<PgConnection>>>,
 }
+
+type Conn = PooledConnection<ConnectionManager<PgConnection>>;
 
 impl PostgresqlMetastore {
     /// Creates a meta store given a database URI.
@@ -181,6 +182,15 @@ impl PostgresqlMetastore {
         Ok(PostgresqlMetastore {
             uri: database_uri.to_string(),
             connection_pool,
+        })
+    }
+
+    fn get_conn(&self) -> MetastoreResult<Conn> {
+        self.connection_pool.get().map_err(|err| {
+            error!(err=?err, "Failed to get connection from pool.");
+            MetastoreError::ConnectionError {
+                message: format!("Failed to get connection from pool: `{:?}`.", err),
+            }
         })
     }
 
@@ -512,19 +522,11 @@ impl Metastore for PostgresqlMetastore {
                 cause: anyhow::anyhow!(err),
             }
         })?;
-
         let model_index = model::Index {
             index_id: index_metadata.index_id.clone(),
             index_metadata_json,
         };
-
-        let conn = self.connection_pool.get().map_err(|err| {
-            error!(err=?err, "Failed to get connection");
-            MetastoreError::ConnectionError {
-                message: format!("Failed to get connection {:?}", err),
-            }
-        })?;
-
+        let conn = self.get_conn()?;
         conn.transaction::<_, MetastoreError, _>(|| {
             // Create index.
             let create_index_statement =
@@ -551,23 +553,14 @@ impl Metastore for PostgresqlMetastore {
                         MetastoreError::DbError(err)
                     }
                 })?;
-
             debug!(index_id=?model_index.index_id, "The index has been created");
-
             Ok(())
         })?;
-
         Ok(())
     }
 
     async fn delete_index(&self, index_id: &str) -> MetastoreResult<()> {
-        let conn = self.connection_pool.get().map_err(|err| {
-            error!(err=?err, "Failed to get connection");
-            MetastoreError::ConnectionError {
-                message: format!("Failed to get connection {:?}", err),
-            }
-        })?;
-
+        let conn = self.get_conn()?;
         conn.transaction::<_, MetastoreError, _>(|| {
             // Delete index.
             let delete_index_statement =
@@ -582,12 +575,9 @@ impl Metastore for PostgresqlMetastore {
                     index_id: index_id.to_string(),
                 });
             }
-
-            debug!(index_id=?index_id, "The index has been deleted");
-
             Ok(())
         })?;
-
+        info!(index_id = index_id, "deleted-index");
         Ok(())
     }
 
@@ -632,14 +622,7 @@ impl Metastore for PostgresqlMetastore {
             split_metadata_json: split_metadata_and_footer_offsets_json,
             index_id: index_id.to_string(),
         };
-
-        let conn = self.connection_pool.get().map_err(|err| {
-            error!(err=?err, "Failed to get connection");
-            MetastoreError::ConnectionError {
-                message: format!("Failed to get connection {:?}", err),
-            }
-        })?;
-
+        let conn = self.get_conn()?;
         conn.transaction::<_, MetastoreError, _>(|| {
             // Insert a new split metadata as `Staged` state.
             let insert_staged_split_statement =
@@ -675,12 +658,9 @@ impl Metastore for PostgresqlMetastore {
                     }
                 }
             })?;
-
             debug!(index_id=?index_id, spliet_id=?model_split.split_id, "The split has been staged");
-
             Ok(())
         })?;
-
         Ok(())
     }
 
@@ -690,13 +670,7 @@ impl Metastore for PostgresqlMetastore {
         split_ids: &[&'a str],
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
-        let conn = self.connection_pool.get().map_err(|err| {
-            error!(err=?err, "Failed to get connection");
-            MetastoreError::ConnectionError {
-                message: format!("Failed to get connection {:?}", err),
-            }
-        })?;
-
+        let conn = self.get_conn()?;
         // Check for the existence of index.
         let index_exists: bool = self.is_index_exist(&conn, index_id)?;
         if !index_exists {
@@ -704,7 +678,6 @@ impl Metastore for PostgresqlMetastore {
                 index_id: index_id.to_string(),
             });
         }
-
         conn.transaction::<_, MetastoreError, _>(|| {
             // Update the index checkpoint.
             self.apply_checkpoint_delta(&conn, index_id, checkpoint_delta)?;
@@ -735,13 +708,7 @@ impl Metastore for PostgresqlMetastore {
         new_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        let conn = self.connection_pool.get().map_err(|err| {
-            error!(err=?err, "Failed to get connection");
-            MetastoreError::ConnectionError {
-                message: format!("Failed to get connection {:?}", err),
-            }
-        })?;
-
+        let conn = self.get_conn()?;
         // Check for the existence of index.
         let index_exists: bool = self.is_index_exist(&conn, index_id)?;
         if !index_exists {
@@ -779,10 +746,8 @@ impl Metastore for PostgresqlMetastore {
                         .collect::<Vec<_>>(),
                 )?;
             }
-
             Ok(())
         })?;
-
         Ok(())
     }
 
@@ -793,13 +758,7 @@ impl Metastore for PostgresqlMetastore {
         time_range_opt: Option<Range<i64>>,
         tags: &[String],
     ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
-        let conn = self.connection_pool.get().map_err(|err| {
-            error!(err=?err, "Failed to get connection");
-            MetastoreError::ConnectionError {
-                message: format!("Failed to get connection {:?}", err),
-            }
-        })?;
-
+        let conn = self.get_conn()?;
         // Check for the existence of index.
         let index_exists: bool = self.is_index_exist(&conn, index_id)?;
         if !index_exists {
@@ -807,7 +766,6 @@ impl Metastore for PostgresqlMetastore {
                 index_id: index_id.to_string(),
             });
         }
-
         let list_splits_statement = if let Some(time_range) = time_range_opt {
             schema::splits::dsl::splits
                 .filter(
@@ -865,7 +823,6 @@ impl Metastore for PostgresqlMetastore {
                 split_metadata_footer_offset_list.push(split_metadata_and_footer_offsets);
             }
         }
-
         Ok(split_metadata_footer_offset_list)
     }
 
@@ -873,14 +830,7 @@ impl Metastore for PostgresqlMetastore {
         &self,
         index_id: &str,
     ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
-        let conn = self
-            .connection_pool
-            .get()
-            .map_err(|err| MetastoreError::InternalError {
-                message: "Failed to get connection".to_string(),
-                cause: anyhow::anyhow!(err),
-            })?;
-
+        let conn = self.get_conn()?;
         // Check for the existence of index.
         let index_exists: bool = self.is_index_exist(&conn, index_id)?;
         if !index_exists {
@@ -888,7 +838,6 @@ impl Metastore for PostgresqlMetastore {
                 index_id: index_id.to_string(),
             });
         }
-
         let list_all_splits_statement =
             schema::splits::dsl::splits.filter(schema::splits::dsl::index_id.eq(index_id));
         debug!(sql=%debug_query::<Pg, _>(&list_all_splits_statement).to_string());
@@ -916,7 +865,6 @@ impl Metastore for PostgresqlMetastore {
                 };
             split_metadata_footer_offset_list.push(split_metadata_and_footer_offsets);
         }
-
         Ok(split_metadata_footer_offset_list)
     }
 
@@ -925,13 +873,7 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        let conn = self.connection_pool.get().map_err(|err| {
-            error!(err=?err, "Failed to get connection");
-            MetastoreError::ConnectionError {
-                message: format!("Failed to get connection {:?}", err),
-            }
-        })?;
-
+        let conn = self.get_conn()?;
         // Check for the existence of index.
         let index_exists: bool = self.is_index_exist(&conn, index_id)?;
         if !index_exists {
@@ -939,17 +881,16 @@ impl Metastore for PostgresqlMetastore {
                 index_id: index_id.to_string(),
             });
         }
-
         conn.transaction::<_, MetastoreError, _>(|| {
             // Mark for deletion.
-            let mark_for_deletion_split_ids =
+            let marked_for_deletion_split_ids =
                 self.mark_splits_for_deletion(&conn, index_id, split_ids)?;
 
-            if mark_for_deletion_split_ids.len() < split_ids.len() {
+            if marked_for_deletion_split_ids.len() < split_ids.len() {
                 // Return an error if there are any splits that could not be marked for deletion.
                 check_all_splits_were_modified(
                     split_ids,
-                    &mark_for_deletion_split_ids
+                    &marked_for_deletion_split_ids
                         .iter()
                         .map(String::as_str)
                         .collect::<Vec<_>>(),
@@ -965,13 +906,7 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        let conn = self.connection_pool.get().map_err(|err| {
-            error!(err=?err, "Failed to get connection");
-            MetastoreError::ConnectionError {
-                message: format!("Failed to get connection {:?}", err),
-            }
-        })?;
-
+        let conn = self.get_conn()?;
         // Check for the existence of index.
         let index_exists: bool = self.is_index_exist(&conn, index_id)?;
         if !index_exists {
@@ -979,7 +914,6 @@ impl Metastore for PostgresqlMetastore {
                 index_id: index_id.to_string(),
             });
         }
-
         conn.transaction::<_, MetastoreError, _>(|| {
             // Delete splits.
             let deleted_split_ids = self.delete_splits(&conn, index_id, split_ids)?;
@@ -994,21 +928,13 @@ impl Metastore for PostgresqlMetastore {
                         .collect::<Vec<_>>(),
                 )?;
             }
-
             Ok(())
         })?;
-
         Ok(())
     }
 
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
-        let conn = self.connection_pool.get().map_err(|err| {
-            error!(err=?err, "Failed to get connection");
-            MetastoreError::ConnectionError {
-                message: format!("Failed to get connection {:?}", err),
-            }
-        })?;
-
+        let conn = self.get_conn()?;
         let select_index_statement =
             schema::indexes::dsl::indexes.filter(schema::indexes::dsl::index_id.eq(index_id));
         debug!(sql=%debug_query::<Pg, _>(&select_index_statement).to_string());
