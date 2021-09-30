@@ -150,11 +150,11 @@ mod tests {
                     || path == Path::new("c.split")
             );
             if path == Path::new("c.split") {
-                return Box::pin(async {
-                    Err(StorageErrorKind::InternalError.with_error(anyhow::anyhow!("Some error")))
-                });
+                return Err(
+                    StorageErrorKind::InternalError.with_error(anyhow::anyhow!("Some error"))
+                );
             }
-            Box::pin(async { Ok(()) })
+            Ok(())
         });
 
         let mut mock_metastore = MockMetastore::default();
@@ -211,7 +211,7 @@ mod tests {
         let mut mock_storage = MockStorage::default();
         mock_storage.expect_delete().times(4).returning(|path| {
             assert!(path == Path::new("a.split") || path == Path::new("b.split"));
-            Box::pin(async { Ok(()) })
+            Ok(())
         });
 
         let mut mock_metastore = MockMetastore::default();

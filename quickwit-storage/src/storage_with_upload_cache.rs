@@ -85,7 +85,7 @@ impl StorageWithUploadCache {
     /// Tries to create a folder `cache_dir/INTERNAL_CACHE_DIR_NAME` if it does not exist.
     /// List the content of `cache_dir/INTERNAL_CACHE_DIR_NAME` as initial cache content.
     /// Removes and ignores all files ending with `CACHE_TEMP_FILE_EXTENSION`
-    pub fn create(
+    fn create(
         remote_storage: Arc<dyn Storage>,
         cache_dir: &Path,
         cache_params: CacheParams,
