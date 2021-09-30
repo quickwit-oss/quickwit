@@ -82,6 +82,9 @@ pub trait Source: Send + Sync + 'static {
         Ok(())
     }
 
+    /// A name identifying the type of source.
+    fn name(&self) -> String;
+
     /// Returns an observable_state for the actor.
     ///
     /// This object is simply a json object, and its content may vary depending on the
@@ -113,6 +116,10 @@ impl fmt::Debug for Loop {
 impl Actor for SourceActor {
     type Message = Loop;
     type ObservableState = serde_json::Value;
+
+    fn name(&self) -> String {
+        self.source.name()
+    }
 
     fn observable_state(&self) -> Self::ObservableState {
         self.source.observable_state()
@@ -174,9 +181,12 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
 ///     "source_id": "my-kafka-source",
 ///     "source_type": "kafka",
 ///     "params": {
-///         "bootstrap_servers": "localhost:9092",
-///         "group_id": "my-kafka-source-consumer-group",
-///         "topic": "my-kafka-source-topic"
+///         "topic": "my-kafka-source-topic",
+///         "client_log_level": "warn",
+///         "client_params": {
+///             "bootstrap.servers": "localhost:9092",
+///             "group.id": "my-kafka-source-consumer-group"
+///         }
 ///     }
 /// }
 /// ```

@@ -148,20 +148,14 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
         // Splits should naturally have an increasing num_merge
         let split_levels = self.build_split_levels(splits);
         for split_range in split_levels.into_iter().rev() {
-            if split_range.len() < self.merge_factor {
-                continue;
+            if let Some(merge_range) = self.merge_candidate_from_level(splits, split_range) {
+                let splits_in_merge: Vec<SplitMetadata> = splits.drain(merge_range).collect();
+                let merge_operation = MergeOperation {
+                    splits: splits_in_merge,
+                    op_type: MergeOrDemux::Merge,
+                };
+                merge_operations.push(merge_operation);
             }
-            let num_splits_in_merge = split_range.len().min(self.merge_factor_max);
-            let mut splits_in_merge: Vec<SplitMetadata> = Vec::new();
-            for split_ord in split_range.rev().take(num_splits_in_merge) {
-                let split = splits.swap_remove(split_ord);
-                splits_in_merge.push(split);
-            }
-            let merge_operation = MergeOperation {
-                splits: splits_in_merge,
-                op_type: MergeOrDemux::Merge,
-            };
-            merge_operations.push(merge_operation);
         }
         splits.extend(splits_too_large);
         debug_assert_eq!(
@@ -181,6 +175,20 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
         // TODO: include demux signature in the is_mature logic.
         split.num_records > self.max_merge_docs
     }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum MergeCandidateSize {
+    /// The split candidate is too small to be considered for execution.
+    TooSmall,
+    /// The split candidate is good to go.
+    ValidSplit,
+    /// We should not add an extra split in this candidate.
+    /// This can happen for any of the two following reasons:
+    /// - the number of splits involved already reached `merge_factor_max`.
+    /// - the overall number of docs that will end up in the merged segment already
+    /// exceeds `max_merge_docs`.
+    OneMoreSplitWouldBeTooBig,
 }
 
 impl StableMultitenantWithTimestampMergePolicy {
@@ -215,6 +223,57 @@ impl StableMultitenantWithTimestampMergePolicy {
         }
         split_levels.push(current_level_start_ord..splits.len());
         split_levels
+    }
+
+    /// Given splits tries to select a subrange of level_range that would be a good merge candidate.
+    fn merge_candidate_from_level(
+        &self,
+        splits: &[SplitMetadata],
+        level_range: Range<usize>,
+    ) -> Option<Range<usize>> {
+        let merge_candidate_end = level_range.end;
+        let mut merge_candidate_start = merge_candidate_end;
+        for split_ord in level_range.rev() {
+            if self.merge_candidate_size(&splits[merge_candidate_start..merge_candidate_end])
+                == MergeCandidateSize::OneMoreSplitWouldBeTooBig
+            {
+                break;
+            }
+            merge_candidate_start = split_ord;
+        }
+        if self.merge_candidate_size(&splits[merge_candidate_start..merge_candidate_end])
+            == MergeCandidateSize::TooSmall
+        {
+            return None;
+        }
+        Some(merge_candidate_start..merge_candidate_end)
+    }
+
+    /// Returns `MergeCandidateSize` iff we should stop adding extra split into this
+    /// merge candidate.
+    fn merge_candidate_size(&self, splits: &[SplitMetadata]) -> MergeCandidateSize {
+        // We don't perform merge with a single segment. We
+        // may relax this in the future in order to compact deletes.
+        if splits.len() <= 1 {
+            return MergeCandidateSize::TooSmall;
+        }
+
+        // There are already enough splits in this merge.
+        if splits.len() >= self.merge_factor_max {
+            return MergeCandidateSize::OneMoreSplitWouldBeTooBig;
+        }
+        let num_docs_in_merge: usize = splits.iter().map(|split| split.num_records).sum();
+
+        // The resulting split will exceed `max_merge_docs`.
+        if num_docs_in_merge >= self.max_merge_docs {
+            return MergeCandidateSize::OneMoreSplitWouldBeTooBig;
+        }
+
+        if splits.len() < self.merge_factor {
+            return MergeCandidateSize::TooSmall;
+        }
+
+        MergeCandidateSize::ValidSplit
     }
 
     fn case_levels_given_growth_factor(&self, growth_factor: usize) -> Vec<usize> {
@@ -462,6 +521,50 @@ mod tests {
         assert_eq!(splits.len(), 1);
         assert_eq!(splits[0].num_records, 10_000_000);
         assert_eq!(merge_ops.len(), 1);
+    }
+
+    #[test]
+    fn test_merge_policy_splits_too_large_are_ignored() {
+        let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
+        let mut splits = create_splits(vec![9_999_999, 10_000_000]);
+        let merge_ops = merge_policy.operations(&mut splits);
+        assert_eq!(splits.len(), 2);
+        assert_eq!(splits[0].num_records, 9_999_999);
+        assert_eq!(splits[1].num_records, 10_000_000);
+        assert!(merge_ops.is_empty());
+    }
+
+    #[test]
+    fn test_merge_policy_splits_entire_level_reach_merge_max_doc() {
+        let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
+        let mut splits = create_splits(vec![5_000_000, 5_000_000]);
+        let merge_ops = merge_policy.operations(&mut splits);
+        assert!(splits.is_empty());
+        assert_eq!(merge_ops.len(), 1);
+        assert_eq!(merge_ops[0].op_type, MergeOrDemux::Merge);
+        assert_eq!(merge_ops[0].splits.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_policy_last_merge_can_have_a_lower_merge_factor() {
+        let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
+        let mut splits = create_splits(vec![9_999_997, 9_999_998, 9_999_999]);
+        let merge_ops = merge_policy.operations(&mut splits);
+        assert_eq!(splits.len(), 1);
+        assert_eq!(splits[0].num_records, 9_999_997);
+        assert_eq!(merge_ops.len(), 1);
+        assert_eq!(merge_ops[0].op_type, MergeOrDemux::Merge);
+        assert_eq!(merge_ops[0].splits.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_policy_no_merge_with_only_one_split() {
+        let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
+        let mut splits = create_splits(vec![9_999_999]);
+        let merge_ops = merge_policy.operations(&mut splits);
+        assert_eq!(splits.len(), 1);
+        assert_eq!(splits[0].num_records, 9_999_999);
+        assert!(merge_ops.is_empty());
     }
 
     #[test]

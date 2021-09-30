@@ -24,7 +24,7 @@ use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitMetadataAndFooterOffsets};
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResponse, PartialHit,
+    FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse, PartialHit,
     SearchRequest, SearchResponse,
 };
 use tantivy::collector::Collector;
@@ -118,7 +118,7 @@ pub async fn root_search(
     let assigned_doc_fetch_jobs = client_pool
         .assign_jobs(fetch_docs_req_jobs, &HashSet::new())
         .await?;
-    let fetch_docs_responses: Vec<FetchDocsResult> =
+    let fetch_docs_responses: Vec<FetchDocsResponse> =
         futures::stream::iter(assigned_doc_fetch_jobs.into_iter())
             .map(|(client, client_jobs)| {
                 let doc_request = jobs_to_fetch_docs_request(
@@ -325,7 +325,7 @@ mod tests {
         );
         mock_search_service.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResult {
+                Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -387,7 +387,7 @@ mod tests {
         );
         mock_search_service1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResult {
+                Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -405,7 +405,7 @@ mod tests {
         );
         mock_search_service2.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResult {
+                Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -477,7 +477,7 @@ mod tests {
 
         mock_search_service1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResult {
+                Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -517,7 +517,7 @@ mod tests {
             });
         mock_search_service2.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResult {
+                Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -604,7 +604,7 @@ mod tests {
             });
         mock_search_service1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResult {
+                Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -643,7 +643,7 @@ mod tests {
             });
         mock_search_service2.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResult {
+                Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -722,7 +722,7 @@ mod tests {
             });
         mock_search_service1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResult {
+                Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -842,7 +842,7 @@ mod tests {
         );
         mock_search_service1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResult {
+                Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -928,7 +928,7 @@ mod tests {
         );
         mock_search_service1.expect_fetch_docs().returning(
             |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResult {
+                Ok(quickwit_proto::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },

@@ -24,7 +24,7 @@ use bytes::Bytes;
 use quickwit_index_config::IndexConfig;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResult, LeafSearchRequest, LeafSearchResponse,
+    FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse,
     LeafSearchStreamRequest, LeafSearchStreamResult, SearchRequest, SearchResponse,
     SearchStreamRequest,
 };
@@ -71,7 +71,7 @@ pub trait SearchService: 'static + Send + Sync {
 
     /// Fetches the documents contents from the document store.
     /// This methods takes `PartialHit`s and returns `Hit`s.
-    async fn fetch_docs(&self, request: FetchDocsRequest) -> crate::Result<FetchDocsResult>;
+    async fn fetch_docs(&self, request: FetchDocsRequest) -> crate::Result<FetchDocsResponse>;
 
     /// Performs a root search returning a receiver for streaming
     async fn root_search_stream(&self, request: SearchStreamRequest) -> crate::Result<Vec<Bytes>>;
@@ -153,19 +153,19 @@ impl SearchService for SearchServiceImpl {
     async fn fetch_docs(
         &self,
         fetch_docs_request: FetchDocsRequest,
-    ) -> crate::Result<FetchDocsResult> {
+    ) -> crate::Result<FetchDocsResponse> {
         let storage = self
             .storage_resolver
             .resolve(&fetch_docs_request.index_uri)?;
 
-        let fetch_docs_result = fetch_docs(
+        let fetch_docs_response = fetch_docs(
             fetch_docs_request.partial_hits,
             storage,
             &fetch_docs_request.split_metadata,
         )
         .await?;
 
-        Ok(fetch_docs_result)
+        Ok(fetch_docs_response)
     }
 
     async fn root_search_stream(

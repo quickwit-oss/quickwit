@@ -181,7 +181,7 @@ pub struct FetchDocsRequest {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FetchDocsResult {
+pub struct FetchDocsResponse {
     /// List of complete hits.
     #[prost(message, repeated, tag = "1")]
     pub hits: ::prost::alloc::vec::Vec<Hit>,
@@ -366,7 +366,7 @@ pub mod search_service_client {
         pub async fn fetch_docs(
             &mut self,
             request: impl tonic::IntoRequest<super::FetchDocsRequest>,
-        ) -> Result<tonic::Response<super::FetchDocsResult>, tonic::Status> {
+        ) -> Result<tonic::Response<super::FetchDocsResponse>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
@@ -432,7 +432,7 @@ pub mod search_service_server {
         async fn fetch_docs(
             &self,
             request: tonic::Request<super::FetchDocsRequest>,
-        ) -> Result<tonic::Response<super::FetchDocsResult>, tonic::Status>;
+        ) -> Result<tonic::Response<super::FetchDocsResponse>, tonic::Status>;
         #[doc = "Server streaming response type for the LeafSearchStream method."]
         type LeafSearchStreamStream: futures_core::Stream<Item = Result<super::LeafSearchStreamResult, tonic::Status>>
             + Send
@@ -549,7 +549,7 @@ pub mod search_service_server {
                     #[allow(non_camel_case_types)]
                     struct FetchDocsSvc<T: SearchService>(pub Arc<T>);
                     impl<T: SearchService> tonic::server::UnaryService<super::FetchDocsRequest> for FetchDocsSvc<T> {
-                        type Response = super::FetchDocsResult;
+                        type Response = super::FetchDocsResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,

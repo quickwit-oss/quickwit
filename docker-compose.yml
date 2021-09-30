@@ -40,6 +40,8 @@ services:
     volumes:
       - ".localstack:/docker-entrypoint-initaws.d"
       - "${TMPDIR:-/tmp}/quickwit/services/localstack:/tmp/localstack"
+    healthcheck:
+      test: ["CMD", "curl", "-k", "https://localhost:4566"]
 
   postgres:
     image: postgres:latest
@@ -56,6 +58,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-quickwit-metastore-dev}
     volumes:
       - "${TMPDIR:-/tmp}/quickwit/services/postgres:/var/lib/postgresql/data/pgdata"
+    healthcheck:
+      test: ["CMD", "pg_isready"]
 
   kafka-broker:
     image: confluentinc/cp-kafka:6.2.0
@@ -79,6 +83,8 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_JMX_PORT: 9101
       KAFKA_JMX_HOSTNAME: localhost
+    healthcheck:
+      test: ["CMD", "cub", "kafka-ready", "-b", "localhost:9092", "1", "30"]
 
   zookeeper:
     image: confluentinc/cp-zookeeper:6.2.0
@@ -91,3 +97,5 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "cub", "zk-ready", "localhost:2181", "30"]

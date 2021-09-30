@@ -2,34 +2,57 @@ name: Code coverage
 
 on:
   push:
-    branches: [main, run-coverage-workflow]
+    branches:
+      - "main"
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "quickwit-*/**"
+
+env:
+  AWS_DEFAULT_REGION  : "localhost"
+  AWS_ACCESS_KEY_ID   : "placeholder"
+  AWS_SECRET_ACCESS_KEY: "placeholder"
+  TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
 
 jobs:
   test:
     name: coverage
     runs-on: ubuntu-latest
-    env:
-      AWS_DEFAULT_REGION  : "localhost"
-      AWS_ACCESS_KEY_ID   : "placeholder"
-      AWS_SECRET_ACCESS_KEY: "placeholder"
     services:
       localstack:
         image: localstack/localstack:latest
         ports:
           - "4566:4566"
-        options: >-
-          --name localstack
-          --hostname localstack
+          - "4571:4571"
+          - "8080:8080"
         env:
-          SERVICES: s3
+          SERVICES: kinesis,s3
+        options: >-
+          --health-cmd "curl -k https://localhost:4566"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres:
+        image: postgres:latest
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_USER: quickwit-dev
+          POSTGRES_PASSWORD: quickwit-dev
+          POSTGRES_DB: quickwit-metastore-dev
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
       kafka-broker:
         image: confluentinc/cp-kafka:6.2.0
         ports:
           - "9092:9092"
           - "9101:9101"
-        options: >-
-          --name kafka-broker
-          --hostname kafka-broker
         env:
           KAFKA_BROKER_ID: 1
           KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
@@ -41,35 +64,58 @@ jobs:
           KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
           KAFKA_JMX_PORT: 9101
           KAFKA_JMX_HOSTNAME: localhost
+        options: >-
+          --health-cmd "cub kafka-ready -b localhost:9092 1 5"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
       zookeeper:
         image: confluentinc/cp-zookeeper:6.2.0
         ports:
           - "2181:2181"
-        options: >-
-          --name zookeeper
-          --hostname zookeeper
         env:
           ZOOKEEPER_CLIENT_PORT: 2181
           ZOOKEEPER_TICK_TIME: 2000
+        options: >-
+          --health-cmd "cub zk-ready localhost:2181 5"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v2
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
+            ${{ runner.os }}-cargo-test
+
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
-          components: rustfmt, clippy
-      - name: Install Rust
-        run: rustup toolchain install nightly --component llvm-tools-preview
+          components: clippy, llvm-tools-preview, rustfmt
+
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov
+        run: |
+          curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | \
+          tar xzf - -C ~/.cargo/bin
+
       - name: Install awslocal
         run: pip install awscli-local
-      - name: Wait for services
-        run: sleep 30s
+
       - name: Prepare LocalStack S3
         run: ./quickwit-cli/tests/prepare_tests.sh 
+
       - name: Generate code coverage
         run: |
           QUICKWIT_ENV=LOCAL cargo +nightly llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
         with:

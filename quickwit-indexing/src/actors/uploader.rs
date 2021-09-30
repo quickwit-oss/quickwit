@@ -36,7 +36,7 @@ use tracing::{info, warn};
 use crate::models::{PackagedSplit, PublishOperation, PublisherMessage};
 use crate::semaphore::Semaphore;
 
-pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 3;
+pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 6;
 
 pub struct Uploader {
     metastore: Arc<dyn Metastore>,
@@ -103,12 +103,13 @@ async fn put_split_file_to_storage(
         )
     })?;
 
-    let elapsed_ms = start.elapsed().as_millis();
+    let elapsed_secs = start.elapsed().as_secs_f32();
     let split_size_in_megabytes = split.footer_offsets.end / 1_000_000;
-    let throughput_mb_s = split_size_in_megabytes as f32 / (elapsed_ms as f32 / 1_000.0f32);
+    let throughput_mb_s = split_size_in_megabytes as f32 / elapsed_secs;
     info!(
+        split_id = %split.split_id,
+        elapsed_secs = %elapsed_secs,
         split_size_in_megabytes = %split_size_in_megabytes,
-        elapsed_ms = %elapsed_ms,
         throughput_mb_s = %throughput_mb_s,
         "upload-split-bundle-end"
     );
@@ -159,6 +160,7 @@ async fn stage_and_upload_split(
     let split_metadata_and_footer_offsets = create_split_metadata(&packaged_split);
     let index_id = packaged_split.index_id.clone();
     let split_metadata = split_metadata_and_footer_offsets.split_metadata.clone();
+    info!(split_id=%packaged_split.split_id, "staging-split");
     metastore
         .stage_split(&index_id, split_metadata_and_footer_offsets)
         .await?;
@@ -189,9 +191,23 @@ impl AsyncActor for Uploader {
             .await?;
 
         // The permit will be added back manually to the semaphore the task after it is finished.
-        let permit_guard = self.concurrent_upload_permits.acquire().await;
 
+        // This is not a valid usage of protected zone here.
+        //
+        // Protected zone are supposed to be used when the cause for blocking is
+        // outside of the responsability of the current actor.
+        // For instance, when sending  a message on a downstream actor with a saturated
+        // mailbox.
+        // This is meant to be fixed with ParallelActors.
+        let permit_guard = {
+            let _guard = ctx.protect_zone();
+            self.concurrent_upload_permits.acquire().await
+        };
         let kill_switch = ctx.kill_switch().clone();
+        if kill_switch.is_dead() {
+            warn!(split_id=%split.split_id,"Kill switch was activated. Cancelling upload.");
+            return Err(ActorExitStatus::Killed);
+        }
         let metastore = self.metastore.clone();
         let index_storage = self.index_storage.clone();
 

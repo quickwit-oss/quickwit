@@ -2,7 +2,12 @@ name: Publish Docker image to Docker Hub (main)
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "main"
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "quickwit-*/**"
 
 jobs:
   publish:

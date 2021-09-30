@@ -107,17 +107,17 @@ impl grpc::SearchService for GrpcSearchAdapter {
     async fn fetch_docs(
         &self,
         request: tonic::Request<quickwit_proto::FetchDocsRequest>,
-    ) -> Result<tonic::Response<quickwit_proto::FetchDocsResult>, tonic::Status> {
+    ) -> Result<tonic::Response<quickwit_proto::FetchDocsResponse>, tonic::Status> {
         let parent_cx =
             global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request.metadata())));
         Span::current().set_parent(parent_cx);
         let fetch_docs_request = request.into_inner();
-        let fetch_docs_result = self
+        let fetch_docs_response = self
             .0
             .fetch_docs(fetch_docs_request)
             .await
             .map_err(Into::<tonic::Status>::into)?;
-        Ok(tonic::Response::new(fetch_docs_result))
+        Ok(tonic::Response::new(fetch_docs_response))
     }
 
     type LeafSearchStreamStream = std::pin::Pin<
