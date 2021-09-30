@@ -245,7 +245,6 @@ impl Source for KafkaSource {
                 .record_partition_delta(partition_id, previous_position, current_position)
                 .context("Failed to record partition delta.")?;
 
-            // Above
             if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
                 break;
             }
