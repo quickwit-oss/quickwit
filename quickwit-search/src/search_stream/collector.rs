@@ -134,7 +134,7 @@ pub struct PartitionValues<Item: FastValue, PartitionItem: FastValue> {
 impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash> Collector
     for PartionnedFastFieldCollector<Item, PartitionItem>
 {
-    type Child = PartitionnedFastFieldSegmentCollector<Item, PartitionItem>;
+    type Child = PartitionedFastFieldSegmentCollector<Item, PartitionItem>;
     type Fruit = Vec<PartitionValues<Item, PartitionItem>>;
 
     fn for_segment(
@@ -157,7 +157,7 @@ impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash> Collector
             &self.partition_by_fast_field,
         )?;
 
-        Ok(PartitionnedFastFieldSegmentCollector::new(
+        Ok(PartitionedFastFieldSegmentCollector::new(
             fast_field_reader,
             partition_by_fast_field_reader,
             timestamp_filter_opt,
@@ -196,7 +196,7 @@ pub struct PartitionedFastFieldSegmentCollector<
 }
 
 impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash>
-    PartitionnedFastFieldSegmentCollector<Item, PartitionItem>
+    PartitionedFastFieldSegmentCollector<Item, PartitionItem>
 {
     pub fn new(
         fast_field_reader: DynamicFastFieldReader<Item>,
@@ -220,7 +220,7 @@ impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash>
 }
 
 impl<Item: FastValue, PartitionItem: FastValue + Hash + Eq> SegmentCollector
-    for PartitionnedFastFieldSegmentCollector<Item, PartitionItem>
+    for PartitionedFastFieldSegmentCollector<Item, PartitionItem>
 {
     type Fruit = HashMap<PartitionItem, Vec<Item>>;
 
