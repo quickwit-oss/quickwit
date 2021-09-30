@@ -60,6 +60,7 @@ impl Publisher {
             PublishOperation::PublishNewSplit {
                 new_split,
                 checkpoint_delta,
+                ..
             } => {
                 self.metastore
                     .publish_splits(
@@ -145,6 +146,8 @@ impl AsyncActor for Publisher {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use quickwit_metastore::{MockMetastore, SplitMetadata};
@@ -198,6 +201,7 @@ mod tests {
                         ..Default::default()
                     },
                     checkpoint_delta: CheckpointDelta::from(3..7),
+                    split_date_of_birth: Instant::now(),
                 }
             })
             .is_ok());
@@ -210,6 +214,7 @@ mod tests {
                         ..Default::default()
                     },
                     checkpoint_delta: CheckpointDelta::from(1..3),
+                    split_date_of_birth: Instant::now(),
                 },
             })
             .is_ok());

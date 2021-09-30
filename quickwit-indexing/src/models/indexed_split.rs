@@ -50,7 +50,7 @@ pub struct IndexedSplit {
     /// This is mostly useful to understand part of the time to search.
     /// However, note that the document may have been waiting for a long time in the source
     /// before actually reaching the indexer.
-    pub start_time: Instant,
+    pub split_date_of_birth: Instant,
 
     pub checkpoint_delta: CheckpointDelta,
 
@@ -92,7 +92,7 @@ impl IndexedSplit {
             time_range: None,
             docs_size_in_bytes: 0,
             num_docs: 0,
-            start_time: Instant::now(),
+            split_date_of_birth: Instant::now(),
             index,
             index_writer,
             split_scratch_directory,

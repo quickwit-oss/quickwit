@@ -142,6 +142,7 @@ fn make_publish_operation(
         PublishOperation::PublishNewSplit {
             new_split: split_metadata,
             checkpoint_delta,
+            split_date_of_birth: packaged_split.split_date_of_birth,
         }
     } else {
         PublishOperation::ReplaceSplits {
@@ -290,6 +291,7 @@ mod tests {
                     num_docs: 10,
                     tags: Default::default(),
                     replaced_split_ids: Vec::new(),
+                    split_date_of_birth: Instant::now(),
                 },
             )
             .await?;
@@ -305,6 +307,7 @@ mod tests {
         if let PublishOperation::PublishNewSplit {
             new_split,
             checkpoint_delta,
+            ..
         } = publisher_message.operation
         {
             assert_eq!(&new_split.split_id, "test-split");
@@ -367,6 +370,7 @@ mod tests {
                         "replaced-split-1".to_string(),
                         "replaced-split-2".to_string(),
                     ],
+                    split_date_of_birth: Instant::now(),
                 },
             )
             .await?;

@@ -19,6 +19,7 @@
 
 use std::collections::HashSet;
 use std::ops::{Range, RangeInclusive};
+use std::time::Instant;
 
 use quickwit_metastore::checkpoint::CheckpointDelta;
 
@@ -36,4 +37,5 @@ pub struct PackagedSplit {
     pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,
     pub tags: HashSet<String>,
+    pub split_date_of_birth: Instant,
 }

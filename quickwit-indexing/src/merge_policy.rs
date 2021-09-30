@@ -24,23 +24,49 @@ use std::ops::Range;
 use quickwit_metastore::SplitMetadata;
 use tracing::debug;
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum MergeOrDemux {
-    Merge,
-    Demux,
+use crate::new_split_id;
+
+pub enum MergeOperation {
+    Merge {
+        merge_split_id: String,
+        splits: Vec<SplitMetadata>,
+    },
+    Demux {
+        splits: Vec<SplitMetadata>,
+    },
 }
-pub struct MergeOperation {
-    pub splits: Vec<SplitMetadata>,
-    pub op_type: MergeOrDemux,
+
+impl MergeOperation {
+    pub fn new_merge_operation(splits: Vec<SplitMetadata>) -> MergeOperation {
+        MergeOperation::Merge {
+            merge_split_id: new_split_id(),
+            splits,
+        }
+    }
+
+    pub fn splits(&self) -> &[SplitMetadata] {
+        match self {
+            MergeOperation::Merge { splits, .. } => splits.as_slice(),
+            MergeOperation::Demux { .. } => unimplemented!(),
+        }
+    }
 }
 
 impl fmt::Debug for MergeOperation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "MergeOperation(t={:?},splits=[", &self.op_type)?;
-        for split in &self.splits {
-            write!(f, "{}", &split.split_id)?;
+        match self {
+            MergeOperation::Merge {
+                merge_split_id: split_id,
+                splits,
+            } => {
+                write!(f, "Merge(merged_split_id={},splits=[", split_id)?;
+                for split in splits {
+                    write!(f, "{},", &split.split_id)?;
+                }
+                write!(f, "])")?;
+            }
+            MergeOperation::Demux { .. } => todo!(),
         }
-        write!(f, "])")?;
         Ok(())
     }
 }
@@ -150,10 +176,7 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
         for split_range in split_levels.into_iter().rev() {
             if let Some(merge_range) = self.merge_candidate_from_level(splits, split_range) {
                 let splits_in_merge: Vec<SplitMetadata> = splits.drain(merge_range).collect();
-                let merge_operation = MergeOperation {
-                    splits: splits_in_merge,
-                    op_type: MergeOrDemux::Merge,
-                };
+                let merge_operation = MergeOperation::new_merge_operation(splits_in_merge);
                 merge_operations.push(merge_operation);
             }
         }
@@ -162,7 +185,7 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
             original_num_splits,
             merge_operations
                 .iter()
-                .map(|op| op.splits.len())
+                .map(|op| op.splits().len())
                 .sum::<usize>()
                 + splits.len(),
             "The merge policy is supposed to keep the number of splits."
@@ -432,12 +455,12 @@ mod tests {
         assert_eq!(merge_ops.len(), 1);
         let merge_op = merge_ops.pop().unwrap();
         let mut merge_segment_ids: Vec<String> = merge_op
-            .splits
-            .into_iter()
-            .map(|split| split.split_id)
+            .splits()
+            .iter()
+            .map(|split| split.split_id.clone())
             .collect();
         merge_segment_ids.sort();
-        assert_eq!(merge_op.op_type, MergeOrDemux::Merge);
+        assert!(matches!(merge_op, MergeOperation::Merge { .. }));
         assert_eq!(
             merge_segment_ids,
             &[
@@ -457,9 +480,9 @@ mod tests {
         assert_eq!(merge_ops.len(), 1);
         let merge_op = merge_ops.pop().unwrap();
         let mut merge_split_ids: Vec<String> = merge_op
-            .splits
-            .into_iter()
-            .map(|split| split.split_id)
+            .splits()
+            .iter()
+            .map(|split| split.split_id.clone())
             .collect();
         merge_split_ids.sort();
         assert_eq!(
@@ -469,7 +492,7 @@ mod tests {
                 "split_08", "split_09", "split_10", "split_11", "split_12"
             ]
         );
-        assert_eq!(merge_op.op_type, MergeOrDemux::Merge);
+        assert!(matches!(merge_op, MergeOperation::Merge { .. }));
     }
 
     #[test]
@@ -483,9 +506,9 @@ mod tests {
         assert_eq!(merge_ops.len(), 1);
         let merge_op = merge_ops.pop().unwrap();
         let mut merge_split_ids: Vec<String> = merge_op
-            .splits
-            .into_iter()
-            .map(|split| split.split_id)
+            .splits()
+            .iter()
+            .map(|split| split.split_id.clone())
             .collect();
         merge_split_ids.sort();
         assert_eq!(
@@ -495,7 +518,7 @@ mod tests {
                 "split_07", "split_08", "split_09"
             ]
         );
-        assert_eq!(merge_op.op_type, MergeOrDemux::Merge);
+        assert!(matches!(merge_op, MergeOperation::Merge { .. }));
     }
 
     #[test]
@@ -541,8 +564,8 @@ mod tests {
         let merge_ops = merge_policy.operations(&mut splits);
         assert!(splits.is_empty());
         assert_eq!(merge_ops.len(), 1);
-        assert_eq!(merge_ops[0].op_type, MergeOrDemux::Merge);
-        assert_eq!(merge_ops[0].splits.len(), 2);
+        assert!(matches!(merge_ops[0], MergeOperation::Merge { .. }));
+        assert_eq!(merge_ops[0].splits().len(), 2);
     }
 
     #[test]
@@ -553,8 +576,8 @@ mod tests {
         assert_eq!(splits.len(), 1);
         assert_eq!(splits[0].num_records, 9_999_997);
         assert_eq!(merge_ops.len(), 1);
-        assert_eq!(merge_ops[0].op_type, MergeOrDemux::Merge);
-        assert_eq!(merge_ops[0].splits.len(), 2);
+        assert!(matches!(merge_ops[0], MergeOperation::Merge { .. }));
+        assert_eq!(merge_ops[0].splits().len(), 2);
     }
 
     #[test]
