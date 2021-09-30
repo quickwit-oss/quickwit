@@ -424,7 +424,7 @@ mod tests {
         let index_config =
             Arc::new(serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?);
         let index_id = "single-node-simple";
-        let test_sandbox = TestSandbox::create("single-node-simple", index_config.clone()).await?;
+        let test_sandbox = TestSandbox::create(index_id, index_config.clone()).await?;
 
         let mut docs = vec![];
         let mut filtered_timestamp_values = vec![];
@@ -508,8 +508,8 @@ mod tests {
         }"#;
         let index_config =
             Arc::new(serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?);
-        let index_id = "single-node-simple";
-        let test_sandbox = TestSandbox::create("single-node-simple", index_config.clone()).await?;
+        let index_id = "single-node-simple-2";
+        let test_sandbox = TestSandbox::create(index_id, index_config.clone()).await?;
 
         let mut docs = vec![];
         let partition_by_fast_field_values = vec![1, 2, 3, 4, 5];
