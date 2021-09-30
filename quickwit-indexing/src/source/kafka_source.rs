@@ -190,7 +190,7 @@ impl Source for KafkaSource {
         let mut docs = Vec::new();
         let mut checkpoint_delta = CheckpointDelta::default();
 
-        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT.div_f32(2.0f32));
+        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
 
         let mut message_stream = Box::pin(self.consumer.stream().take_until(deadline));
 
