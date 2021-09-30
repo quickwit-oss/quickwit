@@ -46,6 +46,17 @@ use tracing::{debug, info, warn};
 use crate::models::RawDocBatch;
 use crate::source::{IndexerMessage, Source, SourceContext, TypedSourceFactory};
 
+/// We try to emit chewable batches for the indexer.
+/// One batch = one message to the indexer actor.
+///
+/// If batches are too large:
+/// - we might not be able to observe the state of the indexer for 5 seconds.
+/// - we will be needlessly occupying resident memory in the mailbox.
+/// - we will not have a precise control of the timeout before commit.
+///
+/// 5MB seems like a good one size fits all value.
+const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
+
 /// Required parameters for instantiating a `KafkaSource`.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct KafkaSourceParams {
@@ -179,8 +190,11 @@ impl Source for KafkaSource {
         let mut docs = Vec::new();
         let mut checkpoint_delta = CheckpointDelta::default();
 
-        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT * 4 / 5);
+        let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
+
         let mut message_stream = Box::pin(self.consumer.stream().take_until(deadline));
+
+        let mut batch_num_bytes = 0;
 
         while let Some(message_res) = message_stream.next().await {
             let message = match message_res {
@@ -205,6 +219,7 @@ impl Source for KafkaSource {
                 self.state.num_invalid_messages += 1;
             }
             self.state.num_bytes_processed += message.payload_len() as u64;
+            batch_num_bytes += message.payload_len() as u64;
             self.state.num_messages_processed += 1;
 
             let partition_id = self
@@ -229,6 +244,10 @@ impl Source for KafkaSource {
             checkpoint_delta
                 .record_partition_delta(partition_id, previous_position, current_position)
                 .context("Failed to record partition delta.")?;
+
+            if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
+                break;
+            }
         }
         if !checkpoint_delta.is_empty() {
             let batch = RawDocBatch {
