@@ -185,7 +185,7 @@ impl<Item: FastValue, PartitionItem: FastValue + Eq + Hash> Collector
 }
 
 #[derive(Clone)]
-pub struct PartitionnedFastFieldSegmentCollector<
+pub struct PartitionedFastFieldSegmentCollector<
     Item: FastValue,
     PartitionItem: FastValue + Eq + Hash,
 > {
