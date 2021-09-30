@@ -150,6 +150,24 @@ fn remove_matching_items<T, Pred: Fn(&T) -> bool>(items: &mut Vec<T>, predicate:
     matching_items
 }
 
+struct SplitShortDebug<'a>(&'a SplitMetadata);
+
+impl<'a> fmt::Debug for SplitShortDebug<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Split")
+            .field("split_id", &self.0.split_id)
+            .field("ndocs", &self.0.num_records)
+            .finish()
+    }
+}
+
+fn splits_short_debug<'a>(splits: &'a [SplitMetadata]) -> Vec<SplitShortDebug<'a>> {
+    splits
+        .iter()
+        .map(|split| SplitShortDebug(split))
+        .collect()
+}
+
 impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
     fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
         if splits.is_empty() {
@@ -170,12 +188,12 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
                 .map(|time_range| Reverse(*time_range.end()));
             (time_end, split.num_records)
         });
-        debug!(splits=?splits, "merge-policy-run");
+        debug!(splits=?splits_short_debug(&splits[..]), "merge-policy-run");
 
         // Splits should naturally have an increasing num_merge
         let split_levels = self.build_split_levels(splits);
         for split_range in split_levels.into_iter().rev() {
-            debug!(splits=?&splits[split_range.clone()]);
+            debug!(splits=?splits_short_debug(&splits[split_range.clone()]));
             if let Some(merge_range) = self.merge_candidate_from_level(splits, split_range) {
                 let splits_in_merge: Vec<SplitMetadata> = splits.drain(merge_range).collect();
                 let merge_operation = MergeOperation::new_merge_operation(splits_in_merge);
