@@ -195,9 +195,12 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
         for split_range in split_levels.into_iter().rev() {
             debug!(splits=?splits_short_debug(&splits[split_range.clone()]));
             if let Some(merge_range) = self.merge_candidate_from_level(splits, split_range) {
+                debug!(merge_range=?merge_range, "merge-candidate");
                 let splits_in_merge: Vec<SplitMetadata> = splits.drain(merge_range).collect();
                 let merge_operation = MergeOperation::new_merge_operation(splits_in_merge);
                 merge_operations.push(merge_operation);
+            } else {
+                debug!("no-merge");
             }
         }
         splits.extend(splits_too_large);
