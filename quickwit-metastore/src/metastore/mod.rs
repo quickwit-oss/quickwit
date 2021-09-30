@@ -183,8 +183,8 @@ pub struct MetadataSet {
 ///
 /// Before creating any file, we need to stage the split. If there is a failure, upon recovery, we
 /// schedule for deletion all the staged splits. A client may not necessarily remove files from
-/// storage right after marking it as deleted. A CLI client may delete files right away, but a more
-/// serious deployment should probably only delete those files after a grace period so that the
+/// storage right after marking it for deletion. A CLI client may delete files right away, but a
+/// more serious deployment should probably only delete those files after a grace period so that the
 /// running search queries can complete.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
@@ -256,11 +256,11 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
     ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>>;
 
-    /// Marks a list of splits as deleted.
+    /// Marks a list of splits for deletion.
     /// This API will change the state to `ScheduledForDeletion` so that it is not referenced by the
     /// client. It actually does not remove the split from storage.
     /// An error will occur if you specify an index or split that does not exist in the storage.
-    async fn mark_splits_as_deleted<'a>(
+    async fn mark_splits_for_deletion<'a>(
         &self,
         index_id: &str,
         split_ids: &[&'a str],

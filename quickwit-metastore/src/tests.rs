@@ -52,9 +52,9 @@ pub mod test_suite {
                 .map(|meta| meta.split_metadata.split_id.as_ref())
                 .collect::<Vec<_>>();
 
-            // Mark splits as deleted.
+            // Mark splits for deletion.
             metastore
-                .mark_splits_as_deleted(index_id, &all_split_ids)
+                .mark_splits_for_deletion(index_id, &all_split_ids)
                 .await
                 .unwrap();
 
@@ -348,7 +348,7 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .mark_splits_as_deleted(index_id, &[split_id_1])
+                .mark_splits_for_deletion(index_id, &[split_id_1])
                 .await
                 .unwrap();
 
@@ -435,7 +435,7 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .mark_splits_as_deleted(index_id, &[split_id_1])
+                .mark_splits_for_deletion(index_id, &[split_id_1])
                 .await
                 .unwrap();
 
@@ -701,7 +701,7 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .mark_splits_as_deleted(index_id, &[split_id_2])
+                .mark_splits_for_deletion(index_id, &[split_id_2])
                 .await
                 .unwrap();
 
@@ -782,7 +782,7 @@ pub mod test_suite {
         }
     }
 
-    pub async fn test_metastore_mark_splits_as_deleted<
+    pub async fn test_metastore_mark_splits_for_deletion<
         MetastoreToTest: Metastore + DefaultForTest,
     >() {
         let metastore = MetastoreToTest::default_for_test().await;
@@ -811,16 +811,16 @@ pub mod test_suite {
             },
         };
 
-        // Mark a split as deleted on a non-existent index
+        // Mark a split for deletion on a non-existent index
         {
             let result = metastore
-                .mark_splits_as_deleted("non-existent-index", &["non-existent-split"])
+                .mark_splits_for_deletion("non-existent-index", &["non-existent-split"])
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
         }
 
-        // Mark a non-existent split as deleted on an index
+        // Mark a non-existent split for deletion on an index
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -828,7 +828,7 @@ pub mod test_suite {
                 .unwrap();
 
             let result = metastore
-                .mark_splits_as_deleted(index_id, &["non-existent-split"])
+                .mark_splits_for_deletion(index_id, &["non-existent-split"])
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
@@ -836,7 +836,7 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Mark a existent split as deleted on an index
+        // Mark an existent split for deletion on an index
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -849,7 +849,7 @@ pub mod test_suite {
                 .unwrap();
 
             let result = metastore
-                .mark_splits_as_deleted(index_id, &[split_id_1])
+                .mark_splits_for_deletion(index_id, &[split_id_1])
                 .await
                 .unwrap();
             assert!(matches!(result, ()));
@@ -885,7 +885,7 @@ pub mod test_suite {
             },
         };
 
-        // Delete a split as deleted on a non-existent index
+        // Delete a split marked for deletion on a non-existent index
         {
             let result = metastore
                 .delete_splits("non-existent-index", &["non-existent-split"])
@@ -894,7 +894,7 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
         }
 
-        // Delete a non-existent split as deleted on an index
+        // Delete a non-existent split marked for deletion on an index
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -931,7 +931,7 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Delete a split that has been marked as deleted on an index
+        // Delete a split that has been marked for deletion on an index
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -944,7 +944,7 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .mark_splits_as_deleted(index_id, &[split_id_1])
+                .mark_splits_for_deletion(index_id, &[split_id_1])
                 .await
                 .unwrap();
 
@@ -957,7 +957,7 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Delete a split that is not marked as deleted
+        // Delete a split that is not marked for deletion
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -1707,10 +1707,10 @@ pub mod test_suite {
 
         current_timestamp = split_meta.update_timestamp;
 
-        // wait for 1s, mark split as deleted & check `update_timestamp`
+        // wait for 1s, mark split for deletion & check `update_timestamp`
         sleep(Duration::from_secs(1)).await;
         metastore
-            .mark_splits_as_deleted(index_id, &[split_id])
+            .mark_splits_for_deletion(index_id, &[split_id])
             .await
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0]
@@ -1757,8 +1757,8 @@ macro_rules! metastore_test_suite {
             }
 
             #[tokio::test]
-            async fn test_metastore_mark_splits_as_deleted() {
-                crate::tests::test_suite::test_metastore_mark_splits_as_deleted::<$metastore_type>(
+            async fn test_metastore_mark_splits_for_deletion() {
+                crate::tests::test_suite::test_metastore_mark_splits_for_deletion::<$metastore_type>(
                 )
                 .await;
             }
@@ -1824,8 +1824,8 @@ macro_rules! metastore_test_suite_for_postgresql {
             }
 
             #[tokio::test]
-            async fn test_metastore_mark_splits_as_deleted() {
-                crate::tests::test_suite::test_metastore_mark_splits_as_deleted::<$metastore_type>(
+            async fn test_metastore_mark_splits_for_deletion() {
+                crate::tests::test_suite::test_metastore_mark_splits_for_deletion::<$metastore_type>(
                 )
                 .await;
             }

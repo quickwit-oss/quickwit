@@ -188,7 +188,7 @@ mod tests {
             },
         );
         mock_metastore
-            .expect_mark_splits_as_deleted()
+            .expect_mark_splits_for_deletion()
             .times(1)
             .returning(|index_id, split_ids| {
                 assert_eq!(index_id, "foo-index");
@@ -243,7 +243,7 @@ mod tests {
             },
         );
         mock_metastore
-            .expect_mark_splits_as_deleted()
+            .expect_mark_splits_for_deletion()
             .times(2)
             .returning(|index_id, split_ids| {
                 assert_eq!(index_id, "foo-index");

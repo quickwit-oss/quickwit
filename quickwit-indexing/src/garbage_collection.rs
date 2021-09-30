@@ -102,7 +102,7 @@ pub async fn run_garbage_collect(
         .map(|meta| meta.split_metadata.split_id.as_str())
         .collect();
     metastore
-        .mark_splits_as_deleted(index_id, &split_ids)
+        .mark_splits_for_deletion(index_id, &split_ids)
         .await?;
 
     // Select split to delete

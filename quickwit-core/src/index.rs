@@ -81,7 +81,7 @@ pub async fn delete_index(
         .map(|meta| meta.split_metadata.split_id.as_ref())
         .collect::<Vec<_>>();
     metastore
-        .mark_splits_as_deleted(index_id, &split_ids)
+        .mark_splits_for_deletion(index_id, &split_ids)
         .await?;
 
     // Select split to delete
@@ -124,8 +124,8 @@ pub async fn garbage_collect_index(
 }
 
 /// Clears the index by applying the following actions:
-/// - mark all splits as deleted in the metastore.
-/// - delete the files of all splits marked as deleted using garbage collection.
+/// - mark all splits for deletion in the metastore.
+/// - delete the files of all splits marked for deletion using garbage collection.
 /// - delete the splits from the metastore.
 ///
 /// * `metastore` - A metastore object for interacting with the metastore.
@@ -145,7 +145,7 @@ pub async fn reset_index(
         .map(|meta| meta.split_metadata.split_id.as_str())
         .collect::<Vec<_>>();
     metastore
-        .mark_splits_as_deleted(index_id, &split_ids)
+        .mark_splits_for_deletion(index_id, &split_ids)
         .await?;
 
     let garbage_removal_result =

@@ -188,8 +188,8 @@ impl SingleFileMetastore {
         Ok(())
     }
 
-    /// Helper to mark a list of splits as published.
-    fn mark_splits_as_published_helper<'a>(
+    /// Helper to publish a list of splits.
+    fn publish_splits_helper<'a>(
         split_ids: &[&'a str],
         metadata_set: &mut MetadataSet,
     ) -> MetastoreResult<()> {
@@ -222,8 +222,8 @@ impl SingleFileMetastore {
         Ok(())
     }
 
-    /// Helper to mark a list of splits as deleted.
-    fn mark_splits_as_deleted_helper<'a>(
+    /// Helper to mark a list of splits for deletion.
+    fn mark_splits_for_deletion_helper<'a>(
         split_ids: &[&'a str],
         metadata_set: &mut MetadataSet,
     ) -> MetastoreResult<bool> {
@@ -353,7 +353,7 @@ impl Metastore for SingleFileMetastore {
             .checkpoint
             .try_apply_delta(checkpoint_delta)?;
 
-        SingleFileMetastore::mark_splits_as_published_helper(split_ids, &mut metadata_set)?;
+        SingleFileMetastore::publish_splits_helper(split_ids, &mut metadata_set)?;
         self.put_index(metadata_set).await?;
         Ok(())
     }
@@ -367,10 +367,13 @@ impl Metastore for SingleFileMetastore {
         let mut metadata_set = self.get_index(index_id).await?;
 
         // Try to publish splits.
-        SingleFileMetastore::mark_splits_as_published_helper(new_split_ids, &mut metadata_set)?;
+        SingleFileMetastore::publish_splits_helper(new_split_ids, &mut metadata_set)?;
 
-        // Mark splits as deleted.
-        SingleFileMetastore::mark_splits_as_deleted_helper(replaced_split_ids, &mut metadata_set)?;
+        // Mark splits for deletion.
+        SingleFileMetastore::mark_splits_for_deletion_helper(
+            replaced_split_ids,
+            &mut metadata_set,
+        )?;
 
         self.put_index(metadata_set).await?;
         Ok(())
@@ -424,7 +427,7 @@ impl Metastore for SingleFileMetastore {
         Ok(splits)
     }
 
-    async fn mark_splits_as_deleted<'a>(
+    async fn mark_splits_for_deletion<'a>(
         &self,
         index_id: &str,
         split_ids: &[&'a str],
@@ -432,7 +435,7 @@ impl Metastore for SingleFileMetastore {
         let mut metadata_set = self.get_index(index_id).await?;
 
         let is_modified =
-            SingleFileMetastore::mark_splits_as_deleted_helper(split_ids, &mut metadata_set)?;
+            SingleFileMetastore::mark_splits_for_deletion_helper(split_ids, &mut metadata_set)?;
         if is_modified {
             self.put_index(metadata_set).await?;
         }
