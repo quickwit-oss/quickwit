@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::time::Instant;
 
 use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::SplitMetadata;
@@ -28,6 +29,7 @@ pub enum PublishOperation {
     PublishNewSplit {
         new_split: SplitMetadata,
         checkpoint_delta: CheckpointDelta,
+        split_date_of_birth: Instant, // for logging
     },
     /// Publish a merge, replacing several splits (typically 10)
     /// by a single larger split.
@@ -43,10 +45,12 @@ impl fmt::Debug for PublishOperation {
             Self::PublishNewSplit {
                 new_split: new_split_id,
                 checkpoint_delta,
+                split_date_of_birth: start_time,
             } => f
                 .debug_struct("PublishNewSplit")
                 .field("new_split_id", &new_split_id.split_id)
                 .field("checkpoint_delta", checkpoint_delta)
+                .field("tts_in_secs", &start_time.elapsed().as_secs_f32())
                 .finish(),
             Self::ReplaceSplits {
                 new_splits,

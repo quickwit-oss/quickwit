@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -100,6 +101,21 @@ impl AsyncActor for GarbageCollector {
             false,
         )
         .await?;
+
+        if !deletion_stats.candidate_entries.is_empty() {
+            let deletion_success: HashSet<&str> = deletion_stats
+                .deleted_entries
+                .iter()
+                .map(|deleted_entry| deleted_entry.file_name.as_str())
+                .collect();
+            let deletion_failures: Vec<&str> = deletion_stats
+                .candidate_entries
+                .iter()
+                .map(|file_entry| file_entry.file_name.as_str())
+                .filter(|file_name| !deletion_success.contains(file_name))
+                .collect();
+            info!(deletion_success=?deletion_success, deletion_failures=?deletion_failures, "gc-delete");
+        }
 
         self.counters.num_deleted_files += deletion_stats.deleted_entries.len();
         self.counters.num_deleted_bytes += deletion_stats
