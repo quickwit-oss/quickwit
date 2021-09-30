@@ -192,7 +192,6 @@ impl Source for KafkaSource {
 
         let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
 
-
         let mut message_stream = Box::pin(self.consumer.stream().take_until(deadline));
 
         let mut batch_num_bytes = 0;
