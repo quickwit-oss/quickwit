@@ -27,6 +27,7 @@ rand = '0.8'
 lru = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 ec2_instance_metadata = "0.3"
+tempfile = '3'
 
 [dependencies.rusoto_core]
 version = '0.46'
@@ -50,15 +51,10 @@ features = ['full']
 version = "0.9"
 optional = true
 
-[dependencies.tempfile]
-version = "3"
-optional = true
-
 [dev-dependencies]
 tracing-subscriber = '0.2'
-tempfile = '3'
 mockall = '0.9'
 
 [features]
-testsuite = ["mockall", "tempfile"]
+testsuite = ["mockall"]
 ci-test = []
