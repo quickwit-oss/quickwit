@@ -26,7 +26,7 @@ use quickwit_actors::{
     Health, KillSwitch, QueueCapacity, Supervisable,
 };
 use quickwit_metastore::{Metastore, SplitState};
-use quickwit_storage::StorageUriResolver;
+use quickwit_storage::{create_storage_with_upload_cache, CacheParams, StorageUriResolver};
 use tokio::join;
 use tracing::{debug, error, info};
 
@@ -183,6 +183,17 @@ impl IndexingPipelineSupervisor {
             .params
             .storage_uri_resolver
             .resolve(&index_metadata.index_uri)?;
+
+        // TODO: Make cache path configurable [https://github.com/quickwit-inc/quickwit/issues/520]
+        // Using the scratch_directory directly is fine since the cache storage will create its own
+        // folder to work with.
+        let cache_directory = self.params.indexer_params.scratch_directory.path();
+        let index_storage = create_storage_with_upload_cache(
+            index_storage,
+            cache_directory,
+            CacheParams::default(),
+        )?;
+
         let tags_field = index_metadata
             .index_config
             .tags_field(&index_metadata.index_config.schema());
