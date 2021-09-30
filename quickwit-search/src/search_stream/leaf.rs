@@ -171,6 +171,37 @@ async fn leaf_search_stream_single_split(
                     },
                 )?;
             }
+            (Type::U64, None) => {
+                let collected_values = collect_values::<u64>(
+                    &m_request_fields,
+                    stream_request.start_timestamp,
+                    stream_request.end_timestamp,
+                    searcher,
+                    query.as_ref(),
+                )?;
+                super::serialize::<u64>(&collected_values, &mut buffer, output_format).map_err(
+                    |_| {
+                        SearchError::InternalError(
+                            "Error when serializing u64 during export".to_owned(),
+                        )
+                    },
+                )?;
+            }
+            (Type::I64, Some(Type::I64)) => {
+                let collected_values = collect_partitioned_values::<i64, i64>(
+                    &m_request_fields,
+                    stream_request.start_timestamp,
+                    stream_request.end_timestamp,
+                    searcher,
+                    query.as_ref(),
+                )?;
+                super::serialize_partitions::<i64, i64>(collected_values.as_slice(), &mut buffer)
+                    .map_err(|_| {
+                    SearchError::InternalError(
+                        "Error when serializing i64 during export".to_owned(),
+                    )
+                })?;
+            }
             (Type::U64, Some(Type::U64)) => {
                 let collected_values = collect_partitioned_values::<u64, u64>(
                     &m_request_fields,
@@ -186,7 +217,11 @@ async fn leaf_search_stream_single_split(
                     )
                 })?;
             }
-            _ => (),
+            _ => {
+                return Err(SearchError::InternalError(
+                    "Mixed types (u64, i64) for fast field and partition field are not supported.".to_owned(),
+                ));
+            },
         };
         Result::<Vec<u8>>::Ok(buffer)
     });
