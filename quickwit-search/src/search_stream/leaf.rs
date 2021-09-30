@@ -219,9 +219,10 @@ async fn leaf_search_stream_single_split(
             }
             _ => {
                 return Err(SearchError::InternalError(
-                    "Mixed types (u64, i64) for fast field and partition field are not supported.".to_owned(),
+                    "Mixed types (u64, i64) for fast field and partition field are not supported."
+                        .to_owned(),
                 ));
-            },
+            }
         };
         Result::<Vec<u8>>::Ok(buffer)
     });
