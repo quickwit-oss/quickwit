@@ -81,7 +81,8 @@ const FOOTER_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u64>();
 /// Returns the file offsets in the file bundle.
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct BundleStorageFileOffsets {
-    files: HashMap<PathBuf, Range<usize>>,
+    /// The files and their offsets in the body
+    pub files: HashMap<PathBuf, Range<usize>>,
 }
 
 impl BundleStorageFileOffsets {
@@ -97,9 +98,13 @@ impl BundleStorageFileOffsets {
     /// Read metadata from a file.
     pub fn open_from_file_slice(file: FileSlice) -> io::Result<Self> {
         let (body_and_footer, footer_num_bytes_data) = file.split_from_end(8);
-        let footer_num_bytes_data = footer_num_bytes_data.read_bytes()?;
-        let footer_num_bytes: u64 =
-            u64::from_le_bytes(footer_num_bytes_data.as_slice().try_into().unwrap());
+        let footer_num_bytes: u64 = u64::from_le_bytes(
+            footer_num_bytes_data
+                .read_bytes()?
+                .as_slice()
+                .try_into()
+                .unwrap(),
+        );
 
         let bundle_storage_file_offsets_data = body_and_footer
             .slice_from_end(footer_num_bytes as usize)

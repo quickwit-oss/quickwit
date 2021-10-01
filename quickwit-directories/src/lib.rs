@@ -21,6 +21,7 @@
 //!
 //! - The `StorageDirectory` justs wraps a `Storage` trait to make it compatible with tantivy's
 //!   Directory API.
+//! - The `BundleDirectory` bundles multiple files into a single file.
 //! - The `HotDirectory` wraps another directory with a static cache.
 //! - The `CachingDirectory` wraps a Directory with a dynamic cache.
 //! - The `DebugDirectory` acts as a proxy to another directory to instrument it and record all of
@@ -34,7 +35,7 @@ mod hot_directory;
 mod storage_directory;
 mod union_directory;
 
-pub use self::bundle_directory::BundleDirectory;
+pub use self::bundle_directory::{get_hotcache_from_split, read_split_footer, BundleDirectory};
 pub use self::caching_directory::CachingDirectory;
 pub use self::debug_proxy_directory::{DebugProxyDirectory, ReadOperation};
 pub use self::hot_directory::{write_hotcache, HotDirectory};
