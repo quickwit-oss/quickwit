@@ -62,6 +62,7 @@ impl MergePlanner {
         merge_policy: Arc<dyn MergePolicy>,
         merge_split_downloader_mailbox: Mailbox<MergeOperation>,
     ) -> MergePlanner {
+        info!(merge_policy=?merge_policy);
         MergePlanner {
             young_splits: Vec::new(),
             merge_policy,

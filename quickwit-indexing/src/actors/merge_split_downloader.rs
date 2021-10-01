@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, AsyncActor, Mailbox};
+use quickwit_actors::{Actor, ActorContext, AsyncActor, Mailbox, QueueCapacity};
 use quickwit_common::split_file;
 use quickwit_metastore::SplitMetadata;
 use quickwit_storage::Storage;
@@ -41,6 +41,10 @@ impl Actor for MergeSplitDownloader {
     type Message = MergeOperation;
     type ObservableState = ();
     fn observable_state(&self) -> Self::ObservableState {}
+
+    fn queue_capacity(&self) -> QueueCapacity {
+        QueueCapacity::Bounded(1)
+    }
 }
 
 #[async_trait]

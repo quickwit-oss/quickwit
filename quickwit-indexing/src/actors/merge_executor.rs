@@ -23,7 +23,7 @@ use std::time::Instant;
 
 use anyhow::Context;
 use itertools::Itertools;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Mailbox, SyncActor};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SyncActor};
 use quickwit_common::split_file;
 use quickwit_directories::{BundleDirectory, UnionDirectory};
 use quickwit_metastore::checkpoint::CheckpointDelta;
@@ -46,6 +46,10 @@ impl Actor for MergeExecutor {
     type ObservableState = ();
 
     fn observable_state(&self) -> Self::ObservableState {}
+
+    fn queue_capacity(&self) -> QueueCapacity {
+        QueueCapacity::Bounded(1)
+    }
 }
 
 fn combine_index_meta(mut index_metas: Vec<IndexMeta>) -> anyhow::Result<IndexMeta> {

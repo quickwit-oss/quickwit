@@ -105,7 +105,7 @@ impl Actor for Publisher {
     }
 
     fn queue_capacity(&self) -> quickwit_actors::QueueCapacity {
-        QueueCapacity::Bounded(3)
+        QueueCapacity::Unbounded
     }
 }
 

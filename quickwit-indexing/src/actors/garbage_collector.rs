@@ -29,7 +29,7 @@ use tracing::info;
 
 use crate::run_garbage_collect;
 
-const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
+const RUN_INTERVAL: Duration = Duration::from_secs(60); // 1 minutes
 const GRACE_PERIOD: Duration = Duration::from_secs(60 * 60); // 1 hour
 
 #[derive(Debug, Clone, Default)]
@@ -273,17 +273,15 @@ mod tests {
         assert_eq!(state_after_initialization.num_deleted_bytes, 40);
         assert_eq!(state_after_initialization.num_failed_files, 0);
 
-        // 5 minutes later
-        universe
-            .simulate_time_shift(Duration::from_secs(5 * 60))
-            .await;
+        // 30 secs later
+        universe.simulate_time_shift(Duration::from_secs(30)).await;
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);
         assert_eq!(state_after_initialization.num_deleted_files, 2);
         assert_eq!(state_after_initialization.num_deleted_bytes, 40);
         assert_eq!(state_after_initialization.num_failed_files, 0);
 
-        // 15 minutes later
+        // 60 secs later
         universe.simulate_time_shift(RUN_INTERVAL).await;
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 2);
