@@ -321,8 +321,6 @@ mod tests {
             &vals[..],
             |num_records_list| {
                 let num_docs = num_records_list.iter().cloned().map(|doc| doc as u64).sum();
-                dbg!(num_docs);
-                dbg!(num_records_list);
                 num_records_list.len() <= merge_policy.max_num_splits_worst_case(num_docs)
             },
         )

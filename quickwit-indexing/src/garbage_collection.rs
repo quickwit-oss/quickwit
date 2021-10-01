@@ -17,15 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt;
 use quickwit_metastore::{Metastore, SplitMetadataAndFooterOffsets, SplitState};
-use quickwit_storage::Storage;
 use tantivy::chrono::Utc;
 use tracing::{error, warn};
+
+use crate::split_store::IndexingSplitStore;
 
 const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
 
@@ -65,7 +65,7 @@ impl From<&SplitMetadataAndFooterOffsets> for FileEntry {
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
 pub async fn run_garbage_collect(
     index_id: &str,
-    storage: Arc<dyn Storage>,
+    split_store: IndexingSplitStore,
     metastore: Arc<dyn Metastore>,
     grace_period: Duration,
     dry_run: bool,
@@ -109,13 +109,9 @@ pub async fn run_garbage_collect(
     let splits_to_delete = metastore
         .list_splits(index_id, SplitState::ScheduledForDeletion, None, &[])
         .await?;
-    let deleted_files = delete_splits_with_files(
-        index_id,
-        storage.clone(),
-        metastore.clone(),
-        splits_to_delete,
-    )
-    .await?;
+    let deleted_files =
+        delete_splits_with_files(index_id, split_store, metastore.clone(), splits_to_delete)
+            .await?;
 
     Ok(deleted_files)
 }
@@ -129,7 +125,7 @@ pub async fn run_garbage_collect(
 /// * `splits`  - The list of splits to delete.
 pub async fn delete_splits_with_files(
     index_id: &str,
-    storage: Arc<dyn Storage>,
+    indexing_split_store: IndexingSplitStore,
     metastore: Arc<dyn Metastore>,
     splits: Vec<SplitMetadataAndFooterOffsets>,
 ) -> anyhow::Result<SplitDeletionStats> {
@@ -137,13 +133,19 @@ pub async fn delete_splits_with_files(
     let mut deleted_split_ids: Vec<String> = Vec::new();
     let mut failed_split_ids: Vec<String> = Vec::new();
 
-    let mut delete_splits_results_stream = tokio_stream::iter(splits)
-        .map(|meta| {
-            let storage_clone = storage.clone();
+    let mut delete_splits_results_stream = tokio_stream::iter(splits.into_iter())
+        .map(|split| {
+            let moved_indexing_split_store = indexing_split_store.clone();
             async move {
-                let file_entry = FileEntry::from(&meta);
-                let delete_split_res = storage_clone.delete(Path::new(&file_entry.file_name)).await;
-                (meta.split_metadata.split_id, file_entry, delete_split_res)
+                let file_entry = FileEntry::from(&split);
+                let delete_result = moved_indexing_split_store
+                    .delete(&split.split_metadata.split_id)
+                    .await;
+                (
+                    split.split_metadata.split_id.clone(),
+                    file_entry,
+                    delete_result,
+                )
             }
         })
         .buffer_unordered(MAX_CONCURRENT_STORAGE_REQUESTS);

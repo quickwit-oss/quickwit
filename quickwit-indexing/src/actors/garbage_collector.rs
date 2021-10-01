@@ -24,10 +24,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, AsyncActor};
 use quickwit_metastore::Metastore;
-use quickwit_storage::Storage;
 use tracing::info;
 
 use crate::run_garbage_collect;
+use crate::split_store::IndexingSplitStore;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(60); // 1 minutes
 const GRACE_PERIOD: Duration = Duration::from_secs(60 * 60); // 1 hour
@@ -47,7 +47,7 @@ pub struct GarbageCollectorCounters {
 /// An actor for collecting garbage periodically from an index.
 pub struct GarbageCollector {
     index_id: String,
-    index_storage: Arc<dyn Storage>,
+    split_store: IndexingSplitStore,
     metastore: Arc<dyn Metastore>,
     counters: GarbageCollectorCounters,
 }
@@ -55,12 +55,12 @@ pub struct GarbageCollector {
 impl GarbageCollector {
     pub fn new(
         index_id: String,
-        index_storage: Arc<dyn Storage>,
+        split_store: IndexingSplitStore,
         metastore: Arc<dyn Metastore>,
     ) -> Self {
         Self {
             index_id,
-            index_storage,
+            split_store,
             metastore,
             counters: GarbageCollectorCounters::default(),
         }
@@ -95,7 +95,7 @@ impl AsyncActor for GarbageCollector {
 
         let deletion_stats = run_garbage_collect(
             &self.index_id,
-            self.index_storage.clone(),
+            self.split_store.clone(),
             self.metastore.clone(),
             GRACE_PERIOD,
             false,
@@ -207,7 +207,7 @@ mod tests {
         let universe = Universe::new();
         let garbage_collect_actor = GarbageCollector::new(
             foo_index.to_string(),
-            Arc::new(mock_storage),
+            IndexingSplitStore::create_with_no_local_store(Arc::new(mock_storage)),
             Arc::new(mock_metastore),
         );
         let (_maibox, handler) = universe.spawn_actor(garbage_collect_actor).spawn_async();
@@ -262,7 +262,7 @@ mod tests {
         let universe = Universe::new();
         let garbage_collect_actor = GarbageCollector::new(
             foo_index.to_string(),
-            Arc::new(mock_storage),
+            IndexingSplitStore::create_with_no_local_store(Arc::new(mock_storage)),
             Arc::new(mock_metastore),
         );
         let (_maibox, handler) = universe.spawn_actor(garbage_collect_actor).spawn_async();
