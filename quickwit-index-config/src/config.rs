@@ -80,8 +80,9 @@ pub enum SortBy {
 /// - a way to build a tantivy:Schema
 #[typetag::serde(tag = "type")]
 pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
-    /// Returns the document built from a json string.
-    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError>;
+    /// Returns the document built from an owned JSON string.
+    fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError>;
+
     /// Returns the schema.
     ///
     /// Considering schema evolution, splits within an index can have different schema

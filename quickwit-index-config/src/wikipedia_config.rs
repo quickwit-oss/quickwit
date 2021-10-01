@@ -68,9 +68,9 @@ impl Default for WikipediaIndexConfig {
 
 #[typetag::serde(name = "wikipedia")]
 impl IndexConfig for WikipediaIndexConfig {
-    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
+    fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError> {
         self.schema
-            .parse_document(doc_json)
+            .parse_document(&doc_json)
             .map_err(DocParsingError::from)
     }
 

@@ -309,25 +309,17 @@ fn tantivy_value_to_string(field_value: &Value) -> String {
 
 #[typetag::serde(name = "default")]
 impl IndexConfig for DefaultIndexConfig {
-    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
+    fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError> {
         let mut document = Document::default();
-        if self.store_source {
-            let source = self.schema.get_field(SOURCE_FIELD_NAME).ok_or_else(|| {
-                DocParsingError::NoSuchFieldInSchema(SOURCE_FIELD_NAME.to_string())
-            })?;
-            document.add_text(source, doc_json);
-        }
-        let json_obj: JsonValue = serde_json::from_str(doc_json).map_err(|_| {
-            let doc_json_sample: String = if doc_json.len() < 20 {
-                String::from(doc_json)
-            } else {
-                format!("{:?}...", &doc_json[0..20])
-            };
+        let json_obj: JsonValue = serde_json::from_str(&doc_json).map_err(|_| {
+            // FIXME: the error contains some useful information (line, column, ...) that we could
+            // surface to the user.
+            let doc_json_sample = format!("{:?}...", &doc_json[0..doc_json.len().min(20)]);
             DocParsingError::NotJson(doc_json_sample)
         })?;
-        let parsing_result = self.field_mappings.parse(&json_obj)?;
+        let field_paths_and_values = self.field_mappings.parse(json_obj)?;
         let tags_field_opt = self.schema.get_field(TAGS_FIELD_NAME);
-        for (field_path, field_value) in parsing_result {
+        for (field_path, field_value) in field_paths_and_values {
             let field_name = field_path.field_name();
             let field = self
                 .schema
@@ -341,6 +333,14 @@ impl IndexConfig for DefaultIndexConfig {
                 document.add(FieldValue::new(tags_field, Value::Str(tag_value)));
             }
             document.add(FieldValue::new(field, field_value))
+        }
+        if self.store_source {
+            let source = self.schema.get_field(SOURCE_FIELD_NAME).ok_or_else(|| {
+                DocParsingError::NoSuchFieldInSchema(SOURCE_FIELD_NAME.to_string())
+            })?;
+            // We avoid `document.add_text` here because it systematically performs a copy of the
+            // value.
+            document.add(FieldValue::new(source, Value::Str(doc_json)));
         }
         Ok(document)
     }
@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn test_parsing_document() -> anyhow::Result<()> {
         let index_config = crate::default_config_for_tests();
-        let document = index_config.doc_from_json(JSON_DOC_VALUE)?;
+        let document = index_config.doc_from_json(JSON_DOC_VALUE.to_string())?;
         let schema = index_config.schema();
         // 7 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
@@ -494,7 +494,8 @@ mod tests {
             r#"{
                 "timestamp": 1586960586000,
                 "unknown_field": "20200415T072306-0700 INFO This is a great log"
-            }"#,
+            }"#
+            .to_string(),
         )?;
         Ok(())
     }
@@ -506,7 +507,8 @@ mod tests {
             r#"{
                 "timestamp": 1586960586000,
                 "body": ["text 1", "text 2"]
-            }"#,
+            }"#
+            .to_string(),
         );
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -524,7 +526,8 @@ mod tests {
             r#"{
                 "timestamp": 1586960586000,
                 "body": 1
-            }"#,
+            }"#
+            .to_string(),
         );
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -626,10 +629,11 @@ mod tests {
             r#"{
             "city": "paris",
             "image": "invalid base64 data"
-        }"#,
+        }"#
+            .to_string(),
         );
         let expected_msg = "The field 'image' could not be parsed: Expected Base64 string, got \
-                            'invalid base64 data'";
+                            'invalid base64 data'.";
         assert_eq!(result.unwrap_err().to_string(), expected_msg);
         Ok(())
     }
@@ -662,7 +666,7 @@ mod tests {
             "city": "tokio",
             "image": "YWJj"
         }"#;
-        let document = index_config.doc_from_json(JSON_DOC_VALUE)?;
+        let document = index_config.doc_from_json(JSON_DOC_VALUE.to_string())?;
 
         // 2 properties, + 1 value for "_source" + 2 values for "_tags"
         assert_eq!(document.len(), 5);
