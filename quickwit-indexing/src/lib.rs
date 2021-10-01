@@ -186,6 +186,7 @@ async fn observe_supervisors(index_ids: &[&String], supervisor_handlers: Vec<Act
         if observations.iter().all(|observation| {
             observation.obs_type == ObservationType::PostMortem
         }) {
+            // TODO: funny things. I got post mortem even though one actor continues to publish splits.
             warn!("all supervisors are down, stopping observations.");
             break;
         }
