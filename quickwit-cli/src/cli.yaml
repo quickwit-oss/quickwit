@@ -198,3 +198,42 @@ subcommands:
                 value_name: PEER SEED
                 multiple: true
                 use_delimiter: true
+    - serve-indexing:
+        about: Starts a web server that runs indexing.
+        args:
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
+                required: true
+            - host:
+                help: Hostname the web server should bind to.
+                long: host
+                default_value: '0.0.0.0'
+                value_name: HOSTNAME
+            - port:
+                help: Port the web server should bind to.
+                long: port
+                default_value: '8090'
+                value_name: PORT
+            - source-config-uri:
+                help: Location of source config files
+                long: source-config-uri
+                value_name: SOURCE CONFIG URI
+                required: true
+            - index-id:
+                help: Index id
+                long: index-id
+                value_name: INDEX ID
+                required: true
+                multiple: true
+                use_delimiter: true
+            - temp-dir:
+                help: Creates intermediate files in this local directory. By default, the OS temp directory will be used.
+                long: temp-dir
+                value_name: TEMP DIR
+            - heap-size:
+                help: Amount of memory allocated to the process and split between the indexing threads
+                long: heap-size
+                value_name: HEAP SIZE
+                default_value: 2G

@@ -29,6 +29,8 @@ use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use quickwit_cli::*;
 use quickwit_common::net::socket_addr_from_str;
+use quickwit_indexing::args::ServeIndexingArgs;
+use quickwit_indexing::serve_indexing_cli;
 use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::Level;
@@ -42,6 +44,7 @@ enum CliCommand {
     Index(IndexDataArgs),
     Search(SearchIndexArgs),
     Serve(ServeArgs),
+    ServeIndexing(ServeIndexingArgs),
     GarbageCollect(GarbageCollectIndexArgs),
     Delete(DeleteIndexArgs),
 }
@@ -54,6 +57,7 @@ impl CliCommand {
             CliCommand::Index(_) => Level::WARN,
             CliCommand::Search(_) => Level::WARN,
             CliCommand::Serve(_) => Level::INFO,
+            CliCommand::ServeIndexing(_) => Level::INFO,
             CliCommand::GarbageCollect(_) => Level::WARN,
             CliCommand::Delete(_) => Level::WARN,
         }
@@ -69,6 +73,7 @@ impl CliCommand {
             "index" => Self::parse_index_args(submatches),
             "search" => Self::parse_search_args(submatches),
             "serve" => Self::parse_serve_args(submatches),
+            "serve-indexing" => Self::parse_serve_indexing_args(submatches),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
             "inspect-split" => Self::parse_inspect_split_args(submatches),
@@ -234,6 +239,45 @@ impl CliCommand {
         }))
     }
 
+    fn parse_serve_indexing_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .map(|metastore_uri_str| metastore_uri_str.to_string())
+            .context("'metastore-uri' is a required arg")?;
+        let host = matches
+            .value_of("host")
+            .context("'host' has a default value")?
+            .to_string();
+        let port = value_t!(matches, "port", u16)?;
+        let rest_addr = format!("{}:{}", host, port);
+        let rest_socket_addr = socket_addr_from_str(&rest_addr)?;
+        let source_config_uri = matches.value_of("source-config-uri")
+            .map(|source_config_uri| source_config_uri.to_string())
+            .context("'source-config-uri' is a required arg")?;
+        let temp_dir: Option<PathBuf> = matches.value_of("temp-dir").map(PathBuf::from);
+        let heap_size_str = matches
+            .value_of("heap-size")
+            .expect("`heap-size` has a default value.");
+        let heap_size = Byte::from_str(heap_size_str)?;
+        let index_ids = matches
+            .values_of("index-id")
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|index_id| index_id.to_string())
+                    .collect()
+            })
+            .context("At least one 'index-uri' is required.")?;
+        Ok(CliCommand::ServeIndexing(ServeIndexingArgs {
+            rest_socket_addr,
+            metastore_uri,
+            source_config_uri,
+            heap_size,
+            temp_dir,
+            index_ids,
+        }))
+    }
+
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
@@ -327,6 +371,7 @@ async fn main() -> anyhow::Result<()> {
         CliCommand::Index(args) => index_data_cli(args).await,
         CliCommand::Search(args) => search_index_cli(args).await,
         CliCommand::Serve(args) => serve_cli(args).await,
+        CliCommand::ServeIndexing(args) => serve_indexing_cli(args).await,
         CliCommand::GarbageCollect(args) => garbage_collect_index_cli(args).await,
         CliCommand::Delete(args) => delete_index_cli(args).await,
     };

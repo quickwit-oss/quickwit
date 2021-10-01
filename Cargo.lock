@@ -2259,9 +2259,11 @@ dependencies = [
  "fail",
  "flume",
  "futures",
+ "hyper",
  "itertools",
  "mockall 0.9.1",
  "once_cell",
+ "prometheus",
  "proptest",
  "quickwit-actors",
  "quickwit-common",
@@ -2280,6 +2282,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "ulid",
+ "warp",
 ]
 
 [[package]]

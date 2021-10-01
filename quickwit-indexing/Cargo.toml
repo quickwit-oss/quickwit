@@ -35,6 +35,9 @@ tokio = { version = "1", features = ["sync"] }
 tracing = "0.1"
 ulid = "0.4"
 tokio-stream = "0.1.6"
+warp = '0.3'
+hyper = { version = "0.14", features = ["stream", "server", "http1", "http2", "tcp", "client"] }
+prometheus = "0.13"
 
 [features]
 kafka = ["rdkafka"]
