@@ -54,7 +54,7 @@ impl Default for CacheParams {
         Self {
             max_num_files: 1000,
             max_num_bytes: 100_000_000_000, // 100GB
-            max_file_size: 10_000_000_000, // 10GB
+            max_file_size: 10_000_000_000,  // 10GB
         }
     }
 }

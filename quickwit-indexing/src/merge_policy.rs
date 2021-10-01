@@ -75,7 +75,7 @@ impl fmt::Debug for MergeOperation {
 /// The SplitMetadata must be extracted from the splits `Vec`.
 ///
 /// It is called by the merge planner whenever a new split is added.
-pub trait MergePolicy: Send + Sync {
+pub trait MergePolicy: Send + Sync + fmt::Debug {
     /// Returns the list of operations that should be performed.
     /// This functions will be called on subset of `SplitMetadata`
     /// for which the number of demux is the same.
@@ -114,7 +114,7 @@ pub trait MergePolicy: Send + Sync {
 ///
 /// Because we stop merging splits reaching a size larger than if it would result in a size larger
 /// than `target_num_docs`.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StableMultitenantWithTimestampMergePolicy {
     pub target_demux_ops: usize,
     /// We never merge segments larger than this size.
@@ -161,7 +161,7 @@ impl<'a> fmt::Debug for SplitShortDebug<'a> {
     }
 }
 
-fn splits_short_debug<'a>(splits: &'a [SplitMetadata]) -> Vec<SplitShortDebug<'a>> {
+fn splits_short_debug(splits: &[SplitMetadata]) -> Vec<SplitShortDebug> {
     splits.iter().map(|split| SplitShortDebug(split)).collect()
 }
 
