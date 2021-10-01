@@ -22,3 +22,9 @@ license-fix:
 fmt:
 	@echo "Formatting Rust files"
 	@(rustup toolchain list | ( ! grep -q nightly && echo "Toolchain 'nightly' is not installed. Please install using 'rustup toolchain install nightly'.") ) || cargo +nightly fmt
+
+EXAMPLE?=wikipedia
+examples:
+	./examples/setup_examples.sh $(EXAMPLE)
+
+.PHONY: examples

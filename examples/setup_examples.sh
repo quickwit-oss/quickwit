@@ -4,8 +4,8 @@ ROOT_PATH=$(git rev-parse --show-toplevel)
 
 cd $ROOT_PATH
 
-METASTORE=$EXAMPLES_FOLDER/metastore
 EXAMPLES_FOLDER=$(git rev-parse --show-toplevel)/examples
+METASTORE=$EXAMPLES_FOLDER/metastore
 
 EXAMPLES_WIKIPEDIA_FOLDER=$EXAMPLES_FOLDER/wikipedia
 INDEX_CONFIG_WIKIPEDIA=$EXAMPLES_FOLDER/index_configs/wikipedia_index_config.json
