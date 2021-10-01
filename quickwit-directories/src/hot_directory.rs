@@ -190,7 +190,7 @@ impl StaticDirectoryCache {
             .map(|(path, cache)| (path.to_owned(), cache.len()))
             .collect::<Vec<_>>();
 
-        entries.sort();
+        entries.sort_by_key(|el| el.0.to_owned());
         entries
     }
 }
@@ -705,8 +705,9 @@ mod tests {
         assert_eq!(directory_cache.get_file_length(four_path), None);
 
         let stats = directory_cache.get_stats();
-        assert_eq!(stats[0], (two_path.to_owned(), 7));
-        assert_eq!(stats[1], (one_path.to_owned(), 8));
+        assert_eq!(stats[0], (one_path.to_owned(), 8));
+        assert_eq!(stats[1], (three_path.to_owned(), 0));
+        assert_eq!(stats[2], (two_path.to_owned(), 7));
 
         assert_eq!(
             directory_cache
