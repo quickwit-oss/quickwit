@@ -79,7 +79,7 @@ impl Actor for Uploader {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(0)
+        QueueCapacity::Bounded(1)
     }
 }
 
