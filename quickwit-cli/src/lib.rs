@@ -36,7 +36,7 @@ use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_common::extract_index_id_from_index_uri;
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_directories::{
-    get_hotcache_from_split, load_split_footer, BundleDirectory, HotDirectory,
+    get_hotcache_from_split, read_split_footer, BundleDirectory, HotDirectory,
 };
 use quickwit_index_config::{DefaultIndexConfigBuilder, IndexConfig};
 use quickwit_indexing::actors::{
@@ -165,8 +165,8 @@ pub struct GarbageCollectIndexArgs {
     pub dry_run: bool,
 }
 
-pub async fn create_inspect_split_cli(args: InspectSplitArgs) -> anyhow::Result<()> {
-    debug!(args = ?args, "read-inspect");
+pub async fn inspect_split_cli(args: InspectSplitArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "inspect-split");
 
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = MetastoreUriResolver::default();
@@ -175,7 +175,7 @@ pub async fn create_inspect_split_cli(args: InspectSplitArgs) -> anyhow::Result<
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
 
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
-    let bundle = load_split_footer(index_storage, &split_file).await?;
+    let bundle = read_split_footer(index_storage, &split_file).await?;
 
     let stats = BundleDirectory::get_stats_split(bundle.clone())?;
     let hotcache_bytes = get_hotcache_from_split(bundle)?;

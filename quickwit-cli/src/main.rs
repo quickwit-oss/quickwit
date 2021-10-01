@@ -322,7 +322,7 @@ async fn main() -> anyhow::Result<()> {
     setup_logging_and_tracing(command.default_log_level())?;
 
     let command_res = match command {
-        CliCommand::InspectSplit(args) => create_inspect_split_cli(args).await,
+        CliCommand::InspectSplit(args) => inspect_split_cli(args).await,
         CliCommand::New(args) => create_index_cli(args).await,
         CliCommand::Index(args) => index_data_cli(args).await,
         CliCommand::Search(args) => search_index_cli(args).await,

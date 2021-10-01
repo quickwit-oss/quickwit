@@ -35,7 +35,7 @@ mod hot_directory;
 mod storage_directory;
 mod union_directory;
 
-pub use self::bundle_directory::{get_hotcache_from_split, load_split_footer, BundleDirectory};
+pub use self::bundle_directory::{get_hotcache_from_split, read_split_footer, BundleDirectory};
 pub use self::caching_directory::CachingDirectory;
 pub use self::debug_proxy_directory::{DebugProxyDirectory, ReadOperation};
 pub use self::hot_directory::{write_hotcache, HotDirectory};

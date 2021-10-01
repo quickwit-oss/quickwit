@@ -48,7 +48,7 @@ impl Debug for BundleDirectory {
 }
 
 /// Loads the split footer from a storage and path.
-pub async fn load_split_footer(storage: Arc<dyn Storage>, path: &Path) -> StorageResult<Bytes> {
+pub async fn read_split_footer(storage: Arc<dyn Storage>, path: &Path) -> StorageResult<Bytes> {
     let file_len = storage.file_num_bytes(path).await? as usize;
 
     let footer_len_bytes = storage.get_slice(path, file_len - 8..file_len).await?;

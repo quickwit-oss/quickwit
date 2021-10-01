@@ -705,8 +705,8 @@ mod tests {
         assert_eq!(directory_cache.get_file_length(four_path), None);
 
         let stats = directory_cache.get_stats();
-        assert_eq!(stats[0], (one_path.to_owned(), 8));
-        assert_eq!(stats[1], (two_path.to_owned(), 7));
+        assert_eq!(stats[0], (two_path.to_owned(), 7));
+        assert_eq!(stats[1], (one_path.to_owned(), 8));
 
         assert_eq!(
             directory_cache
