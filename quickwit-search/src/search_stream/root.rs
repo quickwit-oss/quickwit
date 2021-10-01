@@ -51,13 +51,14 @@ pub async fn root_search_stream(
 
     // Create a hash map of SplitMetadata with split id as a key.
     let split_metadata_map: HashMap<String, SplitMetadataAndFooterOffsets> = split_metadata_list
+        .clone()
         .into_iter()
         .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
         .collect();
     let leaf_search_jobs: Vec<Job> =
         job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
     let assigned_leaf_search_jobs = client_pool
-        .assign_jobs(leaf_search_jobs, &HashSet::default())
+        .assign_jobs(leaf_search_jobs.clone(), &HashSet::default())
         .await?;
 
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
@@ -130,6 +131,66 @@ mod tests {
             end_timestamp: None,
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
+            partition_by_field: None,
+            tags: vec![],
+        };
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata {
+                    index_id: "test-idx".to_string(),
+                    index_uri: "file:///path/to/index/test-idx".to_string(),
+                    index_config: Arc::new(WikipediaIndexConfig::new()),
+                    checkpoint: Checkpoint::default(),
+                })
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str,
+             _split_state: SplitState,
+             _time_range: Option<Range<i64>>,
+             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+        );
+        let mut mock_search_service = MockSearchService::new();
+        let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
+        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
+            data: b"123".to_vec(),
+            split_id: "split_1".to_string(),
+        }))?;
+        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
+            data: b"456".to_vec(),
+            split_id: "split_1".to_string(),
+        }))?;
+        mock_search_service.expect_leaf_search_stream().return_once(
+            |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                Ok(UnboundedReceiverStream::new(result_receiver))
+            },
+        );
+        // The test will hang on indefinitely if we don't drop the receiver.
+        drop(result_sender);
+        let client_pool =
+            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
+
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let result: Vec<Bytes> =
+            root_search_stream(&request, &metastore, &cluster_client, &client_pool).await?;
+        assert_eq!(result.len(), 2);
+        assert_eq!(&result[0], &b"123"[..]);
+        assert_eq!(&result[1], &b"456"[..]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_root_search_stream_single_split_partitionned() -> anyhow::Result<()> {
+        let request = quickwit_proto::SearchStreamRequest {
+            index_id: "test-idx".to_string(),
+            query: "test".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            fast_field: "timestamp".to_string(),
+            output_format: OutputFormat::Csv as i32,
+            partition_by_field: Some("timestamp".to_string()),
             tags: vec![],
         };
         let mut metastore = MockMetastore::new();
@@ -187,6 +248,7 @@ mod tests {
             end_timestamp: None,
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
+            partition_by_field: None,
             tags: vec![],
         };
         let mut metastore = MockMetastore::new();
