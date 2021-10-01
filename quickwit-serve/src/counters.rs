@@ -25,13 +25,12 @@ use quickwit_common::metrics::new_counter;
 
 pub struct Counters {
     pub num_requests: IntCounter,
-    // TODO add more counters
 }
 
 impl Default for Counters {
     fn default() -> Self {
         Counters {
-            num_requests: new_counter("rest_api:num_requests", "Number of requests"),
+            num_requests: new_counter("rest_api:search:num_requests", "Number of search requests"),
         }
     }
 }
