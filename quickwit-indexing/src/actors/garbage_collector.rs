@@ -29,7 +29,7 @@ use tracing::info;
 
 use crate::run_garbage_collect;
 
-const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
+const RUN_INTERVAL: Duration = Duration::from_secs(1 * 60); // 1 minutes
 const GRACE_PERIOD: Duration = Duration::from_secs(60 * 60); // 1 hour
 
 #[derive(Debug, Clone, Default)]
