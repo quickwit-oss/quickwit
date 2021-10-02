@@ -177,7 +177,10 @@ mod tests {
 
         let cluster_client = ClusterClient::new(client_pool.clone());
         let result: Vec<Bytes> =
-            root_search_stream(&request, &metastore, &cluster_client, &client_pool).await?;
+            root_search_stream(request, &metastore, cluster_client, &client_pool)
+                .await?
+                .try_collect()
+                .await?;
         assert_eq!(result.len(), 2);
         assert_eq!(&result[0], &b"123"[..]);
         assert_eq!(&result[1], &b"456"[..]);
