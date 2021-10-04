@@ -135,7 +135,7 @@ impl IndexerState {
         Ok(current_index_split)
     }
 
-    fn prepare_document(&self, doc_json: &str) -> PrepareDocumentOutcome {
+    fn prepare_document(&self, doc_json: String) -> PrepareDocumentOutcome {
         // Parse the document
         let doc_parsing_result = self.index_config.doc_from_json(doc_json);
         let document = match doc_parsing_result {
@@ -186,7 +186,7 @@ impl IndexerState {
             indexed_split.docs_size_in_bytes += doc_json.len() as u64;
             let prepared_doc = {
                 let _protect_zone = ctx.protect_zone();
-                self.prepare_document(&doc_json)
+                self.prepare_document(doc_json)
             };
             match prepared_doc {
                 PrepareDocumentOutcome::ParsingError => {
