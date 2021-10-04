@@ -32,6 +32,7 @@ use tantivy::Document;
 
 use super::field_mapping_entry::DocParsingError;
 use super::{default_as_true, FieldMappingEntry, FieldMappingType};
+use crate::config::convert_tag_to_string;
 use crate::query_builder::build_query;
 use crate::{IndexConfig, QueryParserError, SortBy, SortOrder, SOURCE_FIELD_NAME, TAGS_FIELD_NAME};
 
@@ -293,20 +294,6 @@ impl std::fmt::Debug for DefaultIndexConfig {
     }
 }
 
-/// Converts a [`tantivy::Value`] to it's [`String`] value.
-fn tantivy_value_to_string(field_value: &Value) -> String {
-    match field_value {
-        Value::Str(text) => text.clone(),
-        Value::PreTokStr(data) => data.text.clone(),
-        Value::U64(num) => num.to_string(),
-        Value::I64(num) => num.to_string(),
-        Value::F64(num) => num.to_string(),
-        Value::Date(date) => date.to_rfc3339(),
-        Value::Facet(facet) => facet.to_string(),
-        Value::Bytes(data) => base64::encode(data),
-    }
-}
-
 #[typetag::serde(name = "default")]
 impl IndexConfig for DefaultIndexConfig {
     fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError> {
@@ -329,8 +316,7 @@ impl IndexConfig for DefaultIndexConfig {
                 let tags_field = tags_field_opt.ok_or_else(|| {
                     DocParsingError::NoSuchFieldInSchema(TAGS_FIELD_NAME.to_string())
                 })?;
-                let tag_value = format!("{}:{}", field_name, tantivy_value_to_string(&field_value));
-                document.add(FieldValue::new(tags_field, Value::Str(tag_value)));
+                document.add(FieldValue::new(tags_field, Value::Str(convert_tag_to_string(&field_name, &field_value))));
             }
             document.add(FieldValue::new(field, field_value))
         }

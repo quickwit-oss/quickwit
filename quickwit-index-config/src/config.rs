@@ -23,7 +23,7 @@ use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use tantivy::query::Query;
-use tantivy::schema::{Field, Schema};
+use tantivy::schema::{Field, Schema, Value};
 use tantivy::{Document, Order};
 
 use crate::{DocParsingError, QueryParserError, TAGS_FIELD_NAME};
@@ -68,6 +68,30 @@ pub enum SortBy {
     },
     /// Sort by DocId
     DocId,
+}
+
+/// TODO doc
+pub fn convert_tag_to_string(field_name: &str, field_value: &Value) -> String {
+    format!("{}:{}", field_name, tantivy_value_to_string(field_value))
+}
+
+/// TODO doc
+pub fn match_tag_field_name(field_name: &str, tag_string: &str) -> bool {
+    tag_string.starts_with(&format!("{}:", field_name))
+}
+
+/// Converts a [`tantivy::Value`] to it's [`String`] value.
+fn tantivy_value_to_string(field_value: &Value) -> String {
+    match field_value {
+        Value::Str(text) => text.clone(),
+        Value::PreTokStr(data) => data.text.clone(),
+        Value::U64(num) => num.to_string(),
+        Value::I64(num) => num.to_string(),
+        Value::F64(num) => num.to_string(),
+        Value::Date(date) => date.to_rfc3339(),
+        Value::Facet(facet) => facet.to_string(),
+        Value::Bytes(data) => base64::encode(data),
+    }
 }
 
 /// The `IndexConfig` trait defines the way of defining how a (json) document,

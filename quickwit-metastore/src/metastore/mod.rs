@@ -91,6 +91,9 @@ pub struct SplitMetadata {
     /// A set of tags for categorizing and searching group of splits.
     #[serde(default)]
     pub tags: HashSet<String>,
+
+    /// Demux generation.
+    pub demux_generation: usize,
 }
 
 impl SplitMetadata {
@@ -104,6 +107,7 @@ impl SplitMetadata {
             time_range: None,
             update_timestamp: Utc::now().timestamp(),
             tags: Default::default(),
+            demux_generation: 0,
         }
     }
 }
