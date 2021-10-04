@@ -35,6 +35,10 @@ use crate::caching_directory::BytesWrapper;
 /// open a split and serve the file it contains via tantivy's `Directory`.
 ///
 /// It is the `Directory` equivalent of `BundleStorage`.
+///
+/// Split Format:
+/// [Files][FilesMetadata][FilesMetadata length 8 byte Little endian][Hotcache][Hotcache length 8
+/// byte Little endian]
 #[derive(Clone)]
 pub struct BundleDirectory {
     file: FileSlice,
@@ -48,24 +52,28 @@ impl Debug for BundleDirectory {
 }
 
 /// Loads the split footer from a storage and path.
-pub async fn read_split_footer(storage: Arc<dyn Storage>, path: &Path) -> StorageResult<Bytes> {
+pub async fn read_split_footer(
+    storage: Arc<dyn Storage>,
+    path: &Path,
+) -> StorageResult<(Bytes, Bytes)> {
     let file_len = storage.file_num_bytes(path).await? as usize;
 
-    let footer_len_bytes = storage.get_slice(path, file_len - 8..file_len).await?;
-    let footer_len = u64::from_le_bytes(footer_len_bytes.as_ref().try_into().unwrap()) as usize;
+    let hotcache_len_bytes = storage.get_slice(path, file_len - 8..file_len).await?;
+    let hotcache_len = u64::from_le_bytes(hotcache_len_bytes.as_ref().try_into().unwrap()) as usize;
 
-    let second_footer_start = file_len - 8 - footer_len - 8;
+    let second_footer_start = file_len - 8 - hotcache_len - 8;
     let second_footer_bytes = storage
         .get_slice(path, second_footer_start..second_footer_start + 8)
         .await?;
     let second_footer_len =
         u64::from_le_bytes(second_footer_bytes.as_ref().try_into().unwrap()) as usize;
 
-    let actual_footer = storage
-        .get_slice(path, second_footer_start - second_footer_len - 8..file_len)
+    let split_footer = storage
+        .get_slice(path, second_footer_start - second_footer_len..file_len)
         .await?;
+    let only_bundle_footer = split_footer.slice(0..second_footer_len + 8);
 
-    Ok(actual_footer)
+    Ok((split_footer, only_bundle_footer))
 }
 
 /// Return two slices for given split: [body and bundle meta data] [hotcache]
