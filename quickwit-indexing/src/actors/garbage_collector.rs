@@ -30,7 +30,8 @@ use tracing::info;
 use crate::run_garbage_collect;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(60); // 1 minutes
-const GRACE_PERIOD: Duration = Duration::from_secs(60 * 60); // 1 hour
+const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60); // 1 hour
+const DELETION_GRACE_PERIOD: Duration = Duration::from_secs(120); // 2 min
 
 #[derive(Debug, Clone, Default)]
 pub struct GarbageCollectorCounters {
@@ -97,7 +98,8 @@ impl AsyncActor for GarbageCollector {
             &self.index_id,
             self.index_storage.clone(),
             self.metastore.clone(),
-            GRACE_PERIOD,
+            STAGED_GRACE_PERIOD,
+            DELETION_GRACE_PERIOD,
             false,
         )
         .await?;

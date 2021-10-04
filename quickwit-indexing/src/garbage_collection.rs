@@ -61,17 +61,22 @@ impl From<&SplitMetadataAndFooterOffsets> for FileEntry {
 /// * `index_id` - The target index id.
 /// * `storage - The storage managing the target index.
 /// * `metastore` - The metastore managing the target index.
-/// * `grace_period` -  Threshold period after which a staged split can be safely garbage collected.
+/// * `staged_grace_period` -  Threshold period after which a staged split can be safely garbage
+///   collected.
+/// * `deletion_grace_period` -  Threshold period after which a marked as deleted split can be
+///   safely deleted.
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
 pub async fn run_garbage_collect(
     index_id: &str,
     storage: Arc<dyn Storage>,
     metastore: Arc<dyn Metastore>,
-    grace_period: Duration,
+    staged_grace_period: Duration,
+    deletion_grace_period: Duration,
     dry_run: bool,
 ) -> anyhow::Result<SplitDeletionStats> {
     // Select staged splits with staging timestamp older than grace period timestamp.
-    let grace_period_timestamp = Utc::now().timestamp() - grace_period.as_secs() as i64;
+    let grace_period_timestamp = Utc::now().timestamp() - staged_grace_period.as_secs() as i64;
+
     let deletable_staged_splits: Vec<SplitMetadataAndFooterOffsets> = metastore
         .list_splits(index_id, SplitState::Staged, None, &[])
         .await?
@@ -105,10 +110,16 @@ pub async fn run_garbage_collect(
         .mark_splits_for_deletion(index_id, &split_ids)
         .await?;
 
-    // Select split to delete
+    // We wait another 2 minutes until the split is actually deleted.
+    let grace_period_deletion = Utc::now().timestamp() - deletion_grace_period.as_secs() as i64;
     let splits_to_delete = metastore
         .list_splits(index_id, SplitState::ScheduledForDeletion, None, &[])
-        .await?;
+        .await?
+        .into_iter()
+        // TODO: Update metastore API and push this filter down.
+        .filter(|meta| meta.split_metadata.update_timestamp <= grace_period_deletion)
+        .collect();
+
     let deleted_files = delete_splits_with_files(
         index_id,
         storage.clone(),

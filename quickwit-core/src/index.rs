@@ -114,8 +114,17 @@ pub async fn garbage_collect_index(
     let index_uri = metastore.index_metadata(index_id).await?.index_uri;
     let storage = storage_resolver.resolve(&index_uri)?;
 
-    let deletion_stats =
-        run_garbage_collect(index_id, storage, metastore, grace_period, dry_run).await?;
+    let deletion_stats = run_garbage_collect(
+        index_id,
+        storage,
+        metastore,
+        grace_period,
+        // deletion_grace_period of zero, so that a cli call directly deletes splits after marking
+        // to be deleted.
+        Duration::ZERO,
+        dry_run,
+    )
+    .await?;
     if dry_run {
         Ok(deletion_stats.candidate_entries)
     } else {
