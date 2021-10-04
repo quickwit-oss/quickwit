@@ -281,21 +281,26 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
         .map(|_| EnvFilter::from_default_env())
         .or_else(|_| EnvFilter::try_new(format!("quickwit={}", level)))
         .context("Failed to set up tracing env filter.")?;
-
     global::set_text_map_propagator(TraceContextPropagator::new());
-
-    // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
-    let tracer = opentelemetry_jaeger::new_pipeline()
-        .with_service_name("quickwit")
-        //.install_batch(opentelemetry::runtime::Tokio)
-        .install_simple()
-        .context("Failed to initialize Jaeger exporter.")?;
-    tracing_subscriber::registry()
-        .with(env_filter)
-        .with(tracing_opentelemetry::layer().with_tracer(tracer))
-        .with(tracing_subscriber::fmt::layer())
-        .try_init()
-        .context("Failed to set up tracing.")?;
+    let registry = tracing_subscriber::registry().with(env_filter);
+    if std::env::var_os(QUICKWIT_JAEGER_ENABLED_ENV_KEY).is_some() {
+        // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
+        let tracer = opentelemetry_jaeger::new_pipeline()
+            .with_service_name("quickwit")
+            //.install_batch(opentelemetry::runtime::Tokio)
+            .install_simple()
+            .context("Failed to initialize Jaeger exporter.")?;
+        registry
+            .with(tracing_subscriber::fmt::layer())
+            .with(tracing_opentelemetry::layer().with_tracer(tracer))
+            .try_init()
+            .context("Failed to set up tracing.")?
+    } else {
+        registry
+            .with(tracing_subscriber::fmt::layer())
+            .try_init()
+            .context("Failed to set up tracing.")?
+    }
     Ok(())
 }
 
