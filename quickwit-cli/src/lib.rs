@@ -55,6 +55,9 @@ use tracing::debug;
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
+/// This environment variable can be set to send telemetry events to a jaeger instance.
+pub const QUICKWIT_JAEGER_ENABLED_ENV_KEY: &str = "QUICKWIT_JAEGER_ENABLED";
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct InspectSplitArgs {
     metastore_uri: String,
