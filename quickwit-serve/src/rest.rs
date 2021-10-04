@@ -262,9 +262,8 @@ async fn search_stream_endpoint<TSearchService: SearchService>(
                     }
                 }
                 Err(_) => {
-                    // Add trailer to signal to the client that there is an error.
-                    // TODO: a test with curl don't show the trailers, report the issue to
-                    // hyper/warp projects.
+                    // Add trailer to signal to the client that there is an error. Only works
+                    // with if the request is made with an http2 client.
                     let header_value = HeaderValue::from_static("search stream error");
                     let mut trailers = HeaderMap::new();
                     trailers.insert("X-Stream-Error", header_value);
