@@ -3,6 +3,29 @@ about: Index and search structured or unstructured data
 author: Quickwit, Inc. <hello@quickwit.io>
 
 subcommands:
+    - extract-split:
+        about: Extracts a split into a folder.
+        args:
+            - target-folder:
+                help: Folder to extract the split to.
+                long: target-folder
+                value_name: TARGET FOLDER
+                required: true
+            - metastore-uri:
+                help: Location of the metastore
+                long: metastore-uri
+                value_name: METASTORE URI
+                required: true
+            - index-id:
+                help: Index ID
+                long: index-id
+                value_name: INDEX ID
+                required: true
+            - split-id:
+                help: ID of the split
+                long: split-id
+                value_name: SPLIT ID
+                required: true
     - inspect-split:
         about: Displays file information for a split
         args:

@@ -37,6 +37,7 @@ use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, PartialEq)]
 enum CliCommand {
+    ExtractSplit(ExtractSplitArgs),
     InspectSplit(InspectSplitArgs),
     New(CreateIndexArgs),
     Index(IndexDataArgs),
@@ -49,6 +50,7 @@ enum CliCommand {
 impl CliCommand {
     fn default_log_level(&self) -> Level {
         match self {
+            CliCommand::ExtractSplit(_) => Level::INFO,
             CliCommand::InspectSplit(_) => Level::INFO,
             CliCommand::New(_) => Level::WARN,
             CliCommand::Index(_) => Level::WARN,
@@ -71,6 +73,7 @@ impl CliCommand {
             "serve" => Self::parse_serve_args(submatches),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
+            "extract-split" => Self::parse_extract_split_args(submatches),
             "inspect-split" => Self::parse_inspect_split_args(submatches),
             _ => bail!("Subcommand '{}' is not implemented", subcommand),
         }
@@ -96,6 +99,33 @@ impl CliCommand {
             index_uri,
             index_config_path,
             overwrite,
+        )?))
+    }
+
+    fn parse_extract_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let index_id = matches
+            .value_of("index-id")
+            .context("'index-id' is a required arg")?
+            .to_string();
+        let split_id = matches
+            .value_of("split-id")
+            .context("'split-id' is a required arg")?
+            .to_string();
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .map(|metastore_uri_str| metastore_uri_str.to_string())
+            .context("'metastore-uri' is a required arg")?;
+
+        let target_folder = matches
+            .value_of("target-folder")
+            .map(PathBuf::from)
+            .context("'target-folder' is a required arg")?;
+
+        Ok(CliCommand::ExtractSplit(ExtractSplitArgs::new(
+            metastore_uri,
+            index_id,
+            split_id,
+            target_folder,
         )?))
     }
 
@@ -327,6 +357,7 @@ async fn main() -> anyhow::Result<()> {
     setup_logging_and_tracing(command.default_log_level())?;
 
     let command_res = match command {
+        CliCommand::ExtractSplit(args) => extract_split_cli(args).await,
         CliCommand::InspectSplit(args) => inspect_split_cli(args).await,
         CliCommand::New(args) => create_index_cli(args).await,
         CliCommand::Index(args) => index_data_cli(args).await,
@@ -348,7 +379,7 @@ async fn main() -> anyhow::Result<()> {
     telemetry_handle.terminate_telemetry().await;
     global::shutdown_tracer_provider();
 
-    std::process::exit(return_code);
+    std::process::exit(return_code)
 }
 
 /// Return the about text with telemetry info.

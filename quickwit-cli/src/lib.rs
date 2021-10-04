@@ -48,7 +48,7 @@ use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, MetastoreUriResolver};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
-use quickwit_storage::quickwit_storage_uri_resolver;
+use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
 
@@ -57,6 +57,30 @@ const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
 /// This environment variable can be set to send telemetry events to a jaeger instance.
 pub const QUICKWIT_JAEGER_ENABLED_ENV_KEY: &str = "QUICKWIT_JAEGER_ENABLED";
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct ExtractSplitArgs {
+    metastore_uri: String,
+    index_id: String,
+    split_id: String,
+    target_folder: PathBuf,
+}
+
+impl ExtractSplitArgs {
+    pub fn new(
+        metastore_uri: String,
+        index_id: String,
+        split_id: String,
+        target_folder: PathBuf,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            metastore_uri,
+            index_id,
+            split_id,
+            target_folder,
+        })
+    }
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct InspectSplitArgs {
@@ -168,6 +192,32 @@ pub struct GarbageCollectIndexArgs {
     pub dry_run: bool,
 }
 
+pub async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "extract-split");
+
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+    let index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
+
+    let split_file = PathBuf::from(format!("{}.split", args.split_id));
+    let (_, bundle_footer) = read_split_footer(index_storage.clone(), &split_file).await?;
+
+    let bundle_storage = BundleStorage::new(index_storage, split_file, &bundle_footer)?;
+
+    std::fs::create_dir_all(args.target_folder.to_owned())?;
+
+    for path in bundle_storage.iter_files() {
+        let mut out_path = args.target_folder.to_owned();
+        out_path.push(path.to_owned());
+        println!("Copying {:?}", out_path);
+        bundle_storage.copy_to_file(path, &out_path).await?;
+    }
+
+    Ok(())
+}
+
 pub async fn inspect_split_cli(args: InspectSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "inspect-split");
 
@@ -178,10 +228,10 @@ pub async fn inspect_split_cli(args: InspectSplitArgs) -> anyhow::Result<()> {
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
 
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
-    let bundle = read_split_footer(index_storage, &split_file).await?;
+    let (split_footer, _) = read_split_footer(index_storage, &split_file).await?;
 
-    let stats = BundleDirectory::get_stats_split(bundle.clone())?;
-    let hotcache_bytes = get_hotcache_from_split(bundle)?;
+    let stats = BundleDirectory::get_stats_split(split_footer.clone())?;
+    let hotcache_bytes = get_hotcache_from_split(split_footer)?;
 
     for (path, size) in stats {
         let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
