@@ -143,9 +143,7 @@ impl Storage for BundleStorage {
 
         let mut out_file = File::create(output_path)?;
         let block_size = 100_000_000;
-        for block_start in (0..file_num_bytes).step_by(block_size) {
-            let block_end = (block_start + block_size).min(file_num_bytes);
-            let block = block_start..block_end;
+        for block in chunk_range(0..file_num_bytes, block_size) {
             let file_content = self.get_slice(path, block).await?;
             out_file.write_all(&file_content)?;
         }
@@ -198,6 +196,13 @@ impl Storage for BundleStorage {
     fn uri(&self) -> String {
         self.storage.uri()
     }
+}
+
+fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {
+    range.clone().step_by(chunk_size).map(move |block_start| {
+        let block_end = (block_start + chunk_size).min(range.end);
+        block_start..block_end
+    })
 }
 
 impl HasLen for BundleStorage {
