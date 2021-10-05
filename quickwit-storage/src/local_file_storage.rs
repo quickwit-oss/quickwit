@@ -48,7 +48,7 @@ impl LocalFileStorage {
     /// Creates a file storage instance given a uri
     pub fn from_uri(uri: &str) -> StorageResult<LocalFileStorage> {
         let root_pathbuf = Self::extract_root_path_from_uri(uri)?;
-        Ok(Self { root: root_pathbuf })
+        Ok(LocalFileStorage::from(root_pathbuf))
     }
 
     /// Validates if the provided uri is of the correct protocol & extracts the root path.
@@ -88,10 +88,18 @@ impl LocalFileStorage {
     }
 
     /// Moves a file from a source to a destination.
-    pub async fn move_to(&self, from: &Path, to: &Path) -> crate::StorageResult<()> {
-        let from_full_path = self.root.join(from);
+    /// from here is an external path, and to is an internal path.
+    pub async fn move_into(&self, from_external: &Path, to: &Path) -> crate::StorageResult<()> {
         let to_full_path = self.root.join(to);
-        fs::rename(from_full_path, to_full_path).await?;
+        fs::rename(from_external, to_full_path).await?;
+        Ok(())
+    }
+
+    /// Moves a file from a source to a destination.
+    /// from here is an internal path, and to is an external path.
+    pub async fn move_out(&self, from_internal: &Path, to: &Path) -> crate::StorageResult<()> {
+        let from_full_path = self.root.join(from_internal);
+        fs::rename(from_full_path, to).await?;
         Ok(())
     }
 }
@@ -143,6 +151,12 @@ fn missing_file_is_ok(io_result: io::Result<()>) -> io::Result<()> {
         Ok(()) => Ok(()),
         Err(io_err) if io_err.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(io_err) => Err(io_err),
+    }
+}
+
+impl From<PathBuf> for LocalFileStorage {
+    fn from(root: PathBuf) -> LocalFileStorage {
+        LocalFileStorage { root }
     }
 }
 

@@ -17,16 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt;
 use quickwit_actors::ActorContext;
 use quickwit_metastore::{Metastore, SplitMetadataAndFooterOffsets, SplitState};
-use quickwit_storage::Storage;
 use tantivy::chrono::Utc;
 use tracing::{error, warn};
+
+use crate::split_store::IndexingSplitStore;
 
 const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
 
@@ -70,7 +70,7 @@ impl From<&SplitMetadataAndFooterOffsets> for FileEntry {
 /// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
 pub async fn run_garbage_collect(
     index_id: &str,
-    storage: Arc<dyn Storage>,
+    split_store: IndexingSplitStore,
     metastore: Arc<dyn Metastore>,
     staged_grace_period: Duration,
     deletion_grace_period: Duration,
@@ -128,7 +128,7 @@ pub async fn run_garbage_collect(
 
     let deleted_files = delete_splits_with_files(
         index_id,
-        storage.clone(),
+        split_store.clone(),
         metastore.clone(),
         splits_to_delete,
         ctx_opt,
@@ -148,7 +148,7 @@ pub async fn run_garbage_collect(
 /// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
 pub async fn delete_splits_with_files(
     index_id: &str,
-    storage: Arc<dyn Storage>,
+    indexing_split_store: IndexingSplitStore,
     metastore: Arc<dyn Metastore>,
     splits: Vec<SplitMetadataAndFooterOffsets>,
     ctx_opt: Option<&ActorContext<()>>,
@@ -157,16 +157,22 @@ pub async fn delete_splits_with_files(
     let mut deleted_split_ids: Vec<String> = Vec::new();
     let mut failed_split_ids: Vec<String> = Vec::new();
 
-    let mut delete_splits_results_stream = tokio_stream::iter(splits)
-        .map(|meta| {
-            let storage_clone = storage.clone();
+    let mut delete_splits_results_stream = tokio_stream::iter(splits.into_iter())
+        .map(|split| {
+            let moved_indexing_split_store = indexing_split_store.clone();
             async move {
-                let file_entry = FileEntry::from(&meta);
-                let delete_split_res = storage_clone.delete(Path::new(&file_entry.file_name)).await;
+                let file_entry = FileEntry::from(&split);
+                let delete_result = moved_indexing_split_store
+                    .delete(&split.split_metadata.split_id)
+                    .await;
                 if let Some(ctx) = ctx_opt {
                     ctx.record_progress();
                 }
-                (meta.split_metadata.split_id, file_entry, delete_split_res)
+                (
+                    split.split_metadata.split_id.clone(),
+                    file_entry,
+                    delete_result,
+                )
             }
         })
         .buffer_unordered(MAX_CONCURRENT_STORAGE_REQUESTS);

@@ -41,12 +41,14 @@ kafka = ["rdkafka"]
 kafka-broker-external-service = []
 
 [dev-dependencies]
+bytes = "1"
 mockall = "0.9"
 proptest = "1"
 quickwit-common = {path="../quickwit-common", version="0.1"}
 quickwit-metastore = {path = "../quickwit-metastore", features=["testsuite"]}
 quickwit-storage = {path = "../quickwit-storage", features=["testsuite"]}
 rand = '0.8'
+tempfile = "3"
 
 [[test]]
 name = "failpoints"

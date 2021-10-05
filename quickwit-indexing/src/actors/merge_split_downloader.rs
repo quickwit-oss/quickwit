@@ -18,22 +18,19 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::path::Path;
-use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, AsyncActor, Mailbox, QueueCapacity};
-use quickwit_common::split_file;
 use quickwit_metastore::SplitMetadata;
-use quickwit_storage::Storage;
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::merge_policy::MergeOperation;
 use crate::models::{MergeScratch, ScratchDirectory};
+use crate::split_store::IndexingSplitStore;
 
 pub struct MergeSplitDownloader {
     pub scratch_directory: ScratchDirectory,
-    pub storage: Arc<dyn Storage>,
+    pub storage: IndexingSplitStore,
     pub merge_executor_mailbox: Mailbox<MergeScratch>,
 }
 
@@ -91,15 +88,10 @@ impl MergeSplitDownloader {
     ) -> anyhow::Result<()> {
         // we download all of the split files in the scratch directory.
         for split in splits {
-            let split_filename = split_file(&split.split_id);
-            let split_file = Path::new(&split_filename);
-            let dest_path = download_directory.join(split_file);
             let _protect_guard = ctx.protect_zone();
-            let start_time = Instant::now();
-            debug!(split_file=?split_file, dest_path=?dest_path, "download-file");
-            self.storage.copy_to_file(split_file, &dest_path).await?;
-            let elapsed = start_time.elapsed();
-            debug!(split_file=?split_file, elapsed=?elapsed, "download-file-end");
+            self.storage
+                .fetch_split(&split.split_id, download_directory)
+                .await?;
         }
         Ok(())
     }
@@ -108,8 +100,10 @@ impl MergeSplitDownloader {
 #[cfg(test)]
 mod tests {
     use std::iter;
+    use std::sync::Arc;
 
     use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_common::split_file;
     use quickwit_storage::RamStorageBuilder;
 
     use super::*;
@@ -129,14 +123,15 @@ mod tests {
         .take(10)
         .collect();
 
-        let storage = Arc::new({
+        let storage = {
             let mut storage_builder = RamStorageBuilder::default();
             for split in &splits_to_merge {
                 storage_builder =
                     storage_builder.put(&split_file(&split.split_id), &b"split_payload"[..]);
             }
-            storage_builder.build()
-        });
+            let ram_storage = storage_builder.build();
+            IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage))
+        };
 
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_inbox) = create_test_mailbox();

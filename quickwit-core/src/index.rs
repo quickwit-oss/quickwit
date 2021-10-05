@@ -20,7 +20,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use quickwit_indexing::{delete_splits_with_files, run_garbage_collect, FileEntry};
+use quickwit_indexing::{
+    delete_splits_with_files, run_garbage_collect, FileEntry, IndexingSplitStore,
+};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver, SplitState};
 use quickwit_storage::{quickwit_storage_uri_resolver, StorageUriResolver};
 use tracing::warn;
@@ -88,9 +90,16 @@ pub async fn delete_index(
     let splits_to_delete = metastore
         .list_splits(index_id, SplitState::ScheduledForDeletion, None, &[])
         .await?;
-    let deletion_stats =
-        delete_splits_with_files(index_id, storage, metastore.clone(), splits_to_delete, None)
-            .await?;
+
+    let split_store = IndexingSplitStore::create_with_no_local_store(storage);
+    let deletion_stats = delete_splits_with_files(
+        index_id,
+        split_store,
+        metastore.clone(),
+        splits_to_delete,
+        None,
+    )
+    .await?;
     metastore.delete_index(index_id).await?;
     Ok(deletion_stats.deleted_entries)
 }
@@ -114,10 +123,11 @@ pub async fn garbage_collect_index(
 
     let index_uri = metastore.index_metadata(index_id).await?.index_uri;
     let storage = storage_resolver.resolve(&index_uri)?;
+    let split_store = IndexingSplitStore::create_with_no_local_store(storage);
 
     let deletion_stats = run_garbage_collect(
         index_id,
-        storage,
+        split_store,
         metastore,
         grace_period,
         // deletion_grace_period of zero, so that a cli call directly deletes splits after marking
@@ -149,6 +159,7 @@ pub async fn reset_index(
 ) -> anyhow::Result<()> {
     let index_uri = metastore.index_metadata(index_id).await?.index_uri;
     let storage = storage_resolver.resolve(&index_uri)?;
+    let split_store = IndexingSplitStore::create_with_no_local_store(storage);
 
     let splits = metastore.list_all_splits(index_id).await?;
     let split_ids = splits
@@ -160,7 +171,7 @@ pub async fn reset_index(
         .await?;
 
     let garbage_removal_result =
-        delete_splits_with_files(index_id, storage, metastore.clone(), splits, None).await;
+        delete_splits_with_files(index_id, split_store, metastore.clone(), splits, None).await;
     if garbage_removal_result.is_err() {
         warn!(metastore_uri = %metastore.uri(), "All split files could not be removed during garbage collection.");
     }

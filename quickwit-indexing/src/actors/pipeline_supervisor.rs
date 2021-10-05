@@ -26,7 +26,7 @@ use quickwit_actors::{
     Health, KillSwitch, QueueCapacity, Supervisable,
 };
 use quickwit_metastore::{Metastore, SplitState};
-use quickwit_storage::{create_storage_with_upload_cache, CacheParams, StorageUriResolver};
+use quickwit_storage::StorageUriResolver;
 use tokio::join;
 use tracing::{debug, error, info};
 
@@ -37,6 +37,7 @@ use crate::actors::{
 };
 use crate::models::IndexingStatistics;
 use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
+use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
 pub struct IndexingPipelineHandler {
@@ -185,14 +186,18 @@ impl IndexingPipelineSupervisor {
             .storage_uri_resolver
             .resolve(&index_metadata.index_uri)?;
 
+        let merge_policy: Arc<dyn MergePolicy> =
+            Arc::new(StableMultitenantWithTimestampMergePolicy::default());
+
         // TODO: Make cache path configurable [https://github.com/quickwit-inc/quickwit/issues/520]
         // Using the scratch_directory directly is fine since the cache storage will create its own
         // folder to work with.
-        let cache_directory = self.params.indexer_params.scratch_directory.path();
-        let index_storage = create_storage_with_upload_cache(
+        let scratch_directory = self.params.indexer_params.scratch_directory.path();
+        let split_store = IndexingSplitStore::create_with_local_store(
             index_storage,
-            cache_directory,
-            CacheParams::default(),
+            scratch_directory,
+            IndexingSplitStoreParams::default(),
+            merge_policy.clone(),
         )?;
 
         let tags_field = index_metadata
@@ -207,7 +212,7 @@ impl IndexingPipelineSupervisor {
         // Merge uploader
         let merge_uploader = Uploader::new(
             self.params.metastore.clone(),
-            index_storage.clone(),
+            split_store.clone(),
             publisher_mailbox.clone(),
         );
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
@@ -231,7 +236,7 @@ impl IndexingPipelineSupervisor {
 
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory: self.params.indexer_params.scratch_directory.clone(),
-            storage: index_storage.clone(),
+            storage: split_store.clone(),
             merge_executor_mailbox,
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) = ctx
@@ -240,9 +245,8 @@ impl IndexingPipelineSupervisor {
             .spawn_async();
 
         // Merge planner
-        let merge_policy: Arc<dyn MergePolicy> =
-            Arc::new(StableMultitenantWithTimestampMergePolicy::default());
-        let mut merge_planner = MergePlanner::new(merge_policy, merge_split_downloader_mailbox);
+        let mut merge_planner =
+            MergePlanner::new(merge_policy.clone(), merge_split_downloader_mailbox);
         for split in self
             .params
             .metastore
@@ -259,7 +263,7 @@ impl IndexingPipelineSupervisor {
         // Garbage colletor
         let garbage_collector = GarbageCollector::new(
             self.params.index_id.clone(),
-            index_storage.clone(),
+            split_store.clone(),
             self.params.metastore.clone(),
         );
         let (garbage_collector_mailbox, garbage_collector_handler) = ctx
@@ -282,7 +286,7 @@ impl IndexingPipelineSupervisor {
         // Uploader
         let uploader = Uploader::new(
             self.params.metastore.clone(),
-            index_storage,
+            split_store.clone(),
             publisher_mailbox,
         );
         let (uploader_mailbox, uploader_handler) = ctx

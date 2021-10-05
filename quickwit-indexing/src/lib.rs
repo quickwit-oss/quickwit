@@ -27,6 +27,7 @@ use quickwit_storage::StorageUriResolver;
 use crate::actors::{IndexerParams, IndexingPipelineParams, IndexingPipelineSupervisor};
 use crate::models::IndexingStatistics;
 use crate::source::SourceConfig;
+pub use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
 
 pub mod actors;
 mod garbage_collection;
@@ -34,6 +35,7 @@ mod merge_policy;
 pub mod models;
 pub(crate) mod semaphore;
 pub mod source;
+mod split_store;
 mod test_utils;
 
 pub use test_utils::{mock_split_meta, TestSandbox};
