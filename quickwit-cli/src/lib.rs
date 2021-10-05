@@ -33,7 +33,6 @@ use crossterm::QueueableCommand;
 use humansize::{file_size_opts, FileSize};
 use json_comments::StripComments;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
-use quickwit_common::extract_index_id_from_index_uri;
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_directories::{
     get_hotcache_from_split, read_split_footer, BundleDirectory, HotDirectory,
@@ -109,6 +108,7 @@ impl InspectSplitArgs {
 #[derive(Debug)]
 pub struct CreateIndexArgs {
     metastore_uri: String,
+    index_id: String,
     index_uri: String,
     index_config: Arc<dyn IndexConfig>,
     overwrite: bool,
@@ -117,13 +117,16 @@ impl PartialEq for CreateIndexArgs {
     // index_config is opaque and not compared currently, need to change the trait to enable
     // IndexConfig comparison
     fn eq(&self, other: &Self) -> bool {
-        self.index_uri == other.index_uri && self.overwrite == other.overwrite
+        self.index_uri == other.index_uri
+            && self.overwrite == other.overwrite
+            && self.index_id == other.index_id
     }
 }
 
 impl CreateIndexArgs {
     pub fn new(
         metastore_uri: String,
+        index_id: String,
         index_uri: String,
         index_config_path: PathBuf,
         overwrite: bool,
@@ -146,6 +149,7 @@ impl CreateIndexArgs {
 
         Ok(Self {
             metastore_uri,
+            index_id,
             index_uri,
             index_config,
             overwrite,
@@ -251,14 +255,13 @@ pub async fn inspect_split_cli(args: InspectSplitArgs) -> anyhow::Result<()> {
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "create-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
-    let index_id = extract_index_id_from_index_uri(&args.index_uri)?;
 
     if args.overwrite {
-        delete_index(&args.metastore_uri, index_id, false).await?;
+        delete_index(&args.metastore_uri, &args.index_id, false).await?;
     }
 
     let index_metadata = IndexMetadata {
-        index_id: index_id.to_string(),
+        index_id: args.index_id.to_string(),
         index_uri: args.index_uri.to_string(),
         index_config: args.index_config,
         checkpoint: Checkpoint::default(),
@@ -692,24 +695,4 @@ mod tests {
         assert_eq!(source_config.params.get("foo"), Some(&json!("bar")));
         Ok(())
     }
-}
-
-#[test]
-fn test_extract_index_id_from_index_uri() -> anyhow::Result<()> {
-    let index_uri = "file:///indexes/wikipedia-xd_1";
-    let index_id = extract_index_id_from_index_uri(index_uri)?;
-    assert_eq!("wikipedia-xd_1", index_id);
-
-    let result = extract_index_id_from_index_uri("file:///indexes/_wikipedia");
-    assert!(result.is_err());
-
-    let result = extract_index_id_from_index_uri("file:///indexes/-wikipedia");
-    assert!(result.is_err());
-
-    let result = extract_index_id_from_index_uri("file:///indexes/2-wiki-pedia");
-    assert!(result.is_err());
-
-    let result = extract_index_id_from_index_uri("file:///indexes/01wikipedia");
-    assert!(result.is_err());
-    Ok(())
 }

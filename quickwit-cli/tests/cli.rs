@@ -38,8 +38,9 @@ use crate::helpers::{create_test_env, make_command, spawn_command};
 fn create_logs_index(test_env: &TestEnv, index_id: &str) {
     make_command(
         format!(
-            "new --index-uri {} --index-config-path {} --metastore-uri {}",
+            "new --index-uri {} --index-id {} --index-config-path {} --metastore-uri {}",
             test_env.index_uri(index_id),
+            index_id,
             test_env.resource_files["config"].display(),
             test_env.metastore_uri,
         )
@@ -103,8 +104,9 @@ fn test_cmd_new_on_existing_index() -> Result<()> {
 
     make_command(
         format!(
-            "new --index-uri {} --index-config-path {} --metastore-uri {}",
+            "new --index-uri {} --index-id {} --index-config-path {} --metastore-uri {}",
             test_env.index_uri(index_id),
+            index_id,
             test_env.resource_files["config"].display(),
             test_env.metastore_uri,
         )
@@ -596,8 +598,9 @@ async fn test_all_local_index() -> Result<()> {
     let test_env = create_test_env(TestStorageType::LocalFileSystem)?;
     make_command(
         format!(
-            "new --index-uri {} --metastore-uri {} --index-config-path {}",
+            "new --index-uri {} --index-id {} --metastore-uri {} --index-config-path {}",
             test_env.index_uri(index_id),
+            index_id,
             test_env.metastore_uri,
             test_env.resource_files["config"].display()
         )
@@ -779,6 +782,7 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     let index_uri = test_env.index_uri(index_id);
     let args = CreateIndexArgs::new(
         test_env.metastore_uri.clone(),
+        index_id.to_string(),
         index_uri.clone(),
         test_env.resource_files["config"].to_path_buf(),
         false,
