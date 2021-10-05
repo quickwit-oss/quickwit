@@ -84,6 +84,10 @@ impl CliCommand {
             .value_of("index-uri")
             .context("'index-uri' is a required arg")?
             .to_string();
+        let index_id = matches
+            .value_of("index-id")
+            .context("'index-id' is a required arg")?
+            .to_string();
         let index_config_path = matches
             .value_of("index-config-path")
             .map(PathBuf::from)
@@ -96,6 +100,7 @@ impl CliCommand {
 
         Ok(CliCommand::New(CreateIndexArgs::new(
             metastore_uri,
+            index_id,
             index_uri,
             index_config_path,
             overwrite,
@@ -466,6 +471,8 @@ mod tests {
             "new",
             "--index-uri",
             "file:///indexes/wikipedia",
+            "--index-id",
+            "wikipedia",
             "--index-config-path",
             &path_str,
             "--metastore-uri",
@@ -475,6 +482,7 @@ mod tests {
         let expected_cmd = CliCommand::New(
             CreateIndexArgs::new(
                 "file:///indexes".to_string(),
+                "wikipedia".to_string(),
                 "file:///indexes/wikipedia".to_string(),
                 path.to_path_buf(),
                 false,
@@ -483,21 +491,24 @@ mod tests {
         );
         assert_eq!(command.unwrap(), expected_cmd);
 
+        const QUICKWIT_METASTORE_URI_ENV_KEY: &str = "QUICKWIT_METASTORE_URI";
+        env::set_var(QUICKWIT_METASTORE_URI_ENV_KEY, "file:///indexes");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
             "file:///indexes/wikipedia",
+            "--index-id",
+            "wikipedia",
             "--index-config-path",
             &path_str,
-            "--metastore-uri",
-            "file:///indexes",
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         let expected_cmd = CliCommand::New(
             CreateIndexArgs::new(
                 "file:///indexes".to_string(),
+                "wikipedia".to_string(),
                 "file:///indexes/wikipedia".to_string(),
                 path.to_path_buf(),
                 true,
@@ -505,6 +516,7 @@ mod tests {
             .unwrap(),
         );
         assert_eq!(command.unwrap(), expected_cmd);
+        env::remove_var(QUICKWIT_METASTORE_URI_ENV_KEY);
 
         Ok(())
     }

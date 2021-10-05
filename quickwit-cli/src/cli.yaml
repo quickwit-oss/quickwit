@@ -16,6 +16,7 @@ subcommands:
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
+                env: QUICKWIT_METASTORE_URI
             - index-id:
                 help: Index ID
                 long: index-id
@@ -34,6 +35,7 @@ subcommands:
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
+                env: QUICKWIT_METASTORE_URI
             - index-id:
                 help: Index ID
                 long: index-id
@@ -56,6 +58,12 @@ subcommands:
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
+                env: QUICKWIT_METASTORE_URI
+            - index-id:
+                help: Index ID
+                long: index-id
+                value_name: INDEX ID
+                required: true
             - index-uri:
                 help: Location of the target index
                 long: index-uri
@@ -77,6 +85,7 @@ subcommands:
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
+                env: QUICKWIT_METASTORE_URI
             - index-id:
                 help: Index id
                 long: index-id
@@ -117,6 +126,7 @@ subcommands:
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
+                env: QUICKWIT_METASTORE_URI
             - index-id:
                 help: Index id
                 long: index-id
@@ -163,6 +173,7 @@ subcommands:
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
+                env: QUICKWIT_METASTORE_URI
             - index-id:
                 help: Index id
                 long: index-id
@@ -184,6 +195,7 @@ subcommands:
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
+                env: QUICKWIT_METASTORE_URI
             - index-id:
                 help: Index id
                 long: index-id
@@ -200,6 +212,7 @@ subcommands:
                 long: metastore-uri
                 value_name: METASTORE URI
                 required: true
+                env: QUICKWIT_METASTORE_URI
             - host:
                 help: Hostname the web server should bind to.
                 long: host

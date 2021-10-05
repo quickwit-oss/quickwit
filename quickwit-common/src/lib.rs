@@ -21,45 +21,9 @@ mod coolid;
 pub mod metrics;
 
 pub use coolid::new_coolid;
-use once_cell::sync::Lazy;
-use regex::Regex;
 
 /// Filenames used for hotcache files.
 pub const HOTCACHE_FILENAME: &str = "hotcache";
-
-/// This function takes such a index_url and breaks it into
-/// s3://my_bucket/some_path_containing_my_indices / my_index
-///                                                 \------/
-///                                                 index_id
-pub fn extract_index_id_from_index_uri(mut index_uri: &str) -> anyhow::Result<&str> {
-    static INDEX_URI_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^.+://.+/.+$").unwrap());
-    static INDEX_ID_PATTERN: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9_\-]*$").unwrap());
-
-    if !INDEX_URI_PATTERN.is_match(index_uri) {
-        anyhow::bail!(
-            "Invalid index uri `{}`. Expected format is: `protocol://bucket/path-to-target`.",
-            index_uri
-        );
-    }
-
-    if index_uri.ends_with('/') {
-        index_uri = &index_uri[..index_uri.len() - 1];
-    }
-    let parts: Vec<&str> = index_uri.rsplitn(2, '/').collect();
-    if parts.len() != 2 {
-        anyhow::bail!("Failed to parse the uri into a metastore_uri and an index_id.");
-    }
-    if !INDEX_ID_PATTERN.is_match(parts[0]) {
-        anyhow::bail!(
-            "Invalid index_id `{}`. Only alpha-numeric, `-` and `_` characters allowed. Cannot \
-             start with `-`, `_` or digit.",
-            parts[0]
-        );
-    }
-
-    Ok(parts[0])
-}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum QuickwitEnv {
