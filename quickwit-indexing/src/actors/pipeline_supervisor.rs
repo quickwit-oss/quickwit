@@ -375,8 +375,8 @@ impl IndexingPipelineSupervisor {
 
                         // When the publisher is dead, try to stop the garbage collector if not
                         // already.
-                        if handlers.publisher.health() != Health::Healthy
-                            && handlers.garbage_collector.health() == Health::Healthy
+                        if handlers.publisher.state() != ActorState::Running
+                            && handlers.garbage_collector.state() == ActorState::Running
                         {
                             info!("Stopping the garbage collector since the publisher is dead.");
                             // It's fine for the message to fail.
@@ -474,7 +474,7 @@ mod tests {
             .times(3)
             .returning(|_, _, _, _| Ok(Vec::new()));
         metastore
-            .expect_mark_splits_as_deleted()
+            .expect_mark_splits_for_deletion()
             .times(1)
             .returning(|_, _| Ok(()));
 
