@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt;
+use quickwit_actors::ActorContext;
 use quickwit_metastore::{Metastore, SplitMetadataAndFooterOffsets, SplitState};
 use quickwit_storage::Storage;
 use tantivy::chrono::Utc;
@@ -66,6 +67,7 @@ impl From<&SplitMetadataAndFooterOffsets> for FileEntry {
 /// * `deletion_grace_period` -  Threshold period after which a marked as deleted split can be
 ///   safely deleted.
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
+/// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
 pub async fn run_garbage_collect(
     index_id: &str,
     storage: Arc<dyn Storage>,
@@ -73,6 +75,7 @@ pub async fn run_garbage_collect(
     staged_grace_period: Duration,
     deletion_grace_period: Duration,
     dry_run: bool,
+    ctx_opt: Option<&ActorContext<()>>,
 ) -> anyhow::Result<SplitDeletionStats> {
     // Select staged splits with staging timestamp older than grace period timestamp.
     let grace_period_timestamp = Utc::now().timestamp() - staged_grace_period.as_secs() as i64;
@@ -84,6 +87,9 @@ pub async fn run_garbage_collect(
         // TODO: Update metastore API and push this filter down.
         .filter(|meta| meta.split_metadata.update_timestamp < grace_period_timestamp)
         .collect();
+    if let Some(ctx) = ctx_opt {
+        ctx.record_progress();
+    }
 
     if dry_run {
         let mut scheduled_for_delete_splits = metastore
@@ -125,6 +131,7 @@ pub async fn run_garbage_collect(
         storage.clone(),
         metastore.clone(),
         splits_to_delete,
+        ctx_opt,
     )
     .await?;
 
@@ -138,11 +145,13 @@ pub async fn run_garbage_collect(
 /// * `storage - The storage managing the target index.
 /// * `metastore` - The metastore managing the target index.
 /// * `splits`  - The list of splits to delete.
+/// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
 pub async fn delete_splits_with_files(
     index_id: &str,
     storage: Arc<dyn Storage>,
     metastore: Arc<dyn Metastore>,
     splits: Vec<SplitMetadataAndFooterOffsets>,
+    ctx_opt: Option<&ActorContext<()>>,
 ) -> anyhow::Result<SplitDeletionStats> {
     let mut deletion_stats = SplitDeletionStats::default();
     let mut deleted_split_ids: Vec<String> = Vec::new();
@@ -154,6 +163,9 @@ pub async fn delete_splits_with_files(
             async move {
                 let file_entry = FileEntry::from(&meta);
                 let delete_split_res = storage_clone.delete(Path::new(&file_entry.file_name)).await;
+                if let Some(ctx) = ctx_opt {
+                    ctx.record_progress();
+                }
                 (meta.split_metadata.split_id, file_entry, delete_split_res)
             }
         })

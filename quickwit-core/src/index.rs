@@ -89,7 +89,8 @@ pub async fn delete_index(
         .list_splits(index_id, SplitState::ScheduledForDeletion, None, &[])
         .await?;
     let deletion_stats =
-        delete_splits_with_files(index_id, storage, metastore.clone(), splits_to_delete).await?;
+        delete_splits_with_files(index_id, storage, metastore.clone(), splits_to_delete, None)
+            .await?;
     metastore.delete_index(index_id).await?;
     Ok(deletion_stats.deleted_entries)
 }
@@ -123,6 +124,7 @@ pub async fn garbage_collect_index(
         // to be deleted.
         Duration::ZERO,
         dry_run,
+        None,
     )
     .await?;
     if dry_run {
@@ -158,7 +160,7 @@ pub async fn reset_index(
         .await?;
 
     let garbage_removal_result =
-        delete_splits_with_files(index_id, storage, metastore.clone(), splits).await;
+        delete_splits_with_files(index_id, storage, metastore.clone(), splits, None).await;
     if garbage_removal_result.is_err() {
         warn!(metastore_uri = %metastore.uri(), "All split files could not be removed during garbage collection.");
     }

@@ -110,6 +110,7 @@ impl AsyncActor for GarbageCollector {
             STAGED_GRACE_PERIOD,
             DELETION_GRACE_PERIOD,
             false,
+            Some(ctx),
         )
         .await?;
 
