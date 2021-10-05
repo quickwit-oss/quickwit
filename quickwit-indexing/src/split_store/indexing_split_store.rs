@@ -84,12 +84,9 @@ pub struct IndexingSplitStore {
 }
 
 impl IndexingSplitStore {
-    /// Create an instance of [`StorageWithUploadCache`]
+    /// Create an instance of [`IndexingSplitStore`]
     ///
     /// It needs the remote storage to work with.
-    /// Tries to create a folder `cache_dir/INTERNAL_CACHE_DIR_NAME` if it does not exist.
-    /// List the content of `cache_dir/INTERNAL_CACHE_DIR_NAME` as initial cache content.
-    /// Removes and ignores all files ending with `CACHE_TEMP_FILE_EXTENSION`
     pub fn create_with_local_store(
         remote_storage: Arc<dyn Storage>,
         scratch_dir: &Path,

@@ -96,7 +96,7 @@ impl LocalFileStorage {
     }
 
     /// Moves a file from a source to a destination.
-    /// from here is an external path, and to is an internal path.
+    /// from here is an internal path, and to is an external path.
     pub async fn move_out(&self, from_internal: &Path, to: &Path) -> crate::StorageResult<()> {
         let from_full_path = self.root.join(from_internal);
         fs::rename(from_full_path, to).await?;
