@@ -25,7 +25,7 @@ use futures::StreamExt;
 use quickwit_metastore::{Metastore, SplitMetadataAndFooterOffsets, SplitState};
 use quickwit_storage::Storage;
 use tantivy::chrono::Utc;
-use tracing::warn;
+use tracing::{error, warn};
 
 const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
 
@@ -148,39 +148,35 @@ pub async fn delete_splits_with_files(
     let mut deleted_split_ids: Vec<String> = Vec::new();
     let mut failed_split_ids: Vec<String> = Vec::new();
 
-    let mut delete_splits_results_stream = tokio_stream::iter(splits.into_iter())
+    let mut delete_splits_results_stream = tokio_stream::iter(splits)
         .map(|meta| {
-            let moved_storage = storage.clone();
+            let storage_clone = storage.clone();
             async move {
                 let file_entry = FileEntry::from(&meta);
-                let delete_result = moved_storage.delete(Path::new(&file_entry.file_name)).await;
-                (
-                    meta.split_metadata.split_id.clone(),
-                    file_entry,
-                    delete_result.is_ok(),
-                )
+                let delete_split_res = storage_clone.delete(Path::new(&file_entry.file_name)).await;
+                (meta.split_metadata.split_id, file_entry, delete_split_res)
             }
         })
         .buffer_unordered(MAX_CONCURRENT_STORAGE_REQUESTS);
 
-    while let Some((split_id, file_entry, is_success)) = delete_splits_results_stream.next().await {
+    while let Some((split_id, file_entry, delete_split_res)) =
+        delete_splits_results_stream.next().await
+    {
         deletion_stats.candidate_entries.push(file_entry.clone());
-        if is_success {
+        if let Err(error) = delete_split_res {
+            error!(error = ?error, index_id = ?index_id, split_id = ?split_id, "Failed to delete split.");
+            failed_split_ids.push(split_id);
+        } else {
             deleted_split_ids.push(split_id);
             deletion_stats.deleted_entries.push(file_entry);
-        } else {
-            failed_split_ids.push(split_id);
-        }
+        };
     }
-
     if !failed_split_ids.is_empty() {
-        warn!(splits=?failed_split_ids, "Some splits were not deleted");
+        warn!(index_id = ?index_id, split_ids = ?failed_split_ids, "Failed to delete splits.");
     }
-
     if !deleted_split_ids.is_empty() {
         let split_ids: Vec<&str> = deleted_split_ids.iter().map(String::as_str).collect();
         metastore.delete_splits(index_id, &split_ids).await?;
     }
-
     Ok(deletion_stats)
 }
