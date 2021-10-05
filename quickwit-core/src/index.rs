@@ -93,8 +93,8 @@ pub async fn delete_index(
 
     let split_store = IndexingSplitStore::create_with_no_local_store(storage);
     let deletion_stats =
-        delete_splits_with_files(index_id, split_store, metastore.clone(), splits_to_delete)
-            .await?;
+        delete_splits_with_files(index_id, split_store, metastore.clone(), splits_to_delete, None)
+        .await?;
     metastore.delete_index(index_id).await?;
     Ok(deletion_stats.deleted_entries)
 }
@@ -120,8 +120,18 @@ pub async fn garbage_collect_index(
     let storage = storage_resolver.resolve(&index_uri)?;
     let split_store = IndexingSplitStore::create_with_no_local_store(storage);
 
-    let deletion_stats =
-        run_garbage_collect(index_id, split_store, metastore, grace_period, dry_run).await?;
+    let deletion_stats = run_garbage_collect(
+        index_id,
+        split_store,
+        metastore,
+        grace_period,
+        // deletion_grace_period of zero, so that a cli call directly deletes splits after marking
+        // to be deleted.
+        Duration::ZERO,
+        dry_run,
+        None,
+    )
+    .await?;
     if dry_run {
         Ok(deletion_stats.candidate_entries)
     } else {
@@ -156,7 +166,7 @@ pub async fn reset_index(
         .await?;
 
     let garbage_removal_result =
-        delete_splits_with_files(index_id, split_store, metastore.clone(), splits).await;
+        delete_splits_with_files(index_id, split_store, metastore.clone(), splits, None).await;
     if garbage_removal_result.is_err() {
         warn!(metastore_uri = %metastore.uri(), "All split files could not be removed during garbage collection.");
     }

@@ -30,7 +30,17 @@ use crate::run_garbage_collect;
 use crate::split_store::IndexingSplitStore;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(60); // 1 minutes
-const GRACE_PERIOD: Duration = Duration::from_secs(60 * 60); // 1 hour
+/// Staged files needs to be deleted if there was a failure.
+/// TODO ideally we want clean up all staged splits every time we restart the indexing pipeline, but
+/// the grace period strategy should do the job for the moment.
+const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60); // 1 hour
+/// We cannot safely delete splits right away as a in-flight queries could actually
+/// have selected this split.
+/// We deal this probably by introducing a grace period. A split is first marked as delete,
+/// and hence won't be selected for search. After a few minutes, once it reasonably safe to assume
+/// that all queries involving this split have terminated, we effectively delete the split.
+/// This duration is controlled by `DELETION_GRACE_PERIOD`.
+const DELETION_GRACE_PERIOD: Duration = Duration::from_secs(120); // 2 min
 
 #[derive(Debug, Clone, Default)]
 pub struct GarbageCollectorCounters {
@@ -97,8 +107,10 @@ impl AsyncActor for GarbageCollector {
             &self.index_id,
             self.split_store.clone(),
             self.metastore.clone(),
-            GRACE_PERIOD,
+            STAGED_GRACE_PERIOD,
+            DELETION_GRACE_PERIOD,
             false,
+            Some(ctx),
         )
         .await?;
 

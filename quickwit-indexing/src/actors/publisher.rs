@@ -36,6 +36,7 @@ pub struct PublisherCounters {
 pub struct Publisher {
     metastore: Arc<dyn Metastore>,
     merge_planner_mailbox: Mailbox<MergePlannerMessage>,
+    garbage_collector_mailbox: Mailbox<()>,
     counters: PublisherCounters,
 }
 
@@ -43,10 +44,12 @@ impl Publisher {
     pub fn new(
         metastore: Arc<dyn Metastore>,
         merge_planner_mailbox: Mailbox<MergePlannerMessage>,
+        garbage_collector_mailbox: Mailbox<()>,
     ) -> Publisher {
         Publisher {
             metastore,
             merge_planner_mailbox,
+            garbage_collector_mailbox,
             counters: PublisherCounters::default(),
         }
     }
@@ -142,6 +145,22 @@ impl AsyncActor for Publisher {
         fail_point!("publisher:after");
         Ok(())
     }
+
+    async fn finalize(
+        &mut self,
+        _exit_status: &quickwit_actors::ActorExitStatus,
+        ctx: &ActorContext<Self::Message>,
+    ) -> anyhow::Result<()> {
+        // The `garbage_collector` actor runs for ever.
+        // Periodically scheduling new messages for itself.
+        //
+        // The publisher actor being the last standing actor of the pipeline,
+        // its end of life should also means the end of life of never stopping actors.
+        // After all, when the publisher is stopped, there shouldn't be anything to process.
+        // It's fine if the garbage collector is already dead.
+        let _ = ctx.send_exit_with_success_blocking(&self.garbage_collector_mailbox);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -178,7 +197,12 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
         let (merge_planner_mailbox, _merge_planner_inbox) = create_test_mailbox();
-        let publisher = Publisher::new(Arc::new(mock_metastore), merge_planner_mailbox);
+        let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
+        let publisher = Publisher::new(
+            Arc::new(mock_metastore),
+            merge_planner_mailbox,
+            garbage_collector_mailbox,
+        );
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
         let (split_future_tx1, split_future_rx1) = oneshot::channel::<PublisherMessage>();
@@ -236,7 +260,12 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
-        let publisher = Publisher::new(Arc::new(mock_metastore), merge_planner_mailbox);
+        let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
+        let publisher = Publisher::new(
+            Arc::new(mock_metastore),
+            merge_planner_mailbox,
+            garbage_collector_mailbox,
+        );
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
         let (split_future_tx, split_future_rx) = oneshot::channel::<PublisherMessage>();

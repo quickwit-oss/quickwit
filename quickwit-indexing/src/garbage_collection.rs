@@ -21,6 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::StreamExt;
+use quickwit_actors::ActorContext;
 use quickwit_metastore::{Metastore, SplitMetadataAndFooterOffsets, SplitState};
 use tantivy::chrono::Utc;
 use tracing::{error, warn};
@@ -61,17 +62,24 @@ impl From<&SplitMetadataAndFooterOffsets> for FileEntry {
 /// * `index_id` - The target index id.
 /// * `storage - The storage managing the target index.
 /// * `metastore` - The metastore managing the target index.
-/// * `grace_period` -  Threshold period after which a staged split can be safely garbage collected.
+/// * `staged_grace_period` -  Threshold period after which a staged split can be safely garbage
+///   collected.
+/// * `deletion_grace_period` -  Threshold period after which a marked as deleted split can be
+///   safely deleted.
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
+/// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
 pub async fn run_garbage_collect(
     index_id: &str,
     split_store: IndexingSplitStore,
     metastore: Arc<dyn Metastore>,
-    grace_period: Duration,
+    staged_grace_period: Duration,
+    deletion_grace_period: Duration,
     dry_run: bool,
+    ctx_opt: Option<&ActorContext<()>>,
 ) -> anyhow::Result<SplitDeletionStats> {
     // Select staged splits with staging timestamp older than grace period timestamp.
-    let grace_period_timestamp = Utc::now().timestamp() - grace_period.as_secs() as i64;
+    let grace_period_timestamp = Utc::now().timestamp() - staged_grace_period.as_secs() as i64;
+
     let deletable_staged_splits: Vec<SplitMetadataAndFooterOffsets> = metastore
         .list_splits(index_id, SplitState::Staged, None, &[])
         .await?
@@ -79,6 +87,9 @@ pub async fn run_garbage_collect(
         // TODO: Update metastore API and push this filter down.
         .filter(|meta| meta.split_metadata.update_timestamp < grace_period_timestamp)
         .collect();
+    if let Some(ctx) = ctx_opt {
+        ctx.record_progress();
+    }
 
     if dry_run {
         let mut scheduled_for_delete_splits = metastore
@@ -105,13 +116,24 @@ pub async fn run_garbage_collect(
         .mark_splits_for_deletion(index_id, &split_ids)
         .await?;
 
-    // Select split to delete
+    // We wait another 2 minutes until the split is actually deleted.
+    let grace_period_deletion = Utc::now().timestamp() - deletion_grace_period.as_secs() as i64;
     let splits_to_delete = metastore
         .list_splits(index_id, SplitState::ScheduledForDeletion, None, &[])
-        .await?;
-    let deleted_files =
-        delete_splits_with_files(index_id, split_store, metastore.clone(), splits_to_delete)
-            .await?;
+        .await?
+        .into_iter()
+        // TODO: Update metastore API and push this filter down.
+        .filter(|meta| meta.split_metadata.update_timestamp <= grace_period_deletion)
+        .collect();
+
+    let deleted_files = delete_splits_with_files(
+        index_id,
+        split_store.clone(),
+        metastore.clone(),
+        splits_to_delete,
+        ctx_opt,
+    )
+    .await?;
 
     Ok(deleted_files)
 }
@@ -123,11 +145,13 @@ pub async fn run_garbage_collect(
 /// * `storage - The storage managing the target index.
 /// * `metastore` - The metastore managing the target index.
 /// * `splits`  - The list of splits to delete.
+/// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
 pub async fn delete_splits_with_files(
     index_id: &str,
     indexing_split_store: IndexingSplitStore,
     metastore: Arc<dyn Metastore>,
     splits: Vec<SplitMetadataAndFooterOffsets>,
+    ctx_opt: Option<&ActorContext<()>>,
 ) -> anyhow::Result<SplitDeletionStats> {
     let mut deletion_stats = SplitDeletionStats::default();
     let mut deleted_split_ids: Vec<String> = Vec::new();
@@ -141,6 +165,9 @@ pub async fn delete_splits_with_files(
                 let delete_result = moved_indexing_split_store
                     .delete(&split.split_metadata.split_id)
                     .await;
+                if let Some(ctx) = ctx_opt {
+                    ctx.record_progress();
+                }
                 (
                     split.split_metadata.split_id.clone(),
                     file_entry,
