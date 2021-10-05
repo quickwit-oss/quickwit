@@ -158,6 +158,7 @@ mod tests {
     use std::ops::Range;
     use std::sync::Arc;
 
+    use futures::TryStreamExt;
     use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_indexing::mock_split_meta;
     use quickwit_metastore::checkpoint::Checkpoint;
@@ -260,11 +261,11 @@ mod tests {
             clients: Arc::new(RwLock::new(clients)),
         });
         let cluster_client = ClusterClient::new(client_pool.clone());
-        let search_result =
-            root_search_stream(&request, &metastore, &cluster_client, &client_pool).await;
-        assert!(search_result.is_err());
+        let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
+        let result: Result<Vec<_>, SearchError> = stream.try_collect().await;
+        assert!(result.is_err());
         assert_eq!(
-            search_result.unwrap_err().to_string(),
+            result.unwrap_err().to_string(),
             "Internal error: `Internal error: `Error again on `split2``.`."
         );
         Ok(())

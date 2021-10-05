@@ -221,16 +221,9 @@ mod test {
             member_state: ArtilleryMemberState::Alive,
             last_state_change: Instant::now() - Duration::from_secs(3600),
         };
-
         let encoded = bincode::serialize(&member).unwrap();
-        dbg!(encoded.len());
-
         let decoded: ArtilleryMember = bincode::deserialize(&encoded).unwrap();
         let encoded_again = bincode::serialize(&decoded).unwrap();
-
-        let json_encoded = serde_json::to_string(&member).unwrap();
-        dbg!(json_encoded);
-
         assert_eq!(encoded, encoded_again);
     }
 }

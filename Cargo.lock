@@ -2256,6 +2256,7 @@ dependencies = [
  "async-trait",
  "backoff",
  "byte-unit",
+ "bytes",
  "fail",
  "flume",
  "futures",
