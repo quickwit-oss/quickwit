@@ -92,9 +92,14 @@ pub async fn delete_index(
         .await?;
 
     let split_store = IndexingSplitStore::create_with_no_local_store(storage);
-    let deletion_stats =
-        delete_splits_with_files(index_id, split_store, metastore.clone(), splits_to_delete, None)
-        .await?;
+    let deletion_stats = delete_splits_with_files(
+        index_id,
+        split_store,
+        metastore.clone(),
+        splits_to_delete,
+        None,
+    )
+    .await?;
     metastore.delete_index(index_id).await?;
     Ok(deletion_stats.deleted_entries)
 }

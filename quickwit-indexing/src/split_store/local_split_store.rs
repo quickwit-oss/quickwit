@@ -99,7 +99,9 @@ impl LocalSplitStore {
     }
 
     pub async fn remove_split(&mut self, split_id: &str) -> StorageResult<()> {
-        if !self.stored_splits.contains_key(split_id) { return Ok(()); }
+        if !self.stored_splits.contains_key(split_id) {
+            return Ok(());
+        }
         let split_path = PathBuf::from(quickwit_common::split_file(split_id));
         if let Err(error) = self.local_storage.delete(&split_path).await {
             warn!(file_path = %split_path.display(), error = %error, "Could not remove file from local storage.");
