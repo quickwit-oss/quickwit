@@ -26,7 +26,7 @@ use quickwit_actors::{
     Health, KillSwitch, QueueCapacity, Supervisable,
 };
 use quickwit_metastore::{Metastore, SplitState};
-use quickwit_storage::{create_storage_with_upload_cache, CacheParams, StorageUriResolver};
+use quickwit_storage::StorageUriResolver;
 use tokio::join;
 use tracing::{debug, error, info};
 
@@ -37,6 +37,7 @@ use crate::actors::{
 };
 use crate::models::IndexingStatistics;
 use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
+use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
 pub struct IndexingPipelineHandler {
@@ -122,6 +123,7 @@ impl IndexingPipelineSupervisor {
                 &handlers.packager,
                 &handlers.uploader,
                 &handlers.publisher,
+                &handlers.garbage_collector,
                 &handlers.merge_planner,
                 &handlers.merge_split_downloader,
                 &handlers.merge_executor,
@@ -184,14 +186,18 @@ impl IndexingPipelineSupervisor {
             .storage_uri_resolver
             .resolve(&index_metadata.index_uri)?;
 
+        let merge_policy: Arc<dyn MergePolicy> =
+            Arc::new(StableMultitenantWithTimestampMergePolicy::default());
+
         // TODO: Make cache path configurable [https://github.com/quickwit-inc/quickwit/issues/520]
         // Using the scratch_directory directly is fine since the cache storage will create its own
         // folder to work with.
-        let cache_directory = self.params.indexer_params.scratch_directory.path();
-        let index_storage = create_storage_with_upload_cache(
+        let scratch_directory = self.params.indexer_params.scratch_directory.path();
+        let split_store = IndexingSplitStore::create_with_local_store(
             index_storage,
-            cache_directory,
-            CacheParams::default(),
+            scratch_directory,
+            IndexingSplitStoreParams::default(),
+            merge_policy.clone(),
         )?;
 
         let tags_field = index_metadata
@@ -206,7 +212,7 @@ impl IndexingPipelineSupervisor {
         // Merge uploader
         let merge_uploader = Uploader::new(
             self.params.metastore.clone(),
-            index_storage.clone(),
+            split_store.clone(),
             publisher_mailbox.clone(),
         );
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
@@ -230,7 +236,7 @@ impl IndexingPipelineSupervisor {
 
         let merge_split_downloader = MergeSplitDownloader {
             scratch_directory: self.params.indexer_params.scratch_directory.clone(),
-            storage: index_storage.clone(),
+            storage: split_store.clone(),
             merge_executor_mailbox,
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) = ctx
@@ -239,9 +245,8 @@ impl IndexingPipelineSupervisor {
             .spawn_async();
 
         // Merge planner
-        let merge_policy: Arc<dyn MergePolicy> =
-            Arc::new(StableMultitenantWithTimestampMergePolicy::default());
-        let mut merge_planner = MergePlanner::new(merge_policy, merge_split_downloader_mailbox);
+        let mut merge_planner =
+            MergePlanner::new(merge_policy.clone(), merge_split_downloader_mailbox);
         for split in self
             .params
             .metastore
@@ -255,9 +260,23 @@ impl IndexingPipelineSupervisor {
             .set_kill_switch(self.kill_switch.clone())
             .spawn_sync();
 
+        // Garbage colletor
+        let garbage_collector = GarbageCollector::new(
+            self.params.index_id.clone(),
+            split_store.clone(),
+            self.params.metastore.clone(),
+        );
+        let (garbage_collector_mailbox, garbage_collector_handler) = ctx
+            .spawn_actor(garbage_collector)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_async();
+
         // Publisher
-        let publisher =
-            Publisher::new(self.params.metastore.clone(), merge_planner_mailbox.clone());
+        let publisher = Publisher::new(
+            self.params.metastore.clone(),
+            merge_planner_mailbox.clone(),
+            garbage_collector_mailbox,
+        );
         let (publisher_mailbox, publisher_handler) = ctx
             .spawn_actor(publisher)
             .set_kill_switch(self.kill_switch.clone())
@@ -267,7 +286,7 @@ impl IndexingPipelineSupervisor {
         // Uploader
         let uploader = Uploader::new(
             self.params.metastore.clone(),
-            index_storage.clone(),
+            split_store.clone(),
             publisher_mailbox,
         );
         let (uploader_mailbox, uploader_handler) = ctx
@@ -307,23 +326,13 @@ impl IndexingPipelineSupervisor {
             .set_kill_switch(self.kill_switch.clone())
             .spawn_async();
 
-        let garbage_collector = GarbageCollector::new(
-            self.params.index_id.clone(),
-            index_storage,
-            self.params.metastore.clone(),
-        );
-        let (_garbage_collect_mailbox, garbage_collect_handler) = ctx
-            .spawn_actor(garbage_collector)
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn_async();
-
         self.handlers = Some(IndexingPipelineHandler {
             source: source_handler,
             indexer: indexer_handler,
             packager: packager_handler,
             uploader: uploader_handler,
             publisher: publisher_handler,
-            garbage_collector: garbage_collect_handler,
+            garbage_collector: garbage_collector_handler,
 
             merge_planner: merge_planner_handler,
             merge_split_downloader: merge_split_downloader_handler,
@@ -365,6 +374,18 @@ impl IndexingPipelineSupervisor {
                             // If the message cannot be sent this is not necessarily an error.
                             let _ = ctx
                                 .send_exit_with_success(handlers.merge_planner.mailbox())
+                                .await;
+                        }
+
+                        // When the publisher is dead, try to stop the garbage collector if not
+                        // already.
+                        if handlers.publisher.state() != ActorState::Running
+                            && handlers.garbage_collector.state() == ActorState::Running
+                        {
+                            info!("Stopping the garbage collector since the publisher is dead.");
+                            // It's fine for the message to fail.
+                            let _ = ctx
+                                .send_exit_with_success(handlers.garbage_collector.mailbox())
                                 .await;
                         }
                     }
@@ -454,8 +475,13 @@ mod tests {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_list_splits()
-            .times(1)
+            .times(3)
             .returning(|_, _, _, _| Ok(Vec::new()));
+        metastore
+            .expect_mark_splits_for_deletion()
+            .times(1)
+            .returning(|_, _| Ok(()));
+
         metastore
             .expect_index_metadata()
             .withf(|index_id| index_id == "test-index")
