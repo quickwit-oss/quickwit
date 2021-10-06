@@ -532,8 +532,9 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
     let index_uri = test_env.index_uri(index_id);
     make_command(
         format!(
-            "new --index-uri {} --metastore-uri {} --index-config-path {}",
+            "new --index-uri {} --index-id {} --metastore-uri {} --index-config-path {}",
             index_uri,
+            index_id,
             test_env.metastore_uri,
             test_env.resource_files["config"].display()
         )
@@ -692,8 +693,9 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
 
     make_command(
         format!(
-            "new --index-uri {} --metastore-uri {} --index-config-path {}",
+            "new --index-uri {} --index-id {} --metastore-uri {} --index-config-path {}",
             index_uri,
+            index_id,
             test_env.metastore_uri,
             test_env.resource_files["config"].display()
         )
