@@ -29,7 +29,7 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tracing::warn;
 
-use crate::{OwnedBytes, PutPayload, Storage, StorageErrorKind, StorageFactory, StorageResult};
+use crate::{OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResult};
 
 /// File system compatible storage implementation.
 #[derive(Clone)]
@@ -161,19 +161,20 @@ impl From<PathBuf> for LocalFileStorage {
 
 #[async_trait]
 impl Storage for LocalFileStorage {
-    async fn put(&self, path: &Path, payload: PutPayload) -> crate::StorageResult<()> {
+    async fn put(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayloadProvider>,
+    ) -> crate::StorageResult<()> {
         let full_path = self.root.join(path);
         if let Some(parent_dir) = full_path.parent() {
             fs::create_dir_all(parent_dir).await?;
         }
-        match payload {
-            PutPayload::InMemory(data) => {
-                fs::write(full_path, data).await?;
-            }
-            PutPayload::LocalFile(filepath) => {
-                fs::copy(filepath, full_path).await?;
-            }
-        };
+
+        let mut reader = payload.byte_stream().await?.into_async_read();
+        let mut f = tokio::fs::File::create(full_path).await?;
+        tokio::io::copy(&mut reader, &mut f).await?;
+
         Ok(())
     }
 

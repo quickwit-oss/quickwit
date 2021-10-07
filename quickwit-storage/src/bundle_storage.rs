@@ -133,7 +133,11 @@ impl BundleStorageFileOffsets {
 
 #[async_trait]
 impl Storage for BundleStorage {
-    async fn put(&self, path: &Path, _payload: crate::PutPayload) -> crate::StorageResult<()> {
+    async fn put(
+        &self,
+        path: &Path,
+        _payload: Box<dyn crate::PutPayloadProvider>,
+    ) -> crate::StorageResult<()> {
         Err(unsupported_operation(path))
     }
 

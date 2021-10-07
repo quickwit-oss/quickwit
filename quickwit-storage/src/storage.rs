@@ -17,13 +17,50 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
+use std::io::{self, SeekFrom};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
+use rusoto_core::ByteStream;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio_util::io::ReaderStream;
 
 use crate::{OwnedBytes, StorageErrorKind, StorageResult};
+
+#[async_trait]
+/// The very good trait, always use it.
+pub trait PutPayloadProvider: PutPayloadProviderClone + Send + Sync {
+    /// Return the total length of the payload.
+    async fn len(&self) -> io::Result<u64>;
+    /// Retrieve bytestream for specified range.
+    async fn range_byte_stream(&self, range: Range<u64>) -> io::Result<ByteStream>;
+
+    /// Retrieve complete bytestream.
+    async fn byte_stream(&self) -> io::Result<ByteStream> {
+        let total_len = self.len().await?;
+        let range = 0..total_len;
+        self.range_byte_stream(range).await
+    }
+}
+
+pub trait PutPayloadProviderClone {
+    fn clone_box(&self) -> Box<dyn PutPayloadProvider>;
+}
+
+impl<T> PutPayloadProviderClone for T
+where T: 'static + PutPayloadProvider + Clone
+{
+    fn clone_box(&self) -> Box<dyn PutPayloadProvider> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn PutPayloadProvider> {
+    fn clone(&self) -> Box<dyn PutPayloadProvider> {
+        self.clone_box()
+    }
+}
 
 /// Payload argument of a put request.
 #[derive(Clone)]
@@ -44,6 +81,31 @@ impl PutPayload {
             }
             Self::InMemory(payload) => Ok(payload.len() as u64),
         }
+    }
+}
+
+#[async_trait]
+impl PutPayloadProvider for PutPayload {
+    async fn len(&self) -> io::Result<u64> {
+        self.len().await
+    }
+
+    async fn range_byte_stream(&self, range: Range<u64>) -> io::Result<ByteStream> {
+        byte_stream(self, range).await
+    }
+}
+
+async fn byte_stream(payload: &PutPayload, range: Range<u64>) -> io::Result<ByteStream> {
+    match payload {
+        PutPayload::LocalFile(filepath) => {
+            let mut file: tokio::fs::File = tokio::fs::File::open(&filepath).await?;
+            file.seek(SeekFrom::Start(range.start)).await?;
+            let reader_stream = ReaderStream::new(file.take(range.end - range.start));
+            Ok(ByteStream::new(reader_stream))
+        }
+        PutPayload::InMemory(data) => Ok(ByteStream::from(
+            (&data[range.start as usize..range.end as usize]).to_vec(),
+        )),
     }
 }
 
@@ -71,6 +133,13 @@ impl From<&'static [u8]> for PutPayload {
     }
 }
 
+#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
+#[async_trait]
+pub trait Storagee: Send + Sync + 'static {
+    /// Saves a file into the storage.
+    async fn put(&self, path: &Path, payload: Box<dyn PutPayloadProvider>) -> StorageResult<()>;
+}
+
 /// Storage meant to receive and serve quickwit's split.
 ///
 /// Object storage are the primary target implementation of this trait,
@@ -86,7 +155,7 @@ impl From<&'static [u8]> for PutPayload {
 #[async_trait]
 pub trait Storage: Send + Sync + 'static {
     /// Saves a file into the storage.
-    async fn put(&self, path: &Path, payload: PutPayload) -> StorageResult<()>;
+    async fn put(&self, path: &Path, payload: Box<dyn PutPayloadProvider>) -> StorageResult<()>;
 
     /// Downloads an entire file and writes it into a local file.
     /// `output_path` is expected to be a file path (not a directory path).

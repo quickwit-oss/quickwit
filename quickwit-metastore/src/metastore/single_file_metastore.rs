@@ -166,7 +166,7 @@ impl SingleFileMetastore {
 
         // Put data back into storage.
         self.storage
-            .put(&metadata_path, PutPayload::from(content))
+            .put(&metadata_path, Box::new(PutPayload::from(content)))
             .await
             .map_err(|storage_err| match storage_err.kind() {
                 StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
@@ -727,7 +727,7 @@ mod tests {
         let metadata_path = meta_path(index_id);
         metastore
             .storage
-            .put(&metadata_path, PutPayload::from(content))
+            .put(&metadata_path, Box::new(PutPayload::from(content)))
             .await
             .unwrap();
 

@@ -37,15 +37,13 @@ use rusoto_s3::{
     S3Client, UploadPartRequest, S3,
 };
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio_util::io::ReaderStream;
+use tokio::io::{AsyncWriteExt, BufReader};
 use tracing::warn;
 
 use super::error::RusotoErrorWrapper;
-use crate::object_storage::file_slice_stream::FileSliceStream;
 use crate::object_storage::MultiPartPolicy;
 use crate::retry::{retry, IsRetryable, Retry};
-use crate::{OwnedBytes, PutPayload, Storage, StorageError, StorageErrorKind, StorageResult};
+use crate::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
 
 /// A credential timeout.
 const CREDENTIAL_TIMEOUT: u64 = 5;
@@ -169,20 +167,6 @@ impl Part {
     }
 }
 
-async fn range_byte_stream(payload: &PutPayload, range: Range<u64>) -> io::Result<ByteStream> {
-    match payload {
-        PutPayload::LocalFile(filepath) => {
-            let file: tokio::fs::File = tokio::fs::File::open(&filepath).await?;
-            let file_slice_stream = FileSliceStream::try_new(file, range).await?;
-            Ok(ByteStream::new(file_slice_stream))
-        }
-        PutPayload::InMemory(data) => {
-            let bytes: &[u8] = &data[range.start as usize..range.end as usize];
-            Ok(ByteStream::from(bytes.to_vec()))
-        }
-    }
-}
-
 fn split_range_into_chunks(len: u64, chunk_size: u64) -> Vec<Range<u64>> {
     (0..len)
         .step_by(chunk_size as usize)
@@ -191,17 +175,6 @@ fn split_range_into_chunks(len: u64, chunk_size: u64) -> Vec<Range<u64>> {
             end: (start + chunk_size).min(len),
         })
         .collect()
-}
-
-async fn byte_stream(payload: &PutPayload) -> io::Result<ByteStream> {
-    match payload {
-        PutPayload::LocalFile(filepath) => {
-            let file: tokio::fs::File = tokio::fs::File::open(&filepath).await?;
-            let reader_stream = ReaderStream::new(file);
-            Ok(ByteStream::new(reader_stream))
-        }
-        PutPayload::InMemory(data) => Ok(ByteStream::from(data.to_vec())),
-    }
 }
 
 impl S3CompatibleObjectStorage {
@@ -214,13 +187,13 @@ impl S3CompatibleObjectStorage {
         key_path.to_string_lossy().to_string()
     }
 
-    async fn put_single_part_single_try(
-        &self,
-        key: &str,
-        payload: PutPayload,
+    async fn put_single_part_single_try<'a>(
+        &'a self,
+        key: &'a str,
+        payload: Box<dyn crate::PutPayloadProvider>,
         len: u64,
     ) -> Result<(), RusotoErrorWrapper<PutObjectError>> {
-        let body = byte_stream(&payload).await?;
+        let body = payload.byte_stream().await?;
         let request = PutObjectRequest {
             bucket: self.bucket.clone(),
             key: key.to_string(),
@@ -232,7 +205,12 @@ impl S3CompatibleObjectStorage {
         Ok(())
     }
 
-    async fn put_single_part(&self, key: &str, payload: PutPayload, len: u64) -> StorageResult<()> {
+    async fn put_single_part<'a>(
+        &'a self,
+        key: &'a str,
+        payload: Box<dyn crate::PutPayloadProvider>,
+        len: u64,
+    ) -> StorageResult<()> {
         retry(|| self.put_single_part_single_try(key, payload.clone(), len)).await?;
         Ok(())
     }
@@ -262,7 +240,7 @@ impl S3CompatibleObjectStorage {
 
     async fn create_multipart_requests(
         &self,
-        payload: PutPayload,
+        payload: Box<dyn crate::PutPayloadProvider>,
         len: u64,
         part_len: u64,
     ) -> io::Result<Vec<Part>> {
@@ -275,47 +253,36 @@ impl S3CompatibleObjectStorage {
             .map(|chunk| chunk.end - chunk.start)
             .max()
             .expect("The policy should never emit an empty list of chunk.");
-        match payload {
-            PutPayload::LocalFile(file_path) => {
-                let mut parts = Vec::with_capacity(chunks.len());
-                let mut file: tokio::fs::File = tokio::fs::File::open(&file_path).await?;
-                let mut buf = vec![0u8; largest_chunk_num_bytes as usize];
-                for (chunk_id, chunk) in chunks.into_iter().enumerate() {
-                    let chunk_len = (chunk.end - chunk.start) as usize;
-                    file.read_exact(&mut buf[..chunk_len]).await?;
-                    let md5 = md5::compute(&buf[..chunk_len]);
-                    let part = Part {
-                        part_number: chunk_id + 1, // parts are 1-indexed
-                        range: chunk,
-                        md5,
-                    };
-                    parts.push(part);
-                }
-                Ok(parts)
-            }
-            PutPayload::InMemory(buffer) => Ok(chunks
-                .into_iter()
-                .enumerate()
-                .map(|(chunk_id, range)| {
-                    let md5 = md5::compute(&buffer[range.start as usize..range.end as usize]);
-                    Part {
-                        part_number: chunk_id + 1, // parts are 1-indexed
-                        range,
-                        md5,
-                    }
-                })
-                .collect()),
+
+        let mut buf = vec![0u8; largest_chunk_num_bytes as usize];
+
+        let mut parts = Vec::with_capacity(chunks.len());
+
+        for (chunk_id, chunk) in chunks.into_iter().enumerate() {
+            let byte_stream = payload.range_byte_stream(chunk.clone()).await?;
+            let mut read = byte_stream.into_blocking_read();
+            std::io::copy(&mut read, &mut buf)?;
+            let md5 = md5::compute(&buf);
+            buf.clear();
+            let part = Part {
+                part_number: chunk_id + 1, // parts are 1-indexed
+                range: chunk,
+                md5,
+            };
+            parts.push(part);
         }
+        Ok(parts)
     }
 
-    async fn upload_part(
-        &self,
+    async fn upload_part<'a>(
+        &'a self,
         upload_id: MultipartUploadId,
-        key: &str,
+        key: &'a str,
         part: Part,
-        payload: PutPayload,
+        payload: Box<dyn crate::PutPayloadProvider>,
     ) -> Result<CompletedPart, Retry<StorageError>> {
-        let byte_stream = range_byte_stream(&payload, part.range.clone())
+        let byte_stream = payload
+            .range_byte_stream(part.range.clone())
             .await
             .map_err(StorageError::from)
             .map_err(Retry::NotRetryable)?;
@@ -348,19 +315,19 @@ impl S3CompatibleObjectStorage {
         })
     }
 
-    async fn put_multi_part(
-        &self,
-        key: &str,
-        payload: PutPayload,
+    async fn put_multi_part<'a>(
+        &'a self,
+        key: &'a str,
+        payload: Box<dyn crate::PutPayloadProvider>,
         part_len: u64,
-        len: u64,
+        total_len: u64,
     ) -> StorageResult<()> {
         let upload_id = self
             .create_multipart_upload(key)
             .await
             .map_err(RusotoErrorWrapper::from)?;
         let parts = self
-            .create_multipart_requests(payload.clone(), len, part_len)
+            .create_multipart_requests(payload.clone(), total_len, part_len)
             .await?;
         let max_concurrent_upload = self.multipart_policy.max_concurrent_upload();
         let completed_parts_res: StorageResult<Vec<CompletedPart>> =
@@ -489,14 +456,18 @@ async fn download_all(byte_stream: &mut ByteStream, output: &mut Vec<u8>) -> io:
 
 #[async_trait]
 impl Storage for S3CompatibleObjectStorage {
-    async fn put(&self, path: &Path, payload: PutPayload) -> StorageResult<()> {
+    async fn put(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayloadProvider>,
+    ) -> crate::StorageResult<()> {
         let key = self.key(path);
-        let len = payload.len().await?;
-        let part_num_bytes = self.multipart_policy.part_num_bytes(len);
-        if part_num_bytes >= len {
-            self.put_single_part(&key, payload, len).await?;
+        let total_len = payload.len().await?;
+        let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
+        if part_num_bytes >= total_len {
+            self.put_single_part(&key, payload, total_len).await?;
         } else {
-            self.put_multi_part(&key, payload, part_num_bytes, len)
+            self.put_multi_part(&key, payload, part_num_bytes, total_len)
                 .await?;
         }
         Ok(())
