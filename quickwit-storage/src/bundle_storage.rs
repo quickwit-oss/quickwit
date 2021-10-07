@@ -28,7 +28,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use tantivy::common::CountingWriter;
 use tantivy::directory::FileSlice;
@@ -36,7 +35,7 @@ use tantivy::HasLen;
 use thiserror::Error;
 use tracing::error;
 
-use crate::{Storage, StorageError, StorageResult};
+use crate::{OwnedBytes, Storage, StorageError, StorageResult};
 
 /// Filename used for the bundle.
 pub const BUNDLE_FILENAME: &str = "bundle";
@@ -151,7 +150,11 @@ impl Storage for BundleStorage {
         Ok(())
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> crate::StorageResult<Bytes> {
+    async fn get_slice(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> crate::StorageResult<OwnedBytes> {
         let file_offsets = self.metadata.get(path).ok_or_else(|| {
             crate::StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
@@ -163,7 +166,7 @@ impl Storage for BundleStorage {
             .await
     }
 
-    async fn get_all(&self, path: &Path) -> crate::StorageResult<Bytes> {
+    async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
         let file_offsets = self.metadata.get(path).ok_or_else(|| {
             crate::StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))

@@ -22,9 +22,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 
-use crate::{Cache, PutPayload, Storage, StorageFactory, StorageResult};
+use crate::{Cache, OwnedBytes, PutPayload, Storage, StorageFactory, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
 struct StorageWithCache {
@@ -42,7 +41,7 @@ impl Storage for StorageWithCache {
         self.storage.copy_to_file(path, output_path).await
     }
 
-    async fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> StorageResult<Bytes> {
+    async fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> StorageResult<OwnedBytes> {
         if let Some(bytes) = self.cache.get(path, byte_range.clone()).await {
             Ok(bytes)
         } else {
@@ -54,7 +53,7 @@ impl Storage for StorageWithCache {
         }
     }
 
-    async fn get_all(&self, path: &Path) -> StorageResult<Bytes> {
+    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         if let Some(bytes) = self.cache.get_all(path).await {
             Ok(bytes)
         } else {
@@ -120,13 +119,13 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use crate::{MockCache, MockStorage};
+    use crate::{MockCache, MockStorage, OwnedBytes};
 
     #[tokio::test]
     async fn put_in_cache_test() {
         let mut mock_storage = MockStorage::default();
         let mut mock_cache = MockCache::default();
-        let actual_cache: Arc<Mutex<HashMap<PathBuf, Bytes>>> =
+        let actual_cache: Arc<Mutex<HashMap<PathBuf, OwnedBytes>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
         let cache1 = actual_cache.clone();
@@ -145,7 +144,7 @@ mod tests {
         mock_storage
             .expect_get_all()
             .times(1)
-            .returning(|_path| Ok(Bytes::from_static(&[1, 2, 3])));
+            .returning(|_path| Ok(OwnedBytes::new(vec![1, 2, 3])));
 
         let storage_with_cache = StorageWithCache {
             storage: Arc::new(mock_storage),

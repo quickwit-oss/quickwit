@@ -22,9 +22,8 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use bytes::Bytes;
 
-use crate::{StorageErrorKind, StorageResult};
+use crate::{OwnedBytes, StorageErrorKind, StorageResult};
 
 /// Payload argument of a put request.
 #[derive(Clone)]
@@ -32,7 +31,7 @@ pub enum PutPayload {
     /// Put data from the local file.
     LocalFile(PathBuf),
     /// Put data from a local buffer
-    InMemory(Bytes),
+    InMemory(OwnedBytes),
 }
 
 impl PutPayload {
@@ -54,21 +53,21 @@ impl From<PathBuf> for PutPayload {
     }
 }
 
-impl From<Bytes> for PutPayload {
-    fn from(bytes: Bytes) -> Self {
+impl From<OwnedBytes> for PutPayload {
+    fn from(bytes: OwnedBytes) -> Self {
         PutPayload::InMemory(bytes)
     }
 }
 
 impl From<Vec<u8>> for PutPayload {
     fn from(bytes: Vec<u8>) -> Self {
-        PutPayload::InMemory(Bytes::from(bytes))
+        PutPayload::InMemory(OwnedBytes::new(bytes))
     }
 }
 
 impl From<&'static [u8]> for PutPayload {
     fn from(payload_bytes: &'static [u8]) -> Self {
-        From::from(Bytes::from_static(payload_bytes))
+        From::from(OwnedBytes::new(payload_bytes))
     }
 }
 
@@ -95,11 +94,11 @@ pub trait Storage: Send + Sync + 'static {
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()>;
 
     /// Downloads a slice of a file from the storage, and returns an in memory buffer
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes>;
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes>;
 
     /// Downloads the entire content of a "small" file, returns an in memory buffer.
     /// For large files prefer `copy_to_file`.
-    async fn get_all(&self, path: &Path) -> StorageResult<Bytes>;
+    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes>;
 
     /// Deletes a file.
     ///
