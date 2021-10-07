@@ -24,14 +24,11 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use async_trait::async_trait;
-use bytes::Bytes;
-use quickwit_storage::Storage;
+use quickwit_storage::{OwnedBytes, Storage};
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
-use tantivy::directory::{FileHandle, OwnedBytes, WatchCallback, WatchHandle, WritePtr};
+use tantivy::directory::{FileHandle, WatchCallback, WatchHandle, WritePtr};
 use tantivy::{AsyncIoResult, Directory, HasLen};
 use tracing::{error, instrument};
-
-use crate::caching_directory::BytesWrapper;
 
 struct StorageDirectoryFileHandle {
     storage_directory: StorageDirectory,
@@ -70,7 +67,7 @@ impl FileHandle for StorageDirectoryFileHandle {
             .get_slice(&self.path, byte_range)
             .await
             .map_err(Into::<io::Error>::into)?;
-        Ok(OwnedBytes::new(BytesWrapper(object_bytes)))
+        Ok(object_bytes)
     }
 }
 
@@ -101,14 +98,14 @@ impl StorageDirectory {
     }
 
     /// Fetches a slice of byte from a file asynchronously.
-    pub async fn get_slice(&self, path: &Path, range: Range<usize>) -> io::Result<Bytes> {
-        let payload: Bytes = self.storage.get_slice(path, range).await?;
+    pub async fn get_slice(&self, path: &Path, range: Range<usize>) -> io::Result<OwnedBytes> {
+        let payload: OwnedBytes = self.storage.get_slice(path, range).await?;
         Ok(payload)
     }
 
     /// Fetches an entire file asynchronously.
-    pub async fn get_all(&self, path: &Path) -> io::Result<Bytes> {
-        let payload: Bytes = self.storage.get_all(path).await?;
+    pub async fn get_all(&self, path: &Path) -> io::Result<OwnedBytes> {
+        let payload: OwnedBytes = self.storage.get_all(path).await?;
         Ok(payload)
     }
 

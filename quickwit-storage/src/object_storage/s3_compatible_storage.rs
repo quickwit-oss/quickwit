@@ -25,7 +25,6 @@ use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
-use bytes::Bytes;
 use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
 use regex::Regex;
@@ -46,7 +45,7 @@ use super::error::RusotoErrorWrapper;
 use crate::object_storage::file_slice_stream::FileSliceStream;
 use crate::object_storage::MultiPartPolicy;
 use crate::retry::{retry, IsRetryable, Retry};
-use crate::{PutPayload, Storage, StorageError, StorageErrorKind, StorageResult};
+use crate::{OwnedBytes, PutPayload, Storage, StorageError, StorageErrorKind, StorageResult};
 
 /// A credential timeout.
 const CREDENTIAL_TIMEOUT: u64 = 5;
@@ -461,6 +460,7 @@ impl S3CompatibleObjectStorage {
         path: &Path,
         range_opt: Option<Range<usize>>,
     ) -> StorageResult<Vec<u8>> {
+        let cap = range_opt.as_ref().map(Range::len).unwrap_or(0);
         let get_object_req = self.create_get_object_request(path, range_opt);
         let get_object_output = retry(|| async {
             self.s3_client
@@ -472,7 +472,7 @@ impl S3CompatibleObjectStorage {
         let mut body = get_object_output.body.ok_or_else(|| {
             StorageErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
         })?;
-        let mut buf: Vec<u8> = Vec::new();
+        let mut buf: Vec<u8> = Vec::with_capacity(cap);
         download_all(&mut body, &mut buf).await?;
         Ok(buf)
     }
@@ -539,10 +539,10 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(())
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         self.get_to_vec(path, Some(range.clone()))
             .await
-            .map(Bytes::from)
+            .map(OwnedBytes::new)
             .map_err(|err| {
                 err.add_context(format!(
                     "Failed to fetch slice {:?} for object: {}",
@@ -552,10 +552,10 @@ impl Storage for S3CompatibleObjectStorage {
             })
     }
 
-    async fn get_all(&self, path: &Path) -> StorageResult<Bytes> {
+    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         self.get_to_vec(path, None)
             .await
-            .map(Bytes::from)
+            .map(OwnedBytes::new)
             .map_err(|err| err.add_context(format!("Failed to fetch object: {}", self.uri(path))))
     }
 

@@ -25,11 +25,11 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use bytes::Bytes;
 
 pub use self::in_ram_slice_cache::SliceCache;
 pub use self::memory_sized_cache::MemorySizedCache;
 pub use self::storage_with_cache::StorageWithCacheFactory;
+use crate::OwnedBytes;
 
 /// The `Cache` trait is the abstraction used to describe the caching logic
 /// used in front of a storage. See `StorageWithCache`.
@@ -37,11 +37,11 @@ pub use self::storage_with_cache::StorageWithCacheFactory;
 #[async_trait]
 pub trait Cache: Send + Sync + 'static {
     /// Try to get a slice from the cache.
-    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<Bytes>;
+    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes>;
     /// Try to get the entire file.
-    async fn get_all(&self, path: &Path) -> Option<Bytes>;
+    async fn get_all(&self, path: &Path) -> Option<OwnedBytes>;
     /// Put a slice of data into the cache.
-    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: Bytes);
+    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes);
     /// Put an entire file into the cache.
-    async fn put_all(&self, path: PathBuf, bytes: Bytes);
+    async fn put_all(&self, path: PathBuf, bytes: OwnedBytes);
 }

@@ -82,7 +82,6 @@ where R: AsyncRead + Unpin
 mod tests {
     use std::io::Cursor;
 
-    use bytes::Bytes;
     use futures::StreamExt;
 
     use crate::object_storage::file_slice_stream::FileSliceStream;
@@ -101,17 +100,17 @@ mod tests {
 
         let cursor = Cursor::new(&bytes[..]);
         let mut stream = FileSliceStream::try_new(cursor, 0..1).await?;
-        assert_eq!(stream.next().await.unwrap()?, Bytes::from(&bytes[..1]));
+        assert_eq!(stream.next().await.unwrap()?, &bytes[..1]);
         assert!(stream.next().await.is_none());
 
         let cursor = Cursor::new(&bytes[..]);
         let mut stream = FileSliceStream::try_new(cursor, 5..6).await?;
-        assert_eq!(stream.next().await.unwrap()?, Bytes::from(&bytes[5..]));
+        assert_eq!(stream.next().await.unwrap()?, &bytes[5..]);
         assert!(stream.next().await.is_none());
 
         let cursor = Cursor::new(&bytes[..]);
         let mut stream = FileSliceStream::try_new(cursor, 2..4).await?;
-        assert_eq!(stream.next().await.unwrap()?, Bytes::from(&bytes[2..4]));
+        assert_eq!(stream.next().await.unwrap()?, &bytes[2..4]);
         assert!(stream.next().await.is_none());
 
         Ok(())

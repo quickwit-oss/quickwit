@@ -243,7 +243,7 @@ pub async fn inspect_split_cli(args: InspectSplitArgs) -> anyhow::Result<()> {
     }
 
     if args.verbose {
-        let hotcache_stats = HotDirectory::get_stats_per_file(hotcache_bytes.into())?;
+        let hotcache_stats = HotDirectory::get_stats_per_file(hotcache_bytes)?;
         for (path, size) in hotcache_stats {
             let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
             println!("HotCache {:?} {}", path, readable_size);

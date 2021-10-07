@@ -2217,7 +2217,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "bytes",
  "chrono",
  "crossbeam",
  "futures",
@@ -2226,7 +2225,6 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_json",
- "stable_deref_trait",
  "tantivy",
  "tempfile",
  "thiserror",
@@ -2265,7 +2263,6 @@ dependencies = [
  "async-trait",
  "backoff",
  "byte-unit",
- "bytes",
  "fail",
  "flume",
  "futures",

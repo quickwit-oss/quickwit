@@ -22,9 +22,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use quickwit_common::HOTCACHE_FILENAME;
-use quickwit_storage::{Cache, SliceCache};
+use quickwit_storage::{Cache, OwnedBytes, SliceCache};
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
 
@@ -74,27 +73,27 @@ impl QuickwitCache {
 
 #[async_trait]
 impl Cache for QuickwitCache {
-    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<Bytes> {
+    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
         if let Some(cache) = self.get_relevant_cache(path) {
             return cache.get(path, byte_range).await;
         }
         None
     }
 
-    async fn get_all(&self, path: &Path) -> Option<Bytes> {
+    async fn get_all(&self, path: &Path) -> Option<OwnedBytes> {
         if let Some(cache) = self.get_relevant_cache(path) {
             return cache.get_all(path).await;
         }
         None
     }
 
-    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: Bytes) {
+    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
         if let Some(cache) = self.get_relevant_cache(&path) {
             cache.put(path, byte_range, bytes).await;
         }
     }
 
-    async fn put_all(&self, path: PathBuf, bytes: Bytes) {
+    async fn put_all(&self, path: PathBuf, bytes: OwnedBytes) {
         if let Some(cache) = self.get_relevant_cache(&path) {
             cache.put(path, FULL_SLICE, bytes).await;
         }
@@ -121,7 +120,7 @@ impl SimpleCache {
 
 #[async_trait]
 impl Cache for SimpleCache {
-    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<Bytes> {
+    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
         if let Some(bytes) = self.get_all(path).await {
             return Some(bytes.slice(byte_range.clone()));
         }
@@ -131,15 +130,15 @@ impl Cache for SimpleCache {
         None
     }
 
-    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: Bytes) {
+    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
         self.slice_cache.put(path, byte_range, bytes);
     }
 
-    async fn get_all(&self, path: &Path) -> Option<Bytes> {
+    async fn get_all(&self, path: &Path) -> Option<OwnedBytes> {
         self.slice_cache.get(path, FULL_SLICE.clone())
     }
 
-    async fn put_all(&self, path: PathBuf, bytes: Bytes) {
+    async fn put_all(&self, path: PathBuf, bytes: OwnedBytes) {
         self.slice_cache.put(path, FULL_SLICE.clone(), bytes);
     }
 }
@@ -149,8 +148,7 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    use bytes::Bytes;
-    use quickwit_storage::{Cache, MockCache};
+    use quickwit_storage::{Cache, MockCache, OwnedBytes};
 
     use super::QuickwitCache;
 
@@ -162,7 +160,7 @@ mod tests {
             .expect_get_all()
             .times(1)
             .withf(|path| path == Path::new("bubu/toto.fast"))
-            .returning(|_| Some(Bytes::from("aaaa")));
+            .returning(|_| Some(OwnedBytes::new(&b"aaaa"[..])));
         let mut quickwit_cache = QuickwitCache::empty();
         quickwit_cache.add_route("hotcache", Arc::new(mock_cache_hotcache));
         quickwit_cache.add_route("fast", Arc::new(mock_cache_fast));
@@ -177,7 +175,7 @@ mod tests {
             .expect_get()
             .times(1)
             .withf(|path, _| path == Path::new("bubu/toto.fast"))
-            .returning(|_, _| Some(Bytes::from("aaaaa")));
+            .returning(|_, _| Some(OwnedBytes::new(&b"aaaaa"[..])));
         let mut quickwit_cache = QuickwitCache::empty();
         quickwit_cache.add_route("hotcache", Arc::new(mock_cache_hotcache));
         quickwit_cache.add_route("fast", Arc::new(mock_cache));
@@ -191,7 +189,7 @@ mod tests {
             .expect_get()
             .times(1)
             .withf(|path, _| path == Path::new("bubu/toto.fast"))
-            .returning(|_, _| Some(Bytes::from("aaaaa")));
+            .returning(|_, _| Some(OwnedBytes::new(&b"aaaaa"[..])));
         let mock_cache_fast = MockCache::default();
         let mut quickwit_cache = QuickwitCache::empty();
         quickwit_cache.add_route("ast", Arc::new(mock_cache_ast));

@@ -41,6 +41,8 @@ mod ram_storage;
 mod retry;
 mod storage_resolver;
 
+pub use tantivy::directory::OwnedBytes;
+
 pub use self::bundle_storage::{
     BundleStorage, BundleStorageBuilder, BundleStorageFileOffsets, BUNDLE_FILENAME,
 };
