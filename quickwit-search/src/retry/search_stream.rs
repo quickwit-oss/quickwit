@@ -17,11 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResult};
+use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResponse};
 use tokio::sync::mpsc::error::SendError;
 
 use super::RetryPolicy;
-use crate::SearchError;
 
 pub struct SuccessfullSplitIds(pub Vec<String>);
 
@@ -34,7 +33,7 @@ impl
     RetryPolicy<
         LeafSearchStreamRequest,
         SuccessfullSplitIds,
-        SendError<Result<LeafSearchStreamResult, SearchError>>,
+        SendError<crate::Result<LeafSearchStreamResponse>>,
     > for LeafSearchStreamRetryPolicy
 {
     // Returns a retry request that is either:
@@ -43,10 +42,7 @@ impl
     fn retry_request(
         &self,
         request: &LeafSearchStreamRequest,
-        result: Result<
-            &SuccessfullSplitIds,
-            &SendError<Result<LeafSearchStreamResult, SearchError>>,
-        >,
+        result: Result<&SuccessfullSplitIds, &SendError<crate::Result<LeafSearchStreamResponse>>>,
     ) -> Option<LeafSearchStreamRequest> {
         match result {
             Ok(response) => {

@@ -157,11 +157,11 @@ mod tests {
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
+        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
             data: b"123".to_vec(),
             split_id: "split_1".to_string(),
         }))?;
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
+        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
             data: b"456".to_vec(),
             split_id: "split_1".to_string(),
         }))?;
@@ -219,11 +219,11 @@ mod tests {
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
+        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
             data: b"123".to_vec(),
             split_id: "1".to_string(),
         }))?;
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
+        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
             data: b"456".to_vec(),
             split_id: "2".to_string(),
         }))?;
@@ -279,7 +279,7 @@ mod tests {
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
+        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
             data: b"123".to_vec(),
             split_id: "split1".to_string(),
         }))?;
