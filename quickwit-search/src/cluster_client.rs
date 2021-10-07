@@ -22,7 +22,7 @@ use std::sync::Arc;
 use futures::StreamExt;
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse,
-    LeafSearchStreamRequest, LeafSearchStreamResult,
+    LeafSearchStreamRequest, LeafSearchStreamResponse,
 };
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
@@ -91,7 +91,7 @@ impl ClusterClient {
     pub async fn leaf_search_stream(
         &self,
         placed_request: (LeafSearchStreamRequest, SearchServiceClient),
-    ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>> {
+    ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>> {
         let (request, mut client) = placed_request;
         // We need a dedicated channel to send results with retry. First we send only the successful
         // responses and and ignore errors. If there are some errors, we make one retry and
@@ -162,10 +162,10 @@ fn merge_leaf_search_results(
 // If `send_error` is false, errors are ignored and not forwarded. This is
 // useful if you want to make a retry before propagating errors.
 async fn forward_leaf_search_stream(
-    mut stream: UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>>,
-    sender: UnboundedSender<Result<LeafSearchStreamResult, SearchError>>,
+    mut stream: UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>>,
+    sender: UnboundedSender<crate::Result<LeafSearchStreamResponse>>,
     send_error: bool,
-) -> Result<SuccessfullSplitIds, SendError<crate::Result<LeafSearchStreamResult>>> {
+) -> Result<SuccessfullSplitIds, SendError<crate::Result<LeafSearchStreamResponse>>> {
     let mut successful_split_ids: Vec<String> = Vec::new();
     while let Some(result) = stream.next().await {
         match result {
@@ -187,19 +187,14 @@ async fn forward_leaf_search_stream(
 mod tests {
     use std::collections::HashSet;
     use std::net::SocketAddr;
-    use std::sync::Arc;
 
-    use futures::StreamExt;
     use quickwit_proto::{
-        FetchDocsRequest, LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest,
-        LeafSearchStreamResult, PartialHit, SearchRequest, SearchStreamRequest,
-        SplitIdAndFooterOffsets, SplitSearchError,
+        PartialHit, SearchRequest, SearchStreamRequest, SplitIdAndFooterOffsets, SplitSearchError,
     };
-    use tokio_stream::wrappers::UnboundedReceiverStream;
 
+    use super::*;
     use crate::client_pool::Job;
-    use crate::cluster_client::{merge_leaf_search_results, ClusterClient};
-    use crate::{ClientPool, MockSearchService, SearchClientPool, SearchError};
+    use crate::{ClientPool, MockSearchService};
 
     fn mock_partial_hit(split_id: &str, sorting_field_value: u64, doc_id: u32) -> PartialHit {
         PartialHit {
@@ -525,7 +520,7 @@ mod tests {
             SearchClientPool::from_mocks(vec![Arc::new(mock_service_1), Arc::new(mock_service_2)])
                 .await?,
         );
-        result_sender.send(Ok(LeafSearchStreamResult {
+        result_sender.send(Ok(LeafSearchStreamResponse {
             data: Vec::new(),
             split_id: "split_1".to_string(),
         }))?;

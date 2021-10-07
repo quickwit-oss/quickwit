@@ -24,7 +24,7 @@ use futures::TryStreamExt;
 use opentelemetry::global;
 use opentelemetry::propagation::Extractor;
 use quickwit_proto::{
-    search_service_server as grpc, LeafSearchStreamRequest, LeafSearchStreamResult,
+    search_service_server as grpc, LeafSearchStreamRequest, LeafSearchStreamResponse,
 };
 use quickwit_search::{SearchService, SearchServiceImpl};
 use tracing::{instrument, Span};
@@ -122,7 +122,9 @@ impl grpc::SearchService for GrpcSearchAdapter {
 
     type LeafSearchStreamStream = std::pin::Pin<
         Box<
-            dyn futures::Stream<Item = Result<LeafSearchStreamResult, tonic::Status>> + Send + Sync,
+            dyn futures::Stream<Item = Result<LeafSearchStreamResponse, tonic::Status>>
+                + Send
+                + Sync,
         >,
     >;
     #[instrument(name = "search_adapter:leaf_search_stream", skip(self, request))]

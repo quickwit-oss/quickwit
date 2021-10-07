@@ -25,7 +25,7 @@ use futures::{StreamExt, TryStreamExt};
 use http::Uri;
 use opentelemetry::global;
 use opentelemetry::propagation::Injector;
-use quickwit_proto::LeafSearchStreamResult;
+use quickwit_proto::LeafSearchStreamResponse;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::{Channel, Endpoint};
 use tonic::Request;
@@ -149,7 +149,7 @@ impl SearchServiceClient {
     pub async fn leaf_search_stream(
         &mut self,
         request: quickwit_proto::LeafSearchStreamRequest,
-    ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>> {
+    ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let mut grpc_client_clone = grpc_client.clone();

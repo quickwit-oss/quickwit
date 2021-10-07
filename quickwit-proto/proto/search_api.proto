@@ -44,7 +44,7 @@ service SearchService {
   rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResponse);
 
   // Perform a leaf stream on a given set of splits.
-  rpc LeafSearchStream(LeafSearchStreamRequest) returns (stream LeafSearchStreamResult);
+  rpc LeafSearchStream(LeafSearchStreamRequest) returns (stream LeafSearchStreamResponse);
 }
 
 // -- Search -------------------
@@ -260,7 +260,7 @@ message LeafSearchStreamRequest {
 }
 
 
-message LeafSearchStreamResult {
+message LeafSearchStreamResponse {
   // Row of data serialized in bytes.
   bytes data = 1;
 
