@@ -758,7 +758,7 @@ checksum = "4a99a2d53cf90642500986ad22e5083b09e42d44c408f5f112e2a4a0925a643c"
 [[package]]
 name = "fastfield_codecs"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=a622e2f#a622e2f31dcc8a44fd7c4c93c4a489007dde349e"
+source = "git+https://github.com/quickwit-inc/tantivy?rev=70a7377#70a737732094ad008c4d1df682c2c0578a03cfcb"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -1376,10 +1376,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "lz4_flex"
-version = "0.8.2"
+name = "lru"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5827b976d911b5d2e42b2ccfc7c0d2461a1414e8280436885218762fc529b3f8"
+checksum = "6c748cfe47cb8da225c37595b3108bea1c198c84aaae8ea0ba76d01dda9fc803"
+dependencies = [
+ "hashbrown",
+]
+
+[[package]]
+name = "lz4_flex"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "177c079243f6867429aca5af5053747f57e329d44f0c58bebca078cd14873ec2"
 dependencies = [
  "twox-hash",
 ]
@@ -1428,9 +1437,9 @@ checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 
 [[package]]
 name = "memmap2"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de5d3112c080d58ce560081baeaab7e1e864ca21795ddbf533d5b1842bb1ecf8"
+checksum = "4647a11b578fead29cdbb34d4adef8dd3dc35b876c9c6d5240d83f205abfe96e"
 dependencies = [
  "libc",
 ]
@@ -1771,8 +1780,8 @@ dependencies = [
 
 [[package]]
 name = "ownedbytes"
-version = "0.1.0"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=a622e2f#a622e2f31dcc8a44fd7c4c93c4a489007dde349e"
+version = "0.2.0"
+source = "git+https://github.com/quickwit-inc/tantivy?rev=70a7377#70a737732094ad008c4d1df682c2c0578a03cfcb"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -2328,7 +2337,7 @@ dependencies = [
  "http",
  "hyper",
  "itertools",
- "lru",
+ "lru 0.6.6",
  "mockall 0.9.1",
  "once_cell",
  "opentelemetry",
@@ -2403,7 +2412,7 @@ dependencies = [
  "bytes",
  "ec2_instance_metadata",
  "futures",
- "lru",
+ "lru 0.6.6",
  "md5",
  "mockall 0.9.1",
  "once_cell",
@@ -3376,7 +3385,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.16.1"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=a622e2f#a622e2f31dcc8a44fd7c4c93c4a489007dde349e"
+source = "git+https://github.com/quickwit-inc/tantivy?rev=70a7377#70a737732094ad008c4d1df682c2c0578a03cfcb"
 dependencies = [
  "async-trait",
  "base64",
@@ -3397,7 +3406,7 @@ dependencies = [
  "itertools",
  "levenshtein_automata",
  "log",
- "lru",
+ "lru 0.7.0",
  "lz4_flex",
  "measure_time",
  "memmap2",
@@ -3426,14 +3435,15 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.1.1"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=a622e2f#a622e2f31dcc8a44fd7c4c93c4a489007dde349e"
+source = "git+https://github.com/quickwit-inc/tantivy?rev=70a7377#70a737732094ad008c4d1df682c2c0578a03cfcb"
 
 [[package]]
 name = "tantivy-common"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=a622e2f#a622e2f31dcc8a44fd7c4c93c4a489007dde349e"
+source = "git+https://github.com/quickwit-inc/tantivy?rev=70a7377#70a737732094ad008c4d1df682c2c0578a03cfcb"
 dependencies = [
  "byteorder",
+ "ownedbytes",
 ]
 
 [[package]]
@@ -3450,7 +3460,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.15.0"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=a622e2f#a622e2f31dcc8a44fd7c4c93c4a489007dde349e"
+source = "git+https://github.com/quickwit-inc/tantivy?rev=70a7377#70a737732094ad008c4d1df682c2c0578a03cfcb"
 dependencies = [
  "combine",
  "once_cell",
