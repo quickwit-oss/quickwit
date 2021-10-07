@@ -316,7 +316,10 @@ impl IndexConfig for DefaultIndexConfig {
                 let tags_field = tags_field_opt.ok_or_else(|| {
                     DocParsingError::NoSuchFieldInSchema(TAGS_FIELD_NAME.to_string())
                 })?;
-                document.add(FieldValue::new(tags_field, Value::Str(convert_tag_to_string(&field_name, &field_value))));
+                document.add(FieldValue::new(
+                    tags_field,
+                    Value::Str(convert_tag_to_string(&field_name, &field_value)),
+                ));
             }
             document.add(FieldValue::new(field, field_value))
         }

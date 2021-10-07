@@ -46,7 +46,9 @@ impl MergeOperation {
 
     pub fn splits(&self) -> &[SplitMetadata] {
         match self {
-            MergeOperation::Merge { splits, .. } | MergeOperation::Demux{ splits } => splits.as_slice(),
+            MergeOperation::Merge { splits, .. } | MergeOperation::Demux { splits } => {
+                splits.as_slice()
+            }
         }
     }
 }
@@ -177,11 +179,7 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
         operations.append(&mut self.demux_operations(splits));
         debug_assert_eq!(
             original_num_splits,
-            operations
-                .iter()
-                .map(|op| op.splits().len())
-                .sum::<usize>()
-                + splits.len(),
+            operations.iter().map(|op| op.splits().len()).sum::<usize>() + splits.len(),
             "The merge policy is supposed to keep the number of splits."
         );
         operations
@@ -190,7 +188,8 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
     fn is_mature(&self, split: &SplitMetadata) -> bool {
         // split.demux_signature == self.target_demux_ops &&
         // TODO: include demux signature in the is_mature logic.
-        split.num_records <= self.max_merge_docs && split.demux_generation >= self.max_demux_generation
+        split.num_records <= self.max_merge_docs
+            && split.demux_generation >= self.max_demux_generation
     }
 }
 
@@ -215,8 +214,9 @@ impl StableMultitenantWithTimestampMergePolicy {
         }
         // First we isolate splits that are too large or that have been already demuxed.
         // We will read them at the end.
-        let splits_not_for_merge =
-            remove_matching_items(splits, |split| split.num_records >= self.max_merge_docs || split.demux_generation > 0);
+        let splits_not_for_merge = remove_matching_items(splits, |split| {
+            split.num_records >= self.max_merge_docs || split.demux_generation > 0
+        });
 
         let mut merge_operations: Vec<MergeOperation> = Vec::new();
         // We stable sort the splits, most recent first.
@@ -245,7 +245,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         splits.extend(splits_not_for_merge);
         merge_operations
     }
- 
+
     /// This function builds demux operations for splits that are >= `max_merge_docs` and
     /// have been demux less than `max-demux_generation` times.
     fn demux_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
@@ -256,8 +256,10 @@ impl StableMultitenantWithTimestampMergePolicy {
         // a number of times > `max_demux_generation`.
         // We will append them at the end.
         // TODO: filter out splits that either have only less than 1 tenant
-        let excluded_splits =
-            remove_matching_items(splits, |split| split.num_records < self.max_merge_docs && split.demux_generation < self.max_demux_generation);
+        let excluded_splits = remove_matching_items(splits, |split| {
+            split.num_records < self.max_merge_docs
+                && split.demux_generation < self.max_demux_generation
+        });
 
         let mut merge_operations: Vec<MergeOperation> = Vec::new();
         // We stable sort the splits, most recent first.
@@ -269,17 +271,19 @@ impl StableMultitenantWithTimestampMergePolicy {
             (time_end, split.num_records)
         });
         debug!(splits=?splits_short_debug(&splits[..]), "find-demux-operation");
+        // TODO: add second demux.
         merge_operations.append(&mut self.build_first_demux_operation(splits));
         splits.extend(excluded_splits);
         merge_operations
     }
 
     /// This function builds operations for splits that have never been demuxed.
-    pub(crate) fn build_first_demux_operation(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
+    pub(crate) fn build_first_demux_operation(
+        &self,
+        splits: &mut Vec<SplitMetadata>,
+    ) -> Vec<MergeOperation> {
         assert!(
-            splits
-                .iter()
-                .all(|split| split.demux_generation == 0),
+            splits.iter().all(|split| split.demux_generation == 0),
             "All splits are expected to have never been demuxed."
         );
         let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
@@ -300,7 +304,9 @@ impl StableMultitenantWithTimestampMergePolicy {
         }
         for split_range in operation_ranges.into_iter() {
             let splits_in_merge: Vec<SplitMetadata> = splits.drain(split_range).collect();
-            let merge_operation = MergeOperation::Demux{splits: splits_in_merge};
+            let merge_operation = MergeOperation::Demux {
+                splits: splits_in_merge,
+            };
             operations.push(merge_operation);
         }
         return operations;
