@@ -275,7 +275,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -356,7 +356,7 @@ pub mod test_suite {
                 .publish_splits(index_id, &[split_id_1], CheckpointDelta::from(15..18))
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitIsNotStaged { .. }));
+            assert!(matches!(result, MetastoreError::SplitsNotStaged { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -381,7 +381,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -412,7 +412,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -447,7 +447,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitIsNotStaged { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -643,7 +643,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -669,7 +669,7 @@ pub mod test_suite {
                 .replace_splits(index_id, &[split_id_2], &[split_id_1])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -709,7 +709,7 @@ pub mod test_suite {
                 .replace_splits(index_id, &[split_id_2], &[split_id_1])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitIsNotStaged { .. }));
+            assert!(matches!(result, MetastoreError::SplitsNotStaged { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -740,7 +740,7 @@ pub mod test_suite {
                 .replace_splits(index_id, &[split_id_2, split_id_3], &[split_id_1])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -831,7 +831,7 @@ pub mod test_suite {
                 .mark_splits_for_deletion(index_id, &["non-existent-split"])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -905,7 +905,7 @@ pub mod test_suite {
                 .delete_splits(index_id, &["non-existent-split"])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -978,7 +978,7 @@ pub mod test_suite {
                 .delete_splits(index_id, &[split_id_1])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::Forbidden { .. }));
+            assert!(matches!(result, MetastoreError::SplitsNotDeletable { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }

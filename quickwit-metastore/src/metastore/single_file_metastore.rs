@@ -193,13 +193,17 @@ impl SingleFileMetastore {
         split_ids: &[&'a str],
         metadata_set: &mut MetadataSet,
     ) -> MetastoreResult<()> {
+        let mut split_not_found_ids = vec![];
+        let mut split_not_staged_ids = vec![];
         for &split_id in split_ids {
             // Check for the existence of split.
-            let mut metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
-                MetastoreError::SplitDoesNotExist {
-                    split_id: split_id.to_string(),
+            let metadata = match metadata_set.splits.get_mut(split_id) {
+                Some(metadata) => metadata,
+                _ => {
+                    split_not_found_ids.push(split_id.to_string());
+                    continue;
                 }
-            })?;
+            };
 
             match metadata.split_metadata.split_state {
                 SplitState::Published => {
@@ -212,11 +216,21 @@ impl SingleFileMetastore {
                     metadata.split_metadata.update_timestamp = Utc::now().timestamp();
                 }
                 _ => {
-                    return Err(MetastoreError::SplitIsNotStaged {
-                        split_id: split_id.to_string(),
-                    })
+                    split_not_staged_ids.push(split_id.to_string());
                 }
             }
+        }
+
+        if !split_not_found_ids.is_empty() {
+            return Err(MetastoreError::SplitsDoNotExist {
+                split_ids: split_not_found_ids,
+            });
+        }
+
+        if !split_not_staged_ids.is_empty() {
+            return Err(MetastoreError::SplitsNotStaged {
+                split_ids: split_not_staged_ids,
+            });
         }
 
         Ok(())
@@ -228,22 +242,31 @@ impl SingleFileMetastore {
         metadata_set: &mut MetadataSet,
     ) -> MetastoreResult<bool> {
         let mut is_modified = false;
+        let mut split_not_found_ids = vec![];
         for &split_id in split_ids {
             // Check for the existence of split.
-            let metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
-                MetastoreError::SplitDoesNotExist {
-                    split_id: split_id.to_string(),
+            let metadata = match metadata_set.splits.get_mut(split_id) {
+                Some(metadata) => metadata,
+                None => {
+                    split_not_found_ids.push(split_id.to_string());
+                    continue;
                 }
-            })?;
+            };
 
             if metadata.split_metadata.split_state == SplitState::ScheduledForDeletion {
-                // If the split is already scheduled for deletion, this API call returns success.
+                // If the split is already scheduled for deletion, This is fine, we just skip it.
                 continue;
             }
 
             metadata.split_metadata.split_state = SplitState::ScheduledForDeletion;
             metadata.split_metadata.update_timestamp = Utc::now().timestamp();
             is_modified = true;
+        }
+
+        if !split_not_found_ids.is_empty() {
+            return Err(MetastoreError::SplitsDoNotExist {
+                split_ids: split_not_found_ids,
+            });
         }
 
         Ok(is_modified)
@@ -450,13 +473,17 @@ impl Metastore for SingleFileMetastore {
     ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
 
+        let mut split_not_found_ids = vec![];
+        let mut split_not_deletable_ids = vec![];
         for &split_id in split_ids {
             // Check for the existence of split.
-            let metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
-                MetastoreError::SplitDoesNotExist {
-                    split_id: split_id.to_string(),
+            let metadata = match metadata_set.splits.get_mut(split_id) {
+                Some(metadata) => metadata,
+                None => {
+                    split_not_found_ids.push(split_id.to_string());
+                    continue;
                 }
-            })?;
+            };
 
             match metadata.split_metadata.split_state {
                 SplitState::ScheduledForDeletion | SplitState::Staged => {
@@ -464,13 +491,21 @@ impl Metastore for SingleFileMetastore {
                     metadata_set.splits.remove(split_id);
                 }
                 _ => {
-                    let message: String = format!(
-                        "This split is not in a deletable state: {:?}:{:?}",
-                        split_id, &metadata.split_metadata.split_state
-                    );
-                    return Err(MetastoreError::Forbidden { message });
+                    split_not_deletable_ids.push(split_id.to_string());
                 }
             }
+        }
+
+        if !split_not_found_ids.is_empty() {
+            return Err(MetastoreError::SplitsDoNotExist {
+                split_ids: split_not_found_ids,
+            });
+        }
+
+        if !split_not_deletable_ids.is_empty() {
+            return Err(MetastoreError::SplitsNotDeletable {
+                split_ids: split_not_deletable_ids,
+            });
         }
 
         self.put_index(metadata_set).await?;
