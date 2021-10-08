@@ -191,7 +191,6 @@ impl Source for KafkaSource {
         let mut checkpoint_delta = CheckpointDelta::default();
 
         let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
-
         let mut message_stream = Box::pin(self.consumer.stream().take_until(deadline));
 
         let mut batch_num_bytes = 0;
@@ -202,7 +201,7 @@ impl Source for KafkaSource {
                 Err(KafkaError::PartitionEOF(partition_id)) => {
                     self.state.num_active_partitions -= 1;
                     info!(
-                        topic = ?self.topic.as_str(),
+                        topic = ?self.topic,
                         partition_id = ?partition_id,
                         num_active_partitions = ?self.state.num_active_partitions,
                         "Reached end of partition."
@@ -218,8 +217,8 @@ impl Source for KafkaSource {
             } else {
                 self.state.num_invalid_messages += 1;
             }
-            self.state.num_bytes_processed += message.payload_len() as u64;
             batch_num_bytes += message.payload_len() as u64;
+            self.state.num_bytes_processed += message.payload_len() as u64;
             self.state.num_messages_processed += 1;
 
             let partition_id = self
@@ -258,7 +257,7 @@ impl Source for KafkaSource {
                 .await?;
         }
         if self.state.num_active_partitions == 0 {
-            info!(topic = &self.topic.as_str(), "Reached end of topic.");
+            info!(topic = ?self.topic, "Reached end of topic.");
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
@@ -660,8 +659,8 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "kafka-broker-external-service"))]
-mod kafka_broker_tests {
+#[cfg(all(test, feature = "kafka-external-service"))]
+mod kafka_source_tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::rand::append_random_suffix;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
