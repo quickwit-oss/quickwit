@@ -29,7 +29,7 @@ use tokio_util::io::ReaderStream;
 use crate::{OwnedBytes, StorageErrorKind, StorageResult};
 
 #[async_trait]
-/// The very good trait, always use it.
+/// PutPayloadProvider is used to upload data and support multipart.
 pub trait PutPayloadProvider: PutPayloadProviderClone + Send + Sync {
     /// Return the total length of the payload.
     async fn len(&self) -> io::Result<u64>;
@@ -57,20 +57,20 @@ pub trait PutPayloadProvider: PutPayloadProviderClone + Send + Sync {
 }
 
 pub trait PutPayloadProviderClone {
-    fn clone_box(&self) -> Box<dyn PutPayloadProvider>;
+    fn box_clone(&self) -> Box<dyn PutPayloadProvider>;
 }
 
 impl<T> PutPayloadProviderClone for T
 where T: 'static + PutPayloadProvider + Clone
 {
-    fn clone_box(&self) -> Box<dyn PutPayloadProvider> {
+    fn box_clone(&self) -> Box<dyn PutPayloadProvider> {
         Box::new(self.clone())
     }
 }
 
 impl Clone for Box<dyn PutPayloadProvider> {
     fn clone(&self) -> Box<dyn PutPayloadProvider> {
-        self.clone_box()
+        self.box_clone()
     }
 }
 
@@ -103,12 +103,7 @@ impl PutPayloadProvider for PutPayload {
     }
 
     async fn range_byte_stream(&self, range: Range<u64>) -> io::Result<ByteStream> {
-        byte_stream(self, range).await
-    }
-}
-
-async fn byte_stream(payload: &PutPayload, range: Range<u64>) -> io::Result<ByteStream> {
-    match payload {
+    match self {
         PutPayload::LocalFile(filepath) => {
             let mut file: tokio::fs::File = tokio::fs::File::open(&filepath).await?;
             file.seek(SeekFrom::Start(range.start)).await?;
@@ -118,6 +113,7 @@ async fn byte_stream(payload: &PutPayload, range: Range<u64>) -> io::Result<Byte
         PutPayload::InMemory(data) => Ok(ByteStream::from(
             (&data[range.start as usize..range.end as usize]).to_vec(),
         )),
+    }
     }
 }
 

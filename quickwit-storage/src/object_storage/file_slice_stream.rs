@@ -39,6 +39,7 @@ pub struct FileSliceStream<R> {
 impl<R> FileSliceStream<R>
 where R: AsyncRead + AsyncSeek + Unpin
 {
+    #[allow(dead_code)]
     pub async fn try_new(mut reader: R, range: Range<u64>) -> io::Result<Self> {
         if range.end < range.start {
             return Err(io::Error::new(
