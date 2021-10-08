@@ -20,6 +20,8 @@
 mod file_source;
 #[cfg(feature = "kafka")]
 mod kafka_source;
+#[cfg(feature = "kinesis")]
+mod kinesis;
 mod source_factory;
 mod vec_source;
 

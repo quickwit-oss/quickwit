@@ -36,6 +36,7 @@ services:
       - localstack
     environment:
       DATA_DIR: /tmp/localstack/data
+      KINESIS_PROVIDER: kinesalite
       SERVICES: kinesis,s3
     volumes:
       - ".localstack:/docker-entrypoint-initaws.d"
