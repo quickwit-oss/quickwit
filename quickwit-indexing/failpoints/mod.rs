@@ -43,7 +43,7 @@ use fail::FailScenario;
 use quickwit_index_config::default_config_for_tests;
 use quickwit_indexing::actors::IndexerParams;
 use quickwit_indexing::index_data;
-use quickwit_indexing::models::{CommitPolicy, ScratchDirectory};
+use quickwit_indexing::models::{CommitPolicy, IndexingDirectory};
 use quickwit_indexing::source::SourceConfig;
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, Metastore, SingleFileMetastore, SplitState};
@@ -166,7 +166,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
         })
         .await?;
     let params = IndexerParams {
-        scratch_directory: ScratchDirectory::try_new_temp()?,
+        indexing_directory: IndexingDirectory::for_test().await?,
         heap_size: Byte::from_bytes(30_000_000),
         commit_policy: CommitPolicy {
             timeout: Duration::from_secs(3),
@@ -174,7 +174,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
         },
     };
     let source_config = SourceConfig {
-        id: "test-source".to_string(),
+        source_id: "test-source".to_string(),
         source_type: "vec".to_string(),
         params: json!({
             "items": [

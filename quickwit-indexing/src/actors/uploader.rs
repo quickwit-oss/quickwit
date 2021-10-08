@@ -249,7 +249,7 @@ mod tests {
             IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(Arc::new(mock_metastore), index_storage, mailbox);
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
-        let split_scratch_directory = ScratchDirectory::try_new_temp()?;
+        let split_scratch_directory = ScratchDirectory::for_test()?;
         std::fs::write(
             split_scratch_directory.path().join(BUNDLE_FILENAME),
             &b"bubu"[..],
@@ -319,7 +319,7 @@ mod tests {
             IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(Arc::new(mock_metastore), index_storage, mailbox);
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
-        let split_scratch_directory = ScratchDirectory::try_new_temp()?;
+        let split_scratch_directory = ScratchDirectory::for_test()?;
         std::fs::write(
             split_scratch_directory.path().join(BUNDLE_FILENAME),
             &b"bubu"[..],

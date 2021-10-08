@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::{Cache, OwnedBytes, PutPayload, Storage, StorageFactory, StorageResult};
+use crate::{Cache, OwnedBytes, Storage, StorageFactory, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
 struct StorageWithCache {
@@ -33,7 +33,11 @@ struct StorageWithCache {
 
 #[async_trait]
 impl Storage for StorageWithCache {
-    async fn put(&self, path: &Path, _payload: PutPayload) -> StorageResult<()> {
+    async fn put(
+        &self,
+        path: &Path,
+        _payload: Box<dyn crate::PutPayloadProvider>,
+    ) -> crate::StorageResult<()> {
         unimplemented!("StorageWithCache is readonly. Failed to put {:?}", path)
     }
 

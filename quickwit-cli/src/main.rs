@@ -170,18 +170,21 @@ impl CliCommand {
         let input_path: Option<PathBuf> = matches.value_of("input-path").map(PathBuf::from);
         let source_config_path: Option<PathBuf> =
             matches.value_of("source-config-path").map(PathBuf::from);
-        let temp_dir: Option<PathBuf> = matches.value_of("temp-dir").map(PathBuf::from);
-        let heap_size_str = matches
+        let data_dir_path: PathBuf = matches
+            .value_of("data-dir-path")
+            .map(PathBuf::from)
+            .expect("`data-dir-path` is a required arg.");
+        let heap_size = matches
             .value_of("heap-size")
-            .expect("`heap-size` has a default value.");
-        let heap_size = Byte::from_str(heap_size_str)?;
+            .map(Byte::from_str)
+            .expect("`heap-size` has a default value.")?;
         let overwrite = matches.is_present("overwrite");
 
         Ok(CliCommand::Index(IndexDataArgs {
             index_id,
             input_path,
             source_config_path,
-            temp_dir,
+            data_dir_path,
             heap_size,
             metastore_uri,
             overwrite,
@@ -428,7 +431,7 @@ pub fn parse_duration_with_unit(duration: &str) -> anyhow::Result<Duration> {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::time::Duration;
 
     use clap::{load_yaml, App, AppSettings};
@@ -531,6 +534,8 @@ mod tests {
             "wikipedia",
             "--metastore-uri",
             "file:///indexes",
+            "--data-dir-path",
+            "/var/lib/quickwit/data",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
@@ -539,12 +544,13 @@ mod tests {
                 index_id,
                 input_path: None,
                 source_config_path: None,
-                temp_dir: None,
+                data_dir_path,
                 heap_size,
                 metastore_uri,
                 overwrite: false,
             })) if &index_id == "wikipedia"
                     && &metastore_uri == "file:///indexes"
+                    && data_dir_path == Path::new("/var/lib/quickwit/data")
                     && heap_size.get_bytes() == 2_000_000_000
         ));
 
@@ -556,8 +562,8 @@ mod tests {
             "wikipedia",
             "--source-config-path",
             "/conf/source_config.json",
-            "--temp-dir",
-            "./tmp",
+            "--data-dir-path",
+            "/var/lib/quickwit/data",
             "--heap-size",
             "4gib",
             "--metastore-uri",
@@ -571,17 +577,16 @@ mod tests {
                 index_id,
                 input_path: None,
                 source_config_path: Some(source_config_path),
-                temp_dir,
+                data_dir_path,
                 heap_size,
                 metastore_uri,
                 overwrite: true,
             })) if &index_id == "wikipedia"
+                    && metastore_uri == "file:///indexes"
                     && source_config_path == Path::new("/conf/source_config.json")
-                    && temp_dir == Some(PathBuf::from("./tmp"))
-                    && &metastore_uri == "file:///indexes"
+                    && data_dir_path == Path::new("/var/lib/quickwit/data")
                     && heap_size.get_bytes() == 4_294_967_296
         ));
-
         Ok(())
     }
 
@@ -599,6 +604,8 @@ mod tests {
             "/data/wikipedia.json",
             "--source-config-path",
             "/conf/source_config.json",
+            "--data-dir-path",
+            "/var/lib/quickwit/data",
         ]);
         assert!(matches.is_err());
         Ok(())
