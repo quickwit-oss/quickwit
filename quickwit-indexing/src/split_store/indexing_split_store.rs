@@ -134,7 +134,7 @@ impl IndexingSplitStore {
         let key = PathBuf::from(quickwit_common::split_file(&split.split_id));
         let payload = PutPayload::from(split_path.to_path_buf());
         self.remote_storage
-            .put(&key, payload)
+            .put(&key, Box::new(payload))
             .await
             .with_context(|| {
                 format!(

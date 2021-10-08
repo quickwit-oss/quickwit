@@ -36,7 +36,7 @@ async fn test_upload_single_part_file() -> anyhow::Result<()> {
     object_storage
         .put(
             Path::new("test-s3-compatible-storage/hello_small.txt"),
-            PutPayload::from(b"hello, happy tax payer!".to_vec()),
+            Box::new(PutPayload::from(b"hello, happy tax payer!".to_vec())),
         )
         .await?;
     Ok(())
@@ -60,7 +60,7 @@ async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
     object_storage
         .put(
             Path::new("test-s3-compatible-storage/hello_large.txt"),
-            PutPayload::from(test_buffer),
+            Box::new(PutPayload::from(test_buffer)),
         )
         .await?;
     Ok(())

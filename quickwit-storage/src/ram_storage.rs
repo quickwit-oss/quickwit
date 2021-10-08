@@ -18,10 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fmt, io};
 
 use async_trait::async_trait;
 use tokio::fs::File;
@@ -29,8 +29,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
 use crate::{
-    add_prefix_to_storage, OwnedBytes, PutPayload, Storage, StorageErrorKind, StorageFactory,
-    StorageResult,
+    add_prefix_to_storage, OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResult,
 };
 
 /// In Ram implementation of quickwit's storage.
@@ -67,17 +66,14 @@ impl RamStorage {
     }
 }
 
-async fn read_all(put: &PutPayload) -> io::Result<OwnedBytes> {
-    match put {
-        PutPayload::InMemory(data) => Ok(data.clone()),
-        PutPayload::LocalFile(filepath) => tokio::fs::read(filepath).await.map(OwnedBytes::new),
-    }
-}
-
 #[async_trait]
 impl Storage for RamStorage {
-    async fn put(&self, path: &Path, payload: PutPayload) -> crate::StorageResult<()> {
-        let payload_bytes = read_all(&payload).await?;
+    async fn put(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayloadProvider>,
+    ) -> crate::StorageResult<()> {
+        let payload_bytes = payload.read_all().await?;
         self.put_data(path, payload_bytes).await;
         Ok(())
     }
