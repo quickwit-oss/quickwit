@@ -103,17 +103,17 @@ impl PutPayloadProvider for PutPayload {
     }
 
     async fn range_byte_stream(&self, range: Range<u64>) -> io::Result<ByteStream> {
-    match self {
-        PutPayload::LocalFile(filepath) => {
-            let mut file: tokio::fs::File = tokio::fs::File::open(&filepath).await?;
-            file.seek(SeekFrom::Start(range.start)).await?;
-            let reader_stream = ReaderStream::new(file.take(range.end - range.start));
-            Ok(ByteStream::new(reader_stream))
+        match self {
+            PutPayload::LocalFile(filepath) => {
+                let mut file: tokio::fs::File = tokio::fs::File::open(&filepath).await?;
+                file.seek(SeekFrom::Start(range.start)).await?;
+                let reader_stream = ReaderStream::new(file.take(range.end - range.start));
+                Ok(ByteStream::new(reader_stream))
+            }
+            PutPayload::InMemory(data) => Ok(ByteStream::from(
+                (&data[range.start as usize..range.end as usize]).to_vec(),
+            )),
         }
-        PutPayload::InMemory(data) => Ok(ByteStream::from(
-            (&data[range.start as usize..range.end as usize]).to_vec(),
-        )),
-    }
     }
 }
 
