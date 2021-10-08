@@ -18,10 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fmt, io};
 
 use async_trait::async_trait;
 use tokio::fs::File;
@@ -66,17 +66,6 @@ impl RamStorage {
     }
 }
 
-async fn read_all(payload: Box<dyn crate::PutPayloadProvider>) -> io::Result<OwnedBytes> {
-    let total_len = payload.len().await?;
-    let range = 0..total_len;
-    let mut reader = payload.range_byte_stream(range).await?.into_async_read();
-
-    let mut data: Vec<u8> = Vec::with_capacity(total_len as usize);
-    tokio::io::copy(&mut reader, &mut data).await?;
-
-    Ok(OwnedBytes::new(data))
-}
-
 #[async_trait]
 impl Storage for RamStorage {
     async fn put(
@@ -84,7 +73,7 @@ impl Storage for RamStorage {
         path: &Path,
         payload: Box<dyn crate::PutPayloadProvider>,
     ) -> crate::StorageResult<()> {
-        let payload_bytes = read_all(payload).await?;
+        let payload_bytes = payload.read_all().await?;
         self.put_data(path, payload_bytes).await;
         Ok(())
     }

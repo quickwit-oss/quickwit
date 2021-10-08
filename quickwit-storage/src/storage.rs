@@ -42,6 +42,18 @@ pub trait PutPayloadProvider: PutPayloadProviderClone + Send + Sync {
         let range = 0..total_len;
         self.range_byte_stream(range).await
     }
+
+    /// Load the whole Payload into memory.
+    async fn read_all(&self) -> io::Result<OwnedBytes> {
+        let total_len = self.len().await?;
+        let range = 0..total_len;
+        let mut reader = self.range_byte_stream(range).await?.into_async_read();
+
+        let mut data: Vec<u8> = Vec::with_capacity(total_len as usize);
+        tokio::io::copy(&mut reader, &mut data).await?;
+
+        Ok(OwnedBytes::new(data))
+    }
 }
 
 pub trait PutPayloadProviderClone {
@@ -131,13 +143,6 @@ impl From<&'static [u8]> for PutPayload {
     fn from(payload_bytes: &'static [u8]) -> Self {
         From::from(OwnedBytes::new(payload_bytes))
     }
-}
-
-#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
-#[async_trait]
-pub trait Storagee: Send + Sync + 'static {
-    /// Saves a file into the storage.
-    async fn put(&self, path: &Path, payload: Box<dyn PutPayloadProvider>) -> StorageResult<()>;
 }
 
 /// Storage meant to receive and serve quickwit's split.
