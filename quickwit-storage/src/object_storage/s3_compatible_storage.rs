@@ -260,8 +260,8 @@ impl S3CompatibleObjectStorage {
 
         for (chunk_id, chunk) in chunks.into_iter().enumerate() {
             let byte_stream = payload.range_byte_stream(chunk.clone()).await?;
-            let mut read = byte_stream.into_blocking_read();
-            std::io::copy(&mut read, &mut buf)?;
+            let mut read = byte_stream.into_async_read();
+            tokio::io::copy(&mut read, &mut buf).await?;
             let md5 = md5::compute(&buf);
             buf.clear();
             let part = Part {
