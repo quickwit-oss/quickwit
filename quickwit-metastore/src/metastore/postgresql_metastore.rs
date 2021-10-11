@@ -28,13 +28,15 @@ use diesel::pg::Pg;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::DatabaseErrorKind;
 use diesel::result::Error::DatabaseError;
+use diesel::sql_types::{Array, Text};
 use diesel::{
-    debug_query, BoolExpressionMethods, Connection, ExpressionMethods, PgConnection, QueryDsl,
-    RunQueryDsl,
+    debug_query, sql_query, BoolExpressionMethods, Connection, ExpressionMethods, PgConnection,
+    QueryDsl, RunQueryDsl,
 };
 use tracing::{debug, error, info, warn};
 
 use crate::metastore::{match_tags_filter, CheckpointDelta};
+use crate::postgresql::model::INDEX_TO_SPLIT_ITEM_SQL_STMT;
 use crate::postgresql::{model, schema};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
@@ -904,28 +906,42 @@ impl Metastore for PostgresqlMetastore {
             // There is an error, but we want to investigate and return a meaningful error.
             // From this point, we always have to return `Err` to abort the transaction.
             // Check for the index existence.
-            if deleted_split_ids.is_empty() && !self.is_index_exist(&conn, index_id)? {
-                return Err(MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
-                });
-            }
-
-            // Check splits for existence and state.
             let split_ids_set: HashSet<String> =
                 split_ids.iter().map(|id| id.to_string()).collect();
             let deleted_ids_set: HashSet<String> =
                 deleted_split_ids.iter().map(|id| id.to_string()).collect();
             let untouched_ids_set = &split_ids_set - &deleted_ids_set;
-            let not_deletable_ids: Vec<String> = schema::splits::dsl::splits
-                .filter(
-                    schema::splits::dsl::index_id
-                        .eq(index_id)
-                        .and(schema::splits::dsl::split_id.eq_any(&untouched_ids_set)),
-                )
-                .select(schema::splits::dsl::split_id)
-                .get_results(&conn)
-                .map_err(MetastoreError::DbError)?;
-            let not_deletable_ids_set: HashSet<String> = not_deletable_ids.into_iter().collect();
+
+            // Using raw sql for now (Diesel ORM doesn't support join on sub query).
+            // https://github.com/diesel-rs/diesel/discussions/2921
+            let index_to_split_items: Vec<model::IndexToSplitQueryItem> =
+                sql_query(INDEX_TO_SPLIT_ITEM_SQL_STMT)
+                    .bind::<Array<Text>, _>(
+                        untouched_ids_set.iter().cloned().collect::<Vec<String>>(),
+                    )
+                    .bind::<Text, _>(index_id)
+                    .get_results(&conn)?;
+
+            // Index does not exist if empty.
+            if index_to_split_items.is_empty() {
+                return Err(MetastoreError::IndexDoesNotExist {
+                    index_id: index_id.to_string(),
+                });
+            }
+
+            // None of the untouched splits exist if we have a row
+            // with the split_id being `null`
+            if index_to_split_items.len() == 1 && index_to_split_items[0].split_id.is_none() {
+                return Err(MetastoreError::SplitsDoNotExist {
+                    split_ids: untouched_ids_set.into_iter().collect(),
+                });
+            }
+
+            // The untouched splits might be  a mix of non-existant and not deletable splits.
+            let not_deletable_ids_set: HashSet<String> = index_to_split_items
+                .into_iter()
+                .map(|item| item.split_id.unwrap())
+                .collect();
             let not_found_ids_set: HashSet<String> = &untouched_ids_set - &not_deletable_ids_set;
 
             if !not_found_ids_set.is_empty() {
@@ -934,13 +950,9 @@ impl Metastore for PostgresqlMetastore {
                 });
             }
 
-            if !not_deletable_ids_set.is_empty() {
-                return Err(MetastoreError::SplitsNotDeletable {
-                    split_ids: not_deletable_ids_set.into_iter().collect(),
-                });
-            }
-
-            Err(diesel::result::Error::RollbackTransaction).map_err(MetastoreError::DbError)
+            Err(MetastoreError::SplitsNotDeletable {
+                split_ids: not_deletable_ids_set.into_iter().collect(),
+            })
         })?;
         Ok(())
     }

@@ -20,8 +20,31 @@
 use std::ops::RangeInclusive;
 use std::str::FromStr;
 
+use diesel::sql_types::{Nullable, Text};
+
 use crate::postgresql::schema::{indexes, splits};
 use crate::{IndexMetadata, SplitMetadataAndFooterOffsets, SplitState};
+
+// A raw query that helps figure out if index exist, non-existant
+// splits and not deletable splits.
+pub const INDEX_TO_SPLIT_ITEM_SQL_STMT: &str = r#"
+SELECT i.index_id, s.split_id 
+FROM indexes AS i 
+LEFT JOIN (
+    SELECT index_id, split_id 
+    FROM splits
+    WHERE split_id = ANY ($1)
+) AS s 
+ON i.index_id = s.index_id
+WHERE i.index_id = $2"#;
+
+#[derive(Queryable, QueryableByName, Debug, Clone)]
+pub struct IndexToSplitQueryItem {
+    #[sql_type = "Text"]
+    pub index_id: String,
+    #[sql_type = "Nullable<Text>"]
+    pub split_id: Option<String>,
+}
 
 /// A model structure for handling index metadata in a database.
 #[derive(Identifiable, Insertable, Queryable, Debug)]
