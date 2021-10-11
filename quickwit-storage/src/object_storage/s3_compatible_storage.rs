@@ -254,7 +254,7 @@ impl S3CompatibleObjectStorage {
             .max()
             .expect("The policy should never emit an empty list of chunk.");
 
-        let mut buf = vec![0u8; largest_chunk_num_bytes as usize];
+        let mut buf = Vec::with_capacity(largest_chunk_num_bytes as usize);
 
         let mut parts = Vec::with_capacity(chunks.len());
 
