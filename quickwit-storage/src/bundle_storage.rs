@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_common::chunk_range;
 use serde::{Deserialize, Serialize};
 use tantivy::common::CountingWriter;
 use tantivy::directory::FileSlice;
@@ -203,13 +204,6 @@ impl Storage for BundleStorage {
     fn uri(&self) -> String {
         self.storage.uri()
     }
-}
-
-fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {
-    range.clone().step_by(chunk_size).map(move |block_start| {
-        let block_end = (block_start + chunk_size).min(range.end);
-        block_start..block_end
-    })
 }
 
 impl HasLen for BundleStorage {

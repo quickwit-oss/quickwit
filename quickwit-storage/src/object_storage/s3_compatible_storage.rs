@@ -27,6 +27,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
+use quickwit_common::{chunk_range, to_u64_range};
 use regex::Regex;
 use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider};
 use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
@@ -167,16 +168,6 @@ impl Part {
     }
 }
 
-fn split_range_into_chunks(len: u64, chunk_size: u64) -> Vec<Range<u64>> {
-    (0..len)
-        .step_by(chunk_size as usize)
-        .map(move |start| Range {
-            start,
-            end: (start + chunk_size).min(len),
-        })
-        .collect()
-}
-
 impl S3CompatibleObjectStorage {
     fn uri(&self, relative_path: &Path) -> String {
         format!("s3://{}/{}", &self.bucket, self.key(relative_path))
@@ -245,28 +236,25 @@ impl S3CompatibleObjectStorage {
         part_len: u64,
     ) -> io::Result<Vec<Part>> {
         assert!(len > 0);
-        let chunks = split_range_into_chunks(len, part_len);
-        // Note that it should really be the first chunk, but who knows... and it is very cheap to
-        // compute this anyway.
-        let largest_chunk_num_bytes = chunks
-            .iter()
-            .map(|chunk| chunk.end - chunk.start)
-            .max()
-            .expect("The policy should never emit an empty list of chunk.");
+        let multipart_ranges = chunk_range(0..len as usize, part_len as usize).collect::<Vec<_>>();
 
-        let mut buf = Vec::with_capacity(largest_chunk_num_bytes as usize);
+        let mut parts = Vec::with_capacity(multipart_ranges.len());
 
-        let mut parts = Vec::with_capacity(chunks.len());
+        for (multipart_id, multipart_range) in multipart_ranges.into_iter().enumerate() {
+            let mut md5_context = md5::Context::new();
+            const MD5_CHUNK_SIZE: usize = 1_000_000;
+            for md5_chunk in chunk_range(multipart_range.clone(), MD5_CHUNK_SIZE) {
+                let mut buf = Vec::with_capacity(MD5_CHUNK_SIZE as usize);
+                let byte_stream = payload.range_byte_stream(to_u64_range(&md5_chunk)).await?;
+                let mut read = byte_stream.into_async_read();
+                tokio::io::copy(&mut read, &mut buf).await?;
+                md5_context.consume(buf);
+            }
+            let md5 = md5_context.compute();
 
-        for (chunk_id, chunk) in chunks.into_iter().enumerate() {
-            let byte_stream = payload.range_byte_stream(chunk.clone()).await?;
-            let mut read = byte_stream.into_async_read();
-            tokio::io::copy(&mut read, &mut buf).await?;
-            let md5 = md5::compute(&buf);
-            buf.clear();
             let part = Part {
-                part_number: chunk_id + 1, // parts are 1-indexed
-                range: chunk,
+                part_number: multipart_id + 1, // parts are 1-indexed
+                range: to_u64_range(&multipart_range),
                 md5,
             };
             parts.push(part);
@@ -586,24 +574,27 @@ impl Storage for S3CompatibleObjectStorage {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::object_storage::s3_compatible_storage::split_range_into_chunks;
-
     #[test]
     fn test_split_range_into_chunks_inexact() {
         assert_eq!(
-            split_range_into_chunks(11, 3),
+            chunk_range(0..11, 3).collect::<Vec<_>>(),
             vec![0..3, 3..6, 6..9, 9..11]
         );
     }
     #[test]
     fn test_split_range_into_chunks_exact() {
-        assert_eq!(split_range_into_chunks(9, 3), vec![0..3, 3..6, 6..9]);
+        assert_eq!(
+            chunk_range(0..9, 3).collect::<Vec<_>>(),
+            vec![0..3, 3..6, 6..9]
+        );
     }
 
     #[test]
     fn test_split_range_empty() {
-        assert_eq!(split_range_into_chunks(0, 1), vec![]);
+        assert_eq!(chunk_range(0..0, 1).collect::<Vec<_>>(), vec![]);
     }
+
+    use quickwit_common::chunk_range;
 
     use super::parse_uri;
 
