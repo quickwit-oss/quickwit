@@ -153,6 +153,11 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
             .get_field(TAGS_FIELD_NAME)
             .expect("Tags field must exist in the schema.")
     }
+
+    /// Returns the timestamp field name.
+    fn demux_field_name(&self) -> Option<String> {
+        None
+    }
 }
 
 clone_trait_object!(IndexConfig);

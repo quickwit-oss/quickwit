@@ -187,7 +187,10 @@ impl IndexingPipelineSupervisor {
             .resolve(&index_metadata.index_uri)?;
 
         let merge_policy: Arc<dyn MergePolicy> =
-            Arc::new(StableMultitenantWithTimestampMergePolicy::default());
+            Arc::new(StableMultitenantWithTimestampMergePolicy {
+                demux_field_name: index_metadata.index_config.demux_field_name(),
+                ..Default::default()
+            });
 
         // TODO: Make cache path configurable [https://github.com/quickwit-inc/quickwit/issues/520]
         // Using the scratch_directory directly is fine since the cache storage will create its own

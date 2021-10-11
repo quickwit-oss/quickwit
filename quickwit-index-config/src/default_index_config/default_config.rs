@@ -29,6 +29,7 @@ use tantivy::schema::{
     Cardinality, FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, Value, STORED, STRING,
 };
 use tantivy::Document;
+use tracing::info;
 
 use super::field_mapping_entry::DocParsingError;
 use super::{default_as_true, FieldMappingEntry, FieldMappingType};
@@ -50,6 +51,8 @@ pub struct DefaultIndexConfigBuilder {
     field_mappings: Vec<FieldMappingEntry>,
     #[serde(default)]
     tag_fields: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    demux_field: Option<String>,
 }
 
 #[derive(Default, Serialize, Deserialize, Clone)]
@@ -69,28 +72,6 @@ impl From<SortByConfig> for SortBy {
     }
 }
 
-fn resolve_sort_field(
-    sort_config_opt: Option<SortByConfig>,
-    schema: &Schema,
-) -> anyhow::Result<Option<SortBy>> {
-    if let Some(sort_by_config) = sort_config_opt {
-        let sort_by_field = schema
-            .get_field(&sort_by_config.field_name)
-            .with_context(|| format!("Unknown sort by field: `{}`", sort_by_config.field_name))?;
-
-        let sort_by_field_entry = schema.get_field_entry(sort_by_field);
-        if !sort_by_field_entry.is_fast() {
-            bail!(
-                "Sort by field must be a fast field, please add the fast property to your field \
-                 `{}`.",
-                sort_by_config.field_name
-            )
-        }
-        return Ok(Some(SortBy::from(sort_by_config)));
-    }
-    Ok(None)
-}
-
 impl DefaultIndexConfigBuilder {
     /// Create a new `DefaultIndexConfigBuilder` for tests.
     pub fn new() -> Self {
@@ -101,6 +82,7 @@ impl DefaultIndexConfigBuilder {
             sort_by: None,
             field_mappings: vec![],
             tag_fields: vec![],
+            demux_field: None,
         }
     }
 
@@ -120,41 +102,8 @@ impl DefaultIndexConfigBuilder {
             default_search_field_names.push(field_name.clone());
         }
 
-        // Resolve timestamp field
-        if let Some(ref timestamp_field_name) = self.timestamp_field {
-            let timestamp_field = schema
-                .get_field(timestamp_field_name)
-                .with_context(|| format!("Unknown timestamp field: `{}`", timestamp_field_name))?;
-
-            let timestamp_field_entry = schema.get_field_entry(timestamp_field);
-            if !timestamp_field_entry.is_fast() {
-                bail!(
-                    "Timestamp field must be a fast field, please add the fast property to your \
-                     field `{}`.",
-                    timestamp_field_name
-                )
-            }
-            match timestamp_field_entry.field_type() {
-                FieldType::I64(options) | FieldType::U64(options) => {
-                    if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
-                        bail!(
-                            "Timestamp field cannot be an array, please change your field `{}` \
-                             from an array to a single value.",
-                            timestamp_field_name
-                        )
-                    }
-                }
-                _ => {
-                    bail!(
-                        "Timestamp field must be either of type i64 or u64, please change your \
-                         field type `{}` to i64 or u64.",
-                        timestamp_field_name
-                    )
-                }
-            }
-        }
-
-        // Resolve sort field
+        resolve_timestamp_field(self.timestamp_field.as_ref(), &schema)?;
+        resolve_demux_field(self.demux_field.as_ref(), &schema)?;
         let sort_by = resolve_sort_field(self.sort_by, &schema)?;
 
         // Resolve tag fields
@@ -168,6 +117,15 @@ impl DefaultIndexConfigBuilder {
                 .with_context(|| format!("Unknown tag field: `{}`", tag_field_name))?;
             tag_field_names.push(tag_field_name.clone());
         }
+        if let Some(ref demux_field_name) = self.demux_field {
+            if !tag_field_names.contains(demux_field_name) {
+                info!(
+                    "Demux field name `{}` is not in index config tags, add it automatically.",
+                    demux_field_name
+                );
+                tag_field_names.push(demux_field_name.clone());
+            }
+        }
 
         // Build the root mapping entry, it has an empty name so that we don't prefix all
         // field name with it.
@@ -180,6 +138,7 @@ impl DefaultIndexConfigBuilder {
             sort_by,
             field_mappings,
             tag_field_names,
+            demux_field_name: self.demux_field,
         })
     }
 
@@ -216,6 +175,106 @@ impl DefaultIndexConfigBuilder {
     }
 }
 
+fn resolve_timestamp_field(
+    timestamp_field_name_opt: Option<&String>,
+    schema: &Schema,
+) -> anyhow::Result<()> {
+    if let Some(ref timestamp_field_name) = timestamp_field_name_opt {
+        let timestamp_field = schema
+            .get_field(timestamp_field_name)
+            .with_context(|| format!("Unknown timestamp field: `{}`", timestamp_field_name))?;
+
+        let timestamp_field_entry = schema.get_field_entry(timestamp_field);
+        if !timestamp_field_entry.is_fast() {
+            bail!(
+                "Timestamp field must be a fast field, please add the fast property to your field \
+                 `{}`.",
+                timestamp_field_name
+            )
+        }
+        match timestamp_field_entry.field_type() {
+            FieldType::I64(options) | FieldType::U64(options) => {
+                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
+                    bail!(
+                        "Timestamp field cannot be an array, please change your field `{}` from \
+                         an array to a single value.",
+                        timestamp_field_name
+                    )
+                }
+            }
+            _ => {
+                bail!(
+                    "Timestamp field must be either of type i64 or u64, please change your field \
+                     type `{}` to i64 or u64.",
+                    timestamp_field_name
+                )
+            }
+        }
+    }
+    Ok(())
+}
+
+fn resolve_sort_field(
+    sort_config_opt: Option<SortByConfig>,
+    schema: &Schema,
+) -> anyhow::Result<Option<SortBy>> {
+    if let Some(sort_by_config) = sort_config_opt {
+        let sort_by_field = schema
+            .get_field(&sort_by_config.field_name)
+            .with_context(|| format!("Unknown sort by field: `{}`", sort_by_config.field_name))?;
+
+        let sort_by_field_entry = schema.get_field_entry(sort_by_field);
+        if !sort_by_field_entry.is_fast() {
+            bail!(
+                "Sort by field must be a fast field, please add the fast property to your field \
+                 `{}`.",
+                sort_by_config.field_name
+            )
+        }
+        return Ok(Some(SortBy::from(sort_by_config)));
+    }
+    Ok(None)
+}
+
+fn resolve_demux_field(
+    demux_field_name_opt: Option<&String>,
+    schema: &Schema,
+) -> anyhow::Result<()> {
+    if let Some(demux_field_name) = demux_field_name_opt {
+        let demux_field = schema
+            .get_field(demux_field_name)
+            .with_context(|| format!("Unknown timestamp field: `{}`", demux_field_name))?;
+
+        let demux_field_entry = schema.get_field_entry(demux_field);
+        if !demux_field_entry.is_fast() {
+            bail!(
+                "Demux field must be a fast field, please add the fast property to your field \
+                 `{}`.",
+                demux_field_name
+            )
+        }
+        match demux_field_entry.field_type() {
+            FieldType::I64(options) | FieldType::U64(options) => {
+                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
+                    bail!(
+                        "Demux field cannot be an array, please change your field `{}` from an \
+                         array to a single value.",
+                        demux_field_name
+                    )
+                }
+            }
+            _ => {
+                bail!(
+                    "Demux field must be either of type i64 or u64, please change your field type \
+                     `{}` to i64 or u64.",
+                    demux_field_name
+                )
+            }
+        }
+    }
+    Ok(())
+}
+
 impl TryFrom<DefaultIndexConfigBuilder> for DefaultIndexConfig {
     type Error = anyhow::Error;
 
@@ -241,12 +300,13 @@ impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
             store_source: value.store_source,
             timestamp_field: value.timestamp_field_name(),
             sort_by: sort_by_config,
-            default_search_fields: value.default_search_field_names,
             field_mappings: value
                 .field_mappings
                 .field_mappings()
                 .unwrap_or_else(Vec::new),
+            demux_field: value.demux_field_name(),
             tag_fields: value.tag_field_names,
+            default_search_fields: value.default_search_field_names,
         }
     }
 }
@@ -277,6 +337,8 @@ pub struct DefaultIndexConfig {
     schema: Schema,
     /// List of field names used for tagging.
     tag_field_names: Vec<String>,
+    /// Demux field name.
+    demux_field_name: Option<String>,
 }
 
 impl std::fmt::Debug for DefaultIndexConfig {
@@ -289,6 +351,7 @@ impl std::fmt::Debug for DefaultIndexConfig {
                 &self.default_search_field_names,
             )
             .field("timestamp_field_name", &self.timestamp_field_name())
+            .field("demux_field_name", &self.demux_field_name())
             // TODO: complete it.
             .finish()
     }
@@ -553,6 +616,28 @@ mod tests {
     }
 
     #[test]
+    fn test_fail_to_build_index_config_with_non_fast_demux_field() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "demux_field": "demux",
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "demux",
+                    "type": "u64"
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let expected_msg = "Demux field must be a fast field, please add the fast property to \
+                            your field `demux`."
+            .to_string();
+        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
+        Ok(())
+    }
+
+    #[test]
     fn test_fail_to_build_index_config_with_multivalued_timestamp_field() -> anyhow::Result<()> {
         let index_config = r#"{
             "type": "default",
@@ -768,20 +853,45 @@ mod tests {
     }
 
     #[test]
-    fn test_index_config_with_a_u64_timestamp_field_is_valid() -> anyhow::Result<()> {
+    fn test_index_config_with_a_i64_demux_field_is_valid_and_is_added_to_tags() -> anyhow::Result<()>
+    {
         let index_config = r#"{
             "type": "default",
             "default_search_fields": [],
             "tag_fields": [],
+            "demux_field": "demux",
             "field_mappings": [
                 {
-                    "name": "timestamp",
-                    "type": "u64",
+                    "name": "demux",
+                    "type": "i64",
                     "fast": true
                 }
             ]
         }"#;
-        let _ = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        let config = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        assert_eq!(config.tag_field_names().len(), 1);
+        assert!(config.tag_field_names().contains(&"demux".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_config_with_a_i64_demux_field_is_valid() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "tag_fields": ["demux"],
+            "demux_field": "demux",
+            "field_mappings": [
+                {
+                    "name": "demux",
+                    "type": "i64",
+                    "fast": true
+                }
+            ]
+        }"#;
+        let config = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        assert_eq!(config.tag_field_names().len(), 1);
+        assert!(config.tag_field_names().contains(&"demux".to_string()));
         Ok(())
     }
 }
