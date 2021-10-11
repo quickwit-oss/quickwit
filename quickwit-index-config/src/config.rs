@@ -76,7 +76,8 @@ pub fn convert_tag_to_string(field_name: &str, field_value: &Value) -> String {
 }
 
 /// TODO doc
-pub fn _match_tag_field_name(field_name: &str, tag_string: &str) -> bool {
+pub fn match_tag_field_name(field_name: &str, tag_string: &str) -> bool {
+    println!("{} {}", field_name, tag_string);
     tag_string.starts_with(&format!("{}:", field_name))
 }
 

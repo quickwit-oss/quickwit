@@ -30,7 +30,7 @@ mod error;
 mod query_builder;
 mod wikipedia_config;
 
-pub use config::{IndexConfig, SortBy, SortOrder};
+pub use config::{IndexConfig, SortBy, SortOrder, match_tag_field_name};
 pub use default_index_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
 pub use error::QueryParserError;
 pub use wikipedia_config::WikipediaIndexConfig;
