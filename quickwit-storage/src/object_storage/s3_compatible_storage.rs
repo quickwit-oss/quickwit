@@ -38,7 +38,7 @@ use rusoto_s3::{
     S3Client, UploadPartRequest, S3,
 };
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tracing::warn;
 
 use super::error::RusotoErrorWrapper;
@@ -168,6 +168,21 @@ impl Part {
     }
 }
 
+const MD5_CHUNK_SIZE: usize = 1_000_000;
+async fn compute_md5<T: AsyncRead + std::marker::Unpin>(
+    mut read: T,
+) -> anyhow::Result<md5::Digest> {
+    let mut checksum = md5::Context::new();
+    let mut buf = vec![0; MD5_CHUNK_SIZE];
+    loop {
+        let read_len = read.read(&mut buf).await?;
+        checksum.consume(&buf[..read_len]);
+        if read_len == 0 {
+            return Ok(checksum.compute());
+        }
+    }
+}
+
 impl S3CompatibleObjectStorage {
     fn uri(&self, relative_path: &Path) -> String {
         format!("s3://{}/{}", &self.bucket, self.key(relative_path))
@@ -240,21 +255,12 @@ impl S3CompatibleObjectStorage {
 
         let mut parts = Vec::with_capacity(multipart_ranges.len());
 
-        const MD5_CHUNK_SIZE: usize = 1_000_000;
-        let mut buf = Vec::with_capacity(MD5_CHUNK_SIZE as usize);
         for (multipart_id, multipart_range) in multipart_ranges.into_iter().enumerate() {
-            let mut read = payload
+            let read = payload
                 .range_byte_stream(to_u64_range(&multipart_range))
                 .await?
                 .into_async_read();
-            let mut md5_context = md5::Context::new();
-            for md5_chunk in chunk_range(multipart_range.clone(), MD5_CHUNK_SIZE) {
-                buf.resize(md5_chunk.len(), 0);
-                read.read_exact(&mut buf).await?;
-                md5_context.consume(&mut buf);
-                buf.clear();
-            }
-            let md5 = md5_context.compute();
+            let md5 = compute_md5(read).await.unwrap();
 
             let part = Part {
                 part_number: multipart_id + 1, // parts are 1-indexed
