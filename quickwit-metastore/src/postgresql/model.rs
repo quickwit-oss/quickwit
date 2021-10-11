@@ -82,6 +82,8 @@ pub struct Split {
     pub start_time_range: Option<i64>,
     /// If a timestamp field is available, the max timestamp in the split.
     pub end_time_range: Option<i64>,
+    /// Timestamp for tracking when the split state was last modified.
+    pub update_timestamp: i64,
     /// A list of tags for categorizing and searching group of splits.
     pub tags: Vec<String>,
     // A JSON string containing all of the SplitMetadataAndFooterOffsets.

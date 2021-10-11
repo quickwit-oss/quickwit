@@ -30,6 +30,7 @@ table! {
         split_state -> Varchar,
         start_time_range -> Nullable<Int8>,
         end_time_range -> Nullable<Int8>,
+        update_timestamp -> Int8,
         tags -> Array<Text>,
         split_metadata_json -> Text,
         index_id -> Varchar,
