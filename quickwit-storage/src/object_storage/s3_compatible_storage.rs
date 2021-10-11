@@ -38,7 +38,7 @@ use rusoto_s3::{
     S3Client, UploadPartRequest, S3,
 };
 use tokio::fs::File;
-use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tracing::warn;
 
 use super::error::RusotoErrorWrapper;
@@ -240,15 +240,19 @@ impl S3CompatibleObjectStorage {
 
         let mut parts = Vec::with_capacity(multipart_ranges.len());
 
+        const MD5_CHUNK_SIZE: usize = 1_000_000;
+        let mut buf = Vec::with_capacity(MD5_CHUNK_SIZE as usize);
         for (multipart_id, multipart_range) in multipart_ranges.into_iter().enumerate() {
+            let mut read = payload
+                .range_byte_stream(to_u64_range(&multipart_range))
+                .await?
+                .into_async_read();
             let mut md5_context = md5::Context::new();
-            const MD5_CHUNK_SIZE: usize = 1_000_000;
             for md5_chunk in chunk_range(multipart_range.clone(), MD5_CHUNK_SIZE) {
-                let mut buf = Vec::with_capacity(MD5_CHUNK_SIZE as usize);
-                let byte_stream = payload.range_byte_stream(to_u64_range(&md5_chunk)).await?;
-                let mut read = byte_stream.into_async_read();
-                tokio::io::copy(&mut read, &mut buf).await?;
-                md5_context.consume(buf);
+                buf.resize(md5_chunk.len(), 0);
+                read.read_exact(&mut buf).await?;
+                md5_context.consume(&mut buf);
+                buf.clear();
             }
             let md5 = md5_context.compute();
 
