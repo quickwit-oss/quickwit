@@ -54,11 +54,14 @@ pub enum MetastoreError {
     #[error("IOError `{0}`")]
     Io(io::Error),
 
-    #[error("Split `{split_id}` does not exist.")]
-    SplitDoesNotExist { split_id: String },
+    #[error("Splits `{split_ids:?}` do not exist.")]
+    SplitsDoNotExist { split_ids: Vec<String> },
 
-    #[error("Split `{split_id}` is not staged.")]
-    SplitIsNotStaged { split_id: String },
+    #[error("Splits `{split_ids:?}` are not in a deletable state.")]
+    SplitsNotDeletable { split_ids: Vec<String> },
+
+    #[error("Splits `{split_ids:?}` are not staged.")]
+    SplitsNotStaged { split_ids: Vec<String> },
 
     #[error("Publish checkpoint delta overlaps with the current checkpoint: {0:?}.")]
     IncompatibleCheckpointDelta(#[from] IncompatibleCheckpointDelta),

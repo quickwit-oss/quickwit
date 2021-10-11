@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,13 +28,15 @@ use diesel::pg::Pg;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::DatabaseErrorKind;
 use diesel::result::Error::DatabaseError;
+use diesel::sql_types::{Array, Text};
 use diesel::{
-    debug_query, BoolExpressionMethods, Connection, ExpressionMethods, PgConnection, QueryDsl,
-    RunQueryDsl,
+    debug_query, sql_query, BoolExpressionMethods, Connection, ExpressionMethods, PgConnection,
+    QueryDsl, RunQueryDsl,
 };
 use tracing::{debug, error, info, warn};
 
 use crate::metastore::{match_tags_filter, CheckpointDelta};
+use crate::postgresql::model::INDEX_TO_SPLIT_ITEM_SQL_STMT;
 use crate::postgresql::{model, schema};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
@@ -114,8 +117,8 @@ fn check_all_splits_were_modified<'a>(
             .iter()
             .any(|modified_split_id| modified_split_id == split_id)
         {
-            return Err(MetastoreError::SplitDoesNotExist {
-                split_id: split_id.to_string(),
+            return Err(MetastoreError::SplitsDoNotExist {
+                split_ids: vec![split_id.to_string()],
             });
         }
     }
@@ -220,6 +223,8 @@ impl PostgresqlMetastore {
         index_id: &str,
         split_ids: &[&str],
     ) -> MetastoreResult<Vec<String>> {
+        // TODO: changes here are just to raise the correct errors for now.
+        // This method will be re-implemented in another PR
         // Select splits to publish.
         let select_splits_statement = schema::splits::dsl::splits.filter(
             schema::splits::dsl::index_id
@@ -231,17 +236,34 @@ impl PostgresqlMetastore {
             .get_results(conn)
             .map_err(MetastoreError::DbError)?;
 
+        let split_not_found_ids: Vec<String> = {
+            let splits_set: HashSet<String> = split_ids
+                .iter()
+                .map(|split_id| split_id.to_string())
+                .collect();
+            let found_split_set: HashSet<String> = model_splits
+                .iter()
+                .map(|split| split.split_id.clone())
+                .collect();
+            (&splits_set - &found_split_set).into_iter().collect()
+        };
+        if !split_not_found_ids.is_empty() {
+            return Err(MetastoreError::SplitsDoNotExist {
+                split_ids: split_not_found_ids,
+            });
+        }
+
         let now_timestamp = Utc::now().timestamp();
         let mut succeeded_split_ids = Vec::new();
+        let mut split_not_staged_ids = Vec::new();
         for model_split in model_splits {
             // Check for the inclusion of non-publishable split IDs.
             // Except for SplitState::Staged and SplitState::Published, you cannot publish.
             if model_split.split_state != SplitState::Staged.to_string()
                 && model_split.split_state != SplitState::Published.to_string()
             {
-                return Err(MetastoreError::SplitIsNotStaged {
-                    split_id: model_split.split_id,
-                });
+                split_not_staged_ids.push(model_split.split_id);
+                continue;
             }
 
             // Deserialize the target split metadata.
@@ -306,8 +328,13 @@ impl PostgresqlMetastore {
             succeeded_split_ids.push(updated_split.split_id);
         }
 
-        debug!(index_id=?index_id, split_ids=?succeeded_split_ids, "Published");
+        if !split_not_staged_ids.is_empty() {
+            return Err(MetastoreError::SplitsNotStaged {
+                split_ids: split_not_staged_ids,
+            });
+        }
 
+        debug!(index_id=?index_id, split_ids=?succeeded_split_ids, "Published");
         Ok(succeeded_split_ids)
     }
 
@@ -397,60 +424,6 @@ impl PostgresqlMetastore {
         }
 
         debug!(succeeded_split_ids=?succeeded_split_ids, "Mark for deletion");
-
-        Ok(succeeded_split_ids)
-    }
-
-    fn delete_splits(
-        &self,
-        conn: &PooledConnection<ConnectionManager<PgConnection>>,
-        index_id: &str,
-        split_ids: &[&str],
-    ) -> MetastoreResult<Vec<String>> {
-        // Select splits to delete.
-        let select_splits_statement = schema::splits::dsl::splits.filter(
-            schema::splits::dsl::index_id
-                .eq(index_id)
-                .and(schema::splits::dsl::split_id.eq_any(split_ids)),
-        );
-        debug!(sql=%debug_query::<Pg, _>(&select_splits_statement).to_string());
-        let model_splits: Vec<model::Split> = select_splits_statement
-            .get_results(conn)
-            .map_err(MetastoreError::DbError)?;
-
-        let mut succeeded_split_ids = Vec::new();
-        for model_split in model_splits {
-            // Check for the inclusion of non-deletable split IDs.
-            // Except for SplitState::Staged and SplitState::ScheduledForDeletion, you cannot
-            // delete.
-            if model_split.split_state != SplitState::Staged.to_string()
-                && model_split.split_state != SplitState::ScheduledForDeletion.to_string()
-            {
-                return Err(MetastoreError::Forbidden {
-                    message: format!(
-                        "This split {:?} is not in a deletable state",
-                        model_split.split_id
-                    ),
-                });
-            }
-
-            // Update database.
-            let delete_splits_statement = diesel::delete(
-                schema::splits::dsl::splits.filter(
-                    schema::splits::dsl::index_id
-                        .eq(index_id)
-                        .and(schema::splits::dsl::split_id.eq(model_split.split_id)),
-                ),
-            );
-            debug!(sql=%debug_query::<Pg, _>(&delete_splits_statement).to_string());
-            let deleted_split: model::Split = delete_splits_statement
-                .get_result(&*conn)
-                .map_err(MetastoreError::DbError)?;
-
-            succeeded_split_ids.push(deleted_split.split_id);
-        }
-
-        debug!(index_id=?index_id, split_ids=?succeeded_split_ids, "Deleted");
 
         Ok(succeeded_split_ids)
     }
@@ -907,28 +880,79 @@ impl Metastore for PostgresqlMetastore {
         split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
         let conn = self.get_conn()?;
-        // Check for the existence of index.
-        let index_exists: bool = self.is_index_exist(&conn, index_id)?;
-        if !index_exists {
-            return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_id.to_string(),
-            });
-        }
         conn.transaction::<_, MetastoreError, _>(|| {
-            // Delete splits.
-            let deleted_split_ids = self.delete_splits(&conn, index_id, split_ids)?;
+            let deletable_states = [
+                SplitState::Staged.to_string(),
+                SplitState::ScheduledForDeletion.to_string(),
+            ];
 
-            if deleted_split_ids.len() < split_ids.len() {
-                // Return an error if there are any splits that could not be deleted.
-                check_all_splits_were_modified(
-                    split_ids,
-                    &deleted_split_ids
-                        .iter()
-                        .map(String::as_str)
-                        .collect::<Vec<_>>(),
-                )?;
+            let deleted_split_ids: Vec<String> = diesel::delete(
+                schema::splits::dsl::splits.filter(
+                    schema::splits::dsl::index_id
+                        .eq(index_id)
+                        .and(schema::splits::dsl::split_id.eq_any(split_ids))
+                        .and(schema::splits::dsl::split_state.eq_any(deletable_states)),
+                ),
+            )
+            .returning(schema::splits::dsl::split_id)
+            .get_results(&conn)
+            .map_err(MetastoreError::DbError)?;
+
+            // returning `Ok` means `commit` the transaction.
+            if deleted_split_ids.len() == split_ids.len() {
+                return Ok(());
             }
-            Ok(())
+
+            // There is an error, but we want to investigate and return a meaningful error.
+            // From this point, we always have to return `Err` to abort the transaction.
+            // Check for the index existence.
+            let split_ids_set: HashSet<String> =
+                split_ids.iter().map(|id| id.to_string()).collect();
+            let deleted_ids_set: HashSet<String> =
+                deleted_split_ids.iter().map(|id| id.to_string()).collect();
+            let untouched_ids_set = &split_ids_set - &deleted_ids_set;
+
+            // Using raw sql for now (Diesel ORM doesn't support join on sub query).
+            // https://github.com/diesel-rs/diesel/discussions/2921
+            let index_to_split_items: Vec<model::IndexToSplitQueryItem> =
+                sql_query(INDEX_TO_SPLIT_ITEM_SQL_STMT)
+                    .bind::<Array<Text>, _>(
+                        untouched_ids_set.iter().cloned().collect::<Vec<String>>(),
+                    )
+                    .bind::<Text, _>(index_id)
+                    .get_results(&conn)?;
+
+            // Index does not exist if empty.
+            if index_to_split_items.is_empty() {
+                return Err(MetastoreError::IndexDoesNotExist {
+                    index_id: index_id.to_string(),
+                });
+            }
+
+            // None of the untouched splits exist if we have a row
+            // with the split_id being `null`
+            if index_to_split_items.len() == 1 && index_to_split_items[0].split_id.is_none() {
+                return Err(MetastoreError::SplitsDoNotExist {
+                    split_ids: untouched_ids_set.into_iter().collect(),
+                });
+            }
+
+            // The untouched splits might be  a mix of non-existant and not deletable splits.
+            let not_deletable_ids_set: HashSet<String> = index_to_split_items
+                .into_iter()
+                .map(|item| item.split_id.unwrap())
+                .collect();
+            let not_found_ids_set: HashSet<String> = &untouched_ids_set - &not_deletable_ids_set;
+
+            if !not_found_ids_set.is_empty() {
+                return Err(MetastoreError::SplitsDoNotExist {
+                    split_ids: not_found_ids_set.into_iter().collect(),
+                });
+            }
+
+            Err(MetastoreError::SplitsNotDeletable {
+                split_ids: not_deletable_ids_set.into_iter().collect(),
+            })
         })?;
         Ok(())
     }
