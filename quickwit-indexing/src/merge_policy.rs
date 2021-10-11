@@ -82,7 +82,7 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
     /// This functions will be called on subset of `SplitMetadata`
     /// for which the number of demux is the same.
     fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation>;
-    /// A candidate split is a split that can undergo merge or demux operation.
+    /// A mature split is a split that won't undergo merge or demux operation in the future.
     fn is_mature(&self, split: &SplitMetadata) -> bool;
 }
 
@@ -189,7 +189,7 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
     }
 
     fn is_mature(&self, split: &SplitMetadata) -> bool {
-        split.num_records <= self.max_merge_docs
+        split.num_records > self.max_merge_docs
             && split.demux_generation >= self.max_demux_generation
     }
 }
