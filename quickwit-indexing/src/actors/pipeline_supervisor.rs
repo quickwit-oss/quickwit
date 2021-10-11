@@ -185,10 +185,12 @@ impl IndexingPipelineSupervisor {
             .params
             .storage_uri_resolver
             .resolve(&index_metadata.index_uri)?;
+        let demux_field_name = index_metadata.index_config.demux_field_name();
+        let timestamp_field_name = index_metadata.index_config.timestamp_field_name();
 
         let merge_policy: Arc<dyn MergePolicy> =
             Arc::new(StableMultitenantWithTimestampMergePolicy {
-                demux_field_name: index_metadata.index_config.demux_field_name(),
+                demux_field_name: demux_field_name.clone(),
                 ..Default::default()
             });
 
@@ -230,8 +232,12 @@ impl IndexingPipelineSupervisor {
             .set_kill_switch(self.kill_switch.clone())
             .spawn_sync();
 
-        let merge_executor =
-            MergeExecutor::new(self.params.index_id.clone(), merge_packager_mailbox);
+        let merge_executor = MergeExecutor::new(
+            self.params.index_id.clone(),
+            merge_packager_mailbox,
+            timestamp_field_name,
+            demux_field_name,
+        );
         let (merge_executor_mailbox, merge_executor_handler) = ctx
             .spawn_actor(merge_executor)
             .set_kill_switch(self.kill_switch.clone())
