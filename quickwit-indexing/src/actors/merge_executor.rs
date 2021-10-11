@@ -409,7 +409,7 @@ impl VirtualSplit {
 
 /// Naive demuxing of a virtual split into `output_num_splits` virtual splits,
 /// a virtual split being defined by a map of (demux value, number of docs).
-/// The naive demuxing creates groups of demux values following the 
+/// The naive demuxing creates groups of demux values following the
 /// [`Next-Fit` bin packing logic](https://en.wikipedia.org/wiki/Next-fit_bin_packing)
 /// AND such that following constraints are satisfied:
 /// - exactly `output_num_splits` splits are created
@@ -420,8 +420,8 @@ impl VirtualSplit {
 ///   with the following rules:
 ///     - If `open split num docs + demux value num docs <= split_upper_bound`, docs are added to
 ///       the split.
-///     - If `open split num docs + demux value num docs > `split_upper_bound`, we put all the
-///       docs we can in the open split, the remaining docs will be added in the next one.
+///     - If `open split num docs + demux value num docs > `split_upper_bound`, we put all the docs
+///       we can in the open split, the remaining docs will be added in the next one.
 ///     - If after adding docs, the current split num docs >= `split_lower_bound`, the split is
 ///       closed and we open a new split.
 ///

@@ -262,10 +262,25 @@ impl StableMultitenantWithTimestampMergePolicy {
         // a number of times > `max_demux_generation`.
         // We will append them at the end.
         let excluded_splits = remove_matching_items(splits, |split| {
-            println!("{:?} {:?} {:?} {:?}", split.num_records, split.demux_generation, split.tags, split.tags.iter().filter(|tag| match_tag_field_name(demux_field_name, tag)).count());
+            println!(
+                "{:?} {:?} {:?} {:?}",
+                split.num_records,
+                split.demux_generation,
+                split.tags,
+                split
+                    .tags
+                    .iter()
+                    .filter(|tag| match_tag_field_name(demux_field_name, tag))
+                    .count()
+            );
             split.num_records < self.max_merge_docs
                 || split.demux_generation >= self.max_demux_generation
-                || split.tags.iter().filter(|tag| match_tag_field_name(demux_field_name, tag)).count() < 2
+                || split
+                    .tags
+                    .iter()
+                    .filter(|tag| match_tag_field_name(demux_field_name, tag))
+                    .count()
+                    < 2
         });
 
         let mut merge_operations: Vec<MergeOperation> = Vec::new();
@@ -464,7 +479,9 @@ struct SplitGroup {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, iter::FromIterator, ops::RangeInclusive};
+    use std::collections::HashSet;
+    use std::iter::FromIterator;
+    use std::ops::RangeInclusive;
 
     use super::*;
 
@@ -508,12 +525,16 @@ mod tests {
     ) -> Vec<SplitMetadata> {
         num_docs_vec
             .into_iter()
-            .zip(tag_counts.into_iter())
+            .zip(tag_counts.iter())
             .enumerate()
             .map(|(split_ord, (num_records, &tag_count))| SplitMetadata {
                 split_id: format!("split_{:02}", split_ord),
                 num_records,
-                tags: HashSet::from_iter((0..tag_count).into_iter().map(|i| format!("{}:{}", demux_field_name, i))),
+                tags: HashSet::from_iter(
+                    (0..tag_count)
+                        .into_iter()
+                        .map(|i| format!("{}:{}", demux_field_name, i)),
+                ),
                 ..Default::default()
             })
             .collect()
@@ -753,11 +774,16 @@ mod tests {
             demux_factor: 6,
             demux_field_name: Some(demux_field_name.to_string()),
         };
-        let mut splits = create_splits_with_tags(vec![
-            10_000_000, 10_000_000, 19_999_999, 19_999_999, 10_000_000, 10_000_001, 10_000_002, 10_000_004, 10_000_005,
-        ], demux_field_name, &[0, 1, 2, 3, 3, 4, 5, 6, 10]);
-        let mut other_splits = create_splits_with_tags(vec![
-            10_000_000], "other_demux_field_name", &[5]);
+        let mut splits = create_splits_with_tags(
+            vec![
+                10_000_000, 10_000_000, 19_999_999, 19_999_999, 10_000_000, 10_000_001, 10_000_002,
+                10_000_004, 10_000_005,
+            ],
+            demux_field_name,
+            &[0, 1, 2, 3, 3, 4, 5, 6, 10],
+        );
+        let mut other_splits =
+            create_splits_with_tags(vec![10_000_000], "other_demux_field_name", &[5]);
         splits.append(&mut other_splits);
         let merge_ops = merge_policy.demux_operations(&mut splits);
         assert_eq!(splits.len(), 4);
@@ -779,10 +805,14 @@ mod tests {
             demux_factor: 6,
             demux_field_name: Some(demux_field_name.to_string()),
         };
-        let mut splits = create_splits_with_tags(vec![
-            19_999_999, 19_999_999, 10_000_000, 10_000_001, 10_000_002, 10_000_004, 10_000_005,
-            19_999_999, 19_999_999, 10_000_000, 10_000_001, 10_000_002, 10_000_004, 10_000_005,
-        ], demux_field_name, &[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]);
+        let mut splits = create_splits_with_tags(
+            vec![
+                19_999_999, 19_999_999, 10_000_000, 10_000_001, 10_000_002, 10_000_004, 10_000_005,
+                19_999_999, 19_999_999, 10_000_000, 10_000_001, 10_000_002, 10_000_004, 10_000_005,
+            ],
+            demux_field_name,
+            &[5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5],
+        );
         let merge_ops = merge_policy.demux_operations(&mut splits);
         assert_eq!(splits.len(), 2);
         assert_eq!(merge_ops.len(), 2);
