@@ -176,7 +176,9 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
     fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
         let original_num_splits = splits.len();
         let mut operations = self.merge_operations(splits);
-        operations.append(&mut self.demux_operations(splits));
+        if self.demux_field.is_some() {
+            operations.append(&mut self.demux_operations(splits));
+        }
         debug_assert_eq!(
             original_num_splits,
             operations.iter().map(|op| op.splits().len()).sum::<usize>() + splits.len(),
@@ -249,13 +251,17 @@ impl StableMultitenantWithTimestampMergePolicy {
     /// This function builds demux operations for splits that are >= `max_merge_docs` and
     /// have been demux less than `max-demux_generation` times.
     fn demux_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
+        assert!(
+            self.demux_field.is_some(),
+            "A demux field must be present for demux."
+        );
         if splits.is_empty() {
             return Vec::new();
         }
         // First we isolate splits that are too young or that have been already demuxed
         // a number of times > `max_demux_generation`.
         // We will append them at the end.
-        // TODO: filter out splits that either have only less than 1 tenant
+        // TODO: exclude splits that have only 1 tenant.
         let excluded_splits = remove_matching_items(splits, |split| {
             split.num_records < self.max_merge_docs
                 && split.demux_generation < self.max_demux_generation
@@ -271,7 +277,7 @@ impl StableMultitenantWithTimestampMergePolicy {
             (time_end, split.num_records)
         });
         debug!(splits=?splits_short_debug(&splits[..]), "find-demux-operation");
-        // TODO: add second demux.
+        // TODO: add second demux if necessary.
         merge_operations.append(&mut self.build_first_demux_operation(splits));
         splits.extend(excluded_splits);
         merge_operations
@@ -286,30 +292,24 @@ impl StableMultitenantWithTimestampMergePolicy {
             splits.iter().all(|split| split.demux_generation == 0),
             "All splits are expected to have never been demuxed."
         );
-        let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
-        if num_docs < self.demux_factor * self.max_merge_docs {
+        if splits.len() < self.demux_factor {
             return Vec::new();
         }
         let mut operations = Vec::new();
-        let mut operation_ranges: Vec<Range<usize>> = Vec::new();
-        let mut current_start_ord = 1;
-        let mut current_num_docs = 0;
-        for (split_ord, split) in splits.iter().enumerate() {
-            current_num_docs += split.num_records;
-            if current_num_docs >= self.demux_factor * self.max_merge_docs {
-                operation_ranges.push(current_start_ord..split_ord + 1);
-                current_start_ord = split_ord + 1;
-                current_num_docs = 0;
-            }
-        }
-        for split_range in operation_ranges.into_iter() {
-            let splits_in_merge: Vec<SplitMetadata> = splits.drain(split_range).collect();
+        let num_operations = splits.len() / self.demux_factor;
+        for _ in 0..num_operations {
+            let splits_for_demux: Vec<SplitMetadata> = splits
+                .drain(Range {
+                    start: 0,
+                    end: self.demux_factor,
+                })
+                .collect();
             let merge_operation = MergeOperation::Demux {
-                splits: splits_in_merge,
+                splits: splits_for_demux,
             };
             operations.push(merge_operation);
         }
-        return operations;
+        operations
     }
 
     /// This function groups splits in levels.
@@ -722,14 +722,49 @@ mod tests {
     }
 
     #[test]
-    fn test_demux_operations_with_just_enough_docs() {
-        let mut merge_policy = StableMultitenantWithTimestampMergePolicy::default();
-        merge_policy.max_demux_generation = 1;
-        let mut splits = create_splits(vec![19_999_999, 19_999_999, 10_000_000, 10_000_002]);
+    fn test_demux_one_operation() {
+        let merge_policy = StableMultitenantWithTimestampMergePolicy {
+            target_demux_ops: 2,
+            max_merge_docs: 10_000_000,
+            min_level_num_docs: 100_000,
+            merge_factor: 10,
+            merge_factor_max: 12,
+            max_demux_generation: 2,
+            demux_factor: 6,
+            demux_field: Some("demux_field".to_string()),
+        };
+        let mut splits = create_splits(vec![
+            19_999_999, 19_999_999, 10_000_000, 10_000_001, 10_000_002, 10_000_004, 10_000_005,
+        ]);
         let merge_ops = merge_policy.demux_operations(&mut splits);
-        assert_eq!(splits.len(), 0);
+        assert_eq!(splits.len(), 1);
         assert_eq!(merge_ops.len(), 1);
         assert!(matches!(merge_ops[0], MergeOperation::Demux { .. }));
-        assert_eq!(merge_ops[0].splits().len(), 4);
+        assert_eq!(merge_ops[0].splits().len(), 6);
+    }
+
+    #[test]
+    fn test_demux_two_operations() {
+        let merge_policy = StableMultitenantWithTimestampMergePolicy {
+            target_demux_ops: 2,
+            max_merge_docs: 10_000_000,
+            min_level_num_docs: 100_000,
+            merge_factor: 10,
+            merge_factor_max: 12,
+            max_demux_generation: 2,
+            demux_factor: 6,
+            demux_field: Some("demux_field".to_string()),
+        };
+        let mut splits = create_splits(vec![
+            19_999_999, 19_999_999, 10_000_000, 10_000_001, 10_000_002, 10_000_004, 10_000_005,
+            19_999_999, 19_999_999, 10_000_000, 10_000_001, 10_000_002, 10_000_004, 10_000_005,
+        ]);
+        let merge_ops = merge_policy.demux_operations(&mut splits);
+        assert_eq!(splits.len(), 2);
+        assert_eq!(merge_ops.len(), 2);
+        assert!(matches!(merge_ops[0], MergeOperation::Demux { .. }));
+        assert!(matches!(merge_ops[1], MergeOperation::Demux { .. }));
+        assert_eq!(merge_ops[0].splits().len(), 6);
+        assert_eq!(merge_ops[1].splits().len(), 6);
     }
 }

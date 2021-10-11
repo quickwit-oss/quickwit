@@ -33,12 +33,14 @@ use quickwit_metastore::SplitMetadata;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader, FastValue};
 use tantivy::{
-    Directory, Index, IndexMeta, IndexSettings, Segment, SegmentId, SegmentReader, TantivyError,
+    demux, DemuxMapping, Directory, DocIdToSegmentOrdinal, Index, IndexMeta, SegmentId,
+    SegmentReader, TantivyError,
 };
 use tracing::{debug, info};
 
 use crate::merge_policy::MergeOperation;
 use crate::models::{IndexedSplit, MergeScratch, ScratchDirectory};
+use crate::new_split_id;
 
 pub struct MergeExecutor {
     index_id: String,
@@ -245,127 +247,312 @@ impl MergeExecutor {
         splits: Vec<SplitMetadata>,
         merge_scratch_directory: ScratchDirectory,
         downloaded_splits_directory: ScratchDirectory,
-        ctx: &ActorContext<MergeScratch>,
+        _ctx: &ActorContext<MergeScratch>,
     ) -> anyhow::Result<()> {
-        let start = Instant::now();
+        let _start = Instant::now();
         info!("demux-start");
-        let replaced_split_ids: Vec<String> =
-            splits.iter().map(|split| split.split_id.clone()).collect();
-        let (union_index_meta, split_directories) =
-            open_split_directories(downloaded_splits_directory.path(), &replaced_split_ids)?;
-
-        // Step 1:
-        // Input: Splits. Ok we have some splits, we need to count docs for each tenant.
-        // For that we need to open indexes and get searchable segments, there is only one.
+        let num_splits = splits.len();
+        let replaced_split_ids = splits.iter().map(|split| split.split_id.clone());
+        let mut index_metas = Vec::new();
         let mmap_directory = MmapDirectory::open(downloaded_splits_directory.path())?;
-        let demux_field_name = self.demux_field_name.clone().unwrap();
-        let mut num_docs_by_tenant: HashMap<i64, usize> = HashMap::new();
+        let demux_field_name = self
+            .demux_field_name
+            .clone()
+            .expect("Process demux cannot be called without a demux field.");
+        let mut split_with_all_docs = VirtualSplit::new(HashMap::new());
+        let mut fast_field_values_vec = Vec::new();
+        let mut replaced_segments = Vec::new();
         for split_id in replaced_split_ids.into_iter() {
             let split_filename = split_file(&split_id);
             let split_fileslice = mmap_directory.open_read(Path::new(&split_filename))?;
             let split_directory = BundleDirectory::open_split(split_fileslice)?;
             let index = Index::open(split_directory)?;
-            let segments = index.searchable_segments()?;
-            let segment_reader = SegmentReader::open(&segments[0])?;
+            index_metas.push(index.load_metas()?);
+            let searchable_segments = index.searchable_segments()?;
+            let segment = searchable_segments
+                .into_iter()
+                .next()
+                .expect("Split must have at least one segment.");
+            let segment_reader = SegmentReader::open(&segment)?;
+            replaced_segments.push(segment);
             let num_docs = segment_reader.num_docs() as usize;
             let reader = make_fast_field_reader::<i64>(&segment_reader, &demux_field_name)?;
             let mut fast_field_values: Vec<i64> = Vec::new();
             fast_field_values.reserve_exact(num_docs);
             reader.get_range(0, &mut fast_field_values);
-            for idx in 0..num_docs {
-                let demux_field_value = fast_field_values[idx];
-                *num_docs_by_tenant.entry(demux_field_value).or_insert(0) += 1;
+            for fast_field_value in fast_field_values.iter() {
+                split_with_all_docs.add_docs(*fast_field_value, 1);
             }
+            fast_field_values_vec.push(fast_field_values);
         }
+        // TODO: set min / max as executor parameters.
+        let demuxed_splits_num_docs_by_value =
+            demux_values(split_with_all_docs, 10_000_000, 20_000_000, num_splits);
+        let demux_mapping =
+            build_demux_mapping(demuxed_splits_num_docs_by_value, fast_field_values_vec);
+        let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..num_splits)
+            .map(|_| merge_scratch_directory.temp_child())
+            .try_collect()?;
+        let demuxed_split_directories: Vec<MmapDirectory> = demuxed_scratched_directories
+            .iter()
+            .map(|directory| MmapDirectory::open(directory.path()))
+            .try_collect()?;
+        let union_index_meta = combine_index_meta(index_metas)?;
+        let indexes = demux(
+            &replaced_segments,
+            &demux_mapping,
+            union_index_meta.index_settings,
+            demuxed_split_directories,
+        )?;
 
-        // Output: HashMap<tenant_type, usize>
-
-        // Step 2: demux algo
-        // Input: HashMap<tenant_type, usize>, split count, max_split_size
-        // Returns Vec<HashMap<tenant_type, usize>>
-        // Step 3: Build demux mapping
-        // How: for each split, read fast values
-        // Step 4: demux
-        // use tantivy demux function
-        // Step 5: create splits, compute time ranges with fast field values min / max + tags
-        // Step 6: send each split
-
-        // get union directory.
-        //
-        let merged_directory = {
-            let _protected_zone_guard = ctx.protect_zone();
-            merge_split_directories(
-                union_index_meta,
-                split_directories,
-                merge_scratch_directory.path(),
-            )?
-        };
-        // TODO: create splits
-        // ctx.send_message_blocking(&self.merge_packager_mailbox, indexed_split)?;
+        // TODO: add log with time.
+        // TODO: Send a demux operation.
+        for (index, scratched_directory) in indexes
+            .into_iter()
+            .zip(demuxed_scratched_directories.into_iter())
+        {
+            // TODO: get time range and num_docs, docs_size_in_bytes
+            let index_writer = index.writer_with_num_threads(1, 3_000_000)?;
+            let _indexed_split = IndexedSplit {
+                split_id: new_split_id(),
+                index_id: self.index_id.clone(),
+                replaced_split_ids: vec![],
+                time_range: None,
+                num_docs: 0,
+                docs_size_in_bytes: 0,
+                // start_time is not very interesting here.
+                split_date_of_birth: Instant::now(),
+                checkpoint_delta: CheckpointDelta::default(), //< TODO fixme
+                index,
+                index_writer,
+                split_scratch_directory: scratched_directory,
+            };
+            // ctx.send_message_blocking(&self.merge_packager_mailbox, indexed_split)?
+        }
         Ok(())
     }
 }
 
-/// Demuxes a map of (values, number of docs) with constraints on the maximum of docs per split and
-/// a maximum number of splits returned. Returns a list of split map, each map defining the number
-/// of docs for each demux value. TODO: describe algo
-pub fn demux_values(
-    mut num_docs_by_demux_value: HashMap<i64, usize>,
-    global_max_split_num_docs: usize,
-    max_num_splits: usize,
-) -> Vec<HashMap<i64, usize>> {
-    let total_num_docs: usize = num_docs_by_demux_value.values().sum();
-    assert!(
-        global_max_split_num_docs * max_num_splits >= total_num_docs,
-        "Target splits must have num_docs <= `global_max_split_num_docs`."
-    );
-    let demux_values = num_docs_by_demux_value
-        .keys()
+struct SegmentNumDocs {
+    ordinal: u32,
+    num_docs: usize,
+}
+
+pub fn build_demux_mapping(
+    split_maps: Vec<VirtualSplit>,
+    fast_field_values_vec: Vec<Vec<i64>>,
+) -> DemuxMapping {
+    let mut num_docs_by_demux_value = HashMap::new();
+    for (ordinal, split_map) in split_maps.iter().enumerate() {
+        for (demux_value, &num_docs) in split_map.0.iter() {
+            num_docs_by_demux_value
+                .entry(*demux_value)
+                .or_insert_with(Vec::new)
+                .push(SegmentNumDocs {
+                    ordinal: ordinal as u32,
+                    num_docs,
+                });
+        }
+    }
+    let mut doc_id_to_segment_ordinals = fast_field_values_vec
+        .iter()
         .cloned()
-        .sorted()
+        .map(|values| DocIdToSegmentOrdinal::with_max_doc(values.len()))
         .collect_vec();
-    // Split num docs always remain in an interval [min_split_num_docs, max_split_num_docs]
-    // to distribute docs in all splits.
-    // TODO: we need to protect against cases where the final split has a very low number of
-    // documents. For example, we can track the under filled or over filled splits and adjust in
-    // consequence.
-    let min_split_num_docs = total_num_docs / max_num_splits + total_num_docs % max_num_splits;
-    let max_split_num_docs: usize = std::cmp::min(
-        global_max_split_num_docs,
-        (min_split_num_docs as f32 * 1.5) as usize,
+
+    for ordinal in 0..fast_field_values_vec.len() {
+        let num_docs = fast_field_values_vec[ordinal].len();
+        for doc_id in 0..num_docs {
+            let demux_value = fast_field_values_vec[ordinal][doc_id];
+            let segment_num_docs_vec = num_docs_by_demux_value
+                .get_mut(&demux_value)
+                .expect("Demux value must be present.");
+            segment_num_docs_vec[0].num_docs -= 1;
+            doc_id_to_segment_ordinals[ordinal].set(doc_id as u32, segment_num_docs_vec[0].ordinal);
+        }
+    }
+
+    let mut mapping = DemuxMapping::default();
+    for doc_id_to_segment_ord in doc_id_to_segment_ordinals.into_iter() {
+        mapping.add(doc_id_to_segment_ord);
+    }
+    mapping
+}
+
+#[derive(Debug)]
+pub struct VirtualSplit(HashMap<i64, usize>);
+
+impl VirtualSplit {
+    pub fn new(map: HashMap<i64, usize>) -> Self {
+        Self(map)
+    }
+    pub fn total_num_docs(&self) -> usize {
+        self.0.values().sum()
+    }
+
+    pub fn sorted_demux_values(&self) -> Vec<i64> {
+        self.0.keys().cloned().sorted().collect_vec()
+    }
+
+    pub fn remove_docs(&mut self, demux_value: &i64, num_docs: usize) {
+        *self.0.get_mut(demux_value).expect("msg") -= num_docs;
+    }
+
+    pub fn add_docs(&mut self, demux_value: i64, num_docs: usize) {
+        *self.0.entry(demux_value).or_insert(0) += num_docs;
+    }
+
+    pub fn num_docs(&self, demux_value: &i64) -> &usize {
+        self.0.get(demux_value).unwrap_or(&0usize)
+    }
+}
+
+/// Naive demuxing of a virtual split into `output_num_splits` virtual splits,
+/// a virtual split being defined by a map of (demux value, number of docs).
+/// The naive demuxing creates groups of demux values following the 
+/// [`Next-Fit` bin packing logic](https://en.wikipedia.org/wiki/Next-fit_bin_packing)
+/// AND such that following constraints are satisfied:
+/// - exactly `output_num_splits` splits are created
+/// - each produced split satifies the constraints [min_split_num_docs, max_split_num_docs]
+/// The algorithm logic follows these steps:
+/// - Open a virtual split with 0 docs.
+/// - Iterate on each demux value in natural order and put corresponding num docs in the open split
+///   with the following rules:
+///     - If `open split num docs + demux value num docs <= split_upper_bound`, docs are added to
+///       the split.
+///     - If `open split num docs + demux value num docs > `split_upper_bound`, we put all the
+///       docs we can in the open split, the remaining docs will be added in the next one.
+///     - If after adding docs, the current split num docs >= `split_lower_bound`, the split is
+///       closed and we open a new split.
+///
+/// The split bounds must be carefully chosen to ensure the contraints [min_split_num_docs,
+/// max_split_num_docs] are satisfied for all splits. To ensure that, it is sufficient to define
+/// these bounds starting from the last split and backpropagating them until the first split as
+/// follows:
+/// - We know the last split `n` must have num docs in [min_split_num_docs, max_split_num_docs]. To
+///   ensure that, it is sufficient to have remaining_num_docs in [min_split_num_docs,
+///   max_split_num_docs] when we open this last split.q
+/// - When opening the `n - 1` split, we must put at least `max(min_split_num_docs,
+///   remaining_num_docs - max_split_num_docs)` docs in order to have less than `max_split_num_docs`
+///   in the `n` split. Similarly, we must put at most `min(max_split_num_docs, remaining_num_docs -
+///   min_split_num_docs)` in order to have more than `min_split_num_docs` in the `n` split.
+/// - ...
+/// - On the first split, we need to have bounds between [max(min_split_num_docs, total_num_docs -
+///   (n-1) * max_split_num_docs), min(max_split_num_docs, total_num_docs - (n-1) *
+///   min_split_num_docs)].
+pub fn demux_values(
+    mut input_split: VirtualSplit,
+    min_split_num_docs: usize,
+    max_split_num_docs: usize,
+    output_num_splits: usize,
+) -> Vec<VirtualSplit> {
+    let total_num_docs = input_split.total_num_docs();
+    assert!(
+        max_split_num_docs * output_num_splits >= total_num_docs,
+        "Input split num docs must be `<= max_split_num_docs * output_num_splits`."
     );
-    let mut num_docs_diff_with_split_target = 0usize;
-    let mut current_split_map: HashMap<i64, usize> = HashMap::new();
-    let mut current_split_num_docs = 0usize;
-    let mut split_maps = Vec::new();
+    assert!(
+        min_split_num_docs * output_num_splits <= total_num_docs,
+        "Input split num docs must be `>= min_split_num_docs * output_num_splits`."
+    );
+    let demux_values = input_split.sorted_demux_values();
+    let mut splits = Vec::new();
+    let mut current_split = VirtualSplit::new(HashMap::new());
+    let mut num_docs_split_bounds = compute_split_bounds(
+        total_num_docs,
+        output_num_splits,
+        min_split_num_docs,
+        max_split_num_docs,
+    );
     for demux_value in demux_values.into_iter() {
-        let mut all_num_docs_to_add = num_docs_by_demux_value.remove(&demux_value).unwrap();
-        while all_num_docs_to_add > 0 {
-            let num_docs_to_add =
-                if current_split_num_docs + all_num_docs_to_add <= max_split_num_docs {
-                    all_num_docs_to_add
-                } else
-                {
-                    max_split_num_docs - current_split_num_docs
-                };
-            all_num_docs_to_add -= num_docs_to_add;
-            *current_split_map.entry(demux_value).or_insert(0) += num_docs_to_add;
-            current_split_num_docs += num_docs_to_add;
-            if current_split_num_docs >= min_split_num_docs {
-                num_docs_diff_with_split_target += current_split_num_docs - min_split_num_docs;
-                split_maps.push(HashMap::<i64, usize>::from_iter(current_split_map.drain()));
-                current_split_num_docs = 0usize;
+        while *input_split.num_docs(&demux_value) > 0 {
+            let num_docs_to_add = if current_split.total_num_docs()
+                + *input_split.num_docs(&demux_value)
+                <= *num_docs_split_bounds.end()
+            {
+                *input_split.num_docs(&demux_value)
+            } else {
+                num_docs_split_bounds.end() - current_split.total_num_docs()
+            };
+            current_split.add_docs(demux_value, num_docs_to_add);
+            input_split.remove_docs(&demux_value, num_docs_to_add);
+            if current_split.total_num_docs() >= *num_docs_split_bounds.start() {
+                splits.push(VirtualSplit::new(HashMap::from_iter(
+                    current_split.0.drain(),
+                )));
+                num_docs_split_bounds = compute_split_bounds(
+                    input_split.total_num_docs(),
+                    output_num_splits - splits.len(),
+                    min_split_num_docs,
+                    max_split_num_docs,
+                );
             }
         }
     }
-    if !current_split_map.is_empty() {
-        split_maps.push(current_split_map);
-    }
-    println!("num_docs_diff_with_split_target {}", num_docs_diff_with_split_target);
-    println!("split maps {:?}", split_maps);
-    split_maps
+    assert!(
+        splits
+            .iter()
+            .map(|split| split.total_num_docs())
+            .sum::<usize>()
+            == total_num_docs,
+        "Demuxing must keep the same number of docs."
+    );
+    assert!(
+        splits
+            .iter()
+            .map(|split| split.total_num_docs())
+            .min()
+            .unwrap_or(min_split_num_docs)
+            >= min_split_num_docs,
+        "Demuxing must satisfy the min contraint on split num docs."
+    );
+    assert!(
+        splits
+            .iter()
+            .map(|split| split.total_num_docs())
+            .max()
+            .unwrap_or(max_split_num_docs)
+            <= max_split_num_docs,
+        "Demuxing must satisfy the max contraint on split num docs."
+    );
+    assert!(
+        splits.len() == output_num_splits,
+        "Demuxing must return exactly the requested output splits number."
+    );
+    splits
 }
 
+/// Compute num docs bounds for the current split that is going to be filled.
+pub fn compute_split_bounds(
+    remaining_num_docs: usize,
+    remaining_num_splits: usize,
+    min_split_num_docs: usize,
+    max_split_num_docs: usize,
+) -> RangeInclusive<usize> {
+    if remaining_num_splits == 0 {
+        return RangeInclusive::new(min_split_num_docs, max_split_num_docs);
+    }
+    let num_docs_lower_bound =
+        if remaining_num_docs > (remaining_num_splits - 1) * max_split_num_docs {
+            std::cmp::max(
+                min_split_num_docs,
+                remaining_num_docs - (remaining_num_splits - 1) * max_split_num_docs,
+            )
+        } else {
+            min_split_num_docs
+        };
+    let num_docs_upper_bound = std::cmp::min(
+        max_split_num_docs,
+        remaining_num_docs - (remaining_num_splits - 1) * min_split_num_docs,
+    );
+    assert!(
+        num_docs_lower_bound <= num_docs_upper_bound,
+        "num docs lower bound must be <= num docs upper bound."
+    );
+    RangeInclusive::new(num_docs_lower_bound, num_docs_upper_bound)
+}
+
+// TODO: refactor that as such a function is already present in quickwit-search.
 pub fn make_fast_field_reader<T: FastValue>(
     segment_reader: &SegmentReader,
     fast_field_to_collect: &str,
@@ -378,19 +565,11 @@ pub fn make_fast_field_reader<T: FastValue>(
     DynamicFastFieldReader::open(fast_field_slice)
 }
 
-pub fn demux<Dir: Directory>(
-    segments: &[Segment],
-    demux_mapping: &HashMap<usize, usize>,
-    target_settings: IndexSettings,
-    mut output_directories: Vec<Dir>,
-) -> anyhow::Result<Vec<Index>> {
-    unimplemented!()
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
+    use proptest::sample::select;
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_index_config::DefaultIndexConfigBuilder;
     use quickwit_metastore::SplitMetadata;
@@ -474,12 +653,12 @@ mod tests {
         num_docs_map.insert(0, 100);
         num_docs_map.insert(1, 100);
         num_docs_map.insert(2, 100);
-        let split_maps = demux_values(num_docs_map, 200, 3);
+        let splits = demux_values(VirtualSplit::new(num_docs_map), 100, 200, 3);
 
-        assert_eq!(split_maps.len(), 3);
-        assert_eq!(*split_maps[0].get(&0).unwrap(), 100);
-        assert_eq!(*split_maps[1].get(&1).unwrap(), 100);
-        assert_eq!(*split_maps[2].get(&2).unwrap(), 100);
+        assert_eq!(splits.len(), 3);
+        assert_eq!(*splits[0].num_docs(&0), 100);
+        assert_eq!(*splits[1].num_docs(&1), 100);
+        assert_eq!(*splits[2].num_docs(&2), 100);
     }
 
     #[test]
@@ -489,14 +668,81 @@ mod tests {
         num_docs_map.insert(1, 200);
         num_docs_map.insert(2, 200);
         num_docs_map.insert(3, 1);
-        let split_maps = demux_values(num_docs_map, 200, 3);
+        let splits = demux_values(VirtualSplit::new(num_docs_map), 100, 200, 3);
 
-        assert_eq!(split_maps.len(), 3);
-        assert_eq!(*split_maps[0].get(&0).unwrap(), 1);
-        assert_eq!(*split_maps[0].get(&1).unwrap(), 159);
-        assert_eq!(*split_maps[1].get(&1).unwrap(), 41);
-        assert_eq!(*split_maps[1].get(&2).unwrap(), 119);
-        assert_eq!(*split_maps[2].get(&2).unwrap(), 81);
-        assert_eq!(*split_maps[2].get(&3).unwrap(), 1);
+        assert_eq!(splits.len(), 3);
+        assert_eq!(*splits[0].num_docs(&0), 1);
+        assert_eq!(*splits[0].num_docs(&1), 199);
+        assert_eq!(*splits[1].num_docs(&1), 1);
+        assert_eq!(*splits[1].num_docs(&2), 101);
+        assert_eq!(*splits[2].num_docs(&2), 99);
+        assert_eq!(*splits[2].num_docs(&3), 1);
+    }
+
+    #[test]
+    fn test_demux_not_cutting_tenants_docs_into_two_splits_thanks_nice_min_max() {
+        let mut num_docs_map = HashMap::new();
+        num_docs_map.insert(0, 1);
+        num_docs_map.insert(1, 50);
+        num_docs_map.insert(2, 75);
+        num_docs_map.insert(3, 100);
+        num_docs_map.insert(4, 50);
+        num_docs_map.insert(5, 150);
+        let splits = demux_values(VirtualSplit::new(num_docs_map), 100, 200, 3);
+
+        assert_eq!(splits.len(), 3);
+        assert_eq!(*splits[0].num_docs(&0), 1);
+        assert_eq!(*splits[0].num_docs(&1), 50);
+        assert_eq!(*splits[0].num_docs(&2), 75);
+        assert_eq!(*splits[1].num_docs(&3), 100);
+        assert_eq!(*splits[2].num_docs(&4), 50);
+        assert_eq!(*splits[2].num_docs(&5), 150);
+    }
+
+    #[test]
+    fn test_demux_should_not_cut_tenant_with_small_tenants_with_same_num_docs() {
+        let mut num_docs_map = HashMap::new();
+        for i in 0..1000 {
+            num_docs_map.insert(i as i64, 20_001);
+        }
+        let splits = demux_values(VirtualSplit::new(num_docs_map), 10_000_000, 20_000_000, 2);
+        assert_eq!(splits.len(), 2);
+        assert_eq!(splits[0].total_num_docs(), 10_000_500);
+        assert_eq!(splits[1].total_num_docs(), 10_000_500);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Input split num docs must be `<= max_split_num_docs * output_num_splits`."
+    )]
+    fn test_demux_should_panic_when_one_split_has_too_many_docs() {
+        let mut num_docs_map = HashMap::new();
+        num_docs_map.insert(0, 1);
+        num_docs_map.insert(1, 201);
+        num_docs_map.insert(2, 201);
+        num_docs_map.insert(3, 201);
+        demux_values(VirtualSplit::new(num_docs_map), 100, 200, 3);
+    }
+
+    use proptest::prelude::*;
+
+    fn proptest_config() -> ProptestConfig {
+        let mut proptest_config = ProptestConfig::with_cases(20);
+        proptest_config.max_shrink_iters = 600;
+        proptest_config
+    }
+
+    proptest! {
+        #![proptest_config(proptest_config())]
+        #[test]
+        fn test_proptest_simulate_demux_with_huge_tenants(tenants_num_docs in proptest::collection::vec(select(&[10_001, 100_001, 1_000_001, 10_000_001, 19_999_999, 20_000_000][..]), 1..1000)) {
+            let num_splits_out = tenants_num_docs.iter().sum::<usize>() / 20_000_000 + 1;
+            let mut num_docs_map = HashMap::new();
+            for (i, num_docs) in tenants_num_docs.iter().enumerate() {
+                num_docs_map.insert(i as i64, *num_docs);
+            }
+            let splits = demux_values(VirtualSplit::new(num_docs_map), 10_000_000, 20_000_000, num_splits_out);
+            assert_eq!(splits.len(), num_splits_out);
+        }
     }
 }
