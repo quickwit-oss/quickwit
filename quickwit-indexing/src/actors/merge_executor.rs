@@ -669,18 +669,6 @@ pub fn compute_current_split_bounds(
     RangeInclusive::new(num_docs_lower_bound, num_docs_upper_bound)
 }
 
-// pub fn blocking_demux(
-// segments: &[Segment],
-// demux_mapping: &DemuxMapping,
-// target_settings: IndexSettings,
-// output_directories: Vec<Directory>,
-// ) -> impl Future<Output = crate::Result<Vec<Index>>> {
-//
-// let merge_operation = self.segment_updater.make_merge_operation(segment_ids);
-// let segment_updater = self.segment_updater.clone();
-// async move { segment_updater.start_merge(merge_operation)?.await }
-// }
-
 // TODO: refactor that as such a function is already present in quickwit-search.
 pub fn make_fast_field_reader<T: FastValue>(
     segment_reader: &SegmentReader,
