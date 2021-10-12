@@ -27,6 +27,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
+use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
 use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider};
 use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
@@ -37,7 +38,7 @@ use rusoto_s3::{
     S3Client, UploadPartRequest, S3,
 };
 use tokio::fs::File;
-use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tracing::warn;
 
 use super::error::RusotoErrorWrapper;
@@ -167,14 +168,17 @@ impl Part {
     }
 }
 
-fn split_range_into_chunks(len: u64, chunk_size: u64) -> Vec<Range<u64>> {
-    (0..len)
-        .step_by(chunk_size as usize)
-        .map(move |start| Range {
-            start,
-            end: (start + chunk_size).min(len),
-        })
-        .collect()
+const MD5_CHUNK_SIZE: usize = 1_000_000;
+async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Result<md5::Digest> {
+    let mut checksum = md5::Context::new();
+    let mut buf = vec![0; MD5_CHUNK_SIZE];
+    loop {
+        let read_len = read.read(&mut buf).await?;
+        checksum.consume(&buf[..read_len]);
+        if read_len == 0 {
+            return Ok(checksum.compute());
+        }
+    }
 }
 
 impl S3CompatibleObjectStorage {
@@ -245,28 +249,22 @@ impl S3CompatibleObjectStorage {
         part_len: u64,
     ) -> io::Result<Vec<Part>> {
         assert!(len > 0);
-        let chunks = split_range_into_chunks(len, part_len);
-        // Note that it should really be the first chunk, but who knows... and it is very cheap to
-        // compute this anyway.
-        let largest_chunk_num_bytes = chunks
-            .iter()
-            .map(|chunk| chunk.end - chunk.start)
-            .max()
-            .expect("The policy should never emit an empty list of chunk.");
+        let multipart_ranges = chunk_range(0..len as usize, part_len as usize)
+            .map(into_u64_range)
+            .collect::<Vec<_>>();
 
-        let mut buf = Vec::with_capacity(largest_chunk_num_bytes as usize);
+        let mut parts = Vec::with_capacity(multipart_ranges.len());
 
-        let mut parts = Vec::with_capacity(chunks.len());
+        for (multipart_id, multipart_range) in multipart_ranges.into_iter().enumerate() {
+            let read = payload
+                .range_byte_stream(multipart_range.clone())
+                .await?
+                .into_async_read();
+            let md5 = compute_md5(read).await?;
 
-        for (chunk_id, chunk) in chunks.into_iter().enumerate() {
-            let byte_stream = payload.range_byte_stream(chunk.clone()).await?;
-            let mut read = byte_stream.into_async_read();
-            tokio::io::copy(&mut read, &mut buf).await?;
-            let md5 = md5::compute(&buf);
-            buf.clear();
             let part = Part {
-                part_number: chunk_id + 1, // parts are 1-indexed
-                range: chunk,
+                part_number: multipart_id + 1, // parts are 1-indexed
+                range: multipart_range,
                 md5,
             };
             parts.push(part);
@@ -586,26 +584,38 @@ impl Storage for S3CompatibleObjectStorage {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::object_storage::s3_compatible_storage::split_range_into_chunks;
+    #[tokio::test]
+    async fn test_md5_calc() -> std::io::Result<()> {
+        let data = (0..1_500_000).map(|el| el as u8).collect::<Vec<_>>();
+        let md5 = compute_md5(data.as_slice()).await?;
+        assert_eq!(md5, md5::compute(data));
+
+        Ok(())
+    }
 
     #[test]
     fn test_split_range_into_chunks_inexact() {
         assert_eq!(
-            split_range_into_chunks(11, 3),
+            chunk_range(0..11, 3).collect::<Vec<_>>(),
             vec![0..3, 3..6, 6..9, 9..11]
         );
     }
     #[test]
     fn test_split_range_into_chunks_exact() {
-        assert_eq!(split_range_into_chunks(9, 3), vec![0..3, 3..6, 6..9]);
+        assert_eq!(
+            chunk_range(0..9, 3).collect::<Vec<_>>(),
+            vec![0..3, 3..6, 6..9]
+        );
     }
 
     #[test]
     fn test_split_range_empty() {
-        assert_eq!(split_range_into_chunks(0, 1), vec![]);
+        assert_eq!(chunk_range(0..0, 1).collect::<Vec<_>>(), vec![]);
     }
 
-    use super::parse_uri;
+    use quickwit_common::chunk_range;
+
+    use super::{compute_md5, parse_uri};
 
     #[test]
     fn test_parse_uri() {
