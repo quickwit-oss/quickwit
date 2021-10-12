@@ -27,7 +27,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
-use quickwit_common::{chunk_range, to_u64_range};
+use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
 use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider};
 use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
@@ -169,9 +169,7 @@ impl Part {
 }
 
 const MD5_CHUNK_SIZE: usize = 1_000_000;
-async fn compute_md5<T: AsyncRead + std::marker::Unpin>(
-    mut read: T,
-) -> anyhow::Result<md5::Digest> {
+async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Result<md5::Digest> {
     let mut checksum = md5::Context::new();
     let mut buf = vec![0; MD5_CHUNK_SIZE];
     loop {
@@ -251,20 +249,22 @@ impl S3CompatibleObjectStorage {
         part_len: u64,
     ) -> io::Result<Vec<Part>> {
         assert!(len > 0);
-        let multipart_ranges = chunk_range(0..len as usize, part_len as usize).collect::<Vec<_>>();
+        let multipart_ranges = chunk_range(0..len as usize, part_len as usize)
+            .map(into_u64_range)
+            .collect::<Vec<_>>();
 
         let mut parts = Vec::with_capacity(multipart_ranges.len());
 
         for (multipart_id, multipart_range) in multipart_ranges.into_iter().enumerate() {
             let read = payload
-                .range_byte_stream(to_u64_range(&multipart_range))
+                .range_byte_stream(multipart_range.clone())
                 .await?
                 .into_async_read();
-            let md5 = compute_md5(read).await.unwrap();
+            let md5 = compute_md5(read).await?;
 
             let part = Part {
                 part_number: multipart_id + 1, // parts are 1-indexed
-                range: to_u64_range(&multipart_range),
+                range: multipart_range,
                 md5,
             };
             parts.push(part);
@@ -584,6 +584,15 @@ impl Storage for S3CompatibleObjectStorage {
 mod tests {
     use std::path::PathBuf;
 
+    #[tokio::test]
+    async fn test_md5_calc() -> std::io::Result<()> {
+        let data = (0..1_500_000).map(|el| el as u8).collect::<Vec<_>>();
+        let md5 = compute_md5(data.as_slice()).await?;
+        assert_eq!(md5, md5::compute(data));
+
+        Ok(())
+    }
+
     #[test]
     fn test_split_range_into_chunks_inexact() {
         assert_eq!(
@@ -606,7 +615,7 @@ mod tests {
 
     use quickwit_common::chunk_range;
 
-    use super::parse_uri;
+    use super::{compute_md5, parse_uri};
 
     #[test]
     fn test_parse_uri() {

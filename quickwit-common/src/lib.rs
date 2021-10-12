@@ -54,7 +54,7 @@ pub fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item
     })
 }
 
-pub fn to_u64_range(range: &Range<usize>) -> Range<u64> {
+pub fn into_u64_range(range: Range<usize>) -> Range<u64> {
     range.start as u64..range.end as u64
 }
 
