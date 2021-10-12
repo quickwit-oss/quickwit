@@ -197,8 +197,8 @@ impl MergeExecutor {
             merge_packager_mailbox,
             min_split_num_docs: 10_000_000,
             max_split_num_docs: 20_000_000,
-            demux_field_name,
             timestamp_field_name,
+            demux_field_name,
         }
     }
 
@@ -272,14 +272,15 @@ impl MergeExecutor {
             .iter()
             .map(|split| split.split_id.clone())
             .collect_vec();
-        let (index_metas, replaced_segments, fast_field_values_vec) = load_indexes_info(
+        let (index_metas, replaced_segments, replaced_segments_demux_values) = load_indexes_info(
             downloaded_splits_directory.path(),
             &replaced_split_ids,
             &demux_field_name,
         )?;
-        // Build virtual split for all replaced splits = counting demux values in all segments.
+        // Build virtual split for all replaced splits = counting demux values in all replaced
+        // segments.
         let mut split_with_all_docs = VirtualSplit::new(HashMap::new());
-        for fast_field_values in fast_field_values_vec.iter() {
+        for fast_field_values in replaced_segments_demux_values.iter() {
             for fast_field_value in fast_field_values {
                 split_with_all_docs.add_docs(*fast_field_value, 1);
             }
@@ -291,7 +292,7 @@ impl MergeExecutor {
             self.max_split_num_docs,
             num_splits,
         );
-        let demux_mapping = build_demux_mapping(demuxed_splits, fast_field_values_vec);
+        let demux_mapping = build_demux_mapping(replaced_segments_demux_values, demuxed_splits);
         let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..num_splits)
             .map(|_| merge_scratch_directory.temp_child())
             .try_collect()?;
@@ -320,7 +321,7 @@ impl MergeExecutor {
             let segment_reader = SegmentReader::open(&segment)?;
             // We cannot compute `docs_size_in_bytes` for demuxed splits as it
             // is obtained by summing the docs json bytes at indexing. So we do a simple estimation.
-            // TODO: could be interesting to use the split size or some other proxies to have
+            // TODO: could be interesting to use the split size or some other proxy to have
             // a better estimate.
             let num_docs = segment_reader.num_docs() as usize;
             let docs_size_in_bytes = (num_docs / total_num_docs) as u64 * total_docs_size_in_bytes;
@@ -388,17 +389,36 @@ pub fn load_indexes_info(
     Ok((index_metas, replaced_segments, fast_field_values_vec))
 }
 
-/// Build tantivy `DemuxMapping`.
-/// The virtual splits defines the grouping of demux field values and correspond to the demuxed
-/// segments. The fast field values correspond to the demux field values for each segment to demux.
+/// Build tantivy `DemuxMapping` from input (or old) segments demux values and target
+/// demuxed segments defined as virtual splits.
 pub fn build_demux_mapping(
-    splits: Vec<VirtualSplit>,
-    fast_field_values_vec: Vec<Vec<i64>>,
+    input_segments_demux_values: Vec<Vec<i64>>,
+    target_demuxed_splits: Vec<VirtualSplit>,
 ) -> DemuxMapping {
-    let mut num_docs_by_demux_value = HashMap::new();
-    for (ordinal, split_map) in splits.iter().enumerate() {
+    assert_eq!(
+        input_segments_demux_values.len(),
+        target_demuxed_splits.len(),
+        "Demuxed splits must have the same size as number of segments to demux."
+    );
+    assert_eq!(
+        input_segments_demux_values
+            .iter()
+            .map(|values| values.len())
+            .sum::<usize>(),
+        target_demuxed_splits
+            .iter()
+            .map(|split| split.total_num_docs())
+            .sum::<usize>(),
+        "Num docs must be equal between input segments and target splits."
+    );
+    // Create a hash map of list of `SegmentNumDocs` for each demux value.
+    // A `SegmentNumDocs` item can be seen as a docs stock that will be
+    // consumed when filling `DocIdToSegmentOrdinal`, each time a demux value is seen,
+    // we decrement the segment stock until emptying it and passing to the next segment stock.
+    let mut num_docs_segment_stocks_by_demux_value = HashMap::new();
+    for (ordinal, split_map) in target_demuxed_splits.iter().enumerate() {
         for (demux_value, &num_docs) in split_map.0.iter() {
-            num_docs_by_demux_value
+            num_docs_segment_stocks_by_demux_value
                 .entry(*demux_value)
                 .or_insert_with(Vec::new)
                 .push(SegmentNumDocs {
@@ -407,31 +427,30 @@ pub fn build_demux_mapping(
                 });
         }
     }
-    let mut doc_id_to_segment_ordinals = fast_field_values_vec
-        .iter()
-        .cloned()
-        .map(|values| DocIdToSegmentOrdinal::with_max_doc(values.len()))
-        .collect_vec();
-
-    for segment_ordinal in 0..fast_field_values_vec.len() {
-        let num_docs = fast_field_values_vec[segment_ordinal].len();
+    let mut mapping = DemuxMapping::default();
+    for segment_demux_values in input_segments_demux_values.iter() {
+        let num_docs = segment_demux_values.len();
+        // Fill `DocIdToSegmentOrdinal` with available `SegmentNumDocs`.
+        let mut doc_id_to_segment_ordinal = DocIdToSegmentOrdinal::with_max_doc(num_docs);
         for doc_id in 0..num_docs {
-            let demux_value = fast_field_values_vec[segment_ordinal][doc_id];
-            let segment_num_docs_vec = num_docs_by_demux_value
-                .get_mut(&demux_value)
+            let segment_num_docs_vec = num_docs_segment_stocks_by_demux_value
+                .get_mut(&segment_demux_values[doc_id])
                 .expect("Demux value must be present.");
             segment_num_docs_vec[0].num_docs -= 1;
+            doc_id_to_segment_ordinal.set(doc_id as u32, segment_num_docs_vec[0].ordinal);
+            // When a `SegmentNumDocs` is empty, remove it.
             if segment_num_docs_vec[0].num_docs == 0 {
-                segment_num_docs_vec.pop();
+                segment_num_docs_vec.remove(0);
             }
-            doc_id_to_segment_ordinals[segment_ordinal]
-                .set(doc_id as u32, segment_num_docs_vec[0].ordinal);
         }
+        mapping.add(doc_id_to_segment_ordinal);
     }
-    let mut mapping = DemuxMapping::default();
-    for doc_id_to_segment_ord in doc_id_to_segment_ordinals.into_iter() {
-        mapping.add(doc_id_to_segment_ord);
-    }
+    assert!(
+        num_docs_segment_stocks_by_demux_value
+            .values()
+            .all(|stocks| stocks.is_empty()),
+        "All docs must be placed in new segments."
+    );
     mapping
 }
 
@@ -488,29 +507,24 @@ struct SegmentNumDocs {
 ///
 /// The split bounds must be carefully chosen to ensure the contraints [min_split_num_docs,
 /// max_split_num_docs] are satisfied for all splits. To ensure that, it is sufficient to define
-/// these bounds starting from the last split and backpropagating them to the first split as
-/// follows.
-/// The last split `n` must have its num docs in [min_split_num_docs, max_split_num_docs].
-/// Thus we must have `remaining_num_docs` in [min_split_num_docs, max_split_num_docs] when
-/// opening this last split. To ensure that split `n` will satisfy such a constraint,
-/// we must have `remaining_num_docs` in [2 * min_split_num_docs, 2 * max_split_num_docs]
-/// when opening split `n - 1`. This can be geralized for split `n - k` that must have
-/// `remaining_num_docs` in [k * min_split_num_docs, k * max_split_num_docs] at opening and leave
-/// `remaining_num_docs` in [(k - 1) * min_split_num_docs, (k - 1) * max_split_num_docs] at
-/// closing.
-/// To get the bounds for split `n - k`, we need to consider 4 cases:
-///   1. If `remaining_num_docs - (k - 1) * max_split_num_docs > min_split_num_docs', we must put at
-/// least   `remaining_num_docs - max_split_num_docs` in the `n-k` split otherwise we will have too
-/// much docs   in the remaining splits.
-///   2. If `remaining_num_docs - (k - 1) * max_split_num_docs <= min_split_num_docs', we just need
-/// to   satisfy the min constraint `min_split_num_docs` for the split `n - k`, we will never have
-///   too much docs in the next splits.
-///   3. If `remaining_num_docs - (k - 1) * min_split_num_docs < max_split_num_docs', we must put at
-/// most   `remaining_num_docs - (k - 1) * min_split_num_docs` docs otherwise we will have not
-/// enough docs in   the remaining splits.
-///   4. If `remaining_num_docs - (k - 1) * min_split_num_docs >= max_split_num_docs', we just need
-/// to   satisfy the max constraint `max_split_num_docs` for the split `n - k`. We will always have
-///   enough docs for the next splits.
+/// these bounds starting from the last split and backpropagating them to the first split.
+///
+/// The rationale is as follows: when there is `k` splits to fill, we need to have remaining
+/// num docs in [k * min_split_num_docs, k * max_split_num_docs] to satisfy the min/max constraint
+/// on all the remaining `k` splits.
+/// When starting filling the `n - k - 1`, this translates to the following constraint:
+///   1. If `remaining_num_docs - k * max_split_num_docs > min_split_num_docs', we must put at
+///      least `remaining_num_docs - max_split_num_docs` in the `n - k - 1` split otherwise we will
+///      have too much docs in the `k` remaining splits.
+///   2. If `remaining_num_docs - k * max_split_num_docs <= min_split_num_docs', we just need
+///      to satisfy the min constraint `min_split_num_docs` for the split `n - k - 1`, we will never
+///      have too much docs in the next splits.
+///   3. If `remaining_num_docs - k * min_split_num_docs < max_split_num_docs', we must put at
+///      most `remaining_num_docs - (k - 1) * min_split_num_docs` docs otherwise we will have not
+///      enough docs in the `k` remaining splits.
+///   4. If `remaining_num_docs - k * min_split_num_docs >= max_split_num_docs', we just need
+///      to satisfy the max constraint `max_split_num_docs` for the split `n - k`. We will always
+///      have enough docs for the next splits.
 pub fn demux_values(
     mut input_split: VirtualSplit,
     min_split_num_docs: usize,
@@ -529,9 +543,9 @@ pub fn demux_values(
     let demux_values = input_split.sorted_demux_values();
     let mut splits = Vec::new();
     let mut current_split = VirtualSplit::new(HashMap::new());
-    let mut num_docs_split_bounds = compute_split_bounds(
+    let mut num_docs_split_bounds = compute_current_split_bounds(
         total_num_docs,
-        output_num_splits,
+        output_num_splits - 1,
         min_split_num_docs,
         max_split_num_docs,
     );
@@ -551,9 +565,13 @@ pub fn demux_values(
                 splits.push(VirtualSplit::new(HashMap::from_iter(
                     current_split.0.drain(),
                 )));
-                num_docs_split_bounds = compute_split_bounds(
+                // No more split to fill.
+                if output_num_splits - splits.len() == 0 {
+                    break;
+                }
+                num_docs_split_bounds = compute_current_split_bounds(
                     input_split.total_num_docs(),
-                    output_num_splits - splits.len(),
+                    output_num_splits - splits.len() - 1,
                     min_split_num_docs,
                     max_split_num_docs,
                 );
@@ -596,31 +614,33 @@ pub fn demux_values(
 /// Compute split bounds for the current split that is going to be filled
 /// knowing that there are `remaining_num_splits` splits that needs to be filled
 /// and to satisfiy [min_split_num_docs, max_split_num_docs] constraint.
-pub fn compute_split_bounds(
+/// See description of [demux_values] algorithm for more details.
+pub fn compute_current_split_bounds(
     remaining_num_docs: usize,
     remaining_num_splits: usize,
     min_split_num_docs: usize,
     max_split_num_docs: usize,
 ) -> RangeInclusive<usize> {
+    // When there are no more splits to fill, we return `remaining_num_docs` as
+    // the lower bound as we just want to put all remaining docs in the current split.
     if remaining_num_splits == 0 {
-        return RangeInclusive::new(min_split_num_docs, max_split_num_docs);
+        return RangeInclusive::new(remaining_num_docs, max_split_num_docs);
     }
-    let num_docs_lower_bound =
-        if remaining_num_docs > (remaining_num_splits - 1) * max_split_num_docs {
-            std::cmp::max(
-                min_split_num_docs,
-                remaining_num_docs - (remaining_num_splits - 1) * max_split_num_docs,
-            )
-        } else {
-            min_split_num_docs
-        };
+    let num_docs_lower_bound = if remaining_num_docs > remaining_num_splits * max_split_num_docs {
+        std::cmp::max(
+            min_split_num_docs,
+            remaining_num_docs - remaining_num_splits * max_split_num_docs,
+        )
+    } else {
+        min_split_num_docs
+    };
     let num_docs_upper_bound = std::cmp::min(
         max_split_num_docs,
-        remaining_num_docs - (remaining_num_splits - 1) * min_split_num_docs,
+        remaining_num_docs - remaining_num_splits * min_split_num_docs,
     );
     assert!(
         num_docs_lower_bound <= num_docs_upper_bound,
-        "num docs lower bound must be <= num docs upper bound."
+        "Num docs lower bound must be <= num docs upper bound."
     );
     RangeInclusive::new(num_docs_lower_bound, num_docs_upper_bound)
 }
@@ -770,8 +790,8 @@ mod tests {
         let mut merge_executor = MergeExecutor::new(
             index_id.to_string(),
             merge_packager_mailbox,
-            None,
             Some("tenant_id".to_string()),
+            None,
         );
         merge_executor.min_split_num_docs = 1;
         merge_executor.max_split_num_docs = 1;
@@ -792,6 +812,17 @@ mod tests {
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
         Ok(())
+    }
+
+    #[test]
+    fn test_build_demux_mapping() {
+        let segments_demux_values: Vec<Vec<i64>> =
+            vec![vec![1, 5, 10, 5, 10, 10], vec![1, 5, 10, 20]];
+        let split_1 = VirtualSplit::new(vec![(1, 2), (5, 3), (10, 1)].into_iter().collect());
+        let split_2 = VirtualSplit::new(vec![(10, 3), (20, 1)].into_iter().collect());
+        let splits = vec![split_1, split_2];
+        let demux_mapping = build_demux_mapping(segments_demux_values, splits);
+        assert_eq!(demux_mapping.get_old_num_segments(), 2);
     }
 
     #[test]
