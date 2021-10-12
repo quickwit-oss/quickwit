@@ -275,7 +275,7 @@ impl MergeExecutor {
         let (index_metas, replaced_segments) =
             load_metas_and_segments(downloaded_splits_directory.path(), &replaced_split_ids)?;
         let replaced_segments_demux_values =
-            load_segment_demux_values(&replaced_segments, &demux_field_name)?;
+            read_segments_demux_values(&replaced_segments, &demux_field_name)?;
         // Build virtual split for all replaced splits = counting demux values in all replaced
         // segments.
         let mut split_with_all_docs = VirtualSplit::new(HashMap::new());
@@ -291,6 +291,7 @@ impl MergeExecutor {
             self.max_split_num_docs,
             num_splits,
         );
+        ctx.record_progress();
         let demux_mapping = build_demux_mapping(replaced_segments_demux_values, demuxed_splits);
         let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..num_splits)
             .map(|_| merge_scratch_directory.temp_child())
@@ -300,12 +301,16 @@ impl MergeExecutor {
             .map(|directory| MmapDirectory::open(directory.path()))
             .try_collect()?;
         let union_index_meta = combine_index_meta(index_metas)?;
-        let indexes = demux(
-            &replaced_segments,
-            &demux_mapping,
-            union_index_meta.index_settings,
-            demuxed_split_directories,
-        )?;
+        ctx.record_progress();
+        let indexes = {
+            let _protected_zone_guard = ctx.protect_zone();
+            demux(
+                &replaced_segments,
+                &demux_mapping,
+                union_index_meta.index_settings,
+                demuxed_split_directories,
+            )?
+        };
         info!(elapsed_secs = start.elapsed().as_secs_f32(), "demux-stop");
         // TODO: send indexed splits together and not one by one.
         for (index, scratched_directory) in indexes
@@ -323,7 +328,8 @@ impl MergeExecutor {
             // TODO: could be interesting to use the split size or some other proxy to have
             // a better estimate.
             let num_docs = segment_reader.num_docs() as usize;
-            let docs_size_in_bytes = (num_docs / total_num_docs) as u64 * total_docs_size_in_bytes;
+            let docs_size_in_bytes =
+                (num_docs as f32 * total_docs_size_in_bytes as f32 / total_num_docs as f32) as u64;
             let time_range = if let Some(ref timestamp_field) = self.timestamp_field_name {
                 let reader = make_fast_field_reader::<i64>(&segment_reader, timestamp_field)?;
                 Some(RangeInclusive::new(reader.min_value(), reader.max_value()))
@@ -352,6 +358,7 @@ impl MergeExecutor {
 }
 
 // Open indexes and return metas and segments for each split.
+// Note: only the first segment of each split is taken.
 pub fn load_metas_and_segments(
     directory_path: &Path,
     split_ids: &[String],
@@ -366,16 +373,19 @@ pub fn load_metas_and_segments(
         let index = Index::open(split_directory)?;
         index_metas.push(index.load_metas()?);
         let searchable_segments = index.searchable_segments()?;
-        let segment = searchable_segments
-            .into_iter()
-            .next()
-            .expect("Split must have at least one segment.");
+        assert_eq!(
+            searchable_segments.len(),
+            1,
+            "Only one segment is expected for a split that is going to be demuxed."
+        );
+        let segment = searchable_segments.into_iter().next().unwrap();
         replaced_segments.push(segment);
     }
     Ok((index_metas, replaced_segments))
 }
 
-pub fn load_segment_demux_values(
+// Read fast values of demux field for each segment and return them.
+pub fn read_segments_demux_values(
     segments: &[Segment],
     demux_field_name: &str,
 ) -> anyhow::Result<Vec<Vec<i64>>> {
@@ -385,7 +395,7 @@ pub fn load_segment_demux_values(
         let num_docs = segment_reader.num_docs() as usize;
         let reader = make_fast_field_reader::<i64>(&segment_reader, demux_field_name)?;
         let mut fast_field_values: Vec<i64> = Vec::new();
-        fast_field_values.reserve_exact(num_docs);
+        fast_field_values.resize(num_docs, 0);
         reader.get_range(0, &mut fast_field_values);
         fast_field_values_vec.push(fast_field_values);
     }
@@ -543,8 +553,8 @@ pub fn demux_values(
         min_split_num_docs * output_num_splits <= total_num_docs,
         "Input split num docs must be `>= min_split_num_docs * output_num_splits`."
     );
-    let demux_values = input_split.sorted_demux_values();
-    let mut splits = Vec::new();
+    let input_split_demux_values = input_split.sorted_demux_values();
+    let mut demuxed_splits = Vec::new();
     let mut current_split = VirtualSplit::new(HashMap::new());
     let mut num_docs_split_bounds = compute_current_split_bounds(
         total_num_docs,
@@ -552,7 +562,7 @@ pub fn demux_values(
         min_split_num_docs,
         max_split_num_docs,
     );
-    for demux_value in demux_values.into_iter() {
+    for demux_value in input_split_demux_values.into_iter() {
         while input_split.num_docs(&demux_value) > 0 {
             let num_docs_to_add = if current_split.total_num_docs()
                 + input_split.num_docs(&demux_value)
@@ -565,16 +575,16 @@ pub fn demux_values(
             current_split.add_docs(demux_value, num_docs_to_add);
             input_split.remove_docs(&demux_value, num_docs_to_add);
             if current_split.total_num_docs() >= *num_docs_split_bounds.start() {
-                splits.push(VirtualSplit::new(HashMap::from_iter(
+                demuxed_splits.push(VirtualSplit::new(HashMap::from_iter(
                     current_split.0.drain(),
                 )));
                 // No more split to fill.
-                if output_num_splits - splits.len() == 0 {
+                if output_num_splits - demuxed_splits.len() == 0 {
                     break;
                 }
                 num_docs_split_bounds = compute_current_split_bounds(
                     input_split.total_num_docs(),
-                    output_num_splits - splits.len() - 1,
+                    output_num_splits - demuxed_splits.len() - 1,
                     min_split_num_docs,
                     max_split_num_docs,
                 );
@@ -582,7 +592,7 @@ pub fn demux_values(
         }
     }
     assert_eq!(
-        splits
+        demuxed_splits
             .iter()
             .map(|split| split.total_num_docs())
             .sum::<usize>(),
@@ -590,7 +600,7 @@ pub fn demux_values(
         "Demuxing must keep the same number of docs."
     );
     assert!(
-        splits
+        demuxed_splits
             .iter()
             .map(|split| split.total_num_docs())
             .min()
@@ -599,7 +609,7 @@ pub fn demux_values(
         "Demuxing must satisfy the min contraint on split num docs."
     );
     assert!(
-        splits
+        demuxed_splits
             .iter()
             .map(|split| split.total_num_docs())
             .max()
@@ -608,10 +618,10 @@ pub fn demux_values(
         "Demuxing must satisfy the max contraint on split num docs."
     );
     assert!(
-        splits.len() == output_num_splits,
+        demuxed_splits.len() == output_num_splits,
         "Demuxing must return exactly the requested output splits number."
     );
-    splits
+    demuxed_splits
 }
 
 /// Compute split bounds for the current split that is going to be filled
@@ -648,6 +658,18 @@ pub fn compute_current_split_bounds(
     RangeInclusive::new(num_docs_lower_bound, num_docs_upper_bound)
 }
 
+// pub fn blocking_demux(
+// segments: &[Segment],
+// demux_mapping: &DemuxMapping,
+// target_settings: IndexSettings,
+// output_directories: Vec<Directory>,
+// ) -> impl Future<Output = crate::Result<Vec<Index>>> {
+//
+// let merge_operation = self.segment_updater.make_merge_operation(segment_ids);
+// let segment_updater = self.segment_updater.clone();
+// async move { segment_updater.start_merge(merge_operation)?.await }
+// }
+
 // TODO: refactor that as such a function is already present in quickwit-search.
 pub fn make_fast_field_reader<T: FastValue>(
     segment_reader: &SegmentReader,
@@ -663,6 +685,7 @@ pub fn make_fast_field_reader<T: FastValue>(
 
 #[cfg(test)]
 mod tests {
+    use std::mem;
     use std::sync::Arc;
 
     use proptest::sample::select;
@@ -765,6 +788,8 @@ mod tests {
         for split_id in 0..4 {
             let docs = vec![
                 serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": split_id * 10 }),
+                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": (split_id + 1) * 10 }),
+                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": (split_id + 2) * 10 }),
             ];
             test_index_builder.add_documents(docs).await?;
         }
@@ -774,6 +799,7 @@ mod tests {
             .into_iter()
             .map(|split_and_footer_offsets| split_and_footer_offsets.split_metadata)
             .collect();
+        let total_num_bytes_docs = splits.iter().map(|split| split.size_in_bytes).sum::<u64>();
         let merge_scratch_directory = ScratchDirectory::try_new_temp()?;
         let downloaded_splits_directory = merge_scratch_directory.temp_child()?;
         let storage = test_index_builder.index_storage(index_id)?;
@@ -797,21 +823,24 @@ mod tests {
             None,
         );
         merge_executor.min_split_num_docs = 1;
-        merge_executor.max_split_num_docs = 1;
+        merge_executor.max_split_num_docs = 3;
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
             universe.spawn_actor(merge_executor).spawn_sync();
         universe
             .send_message(&merge_executor_mailbox, merge_scratch)
             .await?;
-        merge_executor_handle.process_pending_and_observe().await;
+        mem::drop(merge_executor_mailbox);
+        let _ = merge_executor_handle.join().await;
         let mut packager_msgs = merge_packager_inbox.drain_available_message_for_test();
-        assert_eq!(packager_msgs.len(), 6);
-        let packager_msg = packager_msgs.pop().unwrap();
-        assert_eq!(packager_msg.num_docs, 4);
-        assert_eq!(packager_msg.docs_size_in_bytes, 136);
-
-        let reader = packager_msg.index.reader()?;
+        assert_eq!(packager_msgs.len(), 4);
+        let first_indexed_split = packager_msgs.pop().unwrap();
+        assert_eq!(first_indexed_split.num_docs, 3);
+        assert_eq!(
+            first_indexed_split.docs_size_in_bytes,
+            total_num_bytes_docs / 4
+        );
+        let reader = first_indexed_split.index.reader()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
         Ok(())
