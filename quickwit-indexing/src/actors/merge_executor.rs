@@ -272,11 +272,10 @@ impl MergeExecutor {
             .iter()
             .map(|split| split.split_id.clone())
             .collect_vec();
-        let (index_metas, replaced_segments, replaced_segments_demux_values) = load_indexes_info(
-            downloaded_splits_directory.path(),
-            &replaced_split_ids,
-            &demux_field_name,
-        )?;
+        let (index_metas, replaced_segments) =
+            load_metas_and_segments(downloaded_splits_directory.path(), &replaced_split_ids)?;
+        let replaced_segments_demux_values =
+            load_segment_demux_values(&replaced_segments, &demux_field_name)?;
         // Build virtual split for all replaced splits = counting demux values in all replaced
         // segments.
         let mut split_with_all_docs = VirtualSplit::new(HashMap::new());
@@ -352,17 +351,14 @@ impl MergeExecutor {
     }
 }
 
-// Open indexes and return metas, segements and demux fast field values for each split segment.
-pub fn load_indexes_info(
+// Open indexes and return metas and segments for each split.
+pub fn load_metas_and_segments(
     directory_path: &Path,
     split_ids: &[String],
-    demux_field_name: &str,
-) -> anyhow::Result<(Vec<IndexMeta>, Vec<Segment>, Vec<Vec<i64>>)> {
+) -> anyhow::Result<(Vec<IndexMeta>, Vec<Segment>)> {
     let mmap_directory = MmapDirectory::open(directory_path)?;
-    let mut fast_field_values_vec = Vec::new();
     let mut replaced_segments = Vec::new();
     let mut index_metas = Vec::new();
-    let mut split_with_all_docs = VirtualSplit::new(HashMap::new());
     for split_id in split_ids.iter() {
         let split_filename = split_file(split_id);
         let split_fileslice = mmap_directory.open_read(Path::new(&split_filename))?;
@@ -374,19 +370,26 @@ pub fn load_indexes_info(
             .into_iter()
             .next()
             .expect("Split must have at least one segment.");
-        let segment_reader = SegmentReader::open(&segment)?;
         replaced_segments.push(segment);
+    }
+    Ok((index_metas, replaced_segments))
+}
+
+pub fn load_segment_demux_values(
+    segments: &[Segment],
+    demux_field_name: &str,
+) -> anyhow::Result<Vec<Vec<i64>>> {
+    let mut fast_field_values_vec = Vec::new();
+    for segment in segments {
+        let segment_reader = SegmentReader::open(segment)?;
         let num_docs = segment_reader.num_docs() as usize;
         let reader = make_fast_field_reader::<i64>(&segment_reader, demux_field_name)?;
         let mut fast_field_values: Vec<i64> = Vec::new();
         fast_field_values.reserve_exact(num_docs);
         reader.get_range(0, &mut fast_field_values);
-        for fast_field_value in fast_field_values.iter() {
-            split_with_all_docs.add_docs(*fast_field_value, 1);
-        }
         fast_field_values_vec.push(fast_field_values);
     }
-    Ok((index_metas, replaced_segments, fast_field_values_vec))
+    Ok(fast_field_values_vec)
 }
 
 /// Build tantivy `DemuxMapping` from input (or old) segments demux values and target
@@ -429,12 +432,12 @@ pub fn build_demux_mapping(
     }
     let mut mapping = DemuxMapping::default();
     for segment_demux_values in input_segments_demux_values.iter() {
-        let num_docs = segment_demux_values.len();
         // Fill `DocIdToSegmentOrdinal` with available `SegmentNumDocs`.
-        let mut doc_id_to_segment_ordinal = DocIdToSegmentOrdinal::with_max_doc(num_docs);
-        for doc_id in 0..num_docs {
+        let mut doc_id_to_segment_ordinal =
+            DocIdToSegmentOrdinal::with_max_doc(segment_demux_values.len());
+        for (doc_id, demux_value) in segment_demux_values.iter().enumerate() {
             let segment_num_docs_vec = num_docs_segment_stocks_by_demux_value
-                .get_mut(&segment_demux_values[doc_id])
+                .get_mut(demux_value)
                 .expect("Demux value must be present.");
             segment_num_docs_vec[0].num_docs -= 1;
             doc_id_to_segment_ordinal.set(doc_id as u32, segment_num_docs_vec[0].ordinal);
