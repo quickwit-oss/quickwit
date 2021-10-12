@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use fail::fail_point;
+use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity, SyncActor};
 use quickwit_directories::write_hotcache;
 use quickwit_storage::{BundleStorageBuilder, BUNDLE_FILENAME};
@@ -34,7 +35,10 @@ use tantivy::schema::Field;
 use tantivy::{ReloadPolicy, SegmentId, SegmentMeta};
 use tracing::*;
 
-use crate::models::{IndexedSplit, MergePlannerMessage, PackagedSplit, ScratchDirectory};
+use crate::models::{
+    IndexedSplit, IndexedSplitBatch, MergePlannerMessage, PackagedSplit, PackagedSplitBatch,
+    ScratchDirectory,
+};
 
 /// The role of the packager is to get an index writer and
 /// produce a split file.
@@ -48,7 +52,7 @@ use crate::models::{IndexedSplit, MergePlannerMessage, PackagedSplit, ScratchDir
 ///
 /// The split format is described in `internals/split-format.md`
 pub struct Packager {
-    uploader_mailbox: Mailbox<PackagedSplit>,
+    uploader_mailbox: Mailbox<PackagedSplitBatch>,
     merge_planner_mailbox_opt: Option<Mailbox<MergePlannerMessage>>,
     /// The special field for extracting tags.
     tags_field: Field,
@@ -57,7 +61,7 @@ pub struct Packager {
 impl Packager {
     pub fn new(
         tags_field: Field,
-        uploader_mailbox: Mailbox<PackagedSplit>,
+        uploader_mailbox: Mailbox<PackagedSplitBatch>,
         merge_planner_mailbox_opt: Option<Mailbox<MergePlannerMessage>>,
     ) -> Packager {
         Packager {
@@ -66,10 +70,24 @@ impl Packager {
             tags_field,
         }
     }
+
+    pub fn process_indexed_split(
+        &self,
+        mut split: IndexedSplit,
+        ctx: &ActorContext<IndexedSplitBatch>,
+    ) -> anyhow::Result<PackagedSplit> {
+        fail_point!("packager:before");
+        commit_split(&mut split, ctx)?;
+        let segment_metas = merge_segments_if_required(&mut split, ctx)?;
+        let packaged_split =
+            create_packaged_split(&segment_metas[..], split, self.tags_field, ctx)?;
+        fail_point!("packager:after");
+        Ok(packaged_split)
+    }
 }
 
 impl Actor for Packager {
-    type Message = IndexedSplit;
+    type Message = IndexedSplitBatch;
 
     type ObservableState = ();
 
@@ -103,7 +121,10 @@ fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
 /// It consists in several sequentials phases mixing both
 /// CPU and IO, the longest once being the serialization of
 /// the inverted index. This phase is CPU bound.
-fn commit_split(split: &mut IndexedSplit, ctx: &ActorContext<IndexedSplit>) -> anyhow::Result<()> {
+fn commit_split(
+    split: &mut IndexedSplit,
+    ctx: &ActorContext<IndexedSplitBatch>,
+) -> anyhow::Result<()> {
     info!(index=%split.index_id, split=?split, "commit-split");
     let _protected_zone_guard = ctx.protect_zone();
     split
@@ -141,7 +162,7 @@ fn create_file_bundle(
     segment_metas: &[SegmentMeta],
     scratch_dir: &ScratchDirectory,
     split_file: &mut impl io::Write,
-    ctx: &ActorContext<IndexedSplit>,
+    ctx: &ActorContext<IndexedSplitBatch>,
 ) -> anyhow::Result<Range<u64>> {
     let _protected_zone_guard = ctx.protect_zone();
     // List the split files that will be packaged into the bundle.
@@ -161,7 +182,7 @@ fn create_file_bundle(
 /// which potentially olds a lot of RAM.
 fn merge_segments_if_required(
     split: &mut IndexedSplit,
-    ctx: &ActorContext<IndexedSplit>,
+    ctx: &ActorContext<IndexedSplitBatch>,
 ) -> anyhow::Result<Vec<SegmentMeta>> {
     debug!(split = ?split, "merge-segments-if-required");
     let segment_metas_before_merge = split.index.searchable_segment_metas()?;
@@ -190,7 +211,7 @@ fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
     tags_field: Field,
-    ctx: &ActorContext<IndexedSplit>,
+    ctx: &ActorContext<IndexedSplitBatch>,
 ) -> anyhow::Result<PackagedSplit> {
     info!(split = ?split, "create-packaged-split");
 
@@ -261,15 +282,21 @@ fn create_packaged_split(
 impl SyncActor for Packager {
     fn process_message(
         &mut self,
-        mut split: IndexedSplit,
-        ctx: &ActorContext<IndexedSplit>,
+        batch: IndexedSplitBatch,
+        ctx: &ActorContext<IndexedSplitBatch>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         fail_point!("packager:before");
-        commit_split(&mut split, ctx)?;
-        let segment_metas = merge_segments_if_required(&mut split, ctx)?;
-        let packaged_split =
-            create_packaged_split(&segment_metas[..], split, self.tags_field, ctx)?;
-        ctx.send_message_blocking(&self.uploader_mailbox, packaged_split)?;
+        let packaged_splits = batch
+            .splits
+            .into_iter()
+            .map(|split| self.process_indexed_split(split, ctx))
+            .try_collect()?;
+        ctx.send_message_blocking(
+            &self.uploader_mailbox,
+            PackagedSplitBatch {
+                splits: packaged_splits,
+            },
+        )?;
         fail_point!("packager:after");
         Ok(())
     }
@@ -373,7 +400,12 @@ mod tests {
         let packager = Packager::new(tags_field, mailbox, None);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
-            .send_message(&packager_mailbox, indexed_split)
+            .send_message(
+                &packager_mailbox,
+                IndexedSplitBatch {
+                    splits: vec![indexed_split],
+                },
+            )
             .await?;
         assert_eq!(
             packager_handle.process_pending_and_observe().await.obs_type,
@@ -398,7 +430,12 @@ mod tests {
         let packager = Packager::new(tags_field, mailbox, None);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
-            .send_message(&packager_mailbox, indexed_split)
+            .send_message(
+                &packager_mailbox,
+                IndexedSplitBatch {
+                    splits: vec![indexed_split],
+                },
+            )
             .await?;
         assert_eq!(
             packager_handle.process_pending_and_observe().await.obs_type,

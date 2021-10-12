@@ -26,6 +26,11 @@ use quickwit_metastore::checkpoint::CheckpointDelta;
 use crate::models::ScratchDirectory;
 
 #[derive(Debug)]
+pub struct PackagedSplitBatch {
+    pub splits: Vec<PackagedSplit>,
+}
+
+#[derive(Debug)]
 pub struct PackagedSplit {
     pub split_id: String,
     pub replaced_split_ids: Vec<String>,

@@ -31,7 +31,7 @@ use tantivy::chrono::Utc;
 use tokio::sync::oneshot::Receiver;
 use tracing::{info, warn};
 
-use crate::models::{PackagedSplit, PublishOperation, PublisherMessage};
+use crate::models::{PackagedSplit, PackagedSplitBatch, PublishOperation, PublisherMessage};
 use crate::semaphore::Semaphore;
 use crate::split_store::IndexingSplitStore;
 
@@ -68,7 +68,7 @@ pub struct UploaderCounters {
 }
 
 impl Actor for Uploader {
-    type Message = PackagedSplit;
+    type Message = PackagedSplitBatch;
 
     type ObservableState = UploaderCounters;
 
@@ -99,35 +99,36 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets
 }
 
 fn make_publish_operation(
-    split_metadata: SplitMetadata,
-    mut packaged_split: PackagedSplit,
+    mut packaged_splits: Vec<PackagedSplit>,
+    mut splits_metadata: Vec<SplitMetadata>,
 ) -> PublishOperation {
-    if packaged_split.replaced_split_ids.is_empty() {
+    assert_eq!(packaged_splits.len(), splits_metadata.len());
+    if packaged_splits.len() == 1 && packaged_splits[0].replaced_split_ids.is_empty() {
+        let mut packaged_split = packaged_splits.pop().unwrap();
         assert_eq!(packaged_split.checkpoint_deltas.len(), 1);
         let checkpoint_delta = packaged_split.checkpoint_deltas.pop().unwrap();
         PublishOperation::PublishNewSplit {
-            new_split: split_metadata,
+            new_split: splits_metadata.pop().unwrap(),
             checkpoint_delta,
             split_date_of_birth: packaged_split.split_date_of_birth,
         }
     } else {
         PublishOperation::ReplaceSplits {
-            new_splits: vec![split_metadata],
-            replaced_split_ids: packaged_split.replaced_split_ids,
+            new_splits: splits_metadata,
+            replaced_split_ids: packaged_splits.pop().unwrap().replaced_split_ids,
         }
     }
 }
 
 async fn stage_and_upload_split(
-    packaged_split: PackagedSplit,
+    packaged_split: &PackagedSplit,
     split_store: &IndexingSplitStore,
     metastore: &dyn Metastore,
     counters: UploaderCounters,
-) -> anyhow::Result<PublisherMessage> {
-    let split_metadata_and_footer_offsets = create_split_metadata(&packaged_split);
+) -> anyhow::Result<SplitMetadata> {
+    let split_metadata_and_footer_offsets = create_split_metadata(packaged_split);
     let index_id = packaged_split.index_id.clone();
     let split_metadata = split_metadata_and_footer_offsets.split_metadata.clone();
-
     info!(split_id=%packaged_split.split_id, "staging-split",);
     metastore
         .stage_split(&index_id, split_metadata_and_footer_offsets)
@@ -140,21 +141,16 @@ async fn stage_and_upload_split(
     split_store
         .store_split(&split_metadata, &bundle_path)
         .await?;
-
     counters.num_uploaded_splits.fetch_add(1, Ordering::SeqCst);
-    let publish_operation = make_publish_operation(split_metadata, packaged_split);
-    Ok(PublisherMessage {
-        index_id,
-        operation: publish_operation,
-    })
+    Ok(split_metadata)
 }
 
 #[async_trait]
 impl AsyncActor for Uploader {
     async fn process_message(
         &mut self,
-        split: PackagedSplit,
-        ctx: &ActorContext<PackagedSplit>,
+        batch: PackagedSplitBatch,
+        ctx: &ActorContext<PackagedSplitBatch>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("uploader:before");
         let (split_uploaded_tx, split_uploaded_rx) = tokio::sync::oneshot::channel();
@@ -179,37 +175,49 @@ impl AsyncActor for Uploader {
             self.concurrent_upload_permits.acquire().await
         };
         let kill_switch = ctx.kill_switch().clone();
+        let split_ids = batch
+            .splits
+            .iter()
+            .map(|split| split.split_id.clone())
+            .collect::<Vec<_>>();
         if kill_switch.is_dead() {
-            warn!(split_id=%split.split_id,"Kill switch was activated. Cancelling upload.");
+            warn!(split_ids=?split_ids,"Kill switch was activated. Cancelling upload.");
             return Err(ActorExitStatus::Killed);
         }
         let metastore = self.metastore.clone();
         let index_storage = self.index_storage.clone();
-
         let counters = self.counters.clone();
 
         tokio::spawn(async move {
             fail_point!("uploader:intask:before");
-            let stage_and_upload_res: anyhow::Result<()> =
-                stage_and_upload_split(split, &index_storage, &*metastore, counters)
-                    .await
-                    .and_then(|publisher_message| {
-                        if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
-                            bail!(
-                                "Failed to send upload split `{:?}`. The publisher is probably \
-                                 dead.",
-                                &publisher_message
-                            );
-                        }
-                        Ok(())
-                    });
-            if let Err(cause) = stage_and_upload_res {
-                warn!(cause=%cause, "Failed to upload split. Killing!");
-                kill_switch.kill();
+            let mut splits_metadata = Vec::new();
+            for split in batch.splits.iter() {
+                let upload_result =
+                    stage_and_upload_split(split, &index_storage, &*metastore, counters.clone())
+                        .await;
+                if let Err(cause) = upload_result {
+                    warn!(cause=%cause, "Failed to upload split. Killing!");
+                    kill_switch.kill();
+                } else {
+                    splits_metadata.push(upload_result.unwrap());
+                }
             }
 
+            let index_id = batch.splits[0].index_id.clone();
+            let operation = make_publish_operation(batch.splits, splits_metadata);
+            let publisher_message = PublisherMessage {
+                index_id,
+                operation,
+            };
+            if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
+                bail!(
+                    "Failed to send upload split `{:?}`. The publisher is probably dead.",
+                    &publisher_message
+                );
+            }
             // we explicitely drop it in order to force move the permit guard into the async task.
             mem::drop(permit_guard);
+            Result::<(), anyhow::Error>::Ok(())
         });
         fail_point!("uploader:intask:after");
         Ok(())
@@ -258,18 +266,20 @@ mod tests {
         universe
             .send_message(
                 &uploader_mailbox,
-                PackagedSplit {
-                    split_id: "test-split".to_string(),
-                    index_id: "test-index".to_string(),
-                    checkpoint_deltas: vec![CheckpointDelta::from(3..15)],
-                    time_range: Some(1_628_203_589i64..=1_628_203_640i64),
-                    size_in_bytes: 1_000,
-                    footer_offsets: 1000..2000,
-                    split_scratch_directory,
-                    num_docs: 10,
-                    tags: Default::default(),
-                    replaced_split_ids: Vec::new(),
-                    split_date_of_birth: Instant::now(),
+                PackagedSplitBatch {
+                    splits: vec![PackagedSplit {
+                        split_id: "test-split".to_string(),
+                        index_id: "test-index".to_string(),
+                        checkpoint_deltas: vec![CheckpointDelta::from(3..15)],
+                        time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+                        size_in_bytes: 1_000,
+                        footer_offsets: 1000..2000,
+                        split_scratch_directory,
+                        num_docs: 10,
+                        tags: Default::default(),
+                        replaced_split_ids: Vec::new(),
+                        split_date_of_birth: Instant::now(),
+                    }],
                 },
             )
             .await?;
@@ -332,24 +342,26 @@ mod tests {
         universe
             .send_message(
                 &uploader_mailbox,
-                PackagedSplit {
-                    split_id: "test-split".to_string(),
-                    index_id: "test-index".to_string(),
-                    checkpoint_deltas: vec![
-                        CheckpointDelta::from(3..15),
-                        CheckpointDelta::from(16..18),
-                    ],
-                    time_range: Some(1_628_203_589i64..=1_628_203_640i64),
-                    size_in_bytes: 1_000,
-                    footer_offsets: 1000..2000,
-                    split_scratch_directory,
-                    num_docs: 10,
-                    tags: Default::default(),
-                    replaced_split_ids: vec![
-                        "replaced-split-1".to_string(),
-                        "replaced-split-2".to_string(),
-                    ],
-                    split_date_of_birth: Instant::now(),
+                PackagedSplitBatch {
+                    splits: vec![PackagedSplit {
+                        split_id: "test-split".to_string(),
+                        index_id: "test-index".to_string(),
+                        checkpoint_deltas: vec![
+                            CheckpointDelta::from(3..15),
+                            CheckpointDelta::from(16..18),
+                        ],
+                        time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+                        size_in_bytes: 1_000,
+                        footer_offsets: 1000..2000,
+                        split_scratch_directory,
+                        num_docs: 10,
+                        tags: Default::default(),
+                        replaced_split_ids: vec![
+                            "replaced-split-1".to_string(),
+                            "replaced-split-2".to_string(),
+                        ],
+                        split_date_of_birth: Instant::now(),
+                    }],
                 },
             )
             .await?;

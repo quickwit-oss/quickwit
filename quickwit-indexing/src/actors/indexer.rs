@@ -32,7 +32,9 @@ use tantivy::schema::{Field, Value};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tracing::{info, warn};
 
-use crate::models::{CommitPolicy, IndexedSplit, IndexerMessage, RawDocBatch, ScratchDirectory};
+use crate::models::{
+    CommitPolicy, IndexedSplit, IndexedSplitBatch, IndexerMessage, RawDocBatch, ScratchDirectory,
+};
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
 pub struct IndexerCounters {
@@ -217,7 +219,7 @@ impl IndexerState {
 
 pub struct Indexer {
     indexer_state: IndexerState,
-    packager_mailbox: Mailbox<IndexedSplit>,
+    packager_mailbox: Mailbox<IndexedSplitBatch>,
     current_split_opt: Option<IndexedSplit>,
     counters: IndexerCounters,
 }
@@ -313,7 +315,7 @@ impl Indexer {
         index_id: String,
         index_config: Arc<dyn IndexConfig>,
         indexer_params: IndexerParams,
-        packager_mailbox: Mailbox<IndexedSplit>,
+        packager_mailbox: Mailbox<IndexedSplitBatch>,
     ) -> anyhow::Result<Indexer> {
         let schema = index_config.schema();
         let timestamp_field_opt = index_config.timestamp_field(&schema);
@@ -383,7 +385,12 @@ impl Indexer {
             return Ok(());
         };
         info!(commit_trigger=?commit_trigger, index=?indexed_split.index_id, split=?indexed_split.split_id,"send-to-packager");
-        ctx.send_message_blocking(&self.packager_mailbox, indexed_split)?;
+        ctx.send_message_blocking(
+            &self.packager_mailbox,
+            IndexedSplitBatch {
+                splits: vec![indexed_split],
+            },
+        )?;
         self.counters.num_docs_in_split = 0;
         self.counters.num_splits_emitted += 1;
         Ok(())
@@ -487,8 +494,12 @@ mod tests {
         );
         let output_messages = inbox.drain_available_message_for_test();
         assert_eq!(output_messages.len(), 1);
-        assert_eq!(output_messages[0].num_docs, 3);
-        let sort_by_field = output_messages[0].index.settings().sort_by_field.as_ref();
+        assert_eq!(output_messages[0].splits[0].num_docs, 3);
+        let sort_by_field = output_messages[0].splits[0]
+            .index
+            .settings()
+            .sort_by_field
+            .as_ref();
         assert!(sort_by_field.is_some());
         assert_eq!(sort_by_field.unwrap().field, "timestamp");
         assert!(sort_by_field.unwrap().order.is_desc());
@@ -553,7 +564,7 @@ mod tests {
         );
         let output_messages = inbox.drain_available_message_for_test();
         assert_eq!(output_messages.len(), 1);
-        assert_eq!(output_messages[0].num_docs, 1);
+        assert_eq!(output_messages[0].splits[0].num_docs, 1);
         Ok(())
     }
 
@@ -597,7 +608,7 @@ mod tests {
         );
         let output_messages = inbox.drain_available_message_for_test();
         assert_eq!(output_messages.len(), 1);
-        assert_eq!(output_messages[0].num_docs, 1);
+        assert_eq!(output_messages[0].splits[0].num_docs, 1);
         Ok(())
     }
 }

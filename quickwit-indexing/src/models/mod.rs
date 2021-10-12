@@ -29,12 +29,12 @@ mod raw_doc_batch;
 mod scratch_directory;
 
 pub use commit_policy::CommitPolicy;
-pub use indexed_split::IndexedSplit;
+pub use indexed_split::{IndexedSplit, IndexedSplitBatch};
 pub use indexer_message::IndexerMessage;
 pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::MergePlannerMessage;
 pub use merge_scratch::MergeScratch;
-pub use packaged_split::PackagedSplit;
+pub use packaged_split::{PackagedSplit, PackagedSplitBatch};
 pub use publisher_message::{PublishOperation, PublisherMessage};
 pub use raw_doc_batch::RawDocBatch;
 pub use scratch_directory::ScratchDirectory;

@@ -39,12 +39,12 @@ use tantivy::{
 use tracing::{debug, info};
 
 use crate::merge_policy::MergeOperation;
-use crate::models::{IndexedSplit, MergeScratch, ScratchDirectory};
+use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, ScratchDirectory};
 use crate::new_split_id;
 
 pub struct MergeExecutor {
     index_id: String,
-    merge_packager_mailbox: Mailbox<IndexedSplit>,
+    merge_packager_mailbox: Mailbox<IndexedSplitBatch>,
     min_split_num_docs: usize,
     max_split_num_docs: usize,
     timestamp_field_name: Option<String>,
@@ -188,7 +188,7 @@ fn merge_split_directories(
 impl MergeExecutor {
     pub fn new(
         index_id: String,
-        merge_packager_mailbox: Mailbox<IndexedSplit>,
+        merge_packager_mailbox: Mailbox<IndexedSplitBatch>,
         demux_field_name: Option<String>,
         timestamp_field_name: Option<String>,
     ) -> Self {
@@ -248,7 +248,12 @@ impl MergeExecutor {
             index_writer,
             split_scratch_directory: merge_scratch_directory,
         };
-        ctx.send_message_blocking(&self.merge_packager_mailbox, indexed_split)?;
+        ctx.send_message_blocking(
+            &self.merge_packager_mailbox,
+            IndexedSplitBatch {
+                splits: vec![indexed_split],
+            },
+        )?;
         Ok(())
     }
 
@@ -312,7 +317,7 @@ impl MergeExecutor {
             )?
         };
         info!(elapsed_secs = start.elapsed().as_secs_f32(), "demux-stop");
-        // TODO: send indexed splits together and not one by one.
+        let mut indexed_splits = Vec::new();
         for (index, scratched_directory) in indexes
             .into_iter()
             .zip(demuxed_scratched_directories.into_iter())
@@ -351,8 +356,14 @@ impl MergeExecutor {
                 index_writer,
                 split_scratch_directory: scratched_directory,
             };
-            ctx.send_message_blocking(&self.merge_packager_mailbox, indexed_split)?
+            indexed_splits.push(indexed_split);
         }
+        ctx.send_message_blocking(
+            &self.merge_packager_mailbox,
+            IndexedSplitBatch {
+                splits: indexed_splits,
+            },
+        )?;
         Ok(())
     }
 }
@@ -758,10 +769,10 @@ mod tests {
         let mut packager_msgs = merge_packager_inbox.drain_available_message_for_test();
         assert_eq!(packager_msgs.len(), 1);
         let packager_msg = packager_msgs.pop().unwrap();
-        assert_eq!(packager_msg.num_docs, 4);
-        assert_eq!(packager_msg.docs_size_in_bytes, 136);
+        assert_eq!(packager_msg.splits[0].num_docs, 4);
+        assert_eq!(packager_msg.splits[0].docs_size_in_bytes, 136);
 
-        let reader = packager_msg.index.reader()?;
+        let reader = packager_msg.splits[0].index.reader()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
         Ok(())
@@ -833,8 +844,10 @@ mod tests {
         mem::drop(merge_executor_mailbox);
         let _ = merge_executor_handle.join().await;
         let mut packager_msgs = merge_packager_inbox.drain_available_message_for_test();
-        assert_eq!(packager_msgs.len(), 4);
-        let first_indexed_split = packager_msgs.pop().unwrap();
+        assert_eq!(packager_msgs.len(), 1);
+        let mut splits = packager_msgs.pop().unwrap().splits;
+        assert_eq!(splits.len(), 4);
+        let first_indexed_split = splits.pop().unwrap();
         assert_eq!(first_indexed_split.num_docs, 3);
         assert_eq!(
             first_indexed_split.docs_size_in_bytes,

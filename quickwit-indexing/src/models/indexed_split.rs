@@ -104,3 +104,8 @@ impl IndexedSplit {
         self.split_scratch_directory.path()
     }
 }
+
+#[derive(Debug)]
+pub struct IndexedSplitBatch {
+    pub splits: Vec<IndexedSplit>,
+}
