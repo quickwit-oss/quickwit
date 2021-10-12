@@ -471,12 +471,6 @@ fn is_sorted(els: &[usize]) -> bool {
     els.windows(2).all(|w| w[0] <= w[1])
 }
 
-#[derive(Debug, Eq, PartialEq)]
-struct SplitGroup {
-    num_merge_ops: usize,
-    split_range: Range<usize>,
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
