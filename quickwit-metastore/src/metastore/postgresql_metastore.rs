@@ -748,7 +748,7 @@ impl Metastore for PostgresqlMetastore {
             let untouched_ids_set: HashSet<&str> = split_ids
                 .iter()
                 .filter(|split_id| !published_ids_set.contains(*split_id))
-                .map(|split_id| *split_id)
+                .copied()
                 .collect();
             let not_staged_ids =
                 self.get_splits_with_invalid_state(&conn, index_id, untouched_ids_set)?;
@@ -1024,7 +1024,7 @@ impl Metastore for PostgresqlMetastore {
             let untouched_ids_set: HashSet<&str> = split_ids
                 .iter()
                 .filter(|split_id| !deleted_ids_set.contains(*split_id))
-                .map(|split_id| *split_id)
+                .copied()
                 .collect();
 
             let not_deletable_ids =
