@@ -27,7 +27,7 @@ use crate::{IndexMetadata, SplitMetadataAndFooterOffsets, SplitState};
 
 // A raw query that helps figure out if index exist, non-existant
 // splits and not deletable splits.
-pub const INDEX_TO_SPLIT_ITEM_SQL_STMT: &str = r#"
+pub const SELECT_SPLITS_FOR_INDEX: &str = r#"
 SELECT i.index_id, s.split_id 
 FROM indexes AS i 
 LEFT JOIN (
@@ -39,7 +39,7 @@ ON i.index_id = s.index_id
 WHERE i.index_id = $2"#;
 
 #[derive(Queryable, QueryableByName, Debug, Clone)]
-pub struct IndexToSplitQueryItem {
+pub struct IndexIdSplitIdRow {
     #[sql_type = "Text"]
     pub index_id: String,
     #[sql_type = "Nullable<Text>"]
