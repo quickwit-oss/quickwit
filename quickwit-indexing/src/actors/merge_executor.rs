@@ -478,6 +478,11 @@ pub fn build_demux_mapping(
     mapping
 }
 
+// A virtual split is a view on a split that contains only the information of
+// docs count per demux value in the split. The demux algorithm use a virtual
+// split as input and produced demuxed virtual splits. The virtual splits are
+// then used for the real demux that will create real split.
+// Thus the usage of `virtual`.
 #[derive(Debug)]
 pub struct VirtualSplit(HashMap<i64, usize>);
 
