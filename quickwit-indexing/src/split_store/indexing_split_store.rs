@@ -126,11 +126,11 @@ impl IndexingSplitStore {
         split: &SplitMetadata,
         split_path: &Path,
     ) -> anyhow::Result<()> {
-        let start = Instant::now();
+        info!("store-split-remote-start");
 
+        let start = Instant::now();
         let split_num_bytes = tokio::fs::metadata(split_path).await?.len() as usize;
 
-        info!(split_path=%split_path.display(), split_id=%split.split_id, "store-split-remote");
         let key = PathBuf::from(quickwit_common::split_file(&split.split_id));
         let payload = PutPayload::from(split_path.to_path_buf());
         self.remote_storage
@@ -146,16 +146,18 @@ impl IndexingSplitStore {
         let elapsed_secs = start.elapsed().as_secs_f32();
         let split_size_in_megabytes = split_num_bytes / 1_000_000;
         let throughput_mb_s = split_size_in_megabytes as f32 / elapsed_secs;
+        let is_mature = self.merge_policy.is_mature(split);
+
         info!(
-            split_id = %split.split_id,
-            elapsed_secs = %elapsed_secs,
             split_size_in_megabytes = %split_size_in_megabytes,
+            elapsed_secs = %elapsed_secs,
             throughput_mb_s = %throughput_mb_s,
-            "store-split-remote-end"
+            is_mature = is_mature,
+            "store-split-remote-success"
         );
 
-        let is_mature = self.merge_policy.is_mature(split);
         if !is_mature {
+            info!("store-in-cache");
             if let Some(split_store) = self.local_split_store.as_ref() {
                 let mut split_store_lock = split_store.lock().await;
                 if split_store_lock
@@ -200,11 +202,11 @@ impl IndexingSplitStore {
         }
         let start_time = Instant::now();
         let dest_filepath = output_dir_path.join(&path);
-        info!(split_id=%split_id, dest_filepath=?dest_filepath, "fetch-split-from-remote-storage");
+        info!(split_id = split_id, "fetch-split-from-remote-storage-start");
         self.remote_storage
             .copy_to_file(&path, &dest_filepath)
             .await?;
-        info!(split_id=%split_id, dest_filepath=?dest_filepath, elapsed=?start_time.elapsed(), "fetch-split-from_remote-storage-end");
+        info!(split_id=split_id,elapsed=?start_time.elapsed(), "fetch-split-from_remote-storage-success");
         Ok(())
     }
 

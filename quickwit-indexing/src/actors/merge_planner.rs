@@ -42,6 +42,10 @@ impl Actor for MergePlanner {
     type ObservableState = ();
 
     fn observable_state(&self) -> Self::ObservableState {}
+
+    fn name(&self) -> String {
+        "MergePlanner".to_string()
+    }
 }
 
 impl SyncActor for MergePlanner {
@@ -62,7 +66,6 @@ impl MergePlanner {
         merge_policy: Arc<dyn MergePolicy>,
         merge_split_downloader_mailbox: Mailbox<MergeOperation>,
     ) -> MergePlanner {
-        info!(merge_policy=?merge_policy);
         MergePlanner {
             young_splits: Vec::new(),
             merge_policy,

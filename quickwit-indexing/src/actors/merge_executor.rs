@@ -30,7 +30,7 @@ use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::SplitMetadata;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::{Directory, Index, IndexMeta, SegmentId};
-use tracing::{debug, info};
+use tracing::{debug, info, info_span, Span};
 
 use crate::merge_policy::MergeOperation;
 use crate::models::{IndexedSplit, MergeScratch, ScratchDirectory};
@@ -49,6 +49,36 @@ impl Actor for MergeExecutor {
 
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Bounded(1)
+    }
+
+    fn name(&self) -> String {
+        "MergeExecutor".to_string()
+    }
+
+    fn message_span(&self, msg_id: u64, merge_scratch: &MergeScratch) -> Span {
+        match &merge_scratch.merge_operation {
+            MergeOperation::Merge {
+                merge_split_id,
+                splits,
+            } => {
+                let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
+                let in_merge_split_ids: Vec<String> =
+                    splits.iter().map(|split| split.split_id.clone()).collect();
+                info_span!("merge",
+                    msg_id=&msg_id,
+                    dir=%merge_scratch.merge_scratch_directory.path().display(),
+                    merge_split_id=%merge_split_id,
+                    in_merge_split_ids=?in_merge_split_ids,
+                    num_docs=num_docs,
+                    num_splits=splits.len())
+            }
+            MergeOperation::Demux { .. } => {
+                // FIXME once demux is here.
+                info_span!("demux",
+                    msg_id=&msg_id,
+                    dir=%merge_scratch.merge_scratch_directory.path().display())
+            }
+        }
     }
 }
 
@@ -184,7 +214,7 @@ impl MergeExecutor {
         ctx: &ActorContext<MergeScratch>,
     ) -> anyhow::Result<()> {
         let start = Instant::now();
-        info!(split_merge_id=%split_merge_id, "merge-start");
+        info!("merge-start");
         let replaced_split_ids: Vec<String> =
             splits.iter().map(|split| split.split_id.clone()).collect();
         let (union_index_meta, split_directories) =
@@ -198,6 +228,11 @@ impl MergeExecutor {
                 merge_scratch_directory.path(),
             )?
         };
+        info!(
+            elapsed_secs = start.elapsed().as_secs_f32(),
+            "merge-success"
+        );
+
         // This will have the side effect of deleting the directory containing the downloaded
         // splits.
         let time_range = merge_time_range(&splits);
@@ -205,8 +240,10 @@ impl MergeExecutor {
         let num_docs = sum_num_docs(&splits);
 
         let merged_index = Index::open(merged_directory)?;
+        ctx.record_progress();
         let index_writer = merged_index.writer_with_num_threads(1, 3_000_000)?;
-        info!(split_merge_id=%split_merge_id, elapsed_secs=start.elapsed().as_secs_f32(), "merge-stop");
+        ctx.record_progress();
+
         let indexed_split = IndexedSplit {
             split_id: split_merge_id,
             index_id: self.index_id.clone(),

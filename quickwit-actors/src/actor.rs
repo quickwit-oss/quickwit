@@ -25,7 +25,7 @@ use std::time::Duration;
 
 use thiserror::Error;
 use tokio::sync::watch::Sender;
-use tracing::{debug, error};
+use tracing::{debug, error, info_span, Span};
 
 use crate::actor_state::{ActorState, AtomicState};
 use crate::channel_with_priority::Priority;
@@ -122,6 +122,9 @@ pub trait Actor: Send + Sync + 'static {
     /// Piece of state that can be copied for assert in unit test, admin, etc.
     type ObservableState: Send + Sync + Clone + fmt::Debug;
     /// A name identifying the type of actor.
+    ///
+    /// Ideally respect the `CamelCase` convention.
+    ///
     /// It does not need to be "instance-unique", and can be the name of
     /// the actor implementation.
     fn name(&self) -> String {
@@ -136,6 +139,20 @@ pub trait Actor: Send + Sync + 'static {
     ///
     /// This function should return quickly.
     fn observable_state(&self) -> Self::ObservableState;
+
+    /// Creates a span associated to all logging happening during the lifetime of an actor instance.
+    fn span(&self, _ctx: &ActorContext<Self::Message>) -> Span {
+        info_span!("", actor = %self.name())
+    }
+
+    /// Returns (optionally) a context span for the processing of a specific
+    /// message.
+    ///
+    /// `msg_id` is an autoincremented message id than can be added to the span.
+    /// The counter starts 0 at the beginning of the life of an actor instance.
+    fn message_span(&self, msg_id: u64, _msg: &Self::Message) -> Span {
+        info_span!("", msg_id = &msg_id)
+    }
 }
 
 // TODO hide all of this public stuff

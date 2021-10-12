@@ -109,7 +109,7 @@ impl Source for FileSource {
     }
 
     fn name(&self) -> String {
-        "file-source".to_string()
+        "FileSource".to_string()
     }
 
     fn observable_state(&self) -> serde_json::Value {

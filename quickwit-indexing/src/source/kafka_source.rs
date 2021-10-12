@@ -266,7 +266,7 @@ impl Source for KafkaSource {
     }
 
     fn name(&self) -> String {
-        "kafka-source".to_string()
+        "KafkaSource".to_string()
     }
 
     fn observable_state(&self) -> serde_json::Value {

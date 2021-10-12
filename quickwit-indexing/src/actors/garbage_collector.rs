@@ -84,6 +84,10 @@ impl Actor for GarbageCollector {
     fn observable_state(&self) -> Self::ObservableState {
         self.counters.clone()
     }
+
+    fn name(&self) -> String {
+        "GarbageCollector".to_string()
+    }
 }
 
 #[async_trait]
@@ -100,7 +104,7 @@ impl AsyncActor for GarbageCollector {
         _: (),
         ctx: &ActorContext<Self::Message>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        info!(index = %self.index_id, "garbage-collect-operation");
+        info!("garbage-collect-operation");
         self.counters.num_passes += 1;
 
         let deletion_stats = run_garbage_collect(

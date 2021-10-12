@@ -29,7 +29,7 @@ use quickwit_metastore::{Metastore, SplitMetadata, SplitMetadataAndFooterOffsets
 use quickwit_storage::BUNDLE_FILENAME;
 use tantivy::chrono::Utc;
 use tokio::sync::oneshot::Receiver;
-use tracing::{info, warn};
+use tracing::{info, info_span, warn, Instrument, Span};
 
 use crate::models::{PackagedSplit, PublishOperation, PublisherMessage};
 use crate::semaphore::Semaphore;
@@ -38,6 +38,7 @@ use crate::split_store::IndexingSplitStore;
 pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 6;
 
 pub struct Uploader {
+    actor_name: &'static str,
     metastore: Arc<dyn Metastore>,
     index_storage: IndexingSplitStore,
     publisher_mailbox: Mailbox<Receiver<PublisherMessage>>,
@@ -47,11 +48,13 @@ pub struct Uploader {
 
 impl Uploader {
     pub fn new(
+        actor_name: &'static str,
         metastore: Arc<dyn Metastore>,
         index_storage: IndexingSplitStore,
         publisher_mailbox: Mailbox<Receiver<PublisherMessage>>,
     ) -> Uploader {
         Uploader {
+            actor_name,
             metastore,
             index_storage,
             publisher_mailbox,
@@ -79,6 +82,14 @@ impl Actor for Uploader {
 
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Bounded(1)
+    }
+
+    fn name(&self) -> String {
+        self.actor_name.to_string()
+    }
+
+    fn message_span(&self, msg_id: u64, split: &PackagedSplit) -> Span {
+        info_span!("", msg_id=&msg_id, split=%split.split_id)
     }
 }
 
@@ -127,7 +138,7 @@ async fn stage_and_upload_split(
     let index_id = packaged_split.index_id.clone();
     let split_metadata = split_metadata_and_footer_offsets.split_metadata.clone();
 
-    info!(split_id=%packaged_split.split_id, "staging-split",);
+    info!("staging-split");
     metastore
         .stage_split(&index_id, split_metadata_and_footer_offsets)
         .await?;
@@ -136,11 +147,15 @@ async fn stage_and_upload_split(
         .split_scratch_directory
         .path()
         .join(BUNDLE_FILENAME);
+
+    info!("storing-split");
     split_store
         .store_split(&split_metadata, &bundle_path)
         .await?;
 
     counters.num_uploaded_splits.fetch_add(1, Ordering::SeqCst);
+
+    info!("success-stage-and-store-split");
     let publish_operation = make_publish_operation(split_metadata, packaged_split);
     Ok(PublisherMessage {
         index_id,
@@ -187,29 +202,36 @@ impl AsyncActor for Uploader {
 
         let counters = self.counters.clone();
 
-        tokio::spawn(async move {
-            fail_point!("uploader:intask:before");
-            let stage_and_upload_res: anyhow::Result<()> =
-                stage_and_upload_split(split, &index_storage, &*metastore, counters)
-                    .await
-                    .and_then(|publisher_message| {
-                        if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
-                            bail!(
-                                "Failed to send upload split `{:?}`. The publisher is probably \
-                                 dead.",
-                                &publisher_message
-                            );
-                        }
-                        Ok(())
-                    });
-            if let Err(cause) = stage_and_upload_res {
-                warn!(cause=%cause, "Failed to upload split. Killing!");
-                kill_switch.kill();
-            }
+        let span = Span::current();
+        tokio::spawn(
+            async move {
+                fail_point!("uploader:intask:before");
+                let stage_and_upload_res: anyhow::Result<()> =
+                    stage_and_upload_split(split, &index_storage, &*metastore, counters)
+                        .await
+                        .and_then(|publisher_message| {
+                            if let Err(publisher_message) =
+                                split_uploaded_tx.send(publisher_message)
+                            {
+                                bail!(
+                                    "Failed to send upload split `{:?}`. The publisher is \
+                                     probably dead.",
+                                    &publisher_message
+                                );
+                            }
+                            Ok(())
+                        });
+                if let Err(cause) = stage_and_upload_res {
+                    warn!(cause=%cause, "Failed to upload split. Killing!");
+                    kill_switch.kill();
+                }
 
-            // we explicitely drop it in order to force move the permit guard into the async task.
-            mem::drop(permit_guard);
-        });
+                // we explicitely drop it in order to force move the permit guard into the async
+                // task.
+                mem::drop(permit_guard);
+            }
+            .instrument(span),
+        );
         fail_point!("uploader:intask:after");
         Ok(())
     }
@@ -247,7 +269,12 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: IndexingSplitStore =
             IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
-        let uploader = Uploader::new(Arc::new(mock_metastore), index_storage, mailbox);
+        let uploader = Uploader::new(
+            "TestUploader",
+            Arc::new(mock_metastore),
+            index_storage,
+            mailbox,
+        );
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
         let split_scratch_directory = ScratchDirectory::for_test()?;
         std::fs::write(
@@ -317,7 +344,12 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: IndexingSplitStore =
             IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
-        let uploader = Uploader::new(Arc::new(mock_metastore), index_storage, mailbox);
+        let uploader = Uploader::new(
+            "TestUploader",
+            Arc::new(mock_metastore),
+            index_storage,
+            mailbox,
+        );
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
         let split_scratch_directory = ScratchDirectory::for_test()?;
         std::fs::write(
