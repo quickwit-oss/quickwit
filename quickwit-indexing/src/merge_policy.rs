@@ -293,13 +293,13 @@ impl StableMultitenantWithTimestampMergePolicy {
             (time_end, split.num_records)
         });
         debug!(splits=?splits_short_debug(&splits[..]), "find-demux-operation");
-        // TODO: add second demux if necessary.
         merge_operations.append(&mut self.build_first_demux_operation(splits));
         splits.extend(excluded_splits);
         merge_operations
     }
 
     /// This function builds operations for splits that have never been demuxed.
+    /// We might authorize several demuxing in the future.
     pub(crate) fn build_first_demux_operation(
         &self,
         splits: &mut Vec<SplitMetadata>,
@@ -315,10 +315,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         let num_operations = splits.len() / self.demux_factor;
         for _ in 0..num_operations {
             let splits_for_demux: Vec<SplitMetadata> = splits
-                .drain(Range {
-                    start: 0,
-                    end: self.demux_factor,
-                })
+                .drain(0..self.demux_factor)
                 .collect();
             let merge_operation = MergeOperation::Demux {
                 splits: splits_for_demux,

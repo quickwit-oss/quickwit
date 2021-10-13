@@ -17,8 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
-use std::iter::FromIterator;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::RangeInclusive;
 use std::path::Path;
 use std::time::Instant;
@@ -283,7 +282,7 @@ impl MergeExecutor {
             read_segments_demux_values(&replaced_segments, &demux_field_name)?;
         // Build virtual split for all replaced splits = counting demux values in all replaced
         // segments.
-        let mut split_with_all_docs = VirtualSplit::new(HashMap::new());
+        let mut split_with_all_docs = VirtualSplit::new(BTreeMap::new());
         for fast_field_values in replaced_segments_demux_values.iter() {
             for fast_field_value in fast_field_values {
                 split_with_all_docs.add_docs(*fast_field_value, 1);
@@ -483,11 +482,11 @@ pub fn build_demux_mapping(
 // split as input and produced demuxed virtual splits. The virtual splits are
 // then used for the real demux that will create real split.
 // Thus the usage of `virtual`.
-#[derive(Debug)]
-pub struct VirtualSplit(HashMap<i64, usize>);
+#[derive(Debug, Clone)]
+pub struct VirtualSplit(BTreeMap<i64, usize>);
 
 impl VirtualSplit {
-    pub fn new(map: HashMap<i64, usize>) -> Self {
+    pub fn new(map: BTreeMap<i64, usize>) -> Self {
         Self(map)
     }
     pub fn total_num_docs(&self) -> usize {
@@ -495,7 +494,7 @@ impl VirtualSplit {
     }
 
     pub fn sorted_demux_values(&self) -> Vec<i64> {
-        self.0.keys().cloned().sorted().collect_vec()
+        self.0.keys().cloned().collect_vec()
     }
 
     pub fn remove_docs(&mut self, demux_value: &i64, num_docs: usize) {
@@ -571,7 +570,7 @@ pub fn demux_values(
     );
     let input_split_demux_values = input_split.sorted_demux_values();
     let mut demuxed_splits = Vec::new();
-    let mut current_split = VirtualSplit::new(HashMap::new());
+    let mut current_split = VirtualSplit::new(BTreeMap::new());
     let mut num_docs_split_bounds = compute_current_split_bounds(
         total_num_docs,
         output_num_splits - 1,
@@ -591,9 +590,8 @@ pub fn demux_values(
             current_split.add_docs(demux_value, num_docs_to_add);
             input_split.remove_docs(&demux_value, num_docs_to_add);
             if current_split.total_num_docs() >= *num_docs_split_bounds.start() {
-                demuxed_splits.push(VirtualSplit::new(HashMap::from_iter(
-                    current_split.0.drain(),
-                )));
+                demuxed_splits.push(current_split.clone());
+                current_split.0.clear();
                 // No more split to fill.
                 if output_num_splits - demuxed_splits.len() == 0 {
                     break;
@@ -865,7 +863,7 @@ mod tests {
 
     #[test]
     fn test_demux_with_same_num_docs() {
-        let mut num_docs_map = HashMap::new();
+        let mut num_docs_map = BTreeMap::new();
         num_docs_map.insert(0, 100);
         num_docs_map.insert(1, 100);
         num_docs_map.insert(2, 100);
@@ -879,7 +877,7 @@ mod tests {
 
     #[test]
     fn test_demux_distribution_with_huge_diff_in_num_docs() {
-        let mut num_docs_map = HashMap::new();
+        let mut num_docs_map = BTreeMap::new();
         num_docs_map.insert(0, 1);
         num_docs_map.insert(1, 200);
         num_docs_map.insert(2, 200);
@@ -897,7 +895,7 @@ mod tests {
 
     #[test]
     fn test_demux_not_cutting_tenants_docs_into_two_splits_thanks_nice_min_max() {
-        let mut num_docs_map = HashMap::new();
+        let mut num_docs_map = BTreeMap::new();
         num_docs_map.insert(0, 1);
         num_docs_map.insert(1, 50);
         num_docs_map.insert(2, 75);
@@ -917,7 +915,7 @@ mod tests {
 
     #[test]
     fn test_demux_should_not_cut_tenant_with_small_tenants_with_same_num_docs() {
-        let mut num_docs_map = HashMap::new();
+        let mut num_docs_map = BTreeMap::new();
         for i in 0..1000 {
             num_docs_map.insert(i as i64, 20_001);
         }
@@ -932,7 +930,7 @@ mod tests {
         expected = "Input split num docs must be `<= max_split_num_docs * output_num_splits`."
     )]
     fn test_demux_should_panic_when_one_split_has_too_many_docs() {
-        let mut num_docs_map = HashMap::new();
+        let mut num_docs_map = BTreeMap::new();
         num_docs_map.insert(0, 1);
         num_docs_map.insert(1, 201);
         num_docs_map.insert(2, 201);
@@ -953,7 +951,7 @@ mod tests {
         #[test]
         fn test_proptest_simulate_demux_with_huge_tenants(tenants_num_docs in proptest::collection::vec(select(&[10_001, 100_001, 1_000_001, 10_000_001, 19_999_999, 20_000_000][..]), 1..1000)) {
             let num_splits_out = tenants_num_docs.iter().sum::<usize>() / 20_000_000 + 1;
-            let mut num_docs_map = HashMap::new();
+            let mut num_docs_map = BTreeMap::new();
             for (i, num_docs) in tenants_num_docs.iter().enumerate() {
                 num_docs_map.insert(i as i64, *num_docs);
             }
