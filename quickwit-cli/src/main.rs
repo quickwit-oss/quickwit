@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
+use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -32,6 +33,7 @@ use quickwit_common::net::socket_addr_from_str;
 use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::Level;
+use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
@@ -53,7 +55,7 @@ impl CliCommand {
             CliCommand::ExtractSplit(_) => Level::INFO,
             CliCommand::InspectSplit(_) => Level::INFO,
             CliCommand::New(_) => Level::WARN,
-            CliCommand::Index(_) => Level::WARN,
+            CliCommand::Index(_) => Level::INFO,
             CliCommand::Search(_) => Level::WARN,
             CliCommand::Serve(_) => Level::INFO,
             CliCommand::GarbageCollect(_) => Level::WARN,
@@ -314,6 +316,17 @@ impl CliCommand {
     }
 }
 
+/// Describes the way events should be formatted in the logs.
+fn event_format(
+) -> Format<tracing_subscriber::fmt::format::Full, tracing_subscriber::fmt::time::ChronoUtc> {
+    tracing_subscriber::fmt::format()
+        .with_target(true)
+        .with_timer(tracing_subscriber::fmt::time::ChronoUtc::with_format(
+            // We do not rely on ChronoUtc::from_rfc3339, because it has a nanosecond precision.
+            "%Y-%m-%dT%H:%M:%S%.3f%:z".to_string(),
+        ))
+}
+
 fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     let env_filter = env::var("RUST_LOG")
         .map(|_| EnvFilter::from_default_env())
@@ -329,13 +342,13 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
             .install_simple()
             .context("Failed to initialize Jaeger exporter.")?;
         registry
-            .with(tracing_subscriber::fmt::layer())
+            .with(tracing_subscriber::fmt::layer().event_format(event_format()))
             .with(tracing_opentelemetry::layer().with_tracer(tracer))
             .try_init()
             .context("Failed to set up tracing.")?
     } else {
         registry
-            .with(tracing_subscriber::fmt::layer())
+            .with(tracing_subscriber::fmt::layer().event_format(event_format()))
             .try_init()
             .context("Failed to set up tracing.")?
     }

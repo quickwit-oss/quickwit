@@ -125,6 +125,10 @@ impl Actor for Scheduler {
             total_num_events: self.event_id_generator,
         }
     }
+
+    fn name(&self) -> String {
+        "Scheduler".to_string()
+    }
 }
 
 #[async_trait]

@@ -233,6 +233,10 @@ impl Actor for Indexer {
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Bounded(10)
     }
+
+    fn name(&self) -> String {
+        "Indexer".to_string()
+    }
 }
 
 fn record_timestamp(timestamp: i64, time_range: &mut Option<RangeInclusive<i64>>) {
@@ -381,7 +385,7 @@ impl Indexer {
         } else {
             return Ok(());
         };
-        info!(commit_trigger=?commit_trigger, index=?indexed_split.index_id, split=?indexed_split.split_id,"send-to-packager");
+        info!(commit_trigger=?commit_trigger, split=?indexed_split.split_id, num_docs=self.counters.num_docs_in_split, "send-to-packager");
         ctx.send_message_blocking(&self.packager_mailbox, indexed_split)?;
         self.counters.num_docs_in_split = 0;
         self.counters.num_splits_emitted += 1;

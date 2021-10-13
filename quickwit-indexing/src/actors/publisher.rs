@@ -58,13 +58,13 @@ impl Publisher {
         &self,
         publisher_message: &PublisherMessage,
     ) -> anyhow::Result<()> {
-        info!(index=publisher_message.index_id.as_str(), op=?publisher_message.operation, "publish-operation");
         match &publisher_message.operation {
             PublishOperation::PublishNewSplit {
                 new_split,
                 checkpoint_delta,
                 ..
             } => {
+                info!("new-split-start");
                 self.metastore
                     .publish_splits(
                         &publisher_message.index_id,
@@ -73,11 +73,13 @@ impl Publisher {
                     )
                     .await
                     .context("Failed to publish splits.")?;
+                info!("new-split-success");
             }
             PublishOperation::ReplaceSplits {
                 new_splits: new_split_id,
                 replaced_split_ids,
             } => {
+                info!("replace-split-start");
                 // TODO change the metastore API to take &[String]
                 let new_split_ids_ref_vec: Vec<&str> = new_split_id
                     .iter()
@@ -93,6 +95,7 @@ impl Publisher {
                     )
                     .await
                     .context("Failed to replace splits.")?;
+                info!("replace-split-success");
             }
         }
         Ok(())
@@ -109,6 +112,10 @@ impl Actor for Publisher {
 
     fn queue_capacity(&self) -> quickwit_actors::QueueCapacity {
         QueueCapacity::Unbounded
+    }
+
+    fn name(&self) -> String {
+        "Publisher".to_string()
     }
 }
 

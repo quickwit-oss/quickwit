@@ -64,7 +64,6 @@ impl fmt::Debug for IndexedSplit {
         formatter
             .debug_struct("IndexedSplit")
             .field("id", &self.split_id)
-            .field("index", &self.index_id)
             .field("dir", &self.split_scratch_directory.path())
             .finish()
     }
