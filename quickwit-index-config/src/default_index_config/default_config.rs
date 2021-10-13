@@ -31,7 +31,7 @@ use tantivy::schema::{
 use tantivy::Document;
 use tracing::info;
 
-use super::field_mapping_entry::DocParsingError;
+use super::field_mapping_entry::{DocParsingError, FieldPath};
 use super::{default_as_true, FieldMappingEntry, FieldMappingType};
 use crate::config::convert_tag_to_string;
 use crate::query_builder::build_query;
@@ -149,7 +149,7 @@ impl DefaultIndexConfigBuilder {
 
         let mut unique_field_names: HashSet<String> = HashSet::new();
         for field_mapping in self.field_mappings.iter() {
-            for (field_path, field_type) in field_mapping.field_entries()? {
+            for (field_path, field_type) in field_mapping.field_entries() {
                 let field_name = field_path.field_name();
                 if field_name == SOURCE_FIELD_NAME {
                     bail!("`_source` is a reserved name, change your field name.");
@@ -341,6 +341,25 @@ pub struct DefaultIndexConfig {
     demux_field_name: Option<String>,
 }
 
+impl DefaultIndexConfig {
+    // Return error if a fast field is not present in field paths.
+    fn check_fast_field_in_doc(
+        &self,
+        field_paths_and_values: &[(FieldPath, Value)],
+    ) -> Result<(), DocParsingError> {
+        for (fast_field_path, _) in self.field_mappings.fast_field_entries() {
+            let fast_field_name = fast_field_path.field_name();
+            if !field_paths_and_values
+                .iter()
+                .any(|(field_path, _)| fast_field_name == field_path.field_name())
+            {
+                return Err(DocParsingError::RequiredFastField(fast_field_name));
+            }
+        }
+        Ok(())
+    }
+}
+
 impl std::fmt::Debug for DefaultIndexConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter
@@ -368,6 +387,7 @@ impl IndexConfig for DefaultIndexConfig {
             DocParsingError::NotJson(doc_json_sample)
         })?;
         let field_paths_and_values = self.field_mappings.parse(json_obj)?;
+        self.check_fast_field_in_doc(&field_paths_and_values)?;
         let tags_field_opt = self.schema.get_field(TAGS_FIELD_NAME);
         for (field_path, field_value) in field_paths_and_values {
             let field_name = field_path.field_name();
@@ -545,11 +565,34 @@ mod tests {
         index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
-                "unknown_field": "20200415T072306-0700 INFO This is a great log"
+                "unknown_field": "20200415T072306-0700 INFO This is a great log",
+                "response_date": "2021-12-19T16:39:57+00:00",
+                "response_time": 12,
+                "response_payload": "YWJj"
             }"#
             .to_string(),
         )?;
         Ok(())
+    }
+
+    #[test]
+    fn test_fail_parsing_document_with_missing_fast_field() {
+        let index_config = crate::default_config_for_tests();
+        let result = index_config.doc_from_json(
+            r#"{
+                "timestamp": 1586960586000,
+                "unknown_field": "20200415T072306-0700 INFO This is a great log",
+                "response_date": "2021-12-19T16:39:57+00:00",
+                "response_time": 12
+            }"#
+            .to_string(),
+        );
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert_eq!(
+            error,
+            DocParsingError::RequiredFastField("response_payload".to_owned())
+        );
     }
 
     #[test]

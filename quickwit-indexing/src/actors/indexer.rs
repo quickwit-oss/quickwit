@@ -27,7 +27,7 @@ use fail::fail_point;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SendError, SyncActor,
 };
-use quickwit_index_config::{IndexConfig, SortBy};
+use quickwit_index_config::{DocParsingError, IndexConfig, SortBy};
 use tantivy::schema::{Field, Value};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tracing::{info, warn};
@@ -45,7 +45,7 @@ pub struct IndexerCounters {
     /// then this counter is 0)
     /// - number of valid docs.
     pub num_parse_errors: u64,
-    pub num_missing_timestamp: u64,
+    pub num_missing_field: u64,
     pub num_valid_docs: u64,
 
     /// Number of splits that were emitted by the indexer.
@@ -65,14 +65,14 @@ pub struct IndexerCounters {
 impl IndexerCounters {
     /// Returns the overall number of docs that went through the indexer (valid or not).
     pub fn num_processed_docs(&self) -> u64 {
-        self.num_valid_docs + self.num_parse_errors + self.num_missing_timestamp
+        self.num_valid_docs + self.num_parse_errors + self.num_missing_field
     }
 
     /// Returns the overall number of docs that were sent to the indexer but were invalid.
     /// (For instance, because they were missing a required field or because their because
     /// their format was invalid)
     pub fn num_invalid_docs(&self) -> u64 {
-        self.num_parse_errors + self.num_missing_timestamp
+        self.num_parse_errors + self.num_missing_field
     }
 }
 
@@ -85,7 +85,7 @@ struct IndexerState {
 
 enum PrepareDocumentOutcome {
     ParsingError,
-    MissingTimestamp,
+    MissingField,
     Document {
         document: Document,
         timestamp_opt: Option<i64>,
@@ -144,7 +144,10 @@ impl IndexerState {
             Ok(doc) => doc,
             Err(doc_parsing_error) => {
                 warn!(err=?doc_parsing_error);
-                return PrepareDocumentOutcome::ParsingError;
+                return match doc_parsing_error {
+                    DocParsingError::RequiredFastField(_) => PrepareDocumentOutcome::MissingField,
+                    _ => PrepareDocumentOutcome::ParsingError,
+                };
             }
         };
         // Extract timestamp if necessary
@@ -160,14 +163,16 @@ impl IndexerState {
         let timestamp_opt = document
             .get_first(timestamp_field)
             .and_then(Value::i64_value);
-        let timestamp = if let Some(timestamp) = timestamp_opt {
-            timestamp
-        } else {
-            return PrepareDocumentOutcome::MissingTimestamp;
-        };
+
+        assert!(
+            timestamp_opt.is_some(),
+            "Timestamp is a fast field and parser has check that. We should always have a \
+             timestamp here."
+        );
+
         PrepareDocumentOutcome::Document {
             document,
-            timestamp_opt: Some(timestamp),
+            timestamp_opt,
         }
     }
 
@@ -194,8 +199,8 @@ impl IndexerState {
                 PrepareDocumentOutcome::ParsingError => {
                     counters.num_parse_errors += 1;
                 }
-                PrepareDocumentOutcome::MissingTimestamp => {
-                    counters.num_missing_timestamp += 1;
+                PrepareDocumentOutcome::MissingField => {
+                    counters.num_missing_field += 1;
                 }
                 PrepareDocumentOutcome::Document {
                     document,
@@ -448,9 +453,9 @@ mod tests {
                 &indexer_mailbox,
                 RawDocBatch {
                     docs: vec![
-                        r#"{"body": "happy"}"#.to_string(), // missing timestamp
-                        r#"{"body": "happy", "timestamp": 1628837062}"#.to_string(), // ok
-                        r#"{"body": "happy2", "timestamp": 1628837062}"#.to_string(), // ok
+                        r#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string(), // missing timestamp
+                        r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(), // ok
+                        r#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#.to_string(), // ok
                         "{".to_string(),                    // invalid json
                     ],
                     checkpoint_delta: CheckpointDelta::from(0..4),
@@ -463,18 +468,18 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 1,
-                num_missing_timestamp: 1,
+                num_missing_field: 1,
                 num_valid_docs: 2,
                 num_splits_emitted: 0,
                 num_docs_in_split: 2, //< we have not reached the commit limit yet.
-                overall_num_bytes: 103
+                overall_num_bytes: 387
             }
         );
         universe
             .send_message(
                 &indexer_mailbox,
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy3", "timestamp": 1628837062}"#.to_string()],
+                    docs: vec![r#"{"body": "happy3", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
                     checkpoint_delta: CheckpointDelta::from(4..5),
                 }
                 .into(),
@@ -485,11 +490,11 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 1,
-                num_missing_timestamp: 1,
+                num_missing_field: 1,
                 num_valid_docs: 3,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0, //< the num docs in split counter has been reset.
-                overall_num_bytes: 146
+                overall_num_bytes: 525
             }
         );
         let output_messages = inbox.drain_available_message_for_test();
@@ -531,7 +536,7 @@ mod tests {
             .send_message(
                 &indexer_mailbox,
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062}"#.to_string()],
+                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
                     checkpoint_delta: CheckpointDelta::from(0..1),
                 }
                 .into(),
@@ -542,11 +547,11 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 0,
-                num_missing_timestamp: 0,
+                num_missing_field: 0,
                 num_valid_docs: 1,
                 num_splits_emitted: 0,
                 num_docs_in_split: 1,
-                overall_num_bytes: 42
+                overall_num_bytes: 137
             }
         );
         universe.simulate_time_shift(Duration::from_secs(61)).await;
@@ -555,11 +560,11 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 0,
-                num_missing_timestamp: 0,
+                num_missing_field: 0,
                 num_valid_docs: 1,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0,
-                overall_num_bytes: 42
+                overall_num_bytes: 137
             }
         );
         let output_messages = inbox.drain_available_message_for_test();
@@ -586,7 +591,7 @@ mod tests {
             .send_message(
                 &indexer_mailbox,
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062}"#.to_string()],
+                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
                     checkpoint_delta: CheckpointDelta::from(0..1),
                 }
                 .into(),
@@ -599,11 +604,11 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 0,
-                num_missing_timestamp: 0,
+                num_missing_field: 0,
                 num_valid_docs: 1,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0,
-                overall_num_bytes: 42
+                overall_num_bytes: 137
             }
         );
         let output_messages = inbox.drain_available_message_for_test();

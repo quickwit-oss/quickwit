@@ -21,7 +21,7 @@ use std::convert::TryFrom;
 
 use anyhow::bail;
 use chrono::{FixedOffset, Utc};
-use itertools::process_results;
+use itertools::{process_results, Itertools};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::schema::{
@@ -63,9 +63,9 @@ impl FieldMappingEntry {
     /// Returns the field entries that must be added to the schema.
     // TODO: can be more efficient to pass a collector in argument (a schema builder)
     // on which we add entry fields.
-    pub fn field_entries(&self) -> anyhow::Result<Vec<(FieldPath, FieldType)>> {
+    pub fn field_entries(&self) -> Vec<(FieldPath, FieldType)> {
         let field_path = FieldPath::new(&self.name);
-        let results = match &self.mapping_type {
+        match &self.mapping_type {
             FieldMappingType::Text(options, _) => {
                 vec![(field_path, FieldType::Str(options.clone()))]
             }
@@ -84,16 +84,27 @@ impl FieldMappingEntry {
             FieldMappingType::Bytes(options, _) => {
                 vec![(field_path, FieldType::Bytes(options.clone()))]
             }
-            FieldMappingType::Object(field_mappings) => process_results(
-                field_mappings.iter().map(|entry| entry.field_entries()),
-                |iter| {
-                    iter.flatten()
-                        .map(|(path, entry)| (path.with_parent(&self.name), entry))
-                        .collect()
-                },
-            )?,
-        };
-        Ok(results)
+            FieldMappingType::Object(field_mappings) => field_mappings
+                .iter()
+                .map(|entry| entry.field_entries())
+                .flatten()
+                .map(|(path, entry)| (path.with_parent(&self.name), entry))
+                .collect(),
+        }
+    }
+
+    pub fn fast_field_entries(&self) -> Vec<(FieldPath, FieldType)> {
+        self.field_entries()
+            .into_iter()
+            .filter(|(_, field_type)| match field_type {
+                FieldType::U64(options)
+                | FieldType::I64(options)
+                | FieldType::F64(options)
+                | FieldType::Date(options) => options.is_fast(),
+                FieldType::Bytes(option) => option.is_fast(),
+                _ => false,
+            })
+            .collect_vec()
     }
 
     pub fn field_mappings(&self) -> Option<Vec<FieldMappingEntry>> {
@@ -716,6 +727,9 @@ pub enum DocParsingError {
     /// The document contains a array of values but a single value is expected.
     #[error("The document contains an array of values but a single value is expected: {0:?}")]
     MultiValuesNotSupported(String),
+    /// The document does not contains a field that is required.
+    #[error("The document must contain field declared as fast field: {0:?}")]
+    RequiredFastField(String),
 }
 
 impl From<TantivyDocParser> for DocParsingError {
