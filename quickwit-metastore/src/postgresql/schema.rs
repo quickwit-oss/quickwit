@@ -28,8 +28,8 @@ table! {
     splits (split_id) {
         split_id -> Varchar,
         split_state -> Varchar,
-        start_time_range -> Nullable<Int8>,
-        end_time_range -> Nullable<Int8>,
+        time_range_start -> Nullable<Int8>,
+        time_range_end -> Nullable<Int8>,
         update_timestamp -> Int8,
         tags -> Array<Text>,
         split_metadata_json -> Text,
