@@ -270,7 +270,8 @@ mod tests {
             .collect();
         assert_eq!(splits.len(), 4);
         let merge_scratch_directory = ScratchDirectory::for_test()?;
-        let downloaded_splits_directory = merge_scratch_directory.temp_child()?;
+        let downloaded_splits_directory =
+            merge_scratch_directory.named_temp_child("downloaded-splits-")?;
         let storage = test_index_builder.index_storage(index_id)?;
         for split in &splits {
             let split_filename = split_file(&split.split_id);

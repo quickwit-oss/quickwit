@@ -63,8 +63,9 @@ impl MergeSplitDownloader {
         ctx: &ActorContext<MergeOperation>,
     ) -> anyhow::Result<()> {
         info!(merge_operation=?merge_operation, "download-merge-splits");
-        let merge_scratch_directory = self.scratch_directory.temp_child()?;
-        let downloaded_splits_directory = merge_scratch_directory.temp_child()?;
+        let merge_scratch_directory = self.scratch_directory.named_temp_child("merge-")?;
+        let downloaded_splits_directory =
+            merge_scratch_directory.named_temp_child("downloaded-splits-")?;
         self.download_splits(
             merge_operation.splits(),
             downloaded_splits_directory.path(),

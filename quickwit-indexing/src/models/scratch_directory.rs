@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
@@ -91,8 +92,10 @@ impl ScratchDirectory {
     ///
     /// A child scratch directory keeps an handle on its father to
     /// prevent its premature deletion.
-    pub fn temp_child(&self) -> io::Result<Self> {
-        let temp_dir = tempfile::tempdir_in(self.path())?;
+    pub fn named_temp_child<S: AsRef<OsStr>>(&self, prefix: S) -> io::Result<Self> {
+        let temp_dir = tempfile::Builder::new()
+            .prefix(prefix.as_ref())
+            .tempdir_in(self.path())?;
         let inner = Inner {
             _parent: Some(self.inner.clone()),
             dir: ScratchDirectoryType::TempDir(temp_dir),
@@ -114,8 +117,13 @@ mod tests {
         let parent = ScratchDirectory::for_test()?;
         let parent_path = parent.path().to_path_buf();
 
-        let child = parent.temp_child()?;
+        let child = parent.named_temp_child("child-")?;
         let child_path = child.path().to_path_buf();
+        assert!(child_path
+            .file_name()
+            .and_then(|file_name| file_name.to_str())
+            .map(|file_name| file_name.contains("child-"))
+            .unwrap_or(false));
 
         mem::drop(parent);
         assert!(parent_path.exists());
@@ -149,7 +157,7 @@ mod tests {
         assert_eq!(parent.path(), tempdir.path());
         assert!(tempdir.path().exists());
 
-        let child = parent.temp_child()?;
+        let child = parent.named_temp_child("child-")?;
         let child_path = child.path().to_path_buf();
         assert!(child_path.exists());
 

@@ -79,15 +79,16 @@ impl IndexedSplit {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
         // and avoid possible race conditions.
+        let split_id = new_split_id();
+        let split_scratch_directory_prefix = format!("split-{}-", split_id);
         let split_scratch_directory = indexer_params
             .indexing_directory
             .scratch_directory
-            .temp_child()?;
+            .named_temp_child(split_scratch_directory_prefix)?;
         let index = index_builder.create_in_dir(split_scratch_directory.path())?;
         let index_writer =
             index.writer_with_num_threads(1, indexer_params.heap_size.get_bytes() as usize)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
-        let split_id = new_split_id();
         Ok(IndexedSplit {
             split_id,
             index_id,
