@@ -255,8 +255,7 @@ fn resolve_demux_field(
         }
         if !demux_field_entry.is_indexed() {
             bail!(
-                "Demux field must be indexed, please add the indexed property to your field \
-                 `{}`.",
+                "Demux field must be indexed, please add the indexed property to your field `{}`.",
                 demux_field_name
             )
         }
@@ -962,7 +961,8 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
-        let expected_msg = "Demux field must be indexed, please add the indexed property to your field `demux`."
+        let expected_msg = "Demux field must be indexed, please add the indexed property to your \
+                            field `demux`."
             .to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
