@@ -253,6 +253,13 @@ fn resolve_demux_field(
                 demux_field_name
             )
         }
+        if !demux_field_entry.is_indexed() {
+            bail!(
+                "Demux field must be indexed, please add the indexed property to your field \
+                 `{}`.",
+                demux_field_name
+            )
+        }
         match demux_field_entry.field_type() {
             FieldType::I64(options) | FieldType::U64(options) => {
                 if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
@@ -659,28 +666,6 @@ mod tests {
     }
 
     #[test]
-    fn test_fail_to_build_index_config_with_non_fast_demux_field() -> anyhow::Result<()> {
-        let index_config = r#"{
-            "type": "default",
-            "default_search_fields": [],
-            "demux_field": "demux",
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "demux",
-                    "type": "u64"
-                }
-            ]
-        }"#;
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
-        let expected_msg = "Demux field must be a fast field, please add the fast property to \
-                            your field `demux`."
-            .to_string();
-        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
-        Ok(())
-    }
-
-    #[test]
     fn test_fail_to_build_index_config_with_multivalued_timestamp_field() -> anyhow::Result<()> {
         let index_config = r#"{
             "type": "default",
@@ -935,6 +920,51 @@ mod tests {
         let config = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
         assert_eq!(config.tag_field_names().len(), 1);
         assert!(config.tag_field_names().contains(&"demux".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_index_config_with_non_fast_demux_field() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "demux_field": "demux",
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "demux",
+                    "type": "u64"
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let expected_msg = "Demux field must be a fast field, please add the fast property to \
+                            your field `demux`."
+            .to_string();
+        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_index_config_with_not_indexed_demux_field() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "demux_field": "demux",
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "demux",
+                    "type": "u64",
+                    "indexed": false,
+                    "fast": true
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let expected_msg = "Demux field must be indexed, please add the indexed property to your field `demux`."
+            .to_string();
+        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
     }
 }
