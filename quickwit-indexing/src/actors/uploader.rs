@@ -196,13 +196,14 @@ impl AsyncActor for Uploader {
                     stage_and_upload_split(split, &index_storage, &*metastore, counters.clone())
                         .await;
                 if let Err(cause) = upload_result {
+                    println!("yo {}", cause);
                     warn!(cause=%cause, "Failed to upload split. Killing!");
                     kill_switch.kill();
+                    bail!("Failed to upload split `{}`. Killing!", split.split_id);
                 } else {
                     splits_metadata.push(upload_result.unwrap());
                 }
             }
-
             let index_id = batch.splits[0].index_id.clone();
             let operation = make_publish_operation(batch.splits, splits_metadata);
             let publisher_message = PublisherMessage {
@@ -215,7 +216,7 @@ impl AsyncActor for Uploader {
                     &publisher_message
                 );
             }
-            // we explicitely drop it in order to force move the permit guard into the async task.
+            // We explicitely drop it in order to force move the permit guard into the async task.
             mem::drop(permit_guard);
             Result::<(), anyhow::Error>::Ok(())
         });
@@ -319,49 +320,65 @@ mod tests {
             .expect_stage_split()
             .withf(move |index_id, metadata| -> bool {
                 (index_id == "test-index")
-                    && &metadata.split_metadata.split_id == "test-split"
+                    && vec!["test-split-1".to_owned(), "test-split-2".to_owned()]
+                        .contains(&metadata.split_metadata.split_id)
                     && metadata.split_metadata.time_range == Some(1628203589..=1628203640)
                     && metadata.split_metadata.split_state == SplitState::New
             })
-            .times(1)
+            .times(2)
             .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
         let index_storage: IndexingSplitStore =
             IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(Arc::new(mock_metastore), index_storage, mailbox);
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
-        let split_scratch_directory = ScratchDirectory::try_new_temp()?;
+        let split_scratch_directory_1 = ScratchDirectory::try_new_temp()?;
+        let split_scratch_directory_2 = ScratchDirectory::try_new_temp()?;
         std::fs::write(
-            split_scratch_directory.path().join(BUNDLE_FILENAME),
+            split_scratch_directory_1.path().join(BUNDLE_FILENAME),
             &b"bubu"[..],
         )?;
         std::fs::write(
-            split_scratch_directory.path().join("anyfile2"),
-            &b"bubu2"[..],
+            split_scratch_directory_2.path().join(BUNDLE_FILENAME),
+            &b"bubu"[..],
         )?;
+        let packaged_split_1 = PackagedSplit {
+            split_id: "test-split-1".to_string(),
+            index_id: "test-index".to_string(),
+            checkpoint_deltas: vec![CheckpointDelta::from(3..15), CheckpointDelta::from(16..18)],
+            time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+            size_in_bytes: 1_000,
+            footer_offsets: 1000..2000,
+            split_scratch_directory: split_scratch_directory_1,
+            num_docs: 10,
+            tags: Default::default(),
+            replaced_split_ids: vec![
+                "replaced-split-1".to_string(),
+                "replaced-split-2".to_string(),
+            ],
+            split_date_of_birth: Instant::now(),
+        };
+        let package_split_2 = PackagedSplit {
+            split_id: "test-split-2".to_string(),
+            index_id: "test-index".to_string(),
+            checkpoint_deltas: vec![CheckpointDelta::from(3..15), CheckpointDelta::from(16..18)],
+            time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+            size_in_bytes: 1_000,
+            footer_offsets: 1000..2000,
+            split_scratch_directory: split_scratch_directory_2,
+            num_docs: 10,
+            tags: Default::default(),
+            replaced_split_ids: vec![
+                "replaced-split-1".to_string(),
+                "replaced-split-2".to_string(),
+            ],
+            split_date_of_birth: Instant::now(),
+        };
         universe
             .send_message(
                 &uploader_mailbox,
                 PackagedSplitBatch {
-                    splits: vec![PackagedSplit {
-                        split_id: "test-split".to_string(),
-                        index_id: "test-index".to_string(),
-                        checkpoint_deltas: vec![
-                            CheckpointDelta::from(3..15),
-                            CheckpointDelta::from(16..18),
-                        ],
-                        time_range: Some(1_628_203_589i64..=1_628_203_640i64),
-                        size_in_bytes: 1_000,
-                        footer_offsets: 1000..2000,
-                        split_scratch_directory,
-                        num_docs: 10,
-                        tags: Default::default(),
-                        replaced_split_ids: vec![
-                            "replaced-split-1".to_string(),
-                            "replaced-split-2".to_string(),
-                        ],
-                        split_date_of_birth: Instant::now(),
-                    }],
+                    splits: vec![packaged_split_1, package_split_2],
                 },
             )
             .await?;
@@ -379,8 +396,9 @@ mod tests {
             replaced_split_ids,
         } = publisher_message.operation
         {
-            assert_eq!(new_splits.len(), 1);
-            assert_eq!(new_splits[0].split_id, "test-split");
+            assert_eq!(new_splits.len(), 2);
+            assert_eq!(new_splits[0].split_id, "test-split-1");
+            assert_eq!(new_splits[1].split_id, "test-split-2");
             assert_eq!(
                 &replaced_split_ids,
                 &[
@@ -393,7 +411,13 @@ mod tests {
         }
         let mut files = ram_storage.list_files().await;
         files.sort();
-        assert_eq!(&files, &[PathBuf::from("test-split.split")]);
+        assert_eq!(
+            &files,
+            &[
+                PathBuf::from("test-split-1.split"),
+                PathBuf::from("test-split-2.split")
+            ]
+        );
         Ok(())
     }
 }

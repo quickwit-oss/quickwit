@@ -76,12 +76,10 @@ impl Packager {
         mut split: IndexedSplit,
         ctx: &ActorContext<IndexedSplitBatch>,
     ) -> anyhow::Result<PackagedSplit> {
-        fail_point!("packager:before");
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
         let packaged_split =
             create_packaged_split(&segment_metas[..], split, self.tags_field, ctx)?;
-        fail_point!("packager:after");
         Ok(packaged_split)
     }
 }
@@ -443,6 +441,38 @@ mod tests {
         );
         let packaged_splits = inbox.drain_available_message_for_test();
         assert_eq!(packaged_splits.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_package_two_indexed_split_and_merge_required() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::new();
+        let (mailbox, inbox) = create_test_mailbox();
+        let indexed_split_1 = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
+        let indexed_split_2 = make_indexed_split_for_test(&[&[1628204589], &[1629203640]])?;
+        let tags_field = indexed_split_1
+            .index
+            .schema()
+            .get_field(quickwit_index_config::TAGS_FIELD_NAME)
+            .unwrap();
+        let packager = Packager::new(tags_field, mailbox, None);
+        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
+        universe
+            .send_message(
+                &packager_mailbox,
+                IndexedSplitBatch {
+                    splits: vec![indexed_split_1, indexed_split_2],
+                },
+            )
+            .await?;
+        assert_eq!(
+            packager_handle.process_pending_and_observe().await.obs_type,
+            ObservationType::Alive
+        );
+        let packaged_splits = inbox.drain_available_message_for_test();
+        assert_eq!(packaged_splits.len(), 1);
+        assert_eq!(packaged_splits[0].splits.len(), 2);
         Ok(())
     }
 
