@@ -19,17 +19,17 @@
 
 use std::collections::VecDeque;
 use std::convert::TryFrom;
-use std::env;
 use std::fs::File;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
-use crossterm::style::{Print, PrintStyledContent, Stylize};
-use crossterm::QueueableCommand;
+use crossterm::execute;
+use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use humansize::{file_size_opts, FileSize};
 use json_comments::StripComments;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
@@ -555,8 +555,38 @@ pub async fn start_statistics_reporting_loop(
     Ok(statistics)
 }
 
+struct Printer<'a> {
+    pub stdout: &'a mut Stdout,
+    pub colored: bool,
+}
+
+impl<'a> Printer<'a> {
+    fn print_header(&mut self, header: &str) -> io::Result<()> {
+        if self.colored {
+            self.stdout.write_all(b" ")?;
+            execute!(
+                &mut self.stdout,
+                SetForegroundColor(Color::Blue),
+                Print(header),
+                ResetColor
+            )?;
+        } else {
+            write!(&mut self.stdout, " {}:", header)?;
+        }
+        Ok(())
+    }
+
+    fn print_value(&mut self, fmt_args: fmt::Arguments) -> io::Result<()> {
+        write!(&mut self.stdout, " {}", fmt_args)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.stdout.flush()
+    }
+}
+
 fn display_statistics(
-    stdout_handle: &mut Stdout,
+    stdout: &mut Stdout,
     throughput_calculator: &mut ThroughputCalculator,
     statistics: &IndexingStatistics,
     is_tty: bool,
@@ -569,36 +599,26 @@ fn display_statistics(
         elapsed_duration.num_seconds() % 60
     );
     let throughput_mb_s = throughput_calculator.calculate(statistics.total_bytes_processed);
-    if is_tty {
-        stdout_handle.queue(PrintStyledContent("Num docs: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:>7}", statistics.num_docs)))?;
-        stdout_handle.queue(PrintStyledContent(" Parse errs: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:>5}", statistics.num_invalid_docs)))?;
-        stdout_handle.queue(PrintStyledContent(" Staged splits: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:>3}", statistics.num_staged_splits)))?;
-        stdout_handle.queue(PrintStyledContent(" Input size: ".blue()))?;
-        stdout_handle.queue(Print(format!(
-            "{:>5}MB",
-            statistics.total_bytes_processed / 1_000_000
-        )))?;
-        stdout_handle.queue(PrintStyledContent(" Thrghput: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:>5.2}MB/s", throughput_mb_s)))?;
-        stdout_handle.queue(PrintStyledContent(" Time: ".blue()))?;
-        stdout_handle.queue(Print(format!("{}\n", elapsed_time)))?;
-    } else {
-        let report_line = format!(
-            "Num docs: {:>7} Parse errs: {:>5} Staged splits: {:>3} Input size: {:>5}MB Thrghput: \
-             {:>5.2}MB/s Time: {}\n",
-            statistics.num_docs,
-            statistics.num_invalid_docs,
-            statistics.num_staged_splits,
-            statistics.total_bytes_processed / 1_000_000,
-            throughput_mb_s,
-            elapsed_time,
-        );
-        stdout_handle.write_all(report_line.as_bytes())?;
-    }
-    stdout_handle.flush()?;
+    let mut printer = Printer {
+        stdout,
+        colored: is_tty,
+    };
+    printer.print_header("Num docs")?;
+    printer.print_value(format_args!("{:>7}", statistics.num_docs))?;
+    printer.print_header("Parse errs")?;
+    printer.print_value(format_args!("{:>5}", statistics.num_invalid_docs))?;
+    printer.print_header("PublSplits")?;
+    printer.print_value(format_args!("{:>3}", statistics.num_published_splits))?;
+    printer.print_header("Input size")?;
+    printer.print_value(format_args!(
+        "{:>5}MB",
+        statistics.total_bytes_processed / 1_000_000
+    ))?;
+    printer.print_header("Thrghput")?;
+    printer.print_value(format_args!("{:>5.2}MB/s", throughput_mb_s))?;
+    printer.print_header("Time")?;
+    printer.print_value(format_args!("{}\n", elapsed_time))?;
+    printer.flush()?;
     Ok(())
 }
 
@@ -630,7 +650,6 @@ impl ThroughputCalculator {
         let elapsed_time = (current_instant - first_instant).as_millis() as f64 / 1_000f64;
         self.processed_bytes_values
             .push_back((current_instant, current_processed_bytes));
-
         (current_processed_bytes - first_processed_bytes) as f64
             / 1_000_000f64
             / elapsed_time.max(1f64) as f64
