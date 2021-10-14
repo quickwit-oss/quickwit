@@ -67,7 +67,13 @@ impl fmt::Debug for MergeOperation {
                 }
                 write!(f, "])")?;
             }
-            MergeOperation::Demux { .. } => todo!(),
+            MergeOperation::Demux { splits } => {
+                write!(f, "Merge(splits=[")?;
+                for split in splits {
+                    write!(f, "{},", &split.split_id)?;
+                }
+                write!(f, "])")?;
+            }
         }
         Ok(())
     }
