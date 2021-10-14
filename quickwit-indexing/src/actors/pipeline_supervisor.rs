@@ -186,6 +186,7 @@ impl IndexingPipelineSupervisor {
     #[instrument(name="", level="info", skip_all, fields(index=%self.params.index_id, gen=self.generation))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Msg>) -> anyhow::Result<()> {
         self.generation += 1;
+        self.previous_generations_statistics = self.statistics.clone();
         self.kill_switch = KillSwitch::default();
         let index_metadata = self
             .params
