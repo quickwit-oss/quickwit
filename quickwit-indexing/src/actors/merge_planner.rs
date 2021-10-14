@@ -339,7 +339,7 @@ mod tests {
                         .iter()
                         .filter(|split| split.demux_num_ops > 0 && split.num_records >= 10_000_000)
                         .count();
-                    return demuxed_num_splits % 6 == 0;
+                    return demuxed_num_splits > 0 && demuxed_num_splits % 6 == 0;
                 }
                 splits
                     .iter()
