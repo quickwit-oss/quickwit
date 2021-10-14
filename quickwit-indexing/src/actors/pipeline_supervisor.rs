@@ -187,12 +187,12 @@ impl IndexingPipelineSupervisor {
             .resolve(&index_metadata.index_uri)?;
         let demux_field_name = index_metadata.index_config.demux_field_name();
         let timestamp_field_name = index_metadata.index_config.timestamp_field_name();
-
-        let merge_policy: Arc<dyn MergePolicy> =
-            Arc::new(StableMultitenantWithTimestampMergePolicy {
-                demux_field_name: demux_field_name.clone(),
-                ..Default::default()
-            });
+        let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
+            demux_field_name: demux_field_name.clone(),
+            ..Default::default()
+        };
+        let max_merge_docs = stable_multitenant_merge_policy.max_merge_docs;
+        let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
 
         // TODO: Make cache path configurable [https://github.com/quickwit-inc/quickwit/issues/520]
         // Using the scratch_directory directly is fine since the cache storage will create its own
@@ -237,6 +237,8 @@ impl IndexingPipelineSupervisor {
             merge_packager_mailbox,
             timestamp_field_name,
             demux_field_name,
+            max_merge_docs,
+            max_merge_docs * 2, // < TODO: put these parameters from a config struct.
         );
         let (merge_executor_mailbox, merge_executor_handler) = ctx
             .spawn_actor(merge_executor)

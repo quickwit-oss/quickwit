@@ -44,10 +44,10 @@ use crate::new_split_id;
 pub struct MergeExecutor {
     index_id: String,
     merge_packager_mailbox: Mailbox<IndexedSplitBatch>,
-    min_split_num_docs: usize,
-    max_split_num_docs: usize,
     timestamp_field_name: Option<String>,
     demux_field_name: Option<String>,
+    min_demuxed_split_num_docs: usize,
+    max_demuxed_split_num_docs: usize,
 }
 
 impl Actor for MergeExecutor {
@@ -188,16 +188,18 @@ impl MergeExecutor {
     pub fn new(
         index_id: String,
         merge_packager_mailbox: Mailbox<IndexedSplitBatch>,
-        demux_field_name: Option<String>,
         timestamp_field_name: Option<String>,
+        demux_field_name: Option<String>,
+        min_demuxed_split_num_docs: usize,
+        max_demuxed_split_num_docs: usize,
     ) -> Self {
         MergeExecutor {
             index_id,
             merge_packager_mailbox,
-            min_split_num_docs: 10_000_000,
-            max_split_num_docs: 20_000_000,
             timestamp_field_name,
             demux_field_name,
+            min_demuxed_split_num_docs,
+            max_demuxed_split_num_docs,
         }
     }
 
@@ -269,9 +271,7 @@ impl MergeExecutor {
             self.demux_field_name.is_some(),
             "`process_demux` cannot be called without a demux field."
         );
-        let demux_field_name = self.demux_field_name.clone().unwrap();
-        let num_splits = splits.len();
-        let total_docs_size_in_bytes = splits.iter().map(|split| split.size_in_bytes).sum::<u64>();
+        let demux_field_name = self.demux_field_name.as_ref().unwrap();
         let replaced_split_ids = splits
             .iter()
             .map(|split| split.split_id.clone())
@@ -279,25 +279,25 @@ impl MergeExecutor {
         let (index_metas, replaced_segments) =
             load_metas_and_segments(downloaded_splits_directory.path(), &replaced_split_ids)?;
         let replaced_segments_demux_values =
-            read_segments_demux_values(&replaced_segments, &demux_field_name)?;
+            read_segments_demux_values(&replaced_segments, demux_field_name)?;
         // Build virtual split for all replaced splits = counting demux values in all replaced
         // segments.
-        let mut split_with_all_docs = VirtualSplit::new(BTreeMap::new());
+        let mut virtual_split_with_all_docs = VirtualSplit::new(BTreeMap::new());
         for fast_field_values in replaced_segments_demux_values.iter() {
             for fast_field_value in fast_field_values {
-                split_with_all_docs.add_docs(*fast_field_value, 1);
+                virtual_split_with_all_docs.add_docs(*fast_field_value, 1);
             }
         }
-        let total_num_docs = split_with_all_docs.total_num_docs();
-        let demuxed_splits = demux_values(
-            split_with_all_docs,
-            self.min_split_num_docs,
-            self.max_split_num_docs,
-            num_splits,
-        );
         ctx.record_progress();
-        let demux_mapping = build_demux_mapping(replaced_segments_demux_values, demuxed_splits);
-        let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..num_splits)
+        let demuxed_virtual_splits = demux_values(
+            virtual_split_with_all_docs,
+            self.min_demuxed_split_num_docs,
+            self.max_demuxed_split_num_docs,
+            splits.len(),
+        );
+        let demux_mapping =
+            build_demux_mapping(replaced_segments_demux_values, demuxed_virtual_splits);
+        let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..splits.len())
             .map(|_| merge_scratch_directory.temp_child())
             .try_collect()?;
         let demuxed_split_directories: Vec<MmapDirectory> = demuxed_scratched_directories
@@ -305,7 +305,6 @@ impl MergeExecutor {
             .map(|directory| MmapDirectory::open(directory.path()))
             .try_collect()?;
         let union_index_meta = combine_index_meta(index_metas)?;
-        ctx.record_progress();
         let indexes = {
             let _protected_zone_guard = ctx.protect_zone();
             demux(
@@ -317,20 +316,23 @@ impl MergeExecutor {
         };
         info!(elapsed_secs = start.elapsed().as_secs_f32(), "demux-stop");
         let mut indexed_splits = Vec::new();
+        // We cannot get the right `docs_size_in_bytes` for demuxed splits as it
+        // is obtained at indexing. Thus we do a simple ratio `num docs * total_docs_size_in_bytes /
+        // total_num_docs`. TODO: should we use another proxy to have a better estimate?
+        let total_docs_size_in_bytes = splits.iter().map(|split| split.size_in_bytes).sum::<u64>();
+        let total_num_docs = sum_num_docs(&splits);
         for (index, scratched_directory) in indexes
             .into_iter()
             .zip(demuxed_scratched_directories.into_iter())
         {
             let searchable_segments = index.searchable_segments()?;
-            let segment = searchable_segments
-                .into_iter()
-                .next()
-                .expect("Split must have at least one segment.");
+            assert_eq!(
+                searchable_segments.len(),
+                1,
+                "Demux should output indexes with only one segment."
+            );
+            let segment = searchable_segments.into_iter().next().unwrap();
             let segment_reader = SegmentReader::open(&segment)?;
-            // We cannot compute `docs_size_in_bytes` for demuxed splits as it
-            // is obtained by summing the docs json bytes at indexing. So we do a simple estimation.
-            // TODO: could be interesting to use the split size or some other proxy to have
-            // a better estimate.
             let num_docs = segment_reader.num_docs() as usize;
             let docs_size_in_bytes =
                 (num_docs as f32 * total_docs_size_in_bytes as f32 / total_num_docs as f32) as u64;
@@ -348,7 +350,6 @@ impl MergeExecutor {
                 time_range,
                 num_docs: num_docs as u64,
                 docs_size_in_bytes,
-                // start_time is not very interesting here.
                 split_date_of_birth: Instant::now(),
                 checkpoint_delta: CheckpointDelta::default(), //< TODO fixme
                 index,
@@ -367,7 +368,7 @@ impl MergeExecutor {
     }
 }
 
-// Open indexes and return metas and segments for each split.
+// Open indexes and return metas & segments for each split.
 // Note: only the first segment of each split is taken.
 pub fn load_metas_and_segments(
     directory_path: &Path,
@@ -412,8 +413,18 @@ pub fn read_segments_demux_values(
     Ok(fast_field_values_vec)
 }
 
-/// Build tantivy `DemuxMapping` from input (or old) segments demux values and target
-/// demuxed segments defined as virtual splits.
+/// Build tantivy `DemuxMapping` from input segments demux values and target
+/// virtual splits that define the targeted demuxed segments.
+/// The `DemuxMapping` defines the mapping of each doc id of each segment
+/// to the demuxed segment ordinal.
+/// The logic is the following:
+/// - for each demux value, build `stocks` of docs for each demuxed segment so that we end up with a
+///   mapping `demux value` -> list of (num docs, segment ordinal)
+/// - iterate on each input segment
+///   - iterate on each doc id
+///     - get the corresponding demux value and get the corresponding first docs stock found, set
+///       the doc id new segment ordinal and decrement the stock by 1. When the stock is depleted,
+///       remove it from the list.
 pub fn build_demux_mapping(
     input_segments_demux_values: Vec<Vec<i64>>,
     target_demuxed_splits: Vec<VirtualSplit>,
@@ -421,7 +432,7 @@ pub fn build_demux_mapping(
     assert_eq!(
         input_segments_demux_values.len(),
         target_demuxed_splits.len(),
-        "Demuxed splits must have the same size as number of segments to demux."
+        "Input segments must the same size of targetd demuxed splits."
     );
     assert_eq!(
         input_segments_demux_values
@@ -432,7 +443,7 @@ pub fn build_demux_mapping(
             .iter()
             .map(|split| split.total_num_docs())
             .sum::<usize>(),
-        "Num docs must be equal between input segments and target splits."
+        "Total num docs must be equal between input segments and targeted demuxed splits."
     );
     // Create a hash map of list of `SegmentNumDocs` for each demux value.
     // A `SegmentNumDocs` item can be seen as a docs stock that will be
@@ -451,11 +462,11 @@ pub fn build_demux_mapping(
         }
     }
     let mut mapping = DemuxMapping::default();
-    for segment_demux_values in input_segments_demux_values.iter() {
+    for input_segment_demux_values in input_segments_demux_values.iter() {
         // Fill `DocIdToSegmentOrdinal` with available `SegmentNumDocs`.
         let mut doc_id_to_segment_ordinal =
-            DocIdToSegmentOrdinal::with_max_doc(segment_demux_values.len());
-        for (doc_id, demux_value) in segment_demux_values.iter().enumerate() {
+            DocIdToSegmentOrdinal::with_max_doc(input_segment_demux_values.len());
+        for (doc_id, demux_value) in input_segment_demux_values.iter().enumerate() {
             let segment_num_docs_vec = num_docs_segment_stocks_by_demux_value
                 .get_mut(demux_value)
                 .expect("Demux value must be present.");
@@ -481,7 +492,7 @@ pub fn build_demux_mapping(
 // docs count per demux value in the split. The demux algorithm use a virtual
 // split as input and produced demuxed virtual splits. The virtual splits are
 // then used for the real demux that will create real split.
-// Thus the usage of `virtual`.
+// Hence the usage of `virtual`.
 #[derive(Debug, Clone)]
 pub struct VirtualSplit(BTreeMap<i64, usize>);
 
@@ -640,8 +651,8 @@ pub fn demux_values(
 
 /// Compute split bounds for the current split that is going to be filled
 /// knowing that there are `remaining_num_splits` splits that needs to be filled
-/// and to satisfiy [min_split_num_docs, max_split_num_docs] constraint.
-/// See description of [demux_values] algorithm for more details.
+/// and to satisfy [`min_split_num_docs`, `max_split_num_docs`] constraint.
+/// See description of [`demux_values`] algorithm for more details.
 pub fn compute_current_split_bounds(
     remaining_num_docs: usize,
     remaining_num_splits: usize,
@@ -748,8 +759,14 @@ mod tests {
             downloaded_splits_directory,
         };
         let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
-        let merge_executor =
-            MergeExecutor::new(index_id.to_string(), merge_packager_mailbox, None, None);
+        let merge_executor = MergeExecutor::new(
+            index_id.to_string(),
+            merge_packager_mailbox,
+            None,
+            None,
+            10_000_000,
+            20_000_000,
+        );
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
             universe.spawn_actor(merge_executor).spawn_sync();
@@ -818,14 +835,14 @@ mod tests {
             downloaded_splits_directory,
         };
         let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
-        let mut merge_executor = MergeExecutor::new(
+        let merge_executor = MergeExecutor::new(
             index_id.to_string(),
             merge_packager_mailbox,
             Some("tenant_id".to_string()),
             None,
+            1,
+            3,
         );
-        merge_executor.min_split_num_docs = 1;
-        merge_executor.max_split_num_docs = 3;
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
             universe.spawn_actor(merge_executor).spawn_sync();

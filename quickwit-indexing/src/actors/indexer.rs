@@ -163,13 +163,11 @@ impl IndexerState {
         let timestamp_opt = document
             .get_first(timestamp_field)
             .and_then(Value::i64_value);
-
         assert!(
             timestamp_opt.is_some(),
-            "Timestamp is a fast field and parser has check that. We should always have a \
-             timestamp here."
+            "We should always have a timestamp here as doc parsing returns a `RequiredFastField` \
+             error on a missing timestamp."
         );
-
         PrepareDocumentOutcome::Document {
             document,
             timestamp_opt,
