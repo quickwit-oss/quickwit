@@ -70,14 +70,13 @@ pub enum SortBy {
     DocId,
 }
 
-/// TODO doc
+/// Convert a field (name, value) into a tag string `name:value`.
 pub fn convert_tag_to_string(field_name: &str, field_value: &Value) -> String {
     format!("{}:{}", field_name, tantivy_value_to_string(field_value))
 }
 
-/// TODO doc
+/// Returns true if tag_string is of form `{field_name}:any_value`.
 pub fn match_tag_field_name(field_name: &str, tag_string: &str) -> bool {
-    println!("{} {}", field_name, tag_string);
     tag_string.starts_with(&format!("{}:", field_name))
 }
 
@@ -154,7 +153,7 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
             .expect("Tags field must exist in the schema.")
     }
 
-    /// Returns the timestamp field name.
+    /// Returns the demux field name.
     fn demux_field_name(&self) -> Option<String> {
         None
     }
