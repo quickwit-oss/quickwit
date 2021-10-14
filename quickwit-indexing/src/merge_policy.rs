@@ -73,14 +73,13 @@ impl fmt::Debug for MergeOperation {
     }
 }
 
-/// A merge policy wraps the logic that decide what should be merged.
+/// A merge policy wraps the logic that decide what should be merged or demux.
 /// The SplitMetadata must be extracted from the splits `Vec`.
 ///
 /// It is called by the merge planner whenever a new split is added.
 pub trait MergePolicy: Send + Sync + fmt::Debug {
-    /// Returns the list of operations that should be performed.
-    /// This functions will be called on subset of `SplitMetadata`
-    /// for which the number of demux is the same.
+    /// Returns the list of operations that should be performed either
+    /// merge or demux operations.
     fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation>;
     /// A mature split is a split that won't undergo merge or demux operation in the future.
     fn is_mature(&self, split: &SplitMetadata) -> bool;
@@ -97,18 +96,22 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
 /// - a number of demux operations
 /// - an end time
 ///
-/// We start by sorting the splits by reverse date... The most recent split are
+/// The policy first build the merge operations and then the demux operations if
+/// a `demux_field_name` is present.
+///
+/// 1. Build merge operations
+/// We start by sorting the splits by reverse date so that the most recent splits are
 /// coming first.
-/// We iterate through the splits and assign the them to increasing levels.
+/// We iterate through the splits and assign them to increasing levels.
 /// Level 0 will receive `{split_i}` for i within `[0..l_0)`
 /// ...
 /// Level k will receive `{split_i}` for i within `[l_{k-1}..l_k)`
 ///
-/// The limit at which we change level are simply defined as
+/// The limit at which we change level is simply defined as
 /// `l_0 = 3 x self.min_level_num_docs`.
 ///
-/// The assuming level N-1, has been built, level N is given by
-/// `l_N = min(num_docs(split_l_{N_1})` * 3, self.max_merge_docs)`
+/// Assuming level N-1 has been built, level N is given by
+/// `l_N = min(num_docs(split_l_{N_1})` * 3, self.max_merge_docs)`.
 /// We stop once l_N = self.max_merge_docs is reached.
 ///
 /// As a result, each level interval is at least 3 times larger than the previous one,
@@ -116,6 +119,15 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
 ///
 /// Because we stop merging splits reaching a size larger than if it would result in a size larger
 /// than `target_num_docs`.
+///
+/// 2. Build demux operations if `demux_field_name` is present
+/// We start by sorting the splits by date so that the oldest splits are first demuxed.
+/// This will avoid leaving an old split alone that will be demuxed with younger splits
+/// in the future.
+///
+/// The logic is simple: as long as we have at least `demux_factor` splits, we take the
+/// `demux_factor` oldest and build a demux operation from it. And we loop until there
+/// strictly less than `demux_factor` split.
 #[derive(Clone, Debug)]
 pub struct StableMultitenantWithTimestampMergePolicy {
     /// We never merge segments larger than this size.
@@ -185,18 +197,7 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
     }
 
     fn is_mature(&self, split: &SplitMetadata) -> bool {
-        // Once a split has been demuxed, we don't want to demux it again or merge it even in the
-        // case where its number of docs is under `max_merge_docs`.
-        let is_mature_for_merge =
-            split.num_records > self.max_merge_docs || split.demux_generation > 0;
-        if self.demux_field_name.is_none() {
-            return is_mature_for_merge;
-        }
-        // A split that has not enough docs won't undergo a demux operation and thus is considered
-        // mature for demux.
-        let is_mature_for_demux =
-            split.num_records <= self.max_merge_docs || split.demux_generation > 0;
-        is_mature_for_merge && is_mature_for_demux
+        self.is_mature_for_merge(split) && self.is_mature_for_demux(split)
     }
 }
 
@@ -215,15 +216,42 @@ enum MergeCandidateSize {
 }
 
 impl StableMultitenantWithTimestampMergePolicy {
+    /// A mature split for merge is a split that won't undergo merge operation in the future.
+    fn is_mature_for_merge(&self, split: &SplitMetadata) -> bool {
+        // Once a split has been demuxed, we don't want to merge it even in the
+        // case where its number of docs is under `max_merge_docs`.
+        split.num_records >= self.max_merge_docs || split.demux_generation > 0
+    }
+
+    /// A mature split for demux is a split that won't undergo demux operation in the future.
+    /// Maturity is reached when the split met one of this condition:
+    /// - has already been demuxed (split.demux_generation > 0).
+    /// - has less than one demux value in the tags set. Demux is useful only if we can demux at
+    ///   least 2 values...
+    /// - has less than `max_merge_docs` as we don't want to demux splits too small.
+    fn is_mature_for_demux(&self, split: &SplitMetadata) -> bool {
+        // All splits are considered mature if there is no demux field as no
+        // split will be demuxed.
+        if self.demux_field_name.is_none() {
+            return true;
+        }
+        let split_tags_contains_at_least_two_demux_values = split
+            .tags
+            .iter()
+            .filter(|tag| match_tag_field_name(self.demux_field_name.as_ref().unwrap(), tag))
+            .count()
+            < 2;
+        split_tags_contains_at_least_two_demux_values
+            && (split.num_records < self.max_merge_docs || split.demux_generation > 0)
+    }
+
     fn merge_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
         if splits.is_empty() {
             return Vec::new();
         }
-        // First we isolate splits that are too large or that have been already demuxed.
-        // We will read them at the end.
-        let splits_not_for_merge = remove_matching_items(splits, |split| {
-            split.num_records >= self.max_merge_docs || split.demux_generation > 0
-        });
+        // First we isolate splits that are mature.
+        let splits_not_for_merge =
+            remove_matching_items(splits, |split| self.is_mature_for_merge(split));
 
         let mut merge_operations: Vec<MergeOperation> = Vec::new();
         // We stable sort the splits, most recent first.
@@ -260,29 +288,18 @@ impl StableMultitenantWithTimestampMergePolicy {
             self.demux_field_name.is_some(),
             "A demux field must be present for demux."
         );
-        let demux_field_name = self.demux_field_name.as_ref().unwrap();
         if splits.is_empty() {
             return Vec::new();
         }
-        // First we isolate splits which:
-        // - have not enough docs or that have been already demuxed once
-        // - contains less than 1 demux field value in its tags set.
+        // First we isolate splits which are mature.
         // We will append them at the end.
-        let excluded_splits = remove_matching_items(splits, |split| {
-            split.num_records < self.max_merge_docs
-                || split.demux_generation > 0
-                || split
-                    .tags
-                    .iter()
-                    .filter(|tag| match_tag_field_name(demux_field_name, tag))
-                    .count()
-                    < 2
-        });
+        let excluded_splits =
+            remove_matching_items(splits, |split| self.is_mature_for_demux(split));
 
         let mut merge_operations: Vec<MergeOperation> = Vec::new();
         // Stable sort the splits, old first. We want old splits to be demuxed first
-        // and leave recent splits to be demuxed later as splits, demux might benefit from
-        // that time consistency.
+        // and leave recent splits to be demuxed later, demux might benefit from
+        // this time consistency.
         splits.sort_by_key(|split| {
             let time_start = split
                 .time_range
