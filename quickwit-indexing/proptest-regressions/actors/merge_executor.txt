@@ -1,7 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc ef376b7697c904d97eac6d7fb94adddd25094b6cfa1d4a7e79eea3a66bf49ce7 # shrinks to tenants_num_docs = [10000001, 10000001, 19999999, 20000000, 10000001, 10000001, 10001, 19999999, 1000001, 10000001, 20000000, 10000001, 10000001, 1000001, 10000001, 1000001, 19999999, 20000000, 20000000, 20000000, 100001, 100001, 10001, 1000001, 10000001, 10001, 100001, 10001, 19999999, 10000001, 20000000, 10001, 20000000, 10001, 100001, 100001, 100001, 100001, 10001, 20000000, 20000000, 10000001, 100001, 100001]
