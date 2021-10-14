@@ -158,7 +158,7 @@ mod tests {
             split_state: SplitState::Published,
             update_timestamp,
             tags,
-            demux_generation: 0,
+            demux_num_ops: 0,
         }
     }
 
@@ -234,7 +234,7 @@ mod tests {
             time_range: Some(time_range),
             update_timestamp: 0,
             tags: Default::default(),
-            demux_generation: 0,
+            demux_num_ops: 0,
         }
     }
 

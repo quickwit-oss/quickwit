@@ -371,6 +371,7 @@ mod tests {
             split_id: "test-split".to_string(),
             index_id: "test-index".to_string(),
             time_range: timerange_opt,
+            demux_num_ops: 0,
             num_docs,
             docs_size_in_bytes: num_docs * 15, //< bogus number
             split_date_of_birth: Instant::now(),

@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
+use std::iter::FromIterator;
 use std::mem;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -92,7 +94,7 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets
             split_state: SplitState::New,
             update_timestamp: Utc::now().timestamp(),
             tags: split.tags.clone(),
-            demux_generation: 0,
+            demux_num_ops: 0,
         },
         footer_offsets: split.footer_offsets.clone(),
     }
@@ -102,6 +104,7 @@ fn make_publish_operation(
     mut packaged_splits: Vec<PackagedSplit>,
     mut splits_metadata: Vec<SplitMetadata>,
 ) -> PublishOperation {
+    assert!(!packaged_splits.is_empty());
     assert_eq!(packaged_splits.len(), splits_metadata.len());
     if packaged_splits.len() == 1 && packaged_splits[0].replaced_split_ids.is_empty() {
         let mut packaged_split = packaged_splits.pop().unwrap();
@@ -113,9 +116,13 @@ fn make_publish_operation(
             split_date_of_birth: packaged_split.split_date_of_birth,
         }
     } else {
+        let replaced_split_ids = packaged_splits
+            .into_iter()
+            .flat_map(|split| split.replaced_split_ids)
+            .collect::<HashSet<_>>();
         PublishOperation::ReplaceSplits {
             new_splits: splits_metadata,
-            replaced_split_ids: packaged_splits.pop().unwrap().replaced_split_ids,
+            replaced_split_ids: Vec::from_iter(replaced_split_ids),
         }
     }
 }
@@ -162,12 +169,11 @@ impl AsyncActor for Uploader {
             .await?;
 
         // The permit will be added back manually to the semaphore the task after it is finished.
-
         // This is not a valid usage of protected zone here.
         //
         // Protected zone are supposed to be used when the cause for blocking is
         // outside of the responsability of the current actor.
-        // For instance, when sending  a message on a downstream actor with a saturated
+        // For instance, when sending a message on a downstream actor with a saturated
         // mailbox.
         // This is meant to be fixed with ParallelActors.
         let permit_guard = {
@@ -187,7 +193,7 @@ impl AsyncActor for Uploader {
         let metastore = self.metastore.clone();
         let index_storage = self.index_storage.clone();
         let counters = self.counters.clone();
-
+        let index_id = batch.splits[0].index_id.clone();
         tokio::spawn(async move {
             fail_point!("uploader:intask:before");
             let mut splits_metadata = Vec::new();
@@ -196,15 +202,12 @@ impl AsyncActor for Uploader {
                     stage_and_upload_split(split, &index_storage, &*metastore, counters.clone())
                         .await;
                 if let Err(cause) = upload_result {
-                    println!("yo {}", cause);
                     warn!(cause=%cause, "Failed to upload split. Killing!");
                     kill_switch.kill();
                     bail!("Failed to upload split `{}`. Killing!", split.split_id);
-                } else {
-                    splits_metadata.push(upload_result.unwrap());
                 }
+                splits_metadata.push(upload_result.unwrap());
             }
-            let index_id = batch.splits[0].index_id.clone();
             let operation = make_publish_operation(batch.splits, splits_metadata);
             let publisher_message = PublisherMessage {
                 index_id,
@@ -393,9 +396,11 @@ mod tests {
         assert_eq!(&publisher_message.index_id, "test-index");
         if let PublishOperation::ReplaceSplits {
             new_splits,
-            replaced_split_ids,
+            mut replaced_split_ids,
         } = publisher_message.operation
         {
+            // Sort first to avoid test failing.
+            replaced_split_ids.sort();
             assert_eq!(new_splits.len(), 2);
             assert_eq!(new_splits[0].split_id, "test-split-1");
             assert_eq!(new_splits[1].split_id, "test-split-2");

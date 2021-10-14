@@ -185,8 +185,8 @@ impl IndexingPipelineSupervisor {
             .params
             .storage_uri_resolver
             .resolve(&index_metadata.index_uri)?;
-        let demux_field_name = index_metadata.index_config.demux_field_name();
         let timestamp_field_name = index_metadata.index_config.timestamp_field_name();
+        let demux_field_name = index_metadata.index_config.demux_field_name();
         let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
             demux_field_name: demux_field_name.clone(),
             ..Default::default()

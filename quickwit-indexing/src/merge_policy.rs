@@ -220,7 +220,7 @@ impl StableMultitenantWithTimestampMergePolicy {
     fn is_mature_for_merge(&self, split: &SplitMetadata) -> bool {
         // Once a split has been demuxed, we don't want to merge it even in the
         // case where its number of docs is under `max_merge_docs`.
-        split.num_records >= self.max_merge_docs || split.demux_generation > 0
+        split.num_records >= self.max_merge_docs || split.demux_num_ops > 0
     }
 
     /// A mature split for demux is a split that won't undergo demux operation in the future.
@@ -242,7 +242,7 @@ impl StableMultitenantWithTimestampMergePolicy {
             .count()
             < 2;
         split_tags_contains_at_least_two_demux_values
-            && (split.num_records < self.max_merge_docs || split.demux_generation > 0)
+            && (split.num_records < self.max_merge_docs || split.demux_num_ops > 0)
     }
 
     fn merge_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
@@ -319,7 +319,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         splits: &mut Vec<SplitMetadata>,
     ) -> Vec<MergeOperation> {
         assert!(
-            splits.iter().all(|split| split.demux_generation == 0),
+            splits.iter().all(|split| split.demux_num_ops == 0),
             "All splits are expected to have never been demuxed."
         );
         if splits.len() < self.demux_factor {
@@ -542,15 +542,15 @@ mod tests {
         let mut split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
         assert!(!merge_policy.is_mature(&split));
         // Split under max_merge_docs and demux_generation = 1 is mature.
-        split.demux_generation = 1;
+        split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs and demux_generation = 0 is mature.
         split.num_records = merge_policy.max_merge_docs + 1;
-        split.demux_generation = 0;
+        split.demux_num_ops = 0;
         assert!(merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs and demux_generation = 1 is mature.
         split.num_records = merge_policy.max_merge_docs + 1;
-        split.demux_generation = 1;
+        split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
     }
 
@@ -564,19 +564,19 @@ mod tests {
         let mut split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
         assert!(!merge_policy.is_mature(&split));
         // Split undermax_merge_docs and demux_generation = 1 is mature.
-        split.demux_generation = 1;
+        split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
         // Split with docs >  max_merge_docs and demux_generation = 1 is mature.
-        split.demux_generation = merge_policy.max_merge_docs + 1;
-        split.demux_generation = 1;
+        split.demux_num_ops = merge_policy.max_merge_docs + 1;
+        split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
         // Split with docs >= max_merge_docs and demux_generation = 0 is not mature.
         split.num_records = merge_policy.max_merge_docs + 1;
-        split.demux_generation = 0;
+        split.demux_num_ops = 0;
         assert!(!merge_policy.is_mature(&split));
         // Split with docs >= max_merge_docs and demux_generation = 1 is mature.
         split.num_records = merge_policy.max_merge_docs + 1;
-        split.demux_generation = 1;
+        split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
     }
 

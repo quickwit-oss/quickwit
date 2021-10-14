@@ -240,6 +240,7 @@ impl MergeExecutor {
             index_id: self.index_id.clone(),
             replaced_split_ids,
             time_range,
+            demux_num_ops: 0,
             num_docs,
             docs_size_in_bytes,
             // start_time is not very interesting here.
@@ -321,6 +322,11 @@ impl MergeExecutor {
         // total_num_docs`. TODO: should we use another proxy to have a better estimate?
         let total_docs_size_in_bytes = splits.iter().map(|split| split.size_in_bytes).sum::<u64>();
         let total_num_docs = sum_num_docs(&splits);
+        let initial_demux_num_ops = splits
+            .iter()
+            .map(|split| split.demux_num_ops)
+            .max()
+            .unwrap();
         for (index, scratched_directory) in indexes
             .into_iter()
             .zip(demuxed_scratched_directories.into_iter())
@@ -348,6 +354,7 @@ impl MergeExecutor {
                 index_id: self.index_id.clone(),
                 replaced_split_ids: replaced_split_ids.clone(),
                 time_range,
+                demux_num_ops: initial_demux_num_ops + 1,
                 num_docs: num_docs as u64,
                 docs_size_in_bytes,
                 split_date_of_birth: Instant::now(),
@@ -838,8 +845,8 @@ mod tests {
         let merge_executor = MergeExecutor::new(
             index_id.to_string(),
             merge_packager_mailbox,
-            Some("tenant_id".to_string()),
             None,
+            Some("tenant_id".to_string()),
             1,
             3,
         );
@@ -861,6 +868,7 @@ mod tests {
             first_indexed_split.docs_size_in_bytes,
             total_num_bytes_docs / 4
         );
+        assert_eq!(first_indexed_split.demux_num_ops, 1);
         let reader = first_indexed_split.index.reader()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);

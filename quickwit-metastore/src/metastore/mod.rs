@@ -92,8 +92,8 @@ pub struct SplitMetadata {
     #[serde(default)]
     pub tags: HashSet<String>,
 
-    /// Demux generation.
-    pub demux_generation: usize,
+    /// Number of demux operations this split has undergone.
+    pub demux_num_ops: usize,
 }
 
 impl SplitMetadata {
@@ -107,7 +107,7 @@ impl SplitMetadata {
             time_range: None,
             update_timestamp: Utc::now().timestamp(),
             tags: Default::default(),
-            demux_generation: 0,
+            demux_num_ops: 0,
         }
     }
 }
