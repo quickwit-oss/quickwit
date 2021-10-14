@@ -311,18 +311,81 @@ impl PostgresqlMetastore {
         Ok(())
     }
 
+    fn list_splits_helper(
+        &self,
+        conn: &PooledConnection<ConnectionManager<PgConnection>>,
+        index_id: &str,
+        state_opt: Option<SplitState>,
+        time_range_opt: Option<Range<i64>>,
+        tags_opt: Option<&[String]>,
+    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
+        let mut select_statement = schema::splits::dsl::splits
+            .filter(schema::splits::dsl::index_id.eq(index_id))
+            .into_boxed();
+
+        if let Some(state) = state_opt {
+            select_statement =
+                select_statement.filter(schema::splits::dsl::split_state.eq(state.to_string()));
+        }
+
+        if let Some(time_range) = time_range_opt {
+            select_statement = select_statement.filter(
+                schema::splits::dsl::time_range_end.is_null().or(
+                    schema::splits::dsl::time_range_end
+                        .ge(time_range.start)
+                        .and(schema::splits::dsl::time_range_start.lt(time_range.end)),
+                ),
+            );
+        }
+
+        if let Some(tags) = tags_opt {
+            if !tags.is_empty() {
+                select_statement =
+                    select_statement.filter(schema::splits::dsl::tags.overlaps_with(tags));
+            }
+        }
+
+        debug!(sql=%debug_query::<Pg, _>(&select_statement).to_string());
+        let splits: Vec<model::Split> = select_statement
+            .load(conn)
+            .map_err(MetastoreError::DbError)?;
+
+        if splits.is_empty() {
+            // Check for the existence of index.
+            if !self.is_index_exist(conn, index_id)? {
+                return Err(MetastoreError::IndexDoesNotExist {
+                    index_id: index_id.to_string(),
+                });
+            }
+            return Ok(Vec::new());
+        }
+
+        self.make_split_metadata_and_footer_offsets(splits)
+    }
+
     /// Query the database to find out if:
     /// - index exists?
     /// - splits exist?
     /// Returns split that are not in valid state.
-    fn get_splits_with_invalid_state(
+    fn get_splits_with_invalid_state<'a>(
         &self,
         conn: &PooledConnection<ConnectionManager<PgConnection>>,
         index_id: &str,
-        untouched_ids_set: HashSet<&str>,
+        split_ids: &[&'a str],
+        affected_split_ids: &[String],
     ) -> MetastoreResult<Vec<String>> {
         // Using raw sql for now (Diesel ORM doesn't support join on sub query).
         // https://github.com/diesel-rs/diesel/discussions/2921
+        let affected_ids_set: HashSet<&str> = affected_split_ids
+            .iter()
+            .map(|split_id| split_id.as_str())
+            .collect();
+        let untouched_ids_set: HashSet<&str> = split_ids
+            .iter()
+            .filter(|split_id| !affected_ids_set.contains(*split_id))
+            .copied()
+            .collect();
+
         let index_to_split_items: Vec<model::IndexIdSplitIdRow> =
             sql_query(SELECT_SPLITS_FOR_INDEX)
                 .bind::<Array<Text>, _>(
@@ -375,6 +438,7 @@ impl PostgresqlMetastore {
     }
 
     /// Make the split metadata and footer offsets from database model.
+    /// TODO: make comment on update_time stamp
     fn make_split_metadata_and_footer_offsets(
         &self,
         splits: Vec<model::Split>,
@@ -469,11 +533,11 @@ impl Metastore for PostgresqlMetastore {
             let delete_index_statement =
                 diesel::delete(schema::indexes::dsl::indexes.find(index_id));
             debug!(sql=%debug_query::<Pg, _>(&delete_index_statement).to_string());
-            let num = delete_index_statement
+            let num_affected_rows = delete_index_statement
                 .execute(&*conn)
                 .map_err(MetastoreError::DbError)?;
 
-            if num == 0 {
+            if num_affected_rows == 0 {
                 return Err(MetastoreError::IndexDoesNotExist {
                     index_id: index_id.to_string(),
                 });
@@ -588,17 +652,12 @@ impl Metastore for PostgresqlMetastore {
             }
 
             // Investigate and report the error.
-            let published_ids_set: HashSet<&str> = published_split_ids
-                .iter()
-                .map(|split_id| split_id.as_str())
-                .collect();
-            let untouched_ids_set: HashSet<&str> = split_ids
-                .iter()
-                .filter(|split_id| !published_ids_set.contains(*split_id))
-                .copied()
-                .collect();
-            let not_staged_ids =
-                self.get_splits_with_invalid_state(&conn, index_id, untouched_ids_set)?;
+            let not_staged_ids = self.get_splits_with_invalid_state(
+                &conn,
+                index_id,
+                split_ids,
+                &published_split_ids,
+            )?;
 
             Err(MetastoreError::SplitsNotStaged {
                 split_ids: not_staged_ids,
@@ -630,20 +689,22 @@ impl Metastore for PostgresqlMetastore {
                 return Ok(());
             }
 
-            let affected_ids_set: HashSet<&str> = published_split_ids
-                .iter()
-                .chain(marked_split_ids.iter())
-                .map(|split_id| split_id.as_str())
+            let affected_split_ids: Vec<String> = published_split_ids
+                .into_iter()
+                .chain(marked_split_ids.into_iter())
                 .collect();
-            let untouched_ids_set: HashSet<&str> = new_split_ids
+            let split_ids: Vec<&str> = new_split_ids
                 .iter()
                 .chain(replaced_split_ids.iter())
-                .filter(|split_id| !affected_ids_set.contains(*split_id))
                 .copied()
                 .collect();
 
-            let not_staged_ids =
-                self.get_splits_with_invalid_state(&conn, index_id, untouched_ids_set)?;
+            let not_staged_ids = self.get_splits_with_invalid_state(
+                &conn,
+                index_id,
+                &split_ids,
+                &affected_split_ids,
+            )?;
 
             Err(MetastoreError::SplitsNotStaged {
                 split_ids: not_staged_ids,
@@ -660,44 +721,46 @@ impl Metastore for PostgresqlMetastore {
         tags: &[String],
     ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
         let conn = self.get_conn()?;
-        let mut select_statement = schema::splits::dsl::splits
-            .filter(
-                schema::splits::dsl::index_id
-                    .eq(index_id)
-                    .and(schema::splits::dsl::split_state.eq(state.to_string())),
-            )
-            .into_boxed();
+        self.list_splits_helper(&conn, index_id, Some(state), time_range_opt, Some(tags))
 
-        if !tags.is_empty() {
-            select_statement =
-                select_statement.filter(schema::splits::dsl::tags.overlaps_with(tags));
-        }
-        if let Some(time_range) = time_range_opt {
-            select_statement = select_statement.filter(
-                schema::splits::dsl::time_range_end.is_null().or(
-                    schema::splits::dsl::time_range_end
-                        .ge(time_range.start)
-                        .and(schema::splits::dsl::time_range_start.lt(time_range.end)),
-                ),
-            );
-        }
+        // let mut select_statement = schema::splits::dsl::splits
+        //     .filter(
+        //         schema::splits::dsl::index_id
+        //             .eq(index_id)
+        //             .and(schema::splits::dsl::split_state.eq(state.to_string())),
+        //     )
+        //     .into_boxed();
 
-        debug!(sql=%debug_query::<Pg, _>(&select_statement).to_string());
-        let splits: Vec<model::Split> = select_statement
-            .load(&conn)
-            .map_err(MetastoreError::DbError)?;
+        // if !tags.is_empty() {
+        //     select_statement =
+        //         select_statement.filter(schema::splits::dsl::tags.overlaps_with(tags));
+        // }
+        // if let Some(time_range) = time_range_opt {
+        //     select_statement = select_statement.filter(
+        //         schema::splits::dsl::time_range_end.is_null().or(
+        //             schema::splits::dsl::time_range_end
+        //                 .ge(time_range.start)
+        //                 .and(schema::splits::dsl::time_range_start.lt(time_range.end)),
+        //         ),
+        //     );
+        // }
 
-        if splits.is_empty() {
-            // Check for the existence of index.
-            if !self.is_index_exist(&conn, index_id)? {
-                return Err(MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
-                });
-            }
-            return Ok(Vec::new());
-        }
+        // debug!(sql=%debug_query::<Pg, _>(&select_statement).to_string());
+        // let splits: Vec<model::Split> = select_statement
+        //     .load(&conn)
+        //     .map_err(MetastoreError::DbError)?;
 
-        self.make_split_metadata_and_footer_offsets(splits)
+        // if splits.is_empty() {
+        //     // Check for the existence of index.
+        //     if !self.is_index_exist(&conn, index_id)? {
+        //         return Err(MetastoreError::IndexDoesNotExist {
+        //             index_id: index_id.to_string(),
+        //         });
+        //     }
+        //     return Ok(Vec::new());
+        // }
+
+        // self.make_split_metadata_and_footer_offsets(splits)
     }
 
     async fn list_all_splits(
@@ -705,24 +768,26 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
     ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
         let conn = self.get_conn()?;
-        let select_statement =
-            schema::splits::dsl::splits.filter(schema::splits::dsl::index_id.eq(index_id));
-        debug!(sql=%debug_query::<Pg, _>(&select_statement).to_string());
-        let splits: Vec<model::Split> = select_statement
-            .load(&conn)
-            .map_err(MetastoreError::DbError)?;
+        self.list_splits_helper(&conn, index_id, None, None, None)
 
-        if splits.is_empty() {
-            // Check for the existence of index.
-            if !self.is_index_exist(&conn, index_id)? {
-                return Err(MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
-                });
-            }
-            return Ok(Vec::new());
-        }
+        // let select_statement =
+        //     schema::splits::dsl::splits.filter(schema::splits::dsl::index_id.eq(index_id));
+        // debug!(sql=%debug_query::<Pg, _>(&select_statement).to_string());
+        // let splits: Vec<model::Split> = select_statement
+        //     .load(&conn)
+        //     .map_err(MetastoreError::DbError)?;
 
-        self.make_split_metadata_and_footer_offsets(splits)
+        // if splits.is_empty() {
+        //     // Check for the existence of index.
+        //     if !self.is_index_exist(&conn, index_id)? {
+        //         return Err(MetastoreError::IndexDoesNotExist {
+        //             index_id: index_id.to_string(),
+        //         });
+        //     }
+        //     return Ok(Vec::new());
+        // }
+
+        // self.make_split_metadata_and_footer_offsets(splits)
     }
 
     async fn mark_splits_for_deletion<'a>(
@@ -739,17 +804,8 @@ impl Metastore for PostgresqlMetastore {
                 return Ok(());
             }
 
-            let marked_ids_set: HashSet<&str> = marked_split_ids
-                .iter()
-                .map(|split_id| split_id.as_str())
-                .collect();
-            let untouched_ids_set: HashSet<&str> = split_ids
-                .iter()
-                .filter(|split_id| !marked_ids_set.contains(*split_id))
-                .copied()
-                .collect();
-
-            let _ = self.get_splits_with_invalid_state(&conn, index_id, untouched_ids_set)?;
+            let _ =
+                self.get_splits_with_invalid_state(&conn, index_id, split_ids, &marked_split_ids)?;
 
             Err(diesel::result::Error::RollbackTransaction).map_err(MetastoreError::DbError)?
         })?;
@@ -787,18 +843,8 @@ impl Metastore for PostgresqlMetastore {
 
             // There is an error, but we want to investigate and return a meaningful error.
             // From this point, we always have to return `Err` to abort the transaction.
-            let deleted_ids_set: HashSet<&str> = deleted_split_ids
-                .iter()
-                .map(|split_id| split_id.as_str())
-                .collect();
-            let untouched_ids_set: HashSet<&str> = split_ids
-                .iter()
-                .filter(|split_id| !deleted_ids_set.contains(*split_id))
-                .copied()
-                .collect();
-
             let not_deletable_ids =
-                self.get_splits_with_invalid_state(&conn, index_id, untouched_ids_set)?;
+                self.get_splits_with_invalid_state(&conn, index_id, split_ids, &deleted_split_ids)?;
 
             Err(MetastoreError::SplitsNotDeletable {
                 split_ids: not_deletable_ids,
