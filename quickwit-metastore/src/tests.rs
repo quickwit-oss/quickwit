@@ -1611,6 +1611,24 @@ pub mod test_suite {
             assert_eq!(split_ids.contains("list-splits-four"), false);
             assert_eq!(split_ids.contains("list-splits-five"), true);
 
+            // add a split without tag
+            let split_metadata_6 = SplitMetadataAndFooterOffsets {
+                footer_offsets: 1000..2000,
+                split_metadata: SplitMetadata {
+                    split_id: "list-splits-six".to_string(),
+                    split_state: SplitState::Staged,
+                    num_records: 1,
+                    size_in_bytes: 2,
+                    time_range: None,
+                    update_timestamp: current_timestamp,
+                    tags: to_set(&[]),
+                },
+            };
+            metastore
+                .stage_split(index_id, split_metadata_6.clone())
+                .await
+                .unwrap();
+
             let range = None;
             let splits = metastore
                 .list_splits(index_id, SplitState::Staged, range, &[])
@@ -1625,6 +1643,7 @@ pub mod test_suite {
             assert_eq!(split_ids.contains("list-splits-three"), true);
             assert_eq!(split_ids.contains("list-splits-four"), true);
             assert_eq!(split_ids.contains("list-splits-five"), true);
+            assert_eq!(split_ids.contains("list-splits-six"), true);
 
             let range = None;
             let tags = vec!["bar".to_string(), "baz".to_string()];
@@ -1641,6 +1660,7 @@ pub mod test_suite {
             assert_eq!(split_ids.contains("list-splits-three"), true);
             assert_eq!(split_ids.contains("list-splits-four"), false);
             assert_eq!(split_ids.contains("list-splits-five"), true);
+            assert_eq!(split_ids.contains("list-splits-six"), false);
 
             cleanup_index(&metastore, index_id).await;
         }
