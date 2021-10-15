@@ -103,9 +103,10 @@ impl LocalSplitStore {
             return Ok(());
         }
         let split_path = PathBuf::from(quickwit_common::split_file(split_id));
-        if let Err(error) = self.local_storage.delete(&split_path).await {
-            warn!(file_path = %split_path.display(), error = %error, "Could not remove file from local storage.");
-        }
+        self.local_storage.delete(&split_path).await.map_err(|error| {
+            error!(file_path = %split_path.display(), error = %error, "Failed to delete split file from local storage.");
+            error
+        })?;
         self.stored_splits.remove(split_id);
         Ok(())
     }
@@ -115,8 +116,7 @@ impl LocalSplitStore {
         split_id: &str,
         output_dir_path: &Path,
     ) -> StorageResult<bool> {
-        let is_file_exist_in_cache = self.stored_splits.contains_key(split_id);
-        if !is_file_exist_in_cache {
+        if !self.stored_splits.contains_key(split_id) {
             return Ok(false);
         }
         let split_filename = quickwit_common::split_file(split_id);
