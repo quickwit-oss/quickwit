@@ -260,7 +260,7 @@ fn resolve_demux_field(
             )
         }
         match demux_field_entry.field_type() {
-            FieldType::I64(options) | FieldType::U64(options) => {
+            FieldType::U64(options) => {
                 if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
                     bail!(
                         "Demux field cannot be an array, please change your field `{}` from an \
@@ -271,8 +271,7 @@ fn resolve_demux_field(
             }
             _ => {
                 bail!(
-                    "Demux field must be either of type i64 or u64, please change your field type \
-                     `{}` to i64 or u64.",
+                    "Demux field must be of type u64, please change your field type `{}` to u64.",
                     demux_field_name
                 )
             }
@@ -880,7 +879,7 @@ mod tests {
     }
 
     #[test]
-    fn test_index_config_with_a_i64_demux_field_is_valid_and_is_added_to_tags() -> anyhow::Result<()>
+    fn test_index_config_with_a_u64_demux_field_is_valid_and_is_added_to_tags() -> anyhow::Result<()>
     {
         let index_config = r#"{
             "type": "default",
@@ -890,7 +889,7 @@ mod tests {
             "field_mappings": [
                 {
                     "name": "demux",
-                    "type": "i64",
+                    "type": "u64",
                     "fast": true
                 }
             ]
@@ -911,7 +910,7 @@ mod tests {
             "field_mappings": [
                 {
                     "name": "demux",
-                    "type": "i64",
+                    "type": "u64",
                     "fast": true
                 }
             ]

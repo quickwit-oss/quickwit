@@ -105,7 +105,7 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use super::*;
-    use crate::actors::merge_executor::{demux_values, VirtualSplit};
+    use crate::actors::merge_executor::{demux_virtual_split, VirtualSplit};
     use crate::{new_split_id, StableMultitenantWithTimestampMergePolicy};
 
     fn merged_timestamp(splits: &[SplitMetadata]) -> Option<RangeInclusive<i64>> {
@@ -176,7 +176,7 @@ mod tests {
         let mut demux_values_map = BTreeMap::new();
         for split in splits {
             let mut num_docs = split.num_records;
-            let mut demux_value = 0i64;
+            let mut demux_value = 0u64;
             while num_docs > 0 {
                 let num_docs_to_insert = std::cmp::min(10_000, num_docs);
                 let demux_count = demux_values_map.entry(demux_value).or_insert(0);
@@ -186,7 +186,7 @@ mod tests {
             }
         }
         let input_split = VirtualSplit::new(demux_values_map);
-        let demuxed_splits = demux_values(input_split, 10_000_000, 20_000_000, splits.len());
+        let demuxed_splits = demux_virtual_split(input_split, 10_000_000, 20_000_000, splits.len());
         let mut splits_metadata = Vec::new();
         for demuxed_split in demuxed_splits {
             let split_metadata = SplitMetadata {

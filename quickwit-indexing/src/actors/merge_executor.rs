@@ -279,25 +279,31 @@ impl MergeExecutor {
             .collect_vec();
         let (index_metas, replaced_segments) =
             load_metas_and_segments(downloaded_splits_directory.path(), &replaced_split_ids)?;
-        let replaced_segments_demux_values =
-            read_segments_demux_values(&replaced_segments, demux_field_name)?;
+        let (replaced_segments_num_docs, replaced_segments_demux_field_readers) =
+            demux_field_readers(&replaced_segments, demux_field_name)?;
         // Build virtual split for all replaced splits = counting demux values in all replaced
         // segments.
         let mut virtual_split_with_all_docs = VirtualSplit::new(BTreeMap::new());
-        for fast_field_values in replaced_segments_demux_values.iter() {
-            for fast_field_value in fast_field_values {
-                virtual_split_with_all_docs.add_docs(*fast_field_value, 1);
+        for (demux_value_reader, num_docs) in replaced_segments_demux_field_readers
+            .iter()
+            .zip(replaced_segments_num_docs.iter())
+        {
+            for doc_id in 0..*num_docs {
+                virtual_split_with_all_docs.add_docs(demux_value_reader.get(doc_id as u32), 1);
             }
         }
         ctx.record_progress();
-        let demuxed_virtual_splits = demux_values(
+        let demuxed_virtual_splits = demux_virtual_split(
             virtual_split_with_all_docs,
             self.min_demuxed_split_num_docs,
             self.max_demuxed_split_num_docs,
             splits.len(),
         );
-        let demux_mapping =
-            build_demux_mapping(replaced_segments_demux_values, demuxed_virtual_splits);
+        let demux_mapping = build_demux_mapping(
+            replaced_segments_num_docs,
+            replaced_segments_demux_field_readers,
+            demuxed_virtual_splits,
+        );
         let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..splits.len())
             .map(|_| merge_scratch_directory.temp_child())
             .try_collect()?;
@@ -403,21 +409,19 @@ pub fn load_metas_and_segments(
 }
 
 // Read fast values of demux field for each segment and return them.
-pub fn read_segments_demux_values(
+pub fn demux_field_readers(
     segments: &[Segment],
     demux_field_name: &str,
-) -> anyhow::Result<Vec<Vec<i64>>> {
-    let mut fast_field_values_vec = Vec::new();
+) -> anyhow::Result<(Vec<usize>, Vec<DynamicFastFieldReader<u64>>)> {
+    let mut segments_num_docs = Vec::new();
+    let mut segments_demux_value_readers = Vec::new();
     for segment in segments {
         let segment_reader = SegmentReader::open(segment)?;
-        let num_docs = segment_reader.num_docs() as usize;
-        let reader = make_fast_field_reader::<i64>(&segment_reader, demux_field_name)?;
-        let mut fast_field_values: Vec<i64> = Vec::new();
-        fast_field_values.resize(num_docs, 0);
-        reader.get_range(0, &mut fast_field_values);
-        fast_field_values_vec.push(fast_field_values);
+        segments_num_docs.push(segment_reader.num_docs() as usize);
+        let reader = make_fast_field_reader::<u64>(&segment_reader, demux_field_name)?;
+        segments_demux_value_readers.push(reader);
     }
-    Ok(fast_field_values_vec)
+    Ok((segments_num_docs, segments_demux_value_readers))
 }
 
 /// Build tantivy `DemuxMapping` from input segments demux values and target
@@ -433,19 +437,17 @@ pub fn read_segments_demux_values(
 ///       the doc id new segment ordinal and decrement the stock by 1. When the stock is depleted,
 ///       remove it from the list.
 pub fn build_demux_mapping(
-    input_segments_demux_values: Vec<Vec<i64>>,
+    replaced_segments_num_docs: Vec<usize>,
+    segments_demux_value_readers: Vec<DynamicFastFieldReader<u64>>,
     target_demuxed_splits: Vec<VirtualSplit>,
 ) -> DemuxMapping {
     assert_eq!(
-        input_segments_demux_values.len(),
+        segments_demux_value_readers.len(),
         target_demuxed_splits.len(),
         "Input segments must the same size of targetd demuxed splits."
     );
     assert_eq!(
-        input_segments_demux_values
-            .iter()
-            .map(|values| values.len())
-            .sum::<usize>(),
+        replaced_segments_num_docs.iter().sum::<usize>(),
         target_demuxed_splits
             .iter()
             .map(|split| split.total_num_docs())
@@ -469,13 +471,16 @@ pub fn build_demux_mapping(
         }
     }
     let mut mapping = DemuxMapping::default();
-    for input_segment_demux_values in input_segments_demux_values.iter() {
+    for (segment_demux_value_reader, num_docs) in segments_demux_value_readers
+        .iter()
+        .zip(replaced_segments_num_docs.iter())
+    {
         // Fill `DocIdToSegmentOrdinal` with available `SegmentNumDocs`.
-        let mut doc_id_to_segment_ordinal =
-            DocIdToSegmentOrdinal::with_max_doc(input_segment_demux_values.len());
-        for (doc_id, demux_value) in input_segment_demux_values.iter().enumerate() {
+        let mut doc_id_to_segment_ordinal = DocIdToSegmentOrdinal::with_max_doc(*num_docs as usize);
+        for doc_id in 0..*num_docs {
+            let demux_value = segment_demux_value_reader.get(doc_id as u32);
             let segment_num_docs_vec = num_docs_segment_stocks_by_demux_value
-                .get_mut(demux_value)
+                .get_mut(&demux_value)
                 .expect("Demux value must be present.");
             segment_num_docs_vec[0].num_docs -= 1;
             doc_id_to_segment_ordinal.set(doc_id as u32, segment_num_docs_vec[0].ordinal);
@@ -501,30 +506,33 @@ pub fn build_demux_mapping(
 // then used for the real demux that will create real split.
 // Hence the usage of `virtual`.
 #[derive(Debug, Clone)]
-pub struct VirtualSplit(BTreeMap<i64, usize>);
+pub struct VirtualSplit(BTreeMap<u64, usize>);
 
 impl VirtualSplit {
-    pub fn new(map: BTreeMap<i64, usize>) -> Self {
+    pub fn new(map: BTreeMap<u64, usize>) -> Self {
         Self(map)
     }
     pub fn total_num_docs(&self) -> usize {
         self.0.values().sum()
     }
 
-    pub fn sorted_demux_values(&self) -> Vec<i64> {
+    pub fn sorted_demux_values(&self) -> Vec<u64> {
         self.0.keys().cloned().collect_vec()
     }
 
-    pub fn remove_docs(&mut self, demux_value: &i64, num_docs: usize) {
-        *self.0.get_mut(demux_value).expect("msg") -= num_docs;
+    pub fn remove_docs(&mut self, demux_value: &u64, num_docs: usize) {
+        *self
+            .0
+            .get_mut(demux_value)
+            .expect("Cannot remove docs from a missing demux value") -= num_docs;
     }
 
-    pub fn add_docs(&mut self, demux_value: i64, num_docs: usize) {
+    pub fn add_docs(&mut self, demux_value: u64, num_docs: usize) {
         *self.0.entry(demux_value).or_insert(0) += num_docs;
     }
 
-    pub fn num_docs(&self, demux_value: &i64) -> usize {
-        *self.0.get(demux_value).unwrap_or(&0usize)
+    pub fn num_docs(&self, demux_value: u64) -> usize {
+        *self.0.get(&demux_value).unwrap_or(&0usize)
     }
 }
 
@@ -571,7 +579,7 @@ struct SegmentNumDocs {
 ///   4. If `remaining_num_docs - k * min_split_num_docs >= max_split_num_docs', we just need
 ///      to satisfy the max constraint `max_split_num_docs` for the split `n - k`. We will always
 ///      have enough docs for the next splits.
-pub fn demux_values(
+pub(crate) fn demux_virtual_split(
     mut input_split: VirtualSplit,
     min_split_num_docs: usize,
     max_split_num_docs: usize,
@@ -596,12 +604,12 @@ pub fn demux_values(
         max_split_num_docs,
     );
     for demux_value in input_split_demux_values.into_iter() {
-        while input_split.num_docs(&demux_value) > 0 {
+        while input_split.num_docs(demux_value) > 0 {
             let num_docs_to_add = if current_split.total_num_docs()
-                + input_split.num_docs(&demux_value)
+                + input_split.num_docs(demux_value)
                 <= *num_docs_split_bounds.end()
             {
-                input_split.num_docs(&demux_value)
+                input_split.num_docs(demux_value)
             } else {
                 num_docs_split_bounds.end() - current_split.total_num_docs()
             };
@@ -804,7 +812,7 @@ mod tests {
             "field_mappings": [
                 { "name": "body", "type": "text" },
                 { "name": "ts", "type": "i64", "fast": true },
-                { "name": "tenant_id", "type": "i64", "fast": true }
+                { "name": "tenant_id", "type": "u64", "fast": true }
             ]
         }"#;
         let index_config =
@@ -876,28 +884,17 @@ mod tests {
     }
 
     #[test]
-    fn test_build_demux_mapping() {
-        let segments_demux_values: Vec<Vec<i64>> =
-            vec![vec![1, 5, 10, 5, 10, 10], vec![1, 5, 10, 20]];
-        let split_1 = VirtualSplit::new(vec![(1, 2), (5, 3), (10, 1)].into_iter().collect());
-        let split_2 = VirtualSplit::new(vec![(10, 3), (20, 1)].into_iter().collect());
-        let splits = vec![split_1, split_2];
-        let demux_mapping = build_demux_mapping(segments_demux_values, splits);
-        assert_eq!(demux_mapping.get_old_num_segments(), 2);
-    }
-
-    #[test]
     fn test_demux_with_same_num_docs() {
         let mut num_docs_map = BTreeMap::new();
         num_docs_map.insert(0, 100);
         num_docs_map.insert(1, 100);
         num_docs_map.insert(2, 100);
-        let splits = demux_values(VirtualSplit::new(num_docs_map), 100, 200, 3);
+        let splits = demux_virtual_split(VirtualSplit::new(num_docs_map), 100, 200, 3);
 
         assert_eq!(splits.len(), 3);
-        assert_eq!(splits[0].num_docs(&0), 100);
-        assert_eq!(splits[1].num_docs(&1), 100);
-        assert_eq!(splits[2].num_docs(&2), 100);
+        assert_eq!(splits[0].num_docs(0), 100);
+        assert_eq!(splits[1].num_docs(1), 100);
+        assert_eq!(splits[2].num_docs(2), 100);
     }
 
     #[test]
@@ -907,15 +904,15 @@ mod tests {
         num_docs_map.insert(1, 200);
         num_docs_map.insert(2, 200);
         num_docs_map.insert(3, 1);
-        let splits = demux_values(VirtualSplit::new(num_docs_map), 100, 200, 3);
+        let splits = demux_virtual_split(VirtualSplit::new(num_docs_map), 100, 200, 3);
 
         assert_eq!(splits.len(), 3);
-        assert_eq!(splits[0].num_docs(&0), 1);
-        assert_eq!(splits[0].num_docs(&1), 199);
-        assert_eq!(splits[1].num_docs(&1), 1);
-        assert_eq!(splits[1].num_docs(&2), 101);
-        assert_eq!(splits[2].num_docs(&2), 99);
-        assert_eq!(splits[2].num_docs(&3), 1);
+        assert_eq!(splits[0].num_docs(0), 1);
+        assert_eq!(splits[0].num_docs(1), 199);
+        assert_eq!(splits[1].num_docs(1), 1);
+        assert_eq!(splits[1].num_docs(2), 101);
+        assert_eq!(splits[2].num_docs(2), 99);
+        assert_eq!(splits[2].num_docs(3), 1);
     }
 
     #[test]
@@ -927,24 +924,25 @@ mod tests {
         num_docs_map.insert(3, 100);
         num_docs_map.insert(4, 50);
         num_docs_map.insert(5, 150);
-        let splits = demux_values(VirtualSplit::new(num_docs_map), 100, 200, 3);
+        let splits = demux_virtual_split(VirtualSplit::new(num_docs_map), 100, 200, 3);
 
         assert_eq!(splits.len(), 3);
-        assert_eq!(splits[0].num_docs(&0), 1);
-        assert_eq!(splits[0].num_docs(&1), 50);
-        assert_eq!(splits[0].num_docs(&2), 75);
-        assert_eq!(splits[1].num_docs(&3), 100);
-        assert_eq!(splits[2].num_docs(&4), 50);
-        assert_eq!(splits[2].num_docs(&5), 150);
+        assert_eq!(splits[0].num_docs(0), 1);
+        assert_eq!(splits[0].num_docs(1), 50);
+        assert_eq!(splits[0].num_docs(2), 75);
+        assert_eq!(splits[1].num_docs(3), 100);
+        assert_eq!(splits[2].num_docs(4), 50);
+        assert_eq!(splits[2].num_docs(5), 150);
     }
 
     #[test]
     fn test_demux_should_not_cut_tenant_with_small_tenants_with_same_num_docs() {
         let mut num_docs_map = BTreeMap::new();
         for i in 0..1000 {
-            num_docs_map.insert(i as i64, 20_001);
+            num_docs_map.insert(i as u64, 20_001);
         }
-        let splits = demux_values(VirtualSplit::new(num_docs_map), 10_000_000, 20_000_000, 2);
+        let splits =
+            demux_virtual_split(VirtualSplit::new(num_docs_map), 10_000_000, 20_000_000, 2);
         assert_eq!(splits.len(), 2);
         assert_eq!(splits[0].total_num_docs(), 10_000_500);
         assert_eq!(splits[1].total_num_docs(), 10_000_500);
@@ -960,7 +958,7 @@ mod tests {
         num_docs_map.insert(1, 201);
         num_docs_map.insert(2, 201);
         num_docs_map.insert(3, 201);
-        demux_values(VirtualSplit::new(num_docs_map), 100, 200, 3);
+        demux_virtual_split(VirtualSplit::new(num_docs_map), 100, 200, 3);
     }
 
     use proptest::prelude::*;
@@ -978,9 +976,9 @@ mod tests {
             let num_splits_out = tenants_num_docs.iter().sum::<usize>() / 20_000_000 + 1;
             let mut num_docs_map = BTreeMap::new();
             for (i, num_docs) in tenants_num_docs.iter().enumerate() {
-                num_docs_map.insert(i as i64, *num_docs);
+                num_docs_map.insert(i as u64, *num_docs);
             }
-            let splits = demux_values(VirtualSplit::new(num_docs_map), 10_000_000, 20_000_000, num_splits_out);
+            let splits = demux_virtual_split(VirtualSplit::new(num_docs_map), 10_000_000, 20_000_000, num_splits_out);
             assert_eq!(splits.len(), num_splits_out);
         }
     }
