@@ -330,6 +330,7 @@ mod tests {
             Arc::new(merge_policy.clone()),
             &vec![1_000_000; 120],
             |splits| {
+                println!("splits {:?}", splits);
                 let num_big_splits = splits
                     .iter()
                     .filter(|split| split.num_records >= 10_000_000)

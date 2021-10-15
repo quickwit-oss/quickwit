@@ -191,9 +191,7 @@ impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
     fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
         let original_num_splits = splits.len();
         let mut operations = self.merge_operations(splits);
-        if self.demux_field_name.is_some() {
-            operations.append(&mut self.demux_operations(splits));
-        }
+        operations.append(&mut self.demux_operations(splits));
         debug_assert_eq!(
             original_num_splits,
             operations.iter().map(|op| op.splits().len()).sum::<usize>() + splits.len(),
@@ -236,15 +234,17 @@ impl StableMultitenantWithTimestampMergePolicy {
     ///   least 2 values...
     /// - has less than `max_merge_docs` as we don't want to demux splits too small.
     fn is_mature_for_demux(&self, split: &SplitMetadata) -> bool {
-        // All splits are considered mature if there is no demux field as no
-        // split will be demuxed.
-        if self.demux_field_name.is_none() {
+        let demux_field_name = if let Some(demux_field_name) = self.demux_field_name.as_ref() {
+            demux_field_name
+        } else {
+            // All splits are considered mature if there is no demux field as no
+            // split will be demuxed.
             return true;
-        }
+        };
         let split_tags_contains_at_least_two_demux_values = split
             .tags
             .iter()
-            .filter(|tag| match_tag_field_name(self.demux_field_name.as_ref().unwrap(), tag))
+            .filter(|tag| match_tag_field_name(demux_field_name, tag))
             .count()
             < 2;
         split_tags_contains_at_least_two_demux_values
@@ -290,11 +290,7 @@ impl StableMultitenantWithTimestampMergePolicy {
     /// This function builds demux operations for splits that are >= `max_merge_docs` and
     /// have been demux less than `max-demux_generation` times.
     fn demux_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
-        assert!(
-            self.demux_field_name.is_some(),
-            "A demux field must be present for demux."
-        );
-        if splits.is_empty() {
+        if self.demux_field_name.is_none() || splits.is_empty() {
             return Vec::new();
         }
         // First we isolate splits which are mature.
@@ -324,6 +320,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         &self,
         splits: &mut Vec<SplitMetadata>,
     ) -> Vec<MergeOperation> {
+        assert!(self.demux_factor > 0, "Demux factor must be > 0");
         assert!(
             splits.iter().all(|split| split.demux_num_ops == 0),
             "All splits are expected to have never been demuxed."
@@ -332,8 +329,7 @@ impl StableMultitenantWithTimestampMergePolicy {
             return Vec::new();
         }
         let mut operations = Vec::new();
-        let num_operations = splits.len() / self.demux_factor;
-        for _ in 0..num_operations {
+        while splits.len() >= self.demux_factor {
             let splits_for_demux: Vec<SplitMetadata> = splits.drain(0..self.demux_factor).collect();
             let merge_operation = MergeOperation::Demux {
                 splits: splits_for_demux,

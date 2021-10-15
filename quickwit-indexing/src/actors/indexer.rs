@@ -45,7 +45,7 @@ pub struct IndexerCounters {
     /// then this counter is 0)
     /// - number of valid docs.
     pub num_parse_errors: u64,
-    pub num_missing_field: u64,
+    pub num_missing_fields: u64,
     pub num_valid_docs: u64,
 
     /// Number of splits that were emitted by the indexer.
@@ -65,14 +65,14 @@ pub struct IndexerCounters {
 impl IndexerCounters {
     /// Returns the overall number of docs that went through the indexer (valid or not).
     pub fn num_processed_docs(&self) -> u64 {
-        self.num_valid_docs + self.num_parse_errors + self.num_missing_field
+        self.num_valid_docs + self.num_parse_errors + self.num_missing_fields
     }
 
     /// Returns the overall number of docs that were sent to the indexer but were invalid.
     /// (For instance, because they were missing a required field or because their because
     /// their format was invalid)
     pub fn num_invalid_docs(&self) -> u64 {
-        self.num_parse_errors + self.num_missing_field
+        self.num_parse_errors + self.num_missing_fields
     }
 }
 
@@ -198,7 +198,7 @@ impl IndexerState {
                     counters.num_parse_errors += 1;
                 }
                 PrepareDocumentOutcome::MissingField => {
-                    counters.num_missing_field += 1;
+                    counters.num_missing_fields += 1;
                 }
                 PrepareDocumentOutcome::Document {
                     document,
@@ -466,7 +466,7 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 1,
-                num_missing_field: 1,
+                num_missing_fields: 1,
                 num_valid_docs: 2,
                 num_splits_emitted: 0,
                 num_docs_in_split: 2, //< we have not reached the commit limit yet.
@@ -488,7 +488,7 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 1,
-                num_missing_field: 1,
+                num_missing_fields: 1,
                 num_valid_docs: 3,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0, //< the num docs in split counter has been reset.
@@ -545,7 +545,7 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 0,
-                num_missing_field: 0,
+                num_missing_fields: 0,
                 num_valid_docs: 1,
                 num_splits_emitted: 0,
                 num_docs_in_split: 1,
@@ -558,7 +558,7 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 0,
-                num_missing_field: 0,
+                num_missing_fields: 0,
                 num_valid_docs: 1,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0,
@@ -602,7 +602,7 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 0,
-                num_missing_field: 0,
+                num_missing_fields: 0,
                 num_valid_docs: 1,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0,

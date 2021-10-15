@@ -26,6 +26,7 @@ use std::sync::Arc;
 use anyhow::bail;
 use async_trait::async_trait;
 use fail::fail_point;
+use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox, QueueCapacity};
 use quickwit_metastore::{Metastore, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState};
 use quickwit_storage::BUNDLE_FILENAME;
@@ -101,27 +102,28 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets
 }
 
 fn make_publish_operation(
-    mut packaged_splits: Vec<PackagedSplit>,
-    mut splits_metadata: Vec<SplitMetadata>,
+    mut packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
 ) -> PublishOperation {
-    assert!(!packaged_splits.is_empty());
-    assert_eq!(packaged_splits.len(), splits_metadata.len());
-    if packaged_splits.len() == 1 && packaged_splits[0].replaced_split_ids.is_empty() {
-        let mut packaged_split = packaged_splits.pop().unwrap();
+    assert!(!packaged_splits_and_metadatas.is_empty());
+    let replaced_split_ids = packaged_splits_and_metadatas
+        .iter()
+        .flat_map(|(split, _)| split.replaced_split_ids.clone())
+        .collect::<HashSet<_>>();
+    if packaged_splits_and_metadatas.len() == 1 && replaced_split_ids.is_empty() {
+        let (mut packaged_split, split_metadata) = packaged_splits_and_metadatas.pop().unwrap();
         assert_eq!(packaged_split.checkpoint_deltas.len(), 1);
         let checkpoint_delta = packaged_split.checkpoint_deltas.pop().unwrap();
         PublishOperation::PublishNewSplit {
-            new_split: splits_metadata.pop().unwrap(),
+            new_split: split_metadata,
             checkpoint_delta,
             split_date_of_birth: packaged_split.split_date_of_birth,
         }
     } else {
-        let replaced_split_ids = packaged_splits
-            .into_iter()
-            .flat_map(|split| split.replaced_split_ids)
-            .collect::<HashSet<_>>();
         PublishOperation::ReplaceSplits {
-            new_splits: splits_metadata,
+            new_splits: packaged_splits_and_metadatas
+                .into_iter()
+                .map(|split_and_meta| split_and_meta.1)
+                .collect_vec(),
             replaced_split_ids: Vec::from_iter(replaced_split_ids),
         }
     }
@@ -181,11 +183,7 @@ impl AsyncActor for Uploader {
             self.concurrent_upload_permits.acquire().await
         };
         let kill_switch = ctx.kill_switch().clone();
-        let split_ids = batch
-            .splits
-            .iter()
-            .map(|split| split.split_id.clone())
-            .collect::<Vec<_>>();
+        let split_ids = batch.split_ids();
         if kill_switch.is_dead() {
             warn!(split_ids=?split_ids,"Kill switch was activated. Cancelling upload.");
             return Err(ActorExitStatus::Killed);
@@ -193,22 +191,22 @@ impl AsyncActor for Uploader {
         let metastore = self.metastore.clone();
         let index_storage = self.index_storage.clone();
         let counters = self.counters.clone();
-        let index_id = batch.splits[0].index_id.clone();
+        let index_id = batch.index_id();
         tokio::spawn(async move {
             fail_point!("uploader:intask:before");
-            let mut splits_metadata = Vec::new();
-            for split in batch.splits.iter() {
+            let mut packaged_splits_and_metadatas = Vec::new();
+            for split in batch.into_iter() {
                 let upload_result =
-                    stage_and_upload_split(split, &index_storage, &*metastore, counters.clone())
+                    stage_and_upload_split(&split, &index_storage, &*metastore, counters.clone())
                         .await;
                 if let Err(cause) = upload_result {
                     warn!(cause=%cause, "Failed to upload split. Killing!");
                     kill_switch.kill();
                     bail!("Failed to upload split `{}`. Killing!", split.split_id);
                 }
-                splits_metadata.push(upload_result.unwrap());
+                packaged_splits_and_metadatas.push((split, upload_result.unwrap()));
             }
-            let operation = make_publish_operation(batch.splits, splits_metadata);
+            let operation = make_publish_operation(packaged_splits_and_metadatas);
             let publisher_message = PublisherMessage {
                 index_id,
                 operation,
@@ -270,21 +268,19 @@ mod tests {
         universe
             .send_message(
                 &uploader_mailbox,
-                PackagedSplitBatch {
-                    splits: vec![PackagedSplit {
-                        split_id: "test-split".to_string(),
-                        index_id: "test-index".to_string(),
-                        checkpoint_deltas: vec![CheckpointDelta::from(3..15)],
-                        time_range: Some(1_628_203_589i64..=1_628_203_640i64),
-                        size_in_bytes: 1_000,
-                        footer_offsets: 1000..2000,
-                        split_scratch_directory,
-                        num_docs: 10,
-                        tags: Default::default(),
-                        replaced_split_ids: Vec::new(),
-                        split_date_of_birth: Instant::now(),
-                    }],
-                },
+                PackagedSplitBatch::new(vec![PackagedSplit {
+                    split_id: "test-split".to_string(),
+                    index_id: "test-index".to_string(),
+                    checkpoint_deltas: vec![CheckpointDelta::from(3..15)],
+                    time_range: Some(1_628_203_589i64..=1_628_203_640i64),
+                    size_in_bytes: 1_000,
+                    footer_offsets: 1000..2000,
+                    split_scratch_directory,
+                    num_docs: 10,
+                    tags: Default::default(),
+                    replaced_split_ids: Vec::new(),
+                    split_date_of_birth: Instant::now(),
+                }]),
             )
             .await?;
         assert_eq!(
@@ -380,9 +376,7 @@ mod tests {
         universe
             .send_message(
                 &uploader_mailbox,
-                PackagedSplitBatch {
-                    splits: vec![packaged_split_1, package_split_2],
-                },
+                PackagedSplitBatch::new(vec![packaged_split_1, package_split_2]),
             )
             .await?;
         assert_eq!(

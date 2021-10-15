@@ -728,7 +728,7 @@ pub enum DocParsingError {
     #[error("The document contains an array of values but a single value is expected: {0:?}")]
     MultiValuesNotSupported(String),
     /// The document does not contains a field that is required.
-    #[error("The document must contain field declared as fast field: {0:?}")]
+    #[error("The document must contain field {0:?}. As a fast field, it is implicitly required.")]
     RequiredFastField(String),
 }
 
