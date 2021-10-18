@@ -485,7 +485,6 @@ fn is_sorted(els: &[usize]) -> bool {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use std::iter::FromIterator;
     use std::ops::RangeInclusive;
 
     use super::*;
@@ -527,11 +526,9 @@ mod tests {
             .map(|(split_ord, (num_records, &tag_count))| SplitMetadata {
                 split_id: format!("split_{:02}", split_ord),
                 num_records,
-                tags: HashSet::from_iter(
-                    (0..tag_count)
+                tags: (0..tag_count)
                         .into_iter()
-                        .map(|i| format!("{}:{}", demux_field_name, i)),
-                ),
+                        .map(|i| format!("{}:{}", demux_field_name, i)).collect::<HashSet<_>>(),
                 ..Default::default()
             })
             .collect()
