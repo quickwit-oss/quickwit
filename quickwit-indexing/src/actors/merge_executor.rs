@@ -873,7 +873,8 @@ mod tests {
             .collect();
         let total_num_bytes_docs = splits.iter().map(|split| split.size_in_bytes).sum::<u64>();
         let merge_scratch_directory = ScratchDirectory::for_test()?;
-        let downloaded_splits_directory = merge_scratch_directory.named_temp_child("downloaded-splits")?;
+        let downloaded_splits_directory =
+            merge_scratch_directory.named_temp_child("downloaded-splits")?;
         let storage = test_index_builder.index_storage(index_id)?;
         for split in &splits {
             let split_filename = split_file(&split.split_id);

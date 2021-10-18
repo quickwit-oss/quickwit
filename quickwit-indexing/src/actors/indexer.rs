@@ -31,7 +31,9 @@ use tantivy::schema::{Field, Value};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tracing::{info, warn};
 
-use crate::models::{CommitPolicy, IndexedSplit, IndexedSplitBatch, IndexerMessage, IndexingDirectory, RawDocBatch};
+use crate::models::{
+    CommitPolicy, IndexedSplit, IndexedSplitBatch, IndexerMessage, IndexingDirectory, RawDocBatch,
+};
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
 pub struct IndexerCounters {

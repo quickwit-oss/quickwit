@@ -206,36 +206,44 @@ impl AsyncActor for Uploader {
         let counters = self.counters.clone();
         let index_id = batch.index_id();
         let span = Span::current();
-        tokio::spawn(async move {
-            fail_point!("uploader:intask:before");
-            let mut packaged_splits_and_metadatas = Vec::new();
-            for split in batch.into_iter() {
-                let upload_result =
-                    stage_and_upload_split(&split, &index_storage, &*metastore, counters.clone())
-                        .await;
-                if let Err(cause) = upload_result {
-                    warn!(cause=%cause, "Failed to upload split. Killing!");
-                    kill_switch.kill();
-                    bail!("Failed to upload split `{}`. Killing!", split.split_id);
+        tokio::spawn(
+            async move {
+                fail_point!("uploader:intask:before");
+                let mut packaged_splits_and_metadatas = Vec::new();
+                for split in batch.into_iter() {
+                    let upload_result = stage_and_upload_split(
+                        &split,
+                        &index_storage,
+                        &*metastore,
+                        counters.clone(),
+                    )
+                    .await;
+                    if let Err(cause) = upload_result {
+                        warn!(cause=%cause, "Failed to upload split. Killing!");
+                        kill_switch.kill();
+                        bail!("Failed to upload split `{}`. Killing!", split.split_id);
+                    }
+                    packaged_splits_and_metadatas.push((split, upload_result.unwrap()));
                 }
-                packaged_splits_and_metadatas.push((split, upload_result.unwrap()));
+                let operation = make_publish_operation(packaged_splits_and_metadatas);
+                let publisher_message = PublisherMessage {
+                    index_id,
+                    operation,
+                };
+                if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
+                    bail!(
+                        "Failed to send upload split `{:?}`. The publisher is probably dead.",
+                        &publisher_message
+                    );
+                }
+                info!("success-stage-and-store-split");
+                // We explicitely drop it in order to force move the permit guard into the async
+                // task.
+                mem::drop(permit_guard);
+                Result::<(), anyhow::Error>::Ok(())
             }
-            let operation = make_publish_operation(packaged_splits_and_metadatas);
-            let publisher_message = PublisherMessage {
-                index_id,
-                operation,
-            };
-            if let Err(publisher_message) = split_uploaded_tx.send(publisher_message) {
-                bail!(
-                    "Failed to send upload split `{:?}`. The publisher is probably dead.",
-                    &publisher_message
-                );
-            }
-            info!("success-stage-and-store-split");
-            // We explicitely drop it in order to force move the permit guard into the async task.
-            mem::drop(permit_guard);
-            Result::<(), anyhow::Error>::Ok(())
-        }.instrument(span));
+            .instrument(span),
+        );
         fail_point!("uploader:intask:after");
         Ok(())
     }
