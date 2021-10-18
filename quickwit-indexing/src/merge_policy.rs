@@ -527,8 +527,9 @@ mod tests {
                 split_id: format!("split_{:02}", split_ord),
                 num_records,
                 tags: (0..tag_count)
-                        .into_iter()
-                        .map(|i| format!("{}:{}", demux_field_name, i)).collect::<HashSet<_>>(),
+                    .into_iter()
+                    .map(|i| format!("{}:{}", demux_field_name, i))
+                    .collect::<HashSet<_>>(),
                 ..Default::default()
             })
             .collect()
