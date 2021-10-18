@@ -52,6 +52,9 @@ pub struct IndexedSplit {
     /// before actually reaching the indexer.
     pub split_date_of_birth: Instant,
 
+    /// Number of demux operations this split has undergone.
+    pub demux_num_ops: usize,
+
     pub checkpoint_delta: CheckpointDelta,
 
     pub index: tantivy::Index,
@@ -93,6 +96,7 @@ impl IndexedSplit {
             index_id,
             replaced_split_ids: Vec::new(),
             time_range: None,
+            demux_num_ops: 0,
             docs_size_in_bytes: 0,
             num_docs: 0,
             split_date_of_birth: Instant::now(),
@@ -106,4 +110,9 @@ impl IndexedSplit {
     pub fn path(&self) -> &Path {
         self.split_scratch_directory.path()
     }
+}
+
+#[derive(Debug)]
+pub struct IndexedSplitBatch {
+    pub splits: Vec<IndexedSplit>,
 }

@@ -98,7 +98,7 @@ impl MergePlanner {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{BTreeMap, HashMap, HashSet};
     use std::ops::RangeInclusive;
     use std::time::UNIX_EPOCH;
 
@@ -108,6 +108,7 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use super::*;
+    use crate::actors::merge_executor::{demux_virtual_split, VirtualSplit};
     use crate::{new_split_id, StableMultitenantWithTimestampMergePolicy};
 
     fn merged_timestamp(splits: &[SplitMetadata]) -> Option<RangeInclusive<i64>> {
@@ -161,23 +162,72 @@ mod tests {
             split_state: SplitState::Published,
             update_timestamp,
             tags,
+            demux_num_ops: 0,
         }
+    }
+
+    fn fake_demux(splits: &[SplitMetadata]) -> Vec<SplitMetadata> {
+        assert!(!splits.is_empty(), "Splits must not be empty.");
+        let update_timestamp = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let num_records: usize = splits.iter().map(|split| split.num_records).sum();
+        let size_in_bytes: u64 = splits.iter().map(|split| split.size_in_bytes).sum();
+        let time_range = merged_timestamp(splits);
+        let tags = compute_merge_tags(splits);
+        let mut demux_values_map = BTreeMap::new();
+        for split in splits {
+            let mut num_docs = split.num_records;
+            let mut demux_value = 0u64;
+            while num_docs > 0 {
+                let num_docs_to_insert = std::cmp::min(10_000, num_docs);
+                let demux_count = demux_values_map.entry(demux_value).or_insert(0);
+                *demux_count += num_docs_to_insert;
+                demux_value += 1;
+                num_docs -= num_docs_to_insert;
+            }
+        }
+        let input_split = VirtualSplit::new(demux_values_map);
+        let demuxed_splits = demux_virtual_split(input_split, 10_000_000, 20_000_000, splits.len());
+        let mut splits_metadata = Vec::new();
+        for demuxed_split in demuxed_splits {
+            let split_metadata = SplitMetadata {
+                split_id: new_split_id(),
+                num_records: demuxed_split.total_num_docs(),
+                size_in_bytes: (size_in_bytes as f32 / num_records as f32) as u64
+                    * demuxed_split.total_num_docs() as u64,
+                time_range: time_range.clone(),
+                split_state: SplitState::Published,
+                update_timestamp,
+                tags: tags.clone(),
+                demux_num_ops: 1,
+            };
+            splits_metadata.push(split_metadata);
+        }
+        splits_metadata
     }
 
     fn apply_merge(
-        split_index: &mut HashMap<String, usize>,
+        split_index: &mut HashMap<String, SplitMetadata>,
         merge_op: &MergeOperation,
-    ) -> SplitMetadata {
-        assert!(matches!(merge_op, &MergeOperation::Merge { .. }));
+    ) -> Vec<SplitMetadata> {
         for split in merge_op.splits() {
             assert!(split_index.remove(&split.split_id).is_some());
         }
-        let merge_split = fake_merge(merge_op.splits());
-        split_index.insert(merge_split.split_id.clone(), merge_split.num_records);
-        merge_split
+        let splits = match merge_op {
+            MergeOperation::Merge { splits, .. } => {
+                vec![fake_merge(splits)]
+            }
+            MergeOperation::Demux { splits } => fake_demux(splits),
+        };
+        for split in splits.iter() {
+            split_index.insert(split.split_id.clone(), split.clone());
+        }
+        splits
     }
 
-    async fn test_aux_simulate_merge_planner<Pred: Fn(&[usize]) -> bool>(
+    async fn test_aux_simulate_merge_planner<Pred: Fn(&[SplitMetadata]) -> bool>(
         merge_policy: Arc<dyn MergePolicy>,
         incoming_splits: Vec<SplitMetadata>,
         predicate: Pred,
@@ -185,11 +235,11 @@ mod tests {
         let (merge_op_mailbox, merge_op_inbox) = create_test_mailbox::<MergeOperation>();
         let merge_planner = MergePlanner::new(merge_policy, merge_op_mailbox);
         let universe = Universe::new();
-        let mut split_index: HashMap<String, usize> = HashMap::default();
+        let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
         let (merge_planner_mailbox, merge_planner_handler) =
             universe.spawn_actor(merge_planner).spawn_sync();
         for split in incoming_splits {
-            split_index.insert(split.split_id.clone(), split.num_records);
+            split_index.insert(split.split_id.clone(), split.clone());
             universe
                 .send_message(
                     &merge_planner_mailbox,
@@ -206,19 +256,17 @@ mod tests {
                     break;
                 }
                 for merge_op in merge_ops {
-                    let split_metadata = apply_merge(&mut split_index, &merge_op);
+                    let splits = apply_merge(&mut split_index, &merge_op);
                     universe
                         .send_message(
                             &merge_planner_mailbox,
-                            MergePlannerMessage {
-                                new_splits: vec![split_metadata],
-                            },
+                            MergePlannerMessage { new_splits: splits },
                         )
                         .await?;
                 }
             }
-            let split_num_records: Vec<usize> = split_index.values().cloned().collect();
-            assert!(predicate(&split_num_records));
+            let split_metadatas: Vec<SplitMetadata> = split_index.values().cloned().collect();
+            assert!(predicate(&split_metadatas));
         }
         Ok(())
     }
@@ -236,10 +284,11 @@ mod tests {
             time_range: Some(time_range),
             update_timestamp: 0,
             tags: Default::default(),
+            demux_num_ops: 0,
         }
     }
 
-    async fn aux_test_simulate_merge_planner_num_docs<TPred: Fn(&[usize]) -> bool>(
+    async fn aux_test_simulate_merge_planner_num_docs<TPred: Fn(&[SplitMetadata]) -> bool>(
         merge_policy: Arc<dyn MergePolicy>,
         batch_num_docs: &[usize],
         predicate: TPred,
@@ -265,9 +314,42 @@ mod tests {
         aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
             &vec![10_000; 100_000],
-            |num_records_list| {
-                let num_docs = num_records_list.iter().cloned().map(|doc| doc as u64).sum();
-                num_records_list.len() <= merge_policy.max_num_splits_ideal_case(num_docs)
+            |splits| {
+                let num_docs = splits.iter().map(|split| split.num_records as u64).sum();
+                splits.len() <= merge_policy.max_num_splits_ideal_case(num_docs)
+            },
+        )
+        .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_simulate_merge_and_demux() -> anyhow::Result<()> {
+        let merge_policy = StableMultitenantWithTimestampMergePolicy {
+            demux_field_name: Some("tenant_id".to_owned()),
+            ..Default::default()
+        };
+        aux_test_simulate_merge_planner_num_docs(
+            Arc::new(merge_policy.clone()),
+            &vec![1_000_000; 120],
+            |splits| {
+                println!("splits {:?}", splits);
+                let num_big_splits = splits
+                    .iter()
+                    .filter(|split| split.num_records >= 10_000_000)
+                    .count();
+                if num_big_splits > 5 {
+                    let demuxed_num_splits = splits
+                        .iter()
+                        .filter(|split| split.demux_num_ops > 0 && split.num_records >= 10_000_000)
+                        .count();
+                    return demuxed_num_splits > 0 && demuxed_num_splits % 6 == 0;
+                }
+                splits
+                    .iter()
+                    .filter(|split| split.demux_num_ops > 0)
+                    .count()
+                    == 0
             },
         )
         .await?;
@@ -292,9 +374,9 @@ mod tests {
             aux_test_simulate_merge_planner_num_docs(
                 Arc::new(merge_policy.clone()),
                 &batch_num_records,
-                |num_records_list| {
-                    let num_docs = num_records_list.iter().cloned().map(|doc| doc as u64).sum();
-                    num_records_list.len() <= merge_policy.max_num_splits_worst_case(num_docs)
+                |splits| {
+                    let num_docs = splits.iter().map(|split| split.num_records as u64).sum();
+                    splits.len() <= merge_policy.max_num_splits_worst_case(num_docs)
                 },
             )).unwrap();
         }
@@ -306,9 +388,9 @@ mod tests {
         aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
             &vec![10_000; 1_000],
-            |num_records_list| {
-                let num_docs = num_records_list.iter().cloned().map(|doc| doc as u64).sum();
-                num_records_list.len() <= merge_policy.max_num_splits_ideal_case(num_docs)
+            |splits| {
+                let num_docs = splits.iter().map(|split| split.num_records as u64).sum();
+                splits.len() <= merge_policy.max_num_splits_ideal_case(num_docs)
             },
         )
         .await?;
@@ -322,9 +404,9 @@ mod tests {
         aux_test_simulate_merge_planner_num_docs(
             Arc::new(merge_policy.clone()),
             &vals[..],
-            |num_records_list| {
-                let num_docs = num_records_list.iter().cloned().map(|doc| doc as u64).sum();
-                num_records_list.len() <= merge_policy.max_num_splits_worst_case(num_docs)
+            |splits| {
+                let num_docs = splits.iter().map(|split| split.num_records as u64).sum();
+                splits.len() <= merge_policy.max_num_splits_worst_case(num_docs)
             },
         )
         .await?;

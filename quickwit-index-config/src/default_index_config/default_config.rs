@@ -29,9 +29,11 @@ use tantivy::schema::{
     Cardinality, FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, Value, STORED, STRING,
 };
 use tantivy::Document;
+use tracing::info;
 
-use super::field_mapping_entry::DocParsingError;
+use super::field_mapping_entry::{DocParsingError, FieldPath};
 use super::{default_as_true, FieldMappingEntry, FieldMappingType};
+use crate::config::convert_tag_to_string;
 use crate::query_builder::build_query;
 use crate::{IndexConfig, QueryParserError, SortBy, SortOrder, SOURCE_FIELD_NAME, TAGS_FIELD_NAME};
 
@@ -49,6 +51,8 @@ pub struct DefaultIndexConfigBuilder {
     field_mappings: Vec<FieldMappingEntry>,
     #[serde(default)]
     tag_fields: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    demux_field: Option<String>,
 }
 
 #[derive(Default, Serialize, Deserialize, Clone)]
@@ -66,6 +70,148 @@ impl From<SortByConfig> for SortBy {
             order: sort_by_config.order,
         }
     }
+}
+
+impl DefaultIndexConfigBuilder {
+    /// Create a new `DefaultIndexConfigBuilder` for tests.
+    pub fn new() -> Self {
+        Self {
+            store_source: true,
+            default_search_fields: vec![],
+            timestamp_field: None,
+            sort_by: None,
+            field_mappings: vec![],
+            tag_fields: vec![],
+            demux_field: None,
+        }
+    }
+
+    /// Build a valid `DefaultIndexConfig`.
+    /// This will consume your `DefaultIndexConfigBuilder`.
+    pub fn build(self) -> anyhow::Result<DefaultIndexConfig> {
+        let schema = self.build_schema()?;
+        // Resolve default search fields
+        let mut default_search_field_names = Vec::new();
+        for field_name in self.default_search_fields.iter() {
+            if default_search_field_names.contains(field_name) {
+                bail!("Duplicated default search field: `{}`", field_name)
+            }
+            schema
+                .get_field(field_name)
+                .with_context(|| format!("Unknown default search field: `{}`", field_name))?;
+            default_search_field_names.push(field_name.clone());
+        }
+
+        resolve_timestamp_field(self.timestamp_field.as_ref(), &schema)?;
+        resolve_demux_field(self.demux_field.as_ref(), &schema)?;
+        let sort_by = resolve_sort_field(self.sort_by, &schema)?;
+
+        // Resolve tag fields
+        let mut tag_field_names = Vec::new();
+        for tag_field_name in self.tag_fields.iter() {
+            if tag_field_names.contains(tag_field_name) {
+                bail!("Duplicated tag field: `{}`", tag_field_name)
+            }
+            schema
+                .get_field(tag_field_name)
+                .with_context(|| format!("Unknown tag field: `{}`", tag_field_name))?;
+            tag_field_names.push(tag_field_name.clone());
+        }
+        if let Some(ref demux_field_name) = self.demux_field {
+            if !tag_field_names.contains(demux_field_name) {
+                info!(
+                    "Demux field name `{}` is not in index config tags, add it automatically.",
+                    demux_field_name
+                );
+                tag_field_names.push(demux_field_name.clone());
+            }
+        }
+
+        // Build the root mapping entry, it has an empty name so that we don't prefix all
+        // field name with it.
+        let field_mappings = FieldMappingEntry::root(FieldMappingType::Object(self.field_mappings));
+        Ok(DefaultIndexConfig {
+            schema,
+            store_source: self.store_source,
+            default_search_field_names,
+            timestamp_field_name: self.timestamp_field,
+            sort_by,
+            field_mappings,
+            tag_field_names,
+            demux_field_name: self.demux_field,
+        })
+    }
+
+    /// Build the schema from the field mappings and store_source parameter.
+    fn build_schema(&self) -> anyhow::Result<Schema> {
+        let mut builder = SchemaBuilder::new();
+        builder.add_text_field(TAGS_FIELD_NAME, STRING);
+
+        let mut unique_field_names: HashSet<String> = HashSet::new();
+        for field_mapping in self.field_mappings.iter() {
+            for (field_path, field_type) in field_mapping.field_entries() {
+                let field_name = field_path.field_name();
+                if field_name == SOURCE_FIELD_NAME {
+                    bail!("`_source` is a reserved name, change your field name.");
+                }
+                if field_name == TAGS_FIELD_NAME {
+                    bail!("`_tags` is a reserved name, change your field name.");
+                }
+                if unique_field_names.contains(&field_name) {
+                    bail!(
+                        "Field name must be unique, found duplicates for `{}`",
+                        field_name
+                    );
+                }
+                unique_field_names.insert(field_name.clone());
+                builder.add_field(FieldEntry::new(field_name, field_type));
+            }
+        }
+        if self.store_source {
+            builder.add_text_field(SOURCE_FIELD_NAME, STORED);
+        }
+
+        Ok(builder.build())
+    }
+}
+
+fn resolve_timestamp_field(
+    timestamp_field_name_opt: Option<&String>,
+    schema: &Schema,
+) -> anyhow::Result<()> {
+    if let Some(ref timestamp_field_name) = timestamp_field_name_opt {
+        let timestamp_field = schema
+            .get_field(timestamp_field_name)
+            .with_context(|| format!("Unknown timestamp field: `{}`", timestamp_field_name))?;
+
+        let timestamp_field_entry = schema.get_field_entry(timestamp_field);
+        if !timestamp_field_entry.is_fast() {
+            bail!(
+                "Timestamp field must be a fast field, please add the fast property to your field \
+                 `{}`.",
+                timestamp_field_name
+            )
+        }
+        match timestamp_field_entry.field_type() {
+            FieldType::I64(options) | FieldType::U64(options) => {
+                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
+                    bail!(
+                        "Timestamp field cannot be an array, please change your field `{}` from \
+                         an array to a single value.",
+                        timestamp_field_name
+                    )
+                }
+            }
+            _ => {
+                bail!(
+                    "Timestamp field must be either of type i64 or u64, please change your field \
+                     type `{}` to i64 or u64.",
+                    timestamp_field_name
+                )
+            }
+        }
+    }
+    Ok(())
 }
 
 fn resolve_sort_field(
@@ -90,129 +236,48 @@ fn resolve_sort_field(
     Ok(None)
 }
 
-impl DefaultIndexConfigBuilder {
-    /// Create a new `DefaultIndexConfigBuilder` for tests.
-    pub fn new() -> Self {
-        Self {
-            store_source: true,
-            default_search_fields: vec![],
-            timestamp_field: None,
-            sort_by: None,
-            field_mappings: vec![],
-            tag_fields: vec![],
+fn resolve_demux_field(
+    demux_field_name_opt: Option<&String>,
+    schema: &Schema,
+) -> anyhow::Result<()> {
+    if let Some(demux_field_name) = demux_field_name_opt {
+        let demux_field = schema
+            .get_field(demux_field_name)
+            .with_context(|| format!("Unknown timestamp field: `{}`", demux_field_name))?;
+
+        let demux_field_entry = schema.get_field_entry(demux_field);
+        if !demux_field_entry.is_fast() {
+            bail!(
+                "Demux field must be a fast field, please add the fast property to your field \
+                 `{}`.",
+                demux_field_name
+            )
         }
-    }
-
-    /// Build a valid `DefaultIndexConfig`.
-    /// This will consume your `DefaultIndexConfigBuilder`.
-    pub fn build(self) -> anyhow::Result<DefaultIndexConfig> {
-        let schema = self.build_schema()?;
-        // Resolve default search fields
-        let mut default_search_field_names = Vec::new();
-        for field_name in self.default_search_fields.iter() {
-            if default_search_field_names.contains(field_name) {
-                bail!("Duplicated default search field: `{}`", field_name)
-            }
-            schema
-                .get_field(field_name)
-                .with_context(|| format!("Unknown default search field: `{}`", field_name))?;
-            default_search_field_names.push(field_name.clone());
+        if !demux_field_entry.is_indexed() {
+            bail!(
+                "Demux field must be indexed, please add the indexed property to your field `{}`.",
+                demux_field_name
+            )
         }
-
-        // Resolve timestamp field
-        if let Some(ref timestamp_field_name) = self.timestamp_field {
-            let timestamp_field = schema
-                .get_field(timestamp_field_name)
-                .with_context(|| format!("Unknown timestamp field: `{}`", timestamp_field_name))?;
-
-            let timestamp_field_entry = schema.get_field_entry(timestamp_field);
-            if !timestamp_field_entry.is_fast() {
-                bail!(
-                    "Timestamp field must be a fast field, please add the fast property to your \
-                     field `{}`.",
-                    timestamp_field_name
-                )
-            }
-            match timestamp_field_entry.field_type() {
-                FieldType::I64(options) | FieldType::U64(options) => {
-                    if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
-                        bail!(
-                            "Timestamp field cannot be an array, please change your field `{}` \
-                             from an array to a single value.",
-                            timestamp_field_name
-                        )
-                    }
-                }
-                _ => {
+        match demux_field_entry.field_type() {
+            FieldType::U64(options) => {
+                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
                     bail!(
-                        "Timestamp field must be either of type i64 or u64, please change your \
-                         field type `{}` to i64 or u64.",
-                        timestamp_field_name
+                        "Demux field cannot be an array, please change your field `{}` from an \
+                         array to a single value.",
+                        demux_field_name
                     )
                 }
             }
-        }
-
-        // Resolve sort field
-        let sort_by = resolve_sort_field(self.sort_by, &schema)?;
-
-        // Resolve tag fields
-        let mut tag_field_names = Vec::new();
-        for tag_field_name in self.tag_fields.iter() {
-            if tag_field_names.contains(tag_field_name) {
-                bail!("Duplicated tag field: `{}`", tag_field_name)
-            }
-            schema
-                .get_field(tag_field_name)
-                .with_context(|| format!("Unknown tag field: `{}`", tag_field_name))?;
-            tag_field_names.push(tag_field_name.clone());
-        }
-
-        // Build the root mapping entry, it has an empty name so that we don't prefix all
-        // field name with it.
-        let field_mappings = FieldMappingEntry::root(FieldMappingType::Object(self.field_mappings));
-        Ok(DefaultIndexConfig {
-            schema,
-            store_source: self.store_source,
-            default_search_field_names,
-            timestamp_field_name: self.timestamp_field,
-            sort_by,
-            field_mappings,
-            tag_field_names,
-        })
-    }
-
-    /// Build the schema from the field mappings and store_source parameter.
-    fn build_schema(&self) -> anyhow::Result<Schema> {
-        let mut builder = SchemaBuilder::new();
-        builder.add_text_field(TAGS_FIELD_NAME, STRING);
-
-        let mut unique_field_names: HashSet<String> = HashSet::new();
-        for field_mapping in self.field_mappings.iter() {
-            for (field_path, field_type) in field_mapping.field_entries()? {
-                let field_name = field_path.field_name();
-                if field_name == SOURCE_FIELD_NAME {
-                    bail!("`_source` is a reserved name, change your field name.");
-                }
-                if field_name == TAGS_FIELD_NAME {
-                    bail!("`_tags` is a reserved name, change your field name.");
-                }
-                if unique_field_names.contains(&field_name) {
-                    bail!(
-                        "Field name must be unique, found duplicates for `{}`",
-                        field_name
-                    );
-                }
-                unique_field_names.insert(field_name.clone());
-                builder.add_field(FieldEntry::new(field_name, field_type));
+            _ => {
+                bail!(
+                    "Demux field must be of type u64, please change your field type `{}` to u64.",
+                    demux_field_name
+                )
             }
         }
-        if self.store_source {
-            builder.add_text_field(SOURCE_FIELD_NAME, STORED);
-        }
-
-        Ok(builder.build())
     }
+    Ok(())
 }
 
 impl TryFrom<DefaultIndexConfigBuilder> for DefaultIndexConfig {
@@ -240,12 +305,13 @@ impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
             store_source: value.store_source,
             timestamp_field: value.timestamp_field_name(),
             sort_by: sort_by_config,
-            default_search_fields: value.default_search_field_names,
             field_mappings: value
                 .field_mappings
                 .field_mappings()
                 .unwrap_or_else(Vec::new),
+            demux_field: value.demux_field_name(),
             tag_fields: value.tag_field_names,
+            default_search_fields: value.default_search_field_names,
         }
     }
 }
@@ -276,6 +342,27 @@ pub struct DefaultIndexConfig {
     schema: Schema,
     /// List of field names used for tagging.
     tag_field_names: Vec<String>,
+    /// Demux field name.
+    demux_field_name: Option<String>,
+}
+
+impl DefaultIndexConfig {
+    // Return error if a fast field is not present in field paths.
+    fn check_fast_field_in_doc(
+        &self,
+        field_paths_and_values: &[(FieldPath, Value)],
+    ) -> Result<(), DocParsingError> {
+        for (fast_field_path, _) in self.field_mappings.fast_field_entries() {
+            let fast_field_name = fast_field_path.field_name();
+            if !field_paths_and_values
+                .iter()
+                .any(|(field_path, _)| fast_field_name == field_path.field_name())
+            {
+                return Err(DocParsingError::RequiredFastField(fast_field_name));
+            }
+        }
+        Ok(())
+    }
 }
 
 impl std::fmt::Debug for DefaultIndexConfig {
@@ -288,22 +375,9 @@ impl std::fmt::Debug for DefaultIndexConfig {
                 &self.default_search_field_names,
             )
             .field("timestamp_field_name", &self.timestamp_field_name())
+            .field("demux_field_name", &self.demux_field_name())
             // TODO: complete it.
             .finish()
-    }
-}
-
-/// Converts a [`tantivy::Value`] to it's [`String`] value.
-fn tantivy_value_to_string(field_value: &Value) -> String {
-    match field_value {
-        Value::Str(text) => text.clone(),
-        Value::PreTokStr(data) => data.text.clone(),
-        Value::U64(num) => num.to_string(),
-        Value::I64(num) => num.to_string(),
-        Value::F64(num) => num.to_string(),
-        Value::Date(date) => date.to_rfc3339(),
-        Value::Facet(facet) => facet.to_string(),
-        Value::Bytes(data) => base64::encode(data),
     }
 }
 
@@ -318,6 +392,7 @@ impl IndexConfig for DefaultIndexConfig {
             DocParsingError::NotJson(doc_json_sample)
         })?;
         let field_paths_and_values = self.field_mappings.parse(json_obj)?;
+        self.check_fast_field_in_doc(&field_paths_and_values)?;
         let tags_field_opt = self.schema.get_field(TAGS_FIELD_NAME);
         for (field_path, field_value) in field_paths_and_values {
             let field_name = field_path.field_name();
@@ -329,8 +404,10 @@ impl IndexConfig for DefaultIndexConfig {
                 let tags_field = tags_field_opt.ok_or_else(|| {
                     DocParsingError::NoSuchFieldInSchema(TAGS_FIELD_NAME.to_string())
                 })?;
-                let tag_value = format!("{}:{}", field_name, tantivy_value_to_string(&field_value));
-                document.add(FieldValue::new(tags_field, Value::Str(tag_value)));
+                document.add(FieldValue::new(
+                    tags_field,
+                    Value::Str(convert_tag_to_string(&field_name, &field_value)),
+                ));
             }
             document.add(FieldValue::new(field, field_value))
         }
@@ -493,11 +570,34 @@ mod tests {
         index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
-                "unknown_field": "20200415T072306-0700 INFO This is a great log"
+                "unknown_field": "20200415T072306-0700 INFO This is a great log",
+                "response_date": "2021-12-19T16:39:57+00:00",
+                "response_time": 12,
+                "response_payload": "YWJj"
             }"#
             .to_string(),
         )?;
         Ok(())
+    }
+
+    #[test]
+    fn test_fail_parsing_document_with_missing_fast_field() {
+        let index_config = crate::default_config_for_tests();
+        let result = index_config.doc_from_json(
+            r#"{
+                "timestamp": 1586960586000,
+                "unknown_field": "20200415T072306-0700 INFO This is a great log",
+                "response_date": "2021-12-19T16:39:57+00:00",
+                "response_time": 12
+            }"#
+            .to_string(),
+        );
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert_eq!(
+            error,
+            DocParsingError::RequiredFastField("response_payload".to_owned())
+        );
     }
 
     #[test]
@@ -779,20 +879,91 @@ mod tests {
     }
 
     #[test]
-    fn test_index_config_with_a_u64_timestamp_field_is_valid() -> anyhow::Result<()> {
+    fn test_index_config_with_a_u64_demux_field_is_valid_and_is_added_to_tags() -> anyhow::Result<()>
+    {
         let index_config = r#"{
             "type": "default",
             "default_search_fields": [],
             "tag_fields": [],
+            "demux_field": "demux",
             "field_mappings": [
                 {
-                    "name": "timestamp",
+                    "name": "demux",
                     "type": "u64",
                     "fast": true
                 }
             ]
         }"#;
-        let _ = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        let config = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        assert_eq!(config.tag_field_names().len(), 1);
+        assert!(config.tag_field_names().contains(&"demux".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_config_with_a_i64_demux_field_is_valid() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "tag_fields": ["demux"],
+            "demux_field": "demux",
+            "field_mappings": [
+                {
+                    "name": "demux",
+                    "type": "u64",
+                    "fast": true
+                }
+            ]
+        }"#;
+        let config = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        assert_eq!(config.tag_field_names().len(), 1);
+        assert!(config.tag_field_names().contains(&"demux".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_index_config_with_non_fast_demux_field() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "demux_field": "demux",
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "demux",
+                    "type": "u64"
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let expected_msg = "Demux field must be a fast field, please add the fast property to \
+                            your field `demux`."
+            .to_string();
+        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_index_config_with_not_indexed_demux_field() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "demux_field": "demux",
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "demux",
+                    "type": "u64",
+                    "indexed": false,
+                    "fast": true
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let expected_msg = "Demux field must be indexed, please add the indexed property to your \
+                            field `demux`."
+            .to_string();
+        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
     }
 }
