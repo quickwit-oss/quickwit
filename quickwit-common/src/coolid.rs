@@ -96,7 +96,7 @@ pub fn new_coolid(name: &str) -> String {
         .take(4)
         .map(char::from)
         .collect();
-    format!("{}-{}-{}", adjective, name, slug)
+    format!("{}-{}-{}", name, adjective, slug)
 }
 
 #[cfg(test)]

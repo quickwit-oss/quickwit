@@ -19,17 +19,17 @@
 
 use std::collections::VecDeque;
 use std::convert::TryFrom;
-use std::env;
 use std::fs::File;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
-use crossterm::style::{Print, PrintStyledContent, Stylize};
-use crossterm::QueueableCommand;
+use crossterm::execute;
+use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use humansize::{file_size_opts, FileSize};
 use json_comments::StripComments;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
@@ -41,7 +41,7 @@ use quickwit_index_config::{DefaultIndexConfigBuilder, IndexConfig};
 use quickwit_indexing::actors::{
     IndexerParams, IndexingPipelineParams, IndexingPipelineSupervisor,
 };
-use quickwit_indexing::models::{CommitPolicy, IndexingStatistics, ScratchDirectory};
+use quickwit_indexing::models::{CommitPolicy, IndexingDirectory, IndexingStatistics};
 use quickwit_indexing::source::{FileSourceParams, SourceConfig};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, MetastoreUriResolver};
@@ -163,7 +163,7 @@ pub struct IndexDataArgs {
     pub index_id: String,
     pub input_path: Option<PathBuf>,
     pub source_config_path: Option<PathBuf>,
-    pub temp_dir: Option<PathBuf>,
+    pub data_dir_path: PathBuf,
     pub heap_size: Byte,
     pub overwrite: bool,
 }
@@ -243,7 +243,7 @@ pub async fn inspect_split_cli(args: InspectSplitArgs) -> anyhow::Result<()> {
     }
 
     if args.verbose {
-        let hotcache_stats = HotDirectory::get_stats_per_file(hotcache_bytes.into())?;
+        let hotcache_stats = HotDirectory::get_stats_per_file(hotcache_bytes)?;
         for (path, size) in hotcache_stats {
             let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
             println!("HotCache {:?} {}", path, readable_size);
@@ -278,12 +278,8 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let input_path_opt = args.input_path.as_ref();
     let source_config =
         create_source_config_from_args(source_config_path_opt, input_path_opt).await?;
-    let scratch_directory = if let Some(scratch_root_path) = args.temp_dir.as_ref() {
-        ScratchDirectory::new_in_path(scratch_root_path.clone())
-    } else {
-        ScratchDirectory::try_new_temp()
-            .with_context(|| "Failed to create a tempdir for the indexer")?
-    };
+    let indexing_directory_path = args.data_dir_path.join(args.index_id.as_str());
+    let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
@@ -298,7 +294,7 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     }
 
     let indexer_params = IndexerParams {
-        scratch_directory,
+        indexing_directory,
         heap_size: args.heap_size,
         commit_policy: CommitPolicy::default(), //< TODO make the commit policy configurable
     };
@@ -424,7 +420,6 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
             println!("Only the index will be deleted since it does not contains any data file.");
             return Ok(());
         }
-
         println!(
             "The following files will be removed from the index `{}`",
             args.index_id
@@ -434,7 +429,6 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
         }
         return Ok(());
     }
-
     println!("Index `{}` successfully deleted.", args.index_id);
     Ok(())
 }
@@ -561,8 +555,38 @@ pub async fn start_statistics_reporting_loop(
     Ok(statistics)
 }
 
+struct Printer<'a> {
+    pub stdout: &'a mut Stdout,
+    pub colored: bool,
+}
+
+impl<'a> Printer<'a> {
+    fn print_header(&mut self, header: &str) -> io::Result<()> {
+        if self.colored {
+            self.stdout.write_all(b" ")?;
+            execute!(
+                &mut self.stdout,
+                SetForegroundColor(Color::Blue),
+                Print(header),
+                ResetColor
+            )?;
+        } else {
+            write!(&mut self.stdout, " {}:", header)?;
+        }
+        Ok(())
+    }
+
+    fn print_value(&mut self, fmt_args: fmt::Arguments) -> io::Result<()> {
+        write!(&mut self.stdout, " {}", fmt_args)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.stdout.flush()
+    }
+}
+
 fn display_statistics(
-    stdout_handle: &mut Stdout,
+    stdout: &mut Stdout,
     throughput_calculator: &mut ThroughputCalculator,
     statistics: &IndexingStatistics,
     is_tty: bool,
@@ -575,36 +599,26 @@ fn display_statistics(
         elapsed_duration.num_seconds() % 60
     );
     let throughput_mb_s = throughput_calculator.calculate(statistics.total_bytes_processed);
-    if is_tty {
-        stdout_handle.queue(PrintStyledContent("Num docs: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:>7}", statistics.num_docs)))?;
-        stdout_handle.queue(PrintStyledContent(" Parse errs: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:>5}", statistics.num_invalid_docs)))?;
-        stdout_handle.queue(PrintStyledContent(" Staged splits: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:>3}", statistics.num_staged_splits)))?;
-        stdout_handle.queue(PrintStyledContent(" Input size: ".blue()))?;
-        stdout_handle.queue(Print(format!(
-            "{:>5}MB",
-            statistics.total_bytes_processed / 1_000_000
-        )))?;
-        stdout_handle.queue(PrintStyledContent(" Thrghput: ".blue()))?;
-        stdout_handle.queue(Print(format!("{:>5.2}MB/s", throughput_mb_s)))?;
-        stdout_handle.queue(PrintStyledContent(" Time: ".blue()))?;
-        stdout_handle.queue(Print(format!("{}\n", elapsed_time)))?;
-    } else {
-        let report_line = format!(
-            "Num docs: {:>7} Parse errs: {:>5} Staged splits: {:>3} Input size: {:>5}MB Thrghput: \
-             {:>5.2}MB/s Time: {}\n",
-            statistics.num_docs,
-            statistics.num_invalid_docs,
-            statistics.num_staged_splits,
-            statistics.total_bytes_processed / 1_000_000,
-            throughput_mb_s,
-            elapsed_time,
-        );
-        stdout_handle.write_all(report_line.as_bytes())?;
-    }
-    stdout_handle.flush()?;
+    let mut printer = Printer {
+        stdout,
+        colored: is_tty,
+    };
+    printer.print_header("Num docs")?;
+    printer.print_value(format_args!("{:>7}", statistics.num_docs))?;
+    printer.print_header("Parse errs")?;
+    printer.print_value(format_args!("{:>5}", statistics.num_invalid_docs))?;
+    printer.print_header("PublSplits")?;
+    printer.print_value(format_args!("{:>3}", statistics.num_published_splits))?;
+    printer.print_header("Input size")?;
+    printer.print_value(format_args!(
+        "{:>5}MB",
+        statistics.total_bytes_processed / 1_000_000
+    ))?;
+    printer.print_header("Thrghput")?;
+    printer.print_value(format_args!("{:>5.2}MB/s", throughput_mb_s))?;
+    printer.print_header("Time")?;
+    printer.print_value(format_args!("{}\n", elapsed_time))?;
+    printer.flush()?;
     Ok(())
 }
 
@@ -636,7 +650,6 @@ impl ThroughputCalculator {
         let elapsed_time = (current_instant - first_instant).as_millis() as f64 / 1_000f64;
         self.processed_bytes_values
             .push_back((current_instant, current_processed_bytes));
-
         (current_processed_bytes - first_processed_bytes) as f64
             / 1_000_000f64
             / elapsed_time.max(1f64) as f64

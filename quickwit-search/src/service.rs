@@ -26,7 +26,7 @@ use quickwit_index_config::IndexConfig;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse,
-    LeafSearchStreamRequest, LeafSearchStreamResult, SearchRequest, SearchResponse,
+    LeafSearchStreamRequest, LeafSearchStreamResponse, SearchRequest, SearchResponse,
     SearchStreamRequest,
 };
 use quickwit_storage::StorageUriResolver;
@@ -84,7 +84,7 @@ pub trait SearchService: 'static + Send + Sync {
     async fn leaf_search_stream(
         &self,
         request: LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>>>;
+    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>>>;
 }
 
 impl SearchServiceImpl {
@@ -189,7 +189,7 @@ impl SearchService for SearchServiceImpl {
     async fn leaf_search_stream(
         &self,
         leaf_stream_request: LeafSearchStreamRequest,
-    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>>> {
+    ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>>> {
         let stream_request = leaf_stream_request
             .request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;

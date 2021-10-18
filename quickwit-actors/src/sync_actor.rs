@@ -19,7 +19,7 @@
 
 use tokio::sync::watch::{self, Sender};
 use tokio::task::{spawn_blocking, JoinHandle};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, Span};
 
 use crate::actor::{process_command, ActorExitStatus};
 use crate::actor_state::ActorState;
@@ -73,14 +73,13 @@ pub(crate) fn spawn_sync_actor<A: SyncActor>(
     ctx: ActorContext<A::Message>,
     inbox: Inbox<A::Message>,
 ) -> ActorHandle<A> {
-    debug!(actor=%ctx.actor_instance_id(),"spawning-sync-actor");
     let (state_tx, state_rx) = watch::channel(actor.observable_state());
     let ctx_clone = ctx.clone();
     let (exit_status_tx, exit_status_rx) = watch::channel(None);
+    let span_current = Span::current();
     let join_handle: JoinHandle<()> = spawn_blocking(move || {
-        let actor_instance_id = ctx.actor_instance_id().to_string();
+        let _span_guard = span_current.enter();
         let exit_status = sync_actor_loop(actor, inbox, ctx, state_tx);
-        info!(exit_status=%exit_status, actor=actor_instance_id.as_str(), "exit");
         let _ = exit_status_tx.send(Some(exit_status));
     });
     ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)
@@ -92,6 +91,7 @@ pub(crate) fn spawn_sync_actor<A: SyncActor>(
 /// processed.
 fn process_msg<A: Actor + SyncActor>(
     actor: &mut A,
+    msg_id: u64,
     inbox: &mut Inbox<A::Message>,
     ctx: &mut ActorContext<A::Message>,
     state_tx: &Sender<A::ObservableState>,
@@ -116,7 +116,8 @@ fn process_msg<A: Actor + SyncActor>(
     match command_or_msg_recv_res {
         Ok(CommandOrMessage::Command(cmd)) => process_command(actor, cmd, ctx, state_tx),
         Ok(CommandOrMessage::Message(msg)) => {
-            debug!(msg=?msg, actor=%actor.name(),"message-received");
+            let span = actor.message_span(msg_id, &msg);
+            let _span_guard = span.enter();
             actor.process_message(msg, ctx).err()
         }
         Err(RecvError::Timeout) => {
@@ -136,6 +137,10 @@ fn sync_actor_loop<A: SyncActor>(
     mut ctx: ActorContext<A::Message>,
     state_tx: Sender<A::ObservableState>,
 ) -> ActorExitStatus {
+    let span = actor.span(&ctx);
+    let _span_guard = span.enter();
+    debug!("spawn-sync");
+
     // We rely on this object internally to fetch a post-mortem state,
     // even in case of a panic.
     let mut actor_with_state_tx = ActorWithStateTx { actor, state_tx };
@@ -143,18 +148,23 @@ fn sync_actor_loop<A: SyncActor>(
     let mut exit_status_opt: Option<ActorExitStatus> =
         actor_with_state_tx.actor.initialize(&ctx).err();
 
+    let mut msg_id = 1;
+
     let exit_status: ActorExitStatus = loop {
         if let Some(exit_status) = exit_status_opt {
             break exit_status;
         }
         exit_status_opt = process_msg(
             &mut actor_with_state_tx.actor,
+            msg_id,
             &mut inbox,
             &mut ctx,
             &actor_with_state_tx.state_tx,
         );
+        msg_id += 1;
     };
     ctx.exit(&exit_status);
+    info!(exit_status=%exit_status, "exit");
     if let Err(error) = actor_with_state_tx.actor.finalize(&exit_status, &ctx) {
         error!(error=?error, "Finalizing failed");
     }

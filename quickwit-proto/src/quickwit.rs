@@ -240,7 +240,7 @@ pub struct LeafSearchStreamRequest {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct LeafSearchStreamResult {
+pub struct LeafSearchStreamResponse {
     /// Row of data serialized in bytes.
     #[prost(bytes = "vec", tag = "1")]
     pub data: ::prost::alloc::vec::Vec<u8>,
@@ -385,7 +385,7 @@ pub mod search_service_client {
             &mut self,
             request: impl tonic::IntoRequest<super::LeafSearchStreamRequest>,
         ) -> Result<
-            tonic::Response<tonic::codec::Streaming<super::LeafSearchStreamResult>>,
+            tonic::Response<tonic::codec::Streaming<super::LeafSearchStreamResponse>>,
             tonic::Status,
         > {
             self.inner.ready().await.map_err(|e| {
@@ -437,7 +437,7 @@ pub mod search_service_server {
             request: tonic::Request<super::FetchDocsRequest>,
         ) -> Result<tonic::Response<super::FetchDocsResponse>, tonic::Status>;
         #[doc = "Server streaming response type for the LeafSearchStream method."]
-        type LeafSearchStreamStream: futures_core::Stream<Item = Result<super::LeafSearchStreamResult, tonic::Status>>
+        type LeafSearchStreamStream: futures_core::Stream<Item = Result<super::LeafSearchStreamResponse, tonic::Status>>
             + Send
             + Sync
             + 'static;
@@ -586,7 +586,7 @@ pub mod search_service_server {
                         tonic::server::ServerStreamingService<super::LeafSearchStreamRequest>
                         for LeafSearchStreamSvc<T>
                     {
-                        type Response = super::LeafSearchStreamResult;
+                        type Response = super::LeafSearchStreamResponse;
                         type ResponseStream = T::LeafSearchStreamStream;
                         type Future =
                             BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;

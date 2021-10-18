@@ -32,7 +32,7 @@ use quickwit_metastore::{Metastore, SplitMetadata, SplitMetadataAndFooterOffsets
 use quickwit_storage::BUNDLE_FILENAME;
 use tantivy::chrono::Utc;
 use tokio::sync::oneshot::Receiver;
-use tracing::{info, warn};
+use tracing::{info, info_span, warn, Instrument, Span};
 
 use crate::models::{PackagedSplit, PackagedSplitBatch, PublishOperation, PublisherMessage};
 use crate::semaphore::Semaphore;
@@ -41,6 +41,7 @@ use crate::split_store::IndexingSplitStore;
 pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 6;
 
 pub struct Uploader {
+    actor_name: &'static str,
     metastore: Arc<dyn Metastore>,
     index_storage: IndexingSplitStore,
     publisher_mailbox: Mailbox<Receiver<PublisherMessage>>,
@@ -50,11 +51,13 @@ pub struct Uploader {
 
 impl Uploader {
     pub fn new(
+        actor_name: &'static str,
         metastore: Arc<dyn Metastore>,
         index_storage: IndexingSplitStore,
         publisher_mailbox: Mailbox<Receiver<PublisherMessage>>,
     ) -> Uploader {
         Uploader {
+            actor_name,
             metastore,
             index_storage,
             publisher_mailbox,
@@ -82,6 +85,14 @@ impl Actor for Uploader {
 
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Bounded(1)
+    }
+
+    fn name(&self) -> String {
+        self.actor_name.to_string()
+    }
+
+    fn message_span(&self, msg_id: u64, batch: &PackagedSplitBatch) -> Span {
+        info_span!("", msg_id=&msg_id, split=?batch.split_ids())
     }
 }
 
@@ -138,7 +149,7 @@ async fn stage_and_upload_split(
     let split_metadata_and_footer_offsets = create_split_metadata(packaged_split);
     let index_id = packaged_split.index_id.clone();
     let split_metadata = split_metadata_and_footer_offsets.split_metadata.clone();
-    info!(split_id=%packaged_split.split_id, "staging-split",);
+    info!("staging-split");
     metastore
         .stage_split(&index_id, split_metadata_and_footer_offsets)
         .await?;
@@ -147,6 +158,8 @@ async fn stage_and_upload_split(
         .split_scratch_directory
         .path()
         .join(BUNDLE_FILENAME);
+
+    info!("storing-split");
     split_store
         .store_split(&split_metadata, &bundle_path)
         .await?;
@@ -192,6 +205,7 @@ impl AsyncActor for Uploader {
         let index_storage = self.index_storage.clone();
         let counters = self.counters.clone();
         let index_id = batch.index_id();
+        let span = Span::current();
         tokio::spawn(async move {
             fail_point!("uploader:intask:before");
             let mut packaged_splits_and_metadatas = Vec::new();
@@ -217,10 +231,11 @@ impl AsyncActor for Uploader {
                     &publisher_message
                 );
             }
+            info!("success-stage-and-store-split");
             // We explicitely drop it in order to force move the permit guard into the async task.
             mem::drop(permit_guard);
             Result::<(), anyhow::Error>::Ok(())
-        });
+        }.instrument(span));
         fail_point!("uploader:intask:after");
         Ok(())
     }
@@ -258,9 +273,14 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: IndexingSplitStore =
             IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
-        let uploader = Uploader::new(Arc::new(mock_metastore), index_storage, mailbox);
+        let uploader = Uploader::new(
+            "TestUploader",
+            Arc::new(mock_metastore),
+            index_storage,
+            mailbox,
+        );
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
-        let split_scratch_directory = ScratchDirectory::try_new_temp()?;
+        let split_scratch_directory = ScratchDirectory::for_test()?;
         std::fs::write(
             split_scratch_directory.path().join(BUNDLE_FILENAME),
             &b"bubu"[..],
@@ -329,10 +349,15 @@ mod tests {
         let ram_storage = RamStorage::default();
         let index_storage: IndexingSplitStore =
             IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage.clone()));
-        let uploader = Uploader::new(Arc::new(mock_metastore), index_storage, mailbox);
+        let uploader = Uploader::new(
+            "TestUploader",
+            Arc::new(mock_metastore),
+            index_storage,
+            mailbox,
+        );
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
-        let split_scratch_directory_1 = ScratchDirectory::try_new_temp()?;
-        let split_scratch_directory_2 = ScratchDirectory::try_new_temp()?;
+        let split_scratch_directory_1 = ScratchDirectory::for_test()?;
+        let split_scratch_directory_2 = ScratchDirectory::for_test()?;
         std::fs::write(
             split_scratch_directory_1.path().join(BUNDLE_FILENAME),
             &b"bubu"[..],

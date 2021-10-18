@@ -23,6 +23,6 @@ mod local_split_store;
 pub use indexing_split_store::{IndexingSplitStore, IndexingSplitStoreParams};
 use local_split_store::LocalSplitStore;
 
-/// An intermediate folder created at `cache_dir/INTERNAL_CACHE_DIR_NAME`
-/// to hold the local files.
-pub const INTERNAL_CACHE_DIR_NAME: &str = "split-cache";
+/// An intermediate folder created at `<cache dir>/SPLIT_CACHE_DIR_NAME`
+/// to hold the local split files.
+pub const SPLIT_CACHE_DIR_NAME: &str = "splits";

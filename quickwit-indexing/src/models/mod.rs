@@ -20,6 +20,7 @@
 mod commit_policy;
 mod indexed_split;
 mod indexer_message;
+mod indexing_directory;
 mod indexing_statistics;
 mod merge_planner_message;
 mod merge_scratch;
@@ -31,6 +32,7 @@ mod scratch_directory;
 pub use commit_policy::CommitPolicy;
 pub use indexed_split::{IndexedSplit, IndexedSplitBatch};
 pub use indexer_message::IndexerMessage;
+pub use indexing_directory::IndexingDirectory;
 pub use indexing_statistics::IndexingStatistics;
 pub use merge_planner_message::MergePlannerMessage;
 pub use merge_scratch::MergeScratch;

@@ -275,7 +275,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -356,7 +356,7 @@ pub mod test_suite {
                 .publish_splits(index_id, &[split_id_1], CheckpointDelta::from(15..18))
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitIsNotStaged { .. }));
+            assert!(matches!(result, MetastoreError::SplitsNotStaged { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -381,7 +381,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -412,7 +412,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -447,7 +447,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitIsNotStaged { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -643,7 +643,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -669,7 +669,7 @@ pub mod test_suite {
                 .replace_splits(index_id, &[split_id_2], &[split_id_1])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -709,7 +709,7 @@ pub mod test_suite {
                 .replace_splits(index_id, &[split_id_2], &[split_id_1])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitIsNotStaged { .. }));
+            assert!(matches!(result, MetastoreError::SplitsNotStaged { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -740,7 +740,7 @@ pub mod test_suite {
                 .replace_splits(index_id, &[split_id_2, split_id_3], &[split_id_1])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -831,7 +831,7 @@ pub mod test_suite {
                 .mark_splits_for_deletion(index_id, &["non-existent-split"])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -905,7 +905,7 @@ pub mod test_suite {
                 .delete_splits(index_id, &["non-existent-split"])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitDoesNotExist { .. }));
+            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -978,7 +978,7 @@ pub mod test_suite {
                 .delete_splits(index_id, &[split_id_1])
                 .await
                 .unwrap_err();
-            assert!(matches!(result, MetastoreError::Forbidden { .. }));
+            assert!(matches!(result, MetastoreError::SplitsNotDeletable { .. }));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -1616,6 +1616,25 @@ pub mod test_suite {
             assert_eq!(split_ids.contains("list-splits-four"), false);
             assert_eq!(split_ids.contains("list-splits-five"), true);
 
+            // add a split without tag
+            let split_metadata_6 = SplitMetadataAndFooterOffsets {
+                footer_offsets: 1000..2000,
+                split_metadata: SplitMetadata {
+                    split_id: "list-splits-six".to_string(),
+                    split_state: SplitState::Staged,
+                    num_records: 1,
+                    size_in_bytes: 2,
+                    time_range: None,
+                    update_timestamp: current_timestamp,
+                    tags: to_set(&[]),
+                    demux_num_ops: 0,
+                },
+            };
+            metastore
+                .stage_split(index_id, split_metadata_6.clone())
+                .await
+                .unwrap();
+
             let range = None;
             let splits = metastore
                 .list_splits(index_id, SplitState::Staged, range, &[])
@@ -1630,6 +1649,7 @@ pub mod test_suite {
             assert_eq!(split_ids.contains("list-splits-three"), true);
             assert_eq!(split_ids.contains("list-splits-four"), true);
             assert_eq!(split_ids.contains("list-splits-five"), true);
+            assert_eq!(split_ids.contains("list-splits-six"), true);
 
             let range = None;
             let tags = vec!["bar".to_string(), "baz".to_string()];
@@ -1646,6 +1666,7 @@ pub mod test_suite {
             assert_eq!(split_ids.contains("list-splits-three"), true);
             assert_eq!(split_ids.contains("list-splits-four"), false);
             assert_eq!(split_ids.contains("list-splits-five"), true);
+            assert_eq!(split_ids.contains("list-splits-six"), false);
 
             cleanup_index(&metastore, index_id).await;
         }

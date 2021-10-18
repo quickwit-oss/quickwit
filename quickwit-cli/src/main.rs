@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
+use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -32,6 +33,7 @@ use quickwit_common::net::socket_addr_from_str;
 use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::Level;
+use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
@@ -53,7 +55,7 @@ impl CliCommand {
             CliCommand::ExtractSplit(_) => Level::INFO,
             CliCommand::InspectSplit(_) => Level::INFO,
             CliCommand::New(_) => Level::WARN,
-            CliCommand::Index(_) => Level::WARN,
+            CliCommand::Index(_) => Level::INFO,
             CliCommand::Search(_) => Level::WARN,
             CliCommand::Serve(_) => Level::INFO,
             CliCommand::GarbageCollect(_) => Level::WARN,
@@ -170,18 +172,21 @@ impl CliCommand {
         let input_path: Option<PathBuf> = matches.value_of("input-path").map(PathBuf::from);
         let source_config_path: Option<PathBuf> =
             matches.value_of("source-config-path").map(PathBuf::from);
-        let temp_dir: Option<PathBuf> = matches.value_of("temp-dir").map(PathBuf::from);
-        let heap_size_str = matches
+        let data_dir_path: PathBuf = matches
+            .value_of("data-dir-path")
+            .map(PathBuf::from)
+            .expect("`data-dir-path` is a required arg.");
+        let heap_size = matches
             .value_of("heap-size")
-            .expect("`heap-size` has a default value.");
-        let heap_size = Byte::from_str(heap_size_str)?;
+            .map(Byte::from_str)
+            .expect("`heap-size` has a default value.")?;
         let overwrite = matches.is_present("overwrite");
 
         Ok(CliCommand::Index(IndexDataArgs {
             index_id,
             input_path,
             source_config_path,
-            temp_dir,
+            data_dir_path,
             heap_size,
             metastore_uri,
             overwrite,
@@ -311,6 +316,17 @@ impl CliCommand {
     }
 }
 
+/// Describes the way events should be formatted in the logs.
+fn event_format(
+) -> Format<tracing_subscriber::fmt::format::Full, tracing_subscriber::fmt::time::ChronoUtc> {
+    tracing_subscriber::fmt::format()
+        .with_target(true)
+        .with_timer(tracing_subscriber::fmt::time::ChronoUtc::with_format(
+            // We do not rely on ChronoUtc::from_rfc3339, because it has a nanosecond precision.
+            "%Y-%m-%dT%H:%M:%S%.3f%:z".to_string(),
+        ))
+}
+
 fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     let env_filter = env::var("RUST_LOG")
         .map(|_| EnvFilter::from_default_env())
@@ -326,13 +342,13 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
             .install_simple()
             .context("Failed to initialize Jaeger exporter.")?;
         registry
-            .with(tracing_subscriber::fmt::layer())
+            .with(tracing_subscriber::fmt::layer().event_format(event_format()))
             .with(tracing_opentelemetry::layer().with_tracer(tracer))
             .try_init()
             .context("Failed to set up tracing.")?
     } else {
         registry
-            .with(tracing_subscriber::fmt::layer())
+            .with(tracing_subscriber::fmt::layer().event_format(event_format()))
             .try_init()
             .context("Failed to set up tracing.")?
     }
@@ -428,7 +444,7 @@ pub fn parse_duration_with_unit(duration: &str) -> anyhow::Result<Duration> {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::time::Duration;
 
     use clap::{load_yaml, App, AppSettings};
@@ -531,6 +547,8 @@ mod tests {
             "wikipedia",
             "--metastore-uri",
             "file:///indexes",
+            "--data-dir-path",
+            "/var/lib/quickwit/data",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
@@ -539,12 +557,13 @@ mod tests {
                 index_id,
                 input_path: None,
                 source_config_path: None,
-                temp_dir: None,
+                data_dir_path,
                 heap_size,
                 metastore_uri,
                 overwrite: false,
             })) if &index_id == "wikipedia"
                     && &metastore_uri == "file:///indexes"
+                    && data_dir_path == Path::new("/var/lib/quickwit/data")
                     && heap_size.get_bytes() == 2_000_000_000
         ));
 
@@ -556,8 +575,8 @@ mod tests {
             "wikipedia",
             "--source-config-path",
             "/conf/source_config.json",
-            "--temp-dir",
-            "./tmp",
+            "--data-dir-path",
+            "/var/lib/quickwit/data",
             "--heap-size",
             "4gib",
             "--metastore-uri",
@@ -571,17 +590,16 @@ mod tests {
                 index_id,
                 input_path: None,
                 source_config_path: Some(source_config_path),
-                temp_dir,
+                data_dir_path,
                 heap_size,
                 metastore_uri,
                 overwrite: true,
             })) if &index_id == "wikipedia"
+                    && metastore_uri == "file:///indexes"
                     && source_config_path == Path::new("/conf/source_config.json")
-                    && temp_dir == Some(PathBuf::from("./tmp"))
-                    && &metastore_uri == "file:///indexes"
+                    && data_dir_path == Path::new("/var/lib/quickwit/data")
                     && heap_size.get_bytes() == 4_294_967_296
         ));
-
         Ok(())
     }
 
@@ -599,6 +617,8 @@ mod tests {
             "/data/wikipedia.json",
             "--source-config-path",
             "/conf/source_config.json",
+            "--data-dir-path",
+            "/var/lib/quickwit/data",
         ]);
         assert!(matches.is_err());
         Ok(())

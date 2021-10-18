@@ -24,13 +24,12 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use futures::future::{BoxFuture, FutureExt};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tracing::warn;
 
-use crate::{PutPayload, Storage, StorageErrorKind, StorageFactory, StorageResult};
+use crate::{OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResult};
 
 /// File system compatible storage implementation.
 #[derive(Clone)]
@@ -162,19 +161,20 @@ impl From<PathBuf> for LocalFileStorage {
 
 #[async_trait]
 impl Storage for LocalFileStorage {
-    async fn put(&self, path: &Path, payload: PutPayload) -> crate::StorageResult<()> {
+    async fn put(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayloadProvider>,
+    ) -> crate::StorageResult<()> {
         let full_path = self.root.join(path);
         if let Some(parent_dir) = full_path.parent() {
             fs::create_dir_all(parent_dir).await?;
         }
-        match payload {
-            PutPayload::InMemory(data) => {
-                fs::write(full_path, data).await?;
-            }
-            PutPayload::LocalFile(filepath) => {
-                fs::copy(filepath, full_path).await?;
-            }
-        };
+
+        let mut reader = payload.byte_stream().await?.into_async_read();
+        let mut f = tokio::fs::File::create(full_path).await?;
+        tokio::io::copy(&mut reader, &mut f).await?;
+
         Ok(())
     }
 
@@ -184,13 +184,13 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let full_path = self.root.join(path);
         let mut file = fs::File::open(full_path).await?;
         file.seek(SeekFrom::Start(range.start as u64)).await?;
-        let mut content_bytes = vec![0u8; range.len()];
+        let mut content_bytes: Vec<u8> = vec![0u8; range.len()];
         file.read_exact(&mut content_bytes).await?;
-        Ok(Bytes::from(content_bytes))
+        Ok(OwnedBytes::new(content_bytes))
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
@@ -207,10 +207,10 @@ impl Storage for LocalFileStorage {
         Ok(())
     }
 
-    async fn get_all(&self, path: &Path) -> StorageResult<Bytes> {
+    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let full_path = self.root.join(path);
         let content_bytes = fs::read(full_path).await?;
-        Ok(Bytes::from(content_bytes))
+        Ok(OwnedBytes::new(content_bytes))
     }
 
     fn uri(&self) -> String {

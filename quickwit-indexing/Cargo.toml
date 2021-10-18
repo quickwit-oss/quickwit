@@ -41,7 +41,6 @@ kafka = ["rdkafka"]
 kafka-broker-external-service = []
 
 [dev-dependencies]
-bytes = "1"
 mockall = "0.9"
 proptest = "1"
 quickwit-common = {path="../quickwit-common", version="0.1"}

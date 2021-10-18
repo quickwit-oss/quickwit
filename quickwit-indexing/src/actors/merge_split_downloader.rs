@@ -22,7 +22,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, AsyncActor, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
-use tracing::info;
+use tracing::{info, info_span, Span};
 
 use crate::merge_policy::MergeOperation;
 use crate::models::{MergeScratch, ScratchDirectory};
@@ -41,6 +41,30 @@ impl Actor for MergeSplitDownloader {
 
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Bounded(1)
+    }
+
+    fn name(&self) -> String {
+        "MergeSplitDownloader".to_string()
+    }
+
+    fn message_span(&self, msg_id: u64, merge_operation: &MergeOperation) -> Span {
+        match merge_operation {
+            MergeOperation::Merge {
+                merge_split_id,
+                splits,
+            } => {
+                let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
+                info_span!("merge",
+                    msg_id=&msg_id,
+                    merge_split_id=%merge_split_id,
+                    num_docs=num_docs,
+                    num_splits=splits.len())
+            }
+            MergeOperation::Demux { .. } => {
+                // FIXME once demux is here.
+                info_span!("demux", msg_id = &msg_id)
+            }
+        }
     }
 }
 
@@ -62,9 +86,10 @@ impl MergeSplitDownloader {
         merge_operation: MergeOperation,
         ctx: &ActorContext<MergeOperation>,
     ) -> anyhow::Result<()> {
-        info!(merge_operation=?merge_operation, "download-merge-splits");
-        let merge_scratch_directory = self.scratch_directory.temp_child()?;
-        let downloaded_splits_directory = merge_scratch_directory.temp_child()?;
+        let merge_scratch_directory = self.scratch_directory.named_temp_child("merge-")?;
+        info!(dir=%merge_scratch_directory.path().display(), "download-merge-splits");
+        let downloaded_splits_directory =
+            merge_scratch_directory.named_temp_child("downloaded-splits-")?;
         self.download_splits(
             merge_operation.splits(),
             downloaded_splits_directory.path(),
@@ -111,7 +136,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_split_downloader() -> anyhow::Result<()> {
-        let scratch_directory = ScratchDirectory::try_new_temp()?;
+        let scratch_directory = ScratchDirectory::for_test()?;
         let splits_to_merge: Vec<SplitMetadata> = iter::repeat_with(|| {
             let split_id = new_split_id();
             SplitMetadata {

@@ -21,9 +21,10 @@ use std::borrow::Borrow;
 use std::hash::Hash;
 use std::sync::Mutex;
 
-use bytes::Bytes;
 use lru::{KeyRef, LruCache};
 use tracing::{error, warn};
+
+use crate::OwnedBytes;
 
 #[derive(Clone, Copy, Debug)]
 enum Capacity {
@@ -40,7 +41,7 @@ impl Capacity {
     }
 }
 struct NeedMutMemorySizedCache<K: Hash + Eq> {
-    lru_cache: LruCache<K, Bytes>,
+    lru_cache: LruCache<K, OwnedBytes>,
     num_bytes: usize,
     capacity: Capacity,
 }
@@ -58,7 +59,7 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
         }
     }
 
-    pub fn get<Q>(&mut self, cache_key: &Q) -> Option<Bytes>
+    pub fn get<Q>(&mut self, cache_key: &Q) -> Option<OwnedBytes>
     where
         KeyRef<K>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -69,7 +70,7 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
     /// Attempt to put the given amount of data in the cache.
     /// This may fail silently if the owned_bytes slice is larger than the cache
     /// capacity.
-    fn put(&mut self, key: K, bytes: Bytes) {
+    fn put(&mut self, key: K, bytes: OwnedBytes) {
         if self.capacity.exceeds_capacity(bytes.len()) {
             // The value does not fit in the cache. We simply don't store it.
             warn!(
@@ -122,7 +123,7 @@ impl<K: Hash + Eq> MemorySizedCache<K> {
     }
 
     /// If available, returns the cached view of the slice.
-    pub fn get<Q>(&self, cache_key: &Q) -> Option<Bytes>
+    pub fn get<Q>(&self, cache_key: &Q) -> Option<OwnedBytes>
     where
         KeyRef<K>: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -133,7 +134,7 @@ impl<K: Hash + Eq> MemorySizedCache<K> {
     /// Attempt to put the given amount of data in the cache.
     /// This may fail silently if the owned_bytes slice is larger than the cache
     /// capacity.
-    pub fn put(&self, val: K, bytes: Bytes) {
+    pub fn put(&self, val: K, bytes: OwnedBytes) {
         self.inner.lock().unwrap().put(val, bytes);
     }
 }
@@ -147,19 +148,19 @@ mod tests {
     fn test_cache_edge_condition() {
         let cache = MemorySizedCache::<String>::with_capacity_in_bytes(5);
         {
-            let data = Bytes::from_static(&b"abc"[..]);
+            let data = OwnedBytes::new(&b"abc"[..]);
             cache.put("3".to_string(), data);
             assert_eq!(cache.get(&"3".to_string()).unwrap(), &b"abc"[..]);
         }
         {
-            let data = Bytes::from_static(&b"de"[..]);
+            let data = OwnedBytes::new(&b"de"[..]);
             cache.put("2".to_string(), data);
             // our first entry should still be here.
             assert_eq!(cache.get(&"3".to_string()).unwrap(), &b"abc"[..]);
             assert_eq!(cache.get(&"2".to_string()).unwrap(), &b"de"[..]);
         }
         {
-            let data = Bytes::from_static(&b"fghij"[..]);
+            let data = OwnedBytes::new(&b"fghij"[..]);
             cache.put("5".to_string(), data);
             assert_eq!(cache.get(&"5".to_string()).unwrap(), &b"fghij"[..]);
             // our two first entries should have be removed from the cache
@@ -167,7 +168,7 @@ mod tests {
             assert!(cache.get(&"3".to_string()).is_none());
         }
         {
-            let data = Bytes::from_static(&b"klmnop"[..]);
+            let data = OwnedBytes::new(&b"klmnop"[..]);
             cache.put("6".to_string(), data);
             // The entry put should have been dismissed as it is too large for the cache
             assert!(cache.get(&"6".to_string()).is_none());
@@ -180,12 +181,12 @@ mod tests {
     fn test_cache_edge_unlimited_capacity() {
         let cache = MemorySizedCache::with_infinite_capacity();
         {
-            let data = Bytes::from_static(&b"abc"[..]);
+            let data = OwnedBytes::new(&b"abc"[..]);
             cache.put("3".to_string(), data);
             assert_eq!(cache.get(&"3".to_string()).unwrap(), &b"abc"[..]);
         }
         {
-            let data = Bytes::from_static(&b"de"[..]);
+            let data = OwnedBytes::new(&b"de"[..]);
             cache.put("2".to_string(), data);
             assert_eq!(cache.get(&"3".to_string()).unwrap(), &b"abc"[..]);
             assert_eq!(cache.get(&"2".to_string()).unwrap(), &b"de"[..]);
@@ -196,7 +197,7 @@ mod tests {
     fn test_cache() {
         let cache = MemorySizedCache::with_capacity_in_bytes(10_000);
         assert!(cache.get(&"hello.seg").is_none());
-        let data = Bytes::from_static(&b"werwer"[..]);
+        let data = OwnedBytes::new(&b"werwer"[..]);
         cache.put("hello.seg", data);
         assert_eq!(cache.get(&"hello.seg").unwrap(), &b"werwer"[..]);
     }

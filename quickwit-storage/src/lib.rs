@@ -19,6 +19,7 @@
 
 #![warn(missing_docs)]
 #![allow(clippy::bool_assert_comparison)]
+#![allow(clippy::len_without_is_empty)]
 
 //! `quickwit-storage` is the abstraction used in quickwit to interface itself
 //! to different storage:
@@ -30,7 +31,7 @@
 //! - The `BundleStorage` bundles together multiple files into a single file.
 mod cache;
 mod storage;
-pub use self::storage::{PutPayload, Storage};
+pub use self::storage::{PutPayload, PutPayloadProvider, Storage};
 
 mod bundle_storage;
 mod error;
@@ -40,6 +41,8 @@ mod prefix_storage;
 mod ram_storage;
 mod retry;
 mod storage_resolver;
+
+pub use tantivy::directory::OwnedBytes;
 
 pub use self::bundle_storage::{
     BundleStorage, BundleStorageBuilder, BundleStorageFileOffsets, BUNDLE_FILENAME,
@@ -87,7 +90,7 @@ pub(crate) mod tests {
         storage
             .put(
                 test_path,
-                PutPayload::from(&b"abcdefghiklmnopqrstuvxyz"[..]),
+                Box::new(PutPayload::from(&b"abcdefghiklmnopqrstuvxyz"[..])),
             )
             .await?;
         let payload = storage.get_slice(test_path, 3..6).await?;
@@ -98,7 +101,7 @@ pub(crate) mod tests {
     async fn test_write_get_all(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("write_and_read_all");
         storage
-            .put(test_path, PutPayload::from(&b"abcdef"[..]))
+            .put(test_path, Box::new(PutPayload::from(&b"abcdef"[..])))
             .await?;
         let payload = storage.get_all(test_path).await?;
         assert_eq!(&payload[..], &b"abcdef"[..]);
@@ -109,7 +112,7 @@ pub(crate) mod tests {
         let test_path = Path::new("write_and_cp");
         let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
         storage
-            .put(test_path, PutPayload::from(payload_bytes))
+            .put(test_path, Box::new(PutPayload::from(payload_bytes)))
             .await?;
         let tempdir = tempfile::tempdir()?;
         let dest_path = tempdir.path().to_path_buf();
@@ -124,7 +127,7 @@ pub(crate) mod tests {
         let test_path = Path::new("write_and_delete");
         let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
         storage
-            .put(test_path, PutPayload::from(payload_bytes))
+            .put(test_path, Box::new(PutPayload::from(payload_bytes)))
             .await?;
         storage.delete(test_path).await?;
         let slice_err = storage
@@ -139,7 +142,7 @@ pub(crate) mod tests {
         let test_path = Path::new("write_for_filesize");
         let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
         storage
-            .put(test_path, PutPayload::from(payload_bytes))
+            .put(test_path, Box::new(PutPayload::from(payload_bytes)))
             .await?;
         assert_eq!(storage.file_num_bytes(test_path).await?, 26u64);
         storage.delete(test_path).await?;
@@ -150,7 +153,7 @@ pub(crate) mod tests {
         let test_path = Path::new("exists");
         assert!(matches!(storage.exists(test_path).await, Ok(false)));
         storage
-            .put(test_path, PutPayload::from(b"".as_ref()))
+            .put(test_path, Box::new(PutPayload::from(b"".as_ref())))
             .await?;
         assert!(matches!(storage.exists(test_path).await, Ok(true)));
         assert!(matches!(storage.delete(test_path).await, Ok(())));
@@ -170,7 +173,7 @@ pub(crate) mod tests {
         let test_path = Path::new("foo/bar/write_and_delete_with_separator");
         let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
         storage
-            .put(test_path, PutPayload::from(payload_bytes))
+            .put(test_path, Box::new(PutPayload::from(payload_bytes)))
             .await?;
         assert!(matches!(
             storage.exists(Path::new("foo/bar")).await,

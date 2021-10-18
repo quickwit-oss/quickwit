@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::Bytes;
+use quickwit_common::chunk_range;
 use serde::{Deserialize, Serialize};
 use tantivy::common::CountingWriter;
 use tantivy::directory::FileSlice;
@@ -36,7 +36,7 @@ use tantivy::HasLen;
 use thiserror::Error;
 use tracing::error;
 
-use crate::{Storage, StorageError, StorageResult};
+use crate::{OwnedBytes, Storage, StorageError, StorageResult};
 
 /// Filename used for the bundle.
 pub const BUNDLE_FILENAME: &str = "bundle";
@@ -134,7 +134,11 @@ impl BundleStorageFileOffsets {
 
 #[async_trait]
 impl Storage for BundleStorage {
-    async fn put(&self, path: &Path, _payload: crate::PutPayload) -> crate::StorageResult<()> {
+    async fn put(
+        &self,
+        path: &Path,
+        _payload: Box<dyn crate::PutPayloadProvider>,
+    ) -> crate::StorageResult<()> {
         Err(unsupported_operation(path))
     }
 
@@ -151,7 +155,11 @@ impl Storage for BundleStorage {
         Ok(())
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> crate::StorageResult<Bytes> {
+    async fn get_slice(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> crate::StorageResult<OwnedBytes> {
         let file_offsets = self.metadata.get(path).ok_or_else(|| {
             crate::StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
@@ -163,7 +171,7 @@ impl Storage for BundleStorage {
             .await
     }
 
-    async fn get_all(&self, path: &Path) -> crate::StorageResult<Bytes> {
+    async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
         let file_offsets = self.metadata.get(path).ok_or_else(|| {
             crate::StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
@@ -196,13 +204,6 @@ impl Storage for BundleStorage {
     fn uri(&self) -> String {
         self.storage.uri()
     }
-}
-
-fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {
-    range.clone().step_by(chunk_size).map(move |block_start| {
-        let block_end = (block_start + chunk_size).min(range.end);
-        block_start..block_end
-    })
 }
 
 impl HasLen for BundleStorage {

@@ -23,7 +23,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context;
-use bytes::Bytes;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use once_cell::sync::OnceCell;
@@ -32,7 +31,7 @@ use quickwit_index_config::IndexConfig;
 use quickwit_proto::{
     LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError,
 };
-use quickwit_storage::{BundleStorage, MemorySizedCache, Storage};
+use quickwit_storage::{BundleStorage, MemorySizedCache, OwnedBytes, Storage};
 use tantivy::collector::Collector;
 use tantivy::query::Query;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
@@ -50,7 +49,7 @@ fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
 async fn get_split_footer_from_cache_or_fetch(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
-) -> anyhow::Result<Bytes> {
+) -> anyhow::Result<OwnedBytes> {
     {
         let possible_val = global_split_footer_cache().get(&split_and_footer_offsets.split_id);
         if let Some(footer_data) = possible_val {

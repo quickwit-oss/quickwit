@@ -24,7 +24,6 @@ use std::time::{Duration, Instant};
 use std::{fmt, io, mem};
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use tantivy::chrono::{DateTime, Utc};
 use tantivy::directory::error::{DeleteError, LockError, OpenReadError, OpenWriteError};
 use tantivy::directory::{
@@ -248,7 +247,7 @@ impl<D: Directory> Directory for DebugProxyDirectory<D> {
 
 impl DebugProxyDirectory<StorageDirectory> {
     /// Fetches a slice of byte from a file asynchronously.
-    pub async fn get_slice(&self, path: &Path, range: Range<usize>) -> io::Result<Bytes> {
+    pub async fn get_slice(&self, path: &Path, range: Range<usize>) -> io::Result<OwnedBytes> {
         let read_operation_builder = ReadOperationBuilder::new(path);
         let payload = self.underlying.get_slice(path, range).await?;
         let read_operation = read_operation_builder.terminate(payload.len());
@@ -257,7 +256,7 @@ impl DebugProxyDirectory<StorageDirectory> {
     }
 
     /// Fetches an entire file asynchronously.
-    pub async fn get_all(&self, path: &Path) -> io::Result<Bytes> {
+    pub async fn get_all(&self, path: &Path) -> io::Result<OwnedBytes> {
         let read_operation_builder = ReadOperationBuilder::new(path);
         let payload = self.underlying.get_all(path).await?;
         let read_operation = read_operation_builder.terminate(payload.len());

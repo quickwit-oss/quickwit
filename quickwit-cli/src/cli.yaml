@@ -101,15 +101,16 @@ subcommands:
                 value_name: SOURCE CONFIG PATH
                 conflicts_with:
                     - input-path
-            - temp-dir:
-                help: Creates intermediate files in this local directory. By default, the OS temp directory will be used.
-                long: temp-dir
-                value_name: TEMP DIR
+            - data-dir-path:
+                help: Creates indexing directories in this local directory.
+                long: data-dir-path
+                value_name: DATA DIR PATH
+                required: true
             - num-threads:
                 help: Number of threads allocated to the process
                 long: num-threads
                 value_name: NUM THREADS
-                default_value: '2'
+                default_value: '1'
             - heap-size:
                 help: Amount of memory allocated to the process and split between the indexing threads
                 long: heap-size

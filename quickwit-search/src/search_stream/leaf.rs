@@ -25,7 +25,7 @@ use std::sync::Arc;
 use futures::{FutureExt, StreamExt};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{
-    LeafSearchStreamResult, OutputFormat, SearchRequest, SearchStreamRequest,
+    LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
     SplitIdAndFooterOffsets,
 };
 use quickwit_storage::Storage;
@@ -57,7 +57,7 @@ pub async fn leaf_search_stream(
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
     index_config: Arc<dyn IndexConfig>,
-) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>> {
+) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>> {
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
     let span = info_span!("leaf_search_stream",);
     tokio::spawn(
@@ -84,7 +84,7 @@ async fn leaf_search_results_stream(
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
     index_config: Arc<dyn IndexConfig>,
-) -> impl futures::Stream<Item = crate::Result<LeafSearchStreamResult>> + Sync + Send + 'static {
+) -> impl futures::Stream<Item = crate::Result<LeafSearchStreamResponse>> + Sync + Send + 'static {
     futures::stream::iter(splits)
         .map(move |split| {
             leaf_search_stream_single_split(
@@ -105,7 +105,7 @@ async fn leaf_search_stream_single_split(
     index_config: Arc<dyn IndexConfig>,
     stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
-) -> crate::Result<LeafSearchStreamResult> {
+) -> crate::Result<LeafSearchStreamResponse> {
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
 
@@ -123,8 +123,8 @@ async fn leaf_search_stream_single_split(
         && output_format != OutputFormat::ClickHouseRowBinary
     {
         return Err(SearchError::InternalError(
-            "Invalid output format specified, only ClickHouseRowBinary is allowed when you \
-             provide a parition-by field."
+            "Invalid output format specified, only ClickHouseRowBinary is allowed when providing \
+             a partitioned-by field."
                 .to_string(),
         ));
     }
@@ -231,7 +231,7 @@ async fn leaf_search_stream_single_split(
         SearchError::InternalError(format!("Error when collecting fast field values for split {}: {:?}", split.split_id, error))
     })??;
 
-    Ok(LeafSearchStreamResult {
+    Ok(LeafSearchStreamResponse {
         data: buffer,
         split_id: split.split_id,
     })

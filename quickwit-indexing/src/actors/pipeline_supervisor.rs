@@ -28,7 +28,7 @@ use quickwit_actors::{
 use quickwit_metastore::{Metastore, SplitState};
 use quickwit_storage::StorageUriResolver;
 use tokio::join;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, info_span, instrument, Span};
 
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::{
@@ -65,6 +65,7 @@ pub enum Msg {
 
 /// TODO have a clear strategy on when we should retry, and when we should not.
 pub struct IndexingPipelineSupervisor {
+    generation: usize,
     params: IndexingPipelineParams,
     previous_generations_statistics: IndexingStatistics,
     statistics: IndexingStatistics,
@@ -81,6 +82,14 @@ impl Actor for IndexingPipelineSupervisor {
     fn observable_state(&self) -> Self::ObservableState {
         self.statistics.clone()
     }
+
+    fn name(&self) -> String {
+        "Pipeline".to_string()
+    }
+
+    fn span(&self, _ctx: &ActorContext<Self::Message>) -> Span {
+        info_span!("")
+    }
 }
 
 impl IndexingPipelineSupervisor {
@@ -91,6 +100,7 @@ impl IndexingPipelineSupervisor {
             handlers: None,
             kill_switch: KillSwitch::default(),
             statistics: IndexingStatistics::default(),
+            generation: 0,
         }
     }
 
@@ -159,7 +169,7 @@ impl IndexingPipelineSupervisor {
         if failure_or_unhealthy_actors.is_empty() {
             if healthy_actors.is_empty() {
                 // all actors finished successfully.
-                info!("indexing pipeline success!");
+                info!("indexing-pipeline-success");
                 Health::Success
             } else {
                 // No error at this point, and there are still actors running
@@ -173,14 +183,27 @@ impl IndexingPipelineSupervisor {
     }
 
     // TODO this should return an error saying whether we can retry or not.
+    #[instrument(name="", level="info", skip_all, fields(index=%self.params.index_id, gen=self.generation))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Msg>) -> anyhow::Result<()> {
-        info!(index_id=%self.params.index_id, "spawn-indexing-pipeline");
+        self.generation += 1;
+        self.previous_generations_statistics = self.statistics.clone();
         self.kill_switch = KillSwitch::default();
         let index_metadata = self
             .params
             .metastore
             .index_metadata(&self.params.index_id)
             .await?;
+
+        let merge_policy: Arc<dyn MergePolicy> =
+            Arc::new(StableMultitenantWithTimestampMergePolicy::default());
+
+        info!(
+            root_dir=%self.params.indexer_params.indexing_directory.path().display(),
+            merge_policy=?merge_policy,
+            index_uri=?index_metadata.index_uri,
+            "spawn-indexing-pipeline",
+        );
+
         let index_storage = self
             .params
             .storage_uri_resolver
@@ -193,14 +216,13 @@ impl IndexingPipelineSupervisor {
         };
         let max_merge_docs = stable_multitenant_merge_policy.max_merge_docs;
         let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
-
-        // TODO: Make cache path configurable [https://github.com/quickwit-inc/quickwit/issues/520]
-        // Using the scratch_directory directly is fine since the cache storage will create its own
-        // folder to work with.
-        let scratch_directory = self.params.indexer_params.scratch_directory.path();
         let split_store = IndexingSplitStore::create_with_local_store(
             index_storage,
-            scratch_directory,
+            self.params
+                .indexer_params
+                .indexing_directory
+                .cache_directory
+                .as_path(),
             IndexingSplitStoreParams::default(),
             merge_policy.clone(),
         )?;
@@ -216,6 +238,7 @@ impl IndexingPipelineSupervisor {
 
         // Merge uploader
         let merge_uploader = Uploader::new(
+            "MergeUploader",
             self.params.metastore.clone(),
             split_store.clone(),
             publisher_mailbox.clone(),
@@ -226,7 +249,8 @@ impl IndexingPipelineSupervisor {
             .spawn_async();
 
         // Merge Packager
-        let merge_packager = Packager::new(tags_field, merge_uploader_mailbox, None);
+        let merge_packager =
+            Packager::new("MergePackager", tags_field, merge_uploader_mailbox, None);
         let (merge_packager_mailbox, merge_packager_handler) = ctx
             .spawn_actor(merge_packager)
             .set_kill_switch(self.kill_switch.clone())
@@ -246,7 +270,12 @@ impl IndexingPipelineSupervisor {
             .spawn_sync();
 
         let merge_split_downloader = MergeSplitDownloader {
-            scratch_directory: self.params.indexer_params.scratch_directory.clone(),
+            scratch_directory: self
+                .params
+                .indexer_params
+                .indexing_directory
+                .scratch_directory
+                .clone(),
             storage: split_store.clone(),
             merge_executor_mailbox,
         };
@@ -296,6 +325,7 @@ impl IndexingPipelineSupervisor {
 
         // Uploader
         let uploader = Uploader::new(
+            "Uploader",
             self.params.metastore.clone(),
             split_store.clone(),
             publisher_mailbox,
@@ -306,7 +336,12 @@ impl IndexingPipelineSupervisor {
             .spawn_async();
 
         // Packager
-        let packager = Packager::new(tags_field, uploader_mailbox, Some(merge_planner_mailbox));
+        let packager = Packager::new(
+            "Packager",
+            tags_field,
+            uploader_mailbox,
+            Some(merge_planner_mailbox),
+        );
         let (packager_mailbox, packager_handler) = ctx
             .spawn_actor(packager)
             .set_kill_switch(self.kill_switch.clone())
@@ -529,7 +564,7 @@ mod tests {
             source_type: "file".to_string(),
             params: json!({ "filepath": PathBuf::from("data/test_corpus.json") }),
         };
-        let indexer_params = IndexerParams::for_test()?;
+        let indexer_params = IndexerParams::for_test().await?;
         let indexing_pipeline_params = IndexingPipelineParams {
             index_id: "test-index".to_string(),
             source_config,

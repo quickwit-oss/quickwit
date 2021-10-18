@@ -32,7 +32,7 @@ use quickwit_storage::{Storage, StorageResolverError, StorageUriResolver};
 
 use crate::actors::IndexerParams;
 use crate::index_data;
-use crate::models::{CommitPolicy, IndexingStatistics, ScratchDirectory};
+use crate::models::{CommitPolicy, IndexingDirectory, IndexingStatistics};
 use crate::source::{SourceConfig, VecSourceParams};
 
 /// Creates a Test environment.
@@ -102,7 +102,7 @@ impl TestSandbox {
         };
         self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let indexer_params = IndexerParams {
-            scratch_directory: ScratchDirectory::try_new_temp()?,
+            indexing_directory: IndexingDirectory::for_test().await?,
             heap_size: Byte::from_bytes(100_000_000),
             commit_policy: CommitPolicy {
                 timeout: Duration::from_secs(3600),
