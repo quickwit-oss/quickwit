@@ -93,6 +93,7 @@ pub struct SplitMetadata {
     pub tags: HashSet<String>,
 
     /// Number of demux operations this split has undergone.
+    #[serde(default)]
     pub demux_num_ops: usize,
 }
 
