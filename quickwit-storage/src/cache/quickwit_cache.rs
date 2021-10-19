@@ -22,20 +22,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_common::HOTCACHE_FILENAME;
-use quickwit_storage::{Cache, OwnedBytes, SliceCache};
+
+use crate::{Cache, OwnedBytes, SliceCache};
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
-
-/// Hotcache cache capacity is hardcoded to 500 MB.
-/// Once the capacity is reached, a LRU strategy is used.
-const HOTCACHE_CACHE_CAPACITY: usize = 500_000_000;
 
 /// Fast field cache capacity is hardcoded to 3GB.
 /// Once the capacity is reached, a LRU strategy is used.
 const FAST_CACHE_CAPACITY: usize = 3_000_000_000;
 
-pub struct QuickwitCache {
+pub(crate) struct QuickwitCache {
     router: Vec<(&'static str, Arc<dyn Cache>)>,
 }
 
@@ -48,10 +44,6 @@ impl From<Vec<(&'static str, Arc<dyn Cache>)>> for QuickwitCache {
 impl Default for QuickwitCache {
     fn default() -> Self {
         let mut quickwit_cache = QuickwitCache::empty();
-        quickwit_cache.add_route(
-            HOTCACHE_FILENAME,
-            Arc::new(SimpleCache::with_capacity_in_bytes(HOTCACHE_CACHE_CAPACITY)),
-        );
         quickwit_cache.add_route(
             ".fast",
             Arc::new(SimpleCache::with_capacity_in_bytes(FAST_CACHE_CAPACITY)),
@@ -156,9 +148,8 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    use quickwit_storage::{Cache, MockCache, OwnedBytes};
-
     use super::QuickwitCache;
+    use crate::{Cache, MockCache, OwnedBytes};
 
     #[tokio::test]
     async fn test_quickwit_cache_get_all() {

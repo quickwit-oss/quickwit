@@ -23,14 +23,12 @@ mod error;
 mod grpc;
 mod grpc_adapter;
 mod http_handler;
-mod quickwit_cache;
 mod rest;
 
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use quickwit_cache::QuickwitCache;
 use quickwit_cluster::cluster::{read_or_create_host_key, Cluster};
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_metastore::MetastoreUriResolver;
@@ -40,7 +38,6 @@ use quickwit_search::{
 };
 use quickwit_storage::{
     LocalFileStorageFactory, RegionProvider, S3CompatibleObjectStorageFactory, StorageUriResolver,
-    StorageWithCacheFactory,
 };
 use quickwit_telemetry::payload::{ServeEvent, TelemetryEvent};
 use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
@@ -84,10 +81,7 @@ fn display_help_message(
 /// - s3+localstack://
 /// - file:// uris.
 fn storage_uri_resolver() -> StorageUriResolver {
-    let s3_storage = StorageWithCacheFactory::new(
-        Arc::new(S3CompatibleObjectStorageFactory::default()),
-        Arc::new(QuickwitCache::default()),
-    );
+    let s3_storage = S3CompatibleObjectStorageFactory::default();
     StorageUriResolver::builder()
         .register(LocalFileStorageFactory::default())
         .register(s3_storage)
