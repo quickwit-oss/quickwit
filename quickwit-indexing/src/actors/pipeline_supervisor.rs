@@ -193,17 +193,6 @@ impl IndexingPipelineSupervisor {
             .metastore
             .index_metadata(&self.params.index_id)
             .await?;
-
-        let merge_policy: Arc<dyn MergePolicy> =
-            Arc::new(StableMultitenantWithTimestampMergePolicy::default());
-
-        info!(
-            root_dir=%self.params.indexer_params.indexing_directory.path().display(),
-            merge_policy=?merge_policy,
-            index_uri=?index_metadata.index_uri,
-            "spawn-indexing-pipeline",
-        );
-
         let index_storage = self
             .params
             .storage_uri_resolver
@@ -216,6 +205,12 @@ impl IndexingPipelineSupervisor {
         };
         let max_merge_docs = stable_multitenant_merge_policy.max_merge_docs;
         let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
+        info!(
+            root_dir=%self.params.indexer_params.indexing_directory.path().display(),
+            merge_policy=?merge_policy,
+            index_uri=?index_metadata.index_uri,
+            "spawn-indexing-pipeline",
+        );
         let split_store = IndexingSplitStore::create_with_local_store(
             index_storage,
             self.params

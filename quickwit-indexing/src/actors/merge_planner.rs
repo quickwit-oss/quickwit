@@ -99,6 +99,7 @@ impl MergePlanner {
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, HashMap, HashSet};
+    use std::iter::FromIterator;
     use std::ops::RangeInclusive;
     use std::time::UNIX_EPOCH;
 
@@ -219,7 +220,7 @@ mod tests {
             MergeOperation::Merge { splits, .. } => {
                 vec![fake_merge(splits)]
             }
-            MergeOperation::Demux { splits } => fake_demux(splits),
+            MergeOperation::Demux { splits, .. } => fake_demux(splits),
         };
         for split in splits.iter() {
             split_index.insert(split.split_id.clone(), split.clone());
@@ -283,7 +284,7 @@ mod tests {
             size_in_bytes: 256u64 * num_records,
             time_range: Some(time_range),
             update_timestamp: 0,
-            tags: Default::default(),
+            tags: HashSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
             demux_num_ops: 0,
         }
     }
@@ -333,7 +334,6 @@ mod tests {
             Arc::new(merge_policy.clone()),
             &vec![1_000_000; 120],
             |splits| {
-                println!("splits {:?}", splits);
                 let num_big_splits = splits
                     .iter()
                     .filter(|split| split.num_records >= 10_000_000)
@@ -341,7 +341,7 @@ mod tests {
                 if num_big_splits > 5 {
                     let demuxed_num_splits = splits
                         .iter()
-                        .filter(|split| split.demux_num_ops > 0 && split.num_records >= 10_000_000)
+                        .filter(|split| split.demux_num_ops > 0)
                         .count();
                     return demuxed_num_splits > 0 && demuxed_num_splits % 6 == 0;
                 }

@@ -243,7 +243,7 @@ fn resolve_demux_field(
     if let Some(demux_field_name) = demux_field_name_opt {
         let demux_field = schema
             .get_field(demux_field_name)
-            .with_context(|| format!("Unknown timestamp field: `{}`", demux_field_name))?;
+            .with_context(|| format!("Unknown demux field: `{}`", demux_field_name))?;
 
         let demux_field_entry = schema.get_field_entry(demux_field);
         if !demux_field_entry.is_fast() {
@@ -438,6 +438,10 @@ impl IndexConfig for DefaultIndexConfig {
         self.timestamp_field_name.clone()
     }
 
+    fn demux_field_name(&self) -> Option<String> {
+        self.demux_field_name.clone()
+    }
+
     fn sort_by(&self) -> crate::SortBy {
         self.sort_by.clone().unwrap_or(crate::SortBy::DocId)
     }
@@ -507,7 +511,7 @@ mod tests {
 
     #[test]
     fn test_json_serialize() -> anyhow::Result<()> {
-        let mut config = crate::default_config_for_tests();
+        let mut config = crate::default_config_with_demux_for_tests();
         let json_config = serde_json::to_string_pretty(&config)?;
         let mut config_after_serialization =
             serde_json::from_str::<DefaultIndexConfig>(&json_config)?;
@@ -523,6 +527,10 @@ mod tests {
         assert_eq!(
             config.timestamp_field_name,
             config_after_serialization.timestamp_field_name
+        );
+        assert_eq!(
+            config.demux_field_name,
+            config_after_serialization.demux_field_name
         );
         assert_eq!(
             config.sort_by.unwrap(),

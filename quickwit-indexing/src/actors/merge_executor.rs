@@ -23,7 +23,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use anyhow::Context;
-use itertools::Itertools;
+use itertools::{izip, Itertools};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SyncActor};
 use quickwit_common::split_file;
 use quickwit_directories::{BundleDirectory, UnionDirectory};
@@ -39,7 +39,6 @@ use tracing::{debug, info, info_span, Span};
 
 use crate::merge_policy::MergeOperation;
 use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, ScratchDirectory};
-use crate::new_split_id;
 
 pub struct MergeExecutor {
     index_id: String,
@@ -82,11 +81,20 @@ impl Actor for MergeExecutor {
                     num_docs=num_docs,
                     num_splits=splits.len())
             }
-            MergeOperation::Demux { .. } => {
-                // FIXME once demux is here.
+            MergeOperation::Demux {
+                demux_split_ids,
+                splits,
+            } => {
+                let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
+                let in_demux_split_idx: Vec<String> =
+                    splits.iter().map(|split| split.split_id.clone()).collect();
                 info_span!("demux",
                     msg_id=&msg_id,
-                    dir=%merge_scratch.merge_scratch_directory.path().display())
+                    dir=%merge_scratch.merge_scratch_directory.path().display(),
+                    demux_split_ids=?demux_split_ids,
+                    in_demux_split_idx=?in_demux_split_idx,
+                    num_docs=num_docs,
+                    num_splits=splits.len())
             }
         }
     }
@@ -148,8 +156,12 @@ impl SyncActor for MergeExecutor {
                     ctx,
                 )?;
             }
-            MergeOperation::Demux { splits } => {
+            MergeOperation::Demux {
+                demux_split_ids,
+                splits,
+            } => {
                 self.process_demux(
+                    demux_split_ids,
                     splits,
                     merge_scratch.merge_scratch_directory,
                     merge_scratch.downloaded_splits_directory,
@@ -298,6 +310,7 @@ impl MergeExecutor {
 
     fn process_demux(
         &mut self,
+        demux_split_ids: Vec<String>,
         splits: Vec<SplitMetadata>,
         merge_scratch_directory: ScratchDirectory,
         downloaded_splits_directory: ScratchDirectory,
@@ -370,9 +383,8 @@ impl MergeExecutor {
             .map(|split| split.demux_num_ops)
             .max()
             .unwrap();
-        for (index, scratched_directory) in indexes
-            .into_iter()
-            .zip(demuxed_scratched_directories.into_iter())
+        for (split_id, index, scratched_directory) in
+            izip!(demux_split_ids, indexes, demuxed_scratched_directories)
         {
             let searchable_segments = index.searchable_segments()?;
             assert_eq!(
@@ -393,7 +405,7 @@ impl MergeExecutor {
             };
             let index_writer = index.writer_with_num_threads(1, 3_000_000)?;
             let indexed_split = IndexedSplit {
-                split_id: new_split_id(),
+                split_id,
                 index_id: self.index_id.clone(),
                 replaced_split_ids: replaced_split_ids.clone(),
                 time_range,
@@ -761,7 +773,7 @@ mod tests {
     use super::*;
     use crate::merge_policy::MergeOperation;
     use crate::models::ScratchDirectory;
-    use crate::TestSandbox;
+    use crate::{new_split_id, TestSandbox};
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
@@ -871,6 +883,7 @@ mod tests {
             .into_iter()
             .map(|split_and_footer_offsets| split_and_footer_offsets.split_metadata)
             .collect();
+        let demux_split_ids = (0..splits.len()).map(|_| new_split_id()).collect_vec();
         let total_num_bytes_docs = splits.iter().map(|split| split.size_in_bytes).sum::<u64>();
         let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory =
@@ -884,7 +897,10 @@ mod tests {
                 .await?;
         }
         let merge_scratch = MergeScratch {
-            merge_operation: MergeOperation::Demux { splits },
+            merge_operation: MergeOperation::Demux {
+                splits,
+                demux_split_ids,
+            },
             merge_scratch_directory,
             downloaded_splits_directory,
         };

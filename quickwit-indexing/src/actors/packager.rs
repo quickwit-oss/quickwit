@@ -279,6 +279,7 @@ fn create_packaged_split(
         checkpoint_deltas: vec![split.checkpoint_delta],
         split_scratch_directory: split.split_scratch_directory,
         num_docs,
+        demux_num_ops: split.demux_num_ops,
         time_range: split.time_range,
         size_in_bytes: split.docs_size_in_bytes,
         tags,
