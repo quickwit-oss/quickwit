@@ -31,6 +31,10 @@ const FULL_SLICE: Range<usize> = 0..usize::MAX;
 /// Once the capacity is reached, a LRU strategy is used.
 const HOTCACHE_CACHE_CAPACITY: usize = 500_000_000;
 
+/// Fast field cache capacity is hardcoded to 3GB.
+/// Once the capacity is reached, a LRU strategy is used.
+const FAST_CACHE_CAPACITY: usize = 3_000_000_000;
+
 pub struct QuickwitCache {
     router: Vec<(&'static str, Arc<dyn Cache>)>,
 }
@@ -47,6 +51,10 @@ impl Default for QuickwitCache {
         quickwit_cache.add_route(
             HOTCACHE_FILENAME,
             Arc::new(SimpleCache::with_capacity_in_bytes(HOTCACHE_CACHE_CAPACITY)),
+        );
+        quickwit_cache.add_route(
+            ".fast",
+            Arc::new(SimpleCache::with_capacity_in_bytes(FAST_CACHE_CAPACITY)),
         );
         quickwit_cache
     }
