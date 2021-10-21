@@ -64,7 +64,7 @@ pub use self::storage_resolver::{
 };
 #[cfg(feature = "testsuite")]
 pub use self::tests::storage_test_suite;
-pub use crate::cache::{Cache, MemorySizedCache, SliceCache, StorageWithCacheFactory};
+pub use crate::cache::{wrap_storage_with_long_term_cache, Cache, MemorySizedCache, SliceCache};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 #[cfg(any(test, feature = "testsuite"))]

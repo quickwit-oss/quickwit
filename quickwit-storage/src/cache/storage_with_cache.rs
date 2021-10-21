@@ -23,12 +23,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::{Cache, OwnedBytes, Storage, StorageFactory, StorageResult};
+use crate::{Cache, OwnedBytes, Storage, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
-struct StorageWithCache {
-    storage: Arc<dyn Storage>,
-    cache: Arc<dyn Cache>,
+pub(crate) struct StorageWithCache {
+    pub storage: Arc<dyn Storage>,
+    pub cache: Arc<dyn Cache>,
 }
 
 #[async_trait]
@@ -81,38 +81,6 @@ impl Storage for StorageWithCache {
 
     fn uri(&self) -> String {
         self.storage.uri()
-    }
-}
-
-/// A StorageFactory that wraps all Storage that are produced with a cache.
-///
-/// The cache is shared with all of the storage instances.
-pub struct StorageWithCacheFactory {
-    storage_factory: Arc<dyn StorageFactory>,
-    cache: Arc<dyn Cache>,
-}
-
-impl StorageWithCacheFactory {
-    /// Creates a new StorageFactory with the given cache.
-    pub fn new(storage_factory: Arc<dyn StorageFactory>, cache: Arc<dyn Cache>) -> Self {
-        StorageWithCacheFactory {
-            storage_factory,
-            cache,
-        }
-    }
-}
-
-impl StorageFactory for StorageWithCacheFactory {
-    fn protocol(&self) -> String {
-        self.storage_factory.protocol()
-    }
-
-    fn resolve(&self, uri: &str) -> crate::StorageResult<Arc<dyn Storage>> {
-        let storage = self.storage_factory.resolve(uri)?;
-        Ok(Arc::new(StorageWithCache {
-            storage,
-            cache: self.cache.clone(),
-        }))
     }
 }
 
