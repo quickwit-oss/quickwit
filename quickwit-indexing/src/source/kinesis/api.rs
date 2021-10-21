@@ -205,8 +205,8 @@ where
 
         if start.elapsed() >= timeout {
             bail!(
-                "The Kinesis data stream `{}` failed to satisfy the predicate after {}s. Current \
-                 status: `{}`.",
+                "The status of the Kinesis data stream `{}` failed to satisfy the predicate after \
+                 {}s. Current status: `{}`.",
                 stream_name,
                 timeout.as_secs(),
                 stream_status
