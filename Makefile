@@ -31,3 +31,14 @@ fmt:
 # `make -k test-all docker-compose-down`, tears down the Docker services after running all the tests.
 test-all: docker-compose-up
 	QUICKWIT_ENV=local cargo test --all-features
+
+# This will build and push all custom cross images for cross-compilation.
+# You will need to login into dockerhub with `quickwitinc` account
+IMAGE_TAGS = x86_64-unknown-linux-musl aarch64-unknown-linux-gnu aarch64-unknown-linux-musl
+
+.PHONY: cross-images
+cross-images:
+	for tag in ${IMAGE_TAGS}; do \
+		docker build --tag quickwitinc/$$tag --file ./cross-images/$$tag.dockerfile ./cross-images; \
+		docker push quickwitinc/$$tag:latest; \
+	done

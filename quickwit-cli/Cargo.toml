@@ -54,3 +54,4 @@ serial_test = "0.5.1"
 [features]
 ci-test = []
 release-feature-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka"]
+release-feature-vendored-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka-vendored"]
