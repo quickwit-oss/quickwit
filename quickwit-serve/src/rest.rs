@@ -258,16 +258,26 @@ async fn search_stream_endpoint<TSearchService: SearchService>(
             match result {
                 Ok(bytes) => {
                     if sender.send_data(bytes).await.is_err() {
+                        sender.abort();
                         break;
                     }
                 }
-                Err(_) => {
+                Err(error) => {
                     // Add trailer to signal to the client that there is an error. Only works
-                    // with if the request is made with an http2 client.
-                    let header_value = HeaderValue::from_static("search stream error");
+                    // if the request is made with an http2 client that can read it... and
+                    // actually this seems pretty rare, for example `curl` will not show this
+                    // trailer. Thus we also call `sender.abort()` so that the
+                    // client will see something wrong happened. But he will
+                    // need to look at the logs to understand that.
+                    tracing::error!(error=%error, "Error when streaming search results.");
+                    let header_value_str =
+                        format!("Error when streaming search results: {}.", error);
+                    let header_value = HeaderValue::from_str(header_value_str.as_str())
+                        .unwrap_or_else(|_| HeaderValue::from_static("Search stream error"));
                     let mut trailers = HeaderMap::new();
                     trailers.insert("X-Stream-Error", header_value);
                     let _ = sender.send_trailers(trailers).await;
+                    sender.abort();
                     break;
                 }
             };
