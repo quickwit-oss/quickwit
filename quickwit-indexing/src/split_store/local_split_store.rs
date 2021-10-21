@@ -93,6 +93,11 @@ impl LocalSplitStore {
         })
     }
 
+    /// Returns the list of splits in the cache
+    pub fn list_splits(&self) -> Vec<String> {
+        self.stored_splits.keys().cloned().collect()
+    }
+
     #[cfg(test)]
     pub fn inspect(&self) -> &HashMap<String, usize> {
         &self.stored_splits
@@ -209,6 +214,10 @@ mod tests {
                 num_splits: 2,
                 size_in_bytes: 27
             }
+        );
+        assert_eq!(
+            split_store.list_splits(),
+            cache_content.keys().cloned().collect::<Vec<_>>()
         );
         Ok(())
     }

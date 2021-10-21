@@ -221,6 +221,9 @@ impl IndexingPipelineSupervisor {
             IndexingSplitStoreParams::default(),
             merge_policy.clone(),
         )?;
+        split_store
+            .remove_dangling_splits(&self.params.index_id, self.params.metastore.clone())
+            .await?;
 
         let tags_field = index_metadata
             .index_config
@@ -515,9 +518,14 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let mut metastore = MockMetastore::default();
         metastore
+            .expect_list_all_splits()
+            .times(1)
+            .returning(|_| Ok(Vec::new()));
+        metastore
             .expect_list_splits()
             .times(3)
             .returning(|_, _, _, _| Ok(Vec::new()));
+
         metastore
             .expect_mark_splits_for_deletion()
             .times(1)
