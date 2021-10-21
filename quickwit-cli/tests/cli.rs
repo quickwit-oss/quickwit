@@ -644,7 +644,7 @@ async fn test_all_local_index() -> Result<()> {
     .unwrap();
     // TODO: wait until port server accepts incoming connections and remove sleep.
     sleep(Duration::from_secs(2)).await;
-    let mut data = vec![0; 512];
+    let mut data = vec![0; 1024];
     server_process
         .stdout
         .as_mut()
@@ -652,6 +652,8 @@ async fn test_all_local_index() -> Result<()> {
         .read_exact(&mut data)
         .expect("Cannot read output");
     let process_output_str = String::from_utf8(data).unwrap();
+    assert!(process_output_str.contains("http://127.0.0.1:8182"));
+
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:8182/api/v1/{}/search?query=level:info",
         index_id
@@ -660,7 +662,6 @@ async fn test_all_local_index() -> Result<()> {
     .text()
     .await?;
 
-    assert!(process_output_str.contains("http://127.0.0.1:8182"));
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
     assert_eq!(result["numHits"], Value::Number(Number::from(2i64)));
