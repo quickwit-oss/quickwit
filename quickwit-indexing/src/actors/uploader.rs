@@ -106,7 +106,7 @@ fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets
             split_state: SplitState::New,
             update_timestamp: Utc::now().timestamp(),
             tags: split.tags.clone(),
-            demux_num_ops: 0,
+            demux_num_ops: split.demux_num_ops,
         },
         footer_offsets: split.footer_offsets.clone(),
     }
@@ -305,6 +305,7 @@ mod tests {
                     footer_offsets: 1000..2000,
                     split_scratch_directory,
                     num_docs: 10,
+                    demux_num_ops: 0,
                     tags: Default::default(),
                     replaced_split_ids: Vec::new(),
                     split_date_of_birth: Instant::now(),
@@ -383,6 +384,7 @@ mod tests {
             footer_offsets: 1000..2000,
             split_scratch_directory: split_scratch_directory_1,
             num_docs: 10,
+            demux_num_ops: 1,
             tags: Default::default(),
             replaced_split_ids: vec![
                 "replaced-split-1".to_string(),
@@ -399,6 +401,7 @@ mod tests {
             footer_offsets: 1000..2000,
             split_scratch_directory: split_scratch_directory_2,
             num_docs: 10,
+            demux_num_ops: 1,
             tags: Default::default(),
             replaced_split_ids: vec![
                 "replaced-split-1".to_string(),
@@ -438,6 +441,8 @@ mod tests {
                     "replaced-split-2".to_string()
                 ]
             );
+            assert_eq!(new_splits[0].demux_num_ops, 1);
+            assert_eq!(new_splits[1].demux_num_ops, 1);
         } else {
             panic!("Expected publish new split operation");
         }

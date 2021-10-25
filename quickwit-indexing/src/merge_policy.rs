@@ -21,6 +21,7 @@ use std::cmp::Reverse;
 use std::fmt;
 use std::ops::Range;
 
+use itertools::Itertools;
 use quickwit_index_config::match_tag_field_name;
 use quickwit_metastore::SplitMetadata;
 use tracing::debug;
@@ -33,6 +34,7 @@ pub enum MergeOperation {
         splits: Vec<SplitMetadata>,
     },
     Demux {
+        demux_split_ids: Vec<String>,
         splits: Vec<SplitMetadata>,
     },
 }
@@ -47,7 +49,7 @@ impl MergeOperation {
 
     pub fn splits(&self) -> &[SplitMetadata] {
         match self {
-            MergeOperation::Merge { splits, .. } | MergeOperation::Demux { splits } => {
+            MergeOperation::Merge { splits, .. } | MergeOperation::Demux { splits, .. } => {
                 splits.as_slice()
             }
         }
@@ -67,8 +69,15 @@ impl fmt::Debug for MergeOperation {
                 }
                 write!(f, "])")?;
             }
-            MergeOperation::Demux { splits } => {
-                write!(f, "Merge(splits=[")?;
+            MergeOperation::Demux {
+                demux_split_ids,
+                splits,
+            } => {
+                write!(f, "Merge(demux_splits=[")?;
+                for split_id in demux_split_ids {
+                    write!(f, "{},", split_id)?;
+                }
+                write!(f, "], input_splits=[")?;
                 for split in splits {
                     write!(f, "{},", &split.split_id)?;
                 }
@@ -241,14 +250,14 @@ impl StableMultitenantWithTimestampMergePolicy {
             // split will be demuxed.
             return true;
         };
-        let split_tags_contains_at_least_two_demux_values = split
+        let split_tags_contains_less_than_2_demux_values = split
             .tags
             .iter()
             .filter(|tag| match_tag_field_name(demux_field_name, tag))
             .count()
             < 2;
-        split_tags_contains_at_least_two_demux_values
-            && (split.num_records < self.max_merge_docs || split.demux_num_ops > 0)
+        split_tags_contains_less_than_2_demux_values
+            || (split.num_records < self.max_merge_docs || split.demux_num_ops > 0)
     }
 
     fn merge_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
@@ -332,6 +341,9 @@ impl StableMultitenantWithTimestampMergePolicy {
         while splits.len() >= self.demux_factor {
             let splits_for_demux: Vec<SplitMetadata> = splits.drain(0..self.demux_factor).collect();
             let merge_operation = MergeOperation::Demux {
+                demux_split_ids: (0..splits_for_demux.len())
+                    .map(|_| new_split_id())
+                    .collect_vec(),
                 splits: splits_for_demux,
             };
             operations.push(merge_operation);
@@ -485,6 +497,7 @@ fn is_sorted(els: &[usize]) -> bool {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use std::iter::FromIterator;
     use std::ops::RangeInclusive;
 
     use super::*;
@@ -560,23 +573,42 @@ mod tests {
             demux_field_name: Some("demux_field".to_owned()),
             ..Default::default()
         };
-        // Split under max_merge_docs and demux_generation = 0 is not mature.
         let mut split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
+        // Add a number of tags > 1 so that it can be a candidate for demux.
+        let demux_tags = HashSet::from_iter(vec![
+            "demux_field:1".to_string(),
+            "demux_field:2".to_string(),
+        ]);
+        split.tags = demux_tags;
+        // Good candidates for merge or demux.
+        // Split under max_merge_docs and demux_generation = 0 is not mature.
         assert!(!merge_policy.is_mature(&split));
-        // Split undermax_merge_docs and demux_generation = 1 is mature.
-        split.demux_num_ops = 1;
-        assert!(merge_policy.is_mature(&split));
-        // Split with docs >  max_merge_docs and demux_generation = 1 is mature.
-        split.demux_num_ops = merge_policy.max_merge_docs + 1;
-        split.demux_num_ops = 1;
-        assert!(merge_policy.is_mature(&split));
         // Split with docs >= max_merge_docs and demux_generation = 0 is not mature.
         split.num_records = merge_policy.max_merge_docs + 1;
         split.demux_num_ops = 0;
         assert!(!merge_policy.is_mature(&split));
-        // Split with docs >= max_merge_docs and demux_generation = 1 is mature.
+        // Split with docs > max_merge_docs, demux_generation of 0 and wrong tags is also mature.
+        split.num_records = 100;
+        split.demux_num_ops = 1;
+        assert!(merge_policy.is_mature(&split));
+
+        // Mature splits.
+        // Split under max_merge_docs and demux_generation = 1 is mature.
+        split.num_records = 100;
+        split.demux_num_ops = 1;
+        assert!(merge_policy.is_mature(&split));
+        // Split with docs > max_merge_docs and demux_generation = 1 is mature.
         split.num_records = merge_policy.max_merge_docs + 1;
         split.demux_num_ops = 1;
+        assert!(merge_policy.is_mature(&split));
+        // Split with docs > max_merge_docs, demux_generation of 0 and wrong tags is also mature.
+        let other_tags = HashSet::from_iter(vec![
+            "other_field:1".to_string(),
+            "other_field:2".to_string(),
+        ]);
+        split.tags = other_tags;
+        split.num_records = merge_policy.max_merge_docs + 1;
+        split.demux_num_ops = 0;
         assert!(merge_policy.is_mature(&split));
     }
 
