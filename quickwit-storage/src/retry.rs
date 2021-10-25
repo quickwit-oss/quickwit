@@ -24,7 +24,7 @@ use futures::Future;
 use rand::Rng;
 use tracing::{debug, warn};
 
-const MAX_RETRY_ATTEMPTS: usize = 30;
+const MAX_RETRY_ATTEMPTS: usize = 2;
 const BASE_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 250 });
 const MAX_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 20_000 });
 
