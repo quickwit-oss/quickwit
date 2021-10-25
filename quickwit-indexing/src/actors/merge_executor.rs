@@ -344,9 +344,11 @@ impl MergeExecutor {
         let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..splits.len())
             .map(|idx| merge_scratch_directory.named_temp_child(format!("demux-split-{}", idx)))
             .try_collect()?;
-        let demuxed_split_directories: Vec<MmapDirectory> = demuxed_scratched_directories
+        let demuxed_split_directories: Vec<Box<dyn Directory>> = demuxed_scratched_directories
             .iter()
-            .map(|directory| MmapDirectory::open(directory.path()))
+            .map(|directory| {
+                MmapDirectory::open(directory.path()).map(|dir| Box::new(dir) as Box<dyn Directory>)
+            })
             .try_collect()?;
         let union_index_meta = combine_index_meta(index_metas)?;
         let indexes = {
