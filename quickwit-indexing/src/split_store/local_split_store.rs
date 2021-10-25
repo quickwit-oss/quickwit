@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
@@ -93,9 +93,21 @@ impl LocalSplitStore {
         })
     }
 
-    /// Returns the list of splits in the cache
-    pub fn list_splits(&self) -> Vec<String> {
-        self.stored_splits.keys().cloned().collect()
+    /// Clean the split store.
+    /// By only keeping the splits specified and removing other
+    /// existing splits in this store.
+    pub async fn retain_only(&mut self, split_ids: &[&str]) -> StorageResult<()> {
+        let stored_ids_set: HashSet<String> = self.stored_splits.keys().cloned().collect();
+        let to_retain_ids_set: HashSet<String> = split_ids
+            .iter()
+            .map(|split_id| split_id.to_string())
+            .collect();
+        let to_remove_ids_set = &stored_ids_set - &to_retain_ids_set;
+
+        for split_id in to_remove_ids_set {
+            self.remove_split(&split_id).await?;
+        }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -214,10 +226,6 @@ mod tests {
                 num_splits: 2,
                 size_in_bytes: 27
             }
-        );
-        assert_eq!(
-            split_store.list_splits(),
-            cache_content.keys().cloned().collect::<Vec<_>>()
         );
         Ok(())
     }

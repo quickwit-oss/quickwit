@@ -19,14 +19,13 @@
 
 #[cfg(test)]
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Context;
-use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
-use quickwit_storage::{PutPayload, Storage, StorageErrorKind, StorageResult};
+use quickwit_metastore::{SplitMetadata, SplitMetadataAndFooterOffsets};
+use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tokio::sync::Mutex;
 use tracing::info;
 
@@ -212,43 +211,23 @@ impl IndexingSplitStore {
     }
 
     /// Removes the danglings splits.
+    /// After a restart, the store might contains splits that are not relevant anymore.
+    /// For instance, if the failure happens right before its publication, the split will be in the
+    /// split store but not in the metastore.
     pub async fn remove_dangling_splits(
         &self,
-        index_id: &str,
-        metastore: Arc<dyn Metastore>,
+        published_splits: &[SplitMetadataAndFooterOffsets],
     ) -> StorageResult<()> {
-        if self.local_split_store.is_none() {
-            return Ok(());
-        }
-
         if let Some(local_split_store) = self.local_split_store.as_ref() {
-            let mut local_split_store_lock = local_split_store.lock().await;
-            let local_splits_ids: HashSet<String> =
-                local_split_store_lock.list_splits().into_iter().collect();
-
-            let all_splits = metastore
-                .list_all_splits(index_id)
-                .await
-                .map_err(|error| StorageErrorKind::InternalError.with_error(error))?;
-
-            // TODO: Optimize this when we implement a generic interface for filtering splits on the
-            // metastore.
-            let split_ids_to_remove: Vec<&str> = all_splits
+            let published_split_ids: Vec<&str> = published_splits
                 .iter()
-                .filter_map(|split| {
-                    if local_splits_ids.contains(&split.split_metadata.split_id)
-                        && split.split_metadata.split_state != SplitState::Published
-                    {
-                        Some(split.split_metadata.split_id.as_str())
-                    } else {
-                        None
-                    }
-                })
+                .map(|split| split.split_metadata.split_id.as_str())
                 .collect();
 
-            for split_id in split_ids_to_remove {
-                local_split_store_lock.remove_split(split_id).await?;
-            }
+            let mut local_split_store_lock = local_split_store.lock().await;
+            return local_split_store_lock
+                .retain_only(&published_split_ids)
+                .await;
         }
 
         Ok(())
@@ -271,9 +250,7 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    use quickwit_metastore::{
-        MockMetastore, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState,
-    };
+    use quickwit_metastore::{SplitMetadata, SplitMetadataAndFooterOffsets, SplitState};
     use quickwit_storage::{RamStorage, Storage, StorageError, StorageErrorKind};
     use tempfile::tempdir;
     use tokio::fs;
@@ -605,7 +582,6 @@ mod tests {
     async fn test_remove_danglings_splits_should_remove_files() -> anyhow::Result<()> {
         let local_dir = tempdir()?;
         let root_path = local_dir.path().join(SPLIT_CACHE_DIR_NAME);
-        let index_id = "mock-index";
         fs::create_dir_all(root_path.to_path_buf()).await?;
         fs::write(root_path.join("a.split"), b"a").await?;
         fs::write(root_path.join("b.split"), b"b").await?;
@@ -622,36 +598,16 @@ mod tests {
             cache_params,
             merge_policy,
         )?;
-
-        let mut mock_metastore = MockMetastore::default();
-        mock_metastore
-            .expect_list_all_splits()
-            .times(1)
-            .returning(|index_id| {
-                assert_eq!(index_id, "mock-index");
-                let splits = vec![
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_id: "a".to_string(),
-                            split_state: SplitState::Staged,
-                            ..Default::default()
-                        },
-                        footer_offsets: 5..20,
-                    },
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_id: "b".to_string(),
-                            split_state: SplitState::Published,
-                            ..Default::default()
-                        },
-                        footer_offsets: 5..20,
-                    },
-                ];
-                Ok(splits)
-            });
-
+        let published_splits = vec![SplitMetadataAndFooterOffsets {
+            split_metadata: SplitMetadata {
+                split_id: "b".to_string(),
+                split_state: SplitState::Published,
+                ..Default::default()
+            },
+            footer_offsets: 5..20,
+        }];
         split_store
-            .remove_dangling_splits(index_id, Arc::new(mock_metastore))
+            .remove_dangling_splits(&published_splits)
             .await?;
         assert!(!root_path.join("a.split").as_path().exists());
         assert!(root_path.join("b.split").as_path().exists());
