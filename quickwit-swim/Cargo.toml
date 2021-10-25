@@ -2,7 +2,7 @@
 name = "quickwit-swim"
 version = "0.1.2"
 authors = ['Quickwit, Inc. <hello@quickwit.io>']
-edition = '2018'
+edition = '2021'
 description = "Fork of artillery-core SWIM implementation"
 repository = "https://github.com/quickwit-inc/quickwit"
 homepage = "https://quickwit.io/"

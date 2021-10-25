@@ -31,19 +31,23 @@ use quickwit_index_config::IndexConfig;
 use quickwit_proto::{
     LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError,
 };
-use quickwit_storage::{BundleStorage, MemorySizedCache, OwnedBytes, Storage};
+use quickwit_storage::{
+    wrap_storage_with_long_term_cache, BundleStorage, MemorySizedCache, OwnedBytes, Storage,
+};
 use tantivy::collector::Collector;
 use tantivy::query::Query;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 use tracing::*;
 
+const SPLIT_FOOTER_CACHE_CAPACITY: usize = 500_000_000;
+
 use crate::collector::{make_collector_for_split, make_merge_collector, GenericQuickwitCollector};
 use crate::SearchError;
 
 fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
     static INSTANCE: OnceCell<MemorySizedCache<String>> = OnceCell::new();
-    INSTANCE.get_or_init(|| MemorySizedCache::with_capacity_in_bytes(500_000_000))
+    INSTANCE.get_or_init(|| MemorySizedCache::with_capacity_in_bytes(SPLIT_FOOTER_CACHE_CAPACITY))
 }
 
 async fn get_split_footer_from_cache_or_fetch(
@@ -97,8 +101,9 @@ pub(crate) async fn open_index(
 
     let hotcache_bytes = footer_data.split_off(footer_data.len() - hotcache_num_bytes);
 
-    let bundle = BundleStorage::new(index_storage, split_file, &footer_data)?;
-    let directory = StorageDirectory::new(Arc::new(bundle));
+    let bundle_storage = BundleStorage::new(index_storage, split_file, &footer_data)?;
+    let bundle_storage_with_cache = wrap_storage_with_long_term_cache(Arc::new(bundle_storage));
+    let directory = StorageDirectory::new(bundle_storage_with_cache);
     let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
     let hot_directory = HotDirectory::open(caching_directory, hotcache_bytes)?;
     let index = Index::open(hot_directory)?;
