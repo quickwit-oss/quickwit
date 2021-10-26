@@ -161,7 +161,7 @@ impl Default for StableMultitenantWithTimestampMergePolicy {
             min_level_num_docs: 100_000,
             merge_factor: 10,
             merge_factor_max: 12,
-            demux_factor: 6,
+            demux_factor: 3,
             demux_field_name: None,
         }
     }

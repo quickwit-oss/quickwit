@@ -329,6 +329,8 @@ impl MergeExecutor {
             .collect_vec();
         let (index_metas, replaced_segments) =
             load_metas_and_segments(downloaded_splits_directory.path(), &replaced_split_ids)?;
+        ctx.record_progress();
+        info!("open-readers");
         let (replaced_segments_num_docs, replaced_segments_demux_field_readers) =
             demux_field_readers(&replaced_segments, demux_field_name)?;
         // Build virtual split for all replaced splits = counting demux values in all replaced
@@ -343,17 +345,22 @@ impl MergeExecutor {
             }
         }
         ctx.record_progress();
+        info!("demux-virtual-split-start");
         let demuxed_virtual_splits = demux_virtual_split(
             virtual_split_with_all_docs,
             self.min_demuxed_split_num_docs,
             self.max_demuxed_split_num_docs,
             demux_split_ids.len(),
         );
+        info!("demux-virtual-split-end");
+        ctx.record_progress();
+        info!("demux-build-mapping-start");
         let demux_mapping = build_demux_mapping(
             replaced_segments_num_docs,
             replaced_segments_demux_field_readers,
             demuxed_virtual_splits,
         );
+        info!("demux-build-mapping-end");
         let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..demux_split_ids.len())
             .map(|idx| merge_scratch_directory.named_temp_child(format!("demux-split-{}", idx)))
             .try_collect()?;
@@ -363,6 +370,7 @@ impl MergeExecutor {
                 MmapDirectory::open(directory.path()).map(|dir| Box::new(dir) as Box<dyn Directory>)
             })
             .try_collect()?;
+        ctx.record_progress();
         let union_index_meta = combine_index_meta(index_metas)?;
         let indexes = {
             let _protected_zone_guard = ctx.protect_zone();
