@@ -39,6 +39,6 @@ IMAGE_TAGS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-l
 .PHONY: cross-images
 cross-images:
 	for tag in ${IMAGE_TAGS}; do \
-		docker build --tag quickwitinc/$$tag --file ./cross-images/$$tag.dockerfile ./cross-images; \
-		docker push quickwitinc/$$tag:latest; \
+		docker build --tag quickwitinc/builder-$$tag --file ./cross-images/$$tag.dockerfile ./cross-images; \
+		docker push quickwitinc/builder-$$tag:latest; \
 	done
