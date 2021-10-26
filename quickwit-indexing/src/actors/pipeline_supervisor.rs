@@ -221,6 +221,12 @@ impl IndexingPipelineSupervisor {
             IndexingSplitStoreParams::default(),
             merge_policy.clone(),
         )?;
+        let pubished_splits = self
+            .params
+            .metastore
+            .list_splits(&self.params.index_id, SplitState::Published, None, &[])
+            .await?;
+        split_store.remove_dangling_splits(&pubished_splits).await?;
 
         let tags_field = index_metadata
             .index_config
@@ -282,12 +288,7 @@ impl IndexingPipelineSupervisor {
         // Merge planner
         let mut merge_planner =
             MergePlanner::new(merge_policy.clone(), merge_split_downloader_mailbox);
-        for split in self
-            .params
-            .metastore
-            .list_splits(&self.params.index_id, SplitState::Published, None, &[])
-            .await?
-        {
+        for split in pubished_splits {
             merge_planner.add_split(split.split_metadata);
         }
         let (merge_planner_mailbox, merge_planner_handler) = ctx
