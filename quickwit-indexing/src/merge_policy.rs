@@ -161,7 +161,7 @@ impl Default for StableMultitenantWithTimestampMergePolicy {
             min_level_num_docs: 100_000,
             merge_factor: 10,
             merge_factor_max: 12,
-            demux_factor: 6,
+            demux_factor: 3,
             demux_field_name: None,
         }
     }
@@ -361,7 +361,7 @@ impl StableMultitenantWithTimestampMergePolicy {
             let splits_for_demux: Vec<SplitMetadata> = splits.drain(0..end_split_idx + 1).collect();
             total_num_docs_left -= num_docs_to_demux;
             let merge_operation = MergeOperation::Demux {
-                demux_split_ids: (0..splits_for_demux.len())
+                demux_split_ids: (0..self.demux_factor)
                     .map(|_| new_split_id())
                     .collect_vec(),
                 splits: splits_for_demux,
