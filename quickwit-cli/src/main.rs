@@ -32,7 +32,7 @@ use quickwit_cli::*;
 use quickwit_common::net::socket_addr_from_str;
 use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
-use tracing::{info_span, Level};
+use tracing::{info, Level};
 use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
@@ -381,12 +381,10 @@ async fn main() -> anyhow::Result<()> {
     };
 
     setup_logging_and_tracing(command.default_log_level())?;
-    let span = info_span!(
-        "quickwit",
+    info!(
         version = env!("CARGO_PKG_VERSION"),
-        commit = env!("GIT_COMMIT_HASH")
+        commit = env!("GIT_COMMIT_HASH"),
     );
-    let _enter = span.enter();
 
     let command_res = match command {
         CliCommand::ExtractSplit(args) => extract_split_cli(args).await,
