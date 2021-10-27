@@ -112,3 +112,38 @@ pub fn default_config_for_tests() -> DefaultIndexConfig {
         }"#;
     serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE).unwrap()
 }
+
+/// Returns a default `DefaultIndexConfig` for unit tests.
+#[cfg(any(test, feature = "testsuite"))]
+pub fn default_config_with_demux_for_tests() -> DefaultIndexConfig {
+    const JSON_CONFIG_VALUE: &str = r#"
+        {
+            "store_source": true,
+            "default_search_fields": [
+                "body", "tenant_id"
+            ],
+            "timestamp_field": "timestamp",
+            "sort_by": {
+                "field_name": "timestamp",
+                "order": "desc"
+            },
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "i64",
+                    "fast": true
+                },
+                {
+                    "name": "body",
+                    "type": "text",
+                    "stored": true
+                },
+                {
+                    "name": "tenant_id",
+                    "type": "u64",
+                    "fast": true
+                }
+            ]
+        }"#;
+    serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE).unwrap()
+}

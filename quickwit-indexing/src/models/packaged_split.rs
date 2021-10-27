@@ -36,6 +36,7 @@ pub struct PackagedSplit {
     pub footer_offsets: Range<u64>,
     pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,
+    pub demux_num_ops: usize,
     pub tags: HashSet<String>,
     pub split_date_of_birth: Instant,
 }

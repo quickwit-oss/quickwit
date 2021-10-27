@@ -193,17 +193,6 @@ impl IndexingPipelineSupervisor {
             .metastore
             .index_metadata(&self.params.index_id)
             .await?;
-
-        let merge_policy: Arc<dyn MergePolicy> =
-            Arc::new(StableMultitenantWithTimestampMergePolicy::default());
-
-        info!(
-            root_dir=%self.params.indexer_params.indexing_directory.path().display(),
-            merge_policy=?merge_policy,
-            index_uri=?index_metadata.index_uri,
-            "spawn-indexing-pipeline",
-        );
-
         let index_storage = self
             .params
             .storage_uri_resolver
@@ -216,6 +205,12 @@ impl IndexingPipelineSupervisor {
         };
         let max_merge_docs = stable_multitenant_merge_policy.max_merge_docs;
         let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
+        info!(
+            root_dir=%self.params.indexer_params.indexing_directory.path().display(),
+            merge_policy=?merge_policy,
+            index_uri=?index_metadata.index_uri,
+            "spawn-indexing-pipeline",
+        );
         let split_store = IndexingSplitStore::create_with_local_store(
             index_storage,
             self.params
@@ -226,6 +221,12 @@ impl IndexingPipelineSupervisor {
             IndexingSplitStoreParams::default(),
             merge_policy.clone(),
         )?;
+        let pubished_splits = self
+            .params
+            .metastore
+            .list_splits(&self.params.index_id, SplitState::Published, None, &[])
+            .await?;
+        split_store.remove_dangling_splits(&pubished_splits).await?;
 
         let tags_field = index_metadata
             .index_config
@@ -287,12 +288,7 @@ impl IndexingPipelineSupervisor {
         // Merge planner
         let mut merge_planner =
             MergePlanner::new(merge_policy.clone(), merge_split_downloader_mailbox);
-        for split in self
-            .params
-            .metastore
-            .list_splits(&self.params.index_id, SplitState::Published, None, &[])
-            .await?
-        {
+        for split in pubished_splits {
             merge_planner.add_split(split.split_metadata);
         }
         let (merge_planner_mailbox, merge_planner_handler) = ctx
