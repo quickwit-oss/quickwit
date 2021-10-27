@@ -22,6 +22,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, AsyncActor, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
+use tantivy::Directory;
 use tracing::{info, info_span, Span};
 
 use crate::merge_policy::MergeOperation;
@@ -90,16 +91,18 @@ impl MergeSplitDownloader {
         info!(dir=%merge_scratch_directory.path().display(), "download-merge-splits");
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits-")?;
-        self.download_splits(
-            merge_operation.splits(),
-            downloaded_splits_directory.path(),
-            ctx,
-        )
-        .await?;
+        let tantivy_dirs = self
+            .download_splits(
+                merge_operation.splits(),
+                downloaded_splits_directory.path(),
+                ctx,
+            )
+            .await?;
         let msg = MergeScratch {
             merge_operation,
             merge_scratch_directory,
             downloaded_splits_directory,
+            tantivy_dirs,
         };
         ctx.send_message(&self.merge_executor_mailbox, msg).await?;
         Ok(())
@@ -110,15 +113,18 @@ impl MergeSplitDownloader {
         splits: &[SplitMetadata],
         download_directory: &Path,
         ctx: &ActorContext<MergeOperation>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<Box<dyn Directory>>> {
         // we download all of the split files in the scratch directory.
+        let mut tantivy_dirs = vec![];
         for split in splits {
             let _protect_guard = ctx.protect_zone();
-            self.storage
+            let tantivy_dir = self
+                .storage
                 .fetch_split(&split.split_id, download_directory)
                 .await?;
+            tantivy_dirs.push(tantivy_dir);
         }
-        Ok(())
+        Ok(tantivy_dirs)
     }
 }
 

@@ -26,12 +26,13 @@ use std::time::Instant;
 use anyhow::Context;
 use quickwit_metastore::{SplitMetadata, SplitMetadataAndFooterOffsets};
 use quickwit_storage::{PutPayload, Storage, StorageResult};
+use tantivy::Directory;
 use tokio::sync::Mutex;
 use tracing::info;
 
 use super::LocalSplitStore;
 use crate::split_store::SPLIT_CACHE_DIR_NAME;
-use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
+use crate::{BundledSplitFile, MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
 /// `IndexingSplitStoreParams` encapsulates the various contraints of the cache.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -69,7 +70,7 @@ impl Default for IndexingSplitStoreParams {
 /// unnecessary download of fresh splits. Its behavior are however very different
 /// from a usual cache as we have a strong knowledge of the split lifecycle.
 ///
-/// The splits are stored on the local filesystem.
+/// The splits are stored on the local filesystem in `LocalSplitStore`.
 #[derive(Clone)]
 pub struct IndexingSplitStore {
     /// The remote storage.
@@ -160,8 +161,9 @@ impl IndexingSplitStore {
             info!("store-in-cache");
             if let Some(split_store) = self.local_split_store.as_ref() {
                 let mut split_store_lock = split_store.lock().await;
+                let tantivy_dir = BundledSplitFile::new(split_path.to_path_buf());
                 if split_store_lock
-                    .move_into_cache(&split.split_id, split_path, split_num_bytes)
+                    .move_into_cache(&split.split_id, tantivy_dir, split_num_bytes)
                     .await?
                 {
                     return Ok(());
@@ -189,15 +191,19 @@ impl IndexingSplitStore {
     /// Gets a split from the split store, and makes it available to the given `output_path`.
     ///
     /// The output_path is expected to be a directory path.
-    pub async fn fetch_split(&self, split_id: &str, output_dir_path: &Path) -> StorageResult<()> {
+    pub async fn fetch_split(
+        &self,
+        split_id: &str,
+        output_dir_path: &Path,
+    ) -> StorageResult<Box<dyn Directory>> {
         let path = PathBuf::from(quickwit_common::split_file(split_id));
         if let Some(local_split_store) = self.local_split_store.as_ref() {
             let mut local_split_store_lock = local_split_store.lock().await;
-            if local_split_store_lock
-                .fetch_split(split_id, output_dir_path)
+            if let Some(split_file) = local_split_store_lock
+                .get_cached_split(split_id, output_dir_path)
                 .await?
             {
-                return Ok(());
+                return split_file.get_tantivy_directory();
             }
         }
         let start_time = Instant::now();
@@ -207,7 +213,7 @@ impl IndexingSplitStore {
             .copy_to_file(&path, &dest_filepath)
             .await?;
         info!(split_id=split_id,elapsed=?start_time.elapsed(), "fetch-split-from_remote-storage-success");
-        Ok(())
+        BundledSplitFile::new(dest_filepath.to_owned()).get_tantivy_directory()
     }
 
     /// Removes the danglings splits.
@@ -238,7 +244,7 @@ impl IndexingSplitStore {
     async fn inspect_local_store(&self) -> HashMap<String, usize> {
         if let Some(split_store) = self.local_split_store.as_ref() {
             let split_store_lock = split_store.lock().await;
-            split_store_lock.inspect().clone()
+            split_store_lock.inspect()
         } else {
             HashMap::default()
         }
@@ -399,19 +405,6 @@ mod tests {
             assert_eq!(local_store_stats.get("split2").cloned(), Some(21));
         }
 
-        let output_dir = tempfile::tempdir()?;
-        {
-            split_store.fetch_split("split1", output_dir.path()).await?;
-            let content = tokio::fs::read(output_dir.path().join("split1.split")).await?;
-            assert_eq!(&content[..], b"split1 content");
-        }
-        {
-            split_store.fetch_split("split2", output_dir.path()).await?;
-            let content = tokio::fs::read(output_dir.path().join("split2.split")).await?;
-            assert_eq!(&content[..], b"split2 larger content");
-        }
-        let local_store_stats = split_store.inspect_local_store().await;
-        assert!(local_store_stats.is_empty());
         Ok(())
     }
 
@@ -467,10 +460,8 @@ mod tests {
         }
         {
             let output = tempfile::tempdir()?;
-            split_store.fetch_split("split1", output.path()).await?;
-            split_store.fetch_split("split2", output.path()).await?;
-            assert!(output.path().join("split1.split").exists());
-            assert!(output.path().join("split2.split").exists());
+            let _split1 = split_store.fetch_split("split1", output.path()).await?;
+            let _split2 = split_store.fetch_split("split2", output.path()).await?;
         }
         Ok(())
     }

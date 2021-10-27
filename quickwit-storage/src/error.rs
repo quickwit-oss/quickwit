@@ -20,6 +20,7 @@
 use std::{fmt, io};
 
 use serde::{Deserialize, Serialize};
+use tantivy::directory::error::{OpenDirectoryError, OpenReadError};
 use thiserror::Error;
 
 /// Storage error kind.
@@ -113,6 +114,24 @@ impl From<io::Error> for StorageError {
     fn from(err: io::Error) -> StorageError {
         match err.kind() {
             io::ErrorKind::NotFound => StorageErrorKind::DoesNotExist.with_error(err),
+            _ => StorageErrorKind::Io.with_error(err),
+        }
+    }
+}
+
+impl From<OpenDirectoryError> for StorageError {
+    fn from(err: OpenDirectoryError) -> StorageError {
+        match err {
+            OpenDirectoryError::DoesNotExist(_) => StorageErrorKind::DoesNotExist.with_error(err),
+            _ => StorageErrorKind::Io.with_error(err),
+        }
+    }
+}
+
+impl From<OpenReadError> for StorageError {
+    fn from(err: OpenReadError) -> StorageError {
+        match err {
+            OpenReadError::FileDoesNotExist(_) => StorageErrorKind::DoesNotExist.with_error(err),
             _ => StorageErrorKind::Io.with_error(err),
         }
     }
