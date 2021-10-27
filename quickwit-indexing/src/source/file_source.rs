@@ -102,8 +102,8 @@ impl Source for FileSource {
         }
         if reached_eof {
             info!("EOF");
-            ctx.send_exit_with_success(batch_sink).await?;
-            return Err(ActorExitStatus::Success);
+            //ctx.send_exit_with_success(batch_sink).await?;
+            //return Err(ActorExitStatus::Success);
         }
         Ok(())
     }

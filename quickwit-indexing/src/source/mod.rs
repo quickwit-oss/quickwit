@@ -20,6 +20,7 @@
 mod file_source;
 #[cfg(feature = "kafka")]
 mod kafka_source;
+mod empty_source;
 mod source_factory;
 mod vec_source;
 
@@ -35,7 +36,7 @@ use serde::{Deserialize, Serialize};
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 pub use vec_source::{VecSource, VecSourceFactory, VecSourceParams};
 
-use crate::models::IndexerMessage;
+use crate::{models::IndexerMessage, source::empty_source::EmptySourceFactory};
 
 pub type SourceContext = ActorContext<Loop>;
 
@@ -165,6 +166,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         #[cfg(feature = "kafka")]
         source_factory.add_source("kafka", KafkaSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
+        source_factory.add_source("empty", EmptySourceFactory);
         source_factory
     })
 }

@@ -59,6 +59,18 @@ impl SyncActor for MergePlanner {
         }
         Ok(())
     }
+    
+    fn initialize(
+        &mut self,
+        ctx: &ActorContext<Self::Message>,
+    ) -> Result<(), ActorExitStatus> {
+        let merge_candidates = self.merge_policy.operations(&mut self.young_splits);
+        for merge_operation in merge_candidates {
+            info!(merge_operation=?merge_operation, "planning-merge");
+            ctx.send_message_blocking(&self.merge_split_downloader_mailbox, merge_operation)?;
+        }
+        Ok(())
+    }
 }
 
 impl MergePlanner {
