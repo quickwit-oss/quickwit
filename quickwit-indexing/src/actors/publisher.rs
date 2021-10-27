@@ -135,6 +135,25 @@ impl AsyncActor for Publisher {
                                                      //< entirely.
         };
         self.run_publish_operation(&publisher_message).await?;
+        match &publisher_message.operation {
+            PublishOperation::PublishNewSplit {
+                new_split,
+                checkpoint_delta,
+                split_date_of_birth,
+            } => {
+                info!(new_split=new_split.split_id.as_str(), tts=%split_date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta, "publish-new-splits");
+            }
+            PublishOperation::ReplaceSplits {
+                new_splits,
+                replaced_split_ids,
+            } => {
+                let new_split_ids: Vec<&str> = new_splits
+                    .iter()
+                    .map(|new_split| new_split.split_id.as_str())
+                    .collect();
+                info!(new_splits=?new_split_ids, replaced_splits=?replaced_split_ids, "replace-splits");
+            }
+        }
 
         let new_splits = publisher_message.operation.extract_new_splits();
 
@@ -165,7 +184,12 @@ impl AsyncActor for Publisher {
         // its end of life should also means the end of life of never stopping actors.
         // After all, when the publisher is stopped, there shouldn't be anything to process.
         // It's fine if the garbage collector is already dead.
-        let _ = ctx.send_exit_with_success_blocking(&self.garbage_collector_mailbox);
+        let _ = ctx
+            .send_exit_with_success(&self.garbage_collector_mailbox)
+            .await;
+        let _ = ctx
+            .send_exit_with_success(&self.merge_planner_mailbox)
+            .await;
         Ok(())
     }
 }
