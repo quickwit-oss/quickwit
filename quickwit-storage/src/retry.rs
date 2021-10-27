@@ -24,7 +24,7 @@ use futures::Future;
 use rand::Rng;
 use tracing::{debug, warn};
 
-const MAX_RETRY_ATTEMPTS: usize = 30;
+const MAX_RETRY_ATTEMPTS: usize = 3;
 const BASE_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 250 });
 const MAX_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 20_000 });
 
@@ -155,19 +155,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_retries_up_at_most_attempts_times() {
-        let retry_sequence: Vec<_> = (0..30)
+        let retry_sequence: Vec<_> = (0..3)
             .map(|retry_id| Err(Retry::Retryable(retry_id)))
             .chain(Some(Ok(())))
             .collect();
         assert_eq!(
             simulate_retries(retry_sequence).await,
-            Err(Retry::Retryable(29))
+            Err(Retry::Retryable(2))
         );
     }
 
     #[tokio::test]
     async fn test_retry_retries_up_to_max_attempts_times() {
-        let retry_sequence: Vec<_> = (0..29)
+        let retry_sequence: Vec<_> = (0..2)
             .map(|retry_id| Err(Retry::Retryable(retry_id)))
             .chain(Some(Ok(())))
             .collect();

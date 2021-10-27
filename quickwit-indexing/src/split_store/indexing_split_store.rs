@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Context;
-use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::{SplitMetadata, SplitMetadataAndFooterOffsets};
 use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tokio::sync::Mutex;
 use tracing::info;
@@ -210,6 +210,29 @@ impl IndexingSplitStore {
         Ok(())
     }
 
+    /// Removes the danglings splits.
+    /// After a restart, the store might contains splits that are not relevant anymore.
+    /// For instance, if the failure happens right before its publication, the split will be in the
+    /// split store but not in the metastore.
+    pub async fn remove_dangling_splits(
+        &self,
+        published_splits: &[SplitMetadataAndFooterOffsets],
+    ) -> StorageResult<()> {
+        if let Some(local_split_store) = self.local_split_store.as_ref() {
+            let published_split_ids: Vec<&str> = published_splits
+                .iter()
+                .map(|split| split.split_metadata.split_id.as_str())
+                .collect();
+
+            let mut local_split_store_lock = local_split_store.lock().await;
+            return local_split_store_lock
+                .retain_only(&published_split_ids)
+                .await;
+        }
+
+        Ok(())
+    }
+
     /// Takes a snapshot of the cache view (only used for testing).
     #[cfg(test)]
     async fn inspect_local_store(&self) -> HashMap<String, usize> {
@@ -227,7 +250,7 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    use quickwit_metastore::SplitMetadata;
+    use quickwit_metastore::{SplitMetadata, SplitMetadataAndFooterOffsets, SplitState};
     use quickwit_storage::{RamStorage, Storage, StorageError, StorageErrorKind};
     use tempfile::tempdir;
     use tokio::fs;
@@ -296,6 +319,7 @@ mod tests {
         ));
         Ok(())
     }
+
     #[tokio::test]
     async fn test_create_should_accept_a_file_size_exeeding_constraint() -> anyhow::Result<()> {
         let local_dir = tempdir()?;
@@ -551,6 +575,42 @@ mod tests {
             .unwrap_err();
         assert_eq!(storage_err.kind(), StorageErrorKind::DoesNotExist);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_remove_danglings_splits_should_remove_files() -> anyhow::Result<()> {
+        let local_dir = tempdir()?;
+        let root_path = local_dir.path().join(SPLIT_CACHE_DIR_NAME);
+        fs::create_dir_all(root_path.to_path_buf()).await?;
+        fs::write(root_path.join("a.split"), b"a").await?;
+        fs::write(root_path.join("b.split"), b"b").await?;
+
+        let cache_params = IndexingSplitStoreParams {
+            max_num_splits: 100,
+            max_num_bytes: 100,
+        };
+        let remote_storage = Arc::new(RamStorage::default());
+        let merge_policy = Arc::new(StableMultitenantWithTimestampMergePolicy::default());
+        let split_store = IndexingSplitStore::create_with_local_store(
+            remote_storage,
+            local_dir.path(),
+            cache_params,
+            merge_policy,
+        )?;
+        let published_splits = vec![SplitMetadataAndFooterOffsets {
+            split_metadata: SplitMetadata {
+                split_id: "b".to_string(),
+                split_state: SplitState::Published,
+                ..Default::default()
+            },
+            footer_offsets: 5..20,
+        }];
+        split_store
+            .remove_dangling_splits(&published_splits)
+            .await?;
+        assert!(!root_path.join("a.split").as_path().exists());
+        assert!(root_path.join("b.split").as_path().exists());
         Ok(())
     }
 }
