@@ -332,7 +332,7 @@ impl MergeExecutor {
         ctx.record_progress();
         info!("open-readers");
         let (replaced_segments_num_docs, replaced_segments_demux_field_readers) =
-            demux_field_readers(&replaced_segments, demux_field_name)?;
+            demux_field_readers(&replaced_segments, demux_field_name, ctx)?;
         // Build virtual split for all replaced splits = counting demux values in all replaced
         // segments.
         let mut virtual_split_with_all_docs = VirtualSplit::new(BTreeMap::new());
@@ -471,10 +471,12 @@ pub fn load_metas_and_segments(
 pub fn demux_field_readers(
     segments: &[Segment],
     demux_field_name: &str,
+    ctx: &ActorContext<MergeScratch>,
 ) -> anyhow::Result<(Vec<usize>, Vec<DynamicFastFieldReader<u64>>)> {
     let mut segments_num_docs = Vec::new();
     let mut segments_demux_value_readers = Vec::new();
     for segment in segments {
+        ctx.record_progress();
         let segment_reader = SegmentReader::open(segment)?;
         segments_num_docs.push(segment_reader.num_docs() as usize);
         let reader = make_fast_field_reader::<u64>(&segment_reader, demux_field_name)?;
