@@ -17,10 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::process::Command;
+
 fn main() {
-    let git_commit_hash = std::env::var_os("GITHUB_SHA")
-        .map_or("Unknown".to_string(), |value_os_str| {
-            value_os_str.to_string_lossy().to_string()
+    let git_commit_hash = Command::new("git")
+        .args(&["rev-parse", "HEAD"])
+        .output()
+        .map_or("unknown".to_string(), |output| {
+            let hash = String::from_utf8(output.stdout).unwrap();
+            String::from(&hash[..7])
         });
     println!("cargo:rustc-env=GIT_COMMIT_HASH={}", git_commit_hash);
 }
