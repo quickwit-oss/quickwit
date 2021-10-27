@@ -33,7 +33,6 @@ pub mod actors;
 mod garbage_collection;
 mod merge_policy;
 pub mod models;
-pub(crate) mod semaphore;
 pub mod source;
 mod split_store;
 mod test_utils;
