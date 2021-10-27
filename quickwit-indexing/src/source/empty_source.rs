@@ -17,17 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-
 use async_trait::async_trait;
-use quickwit_actors::{ActorExitStatus, HEARTBEAT, Mailbox};
+use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
 use serde::{Deserialize, Serialize};
 
 use crate::models::IndexerMessage;
 use crate::source::{Source, SourceContext, TypedSourceFactory};
 
-pub struct EmptySource {
-    params: EmptySourceParams,
-}
+pub struct EmptySource;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct FilePosition {
@@ -38,8 +35,8 @@ pub struct FilePosition {
 impl Source for EmptySource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<IndexerMessage>,
-        ctx: &SourceContext,
+        _: &Mailbox<IndexerMessage>,
+        _: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         tokio::time::sleep(HEARTBEAT / 2).await;
         Ok(())
@@ -55,9 +52,7 @@ impl Source for EmptySource {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct EmptySourceParams {
-    pub delay_before_closing: usize, //< If None read from stdin.
-}
+pub struct EmptySourceParams;
 
 pub struct EmptySourceFactory;
 
@@ -67,15 +62,11 @@ impl TypedSourceFactory for EmptySourceFactory {
 
     type Params = EmptySourceParams;
 
-    // TODO handle checkpoint for files.
     async fn typed_create_source(
-        mut params: EmptySourceParams,
+        _: EmptySourceParams,
         _: quickwit_metastore::checkpoint::Checkpoint,
     ) -> anyhow::Result<EmptySource> {
-        params.delay_before_closing = 1;
-        let empty_source = EmptySource {
-            params,
-        };
+        let empty_source = EmptySource {};
         Ok(empty_source)
     }
 }

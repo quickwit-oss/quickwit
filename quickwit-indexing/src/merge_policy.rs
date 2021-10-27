@@ -152,6 +152,8 @@ pub struct StableMultitenantWithTimestampMergePolicy {
     pub merge_factor_max: usize,
     pub demux_factor: usize,
     pub demux_field_name: Option<String>,
+    pub merge_enabled: bool,
+    pub demux_enabled: bool,
 }
 
 impl Default for StableMultitenantWithTimestampMergePolicy {
@@ -163,6 +165,8 @@ impl Default for StableMultitenantWithTimestampMergePolicy {
             merge_factor_max: 12,
             demux_factor: 3,
             demux_field_name: None,
+            merge_enabled: true,
+            demux_enabled: false,
         }
     }
 }
@@ -266,7 +270,7 @@ impl StableMultitenantWithTimestampMergePolicy {
     }
 
     fn merge_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
-        if splits.is_empty() {
+        if !self.merge_enabled || splits.is_empty() {
             return Vec::new();
         }
         // First we isolate splits that are mature.
@@ -304,7 +308,7 @@ impl StableMultitenantWithTimestampMergePolicy {
     /// This function builds demux operations for splits that are >= `max_merge_docs` and
     /// have been demux less than `max-demux_generation` times.
     fn demux_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
-        if self.demux_field_name.is_none() || splits.is_empty() {
+        if !self.demux_enabled || self.demux_field_name.is_none() || splits.is_empty() {
             return Vec::new();
         }
         // First we isolate splits which are mature.
@@ -875,6 +879,8 @@ mod tests {
             merge_factor_max: 12,
             demux_factor: 6,
             demux_field_name: Some(demux_field_name.to_string()),
+            merge_enabled: true,
+            demux_enabled: true,
         };
         let mut demux_candidates = create_splits_with_tags(
             vec![
@@ -904,6 +910,8 @@ mod tests {
             merge_factor_max: 12,
             demux_factor: 6,
             demux_field_name: Some(demux_field_name.to_string()),
+            merge_enabled: true,
+            demux_enabled: true,
         };
         let mut demux_candidates = create_splits_with_tags(
             vec![50_000_000, 10_000_000, 12_000_000],
@@ -928,6 +936,8 @@ mod tests {
             merge_factor_max: 12,
             demux_factor: 6,
             demux_field_name: Some(demux_field_name.to_string()),
+            merge_enabled: true,
+            demux_enabled: true,
         };
         let mut splits = create_splits_with_tags(
             vec![

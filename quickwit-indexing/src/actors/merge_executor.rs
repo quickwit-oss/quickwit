@@ -477,6 +477,7 @@ pub fn demux_field_readers(
     let mut segments_demux_value_readers = Vec::new();
     for segment in segments {
         ctx.record_progress();
+        info!("Opening segment {:?}", segment);
         let segment_reader = SegmentReader::open(segment)?;
         segments_num_docs.push(segment_reader.num_docs() as usize);
         let reader = make_fast_field_reader::<u64>(&segment_reader, demux_field_name)?;
@@ -763,6 +764,15 @@ pub fn make_fast_field_reader<T: FastValue>(
         .schema()
         .get_field(fast_field_to_collect)
         .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
+    assert!(
+        segment_reader
+            .schema()
+            .get_field_entry(field)
+            .field_type()
+            .value_type()
+            == T::to_type(),
+        "Fast field type in segment must be the same as the requested type."
+    );
     let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
     DynamicFastFieldReader::open(fast_field_slice)
 }

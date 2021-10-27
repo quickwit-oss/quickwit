@@ -181,6 +181,8 @@ impl CliCommand {
             .map(Byte::from_str)
             .expect("`heap-size` has a default value.")?;
         let overwrite = matches.is_present("overwrite");
+        let demux = matches.is_present("demux");
+        let merge = !matches.is_present("no-merge");
 
         Ok(CliCommand::Index(IndexDataArgs {
             index_id,
@@ -190,6 +192,8 @@ impl CliCommand {
             heap_size,
             metastore_uri,
             overwrite,
+            demux,
+            merge,
         }))
     }
 
@@ -561,6 +565,8 @@ mod tests {
                 heap_size,
                 metastore_uri,
                 overwrite: false,
+                demux: false,
+                merge: false,
             })) if &index_id == "wikipedia"
                     && &metastore_uri == "file:///indexes"
                     && data_dir_path == Path::new("/var/lib/quickwit/data")
@@ -594,6 +600,8 @@ mod tests {
                 heap_size,
                 metastore_uri,
                 overwrite: true,
+                demux: false,
+                merge: false,
             })) if &index_id == "wikipedia"
                     && metastore_uri == "file:///indexes"
                     && source_config_path == Path::new("/conf/source_config.json")

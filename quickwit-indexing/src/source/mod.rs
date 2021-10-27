@@ -17,10 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod empty_source;
 mod file_source;
 #[cfg(feature = "kafka")]
 mod kafka_source;
-mod empty_source;
 mod source_factory;
 mod vec_source;
 
@@ -36,7 +36,8 @@ use serde::{Deserialize, Serialize};
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 pub use vec_source::{VecSource, VecSourceFactory, VecSourceParams};
 
-use crate::{models::IndexerMessage, source::empty_source::EmptySourceFactory};
+use crate::models::IndexerMessage;
+use crate::source::empty_source::EmptySourceFactory;
 
 pub type SourceContext = ActorContext<Loop>;
 
