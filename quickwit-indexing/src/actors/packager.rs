@@ -36,8 +36,7 @@ use tantivy::{ReloadPolicy, SegmentId, SegmentMeta};
 use tracing::*;
 
 use crate::models::{
-    IndexedSplit, IndexedSplitBatch, MergePlannerMessage, PackagedSplit, PackagedSplitBatch,
-    ScratchDirectory,
+    IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch, ScratchDirectory,
 };
 
 /// The role of the packager is to get an index writer and
@@ -54,7 +53,6 @@ use crate::models::{
 pub struct Packager {
     actor_name: &'static str,
     uploader_mailbox: Mailbox<PackagedSplitBatch>,
-    merge_planner_mailbox_opt: Option<Mailbox<MergePlannerMessage>>,
     /// The special field for extracting tags.
     tags_field: Field,
 }
@@ -64,12 +62,10 @@ impl Packager {
         actor_name: &'static str,
         tags_field: Field,
         uploader_mailbox: Mailbox<PackagedSplitBatch>,
-        merge_planner_mailbox_opt: Option<Mailbox<MergePlannerMessage>>,
     ) -> Packager {
         Packager {
             actor_name,
             uploader_mailbox,
-            merge_planner_mailbox_opt,
             tags_field,
         }
     }
@@ -308,30 +304,14 @@ impl SyncActor for Packager {
         fail_point!("packager:after");
         Ok(())
     }
-
-    fn finalize(
-        &mut self,
-        _exit_status: &quickwit_actors::ActorExitStatus,
-        ctx: &ActorContext<Self::Message>,
-    ) -> anyhow::Result<()> {
-        if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
-            // We are trying to stop the merge planner.
-            // If the merge planner is already dead, this is not an error.
-            let _ = ctx.send_exit_with_success_blocking(merge_planner_mailbox);
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::mem;
     use std::ops::RangeInclusive;
     use std::time::Instant;
 
-    use quickwit_actors::{
-        create_test_mailbox, Command, CommandOrMessage, ObservationType, Universe,
-    };
+    use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use tantivy::schema::{Schema, FAST, STRING, TEXT};
     use tantivy::{doc, Index};
@@ -406,7 +386,7 @@ mod tests {
             .schema()
             .get_field(quickwit_index_config::TAGS_FIELD_NAME)
             .unwrap();
-        let packager = Packager::new("TestPackager", tags_field, mailbox, None);
+        let packager = Packager::new("TestPackager", tags_field, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
@@ -436,7 +416,7 @@ mod tests {
             .schema()
             .get_field(quickwit_index_config::TAGS_FIELD_NAME)
             .unwrap();
-        let packager = Packager::new("TestPackager", tags_field, mailbox, None);
+        let packager = Packager::new("TestPackager", tags_field, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
@@ -467,7 +447,7 @@ mod tests {
             .schema()
             .get_field(quickwit_index_config::TAGS_FIELD_NAME)
             .unwrap();
-        let packager = Packager::new("TestPackager", tags_field, mailbox, None);
+        let packager = Packager::new("TestPackager", tags_field, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
@@ -484,33 +464,6 @@ mod tests {
         let mut packaged_splits = inbox.drain_available_message_for_test();
         assert_eq!(packaged_splits.len(), 1);
         assert_eq!(packaged_splits.pop().unwrap().into_iter().count(), 2);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_packager_stop_merge_planner_on_finalize() -> anyhow::Result<()> {
-        quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
-        let (mailbox, _inbox) = create_test_mailbox();
-        let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
-
-        let packager = Packager::new(
-            "TestPackager",
-            Field::from_field_id(0u32),
-            mailbox,
-            Some(merge_planner_mailbox),
-        );
-        let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
-        // That way the packager will terminate
-        mem::drop(packager_mailbox);
-        packager_handle.join().await;
-        let merge_planner_msgs = merge_planner_inbox.drain_available_message_or_command_for_test();
-        assert_eq!(merge_planner_msgs.len(), 1);
-        let merge_planner_msg = merge_planner_msgs.into_iter().next().unwrap();
-        assert!(matches!(
-            merge_planner_msg,
-            CommandOrMessage::Command(Command::ExitWithSuccess)
-        ));
         Ok(())
     }
 }

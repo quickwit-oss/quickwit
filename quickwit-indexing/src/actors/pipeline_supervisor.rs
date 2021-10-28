@@ -22,8 +22,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, AsyncActor,
-    Health, KillSwitch, QueueCapacity, Supervisable,
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health,
+    KillSwitch, QueueCapacity, Supervisable,
 };
 use quickwit_metastore::{Metastore, SplitState};
 use quickwit_storage::StorageUriResolver;
@@ -55,6 +55,7 @@ pub struct IndexingPipelineHandler {
     pub merge_executor: ActorHandle<MergeExecutor>,
     pub merge_packager: ActorHandle<Packager>,
     pub merge_uploader: ActorHandle<Uploader>,
+    pub merge_publisher: ActorHandle<Publisher>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -233,17 +234,40 @@ impl IndexingPipelineSupervisor {
             .index_config
             .tags_field(&index_metadata.index_config.schema());
 
-        let (publisher_mailbox, publisher_inbox) = create_mailbox::<<Publisher as Actor>::Message>(
-            "publisher".to_string(),
-            QueueCapacity::Unbounded,
+        let (merge_planner_mailbox, merge_planner_inbox) =
+            create_mailbox::<<MergePlanner as Actor>::Message>(
+                "MergePlanner".to_string(),
+                QueueCapacity::Unbounded,
+            );
+
+        // Garbage colletor
+        let garbage_collector = GarbageCollector::new(
+            self.params.index_id.clone(),
+            split_store.clone(),
+            self.params.metastore.clone(),
         );
+        let (garbage_collector_mailbox, garbage_collector_handler) = ctx
+            .spawn_actor(garbage_collector)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_async();
+
+        // Merge publisher
+        let merge_publisher = Publisher::new(
+            self.params.metastore.clone(),
+            merge_planner_mailbox.clone(),
+            garbage_collector_mailbox.clone(),
+        );
+        let (merge_publisher_mailbox, merge_publisher_handler) = ctx
+            .spawn_actor(merge_publisher)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn_async();
 
         // Merge uploader
         let merge_uploader = Uploader::new(
             "MergeUploader",
             self.params.metastore.clone(),
             split_store.clone(),
-            publisher_mailbox.clone(),
+            merge_publisher_mailbox,
         );
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
             .spawn_actor(merge_uploader)
@@ -251,8 +275,7 @@ impl IndexingPipelineSupervisor {
             .spawn_async();
 
         // Merge Packager
-        let merge_packager =
-            Packager::new("MergePackager", tags_field, merge_uploader_mailbox, None);
+        let merge_packager = Packager::new("MergePackager", tags_field, merge_uploader_mailbox);
         let (merge_packager_mailbox, merge_packager_handler) = ctx
             .spawn_actor(merge_packager)
             .set_kill_switch(self.kill_switch.clone())
@@ -295,29 +318,18 @@ impl IndexingPipelineSupervisor {
         let (merge_planner_mailbox, merge_planner_handler) = ctx
             .spawn_actor(merge_planner)
             .set_kill_switch(self.kill_switch.clone())
+            .set_mailboxes(merge_planner_mailbox, merge_planner_inbox)
             .spawn_sync();
-
-        // Garbage colletor
-        let garbage_collector = GarbageCollector::new(
-            self.params.index_id.clone(),
-            split_store.clone(),
-            self.params.metastore.clone(),
-        );
-        let (garbage_collector_mailbox, garbage_collector_handler) = ctx
-            .spawn_actor(garbage_collector)
-            .set_kill_switch(self.kill_switch.clone())
-            .spawn_async();
 
         // Publisher
         let publisher = Publisher::new(
             self.params.metastore.clone(),
-            merge_planner_mailbox.clone(),
+            merge_planner_mailbox,
             garbage_collector_mailbox,
         );
         let (publisher_mailbox, publisher_handler) = ctx
             .spawn_actor(publisher)
             .set_kill_switch(self.kill_switch.clone())
-            .set_mailboxes(publisher_mailbox, publisher_inbox)
             .spawn_async();
 
         // Uploader
@@ -333,12 +345,7 @@ impl IndexingPipelineSupervisor {
             .spawn_async();
 
         // Packager
-        let packager = Packager::new(
-            "Packager",
-            tags_field,
-            uploader_mailbox,
-            Some(merge_planner_mailbox),
-        );
+        let packager = Packager::new("Packager", tags_field, uploader_mailbox);
         let (packager_mailbox, packager_handler) = ctx
             .spawn_actor(packager)
             .set_kill_switch(self.kill_switch.clone())
@@ -382,6 +389,7 @@ impl IndexingPipelineSupervisor {
             merge_executor: merge_executor_handler,
             merge_packager: merge_packager_handler,
             merge_uploader: merge_uploader_handler,
+            merge_publisher: merge_publisher_handler,
         });
         Ok(())
     }
@@ -397,42 +405,7 @@ impl IndexingPipelineSupervisor {
             // }
         } else {
             match self.healthcheck() {
-                Health::Healthy => {
-                    // We stop triggering new merges as soon as there cannot be more splits.
-                    if let Some(handlers) = self.handlers.as_mut() {
-                        // If the packager has terminated (due to end of source) we want to stop
-                        // merging new splits.
-                        //
-                        // This is done by sending a message to the `MergePlanner`.
-                        // We already send this message in the packager finalizer, but if the
-                        // packager panics, the finalizer may never be
-                        // called, so we defensively send the message if we
-                        // detect that the packager is not running, while the merge planner is.
-
-                        if handlers.packager.state() != ActorState::Running
-                            && handlers.merge_planner.state() == ActorState::Running
-                        {
-                            // Failing to send is fine here.
-                            info!("Stopping the merge planner since the packager is dead.");
-                            // If the message cannot be sent this is not necessarily an error.
-                            let _ = ctx
-                                .send_exit_with_success(handlers.merge_planner.mailbox())
-                                .await;
-                        }
-
-                        // When the publisher is dead, try to stop the garbage collector if not
-                        // already.
-                        if handlers.publisher.state() != ActorState::Running
-                            && handlers.garbage_collector.state() == ActorState::Running
-                        {
-                            info!("Stopping the garbage collector since the publisher is dead.");
-                            // It's fine for the message to fail.
-                            let _ = ctx
-                                .send_exit_with_success(handlers.garbage_collector.mailbox())
-                                .await;
-                        }
-                    }
-                }
+                Health::Healthy => {}
                 Health::FailureOrUnhealthy => {
                     self.terminate().await;
                 }
