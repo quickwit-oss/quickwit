@@ -109,20 +109,15 @@ fn combine_index_meta(mut index_metas: Vec<IndexMeta>) -> anyhow::Result<IndexMe
 }
 
 fn open_split_directories(
-    // Directory containing the splits to merge
-    split_path: &Path,
-    // Splits metadata
-    split_ids: &[String],
+    // Directories containing the splits to merge
+    tantivy_dirs: &[Box<dyn Directory>],
 ) -> anyhow::Result<(IndexMeta, Vec<Box<dyn Directory>>)> {
-    let mmap_directory = MmapDirectory::open(split_path)?;
     let mut directories: Vec<Box<dyn Directory>> = Vec::new();
     let mut index_metas = Vec::new();
-    for split_id in split_ids {
-        let split_filename = split_file(split_id);
-        let split_fileslice = mmap_directory.open_read(Path::new(&split_filename))?;
-        let split_directory = BundleDirectory::open_split(split_fileslice)?;
-        directories.push(split_directory.box_clone());
-        let index_meta = Index::open(split_directory)?.load_metas()?;
+    for tantivy_dir in tantivy_dirs {
+        directories.push(tantivy_dir.clone());
+
+        let index_meta = Index::open(tantivy_dir.clone())?.load_metas()?;
         index_metas.push(index_meta);
     }
     let union_index_meta = combine_index_meta(index_metas)?;
@@ -151,8 +146,8 @@ impl SyncActor for MergeExecutor {
                 self.process_merge(
                     split_id,
                     splits,
+                    merge_scratch.tantivy_dirs,
                     merge_scratch.merge_scratch_directory,
-                    merge_scratch.downloaded_splits_directory,
                     ctx,
                 )?;
             }
@@ -249,16 +244,15 @@ impl MergeExecutor {
         &mut self,
         split_merge_id: String,
         splits: Vec<SplitMetadata>,
+        tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: ScratchDirectory,
-        downloaded_splits_directory: ScratchDirectory,
         ctx: &ActorContext<MergeScratch>,
     ) -> anyhow::Result<()> {
         let start = Instant::now();
         info!("merge-start");
         let replaced_split_ids: Vec<String> =
             splits.iter().map(|split| split.split_id.clone()).collect();
-        let (union_index_meta, split_directories) =
-            open_split_directories(downloaded_splits_directory.path(), &replaced_split_ids)?;
+        let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         let merged_directory = {
             let _protected_zone_guard = ctx.protect_zone();
@@ -784,13 +778,14 @@ mod tests {
 
     use proptest::sample::select;
     use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_common::split_file;
     use quickwit_index_config::DefaultIndexConfigBuilder;
     use quickwit_metastore::SplitMetadata;
 
     use super::*;
     use crate::merge_policy::MergeOperation;
     use crate::models::ScratchDirectory;
-    use crate::{new_split_id, TestSandbox};
+    use crate::{new_split_id, BundledSplitFile, TestSandbox};
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
@@ -825,18 +820,25 @@ mod tests {
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits-")?;
         let storage = test_index_builder.index_storage(index_id)?;
+        let mut tantivy_dirs: Vec<Box<dyn Directory>> = vec![];
         for split in &splits {
             let split_filename = split_file(&split.split_id);
             let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
             storage
                 .copy_to_file(Path::new(&split_filename), &dest_filepath)
                 .await?;
+            tantivy_dirs.push(
+                BundledSplitFile::new(dest_filepath.to_owned())
+                    .get_tantivy_directory()
+                    .unwrap(),
+            )
         }
         let merge_scratch = MergeScratch {
             merge_operation: MergeOperation::Merge {
                 merge_split_id: crate::new_split_id(),
                 splits,
             },
+            tantivy_dirs,
             merge_scratch_directory,
             downloaded_splits_directory,
         };
@@ -920,6 +922,7 @@ mod tests {
             },
             merge_scratch_directory,
             downloaded_splits_directory,
+            tantivy_dirs: Default::default(),
         };
         let (merge_packager_mailbox, merge_packager_inbox) = create_test_mailbox();
         let merge_executor = MergeExecutor::new(

@@ -32,7 +32,7 @@ use quickwit_cli::*;
 use quickwit_common::net::socket_addr_from_str;
 use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
-use tracing::Level;
+use tracing::{info, Level};
 use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
@@ -363,11 +363,16 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
+    let version_text = format!(
+        "{} (commit-hash: {})",
+        env!("CARGO_PKG_VERSION"),
+        env!("GIT_COMMIT_HASH")
+    );
 
     let yaml = load_yaml!("cli.yaml");
     let app = App::from(yaml)
         .setting(AppSettings::ArgRequiredElseHelp)
-        .version(env!("CARGO_PKG_VERSION"))
+        .version(version_text.as_str())
         .about(about_text.as_str());
     let matches = app.get_matches();
 
@@ -380,6 +385,10 @@ async fn main() -> anyhow::Result<()> {
     };
 
     setup_logging_and_tracing(command.default_log_level())?;
+    info!(
+        version = env!("CARGO_PKG_VERSION"),
+        commit = env!("GIT_COMMIT_HASH"),
+    );
 
     let command_res = match command {
         CliCommand::ExtractSplit(args) => extract_split_cli(args).await,
@@ -409,10 +418,8 @@ async fn main() -> anyhow::Result<()> {
 
 /// Return the about text with telemetry info.
 fn about_text() -> String {
-    let mut about_text = format!(
-        "Indexing your large dataset on object storage & making it searchable from the command \
-         line.\nCommit hash: {}\n",
-        env!("GIT_COMMIT_HASH")
+    let mut about_text = String::from(
+        "Indexing your dataset on object storage & making it searchable from the command line.\n",
     );
     if quickwit_telemetry::is_telemetry_enabled() {
         about_text += "Telemetry Enabled";

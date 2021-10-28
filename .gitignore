@@ -10,3 +10,5 @@
 **/*.rs.bk
 
 .vscode
+
+.cargo

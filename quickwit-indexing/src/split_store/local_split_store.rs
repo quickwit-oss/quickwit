@@ -23,11 +23,60 @@ use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use quickwit_common::split_file;
-use quickwit_storage::{LocalFileStorage, Storage, StorageErrorKind, StorageResult};
+use quickwit_directories::BundleDirectory;
+use quickwit_storage::{StorageErrorKind, StorageResult};
+use tantivy::directory::MmapDirectory;
+use tantivy::Directory;
 use tracing::{error, warn};
 
 use super::IndexingSplitStoreParams;
 
+#[derive(Clone, Debug)]
+pub struct BundledSplitFile {
+    pub path: PathBuf,
+}
+impl BundledSplitFile {
+    pub fn new(path: PathBuf) -> Self {
+        BundledSplitFile { path }
+    }
+}
+
+impl BundledSplitFile {
+    pub fn get_tantivy_directory(&self) -> StorageResult<Box<dyn Directory>> {
+        let mmap_directory = MmapDirectory::open(self.path.parent().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Couldn't find parent for {:?}", &self.path),
+            )
+        })?)?;
+        let split_fileslice = mmap_directory.open_read(Path::new(&self.path))?;
+        Ok(Box::new(BundleDirectory::open_split(split_fileslice)?))
+    }
+
+    /// Moves the underlying data to a new location.
+    async fn move_to(&mut self, new_folder: &Path, split_id: &str) -> StorageResult<()> {
+        let new_path = PathBuf::from(split_file(split_id));
+        let to_full_path = new_folder.join(new_path);
+        tokio::fs::rename(&self.path, &to_full_path).await?;
+        self.path = to_full_path.to_path_buf();
+        Ok(())
+    }
+
+    async fn delete(&self) -> io::Result<()> {
+        missing_file_is_ok(tokio::fs::remove_file(&self.path).await)?;
+        Ok(())
+    }
+}
+
+fn missing_file_is_ok(io_result: io::Result<()>) -> io::Result<()> {
+    match io_result {
+        Ok(()) => Ok(()),
+        Err(io_err) if io_err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(io_err) => Err(io_err),
+    }
+}
+
+// TODO add folder support
 fn split_id_from_filename(dir_entry: &DirEntry) -> Option<String> {
     if !dir_entry.path().is_file() {
         return None;
@@ -45,12 +94,13 @@ struct SizeInCache {
 }
 
 pub struct LocalSplitStore {
-    /// The backing local storage.
-    local_storage: LocalFileStorage,
-    // The list of stored splits.
-    stored_splits: HashMap<String, usize>,
     /// The parameters of the cache.
     params: IndexingSplitStoreParams,
+    /// Splits owned by the local split store, which reside in the split_store_folder.
+    /// SplitId -> (Split Num Bytes, BundledSplitFile)
+    split_files: HashMap<String, (usize, BundledSplitFile)>,
+    /// The root folder where all data is moved into.
+    split_store_folder: PathBuf,
 }
 
 impl LocalSplitStore {
@@ -61,20 +111,20 @@ impl LocalSplitStore {
         local_storage_root: PathBuf,
         params: IndexingSplitStoreParams,
     ) -> StorageResult<LocalSplitStore> {
-        let mut cache_entries = HashMap::new();
+        let mut split_files: HashMap<String, (usize, BundledSplitFile)> = HashMap::new();
         let mut total_size_in_bytes: usize = 0;
         for dir_entry_result in fs::read_dir(&local_storage_root)? {
             let dir_entry = dir_entry_result?;
             if let Some(split_id) = split_id_from_filename(&dir_entry) {
+                // TODO support folder containing tantivy index
+                let split_file = BundledSplitFile::new(dir_entry.path());
                 let split_num_bytes = dir_entry.metadata()?.len() as usize;
                 total_size_in_bytes += split_num_bytes;
-                cache_entries.insert(split_id, split_num_bytes);
+                split_files.insert(split_id, (split_num_bytes, split_file));
             }
         }
 
-        let local_storage = LocalFileStorage::from(local_storage_root);
-
-        if cache_entries.len() > params.max_num_splits {
+        if split_files.len() > params.max_num_splits {
             return Err(StorageErrorKind::InternalError.with_error(anyhow::anyhow!(
                 "Initial number of files exceeds the maximum number of files allowed.",
             )));
@@ -87,9 +137,9 @@ impl LocalSplitStore {
         }
 
         Ok(LocalSplitStore {
-            local_storage,
-            stored_splits: cache_entries,
+            split_store_folder: local_storage_root,
             params,
+            split_files,
         })
     }
 
@@ -97,7 +147,7 @@ impl LocalSplitStore {
     /// By only keeping the splits specified and removing other
     /// existing splits in this store.
     pub async fn retain_only(&mut self, split_ids: &[&str]) -> StorageResult<()> {
-        let stored_ids_set: HashSet<String> = self.stored_splits.keys().cloned().collect();
+        let stored_ids_set: HashSet<String> = self.split_files.keys().cloned().collect();
         let to_retain_ids_set: HashSet<String> = split_ids
             .iter()
             .map(|split_id| split_id.to_string())
@@ -111,55 +161,82 @@ impl LocalSplitStore {
     }
 
     #[cfg(test)]
-    pub fn inspect(&self) -> &HashMap<String, usize> {
-        &self.stored_splits
+    pub fn inspect(&self) -> HashMap<String, usize> {
+        self.split_files
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.0))
+            .collect()
     }
 
     pub async fn remove_split(&mut self, split_id: &str) -> StorageResult<()> {
-        if !self.stored_splits.contains_key(split_id) {
+        if !self.split_files.contains_key(split_id) {
             return Ok(());
         }
-        let split_path = PathBuf::from(quickwit_common::split_file(split_id));
-        self.local_storage.delete(&split_path).await.map_err(|error| {
-            error!(file_path = %split_path.display(), error = %error, "Failed to delete split file from local storage.");
-            error
-        })?;
-        self.stored_splits.remove(split_id);
+        if let Some((_, split_file)) = self.split_files.remove(split_id) {
+            split_file.delete().await?;
+        }
         Ok(())
     }
 
-    pub async fn fetch_split(
+    /// Moves a split into the store.
+    /// from here is an external path, and to is an internal path.
+    pub async fn move_into(
+        &self,
+        split: &mut BundledSplitFile,
+        to_full_path: &Path,
+        split_id: &str,
+    ) -> StorageResult<()> {
+        split.move_to(to_full_path, split_id).await?;
+        Ok(())
+    }
+
+    /// Moves a split within the store to an external path.
+    /// from here is an internal path, and to is an external path.
+    pub async fn move_out(&mut self, split_id: &str, to: &Path) -> StorageResult<BundledSplitFile> {
+        let mut split_file = self
+            .split_files
+            .remove(split_id)
+            .ok_or_else(|| {
+                StorageErrorKind::DoesNotExist
+                    .with_error(anyhow::anyhow!("Missing split_id `{}`", split_id))
+            })?
+            .1;
+        split_file.move_to(to, split_id).await?;
+        Ok(split_file)
+    }
+
+    pub async fn get_cached_split(
         &mut self,
         split_id: &str,
         output_dir_path: &Path,
-    ) -> StorageResult<bool> {
-        if !self.stored_splits.contains_key(split_id) {
-            return Ok(false);
+    ) -> StorageResult<Option<BundledSplitFile>> {
+        if !self.split_files.contains_key(split_id) {
+            return Ok(None);
         }
-        let split_filename = quickwit_common::split_file(split_id);
-        let out_filepath = output_dir_path.join(&split_filename);
-        let copy_to_result = self
-            .local_storage
-            .move_out(Path::new(&split_filename), &out_filepath)
-            .await;
-        match copy_to_result {
-            Ok(_) => {
-                self.stored_splits.remove(split_id);
-                Ok(true)
+        let split_file_res = self.move_out(split_id, output_dir_path).await;
+        match split_file_res {
+            Ok(split_file) => {
+                self.split_files.remove(split_id);
+                Ok(Some(split_file))
             }
             Err(storage_err) if storage_err.kind() == StorageErrorKind::DoesNotExist => {
-                error!(split_path = split_filename.as_str(), error = ?storage_err, "Registered file is missing.");
-                self.stored_splits.remove(split_id);
-                Ok(false)
+                error!(split_id = split_id, error = ?storage_err, "Cached split file/folder is missing.");
+                self.split_files.remove(split_id);
+                Ok(None)
             }
             Err(storage_err) => Err(storage_err),
         }
     }
 
     fn size_in_store(&self) -> SizeInCache {
-        let size_in_bytes = self.stored_splits.values().cloned().sum::<usize>();
+        let size_in_bytes = self
+            .split_files
+            .values()
+            .map(|(size, _)| size)
+            .cloned()
+            .sum::<usize>();
         SizeInCache {
-            num_splits: self.stored_splits.len(),
+            num_splits: self.split_files.len(),
             size_in_bytes,
         }
     }
@@ -172,10 +249,10 @@ impl LocalSplitStore {
     /// just logs a warning and returns Ok(false).
     ///
     /// Ok(true) means the file was effectively accepted.
-    pub async fn move_into_cache(
-        &mut self,
-        split_id: &str,
-        split_path: &Path,
+    pub async fn move_into_cache<'a>(
+        &'a mut self,
+        split_id: &'a str,
+        mut split_file: BundledSplitFile,
         split_num_bytes: usize,
     ) -> io::Result<bool> {
         let size_in_cache = self.size_in_store();
@@ -192,13 +269,11 @@ impl LocalSplitStore {
             return Ok(false);
         }
 
-        let split_filename = PathBuf::from(split_file(split_id));
-        self.local_storage
-            .move_into(split_path, &split_filename)
+        self.move_into(&mut split_file, &self.split_store_folder, split_id)
             .await?;
 
-        self.stored_splits
-            .insert(split_id.to_string(), split_num_bytes);
+        self.split_files
+            .insert(split_id.to_string(), (split_num_bytes, split_file));
         Ok(true)
     }
 }
