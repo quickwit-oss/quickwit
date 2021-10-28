@@ -21,6 +21,7 @@ mod indexing_split_store;
 mod local_split_store;
 
 pub use indexing_split_store::{IndexingSplitStore, IndexingSplitStoreParams};
+pub use local_split_store::BundledSplitFile;
 use local_split_store::LocalSplitStore;
 
 /// An intermediate folder created at `<cache dir>/SPLIT_CACHE_DIR_NAME`
