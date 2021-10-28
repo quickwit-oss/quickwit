@@ -27,7 +27,7 @@ use quickwit_storage::StorageUriResolver;
 use crate::actors::{IndexerParams, IndexingPipelineParams, IndexingPipelineSupervisor};
 use crate::models::IndexingStatistics;
 use crate::source::SourceConfig;
-pub use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
+pub use crate::split_store::{BundledSplitFile, IndexingSplitStore, IndexingSplitStoreParams};
 
 pub mod actors;
 mod garbage_collection;
