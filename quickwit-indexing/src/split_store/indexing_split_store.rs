@@ -257,7 +257,9 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_metastore::{SplitMetadata, SplitMetadataAndFooterOffsets, SplitState};
-    use quickwit_storage::{RamStorage, Storage, StorageError, StorageErrorKind};
+    use quickwit_storage::{
+        BundleStorageBuilder, RamStorage, Storage, StorageError, StorageErrorKind,
+    };
     use tempfile::tempdir;
     use tokio::fs;
 
@@ -426,8 +428,15 @@ mod tests {
             merge_policy.clone(),
         )?;
 
+        let mut bundle_data: Vec<u8> = Vec::new();
+        let create_bundle = BundleStorageBuilder::new(&mut bundle_data)?;
+        create_bundle.finalize()?;
+        // hotcache
+        bundle_data.extend(&[1, 2, 3]);
+        bundle_data.extend(3_usize.to_le_bytes());
+
         {
-            fs::write(&bundle_path, b"split1 content").await?;
+            fs::write(&bundle_path, &bundle_data).await?;
             let split_metadata1 = create_test_split_metadata("split1");
             split_store
                 .store_split(&split_metadata1, &bundle_path)
@@ -440,10 +449,10 @@ mod tests {
                 .exists());
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
-            assert_eq!(local_store_stats.get("split1").cloned(), Some(14));
+            assert_eq!(local_store_stats.get("split1").cloned(), Some(31));
         }
         {
-            fs::write(&bundle_path, b"split2 content").await?;
+            fs::write(&bundle_path, &bundle_data).await?;
             let split_metadata2 = create_test_split_metadata("split2");
             split_store
                 .store_split(&split_metadata2, &bundle_path)
@@ -456,7 +465,7 @@ mod tests {
                 .exists());
             let local_store_stats = split_store.inspect_local_store().await;
             assert_eq!(local_store_stats.len(), 1);
-            assert_eq!(local_store_stats.get("split1").cloned(), Some(14));
+            assert_eq!(local_store_stats.get("split1").cloned(), Some(31));
         }
         {
             let output = tempfile::tempdir()?;
