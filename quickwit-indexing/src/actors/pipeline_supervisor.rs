@@ -166,20 +166,21 @@ impl IndexingPipelineSupervisor {
                 }
             }
         }
-        if failure_or_unhealthy_actors.is_empty() {
-            if healthy_actors.is_empty() {
-                // all actors finished successfully.
-                info!("indexing-pipeline-success");
-                Health::Success
-            } else {
-                // No error at this point, and there are still actors running
-                debug!(healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "pipeline is judged healthy.");
-                Health::Healthy
-            }
-        } else {
+
+        if !failure_or_unhealthy_actors.is_empty() {
             error!(healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "indexing pipeline error.");
-            Health::FailureOrUnhealthy
+            return Health::FailureOrUnhealthy;
         }
+
+        if healthy_actors.is_empty() {
+            // all actors finished successfully.
+            info!("indexing-pipeline-success");
+            return Health::Success;
+        }
+
+        // No error at this point, and there are still actors running
+        debug!(healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "pipeline is judged healthy.");
+        Health::Healthy
     }
 
     // TODO this should return an error saying whether we can retry or not.
