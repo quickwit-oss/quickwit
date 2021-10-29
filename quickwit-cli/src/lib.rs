@@ -166,6 +166,8 @@ pub struct IndexDataArgs {
     pub data_dir_path: PathBuf,
     pub heap_size: Byte,
     pub overwrite: bool,
+    pub demux: bool,
+    pub merge: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Default)]
@@ -305,6 +307,8 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         indexer_params,
         metastore,
         storage_uri_resolver: storage_uri_resolver.clone(),
+        merge_enabled: args.merge,
+        demux_enabled: args.demux,
     };
 
     let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
