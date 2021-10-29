@@ -30,8 +30,9 @@ use crate::source::SourceConfig;
 pub use crate::split_store::{BundledSplitFile, IndexingSplitStore, IndexingSplitStoreParams};
 
 pub mod actors;
+mod controllable_directory;
 mod garbage_collection;
-mod merge_policy;
+pub mod merge_policy;
 pub mod models;
 pub mod source;
 mod split_store;
@@ -71,6 +72,6 @@ pub async fn index_data(
     Ok(statistics)
 }
 
-pub(crate) fn new_split_id() -> String {
+pub fn new_split_id() -> String {
     ulid::Ulid::new().to_string()
 }

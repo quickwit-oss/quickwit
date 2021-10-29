@@ -22,11 +22,14 @@ use std::ops::RangeInclusive;
 use std::path::Path;
 use std::time::Instant;
 
+use quickwit_actors::{KillSwitch, Progress};
 use quickwit_metastore::checkpoint::CheckpointDelta;
+use tantivy::directory::MmapDirectory;
 use tantivy::merge_policy::NoMergePolicy;
 use tantivy::IndexBuilder;
 
 use crate::actors::IndexerParams;
+use crate::controllable_directory::ControllableDirectory;
 use crate::models::ScratchDirectory;
 use crate::new_split_id;
 
@@ -77,6 +80,8 @@ impl IndexedSplit {
         index_id: String,
         indexer_params: &IndexerParams,
         index_builder: IndexBuilder,
+        progress: Progress,
+        kill_switch: KillSwitch,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
@@ -87,7 +92,11 @@ impl IndexedSplit {
             .indexing_directory
             .scratch_directory
             .named_temp_child(split_scratch_directory_prefix)?;
-        let index = index_builder.create_in_dir(split_scratch_directory.path())?;
+        let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
+        let box_mmap_directory = Box::new(mmap_directory);
+        let controllable_directory =
+            ControllableDirectory::new(box_mmap_directory, progress, kill_switch);
+        let index = index_builder.open_or_create(controllable_directory)?;
         let index_writer =
             index.writer_with_num_threads(1, indexer_params.heap_size.get_bytes() as usize)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));

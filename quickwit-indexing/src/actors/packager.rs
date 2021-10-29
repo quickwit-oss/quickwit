@@ -128,10 +128,9 @@ fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
 /// the inverted index. This phase is CPU bound.
 fn commit_split(
     split: &mut IndexedSplit,
-    ctx: &ActorContext<IndexedSplitBatch>,
+    _ctx: &ActorContext<IndexedSplitBatch>,
 ) -> anyhow::Result<()> {
     info!("commit-split");
-    let _protected_zone_guard = ctx.protect_zone();
     split
         .index_writer
         .commit()
