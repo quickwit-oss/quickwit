@@ -21,6 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use itertools::Itertools;
 use quickwit_actors::{
     create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health,
     KillSwitch, QueueCapacity, Supervisable,
@@ -203,6 +204,8 @@ impl IndexingPipelineSupervisor {
         let demux_field_name = index_metadata.index_config.demux_field_name();
         let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
             demux_field_name: demux_field_name.clone(),
+            merge_enabled: self.params.merge_enabled,
+            demux_enabled: self.params.demux_enabled,
             ..Default::default()
         };
         let max_merge_docs = stable_multitenant_merge_policy.max_merge_docs;
@@ -223,12 +226,14 @@ impl IndexingPipelineSupervisor {
             IndexingSplitStoreParams::default(),
             merge_policy.clone(),
         )?;
-        let pubished_splits = self
+        let published_splits = self
             .params
             .metastore
             .list_splits(&self.params.index_id, SplitState::Published, None, &[])
             .await?;
-        split_store.remove_dangling_splits(&pubished_splits).await?;
+        split_store
+            .remove_dangling_splits(&published_splits)
+            .await?;
 
         let tags_field = index_metadata
             .index_config
@@ -310,11 +315,15 @@ impl IndexingPipelineSupervisor {
             .spawn_async();
 
         // Merge planner
-        let mut merge_planner =
-            MergePlanner::new(merge_policy.clone(), merge_split_downloader_mailbox);
-        for split in pubished_splits {
-            merge_planner.add_split(split.split_metadata);
-        }
+        let published_split_metadatas = published_splits
+            .into_iter()
+            .map(|split| split.split_metadata)
+            .collect_vec();
+        let merge_planner = MergePlanner::new(
+            published_split_metadatas,
+            merge_policy.clone(),
+            merge_split_downloader_mailbox,
+        );
         let (merge_planner_mailbox, merge_planner_handler) = ctx
             .spawn_actor(merge_planner)
             .set_kill_switch(self.kill_switch.clone())
@@ -468,6 +477,8 @@ pub struct IndexingPipelineParams {
     pub indexer_params: IndexerParams,
     pub metastore: Arc<dyn Metastore>,
     pub storage_uri_resolver: StorageUriResolver,
+    pub demux_enabled: bool,
+    pub merge_enabled: bool,
 }
 
 #[cfg(test)]
@@ -541,6 +552,8 @@ mod tests {
             indexer_params,
             metastore: Arc::new(metastore),
             storage_uri_resolver: StorageUriResolver::for_test(),
+            merge_enabled: true,
+            demux_enabled: false,
         };
         let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) =
