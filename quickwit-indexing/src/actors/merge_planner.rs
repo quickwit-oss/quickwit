@@ -87,7 +87,7 @@ impl MergePlanner {
         }
     }
 
-    pub fn send_operations(
+    fn send_operations(
         &mut self,
         ctx: &ActorContext<MergePlannerMessage>,
     ) -> Result<(), ActorExitStatus> {
