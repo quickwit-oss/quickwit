@@ -17,12 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+// TODO: Remove when `KinesisSource` is fully implemented.
 #![allow(dead_code)]
 
 use std::collections::BTreeSet;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use rusoto_kinesis::{
     CreateStreamInput, DeleteStreamInput, DescribeStreamSummaryInput, GetRecordsInput,
     GetRecordsOutput, GetShardIteratorInput, Kinesis, ListShardsInput, ListStreamsInput, Shard,
@@ -31,8 +32,8 @@ use rusoto_kinesis::{
 
 /// Creates a Kinesis data stream.
 /// https://docs.aws.amazon.com/kinesis/latest/APIReference/API_CreateStream.html
-async fn create_stream<K: Kinesis>(
-    kinesis_client: &K,
+async fn create_stream(
+    kinesis_client: &dyn Kinesis,
     stream_name: &str,
     num_shards: usize,
 ) -> anyhow::Result<()> {
@@ -50,7 +51,7 @@ async fn create_stream<K: Kinesis>(
 
 /// Deletes a Kinesis data stream. Only streams in `ACTIVE` state can be deleted.
 /// https://docs.aws.amazon.com/kinesis/latest/APIReference/API_DeleteStream.html
-async fn delete_stream<K: Kinesis>(kinesis_client: &K, stream_name: &str) -> anyhow::Result<()> {
+async fn delete_stream(kinesis_client: &dyn Kinesis, stream_name: &str) -> anyhow::Result<()> {
     let request = DeleteStreamInput {
         stream_name: stream_name.to_string(),
         ..Default::default()
@@ -65,8 +66,8 @@ async fn delete_stream<K: Kinesis>(kinesis_client: &K, stream_name: &str) -> any
 
 /// Provides a summarized description of the specified Kinesis data stream without the shard list.
 /// https://docs.aws.amazon.com/kinesis/latest/APIReference/API_DescribeStreamSummary.html
-async fn describe_stream<K: Kinesis>(
-    kinesis_client: &K,
+async fn describe_stream(
+    kinesis_client: &dyn Kinesis,
     stream_name: &str,
 ) -> anyhow::Result<StreamDescriptionSummary> {
     let request = DescribeStreamSummaryInput {
@@ -79,8 +80,8 @@ async fn describe_stream<K: Kinesis>(
 
 /// Gets records from a Kinesis data stream's shard.
 /// https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetRecords.html
-async fn get_records<K: Kinesis>(
-    kinesis_client: &K,
+async fn get_records(
+    kinesis_client: &dyn Kinesis,
     shard_iterator: String,
 ) -> anyhow::Result<GetRecordsOutput> {
     let request = GetRecordsInput {
@@ -97,8 +98,8 @@ async fn get_records<K: Kinesis>(
 /// Gets a Kinesis shard iterator. A shard iterator expires 5 minutes after it is returned
 /// to the requester.
 /// https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetShardIterator.html
-async fn get_shard_iterator<K: Kinesis>(
-    kinesis_client: &K,
+async fn get_shard_iterator(
+    kinesis_client: &dyn Kinesis,
     stream_name: &str,
     shard_id: &str,
     starting_sequence_number: Option<String>,
@@ -124,16 +125,21 @@ async fn get_shard_iterator<K: Kinesis>(
 /// Lists the shards in a stream and provides information about each shard. This operation has a
 /// limit of 1000 transactions per second per data stream.
 /// https://docs.aws.amazon.com/kinesis/latest/APIReference/API_ListShards.html
-async fn list_shards<K: Kinesis>(
-    kinesis_client: &K,
+async fn list_shards(
+    kinesis_client: &dyn Kinesis,
     stream_name: &str,
     limit_per_request: Option<usize>,
 ) -> anyhow::Result<Vec<Shard>> {
     let mut shards = Vec::new();
-    let mut stream_name = Some(stream_name.to_string());
     let mut next_token = None;
 
-    while stream_name.is_some() || next_token.is_some() {
+    loop {
+        // `stream_name` and `next_token` cannot be set simultaneously.
+        let stream_name = if next_token.is_none() {
+            Some(stream_name.to_string())
+        } else {
+            None
+        };
         let request = ListShardsInput {
             stream_name,
             next_token,
@@ -146,16 +152,17 @@ async fn list_shards<K: Kinesis>(
         if let Some(shrds) = response.shards {
             shards.extend_from_slice(&shrds);
         }
-        stream_name = None;
+        if response.next_token.is_none() {
+            return Ok(shards);
+        }
         next_token = response.next_token;
     }
-    Ok(shards)
 }
 
 /// Lists the Kinesis data streams.
 /// https://docs.aws.amazon.com/kinesis/latest/APIReference/API_ListStreams.html
-async fn list_streams<K: Kinesis>(
-    kinesis_client: &K,
+async fn list_streams(
+    kinesis_client: &dyn Kinesis,
     mut exclusive_start_stream_name: Option<String>,
     limit_per_request: Option<usize>,
 ) -> anyhow::Result<BTreeSet<String>> {
@@ -176,43 +183,32 @@ async fn list_streams<K: Kinesis>(
     Ok(stream_names)
 }
 
-/// Waits for a Kinesis data stream's status to satisfy the specified predicate. Returns an error
-/// after the specified `timeout` duration has passed.
-async fn wait_for_stream_status<K, P>(
-    kinesis_client: &K,
+/// Waits for a Kinesis data stream's status to satisfy the specified predicate. This is done
+/// through periodically polling the `[describe_stream]` API for the stream. Returns an error after
+/// the specified `timeout` duration has passed.
+async fn wait_for_stream_status<P>(
+    kinesis_client: &dyn Kinesis,
     stream_name: &str,
     stream_status_predicate: P,
     timeout: Duration,
-) -> anyhow::Result<()>
+) -> Result<anyhow::Result<()>, tokio::time::error::Elapsed>
 where
-    K: Kinesis,
     P: Fn(&str) -> bool,
 {
-    let start = Instant::now();
-
-    let period = Duration::from_millis(if cfg!(test) { 100 } else { 5000 });
-    let mut interval = tokio::time::interval(period);
-    interval.tick().await;
-
-    loop {
-        let stream_status = describe_stream(kinesis_client, stream_name)
-            .await?
-            .stream_status;
-        if stream_status_predicate(&stream_status) {
-            return Ok(());
+    tokio::time::timeout(timeout, async {
+        let period = Duration::from_millis(if cfg!(test) { 100 } else { 5000 });
+        let mut interval = tokio::time::interval(period);
+        loop {
+            interval.tick().await;
+            let stream_status = describe_stream(kinesis_client, stream_name)
+                .await?
+                .stream_status;
+            if stream_status_predicate(&stream_status) {
+                return Ok(());
+            }
         }
-        interval.tick().await;
-
-        if start.elapsed() >= timeout {
-            bail!(
-                "The status of the Kinesis data stream `{}` failed to satisfy the predicate after \
-                 {}s. Current status: `{}`.",
-                stream_name,
-                timeout.as_secs(),
-                stream_status
-            );
-        }
-    }
+    })
+    .await
 }
 
 #[cfg(all(test, feature = "kinesis-external-service"))]
@@ -243,14 +239,13 @@ mod kinesis_localstack_tests {
             .and_then(|shard_id| shard_id.parse::<usize>().ok())
     }
 
-    async fn put_records_into_shards<'a, K, I>(
-        kinesis_client: &K,
+    async fn put_records_into_shards<I>(
+        kinesis_client: &dyn Kinesis,
         stream_name: &str,
         records: I,
     ) -> anyhow::Result<HashMap<usize, Vec<String>>>
     where
-        K: Kinesis,
-        I: IntoIterator<Item = (usize, &'a str)>,
+        I: IntoIterator<Item = (usize, &'static str)>,
     {
         let shard_hash_keys: HashMap<usize, String> =
             list_shards(kinesis_client, &stream_name, None)
@@ -269,7 +264,7 @@ mod kinesis_localstack_tests {
             .map(|(shard_id, record)| PutRecordsRequestEntry {
                 explicit_hash_key: shard_hash_keys.get(&shard_id).cloned(),
                 partition_key: "Overridden by hash key".to_string(),
-                data: bytes::Bytes::from(record.to_string().into_bytes()),
+                data: bytes::Bytes::from(record),
             })
             .collect();
 
@@ -296,18 +291,18 @@ mod kinesis_localstack_tests {
         let stream_name = append_random_suffix(test_name.as_ref());
         let kinesis_client = get_localstack_client();
         create_stream(&kinesis_client, &stream_name, num_shards).await?;
-        wait_for_active_stream(&kinesis_client, &stream_name).await?;
+        wait_for_active_stream(&kinesis_client, &stream_name).await??;
         Ok((kinesis_client, stream_name))
     }
 
-    async fn teardown<K: Kinesis>(kinesis_client: &K, stream_name: &str) {
+    async fn teardown(kinesis_client: &dyn Kinesis, stream_name: &str) {
         let _delete_res = delete_stream(kinesis_client, stream_name).await;
     }
 
-    async fn wait_for_active_stream<K: Kinesis>(
-        kinesis_client: &K,
+    async fn wait_for_active_stream(
+        kinesis_client: &dyn Kinesis,
         stream_name: &str,
-    ) -> anyhow::Result<()> {
+    ) -> Result<anyhow::Result<()>, tokio::time::error::Elapsed> {
         wait_for_stream_status(
             kinesis_client,
             stream_name,
@@ -322,7 +317,7 @@ mod kinesis_localstack_tests {
         let stream_name = append_random_suffix("test-create-stream");
         let kinesis_client = get_localstack_client();
         create_stream(&kinesis_client, &stream_name, 1).await?;
-        wait_for_active_stream(&kinesis_client, &stream_name).await?;
+        wait_for_active_stream(&kinesis_client, &stream_name).await??;
         let description_summary = describe_stream(&kinesis_client, &stream_name).await?;
         assert_eq!(description_summary.stream_name, stream_name);
         assert_eq!(description_summary.open_shard_count, 1);
