@@ -323,6 +323,8 @@ impl MergeExecutor {
             .collect_vec();
         let (index_metas, replaced_segments) =
             load_metas_and_segments(downloaded_splits_directory.path(), &replaced_split_ids)?;
+        ctx.record_progress();
+        info!("open-readers");
         let (replaced_segments_num_docs, replaced_segments_demux_field_readers) =
             demux_field_readers(&replaced_segments, demux_field_name)?;
         // Build virtual split for all replaced splits = counting demux values in all replaced
@@ -337,18 +339,23 @@ impl MergeExecutor {
             }
         }
         ctx.record_progress();
+        info!("demux-virtual-split-start");
         let demuxed_virtual_splits = demux_virtual_split(
             virtual_split_with_all_docs,
             self.min_demuxed_split_num_docs,
             self.max_demuxed_split_num_docs,
-            splits.len(),
+            demux_split_ids.len(),
         );
+        info!("demux-virtual-split-end");
+        ctx.record_progress();
+        info!("demux-build-mapping-start");
         let demux_mapping = build_demux_mapping(
             replaced_segments_num_docs,
             replaced_segments_demux_field_readers,
             demuxed_virtual_splits,
         );
-        let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..splits.len())
+        info!("demux-build-mapping-end");
+        let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..demux_split_ids.len())
             .map(|idx| merge_scratch_directory.named_temp_child(format!("demux-split-{}", idx)))
             .try_collect()?;
         let demuxed_split_directories: Vec<Box<dyn Directory>> = demuxed_scratched_directories
@@ -357,6 +364,7 @@ impl MergeExecutor {
                 MmapDirectory::open(directory.path()).map(|dir| Box::new(dir) as Box<dyn Directory>)
             })
             .try_collect()?;
+        ctx.record_progress();
         let union_index_meta = combine_index_meta(index_metas)?;
         let indexes = {
             let _protected_zone_guard = ctx.protect_zone();
@@ -486,11 +494,6 @@ pub fn build_demux_mapping(
     segments_demux_value_readers: Vec<DynamicFastFieldReader<u64>>,
     target_demuxed_splits: Vec<VirtualSplit>,
 ) -> DemuxMapping {
-    assert_eq!(
-        segments_demux_value_readers.len(),
-        target_demuxed_splits.len(),
-        "Input segments must the same size of targetd demuxed splits."
-    );
     assert_eq!(
         replaced_segments_num_docs.iter().sum::<usize>(),
         target_demuxed_splits
@@ -896,7 +899,7 @@ mod tests {
             .into_iter()
             .map(|split_and_footer_offsets| split_and_footer_offsets.split_metadata)
             .collect();
-        let demux_split_ids = (0..splits.len()).map(|_| new_split_id()).collect_vec();
+        let demux_split_ids = (0..splits.len() - 1).map(|_| new_split_id()).collect_vec();
         let total_num_bytes_docs = splits.iter().map(|split| split.size_in_bytes).sum::<u64>();
         let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory =
@@ -924,8 +927,8 @@ mod tests {
             merge_packager_mailbox,
             None,
             Some("tenant_id".to_string()),
-            1,
-            3,
+            2,
+            5,
         );
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_handle) =
@@ -938,12 +941,12 @@ mod tests {
         let mut packager_msgs = merge_packager_inbox.drain_available_message_for_test();
         assert_eq!(packager_msgs.len(), 1);
         let mut splits = packager_msgs.pop().unwrap().splits;
-        assert_eq!(splits.len(), 4);
+        assert_eq!(splits.len(), 3);
         let first_indexed_split = splits.pop().unwrap();
-        assert_eq!(first_indexed_split.num_docs, 3);
+        assert_eq!(first_indexed_split.num_docs, 4);
         assert_eq!(
             first_indexed_split.docs_size_in_bytes,
-            total_num_bytes_docs / 4
+            total_num_bytes_docs / 3
         );
         assert_eq!(first_indexed_split.demux_num_ops, 1);
         let reader = first_indexed_split.index.reader()?;
