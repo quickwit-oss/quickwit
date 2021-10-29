@@ -332,6 +332,7 @@ mod tests {
     async fn test_simulate_merge_and_demux() -> anyhow::Result<()> {
         let merge_policy = StableMultitenantWithTimestampMergePolicy {
             demux_field_name: Some("tenant_id".to_owned()),
+            demux_enabled: true,
             ..Default::default()
         };
         aux_test_simulate_merge_planner_num_docs(

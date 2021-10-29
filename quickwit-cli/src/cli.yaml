@@ -119,6 +119,12 @@ subcommands:
             - overwrite:
                 help: Overwrites pre-existing index
                 long: overwrite
+            - demux:
+                help: Indexing with demux
+                long: demux
+            - no-merge:
+                help: Indexing without merge
+                long: no-merge
     - search:
         about: Searches an index
         args:
