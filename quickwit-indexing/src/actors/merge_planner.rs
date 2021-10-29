@@ -54,45 +54,49 @@ impl SyncActor for MergePlanner {
         message: MergePlannerMessage,
         ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
+        let mut has_new_young_split = false;
         for split in message.new_splits {
-            self.process_new_split(split, ctx)?;
+            if self.merge_policy.is_mature(&split) {
+                info!(split_id=%split.split_id, num_records=split.num_records, size_in_bytes=split.size_in_bytes, "mature-split");
+                continue;
+            }
+            self.young_splits.push(split);
+            has_new_young_split = true;
+        }
+        if has_new_young_split {
+            self.send_operations(ctx)?;
         }
         Ok(())
+    }
+
+    fn initialize(&mut self, ctx: &ActorContext<Self::Message>) -> Result<(), ActorExitStatus> {
+        self.send_operations(ctx)
     }
 }
 
 impl MergePlanner {
     pub fn new(
+        young_splits: Vec<SplitMetadata>,
         merge_policy: Arc<dyn MergePolicy>,
         merge_split_downloader_mailbox: Mailbox<MergeOperation>,
     ) -> MergePlanner {
         MergePlanner {
-            young_splits: Vec::new(),
+            young_splits,
             merge_policy,
             merge_split_downloader_mailbox,
         }
     }
 
-    fn process_new_split(
+    fn send_operations(
         &mut self,
-        split: SplitMetadata,
         ctx: &ActorContext<MergePlannerMessage>,
     ) -> Result<(), ActorExitStatus> {
-        if self.merge_policy.is_mature(&split) {
-            info!(split_id=%split.split_id, num_records=split.num_records, size_in_bytes=split.size_in_bytes, "mature-split");
-            return Ok(());
-        }
-        self.add_split(split);
         let merge_candidates = self.merge_policy.operations(&mut self.young_splits);
         for merge_operation in merge_candidates {
             info!(merge_operation=?merge_operation, "planning-merge");
             ctx.send_message_blocking(&self.merge_split_downloader_mailbox, merge_operation)?;
         }
         Ok(())
-    }
-
-    pub fn add_split(&mut self, split: SplitMetadata) {
-        self.young_splits.push(split);
     }
 }
 
@@ -234,7 +238,7 @@ mod tests {
         predicate: Pred,
     ) -> anyhow::Result<()> {
         let (merge_op_mailbox, merge_op_inbox) = create_test_mailbox::<MergeOperation>();
-        let merge_planner = MergePlanner::new(merge_policy, merge_op_mailbox);
+        let merge_planner = MergePlanner::new(Vec::new(), merge_policy, merge_op_mailbox);
         let universe = Universe::new();
         let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
         let (merge_planner_mailbox, merge_planner_handler) =
