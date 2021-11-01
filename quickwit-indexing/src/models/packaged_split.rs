@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
 use std::time::Instant;
 
 use quickwit_metastore::checkpoint::CheckpointDelta;
@@ -33,12 +33,13 @@ pub struct PackagedSplit {
     pub checkpoint_deltas: Vec<CheckpointDelta>,
     pub time_range: Option<RangeInclusive<i64>>,
     pub size_in_bytes: u64,
-    pub footer_offsets: Range<u64>,
     pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,
     pub demux_num_ops: usize,
     pub tags: HashSet<String>,
     pub split_date_of_birth: Instant,
+    pub split_files: Vec<std::path::PathBuf>,
+    pub hotcache_bytes: Vec<u8>,
 }
 
 #[derive(Debug)]

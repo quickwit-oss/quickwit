@@ -211,7 +211,11 @@ pub async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
     let (_, bundle_footer) = read_split_footer(index_storage.clone(), &split_file).await?;
 
-    let bundle_storage = BundleStorage::new(index_storage, split_file, &bundle_footer)?;
+    let (_hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data_with_owned_bytes(
+        index_storage,
+        split_file,
+        bundle_footer,
+    )?;
 
     std::fs::create_dir_all(args.target_folder.to_owned())?;
 

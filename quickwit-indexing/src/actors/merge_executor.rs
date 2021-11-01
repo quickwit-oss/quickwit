@@ -806,7 +806,7 @@ mod tests {
     use super::*;
     use crate::merge_policy::MergeOperation;
     use crate::models::ScratchDirectory;
-    use crate::{new_split_id, BundledSplitFile, TestSandbox};
+    use crate::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
@@ -848,11 +848,8 @@ mod tests {
             storage
                 .copy_to_file(Path::new(&split_filename), &dest_filepath)
                 .await?;
-            tantivy_dirs.push(
-                BundledSplitFile::new(dest_filepath.to_owned())
-                    .get_tantivy_directory()
-                    .unwrap(),
-            );
+
+            tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap())
         }
         let merge_scratch = MergeScratch {
             merge_operation: MergeOperation::Merge {
