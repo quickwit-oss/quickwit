@@ -1041,6 +1041,23 @@ mod tests {
         proptest_config
     }
 
+    #[test]
+    fn test_proptest_simulate_demux_with_huge_tenants_bug_172() {
+        let tenants_num_docs = vec![10_001];
+        let num_splits_out = tenants_num_docs.iter().sum::<usize>() / 20_000_000 + 1;
+        let mut num_docs_map = BTreeMap::new();
+        for (i, num_docs) in tenants_num_docs.iter().enumerate() {
+            num_docs_map.insert(i as u64, *num_docs);
+        }
+        let splits = demux_virtual_split(
+            VirtualSplit::new(num_docs_map),
+            10_000_000,
+            20_000_000,
+            num_splits_out,
+        );
+        assert_eq!(splits.len(), num_splits_out);
+    }
+
     proptest! {
         #![proptest_config(proptest_config())]
         #[test]
