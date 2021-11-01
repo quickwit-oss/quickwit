@@ -44,6 +44,7 @@ tempfile = "3"
 json_comments = "0.2"
 chrono = "0.4"
 humansize = "1.1.1"
+openssl-probe = { version = "0.1.4", optional = true }
 
 [dev-dependencies]
 assert_cmd = "1"
@@ -53,5 +54,6 @@ serial_test = "0.5.1"
 
 [features]
 ci-test = []
-release-feature-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka"]
-release-feature-vendored-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka-vendored"]
+openssl-support = ["openssl-probe"]
+release-feature-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka", "openssl-support"]
+release-feature-vendored-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka-vendored", "openssl-support"]
