@@ -131,7 +131,7 @@ fn commit_split(
     ctx: &ActorContext<IndexedSplitBatch>,
 ) -> anyhow::Result<()> {
     info!("commit-split");
-    let _protected_zone_guard = ctx.protect_zone();
+    let _protect_guard = ctx.protect_zone();
     split
         .index_writer
         .commit()
@@ -291,6 +291,14 @@ impl SyncActor for Packager {
         batch: IndexedSplitBatch,
         ctx: &ActorContext<IndexedSplitBatch>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        for split in &batch.splits {
+            if let Some(controlled_directory) = split.controlled_directory_opt.as_ref() {
+                controlled_directory.set_progress_and_kill_switch(
+                    ctx.progress().clone(),
+                    ctx.kill_switch().clone(),
+                );
+            }
+        }
         fail_point!("packager:before");
         let packaged_splits = batch
             .splits
@@ -370,6 +378,7 @@ mod tests {
             split_scratch_directory,
             checkpoint_delta: CheckpointDelta::from(10..20),
             replaced_split_ids: Vec::new(),
+            controlled_directory_opt: None,
         };
         Ok(indexed_split)
     }
