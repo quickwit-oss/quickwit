@@ -85,7 +85,7 @@ impl Progress {
 
     pub fn protect_zone(&self) -> ProtectedZoneGuard {
         loop {
-            let previous_state: ProgressState = self.0.load(Ordering::SeqCst).into();
+            let previous_state: ProgressState = self.0.load(Ordering::Relaxed).into();
             let new_state = match previous_state {
                 ProgressState::NoUpdate | ProgressState::Updated => ProgressState::ProtectedZone(0),
                 ProgressState::ProtectedZone(level) => ProgressState::ProtectedZone(level + 1),
@@ -95,8 +95,8 @@ impl Progress {
                 .compare_exchange(
                     previous_state.into(),
                     new_state.into(),
-                    Ordering::SeqCst,
-                    Ordering::SeqCst,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
                 )
                 .is_ok()
             {
@@ -129,7 +129,7 @@ pub struct ProtectedZoneGuard(Arc<AtomicU32>);
 
 impl Drop for ProtectedZoneGuard {
     fn drop(&mut self) {
-        let previous_state: ProgressState = self.0.fetch_sub(1, Ordering::SeqCst).into();
+        let previous_state: ProgressState = self.0.fetch_sub(1, Ordering::Relaxed).into();
         assert!(matches!(previous_state, ProgressState::ProtectedZone(_)));
     }
 }

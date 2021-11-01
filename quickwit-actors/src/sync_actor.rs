@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::cell::RefCell;
+
 use tokio::sync::watch::{self, Sender};
 use tokio::task::{spawn_blocking, JoinHandle};
 use tracing::{debug, error, info, Span};
@@ -25,7 +27,33 @@ use crate::actor::{process_command, ActorExitStatus};
 use crate::actor_state::ActorState;
 use crate::actor_with_state_tx::ActorWithStateTx;
 use crate::mailbox::{CommandOrMessage, Inbox};
-use crate::{Actor, ActorContext, ActorHandle, RecvError};
+use crate::{Actor, ActorContext, ActorHandle, KillSwitch, Progress, RecvError};
+
+thread_local! {
+    static ACTOR_CONTROLS: RefCell<ActorControls> = RefCell::new(ActorControls::default());
+}
+
+#[derive(Clone, Default)]
+struct ActorControls {
+    progress: Progress,
+    kill_switch: KillSwitch,
+}
+
+pub fn is_thread_local_kill_switch_alive() -> bool {
+    ACTOR_CONTROLS.with(|controls| {
+        let ctrls = controls.borrow();
+        ctrls.progress.record_progress();
+        ctrls.kill_switch.is_alive()
+    })
+}
+
+pub fn set_thread_locals_controls(progress: Progress, kill_switch: KillSwitch) {
+    let controls = ActorControls {
+        progress: progress.clone(),
+        kill_switch: kill_switch.clone(),
+    };
+    ACTOR_CONTROLS.with(|actor_controls_cell| actor_controls_cell.replace(controls));
+}
 
 /// An sync actor is executed on a tokio blocking task.
 ///
@@ -137,6 +165,7 @@ fn sync_actor_loop<A: SyncActor>(
     mut ctx: ActorContext<A::Message>,
     state_tx: Sender<A::ObservableState>,
 ) -> ActorExitStatus {
+    set_thread_locals_controls(ctx.progress().clone(), ctx.kill_switch().clone());
     let span = actor.span(&ctx);
     let _span_guard = span.enter();
     debug!("spawn-sync");

@@ -75,7 +75,7 @@ impl Packager {
         mut split: IndexedSplit,
         ctx: &ActorContext<IndexedSplitBatch>,
     ) -> anyhow::Result<PackagedSplit> {
-        commit_split(&mut split, ctx)?;
+        commit_split(&mut split)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
         let packaged_split =
             create_packaged_split(&segment_metas[..], split, self.tags_field, ctx)?;
@@ -126,12 +126,8 @@ fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
 /// It consists in several sequentials phases mixing both
 /// CPU and IO, the longest once being the serialization of
 /// the inverted index. This phase is CPU bound.
-fn commit_split(
-    split: &mut IndexedSplit,
-    ctx: &ActorContext<IndexedSplitBatch>,
-) -> anyhow::Result<()> {
+fn commit_split(split: &mut IndexedSplit) -> anyhow::Result<()> {
     info!("commit-split");
-    let _protected_zone_guard = ctx.protect_zone();
     split
         .index_writer
         .commit()
@@ -370,6 +366,7 @@ mod tests {
             split_scratch_directory,
             checkpoint_delta: CheckpointDelta::from(10..20),
             replaced_split_ids: Vec::new(),
+            controlled_directory_opt: None,
         };
         Ok(indexed_split)
     }

@@ -230,7 +230,7 @@ impl<Message> ActorContext<Message> {
         &self.kill_switch
     }
 
-    pub(crate) fn progress(&self) -> &Progress {
+    pub fn progress(&self) -> &Progress {
         &self.progress
     }
 

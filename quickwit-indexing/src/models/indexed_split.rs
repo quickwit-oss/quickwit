@@ -23,10 +23,12 @@ use std::path::Path;
 use std::time::Instant;
 
 use quickwit_metastore::checkpoint::CheckpointDelta;
+use tantivy::directory::MmapDirectory;
 use tantivy::merge_policy::NoMergePolicy;
 use tantivy::IndexBuilder;
 
 use crate::actors::IndexerParams;
+use crate::controlled_directory::ControlledDirectory;
 use crate::models::ScratchDirectory;
 use crate::new_split_id;
 
@@ -87,7 +89,10 @@ impl IndexedSplit {
             .indexing_directory
             .scratch_directory
             .named_temp_child(split_scratch_directory_prefix)?;
-        let index = index_builder.create_in_dir(split_scratch_directory.path())?;
+        let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
+        let box_mmap_directory = Box::new(mmap_directory);
+        let controlled_directory = ControlledDirectory::new(box_mmap_directory);
+        let index = index_builder.open_or_create(controlled_directory)?;
         let index_writer =
             index.writer_with_num_threads(1, indexer_params.heap_size.get_bytes() as usize)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
