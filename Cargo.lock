@@ -2346,7 +2346,6 @@ dependencies = [
  "dotenv",
  "mockall 0.9.1",
  "openssl",
- "openssl-probe",
  "quickwit-index-config",
  "quickwit-storage",
  "serde",

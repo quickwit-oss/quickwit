@@ -21,8 +21,7 @@ serde_json = "1.0"
 thiserror = "1.0"
 tokio = { version = "1.6", features = ["full"]}
 tracing = "0.1"
-openssl = { version = "*", optional = true }
-openssl-probe = { version="0.1.2", optional = true }
+openssl = { version = "0.10.36", optional = true }
 
 quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
@@ -45,4 +44,4 @@ tempfile = '3'
 [features]
 testsuite = ["mockall", "tempfile"]
 ci-test = []
-postgres = [ "diesel", "diesel_migrations", "openssl", "openssl-probe"]
+postgres = [ "diesel", "diesel_migrations", "openssl"]

@@ -24,6 +24,16 @@ main() {
 
     td=$(mktemp -d)
 
+    # Download and build libpq form source
+    # We first configure the toolchain components.
+    # Since we want to cross-compile, we need to make sure the tools being used 
+    # to build match the correct architecture (ex: aarch64-linux-gnu-gcc).
+    # 
+    # After configuring the build, we need to jump into libpq directory since we only need the 
+    # Postgres client library. Then build and install libpq.
+    # 
+    # We also need to build & install `pg_config` because it's invoked when building crates that
+    # make use of libpq.
     pushd $td
     curl -kfLO https://ftp.postgresql.org/pub/source/v$version/postgresql-$version.tar.gz
     tar xzf "postgresql-$version.tar.gz" && cd "postgresql-$version" 
