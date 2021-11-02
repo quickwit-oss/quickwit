@@ -92,7 +92,10 @@ enum PrepareDocumentOutcome {
 }
 
 impl IndexerState {
-    fn create_indexed_split(&self) -> anyhow::Result<IndexedSplit> {
+    fn create_indexed_split(
+        &self,
+        ctx: &ActorContext<IndexerMessage>,
+    ) -> anyhow::Result<IndexedSplit> {
         let schema = self.index_config.schema();
         let mut index_settings = IndexSettings::default();
         let sort_by_field = match self.index_config.sort_by() {
@@ -104,8 +107,13 @@ impl IndexerState {
         };
         index_settings.sort_by_field = sort_by_field;
         let index_builder = IndexBuilder::new().settings(index_settings).schema(schema);
-        let indexed_split =
-            IndexedSplit::new_in_dir(self.index_id.clone(), &self.indexer_params, index_builder)?;
+        let indexed_split = IndexedSplit::new_in_dir(
+            self.index_id.clone(),
+            &self.indexer_params,
+            index_builder,
+            ctx.progress().clone(),
+            ctx.kill_switch().clone(),
+        )?;
         info!(split_id=%indexed_split.split_id, "new-split");
         Ok(indexed_split)
     }
@@ -120,7 +128,7 @@ impl IndexerState {
         ctx: &ActorContext<IndexerMessage>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {
         if current_split_opt.is_none() {
-            let new_indexed_split = self.create_indexed_split()?;
+            let new_indexed_split = self.create_indexed_split(ctx)?;
             let commit_timeout = IndexerMessage::CommitTimeout {
                 split_id: new_indexed_split.split_id.clone(),
             };
