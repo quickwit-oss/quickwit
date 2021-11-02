@@ -27,6 +27,7 @@ use tantivy::common::{AntiCallToken, TerminatingWrite};
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{FileHandle, WatchCallback, WatchHandle, WritePtr};
 use tantivy::Directory;
+use tracing::info;
 
 /// Buffer capacity.
 ///
@@ -45,6 +46,7 @@ pub struct ControlledDirectory {
 }
 
 fn check_if_alive() -> io::Result<()> {
+    info!("checkifalive");
     if is_thread_local_kill_switch_alive() {
         Ok(())
     } else {

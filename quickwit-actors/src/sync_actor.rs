@@ -42,6 +42,7 @@ struct ActorControls {
 pub fn is_thread_local_kill_switch_alive() -> bool {
     ACTOR_CONTROLS.with(|controls| {
         let ctrls = controls.borrow();
+        info!("controlleddircheckisalive");
         ctrls.progress.record_progress();
         ctrls.kill_switch.is_alive()
     })

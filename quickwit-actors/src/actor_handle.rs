@@ -25,7 +25,7 @@ use std::sync::Arc;
 use tokio::sync::{oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
-use tracing::error;
+use tracing::{error, info};
 
 use crate::actor_state::ActorState;
 use crate::channel_with_priority::Priority;
@@ -73,6 +73,7 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
 
     fn health(&self) -> Health {
         let actor_state = self.state();
+        info!(actor = self.name(), "actor-timeout");
         if actor_state == ActorState::Exit {
             let actor_exit_status = self
                 .actor_exit_status
