@@ -36,6 +36,9 @@ services:
       - localstack
     environment:
       DATA_DIR: /tmp/localstack/data
+      # `kinesalite` provides a more accurate implementation than
+      # the default Kinesis provider (`kinesis-mock`).
+      KINESIS_PROVIDER: kinesalite
       SERVICES: kinesis,s3
     volumes:
       - ".localstack:/docker-entrypoint-initaws.d"

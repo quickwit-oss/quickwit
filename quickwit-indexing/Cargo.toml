@@ -26,6 +26,8 @@ quickwit-index-config = {path = "../quickwit-index-config", features=["testsuite
 quickwit-metastore = {path = "../quickwit-metastore" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
 rdkafka = { version = "0.26", features = ["cmake-build", "ssl"], optional = true }
+rusoto_core = { version = "0.47", default-features = false, features = ["rustls"], optional = true }
+rusoto_kinesis = { version = "0.47", default-features = false, features = ["rustls"], optional = true }
 serde = "1"
 serde_json = "1"
 tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="ff631ec", default-features=false, features = ["mmap", "lz4-compression"] }
@@ -39,9 +41,12 @@ arc-swap = "1.4"
 
 [features]
 kafka = ["rdkafka"]
-kafka-broker-external-service = []
+kafka-external-service = []
+kinesis = ["rusoto_core", "rusoto_kinesis"]
+kinesis-external-service = []
 
 [dev-dependencies]
+bytes = "1"
 mockall = "0.9"
 proptest = "1"
 quickwit-common = {path="../quickwit-common", version="0.1"}
