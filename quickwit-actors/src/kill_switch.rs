@@ -20,6 +20,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use tracing::warn;
+
 #[derive(Clone)]
 pub struct KillSwitch {
     alive: Arc<AtomicBool>,
@@ -35,6 +37,7 @@ impl Default for KillSwitch {
 
 impl KillSwitch {
     pub fn kill(&self) {
+        warn!("kill-switch-activated");
         self.alive.store(false, Ordering::Relaxed);
     }
 

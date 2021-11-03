@@ -168,7 +168,7 @@ impl SingleFileMetastore {
 
         // Put data back into storage.
         self.storage
-            .put(&metadata_path, PutPayload::from(content))
+            .put(&metadata_path, Box::new(PutPayload::from(content)))
             .await
             .map_err(|storage_err| match storage_err.kind() {
                 StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
@@ -190,18 +190,22 @@ impl SingleFileMetastore {
         Ok(())
     }
 
-    /// Helper to mark a list of splits as published.
-    fn mark_splits_as_published_helper<'a>(
+    /// Helper to publish a list of splits.
+    fn publish_splits_helper<'a>(
         split_ids: &[&'a str],
         metadata_set: &mut MetadataSet,
     ) -> MetastoreResult<()> {
+        let mut split_not_found_ids = vec![];
+        let mut split_not_staged_ids = vec![];
         for &split_id in split_ids {
             // Check for the existence of split.
-            let mut metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
-                MetastoreError::SplitDoesNotExist {
-                    split_id: split_id.to_string(),
+            let metadata = match metadata_set.splits.get_mut(split_id) {
+                Some(metadata) => metadata,
+                _ => {
+                    split_not_found_ids.push(split_id.to_string());
+                    continue;
                 }
-            })?;
+            };
 
             match metadata.split_metadata.split_state {
                 SplitState::Published => {
@@ -214,38 +218,57 @@ impl SingleFileMetastore {
                     metadata.split_metadata.update_timestamp = Utc::now().timestamp();
                 }
                 _ => {
-                    return Err(MetastoreError::SplitIsNotStaged {
-                        split_id: split_id.to_string(),
-                    })
+                    split_not_staged_ids.push(split_id.to_string());
                 }
             }
+        }
+
+        if !split_not_found_ids.is_empty() {
+            return Err(MetastoreError::SplitsDoNotExist {
+                split_ids: split_not_found_ids,
+            });
+        }
+
+        if !split_not_staged_ids.is_empty() {
+            return Err(MetastoreError::SplitsNotStaged {
+                split_ids: split_not_staged_ids,
+            });
         }
 
         Ok(())
     }
 
-    /// Helper to mark a list of splits as deleted.
-    fn mark_splits_as_deleted_helper<'a>(
+    /// Helper to mark a list of splits for deletion.
+    fn mark_splits_for_deletion_helper<'a>(
         split_ids: &[&'a str],
         metadata_set: &mut MetadataSet,
     ) -> MetastoreResult<bool> {
         let mut is_modified = false;
+        let mut split_not_found_ids = vec![];
         for &split_id in split_ids {
             // Check for the existence of split.
-            let metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
-                MetastoreError::SplitDoesNotExist {
-                    split_id: split_id.to_string(),
+            let metadata = match metadata_set.splits.get_mut(split_id) {
+                Some(metadata) => metadata,
+                None => {
+                    split_not_found_ids.push(split_id.to_string());
+                    continue;
                 }
-            })?;
+            };
 
             if metadata.split_metadata.split_state == SplitState::ScheduledForDeletion {
-                // If the split is already scheduled for deletion, this API call returns success.
+                // If the split is already scheduled for deletion, This is fine, we just skip it.
                 continue;
             }
 
             metadata.split_metadata.split_state = SplitState::ScheduledForDeletion;
             metadata.split_metadata.update_timestamp = Utc::now().timestamp();
             is_modified = true;
+        }
+
+        if !split_not_found_ids.is_empty() {
+            return Err(MetastoreError::SplitsDoNotExist {
+                split_ids: split_not_found_ids,
+            });
         }
 
         Ok(is_modified)
@@ -363,7 +386,7 @@ impl Metastore for SingleFileMetastore {
             .checkpoint
             .try_apply_delta(checkpoint_delta)?;
 
-        SingleFileMetastore::mark_splits_as_published_helper(split_ids, &mut metadata_set)?;
+        SingleFileMetastore::publish_splits_helper(split_ids, &mut metadata_set)?;
         self.put_index(metadata_set).await?;
         Ok(())
     }
@@ -379,10 +402,13 @@ impl Metastore for SingleFileMetastore {
         let mut metadata_set = self.get_index(index_id).await?;
 
         // Try to publish splits.
-        SingleFileMetastore::mark_splits_as_published_helper(new_split_ids, &mut metadata_set)?;
+        SingleFileMetastore::publish_splits_helper(new_split_ids, &mut metadata_set)?;
 
-        // Mark splits as deleted.
-        SingleFileMetastore::mark_splits_as_deleted_helper(replaced_split_ids, &mut metadata_set)?;
+        // Mark splits for deletion.
+        SingleFileMetastore::mark_splits_for_deletion_helper(
+            replaced_split_ids,
+            &mut metadata_set,
+        )?;
 
         self.put_index(metadata_set).await?;
         Ok(())
@@ -436,7 +462,7 @@ impl Metastore for SingleFileMetastore {
         Ok(splits)
     }
 
-    async fn mark_splits_as_deleted<'a>(
+    async fn mark_splits_for_deletion<'a>(
         &self,
         index_id: &str,
         split_ids: &[&'a str],
@@ -446,7 +472,7 @@ impl Metastore for SingleFileMetastore {
         let mut metadata_set = self.get_index(index_id).await?;
 
         let is_modified =
-            SingleFileMetastore::mark_splits_as_deleted_helper(split_ids, &mut metadata_set)?;
+            SingleFileMetastore::mark_splits_for_deletion_helper(split_ids, &mut metadata_set)?;
         if is_modified {
             self.put_index(metadata_set).await?;
         }
@@ -463,13 +489,17 @@ impl Metastore for SingleFileMetastore {
 
         let mut metadata_set = self.get_index(index_id).await?;
 
+        let mut split_not_found_ids = vec![];
+        let mut split_not_deletable_ids = vec![];
         for &split_id in split_ids {
             // Check for the existence of split.
-            let metadata = metadata_set.splits.get_mut(split_id).ok_or_else(|| {
-                MetastoreError::SplitDoesNotExist {
-                    split_id: split_id.to_string(),
+            let metadata = match metadata_set.splits.get_mut(split_id) {
+                Some(metadata) => metadata,
+                None => {
+                    split_not_found_ids.push(split_id.to_string());
+                    continue;
                 }
-            })?;
+            };
 
             match metadata.split_metadata.split_state {
                 SplitState::ScheduledForDeletion | SplitState::Staged => {
@@ -477,13 +507,21 @@ impl Metastore for SingleFileMetastore {
                     metadata_set.splits.remove(split_id);
                 }
                 _ => {
-                    let message: String = format!(
-                        "This split is not in a deletable state: {:?}:{:?}",
-                        split_id, &metadata.split_metadata.split_state
-                    );
-                    return Err(MetastoreError::Forbidden { message });
+                    split_not_deletable_ids.push(split_id.to_string());
                 }
             }
+        }
+
+        if !split_not_found_ids.is_empty() {
+            return Err(MetastoreError::SplitsDoNotExist {
+                split_ids: split_not_found_ids,
+            });
+        }
+
+        if !split_not_deletable_ids.is_empty() {
+            return Err(MetastoreError::SplitsNotDeletable {
+                split_ids: split_not_deletable_ids,
+            });
         }
 
         self.put_index(metadata_set).await?;
@@ -559,7 +597,7 @@ mod tests {
     use std::sync::Arc;
 
     use chrono::Utc;
-    use quickwit_index_config::AllFlattenIndexConfig;
+    use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_storage::{MockStorage, PutPayload, StorageErrorKind};
 
     use crate::checkpoint::{Checkpoint, CheckpointDelta};
@@ -583,7 +621,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Arc::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(WikipediaIndexConfig::default()),
                 checkpoint: Checkpoint::default(),
             };
 
@@ -611,7 +649,7 @@ mod tests {
             let index_metadata = IndexMetadata {
                 index_id: index_id.to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Arc::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(WikipediaIndexConfig::default()),
                 checkpoint: Checkpoint::default(),
             };
 
@@ -636,7 +674,7 @@ mod tests {
 
             assert_eq!(
                 format!("{:?}", created_index.index.index_config),
-                "AllFlattenIndexConfig".to_string()
+                "WikipediaIndexConfig".to_string()
             );
 
             // Open a non-existent index.
@@ -731,7 +769,7 @@ mod tests {
             index: IndexMetadata {
                 index_id: "inconsistent_index_id".to_string(),
                 index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Arc::new(AllFlattenIndexConfig::default()),
+                index_config: Arc::new(WikipediaIndexConfig::default()),
                 checkpoint: Checkpoint::default(),
             },
             splits: HashMap::new(),
@@ -740,7 +778,7 @@ mod tests {
         let metadata_path = meta_path(index_id);
         metastore
             .storage
-            .put(&metadata_path, PutPayload::from(content))
+            .put(&metadata_path, Box::new(PutPayload::from(content)))
             .await
             .unwrap();
 

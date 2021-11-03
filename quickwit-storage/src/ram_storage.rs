@@ -18,19 +18,18 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fmt, io};
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 
 use crate::{
-    add_prefix_to_storage, PutPayload, Storage, StorageErrorKind, StorageFactory, StorageResult,
+    add_prefix_to_storage, OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResult,
 };
 
 /// In Ram implementation of quickwit's storage.
@@ -38,7 +37,7 @@ use crate::{
 /// This implementation is mostly useful in unit tests.
 #[derive(Default, Clone)]
 pub struct RamStorage {
-    files: Arc<RwLock<HashMap<PathBuf, Bytes>>>,
+    files: Arc<RwLock<HashMap<PathBuf, OwnedBytes>>>,
 }
 
 impl fmt::Debug for RamStorage {
@@ -53,11 +52,11 @@ impl RamStorage {
         RamStorageBuilder::default()
     }
 
-    async fn put_data(&self, path: &Path, payload: Bytes) {
+    async fn put_data(&self, path: &Path, payload: OwnedBytes) {
         self.files.write().await.insert(path.to_path_buf(), payload);
     }
 
-    async fn get_data(&self, path: &Path) -> Option<Bytes> {
+    async fn get_data(&self, path: &Path) -> Option<OwnedBytes> {
         self.files.read().await.get(path).cloned()
     }
 
@@ -67,17 +66,14 @@ impl RamStorage {
     }
 }
 
-async fn read_all(put: &PutPayload) -> io::Result<Bytes> {
-    match put {
-        PutPayload::InMemory(data) => Ok(data.clone()),
-        PutPayload::LocalFile(filepath) => tokio::fs::read(filepath).await.map(Bytes::from),
-    }
-}
-
 #[async_trait]
 impl Storage for RamStorage {
-    async fn put(&self, path: &Path, payload: PutPayload) -> crate::StorageResult<()> {
-        let payload_bytes = read_all(&payload).await?;
+    async fn put(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayloadProvider>,
+    ) -> crate::StorageResult<()> {
+        let payload_bytes = payload.read_all().await?;
         self.put_data(path, payload_bytes).await;
         Ok(())
     }
@@ -93,7 +89,7 @@ impl Storage for RamStorage {
         Ok(())
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
             StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
@@ -106,7 +102,7 @@ impl Storage for RamStorage {
         Ok(())
     }
 
-    async fn get_all(&self, path: &Path) -> StorageResult<Bytes> {
+    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
             StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
@@ -131,14 +127,14 @@ impl Storage for RamStorage {
 /// Builder to create a prepopulated [`RamStorage`]. This is mostly useful for tests.
 #[derive(Default)]
 pub struct RamStorageBuilder {
-    files: HashMap<PathBuf, Bytes>,
+    files: HashMap<PathBuf, OwnedBytes>,
 }
 
 impl RamStorageBuilder {
     /// Adds a new file into the [`RamStorageBuilder`].
     pub fn put(mut self, path: &str, payload: &[u8]) -> Self {
         self.files
-            .insert(PathBuf::from(path), Bytes::from(payload.to_vec()));
+            .insert(PathBuf::from(path), OwnedBytes::new(payload.to_vec()));
         self
     }
 

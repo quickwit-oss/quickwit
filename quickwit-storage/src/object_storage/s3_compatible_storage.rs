@@ -25,9 +25,9 @@ use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
-use bytes::Bytes;
 use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
+use quickwit_common::{chunk_range, into_u64_range};
 use regex::Regex;
 use rusoto_core::credential::{AutoRefreshingProvider, ChainProvider};
 use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
@@ -38,15 +38,13 @@ use rusoto_s3::{
     S3Client, UploadPartRequest, S3,
 };
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio_util::io::ReaderStream;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tracing::warn;
 
 use super::error::RusotoErrorWrapper;
-use crate::object_storage::file_slice_stream::FileSliceStream;
 use crate::object_storage::MultiPartPolicy;
 use crate::retry::{retry, IsRetryable, Retry};
-use crate::{PutPayload, Storage, StorageError, StorageErrorKind, StorageResult};
+use crate::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
 
 /// A credential timeout.
 const CREDENTIAL_TIMEOUT: u64 = 5;
@@ -170,38 +168,16 @@ impl Part {
     }
 }
 
-async fn range_byte_stream(payload: &PutPayload, range: Range<u64>) -> io::Result<ByteStream> {
-    match payload {
-        PutPayload::LocalFile(filepath) => {
-            let file: tokio::fs::File = tokio::fs::File::open(&filepath).await?;
-            let file_slice_stream = FileSliceStream::try_new(file, range).await?;
-            Ok(ByteStream::new(file_slice_stream))
+const MD5_CHUNK_SIZE: usize = 1_000_000;
+async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Result<md5::Digest> {
+    let mut checksum = md5::Context::new();
+    let mut buf = vec![0; MD5_CHUNK_SIZE];
+    loop {
+        let read_len = read.read(&mut buf).await?;
+        checksum.consume(&buf[..read_len]);
+        if read_len == 0 {
+            return Ok(checksum.compute());
         }
-        PutPayload::InMemory(data) => {
-            let bytes: &[u8] = &data[range.start as usize..range.end as usize];
-            Ok(ByteStream::from(bytes.to_vec()))
-        }
-    }
-}
-
-fn split_range_into_chunks(len: u64, chunk_size: u64) -> Vec<Range<u64>> {
-    (0..len)
-        .step_by(chunk_size as usize)
-        .map(move |start| Range {
-            start,
-            end: (start + chunk_size).min(len),
-        })
-        .collect()
-}
-
-async fn byte_stream(payload: &PutPayload) -> io::Result<ByteStream> {
-    match payload {
-        PutPayload::LocalFile(filepath) => {
-            let file: tokio::fs::File = tokio::fs::File::open(&filepath).await?;
-            let reader_stream = ReaderStream::new(file);
-            Ok(ByteStream::new(reader_stream))
-        }
-        PutPayload::InMemory(data) => Ok(ByteStream::from(data.to_vec())),
     }
 }
 
@@ -215,13 +191,13 @@ impl S3CompatibleObjectStorage {
         key_path.to_string_lossy().to_string()
     }
 
-    async fn put_single_part_single_try(
-        &self,
-        key: &str,
-        payload: PutPayload,
+    async fn put_single_part_single_try<'a>(
+        &'a self,
+        key: &'a str,
+        payload: Box<dyn crate::PutPayloadProvider>,
         len: u64,
     ) -> Result<(), RusotoErrorWrapper<PutObjectError>> {
-        let body = byte_stream(&payload).await?;
+        let body = payload.byte_stream().await?;
         let request = PutObjectRequest {
             bucket: self.bucket.clone(),
             key: key.to_string(),
@@ -233,7 +209,12 @@ impl S3CompatibleObjectStorage {
         Ok(())
     }
 
-    async fn put_single_part(&self, key: &str, payload: PutPayload, len: u64) -> StorageResult<()> {
+    async fn put_single_part<'a>(
+        &'a self,
+        key: &'a str,
+        payload: Box<dyn crate::PutPayloadProvider>,
+        len: u64,
+    ) -> StorageResult<()> {
         retry(|| self.put_single_part_single_try(key, payload.clone(), len)).await?;
         Ok(())
     }
@@ -263,60 +244,43 @@ impl S3CompatibleObjectStorage {
 
     async fn create_multipart_requests(
         &self,
-        payload: PutPayload,
+        payload: Box<dyn crate::PutPayloadProvider>,
         len: u64,
         part_len: u64,
     ) -> io::Result<Vec<Part>> {
         assert!(len > 0);
-        let chunks = split_range_into_chunks(len, part_len);
-        // Note that it should really be the first chunk, but who knows... and it is very cheap to
-        // compute this anyway.
-        let largest_chunk_num_bytes = chunks
-            .iter()
-            .map(|chunk| chunk.end - chunk.start)
-            .max()
-            .expect("The policy should never emit an empty list of chunk.");
-        match payload {
-            PutPayload::LocalFile(file_path) => {
-                let mut parts = Vec::with_capacity(chunks.len());
-                let mut file: tokio::fs::File = tokio::fs::File::open(&file_path).await?;
-                let mut buf = vec![0u8; largest_chunk_num_bytes as usize];
-                for (chunk_id, chunk) in chunks.into_iter().enumerate() {
-                    let chunk_len = (chunk.end - chunk.start) as usize;
-                    file.read_exact(&mut buf[..chunk_len]).await?;
-                    let md5 = md5::compute(&buf[..chunk_len]);
-                    let part = Part {
-                        part_number: chunk_id + 1, // parts are 1-indexed
-                        range: chunk,
-                        md5,
-                    };
-                    parts.push(part);
-                }
-                Ok(parts)
-            }
-            PutPayload::InMemory(buffer) => Ok(chunks
-                .into_iter()
-                .enumerate()
-                .map(|(chunk_id, range)| {
-                    let md5 = md5::compute(&buffer[range.start as usize..range.end as usize]);
-                    Part {
-                        part_number: chunk_id + 1, // parts are 1-indexed
-                        range,
-                        md5,
-                    }
-                })
-                .collect()),
+        let multipart_ranges = chunk_range(0..len as usize, part_len as usize)
+            .map(into_u64_range)
+            .collect::<Vec<_>>();
+
+        let mut parts = Vec::with_capacity(multipart_ranges.len());
+
+        for (multipart_id, multipart_range) in multipart_ranges.into_iter().enumerate() {
+            let read = payload
+                .range_byte_stream(multipart_range.clone())
+                .await?
+                .into_async_read();
+            let md5 = compute_md5(read).await?;
+
+            let part = Part {
+                part_number: multipart_id + 1, // parts are 1-indexed
+                range: multipart_range,
+                md5,
+            };
+            parts.push(part);
         }
+        Ok(parts)
     }
 
-    async fn upload_part(
-        &self,
+    async fn upload_part<'a>(
+        &'a self,
         upload_id: MultipartUploadId,
-        key: &str,
+        key: &'a str,
         part: Part,
-        payload: PutPayload,
+        payload: Box<dyn crate::PutPayloadProvider>,
     ) -> Result<CompletedPart, Retry<StorageError>> {
-        let byte_stream = range_byte_stream(&payload, part.range.clone())
+        let byte_stream = payload
+            .range_byte_stream(part.range.clone())
             .await
             .map_err(StorageError::from)
             .map_err(Retry::NotRetryable)?;
@@ -349,19 +313,19 @@ impl S3CompatibleObjectStorage {
         })
     }
 
-    async fn put_multi_part(
-        &self,
-        key: &str,
-        payload: PutPayload,
+    async fn put_multi_part<'a>(
+        &'a self,
+        key: &'a str,
+        payload: Box<dyn crate::PutPayloadProvider>,
         part_len: u64,
-        len: u64,
+        total_len: u64,
     ) -> StorageResult<()> {
         let upload_id = self
             .create_multipart_upload(key)
             .await
             .map_err(RusotoErrorWrapper::from)?;
         let parts = self
-            .create_multipart_requests(payload.clone(), len, part_len)
+            .create_multipart_requests(payload.clone(), total_len, part_len)
             .await?;
         let max_concurrent_upload = self.multipart_policy.max_concurrent_upload();
         let completed_parts_res: StorageResult<Vec<CompletedPart>> =
@@ -461,6 +425,7 @@ impl S3CompatibleObjectStorage {
         path: &Path,
         range_opt: Option<Range<usize>>,
     ) -> StorageResult<Vec<u8>> {
+        let cap = range_opt.as_ref().map(Range::len).unwrap_or(0);
         let get_object_req = self.create_get_object_request(path, range_opt);
         let get_object_output = retry(|| async {
             self.s3_client
@@ -472,7 +437,7 @@ impl S3CompatibleObjectStorage {
         let mut body = get_object_output.body.ok_or_else(|| {
             StorageErrorKind::Service.with_error(anyhow::anyhow!("Returned object body was empty."))
         })?;
-        let mut buf: Vec<u8> = Vec::new();
+        let mut buf: Vec<u8> = Vec::with_capacity(cap);
         download_all(&mut body, &mut buf).await?;
         Ok(buf)
     }
@@ -489,14 +454,18 @@ async fn download_all(byte_stream: &mut ByteStream, output: &mut Vec<u8>) -> io:
 
 #[async_trait]
 impl Storage for S3CompatibleObjectStorage {
-    async fn put(&self, path: &Path, payload: PutPayload) -> StorageResult<()> {
+    async fn put(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayloadProvider>,
+    ) -> crate::StorageResult<()> {
         let key = self.key(path);
-        let len = payload.len().await?;
-        let part_num_bytes = self.multipart_policy.part_num_bytes(len);
-        if part_num_bytes >= len {
-            self.put_single_part(&key, payload, len).await?;
+        let total_len = payload.len().await?;
+        let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
+        if part_num_bytes >= total_len {
+            self.put_single_part(&key, payload, total_len).await?;
         } else {
-            self.put_multi_part(&key, payload, part_num_bytes, len)
+            self.put_multi_part(&key, payload, part_num_bytes, total_len)
                 .await?;
         }
         Ok(())
@@ -539,10 +508,10 @@ impl Storage for S3CompatibleObjectStorage {
         Ok(())
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<Bytes> {
+    async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         self.get_to_vec(path, Some(range.clone()))
             .await
-            .map(Bytes::from)
+            .map(OwnedBytes::new)
             .map_err(|err| {
                 err.add_context(format!(
                     "Failed to fetch slice {:?} for object: {}",
@@ -552,10 +521,10 @@ impl Storage for S3CompatibleObjectStorage {
             })
     }
 
-    async fn get_all(&self, path: &Path) -> StorageResult<Bytes> {
+    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         self.get_to_vec(path, None)
             .await
-            .map(Bytes::from)
+            .map(OwnedBytes::new)
             .map_err(|err| err.add_context(format!("Failed to fetch object: {}", self.uri(path))))
     }
 
@@ -615,26 +584,38 @@ impl Storage for S3CompatibleObjectStorage {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::object_storage::s3_compatible_storage::split_range_into_chunks;
+    #[tokio::test]
+    async fn test_md5_calc() -> std::io::Result<()> {
+        let data = (0..1_500_000).map(|el| el as u8).collect::<Vec<_>>();
+        let md5 = compute_md5(data.as_slice()).await?;
+        assert_eq!(md5, md5::compute(data));
+
+        Ok(())
+    }
 
     #[test]
     fn test_split_range_into_chunks_inexact() {
         assert_eq!(
-            split_range_into_chunks(11, 3),
+            chunk_range(0..11, 3).collect::<Vec<_>>(),
             vec![0..3, 3..6, 6..9, 9..11]
         );
     }
     #[test]
     fn test_split_range_into_chunks_exact() {
-        assert_eq!(split_range_into_chunks(9, 3), vec![0..3, 3..6, 6..9]);
+        assert_eq!(
+            chunk_range(0..9, 3).collect::<Vec<_>>(),
+            vec![0..3, 3..6, 6..9]
+        );
     }
 
     #[test]
     fn test_split_range_empty() {
-        assert_eq!(split_range_into_chunks(0, 1), vec![]);
+        assert_eq!(chunk_range(0..0, 1).collect::<Vec<_>>(), vec![]);
     }
 
-    use super::parse_uri;
+    use quickwit_common::chunk_range;
+
+    use super::{compute_md5, parse_uri};
 
     #[test]
     fn test_parse_uri() {

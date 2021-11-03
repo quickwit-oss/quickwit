@@ -21,9 +21,11 @@ use std::convert::{Infallible, TryFrom};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use bytes::Bytes;
-use futures::stream::{self, StreamExt};
+use futures::stream::StreamExt;
+use hyper::header::HeaderValue;
+use hyper::HeaderMap;
 use quickwit_cluster::service::ClusterServiceImpl;
+use quickwit_common::metrics;
 use quickwit_proto::OutputFormat;
 use quickwit_search::{SearchResponseRest, SearchService, SearchServiceImpl};
 use serde::{Deserialize, Deserializer};
@@ -43,10 +45,18 @@ pub async fn start_rest_service(
     cluster_service: Arc<ClusterServiceImpl>,
 ) -> anyhow::Result<()> {
     info!(rest_addr=?rest_addr, "Starting REST service.");
+    let request_counter = warp::log::custom(|_| {
+        crate::COUNTERS.num_requests.inc();
+    });
+    let metrics_service = warp::path("metrics")
+        .and(warp::get())
+        .map(metrics::metrics_handler);
     let rest_routes = liveness_check_handler()
         .or(cluster_handler(cluster_service))
         .or(search_handler(search_service.clone()))
         .or(search_stream_handler(search_service))
+        .or(metrics_service)
+        .with(request_counter)
         .recover(recover_fn);
     warp::serve(rest_routes).run(rest_addr).await;
     Ok(())
@@ -217,6 +227,8 @@ pub struct SearchStreamRequestQueryString {
     /// The requested output format.
     #[serde(default)]
     pub output_format: OutputFormat,
+    #[serde(default)]
+    pub partition_by_field: Option<String>,
     /// The tag filter.
     #[serde(default)]
     #[serde(deserialize_with = "from_simple_list")]
@@ -237,10 +249,40 @@ async fn search_stream_endpoint<TSearchService: SearchService>(
         fast_field: search_request.fast_field,
         output_format: search_request.output_format as i32,
         tags: search_request.tags.unwrap_or_default(),
+        partition_by_field: search_request.partition_by_field,
     };
-    let data = search_service.root_search_stream(request).await?;
-    let stream = stream::iter(data).map(Result::<Bytes, std::io::Error>::Ok);
-    let body = hyper::Body::wrap_stream(stream);
+    let mut data = search_service.root_search_stream(request).await?;
+    let (mut sender, body) = hyper::Body::channel();
+    tokio::spawn(async move {
+        while let Some(result) = data.next().await {
+            match result {
+                Ok(bytes) => {
+                    if sender.send_data(bytes).await.is_err() {
+                        sender.abort();
+                        break;
+                    }
+                }
+                Err(error) => {
+                    // Add trailer to signal to the client that there is an error. Only works
+                    // if the request is made with an http2 client that can read it... and
+                    // actually this seems pretty rare, for example `curl` will not show this
+                    // trailer. Thus we also call `sender.abort()` so that the
+                    // client will see something wrong happened. But he will
+                    // need to look at the logs to understand that.
+                    tracing::error!(error=%error, "Error when streaming search results.");
+                    let header_value_str =
+                        format!("Error when streaming search results: {}.", error);
+                    let header_value = HeaderValue::from_str(header_value_str.as_str())
+                        .unwrap_or_else(|_| HeaderValue::from_static("Search stream error"));
+                    let mut trailers = HeaderMap::new();
+                    trailers.insert("X-Stream-Error", header_value);
+                    let _ = sender.send_trailers(trailers).await;
+                    sender.abort();
+                    break;
+                }
+            };
+        }
+    });
     Ok(body)
 }
 
@@ -321,6 +363,7 @@ where D: Deserializer<'de> {
 #[cfg(test)]
 mod tests {
     use assert_json_diff::assert_json_include;
+    use bytes::Bytes;
     use mockall::predicate;
     use quickwit_search::{MockSearchService, SearchError};
     use serde_json::json;
@@ -559,7 +602,12 @@ mod tests {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
             .expect_root_search_stream()
-            .return_once(|_| Ok(vec![Bytes::from("first row\n"), Bytes::from("second row")]));
+            .return_once(|_| {
+                Ok(Box::pin(futures::stream::iter(vec![
+                    Ok(Bytes::from("first row\n")),
+                    Ok(Bytes::from("second row")),
+                ])))
+            });
         let rest_search_stream_api_handler =
             super::search_stream_handler(Arc::new(mock_search_service)).recover(recover_fn);
         let response = warp::test::request()
@@ -593,6 +641,7 @@ mod tests {
                 end_timestamp: None,
                 fast_field: "external_id".to_string(),
                 output_format: OutputFormat::Csv,
+                partition_by_field: None,
                 tags: None
             }
         );
@@ -618,6 +667,7 @@ mod tests {
                 end_timestamp: None,
                 fast_field: "external_id".to_string(),
                 output_format: OutputFormat::ClickHouseRowBinary,
+                partition_by_field: None,
                 tags: Some(vec!["lang:english".to_string()])
             }
         );

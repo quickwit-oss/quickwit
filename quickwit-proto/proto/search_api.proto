@@ -41,10 +41,10 @@ service SearchService {
 
   /// Fetches the documents contents from the document store.
   /// This methods takes `PartialHit`s and returns `Hit`s.
-  rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResult);
+  rpc FetchDocs(FetchDocsRequest) returns (FetchDocsResponse);
 
   // Perform a leaf stream on a given set of splits.
-  rpc LeafSearchStream(LeafSearchStreamRequest) returns (stream LeafSearchStreamResult);
+  rpc LeafSearchStream(LeafSearchStreamRequest) returns (stream LeafSearchStreamResponse);
 }
 
 // -- Search -------------------
@@ -197,7 +197,7 @@ message FetchDocsRequest {
   string index_uri = 4;
 }
 
-message FetchDocsResult {
+message FetchDocsResponse {
   // List of complete hits.
   repeated Hit hits = 1;
 }
@@ -236,6 +236,9 @@ message SearchStreamRequest {
 
   // Split tag filter
   repeated string tags = 8;
+
+  // The field by which we want to partition
+  optional string partition_by_field = 9;
 }
 
 message LeafSearchStreamRequest {
@@ -257,7 +260,7 @@ message LeafSearchStreamRequest {
 }
 
 
-message LeafSearchStreamResult {
+message LeafSearchStreamResponse {
   // Row of data serialized in bytes.
   bytes data = 1;
 

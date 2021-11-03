@@ -24,15 +24,13 @@
 //! to convert a json like documents to a document indexable by tantivy
 //! engine, aka tantivy::Document.
 
-mod all_flatten_config;
 mod config;
 mod default_index_config;
 mod error;
 mod query_builder;
 mod wikipedia_config;
 
-pub use all_flatten_config::AllFlattenIndexConfig;
-pub use config::{IndexConfig, SortBy, SortOrder};
+pub use config::{match_tag_field_name, IndexConfig, SortBy, SortOrder};
 pub use default_index_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
 pub use error::QueryParserError;
 pub use wikipedia_config::WikipediaIndexConfig;
@@ -53,6 +51,10 @@ pub fn default_config_for_tests() -> DefaultIndexConfig {
                 "body", "attributes.server", "attributes.server.status"
             ],
             "timestamp_field": "timestamp",
+            "sort_by": {
+                "field_name": "timestamp",
+                "order": "desc"
+            },
             "tag_fields": ["owner"],
             "field_mappings": [
                 {
@@ -105,6 +107,41 @@ pub fn default_config_for_tests() -> DefaultIndexConfig {
                             "type": "array<bytes>"
                         }
                     ]
+                }
+            ]
+        }"#;
+    serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE).unwrap()
+}
+
+/// Returns a default `DefaultIndexConfig` for unit tests.
+#[cfg(any(test, feature = "testsuite"))]
+pub fn default_config_with_demux_for_tests() -> DefaultIndexConfig {
+    const JSON_CONFIG_VALUE: &str = r#"
+        {
+            "store_source": true,
+            "default_search_fields": [
+                "body", "tenant_id"
+            ],
+            "timestamp_field": "timestamp",
+            "sort_by": {
+                "field_name": "timestamp",
+                "order": "desc"
+            },
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "i64",
+                    "fast": true
+                },
+                {
+                    "name": "body",
+                    "type": "text",
+                    "stored": true
+                },
+                {
+                    "name": "tenant_id",
+                    "type": "u64",
+                    "fast": true
                 }
             ]
         }"#;

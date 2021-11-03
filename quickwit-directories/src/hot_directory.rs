@@ -24,7 +24,6 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use tantivy::directory::error::{LockError, OpenReadError};
 use tantivy::directory::{
@@ -33,7 +32,6 @@ use tantivy::directory::{
 use tantivy::error::DataCorruption;
 use tantivy::{AsyncIoResult, Directory, HasLen, Index, IndexReader, ReloadPolicy};
 
-use crate::caching_directory::BytesWrapper;
 use crate::{CachingDirectory, DebugProxyDirectory};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -181,6 +179,18 @@ impl StaticDirectoryCache {
     pub fn get_file_length(&self, path: &Path) -> Option<u64> {
         self.file_lengths.get(path).map(u64::clone)
     }
+
+    /// return the files and their cached lengths
+    pub fn get_stats(&self) -> Vec<(PathBuf, usize)> {
+        let mut entries = self
+            .slices
+            .iter()
+            .map(|(path, cache)| (path.to_owned(), cache.len()))
+            .collect::<Vec<_>>();
+
+        entries.sort_by_key(|el| el.0.to_owned());
+        entries
+    }
 }
 
 /// A SliceCache is a static toring
@@ -232,6 +242,10 @@ impl StaticSliceCache {
             return Some(self.bytes.slice(start..start + byte_range.len()));
         }
         None
+    }
+
+    pub fn len(&self) -> usize {
+        self.bytes.len()
     }
 }
 
@@ -331,16 +345,22 @@ impl HotDirectory {
     /// Wraps an index, with a static cache serialized into `hot_cache_bytes`.
     pub fn open<D: Directory>(
         underlying: D,
-        hot_cache_bytes: Bytes,
+        hot_cache_bytes: OwnedBytes,
     ) -> tantivy::Result<HotDirectory> {
-        let static_cache =
-            StaticDirectoryCache::open(OwnedBytes::new(BytesWrapper(hot_cache_bytes)))?;
+        let static_cache = StaticDirectoryCache::open(hot_cache_bytes)?;
         Ok(HotDirectory {
             inner: Arc::new(InnerHotDirectory {
                 underlying: Box::new(underlying),
                 cache: Arc::new(static_cache),
             }),
         })
+    }
+    /// Get files and their cached sizes.
+    pub fn get_stats_per_file(
+        hot_cache_bytes: OwnedBytes,
+    ) -> tantivy::Result<Vec<(PathBuf, usize)>> {
+        let static_cache = StaticDirectoryCache::open(hot_cache_bytes)?;
+        Ok(static_cache.get_stats())
     }
 }
 
@@ -681,6 +701,11 @@ mod tests {
         assert_eq!(directory_cache.get_file_length(two_path), Some(200));
         assert_eq!(directory_cache.get_file_length(three_path), Some(300));
         assert_eq!(directory_cache.get_file_length(four_path), None);
+
+        let stats = directory_cache.get_stats();
+        assert_eq!(stats[0], (one_path.to_owned(), 8));
+        assert_eq!(stats[1], (three_path.to_owned(), 0));
+        assert_eq!(stats[2], (two_path.to_owned(), 7));
 
         assert_eq!(
             directory_cache

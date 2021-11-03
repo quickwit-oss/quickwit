@@ -32,7 +32,7 @@ use quickwit_storage::{Storage, StorageResolverError, StorageUriResolver};
 
 use crate::actors::IndexerParams;
 use crate::index_data;
-use crate::models::{CommitPolicy, IndexingStatistics, ScratchDirectory};
+use crate::models::{CommitPolicy, IndexingDirectory, IndexingStatistics};
 use crate::source::{SourceConfig, VecSourceParams};
 
 /// Creates a Test environment.
@@ -92,7 +92,7 @@ impl TestSandbox {
             .map(|doc_json| doc_json.to_string())
             .collect();
         let source_config = SourceConfig {
-            id: self.index_id.clone(),
+            source_id: self.index_id.clone(),
             source_type: "vec".to_string(),
             params: serde_json::to_value(VecSourceParams {
                 items: docs,
@@ -102,7 +102,7 @@ impl TestSandbox {
         };
         self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let indexer_params = IndexerParams {
-            scratch_directory: ScratchDirectory::try_new_temp()?,
+            indexing_directory: IndexingDirectory::for_test().await?,
             heap_size: Byte::from_bytes(100_000_000),
             commit_policy: CommitPolicy {
                 timeout: Duration::from_secs(3600),
@@ -152,6 +152,7 @@ pub fn mock_split_meta(split_id: &str) -> SplitMetadataAndFooterOffsets {
             time_range: None,
             update_timestamp: 0,
             tags: Default::default(),
+            demux_num_ops: 0,
         },
     }
 }

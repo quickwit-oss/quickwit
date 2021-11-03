@@ -17,15 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::ops::{Deref, Range};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use quickwit_storage::SliceCache;
-use stable_deref_trait::StableDeref;
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{FileHandle, OwnedBytes, WatchHandle, WritePtr};
 use tantivy::{AsyncIoResult, Directory, HasLen};
@@ -96,44 +94,28 @@ impl fmt::Debug for CachingFileHandle {
     }
 }
 
-pub struct BytesWrapper(pub Bytes);
-unsafe impl StableDeref for BytesWrapper {}
-impl Deref for BytesWrapper {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        self.0.as_ref()
-    }
-}
-
 #[async_trait]
 impl FileHandle for CachingFileHandle {
     fn read_bytes(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
         if let Some(bytes) = self.cache.get(&self.path, byte_range.clone()) {
-            return Ok(OwnedBytes::new(BytesWrapper(bytes)));
+            return Ok(bytes);
         }
         let owned_bytes = self.underlying_filehandle.read_bytes(byte_range.clone())?;
-        self.cache.put(
-            self.path.to_path_buf(),
-            byte_range,
-            Bytes::from(owned_bytes.to_vec()),
-        );
+        self.cache
+            .put(self.path.to_path_buf(), byte_range, owned_bytes.clone());
         Ok(owned_bytes)
     }
 
     async fn read_bytes_async(&self, byte_range: Range<usize>) -> AsyncIoResult<OwnedBytes> {
         if let Some(owned_bytes) = self.cache.get(&self.path, byte_range.clone()) {
-            return Ok(OwnedBytes::new(BytesWrapper(owned_bytes)));
+            return Ok(owned_bytes);
         }
         let read_bytes = self
             .underlying_filehandle
             .read_bytes_async(byte_range.clone())
             .await?;
-        self.cache.put(
-            self.path.clone(),
-            byte_range,
-            Bytes::from(read_bytes.to_vec()),
-        );
+        self.cache
+            .put(self.path.clone(), byte_range, read_bytes.clone());
         Ok(read_bytes)
     }
 }

@@ -19,11 +19,13 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
-use futures::StreamExt;
+use backoff::ExponentialBackoff;
+use futures::{StreamExt, TryFutureExt};
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_metastore::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
@@ -33,29 +35,37 @@ use rdkafka::consumer::{Consumer, ConsumerContext, Rebalance};
 use rdkafka::error::{KafkaError, KafkaResult};
 use rdkafka::message::BorrowedMessage;
 use rdkafka::topic_partition_list::TopicPartitionList;
+use rdkafka::types::RDKafkaErrorCode;
 use rdkafka::util::Timeout;
 use rdkafka::{ClientContext, Message, Offset};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tokio::task::spawn_blocking;
 use tracing::{debug, info, warn};
 
 use crate::models::RawDocBatch;
 use crate::source::{IndexerMessage, Source, SourceContext, TypedSourceFactory};
 
+/// We try to emit chewable batches for the indexer.
+/// One batch = one message to the indexer actor.
+///
+/// If batches are too large:
+/// - we might not be able to observe the state of the indexer for 5 seconds.
+/// - we will be needlessly occupying resident memory in the mailbox.
+/// - we will not have a precise control of the timeout before commit.
+///
+/// 5MB seems like a good one size fits all value.
+const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
+
 /// Required parameters for instantiating a `KafkaSource`.
 #[derive(Clone, Deserialize, Serialize)]
 pub struct KafkaSourceParams {
-    /// Comma-separated list of host and port pairs that provide the initial addresses of Kafka
-    /// brokers that act as the starting point for a Kafka client to discover the full set of
-    /// alive servers in the cluster.
-    pub bootstrap_servers: String,
-    /// Specifies the name of the consumer group a Kafka consumer belongs to.
-    pub group_id: String,
     /// Name of the topic that the source consumes.
     pub topic: String,
-    /// When set to `true`, the source will terminate after reading the last message of each
-    /// assigned partition. Otherwise, it will keep waiting for new incoming messages.
-    pub enable_partition_eof: Option<bool>,
+    /// Kafka client log level. Valid values are `debug`, `info`, `warn`, and `error`.
+    pub client_log_level: Option<String>,
+    /// Kafka client configuration parameters.
+    pub client_params: serde_json::Value,
 }
 
 /// Factory for instantiating a `KafkaSource`.
@@ -112,20 +122,14 @@ pub struct KafkaSourceState {
 
 /// A `KafkaSource` consumes a topic and forwards its messages to an `Indexer`.
 pub struct KafkaSource {
-    bootstrap_servers: String,
-    group_id: String,
     topic: String,
-    consumer: KafkaSourceConsumer,
+    consumer: Arc<KafkaSourceConsumer>,
     state: KafkaSourceState,
 }
 
 impl fmt::Debug for KafkaSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "KafkaSource {{ bootstrap_servers: {}, group_id: {}, topic:{} }}",
-            self.bootstrap_servers, self.group_id, self.topic
-        )
+        write!(f, "KafkaSource {{ topic:{} }}", self.topic)
     }
 }
 
@@ -135,13 +139,9 @@ impl KafkaSource {
         params: KafkaSourceParams,
         checkpoint: Checkpoint,
     ) -> anyhow::Result<KafkaSource> {
-        let consumer = create_consumer(
-            params.bootstrap_servers.as_str(),
-            params.group_id.as_str(),
-            params.enable_partition_eof.unwrap_or(false),
-        )?;
-        let topic = params.topic.as_str();
-        let partition_ids = fetch_partition_ids(&consumer, topic).await?;
+        let topic = params.topic;
+        let consumer = create_consumer(params.client_log_level, params.client_params)?;
+        let partition_ids = fetch_partition_ids(consumer.clone(), &topic).await?;
         let assigned_partition_ids = partition_ids
             .iter()
             .map(|partition_id| {
@@ -151,18 +151,18 @@ impl KafkaSource {
                 )
             })
             .collect();
-        let watermarks = fetch_watermarks(&consumer, topic, &partition_ids).await?;
+        let timeout = Duration::from_secs(30);
+        let watermarks =
+            fetch_watermarks(consumer.clone(), &topic, &partition_ids, timeout).await?;
         let kafka_checkpoint = kafka_checkpoint_from_checkpoint(&checkpoint)?;
-        let assignment = compute_assignment(topic, &partition_ids, &kafka_checkpoint, &watermarks)?;
+        let assignment =
+            compute_assignment(&topic, &partition_ids, &kafka_checkpoint, &watermarks)?;
 
         debug!(
-            bootstrap_servers = ?params.bootstrap_servers.as_str(),
-            group_id = ?params.group_id.as_str(),
-            topic = ?params.topic.as_str(),
+            topic = %topic,
             assignment = ?assignment,
             "Starting Kafka source."
         );
-
         consumer
             .assign(&assignment)
             .context("Failed to resume from checkpoint.")?;
@@ -173,9 +173,7 @@ impl KafkaSource {
             ..Default::default()
         };
         Ok(KafkaSource {
-            bootstrap_servers: params.bootstrap_servers,
-            group_id: params.group_id,
-            topic: params.topic,
+            topic,
             consumer,
             state,
         })
@@ -195,13 +193,15 @@ impl Source for KafkaSource {
         let deadline = tokio::time::sleep(quickwit_actors::HEARTBEAT / 2);
         let mut message_stream = Box::pin(self.consumer.stream().take_until(deadline));
 
+        let mut batch_num_bytes = 0;
+
         while let Some(message_res) = message_stream.next().await {
             let message = match message_res {
                 Ok(message) => message,
                 Err(KafkaError::PartitionEOF(partition_id)) => {
                     self.state.num_active_partitions -= 1;
                     info!(
-                        topic = ?self.topic.as_str(),
+                        topic = %self.topic,
                         partition_id = ?partition_id,
                         num_active_partitions = ?self.state.num_active_partitions,
                         "Reached end of partition."
@@ -217,6 +217,7 @@ impl Source for KafkaSource {
             } else {
                 self.state.num_invalid_messages += 1;
             }
+            batch_num_bytes += message.payload_len() as u64;
             self.state.num_bytes_processed += message.payload_len() as u64;
             self.state.num_messages_processed += 1;
 
@@ -242,6 +243,10 @@ impl Source for KafkaSource {
             checkpoint_delta
                 .record_partition_delta(partition_id, previous_position, current_position)
                 .context("Failed to record partition delta.")?;
+
+            if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
+                break;
+            }
         }
         if !checkpoint_delta.is_empty() {
             let batch = RawDocBatch {
@@ -252,12 +257,15 @@ impl Source for KafkaSource {
                 .await?;
         }
         if self.state.num_active_partitions == 0 {
-            info!(topic = &self.topic.as_str(), "Reached end of topic.");
-            ctx.send_message(batch_sink, IndexerMessage::EndOfSource)
-                .await?;
+            info!(topic = %self.topic, "Reached end of topic.");
+            ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(())
+    }
+
+    fn name(&self) -> String {
+        "KafkaSource".to_string()
     }
 
     fn observable_state(&self) -> serde_json::Value {
@@ -277,8 +285,7 @@ impl Source for KafkaSource {
             .sorted()
             .collect();
         json!({
-            "group_id": self.group_id,
-            "topic":  self.topic,
+            "topic": self.topic,
             "assigned_partition_ids": assigned_partition_ids,
             "current_positions": current_positions,
             "num_active_partitions": self.state.num_active_partitions,
@@ -300,27 +307,59 @@ fn previous_position_for_offset(offset: i64) -> Position {
 
 /// Creates a new `KafkaSourceConsumer`.
 fn create_consumer(
-    bootstrap_servers: &str,
-    group_id: &str,
-    enable_partition_eof: bool,
-) -> anyhow::Result<KafkaSourceConsumer> {
-    let consumer: KafkaSourceConsumer = ClientConfig::new()
-        .set("bootstrap.servers", bootstrap_servers)
-        .set("group.id", group_id)
-        .set("enable.partition.eof", enable_partition_eof.to_string())
-        .set("session.timeout.ms", "6000")
-        .set("enable.auto.commit", "false")
-        //.set("statistics.interval.ms", "30000")
-        //.set("auto.offset.reset", "smallest")
-        .set_log_level(RDKafkaLogLevel::Info) // TODO: read log level from env variable.
+    client_log_level: Option<String>,
+    client_params: serde_json::Value,
+) -> anyhow::Result<Arc<KafkaSourceConsumer>> {
+    let log_level = parse_client_log_level(client_log_level)?;
+    let mut client_config = parse_client_params(client_params)?;
+    let consumer: KafkaSourceConsumer = client_config
+        .set_log_level(log_level)
         .create_with_context(KafkaSourceContext)
-        .with_context(|| {
-            format!(
-                "Failed to create consumer with bootstrap servers `{}` and group ID `{}`.",
-                bootstrap_servers, group_id,
-            )
-        })?;
-    Ok(consumer)
+        .context("Failed to create Kafka consumer.")?;
+    Ok(Arc::new(consumer))
+}
+
+fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RDKafkaLogLevel> {
+    let log_level = match client_log_level
+        .map(|log_level| log_level.to_lowercase())
+        .as_deref()
+    {
+        Some("debug") => RDKafkaLogLevel::Debug,
+        Some("info") | None => RDKafkaLogLevel::Info,
+        Some("warn") | Some("warning") => RDKafkaLogLevel::Warning,
+        Some("error") => RDKafkaLogLevel::Error,
+        Some(level) => bail!(
+            "Failed to parse Kafka client log level. Value `{}` is not supported.",
+            level
+        ),
+    };
+    Ok(log_level)
+}
+
+fn parse_client_params(client_params: serde_json::Value) -> anyhow::Result<ClientConfig> {
+    let params = if let serde_json::Value::Object(params) = client_params {
+        params
+    } else {
+        bail!("Failed to parse Kafka client parameters. `client_params` must be a JSON object.");
+    };
+    let mut client_config = ClientConfig::new();
+    for (key, value_json) in params {
+        let value = match value_json {
+            serde_json::Value::Bool(value_bool) => value_bool.to_string(),
+            serde_json::Value::Number(value_number) => value_number.to_string(),
+            serde_json::Value::String(value_string) => value_string,
+            serde_json::Value::Null => continue,
+            serde_json::Value::Array(_) | serde_json::Value::Object(_) => bail!(
+                "Failed to parse Kafka client parameters. `client_params.{}` must be a boolean, \
+                 number, or string.",
+                key
+            ),
+        };
+        client_config.set(key, value);
+    }
+    // We manage offsets ourselves: we always want this value to be `false`.
+    client_config.set("enable.auto.commit", "false");
+    Ok(client_config)
 }
 
 /// Represents a checkpoint with the Kafka native types: `i32` for partition IDs and `i64` for
@@ -344,16 +383,17 @@ fn kafka_checkpoint_from_checkpoint(checkpoint: &Checkpoint) -> anyhow::Result<H
 
 /// Retrieves the list of all partition IDs of a given topic.
 async fn fetch_partition_ids(
-    consumer: &KafkaSourceConsumer,
+    consumer: Arc<KafkaSourceConsumer>,
     topic: &str,
 ) -> anyhow::Result<Vec<i32>> {
-    let cluster_metadata = async move {
-        let timeout = Timeout::After(Duration::from_secs(5));
+    let timeout = Timeout::After(Duration::from_secs(5));
+    let topic_clone = topic.to_string();
+    let cluster_metadata = spawn_blocking(move || {
         consumer
-            .fetch_metadata(Some(topic), timeout)
-            .with_context(|| format!("Failed to fetch metadata for topic `{}`.", topic))
-    }
-    .await?;
+            .fetch_metadata(Some(&topic_clone), timeout)
+            .with_context(|| format!("Failed to fetch metadata for topic `{}`.", topic_clone))
+    })
+    .await??;
 
     if cluster_metadata.topics().is_empty() {
         bail!("Topic `{}` does not exist.", topic);
@@ -381,27 +421,61 @@ async fn fetch_partition_ids(
 /// The high watermark is the offset of the latest message in the partition available for
 /// consumption + 1.
 async fn fetch_watermarks(
-    consumer: &KafkaSourceConsumer,
+    consumer: Arc<KafkaSourceConsumer>,
     topic: &str,
     partition_ids: &[i32],
+    timeout: Duration,
 ) -> anyhow::Result<HashMap<i32, (i64, i64)>> {
-    let timeout = Duration::from_secs(10);
-    let tasks = partition_ids.iter().map(|&partition_id| async move {
-        consumer
-            .fetch_watermarks(topic, partition_id, timeout)
-            .map(|watermarks| (partition_id, watermarks))
-            .with_context(|| {
-                format!(
-                    "Failed to fetch watermarks for topic `{}` and partition `{}`.",
-                    topic, partition_id
-                )
-            })
+    let tasks = partition_ids.iter().map(|&partition_id| {
+        fetch_watermarks_for_partition_id(
+            consumer.clone(),
+            topic.to_string(),
+            partition_id,
+            timeout,
+        )
+        .map_ok(move |watermarks| (partition_id, watermarks))
     });
     let watermarks = futures::future::try_join_all(tasks)
         .await?
         .into_iter()
         .collect();
     Ok(watermarks)
+}
+
+/// Fetches the low and high watermarks for the given topic and partition ID.
+async fn fetch_watermarks_for_partition_id(
+    consumer: Arc<KafkaSourceConsumer>,
+    topic: String,
+    partition_id: i32,
+    timeout: Duration,
+) -> anyhow::Result<(i64, i64)> {
+    let attempt_timeout = Duration::from_secs(5).min(timeout);
+    let backoff = ExponentialBackoff {
+        max_interval: Duration::from_secs(5),
+        max_elapsed_time: Some(timeout),
+        ..Default::default()
+    };
+    spawn_blocking(move ||
+        backoff::retry(backoff, || {
+            debug!(topic = %topic, partition_id = ?partition_id, "Fetching watermarks");
+            consumer
+                .fetch_watermarks(&topic, partition_id, attempt_timeout)
+                .map_err(|err| {
+                    debug!(topic = %topic, partition_id = ?partition_id, error = ?err, "Failed to fetch watermarks");
+                    if let KafkaError::MetadataFetch(RDKafkaErrorCode::UnknownPartition) = err {
+                        backoff::Error::Transient(err)
+                    } else {
+                        backoff::Error::Permanent(err)
+                    }
+                })
+            })
+            .with_context(|| {
+                format!(
+                    "Failed to fetch watermarks for topic `{}` and partition `{}`.",
+                    topic, partition_id
+                )
+            })
+    ).await?
 }
 
 /// Given a checkpoint, computes the next offset from which to start reading messages for the
@@ -585,28 +659,18 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "kafka-broker-external-service"))]
-mod kafka_broker_tests {
+#[cfg(all(test, feature = "kafka-external-service"))]
+mod kafka_source_tests {
     use quickwit_actors::{create_test_mailbox, Universe};
-    use rand::distributions::Alphanumeric;
-    use rand::Rng;
+    use quickwit_common::rand::append_random_suffix;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;
     use rdkafka::producer::{FutureProducer, FutureRecord};
 
     use super::*;
-    use crate::source::SourceActor;
-
-    fn append_random_suffix(string: &str) -> String {
-        let rng = rand::thread_rng();
-        let slug: String = rng
-            .sample_iter(&Alphanumeric)
-            .take(4)
-            .map(char::from)
-            .collect();
-        format!("{}-{}", string, slug)
-    }
+    use crate::source::{quickwit_supported_sources, SourceActor};
+    use crate::SourceConfig;
 
     fn create_admin_client(
         bootstrap_servers: &str,
@@ -642,6 +706,18 @@ mod kafka_broker_tests {
                 )
             })?;
         Ok(())
+    }
+
+    fn create_consumer_for_test(
+        bootstrap_servers: &str,
+        group_id: &str,
+    ) -> anyhow::Result<Arc<KafkaSourceConsumer>> {
+        let client_params = json!({
+            "bootstrap.servers": bootstrap_servers,
+            "group.id": group_id,
+            "enable.partition.eof": true,
+        });
+        create_consumer(Some("info".to_string()), client_params)
     }
 
     async fn populate_topic<K, M, J, Q>(
@@ -701,6 +777,20 @@ mod kafka_broker_tests {
         format!("Message #{}", id)
     }
 
+    fn merge_messages(messages: Vec<IndexerMessage>) -> anyhow::Result<RawDocBatch> {
+        let mut merged_batch = RawDocBatch::default();
+        for message in messages {
+            if let IndexerMessage::Batch(batch) = message {
+                merged_batch.docs.extend(batch.docs);
+                merged_batch
+                    .checkpoint_delta
+                    .extend(batch.checkpoint_delta)?;
+            }
+        }
+        merged_batch.docs.sort();
+        Ok(merged_batch)
+    }
+
     #[tokio::test]
     async fn test_kafka_source() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
@@ -714,18 +804,28 @@ mod kafka_broker_tests {
         let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 3).await?;
 
-        let params = KafkaSourceParams {
-            bootstrap_servers: bootstrap_servers.clone(),
-            group_id: group_id.clone(),
-            topic: topic.clone(),
-            enable_partition_eof: Some(true),
+        let source_config = SourceConfig {
+            source_id: "kafka-test-source".to_string(),
+            source_type: "kafka".to_string(),
+            params: json!({
+                "topic": topic,
+                "client_log_level": "info",
+                "client_params": json!({
+                    "bootstrap.servers": bootstrap_servers,
+                    "group.id": group_id,
+                    "enable.partition.eof": true,
+                }),
+            }),
         };
+        let source_loader = quickwit_supported_sources();
         {
             let (sink, inbox) = create_test_mailbox();
             let checkpoint = Checkpoint::default();
-            let source = KafkaSource::try_new(params.clone(), checkpoint).await?;
+            let source = source_loader
+                .load_source(source_config.clone(), checkpoint)
+                .await?;
             let actor = SourceActor {
-                source: Box::new(source),
+                source,
                 batch_sink: sink.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
@@ -733,12 +833,10 @@ mod kafka_broker_tests {
             assert!(exit_status.is_success());
 
             let messages = inbox.drain_available_message_for_test();
-            assert_eq!(messages.len(), 1);
-            assert!(matches!(messages[0], IndexerMessage::EndOfSource));
+            assert!(messages.is_empty());
 
             let expected_current_positions: Vec<(i32, i64)> = vec![];
             let expected_state = json!({
-                "group_id": group_id,
                 "topic":  topic,
                 "assigned_partition_ids": vec![0, 1, 2],
                 "current_positions":  expected_current_positions,
@@ -770,45 +868,42 @@ mod kafka_broker_tests {
         {
             let (sink, inbox) = create_test_mailbox();
             let checkpoint = Checkpoint::default();
-            let source = KafkaSource::try_new(params.clone(), checkpoint).await?;
+            let source = source_loader
+                .load_source(source_config.clone(), checkpoint)
+                .await?;
             let actor = SourceActor {
-                source: Box::new(source),
+                source,
                 batch_sink: sink.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
             let (exit_status, state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let mut messages = inbox.drain_available_message_for_test();
-            assert_eq!(messages.len(), 2);
-            assert!(matches!(messages[0], IndexerMessage::Batch(_)));
-            assert!(matches!(messages[1], IndexerMessage::EndOfSource));
+            let messages = inbox.drain_available_message_for_test();
+            assert!(messages.len() >= 1);
 
-            if let IndexerMessage::Batch(batch) = &mut messages[0] {
-                batch.docs.sort();
-                let expected_docs = vec![
-                    "Message #000",
-                    "Message #002",
-                    "Message #100",
-                    "Message #102",
-                    "Message #200",
-                    "Message #202",
-                ];
-                assert_eq!(batch.docs, expected_docs);
+            let batch = merge_messages(messages)?;
+            let expected_docs = vec![
+                "Message #000",
+                "Message #002",
+                "Message #100",
+                "Message #102",
+                "Message #200",
+                "Message #202",
+            ];
+            assert_eq!(batch.docs, expected_docs);
 
-                let mut expected_checkpoint_delta = CheckpointDelta::default();
-                for partition in 0..3 {
-                    expected_checkpoint_delta.record_partition_delta(
-                        PartitionId::from(partition),
-                        Position::Beginning,
-                        Position::from(2u64),
-                    )?;
-                }
-                assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
-            };
+            let mut expected_checkpoint_delta = CheckpointDelta::default();
+            for partition in 0..3 {
+                expected_checkpoint_delta.record_partition_delta(
+                    PartitionId::from(partition),
+                    Position::Beginning,
+                    Position::from(2u64),
+                )?;
+            }
+            assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);
 
             let expected_state = json!({
-                "group_id": group_id,
                 "topic":  topic,
                 "assigned_partition_ids": vec![0, 1, 2],
                 "current_positions":  vec![(0, 2), (1, 2), (2, 2)],
@@ -827,40 +922,38 @@ mod kafka_broker_tests {
                     (PartitionId::from(partition_id), Position::from(offset))
                 })
                 .collect();
-            let source = KafkaSource::try_new(params.clone(), checkpoint).await?;
+            let source = source_loader
+                .load_source(source_config.clone(), checkpoint)
+                .await?;
             let actor = SourceActor {
-                source: Box::new(source),
+                source,
                 batch_sink: sink.clone(),
             };
             let (_mailbox, handle) = universe.spawn_actor(actor).spawn_async();
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
 
-            let mut messages = inbox.drain_available_message_for_test();
-            assert_eq!(messages.len(), 2);
-            assert!(matches!(messages[0], IndexerMessage::Batch(_)));
-            assert!(matches!(messages[1], IndexerMessage::EndOfSource));
+            let messages = inbox.drain_available_message_for_test();
+            assert!(messages.len() >= 1);
 
-            if let IndexerMessage::Batch(batch) = &mut messages[0] {
-                batch.docs.sort();
-                let expected_docs = vec!["Message #002", "Message #200", "Message #202"];
-                assert_eq!(batch.docs, expected_docs);
+            let batch = merge_messages(messages)?;
+            let expected_docs = vec!["Message #002", "Message #200", "Message #202"];
+            assert_eq!(batch.docs, expected_docs);
 
-                let mut expected_checkpoint_delta = CheckpointDelta::default();
-                expected_checkpoint_delta.record_partition_delta(
-                    PartitionId::from(0),
-                    Position::from(0u64),
-                    Position::from(2u64),
-                )?;
-                expected_checkpoint_delta.record_partition_delta(
-                    PartitionId::from(2),
-                    Position::Beginning,
-                    Position::from(2u64),
-                )?;
-                assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta,);
-            };
+            let mut expected_checkpoint_delta = CheckpointDelta::default();
+            expected_checkpoint_delta.record_partition_delta(
+                PartitionId::from(0),
+                Position::from(0u64),
+                Position::from(2u64),
+            )?;
+            expected_checkpoint_delta.record_partition_delta(
+                PartitionId::from(2),
+                Position::Beginning,
+                Position::from(2u64),
+            )?;
+            assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta,);
+
             let expected_exit_state = json!({
-                "group_id": group_id,
                 "topic":  topic,
                 "assigned_partition_ids": vec![0, 1, 2],
                 "current_positions":  vec![(0, 2), (2, 2)],
@@ -883,12 +976,14 @@ mod kafka_broker_tests {
         let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 2).await?;
 
-        let consumer = create_consumer(&bootstrap_servers, &group_id, true)?;
-        assert!(fetch_partition_ids(&consumer, "topic-does-not-exist")
-            .await
-            .is_err());
+        let consumer = create_consumer_for_test(&bootstrap_servers, &group_id)?;
+        assert!(
+            fetch_partition_ids(consumer.clone(), "topic-does-not-exist")
+                .await
+                .is_err()
+        );
 
-        let partition_ids = fetch_partition_ids(&consumer, &topic).await?;
+        let partition_ids = fetch_partition_ids(consumer.clone(), &topic).await?;
         assert_eq!(&partition_ids, &[0, 1]);
         Ok(())
     }
@@ -902,21 +997,20 @@ mod kafka_broker_tests {
         let admin_client = create_admin_client(&bootstrap_servers)?;
         create_topic(&admin_client, &topic, 2).await?;
 
-        let consumer = create_consumer(&bootstrap_servers, &group_id, true)?;
-        // Force metadata update for the consumer. Otherwise, `fetch_watermarks` may return
-        // `UnknownPartition` if the broker hasn't received a metadata update since the
-        // topic was created. See also https://issues.apache.org/jira/browse/KAFKA-6829.
-        consumer.fetch_metadata(Some(&topic), Duration::from_secs(5))?;
-        assert!(fetch_watermarks(&consumer, "topic-does-not-exist", &[0])
-            .await
-            .is_err());
+        let consumer = create_consumer_for_test(&bootstrap_servers, &group_id)?;
+        let timeout = Duration::from_secs(1);
+        assert!(
+            fetch_watermarks(consumer.clone(), "topic-does-not-exist", &[0], timeout)
+                .await
+                .is_err()
+        );
         {
-            let watermarks = fetch_watermarks(&consumer, &topic, &[0]).await?;
+            let watermarks = fetch_watermarks(consumer.clone(), &topic, &[0], timeout).await?;
             let expected_watermarks = vec![(0, (0, 0))].into_iter().collect();
             assert_eq!(watermarks, expected_watermarks);
         }
         {
-            let watermarks = fetch_watermarks(&consumer, &topic, &[0, 1]).await?;
+            let watermarks = fetch_watermarks(consumer.clone(), &topic, &[0, 1], timeout).await?;
             let expected_watermarks = vec![(0, (0, 0)), (1, (0, 0))].into_iter().collect();
             assert_eq!(watermarks, expected_watermarks);
         }
@@ -933,7 +1027,7 @@ mod kafka_broker_tests {
             .await?;
         }
         {
-            let watermarks = fetch_watermarks(&consumer, &topic, &[0, 1]).await?;
+            let watermarks = fetch_watermarks(consumer.clone(), &topic, &[0, 1], timeout).await?;
             let expected_watermarks = vec![(0, (0, 1)), (1, (0, 1))].into_iter().collect();
             assert_eq!(watermarks, expected_watermarks);
         }

@@ -1,0 +1,9 @@
+**/*.md
+**/*.txt
+**/.*
+**/Dockerfile
+**/target
+docs
+examples
+Makefile
+!.git/

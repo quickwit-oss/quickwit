@@ -21,7 +21,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use tokio::sync::watch::{self, Sender};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, Instrument};
 
 use crate::actor::{process_command, ActorExitStatus};
 use crate::actor_handle::ActorHandle;
@@ -86,11 +86,12 @@ pub(crate) fn spawn_async_actor<A: AsyncActor>(
     ctx: ActorContext<A::Message>,
     inbox: Inbox<A::Message>,
 ) -> ActorHandle<A> {
-    debug!(actor_name = %ctx.actor_instance_id(), "spawning-async-actor");
     let (state_tx, state_rx) = watch::channel(actor.observable_state());
     let ctx_clone = ctx.clone();
+    let span = actor.span(&ctx_clone);
     let (exit_status_tx, exit_status_rx) = watch::channel(None);
-    let join_handle: JoinHandle<()> = tokio::spawn(async move {
+    let loop_async_actor_future = async move {
+        debug!("spawn-async");
         let actor_instance_id = ctx.actor_instance_id().to_string();
         let exit_status = async_actor_loop(actor, inbox, ctx, state_tx).await;
         info!(
@@ -99,12 +100,15 @@ pub(crate) fn spawn_async_actor<A: AsyncActor>(
             "actor-exit"
         );
         let _ = exit_status_tx.send(Some(exit_status));
-    });
+    }
+    .instrument(span);
+    let join_handle: JoinHandle<()> = tokio::spawn(loop_async_actor_future);
     ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)
 }
 
 async fn process_msg<A: Actor + AsyncActor>(
     actor: &mut A,
+    msg_id: u64,
     inbox: &mut Inbox<A::Message>,
     ctx: &mut ActorContext<A::Message>,
     state_tx: &Sender<A::ObservableState>,
@@ -129,8 +133,8 @@ async fn process_msg<A: Actor + AsyncActor>(
     match command_or_msg_recv_res {
         Ok(CommandOrMessage::Command(cmd)) => process_command(actor, cmd, ctx, state_tx),
         Ok(CommandOrMessage::Message(msg)) => {
-            debug!(msg=?msg, actor=%actor.name(),"message-received");
-            actor.process_message(msg, ctx).await.err()
+            let span = actor.message_span(msg_id, &msg);
+            actor.process_message(msg, ctx).instrument(span).await.err()
         }
         Err(RecvError::Disconnected) => Some(ActorExitStatus::Success),
         Err(RecvError::Timeout) => {
@@ -158,6 +162,7 @@ async fn async_actor_loop<A: AsyncActor>(
     let mut exit_status_opt: Option<ActorExitStatus> =
         actor_with_state_tx.actor.initialize(&ctx).await.err();
 
+    let mut msg_id: u64 = 1;
     let exit_status: ActorExitStatus = loop {
         tokio::task::yield_now().await;
         if let Some(exit_status) = exit_status_opt {
@@ -165,11 +170,13 @@ async fn async_actor_loop<A: AsyncActor>(
         }
         exit_status_opt = process_msg(
             &mut actor_with_state_tx.actor,
+            msg_id,
             &mut inbox,
             &mut ctx,
             &actor_with_state_tx.state_tx,
         )
         .await;
+        msg_id += 1;
     };
     ctx.exit(&exit_status);
 

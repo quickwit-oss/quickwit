@@ -22,9 +22,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 
-use crate::Storage;
+use crate::{OwnedBytes, Storage};
 
 /// This storage acts as a proxy to another storage that simply modifies each API call
 /// by preceding each path with a given a prefix.
@@ -35,7 +34,11 @@ struct PrefixStorage {
 
 #[async_trait]
 impl Storage for PrefixStorage {
-    async fn put(&self, path: &Path, payload: crate::PutPayload) -> crate::StorageResult<()> {
+    async fn put(
+        &self,
+        path: &Path,
+        payload: Box<dyn crate::PutPayloadProvider>,
+    ) -> crate::StorageResult<()> {
         self.storage.put(&self.prefix.join(path), payload).await
     }
 
@@ -45,11 +48,15 @@ impl Storage for PrefixStorage {
             .await
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> crate::StorageResult<Bytes> {
+    async fn get_slice(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> crate::StorageResult<OwnedBytes> {
         self.storage.get_slice(&self.prefix.join(path), range).await
     }
 
-    async fn get_all(&self, path: &Path) -> crate::StorageResult<Bytes> {
+    async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
         self.storage.get_all(&self.prefix.join(path)).await
     }
 

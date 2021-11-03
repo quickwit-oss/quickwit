@@ -19,6 +19,7 @@
 
 use std::collections::HashSet;
 use std::ops::{Range, RangeInclusive};
+use std::time::Instant;
 
 use quickwit_metastore::checkpoint::CheckpointDelta;
 
@@ -35,5 +36,56 @@ pub struct PackagedSplit {
     pub footer_offsets: Range<u64>,
     pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,
+    pub demux_num_ops: usize,
     pub tags: HashSet<String>,
+    pub split_date_of_birth: Instant,
+}
+
+#[derive(Debug)]
+pub struct PackagedSplitBatch {
+    splits: Vec<PackagedSplit>,
+}
+
+impl PackagedSplitBatch {
+    /// Instantiate a consistent [`PackagedSplitBatch`] that
+    /// satisfies two constraints:
+    /// - a batch must have at least one split
+    /// - all splits must be on the same `index_id`.
+    pub fn new(splits: Vec<PackagedSplit>) -> Self {
+        assert!(!splits.is_empty());
+        assert_eq!(
+            splits
+                .iter()
+                .map(|split| split.index_id.clone())
+                .collect::<HashSet<_>>()
+                .len(),
+            1,
+            "All splits must be on the same `index_id`."
+        );
+        Self { splits }
+    }
+
+    pub fn index_id(&self) -> String {
+        self.splits
+            .get(0)
+            .map(|split| split.index_id.clone())
+            .unwrap()
+    }
+
+    pub fn split_ids(&self) -> Vec<String> {
+        self.splits
+            .iter()
+            .map(|split| split.split_id.clone())
+            .collect::<Vec<_>>()
+    }
+}
+
+impl IntoIterator for PackagedSplitBatch {
+    type Item = PackagedSplit;
+
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.splits.into_iter()
+    }
 }

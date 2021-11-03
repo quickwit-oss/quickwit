@@ -20,7 +20,6 @@
 use quickwit_metastore::SplitMetadata;
 
 #[derive(Debug, Clone)]
-pub enum MergePlannerMessage {
-    NewSplits(Vec<SplitMetadata>),
-    EndWithSuccess,
+pub struct MergePlannerMessage {
+    pub new_splits: Vec<SplitMetadata>,
 }

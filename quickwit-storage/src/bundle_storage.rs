@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::Bytes;
+use quickwit_common::chunk_range;
 use serde::{Deserialize, Serialize};
 use tantivy::common::CountingWriter;
 use tantivy::directory::FileSlice;
@@ -36,7 +36,7 @@ use tantivy::HasLen;
 use thiserror::Error;
 use tracing::error;
 
-use crate::{Storage, StorageError, StorageResult};
+use crate::{OwnedBytes, Storage, StorageError, StorageResult};
 
 /// Filename used for the bundle.
 pub const BUNDLE_FILENAME: &str = "bundle";
@@ -66,6 +66,11 @@ impl BundleStorage {
             metadata,
         })
     }
+
+    /// Returns Iterator over files contained in the bundle.
+    pub fn iter_files(&self) -> impl Iterator<Item = &PathBuf> {
+        self.metadata.files.keys()
+    }
 }
 
 #[derive(Debug, Error)]
@@ -76,18 +81,19 @@ pub struct CorruptedData {
     pub error: serde_json::Error,
 }
 
-const FOOTER_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u64>();
+const SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u64>();
 
 /// Returns the file offsets in the file bundle.
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct BundleStorageFileOffsets {
-    files: HashMap<PathBuf, Range<usize>>,
+    /// The files and their offsets in the body
+    pub files: HashMap<PathBuf, Range<usize>>,
 }
 
 impl BundleStorageFileOffsets {
     fn open(data: &[u8]) -> Result<Self, CorruptedData> {
         let (body_and_footer, footer_num_bytes_data) =
-            data.split_at(data.len() - FOOTER_LENGTH_NUM_BYTES);
+            data.split_at(data.len() - SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES);
         let footer_num_bytes: u64 = u64::from_le_bytes(footer_num_bytes_data.try_into().unwrap());
         let footer_slice = &body_and_footer[body_and_footer.len() - footer_num_bytes as usize..];
         let bundle_storage_file_offsets = serde_json::from_slice(footer_slice)?;
@@ -96,10 +102,15 @@ impl BundleStorageFileOffsets {
 
     /// Read metadata from a file.
     pub fn open_from_file_slice(file: FileSlice) -> io::Result<Self> {
-        let (body_and_footer, footer_num_bytes_data) = file.split_from_end(8);
-        let footer_num_bytes_data = footer_num_bytes_data.read_bytes()?;
-        let footer_num_bytes: u64 =
-            u64::from_le_bytes(footer_num_bytes_data.as_slice().try_into().unwrap());
+        let (body_and_footer, footer_num_bytes_data) =
+            file.split_from_end(SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES);
+        let footer_num_bytes: u64 = u64::from_le_bytes(
+            footer_num_bytes_data
+                .read_bytes()?
+                .as_slice()
+                .try_into()
+                .unwrap(),
+        );
 
         let bundle_storage_file_offsets_data = body_and_footer
             .slice_from_end(footer_num_bytes as usize)
@@ -123,15 +134,32 @@ impl BundleStorageFileOffsets {
 
 #[async_trait]
 impl Storage for BundleStorage {
-    async fn put(&self, path: &Path, _payload: crate::PutPayload) -> crate::StorageResult<()> {
+    async fn put(
+        &self,
+        path: &Path,
+        _payload: Box<dyn crate::PutPayloadProvider>,
+    ) -> crate::StorageResult<()> {
         Err(unsupported_operation(path))
     }
 
-    async fn copy_to_file(&self, path: &Path, _output_path: &Path) -> crate::StorageResult<()> {
-        Err(unsupported_operation(path))
+    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> crate::StorageResult<()> {
+        let file_num_bytes = self.file_num_bytes(path).await? as usize;
+
+        let mut out_file = File::create(output_path)?;
+        let block_size = 100_000_000;
+        for block in chunk_range(0..file_num_bytes, block_size) {
+            let file_content = self.get_slice(path, block).await?;
+            out_file.write_all(&file_content)?;
+        }
+
+        Ok(())
     }
 
-    async fn get_slice(&self, path: &Path, range: Range<usize>) -> crate::StorageResult<Bytes> {
+    async fn get_slice(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> crate::StorageResult<OwnedBytes> {
         let file_offsets = self.metadata.get(path).ok_or_else(|| {
             crate::StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
@@ -143,7 +171,7 @@ impl Storage for BundleStorage {
             .await
     }
 
-    async fn get_all(&self, path: &Path) -> crate::StorageResult<Bytes> {
+    async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
         let file_offsets = self.metadata.get(path).ok_or_else(|| {
             crate::StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
@@ -351,6 +379,13 @@ mod tests {
 
         let f2_data = bundle_storage.get_all(Path::new("f2")).await?;
         assert_eq!(&f2_data[..], &[99, 55, 44]);
+
+        let copy_to_file = temp_dir.path().join("copy_file");
+        bundle_storage
+            .copy_to_file(Path::new("f2"), &copy_to_file)
+            .await?;
+        let file_content = fs::read(copy_to_file).unwrap();
+        assert_eq!(&f2_data[..], file_content);
 
         Ok(())
     }

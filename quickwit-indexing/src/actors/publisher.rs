@@ -36,6 +36,7 @@ pub struct PublisherCounters {
 pub struct Publisher {
     metastore: Arc<dyn Metastore>,
     merge_planner_mailbox: Mailbox<MergePlannerMessage>,
+    garbage_collector_mailbox: Mailbox<()>,
     counters: PublisherCounters,
 }
 
@@ -43,10 +44,12 @@ impl Publisher {
     pub fn new(
         metastore: Arc<dyn Metastore>,
         merge_planner_mailbox: Mailbox<MergePlannerMessage>,
+        garbage_collector_mailbox: Mailbox<()>,
     ) -> Publisher {
         Publisher {
             metastore,
             merge_planner_mailbox,
+            garbage_collector_mailbox,
             counters: PublisherCounters::default(),
         }
     }
@@ -55,12 +58,13 @@ impl Publisher {
         &self,
         publisher_message: &PublisherMessage,
     ) -> anyhow::Result<()> {
-        info!(index=publisher_message.index_id.as_str(), op=?publisher_message.operation, "publish-operation");
         match &publisher_message.operation {
             PublishOperation::PublishNewSplit {
                 new_split,
                 checkpoint_delta,
+                ..
             } => {
+                info!("new-split-start");
                 self.metastore
                     .publish_splits(
                         &publisher_message.index_id,
@@ -69,11 +73,13 @@ impl Publisher {
                     )
                     .await
                     .context("Failed to publish splits.")?;
+                info!("new-split-success");
             }
             PublishOperation::ReplaceSplits {
                 new_splits: new_split_id,
                 replaced_split_ids,
             } => {
+                info!("replace-split-start");
                 // TODO change the metastore API to take &[String]
                 let new_split_ids_ref_vec: Vec<&str> = new_split_id
                     .iter()
@@ -89,6 +95,7 @@ impl Publisher {
                     )
                     .await
                     .context("Failed to replace splits.")?;
+                info!("replace-split-success");
             }
         }
         Ok(())
@@ -104,7 +111,11 @@ impl Actor for Publisher {
     }
 
     fn queue_capacity(&self) -> quickwit_actors::QueueCapacity {
-        QueueCapacity::Bounded(3)
+        QueueCapacity::Unbounded
+    }
+
+    fn name(&self) -> String {
+        "Publisher".to_string()
     }
 }
 
@@ -124,6 +135,25 @@ impl AsyncActor for Publisher {
                                                      //< entirely.
         };
         self.run_publish_operation(&publisher_message).await?;
+        match &publisher_message.operation {
+            PublishOperation::PublishNewSplit {
+                new_split,
+                checkpoint_delta,
+                split_date_of_birth,
+            } => {
+                info!(new_split=new_split.split_id.as_str(), tts=%split_date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta, "publish-new-splits");
+            }
+            PublishOperation::ReplaceSplits {
+                new_splits,
+                replaced_split_ids,
+            } => {
+                let new_split_ids: Vec<&str> = new_splits
+                    .iter()
+                    .map(|new_split| new_split.split_id.as_str())
+                    .collect();
+                info!(new_splits=?new_split_ids, replaced_splits=?replaced_split_ids, "replace-splits");
+            }
+        }
 
         let new_splits = publisher_message.operation.extract_new_splits();
 
@@ -134,17 +164,40 @@ impl AsyncActor for Publisher {
         let _ = ctx
             .send_message(
                 &self.merge_planner_mailbox,
-                MergePlannerMessage::NewSplits(new_splits),
+                MergePlannerMessage { new_splits },
             )
             .await;
         self.counters.num_published_splits += 1;
         fail_point!("publisher:after");
         Ok(())
     }
+
+    async fn finalize(
+        &mut self,
+        _exit_status: &quickwit_actors::ActorExitStatus,
+        ctx: &ActorContext<Self::Message>,
+    ) -> anyhow::Result<()> {
+        // The `garbage_collector` actor runs for ever.
+        // Periodically scheduling new messages for itself.
+        //
+        // The publisher actor being the last standing actor of the pipeline,
+        // its end of life should also means the end of life of never stopping actors.
+        // After all, when the publisher is stopped, there shouldn't be anything to process.
+        // It's fine if the garbage collector is already dead.
+        let _ = ctx
+            .send_exit_with_success(&self.garbage_collector_mailbox)
+            .await;
+        let _ = ctx
+            .send_exit_with_success(&self.merge_planner_mailbox)
+            .await;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_metastore::checkpoint::CheckpointDelta;
     use quickwit_metastore::{MockMetastore, SplitMetadata};
@@ -175,7 +228,12 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
         let (merge_planner_mailbox, _merge_planner_inbox) = create_test_mailbox();
-        let publisher = Publisher::new(Arc::new(mock_metastore), merge_planner_mailbox);
+        let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
+        let publisher = Publisher::new(
+            Arc::new(mock_metastore),
+            merge_planner_mailbox,
+            garbage_collector_mailbox,
+        );
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
         let (split_future_tx1, split_future_rx1) = oneshot::channel::<PublisherMessage>();
@@ -198,6 +256,7 @@ mod tests {
                         ..Default::default()
                     },
                     checkpoint_delta: CheckpointDelta::from(3..7),
+                    split_date_of_birth: Instant::now(),
                 }
             })
             .is_ok());
@@ -210,6 +269,7 @@ mod tests {
                         ..Default::default()
                     },
                     checkpoint_delta: CheckpointDelta::from(1..3),
+                    split_date_of_birth: Instant::now(),
                 },
             })
             .is_ok());
@@ -231,7 +291,12 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
-        let publisher = Publisher::new(Arc::new(mock_metastore), merge_planner_mailbox);
+        let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
+        let publisher = Publisher::new(
+            Arc::new(mock_metastore),
+            merge_planner_mailbox,
+            garbage_collector_mailbox,
+        );
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
         let (split_future_tx, split_future_rx) = oneshot::channel::<PublisherMessage>();
@@ -257,7 +322,7 @@ mod tests {
         assert_eq!(merge_planner_msgs.len(), 1);
         let merge_planner_msg = merge_planner_msgs.pop().unwrap();
         assert!(
-            matches!(merge_planner_msg, MergePlannerMessage::NewSplits(splits) if splits.len() == 1)
+            matches!(merge_planner_msg, MergePlannerMessage { new_splits } if new_splits.len() == 1)
         )
     }
 }

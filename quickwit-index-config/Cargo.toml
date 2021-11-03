@@ -2,7 +2,7 @@
 name = "quickwit-index-config"
 version = "0.1.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
-edition = "2018"
+edition = "2021"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit index configuration"
 repository = "https://github.com/quickwit-inc/quickwit"
@@ -19,10 +19,11 @@ once_cell = "1.4"
 regex = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="c1d1d84" }
-tantivy-query-grammar = { git= "https://github.com/quickwit-inc/tantivy/", rev="c1d1d84" }
+tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="ff631ec", default-features=false, features = ["mmap", "lz4-compression"] }
+tantivy-query-grammar = { git= "https://github.com/quickwit-inc/tantivy/", rev="ff631ec" }
 thiserror = "1.0"
 typetag = "0.1"
+tracing = "0.1"
 
 [dependencies.quickwit-proto]
 path = '../quickwit-proto'

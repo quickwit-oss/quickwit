@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
@@ -27,12 +26,14 @@ use fail::fail_point;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SendError, SyncActor,
 };
-use quickwit_index_config::IndexConfig;
+use quickwit_index_config::{DocParsingError, IndexConfig, SortBy};
 use tantivy::schema::{Field, Value};
-use tantivy::Document;
+use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tracing::{info, warn};
 
-use crate::models::{CommitPolicy, IndexedSplit, IndexerMessage, RawDocBatch, ScratchDirectory};
+use crate::models::{
+    CommitPolicy, IndexedSplit, IndexedSplitBatch, IndexerMessage, IndexingDirectory, RawDocBatch,
+};
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
 pub struct IndexerCounters {
@@ -43,7 +44,7 @@ pub struct IndexerCounters {
     /// then this counter is 0)
     /// - number of valid docs.
     pub num_parse_errors: u64,
-    pub num_missing_timestamp: u64,
+    pub num_missing_fields: u64,
     pub num_valid_docs: u64,
 
     /// Number of splits that were emitted by the indexer.
@@ -63,14 +64,14 @@ pub struct IndexerCounters {
 impl IndexerCounters {
     /// Returns the overall number of docs that went through the indexer (valid or not).
     pub fn num_processed_docs(&self) -> u64 {
-        self.num_valid_docs + self.num_parse_errors + self.num_missing_timestamp
+        self.num_valid_docs + self.num_parse_errors + self.num_missing_fields
     }
 
     /// Returns the overall number of docs that were sent to the indexer but were invalid.
     /// (For instance, because they were missing a required field or because their because
     /// their format was invalid)
     pub fn num_invalid_docs(&self) -> u64 {
-        self.num_parse_errors + self.num_missing_timestamp
+        self.num_parse_errors + self.num_missing_fields
     }
 }
 
@@ -83,7 +84,7 @@ struct IndexerState {
 
 enum PrepareDocumentOutcome {
     ParsingError,
-    MissingTimestamp,
+    MissingField,
     Document {
         document: Document,
         timestamp_opt: Option<i64>,
@@ -91,10 +92,29 @@ enum PrepareDocumentOutcome {
 }
 
 impl IndexerState {
-    fn create_indexed_split(&self) -> anyhow::Result<IndexedSplit> {
+    fn create_indexed_split(
+        &self,
+        ctx: &ActorContext<IndexerMessage>,
+    ) -> anyhow::Result<IndexedSplit> {
         let schema = self.index_config.schema();
-        let indexed_split =
-            IndexedSplit::new_in_dir(self.index_id.clone(), &self.indexer_params, schema)?;
+        let mut index_settings = IndexSettings::default();
+        let sort_by_field = match self.index_config.sort_by() {
+            SortBy::DocId => None,
+            SortBy::SortByFastField { field_name, order } => Some(IndexSortByField {
+                field: field_name,
+                order: order.into(),
+            }),
+        };
+        index_settings.sort_by_field = sort_by_field;
+        let index_builder = IndexBuilder::new().settings(index_settings).schema(schema);
+        let indexed_split = IndexedSplit::new_in_dir(
+            self.index_id.clone(),
+            &self.indexer_params,
+            index_builder,
+            ctx.progress().clone(),
+            ctx.kill_switch().clone(),
+        )?;
+        info!(split_id=%indexed_split.split_id, "new-split");
         Ok(indexed_split)
     }
 
@@ -108,7 +128,7 @@ impl IndexerState {
         ctx: &ActorContext<IndexerMessage>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {
         if current_split_opt.is_none() {
-            let new_indexed_split = self.create_indexed_split()?;
+            let new_indexed_split = self.create_indexed_split(ctx)?;
             let commit_timeout = IndexerMessage::CommitTimeout {
                 split_id: new_indexed_split.split_id.clone(),
             };
@@ -124,14 +144,17 @@ impl IndexerState {
         Ok(current_index_split)
     }
 
-    fn prepare_document(&self, doc_json: &str) -> PrepareDocumentOutcome {
+    fn prepare_document(&self, doc_json: String) -> PrepareDocumentOutcome {
         // Parse the document
         let doc_parsing_result = self.index_config.doc_from_json(doc_json);
         let document = match doc_parsing_result {
             Ok(doc) => doc,
             Err(doc_parsing_error) => {
                 warn!(err=?doc_parsing_error);
-                return PrepareDocumentOutcome::ParsingError;
+                return match doc_parsing_error {
+                    DocParsingError::RequiredFastField(_) => PrepareDocumentOutcome::MissingField,
+                    _ => PrepareDocumentOutcome::ParsingError,
+                };
             }
         };
         // Extract timestamp if necessary
@@ -147,14 +170,14 @@ impl IndexerState {
         let timestamp_opt = document
             .get_first(timestamp_field)
             .and_then(Value::i64_value);
-        let timestamp = if let Some(timestamp) = timestamp_opt {
-            timestamp
-        } else {
-            return PrepareDocumentOutcome::MissingTimestamp;
-        };
+        assert!(
+            timestamp_opt.is_some(),
+            "We should always have a timestamp here as doc parsing returns a `RequiredFastField` \
+             error on a missing timestamp."
+        );
         PrepareDocumentOutcome::Document {
             document,
-            timestamp_opt: Some(timestamp),
+            timestamp_opt,
         }
     }
 
@@ -173,12 +196,16 @@ impl IndexerState {
         for doc_json in batch.docs {
             counters.overall_num_bytes += doc_json.len() as u64;
             indexed_split.docs_size_in_bytes += doc_json.len() as u64;
-            match self.prepare_document(&doc_json) {
+            let prepared_doc = {
+                let _protect_zone = ctx.protect_zone();
+                self.prepare_document(doc_json)
+            };
+            match prepared_doc {
                 PrepareDocumentOutcome::ParsingError => {
                     counters.num_parse_errors += 1;
                 }
-                PrepareDocumentOutcome::MissingTimestamp => {
-                    counters.num_missing_timestamp += 1;
+                PrepareDocumentOutcome::MissingField => {
+                    counters.num_missing_fields += 1;
                 }
                 PrepareDocumentOutcome::Document {
                     document,
@@ -190,6 +217,7 @@ impl IndexerState {
                     if let Some(timestamp) = timestamp_opt {
                         record_timestamp(timestamp, &mut indexed_split.time_range);
                     }
+                    let _protect_guard = ctx.protect_zone();
                     indexed_split.index_writer.add_document(document);
                 }
             }
@@ -201,7 +229,7 @@ impl IndexerState {
 
 pub struct Indexer {
     indexer_state: IndexerState,
-    packager_mailbox: Mailbox<IndexedSplit>,
+    packager_mailbox: Mailbox<IndexedSplitBatch>,
     current_split_opt: Option<IndexedSplit>,
     counters: IndexerCounters,
 }
@@ -218,6 +246,10 @@ impl Actor for Indexer {
     fn queue_capacity(&self) -> QueueCapacity {
         QueueCapacity::Bounded(10)
     }
+
+    fn name(&self) -> String {
+        "Indexer".to_string()
+    }
 }
 
 fn record_timestamp(timestamp: i64, time_range: &mut Option<RangeInclusive<i64>>) {
@@ -232,16 +264,16 @@ fn record_timestamp(timestamp: i64, time_range: &mut Option<RangeInclusive<i64>>
 
 #[derive(Clone)]
 pub struct IndexerParams {
-    pub scratch_directory: ScratchDirectory,
+    pub indexing_directory: IndexingDirectory,
     pub heap_size: Byte,
     pub commit_policy: CommitPolicy,
 }
 
 impl IndexerParams {
-    pub fn for_test() -> io::Result<Self> {
-        let scratch_directory = ScratchDirectory::try_new_temp()?;
+    pub async fn for_test() -> anyhow::Result<Self> {
+        let indexing_directory = IndexingDirectory::for_test().await?;
         Ok(IndexerParams {
-            scratch_directory,
+            indexing_directory,
             heap_size: Byte::from_str("30MB").unwrap(),
             commit_policy: Default::default(),
         })
@@ -260,9 +292,6 @@ impl SyncActor for Indexer {
             }
             IndexerMessage::CommitTimeout { split_id } => {
                 self.process_commit_timeout(&split_id, ctx)?;
-            }
-            IndexerMessage::EndOfSource => {
-                return Err(ActorExitStatus::Success);
             }
         }
         Ok(())
@@ -300,7 +329,7 @@ impl Indexer {
         index_id: String,
         index_config: Arc<dyn IndexConfig>,
         indexer_params: IndexerParams,
-        packager_mailbox: Mailbox<IndexedSplit>,
+        packager_mailbox: Mailbox<IndexedSplitBatch>,
     ) -> anyhow::Result<Indexer> {
         let schema = index_config.schema();
         let timestamp_field_opt = index_config.timestamp_field(&schema);
@@ -369,8 +398,13 @@ impl Indexer {
         } else {
             return Ok(());
         };
-        info!(commit_trigger=?commit_trigger, index=?indexed_split.index_id, split=?indexed_split.split_id,"send-to-packager");
-        ctx.send_message_blocking(&self.packager_mailbox, indexed_split)?;
+        info!(commit_trigger=?commit_trigger, split=?indexed_split.split_id, num_docs=self.counters.num_docs_in_split, "send-to-packager");
+        ctx.send_message_blocking(
+            &self.packager_mailbox,
+            IndexedSplitBatch {
+                splits: vec![indexed_split],
+            },
+        )?;
         self.counters.num_docs_in_split = 0;
         self.counters.num_splits_emitted += 1;
         Ok(())
@@ -389,7 +423,7 @@ mod tests {
     use super::Indexer;
     use crate::actors::indexer::{record_timestamp, IndexerCounters};
     use crate::actors::IndexerParams;
-    use crate::models::{CommitPolicy, IndexerMessage, RawDocBatch, ScratchDirectory};
+    use crate::models::{CommitPolicy, IndexingDirectory, RawDocBatch};
 
     #[test]
     fn test_record_timestamp() {
@@ -411,8 +445,8 @@ mod tests {
                 timeout: Duration::from_secs(60),
                 num_docs_threshold: 3,
             },
-            scratch_directory: ScratchDirectory::try_new_temp()?,
             heap_size: Byte::from_str("30MB").unwrap(),
+            indexing_directory: IndexingDirectory::for_test().await?,
         };
         let (mailbox, inbox) = create_test_mailbox();
         let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
@@ -428,9 +462,9 @@ mod tests {
                 &indexer_mailbox,
                 RawDocBatch {
                     docs: vec![
-                        r#"{"body": "happy"}"#.to_string(), // missing timestamp
-                        r#"{"body": "happy", "timestamp": 1628837062}"#.to_string(), // ok
-                        r#"{"body": "happy2", "timestamp": 1628837062}"#.to_string(), // ok
+                        r#"{"body": "happy", "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string(), // missing timestamp
+                        r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:59+00:00", "response_time": 2, "response_payload": "YWJj"}"#.to_string(), // ok
+                        r#"{"body": "happy2", "timestamp": 1628837062, "response_date": "2021-12-19T16:40:57+00:00", "response_time": 13, "response_payload": "YWJj"}"#.to_string(), // ok
                         "{".to_string(),                    // invalid json
                     ],
                     checkpoint_delta: CheckpointDelta::from(0..4),
@@ -443,18 +477,18 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 1,
-                num_missing_timestamp: 1,
+                num_missing_fields: 1,
                 num_valid_docs: 2,
                 num_splits_emitted: 0,
                 num_docs_in_split: 2, //< we have not reached the commit limit yet.
-                overall_num_bytes: 103
+                overall_num_bytes: 387
             }
         );
         universe
             .send_message(
                 &indexer_mailbox,
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy3", "timestamp": 1628837062}"#.to_string()],
+                    docs: vec![r#"{"body": "happy3", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
                     checkpoint_delta: CheckpointDelta::from(4..5),
                 }
                 .into(),
@@ -465,16 +499,24 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 1,
-                num_missing_timestamp: 1,
+                num_missing_fields: 1,
                 num_valid_docs: 3,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0, //< the num docs in split counter has been reset.
-                overall_num_bytes: 146
+                overall_num_bytes: 525
             }
         );
         let output_messages = inbox.drain_available_message_for_test();
         assert_eq!(output_messages.len(), 1);
-        assert_eq!(output_messages[0].num_docs, 3);
+        assert_eq!(output_messages[0].splits[0].num_docs, 3);
+        let sort_by_field = output_messages[0].splits[0]
+            .index
+            .settings()
+            .sort_by_field
+            .as_ref();
+        assert!(sort_by_field.is_some());
+        assert_eq!(sort_by_field.unwrap().field, "timestamp");
+        assert!(sort_by_field.unwrap().order.is_desc());
         Ok(())
     }
 
@@ -487,8 +529,8 @@ mod tests {
                 timeout: Duration::from_secs(60),
                 num_docs_threshold: 10_000_000,
             },
-            scratch_directory: ScratchDirectory::try_new_temp()?,
             heap_size: Byte::from_str("30MB").unwrap(),
+            indexing_directory: IndexingDirectory::for_test().await?,
         };
         let (mailbox, inbox) = create_test_mailbox();
         let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
@@ -503,7 +545,7 @@ mod tests {
             .send_message(
                 &indexer_mailbox,
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062}"#.to_string()],
+                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
                     checkpoint_delta: CheckpointDelta::from(0..1),
                 }
                 .into(),
@@ -514,11 +556,11 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 0,
-                num_missing_timestamp: 0,
+                num_missing_fields: 0,
                 num_valid_docs: 1,
                 num_splits_emitted: 0,
                 num_docs_in_split: 1,
-                overall_num_bytes: 42
+                overall_num_bytes: 137
             }
         );
         universe.simulate_time_shift(Duration::from_secs(61)).await;
@@ -527,16 +569,16 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 0,
-                num_missing_timestamp: 0,
+                num_missing_fields: 0,
                 num_valid_docs: 1,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0,
-                overall_num_bytes: 42
+                overall_num_bytes: 137
             }
         );
         let output_messages = inbox.drain_available_message_for_test();
         assert_eq!(output_messages.len(), 1);
-        assert_eq!(output_messages[0].num_docs, 1);
+        assert_eq!(output_messages[0].splits[0].num_docs, 1);
         Ok(())
     }
 
@@ -546,7 +588,7 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
-        let indexer_params = IndexerParams::for_test()?;
+        let indexer_params = IndexerParams::for_test().await?;
         let indexer = Indexer::try_new(
             "test-index".to_string(),
             index_config,
@@ -558,31 +600,29 @@ mod tests {
             .send_message(
                 &indexer_mailbox,
                 RawDocBatch {
-                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062}"#.to_string()],
+                    docs: vec![r#"{"body": "happy", "timestamp": 1628837062, "response_date": "2021-12-19T16:39:57+00:00", "response_time": 12, "response_payload": "YWJj"}"#.to_string()],
                     checkpoint_delta: CheckpointDelta::from(0..1),
                 }
                 .into(),
             )
             .await?;
-        universe
-            .send_message(&indexer_mailbox, IndexerMessage::EndOfSource)
-            .await?;
+        universe.send_exit_with_success(&indexer_mailbox).await?;
         let (exit_status, indexer_counters) = indexer_handle.join().await;
         assert!(exit_status.is_success());
         assert_eq!(
             indexer_counters,
             IndexerCounters {
                 num_parse_errors: 0,
-                num_missing_timestamp: 0,
+                num_missing_fields: 0,
                 num_valid_docs: 1,
                 num_splits_emitted: 1,
                 num_docs_in_split: 0,
-                overall_num_bytes: 42
+                overall_num_bytes: 137
             }
         );
         let output_messages = inbox.drain_available_message_for_test();
         assert_eq!(output_messages.len(), 1);
-        assert_eq!(output_messages[0].num_docs, 1);
+        assert_eq!(output_messages[0].splits[0].num_docs, 1);
         Ok(())
     }
 }

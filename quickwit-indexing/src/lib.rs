@@ -27,16 +27,22 @@ use quickwit_storage::StorageUriResolver;
 use crate::actors::{IndexerParams, IndexingPipelineParams, IndexingPipelineSupervisor};
 use crate::models::IndexingStatistics;
 use crate::source::SourceConfig;
+pub use crate::split_store::{BundledSplitFile, IndexingSplitStore, IndexingSplitStoreParams};
 
 pub mod actors;
-mod merge_policy;
+mod controlled_directory;
+mod garbage_collection;
+pub mod merge_policy;
 pub mod models;
-pub(crate) mod semaphore;
 pub mod source;
+mod split_store;
 mod test_utils;
 
 pub use test_utils::{mock_split_meta, TestSandbox};
 
+pub use self::garbage_collection::{
+    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionStats,
+};
 pub use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
 pub async fn index_data(
@@ -53,6 +59,8 @@ pub async fn index_data(
         indexer_params,
         metastore,
         storage_uri_resolver,
+        merge_enabled: true,
+        demux_enabled: false,
     };
     let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
     let (_pipeline_mailbox, pipeline_handler) =
@@ -64,6 +72,6 @@ pub async fn index_data(
     Ok(statistics)
 }
 
-pub(crate) fn new_split_id() -> String {
+pub fn new_split_id() -> String {
     ulid::Ulid::new().to_string()
 }

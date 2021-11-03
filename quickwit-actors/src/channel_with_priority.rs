@@ -252,6 +252,16 @@ impl<T> Receiver<T> {
         }
         messages
     }
+
+    /// Drains all the pending low priority messages and returns them.
+    pub fn drain_all(&mut self) -> Vec<T> {
+        let mut messages = Vec::new();
+        let timeout = Duration::from_millis(10);
+        while let Ok(msg) = self.recv_timeout_blocking(timeout) {
+            messages.push(msg);
+        }
+        messages
+    }
 }
 
 #[cfg(test)]

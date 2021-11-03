@@ -21,15 +21,17 @@ use std::fmt::Debug;
 
 use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_proto::SearchRequest;
+use serde::{Deserialize, Serialize};
 use tantivy::query::Query;
-use tantivy::schema::{Field, Schema};
-use tantivy::Document;
+use tantivy::schema::{Field, Schema, Value};
+use tantivy::{Document, Order};
 
 use crate::{DocParsingError, QueryParserError, TAGS_FIELD_NAME};
 
 /// Sorted order (either Ascending or Descending).
 /// To get a regular top-K results search, use `SortOrder::Desc`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SortOrder {
     /// Descending. This is the default to get Top-K results.
     Desc,
@@ -37,10 +39,25 @@ pub enum SortOrder {
     Asc,
 }
 
+impl Default for SortOrder {
+    fn default() -> Self {
+        Self::Desc
+    }
+}
+
+impl From<SortOrder> for Order {
+    fn from(order: SortOrder) -> Self {
+        match order {
+            SortOrder::Asc => Order::Asc,
+            SortOrder::Desc => Order::Desc,
+        }
+    }
+}
+
 /// Defines the way documents should be sorted.
 /// In case of a tie, the documents are ordered according to descending `(split_id, segment_ord,
 /// doc_id)`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SortBy {
     /// Sort by a specific field.
     SortByFastField {
@@ -53,6 +70,30 @@ pub enum SortBy {
     DocId,
 }
 
+/// Convert a field (name, value) into a tag string `name:value`.
+pub fn convert_tag_to_string(field_name: &str, field_value: &Value) -> String {
+    format!("{}:{}", field_name, tantivy_value_to_string(field_value))
+}
+
+/// Returns true if tag_string is of form `{field_name}:any_value`.
+pub fn match_tag_field_name(field_name: &str, tag_string: &str) -> bool {
+    tag_string.starts_with(&format!("{}:", field_name))
+}
+
+/// Converts a [`tantivy::Value`] to it's [`String`] value.
+fn tantivy_value_to_string(field_value: &Value) -> String {
+    match field_value {
+        Value::Str(text) => text.clone(),
+        Value::PreTokStr(data) => data.text.clone(),
+        Value::U64(num) => num.to_string(),
+        Value::I64(num) => num.to_string(),
+        Value::F64(num) => num.to_string(),
+        Value::Date(date) => date.to_rfc3339(),
+        Value::Facet(facet) => facet.to_string(),
+        Value::Bytes(data) => base64::encode(data),
+    }
+}
+
 /// The `IndexConfig` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
 ///
@@ -63,8 +104,9 @@ pub enum SortBy {
 /// - a way to build a tantivy:Schema
 #[typetag::serde(tag = "type")]
 pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
-    /// Returns the document built from a json string.
-    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError>;
+    /// Returns the document built from an owned JSON string.
+    fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError>;
+
     /// Returns the schema.
     ///
     /// Considering schema evolution, splits within an index can have different schema
@@ -82,7 +124,7 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     ) -> Result<Box<dyn Query>, QueryParserError>;
 
     /// Returns the default sort
-    fn default_sort_by(&self) -> SortBy {
+    fn sort_by(&self) -> SortBy {
         SortBy::DocId
     }
 
@@ -110,6 +152,11 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
             .get_field(TAGS_FIELD_NAME)
             .expect("Tags field must exist in the schema.")
     }
+
+    /// Returns the demux field name.
+    fn demux_field_name(&self) -> Option<String> {
+        None
+    }
 }
 
 clone_trait_object!(IndexConfig);
@@ -117,11 +164,6 @@ clone_trait_object!(IndexConfig);
 #[cfg(test)]
 mod tests {
     use crate::{DefaultIndexConfigBuilder, IndexConfig};
-
-    const JSON_ALL_FLATTEN_INDEX_CONFIG: &str = r#"
-        {
-            "type": "all_flatten"
-        }"#;
 
     const JSON_DEFAULT_INDEX_CONFIG: &str = r#"
         {
@@ -133,13 +175,6 @@ mod tests {
 
     #[test]
     fn test_deserialize_index_config() -> anyhow::Result<()> {
-        let all_flatten_config =
-            serde_json::from_str::<Box<dyn IndexConfig>>(JSON_ALL_FLATTEN_INDEX_CONFIG)?;
-        assert_eq!(
-            format!("{:?}", all_flatten_config),
-            "AllFlattenIndexConfig".to_string()
-        );
-
         let deserialized_default_config =
             serde_json::from_str::<Box<dyn IndexConfig>>(JSON_DEFAULT_INDEX_CONFIG)?;
         let expected_default_config = DefaultIndexConfigBuilder::new().build()?;
@@ -152,13 +187,6 @@ mod tests {
 
     #[test]
     fn test_sedeserialize_index_config() -> anyhow::Result<()> {
-        let all_flatten_config =
-            serde_json::from_str::<Box<dyn IndexConfig>>(JSON_ALL_FLATTEN_INDEX_CONFIG)?;
-        assert_eq!(
-            format!("{:?}", all_flatten_config),
-            "AllFlattenIndexConfig".to_string()
-        );
-
         let deserialized_default_config =
             serde_json::from_str::<Box<dyn IndexConfig>>(JSON_DEFAULT_INDEX_CONFIG)?;
         let expected_default_config = DefaultIndexConfigBuilder::new().build()?;

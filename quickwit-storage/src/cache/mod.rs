@@ -19,17 +19,37 @@
 
 mod in_ram_slice_cache;
 mod memory_sized_cache;
+mod quickwit_cache;
 mod storage_with_cache;
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::Bytes;
+use once_cell::sync::OnceCell;
 
 pub use self::in_ram_slice_cache::SliceCache;
 pub use self::memory_sized_cache::MemorySizedCache;
-pub use self::storage_with_cache::StorageWithCacheFactory;
+use crate::cache::quickwit_cache::QuickwitCache;
+use crate::cache::storage_with_cache::StorageWithCache;
+use crate::{OwnedBytes, Storage};
+
+/// Wraps the given directory with a slice cache that is actually global
+/// to quickwit.
+///
+/// FIXME The current approach is quite horrible in that:
+/// - it uses a global
+/// - it relies on the idea that all of the files we attempt to cache
+/// have universally unique names. It happens to be true today, but this might be very error prone
+/// in the future.
+pub fn wrap_storage_with_long_term_cache(storage: Arc<dyn Storage>) -> Arc<dyn Storage> {
+    static SINGLETON: OnceCell<Arc<dyn Cache>> = OnceCell::new();
+    let cache = SINGLETON
+        .get_or_init(|| Arc::new(QuickwitCache::default()))
+        .clone();
+    Arc::new(StorageWithCache { storage, cache })
+}
 
 /// The `Cache` trait is the abstraction used to describe the caching logic
 /// used in front of a storage. See `StorageWithCache`.
@@ -37,11 +57,11 @@ pub use self::storage_with_cache::StorageWithCacheFactory;
 #[async_trait]
 pub trait Cache: Send + Sync + 'static {
     /// Try to get a slice from the cache.
-    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<Bytes>;
+    async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes>;
     /// Try to get the entire file.
-    async fn get_all(&self, path: &Path) -> Option<Bytes>;
+    async fn get_all(&self, path: &Path) -> Option<OwnedBytes>;
     /// Put a slice of data into the cache.
-    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: Bytes);
+    async fn put(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes);
     /// Put an entire file into the cache.
-    async fn put_all(&self, path: PathBuf, bytes: Bytes);
+    async fn put_all(&self, path: PathBuf, bytes: OwnedBytes);
 }

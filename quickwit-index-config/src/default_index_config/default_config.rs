@@ -29,9 +29,11 @@ use tantivy::schema::{
     Cardinality, FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, Value, STORED, STRING,
 };
 use tantivy::Document;
+use tracing::info;
 
-use super::field_mapping_entry::DocParsingError;
+use super::field_mapping_entry::{DocParsingError, FieldPath};
 use super::{default_as_true, FieldMappingEntry, FieldMappingType};
+use crate::config::convert_tag_to_string;
 use crate::query_builder::build_query;
 use crate::{IndexConfig, QueryParserError, SortBy, SortOrder, SOURCE_FIELD_NAME, TAGS_FIELD_NAME};
 
@@ -42,23 +44,45 @@ pub struct DefaultIndexConfigBuilder {
     #[serde(default = "default_as_true")]
     store_source: bool,
     default_search_fields: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     timestamp_field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sort_by: Option<SortByConfig>,
     field_mappings: Vec<FieldMappingEntry>,
+    #[serde(default)]
     tag_fields: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    demux_field: Option<String>,
+}
+
+#[derive(Default, Serialize, Deserialize, Clone)]
+struct SortByConfig {
+    /// Sort field name in the index schema.
+    pub field_name: String,
+    /// Sort order of the field.
+    pub order: SortOrder,
+}
+
+impl From<SortByConfig> for SortBy {
+    fn from(sort_by_config: SortByConfig) -> Self {
+        SortBy::SortByFastField {
+            field_name: sort_by_config.field_name,
+            order: sort_by_config.order,
+        }
+    }
 }
 
 impl DefaultIndexConfigBuilder {
-    /// Create a new `DefaultIndexConfigBuilder`.
-    // TODO: either remove it or complete implementation
-    // with methods to make possible to add / remove
-    // default search fields and field mappings.
+    /// Create a new `DefaultIndexConfigBuilder` for tests.
     pub fn new() -> Self {
         Self {
             store_source: true,
             default_search_fields: vec![],
             timestamp_field: None,
+            sort_by: None,
             field_mappings: vec![],
             tag_fields: vec![],
+            demux_field: None,
         }
     }
 
@@ -78,36 +102,9 @@ impl DefaultIndexConfigBuilder {
             default_search_field_names.push(field_name.clone());
         }
 
-        // Resolve timestamp field
-        if let Some(ref timestamp_field_name) = self.timestamp_field {
-            let timestamp_field = schema
-                .get_field(timestamp_field_name)
-                .with_context(|| format!("Unknown timestamp field: `{}`", timestamp_field_name))?;
-
-            let timestamp_field_entry = schema.get_field_entry(timestamp_field);
-            if !timestamp_field_entry.is_fast() {
-                bail!(
-                    "Timestamp field must be a fast field, please add fast property to your field \
-                     `{}`.",
-                    timestamp_field_name
-                )
-            }
-            if let FieldType::I64(options) = timestamp_field_entry.field_type() {
-                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
-                    bail!(
-                        "Timestamp field cannot be an array, please change your field `{}` from \
-                         an array to a single value.",
-                        timestamp_field_name
-                    )
-                }
-            } else {
-                bail!(
-                    "Timestamp field must be of type i64, please change your field type `{}` to \
-                     i64.",
-                    timestamp_field_name
-                )
-            }
-        }
+        resolve_timestamp_field(self.timestamp_field.as_ref(), &schema)?;
+        resolve_demux_field(self.demux_field.as_ref(), &schema)?;
+        let sort_by = resolve_sort_field(self.sort_by, &schema)?;
 
         // Resolve tag fields
         let mut tag_field_names = Vec::new();
@@ -120,6 +117,15 @@ impl DefaultIndexConfigBuilder {
                 .with_context(|| format!("Unknown tag field: `{}`", tag_field_name))?;
             tag_field_names.push(tag_field_name.clone());
         }
+        if let Some(ref demux_field_name) = self.demux_field {
+            if !tag_field_names.contains(demux_field_name) {
+                info!(
+                    "Demux field name `{}` is not in index config tags, add it automatically.",
+                    demux_field_name
+                );
+                tag_field_names.push(demux_field_name.clone());
+            }
+        }
 
         // Build the root mapping entry, it has an empty name so that we don't prefix all
         // field name with it.
@@ -129,8 +135,10 @@ impl DefaultIndexConfigBuilder {
             store_source: self.store_source,
             default_search_field_names,
             timestamp_field_name: self.timestamp_field,
+            sort_by,
             field_mappings,
             tag_field_names,
+            demux_field_name: self.demux_field,
         })
     }
 
@@ -141,7 +149,7 @@ impl DefaultIndexConfigBuilder {
 
         let mut unique_field_names: HashSet<String> = HashSet::new();
         for field_mapping in self.field_mappings.iter() {
-            for (field_path, field_type) in field_mapping.field_entries()? {
+            for (field_path, field_type) in field_mapping.field_entries() {
                 let field_name = field_path.field_name();
                 if field_name == SOURCE_FIELD_NAME {
                     bail!("`_source` is a reserved name, change your field name.");
@@ -167,6 +175,111 @@ impl DefaultIndexConfigBuilder {
     }
 }
 
+fn resolve_timestamp_field(
+    timestamp_field_name_opt: Option<&String>,
+    schema: &Schema,
+) -> anyhow::Result<()> {
+    if let Some(ref timestamp_field_name) = timestamp_field_name_opt {
+        let timestamp_field = schema
+            .get_field(timestamp_field_name)
+            .with_context(|| format!("Unknown timestamp field: `{}`", timestamp_field_name))?;
+
+        let timestamp_field_entry = schema.get_field_entry(timestamp_field);
+        if !timestamp_field_entry.is_fast() {
+            bail!(
+                "Timestamp field must be a fast field, please add the fast property to your field \
+                 `{}`.",
+                timestamp_field_name
+            )
+        }
+        match timestamp_field_entry.field_type() {
+            FieldType::I64(options) | FieldType::U64(options) => {
+                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
+                    bail!(
+                        "Timestamp field cannot be an array, please change your field `{}` from \
+                         an array to a single value.",
+                        timestamp_field_name
+                    )
+                }
+            }
+            _ => {
+                bail!(
+                    "Timestamp field must be either of type i64 or u64, please change your field \
+                     type `{}` to i64 or u64.",
+                    timestamp_field_name
+                )
+            }
+        }
+    }
+    Ok(())
+}
+
+fn resolve_sort_field(
+    sort_config_opt: Option<SortByConfig>,
+    schema: &Schema,
+) -> anyhow::Result<Option<SortBy>> {
+    if let Some(sort_by_config) = sort_config_opt {
+        let sort_by_field = schema
+            .get_field(&sort_by_config.field_name)
+            .with_context(|| format!("Unknown sort by field: `{}`", sort_by_config.field_name))?;
+
+        let sort_by_field_entry = schema.get_field_entry(sort_by_field);
+        if !sort_by_field_entry.is_fast() {
+            bail!(
+                "Sort by field must be a fast field, please add the fast property to your field \
+                 `{}`.",
+                sort_by_config.field_name
+            )
+        }
+        return Ok(Some(SortBy::from(sort_by_config)));
+    }
+    Ok(None)
+}
+
+fn resolve_demux_field(
+    demux_field_name_opt: Option<&String>,
+    schema: &Schema,
+) -> anyhow::Result<()> {
+    if let Some(demux_field_name) = demux_field_name_opt {
+        let demux_field = schema
+            .get_field(demux_field_name)
+            .with_context(|| format!("Unknown demux field: `{}`", demux_field_name))?;
+
+        let demux_field_entry = schema.get_field_entry(demux_field);
+        if !demux_field_entry.is_fast() {
+            bail!(
+                "Demux field must be a fast field, please add the fast property to your field \
+                 `{}`.",
+                demux_field_name
+            )
+        }
+        if !demux_field_entry.is_indexed() {
+            bail!(
+                "Demux field must be indexed, please add the indexed property to your field `{}`.",
+                demux_field_name
+            )
+        }
+        match demux_field_entry.field_type() {
+            FieldType::U64(options) => {
+                if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
+                    bail!(
+                        "Demux field cannot be an array, please change your field `{}` from an \
+                         array to a single value.",
+                        demux_field_name
+                    )
+                }
+            }
+            _ => {
+                bail!(
+                    "Demux field must be of type u64, please change your field type `{}` to u64.",
+                    demux_field_name
+                )
+            }
+        }
+    }
+    Ok(())
+}
+
 impl TryFrom<DefaultIndexConfigBuilder> for DefaultIndexConfig {
     type Error = anyhow::Error;
 
@@ -177,15 +290,28 @@ impl TryFrom<DefaultIndexConfigBuilder> for DefaultIndexConfig {
 
 impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
     fn from(value: DefaultIndexConfig) -> Self {
+        let sort_by_config = value
+            .sort_by
+            .as_ref()
+            .map(|sort_by| match sort_by {
+                SortBy::SortByFastField { field_name, order } => Some(SortByConfig {
+                    field_name: field_name.clone(),
+                    order: *order,
+                }),
+                SortBy::DocId => None,
+            })
+            .flatten();
         Self {
             store_source: value.store_source,
             timestamp_field: value.timestamp_field_name(),
-            default_search_fields: value.default_search_field_names,
+            sort_by: sort_by_config,
             field_mappings: value
                 .field_mappings
                 .field_mappings()
                 .unwrap_or_else(Vec::new),
+            demux_field: value.demux_field_name(),
             tag_fields: value.tag_field_names,
+            default_search_fields: value.default_search_field_names,
         }
     }
 }
@@ -207,6 +333,8 @@ pub struct DefaultIndexConfig {
     default_search_field_names: Vec<String>,
     /// Timestamp field name.
     timestamp_field_name: Option<String>,
+    /// Sort field name and order.
+    sort_by: Option<SortBy>,
     /// List of field mappings which defines how a json field is mapped to index fields.
     field_mappings: FieldMappingEntry,
     /// Schema generated by the store source and field mappings parameters.
@@ -214,6 +342,27 @@ pub struct DefaultIndexConfig {
     schema: Schema,
     /// List of field names used for tagging.
     tag_field_names: Vec<String>,
+    /// Demux field name.
+    demux_field_name: Option<String>,
+}
+
+impl DefaultIndexConfig {
+    // Return error if a fast field is not present in field paths.
+    fn check_fast_field_in_doc(
+        &self,
+        field_paths_and_values: &[(FieldPath, Value)],
+    ) -> Result<(), DocParsingError> {
+        for (fast_field_path, _) in self.field_mappings.fast_field_entries() {
+            let fast_field_name = fast_field_path.field_name();
+            if !field_paths_and_values
+                .iter()
+                .any(|(field_path, _)| fast_field_name == field_path.field_name())
+            {
+                return Err(DocParsingError::RequiredFastField(fast_field_name));
+            }
+        }
+        Ok(())
+    }
 }
 
 impl std::fmt::Debug for DefaultIndexConfig {
@@ -226,46 +375,26 @@ impl std::fmt::Debug for DefaultIndexConfig {
                 &self.default_search_field_names,
             )
             .field("timestamp_field_name", &self.timestamp_field_name())
+            .field("demux_field_name", &self.demux_field_name())
             // TODO: complete it.
             .finish()
     }
 }
 
-/// Converts a [`tantivy::Value`] to it's [`String`] value.
-fn tantivy_value_to_string(field_value: &Value) -> String {
-    match field_value {
-        Value::Str(text) => text.clone(),
-        Value::PreTokStr(data) => data.text.clone(),
-        Value::U64(num) => num.to_string(),
-        Value::I64(num) => num.to_string(),
-        Value::F64(num) => num.to_string(),
-        Value::Date(date) => date.to_rfc3339(),
-        Value::Facet(facet) => facet.to_string(),
-        Value::Bytes(data) => base64::encode(data),
-    }
-}
-
 #[typetag::serde(name = "default")]
 impl IndexConfig for DefaultIndexConfig {
-    fn doc_from_json(&self, doc_json: &str) -> Result<Document, DocParsingError> {
+    fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError> {
         let mut document = Document::default();
-        if self.store_source {
-            let source = self.schema.get_field(SOURCE_FIELD_NAME).ok_or_else(|| {
-                DocParsingError::NoSuchFieldInSchema(SOURCE_FIELD_NAME.to_string())
-            })?;
-            document.add_text(source, doc_json);
-        }
-        let json_obj: JsonValue = serde_json::from_str(doc_json).map_err(|_| {
-            let doc_json_sample: String = if doc_json.len() < 20 {
-                String::from(doc_json)
-            } else {
-                format!("{:?}...", &doc_json[0..20])
-            };
+        let json_obj: JsonValue = serde_json::from_str(&doc_json).map_err(|_| {
+            // FIXME: the error contains some useful information (line, column, ...) that we could
+            // surface to the user.
+            let doc_json_sample = format!("{:?}...", &doc_json[0..doc_json.len().min(20)]);
             DocParsingError::NotJson(doc_json_sample)
         })?;
-        let parsing_result = self.field_mappings.parse(&json_obj)?;
+        let field_paths_and_values = self.field_mappings.parse(json_obj)?;
+        self.check_fast_field_in_doc(&field_paths_and_values)?;
         let tags_field_opt = self.schema.get_field(TAGS_FIELD_NAME);
-        for (field_path, field_value) in parsing_result {
+        for (field_path, field_value) in field_paths_and_values {
             let field_name = field_path.field_name();
             let field = self
                 .schema
@@ -275,10 +404,20 @@ impl IndexConfig for DefaultIndexConfig {
                 let tags_field = tags_field_opt.ok_or_else(|| {
                     DocParsingError::NoSuchFieldInSchema(TAGS_FIELD_NAME.to_string())
                 })?;
-                let tag_value = format!("{}:{}", field_name, tantivy_value_to_string(&field_value));
-                document.add(FieldValue::new(tags_field, Value::Str(tag_value)));
+                document.add(FieldValue::new(
+                    tags_field,
+                    Value::Str(convert_tag_to_string(&field_name, &field_value)),
+                ));
             }
             document.add(FieldValue::new(field, field_value))
+        }
+        if self.store_source {
+            let source = self.schema.get_field(SOURCE_FIELD_NAME).ok_or_else(|| {
+                DocParsingError::NoSuchFieldInSchema(SOURCE_FIELD_NAME.to_string())
+            })?;
+            // We avoid `document.add_text` here because it systematically performs a copy of the
+            // value.
+            document.add(FieldValue::new(source, Value::Str(doc_json)));
         }
         Ok(document)
     }
@@ -299,15 +438,12 @@ impl IndexConfig for DefaultIndexConfig {
         self.timestamp_field_name.clone()
     }
 
-    fn default_sort_by(&self) -> crate::SortBy {
-        if let Some(timestamp_fieldname) = self.timestamp_field_name() {
-            SortBy::SortByFastField {
-                field_name: timestamp_fieldname,
-                order: SortOrder::Desc,
-            }
-        } else {
-            SortBy::DocId
-        }
+    fn demux_field_name(&self) -> Option<String> {
+        self.demux_field_name.clone()
+    }
+
+    fn sort_by(&self) -> crate::SortBy {
+        self.sort_by.clone().unwrap_or(crate::SortBy::DocId)
     }
 
     fn tag_field_names(&self) -> Vec<String> {
@@ -319,11 +455,13 @@ impl IndexConfig for DefaultIndexConfig {
 mod tests {
     use std::collections::HashMap;
 
+    use anyhow::bail;
     use serde_json::{self, Value as JsonValue};
 
     use super::DefaultIndexConfig;
     use crate::{
-        DefaultIndexConfigBuilder, DocParsingError, IndexConfig, SOURCE_FIELD_NAME, TAGS_FIELD_NAME,
+        DefaultIndexConfigBuilder, DocParsingError, IndexConfig, SortBy, SortOrder,
+        SOURCE_FIELD_NAME, TAGS_FIELD_NAME,
     };
 
     const JSON_DOC_VALUE: &str = r#"
@@ -373,7 +511,7 @@ mod tests {
 
     #[test]
     fn test_json_serialize() -> anyhow::Result<()> {
-        let mut config = crate::default_config_for_tests();
+        let mut config = crate::default_config_with_demux_for_tests();
         let json_config = serde_json::to_string_pretty(&config)?;
         let mut config_after_serialization =
             serde_json::from_str::<DefaultIndexConfig>(&json_config)?;
@@ -386,13 +524,25 @@ mod tests {
             config_after_serialization.default_search_field_names
         );
         assert_eq!(config.schema, config_after_serialization.schema);
+        assert_eq!(
+            config.timestamp_field_name,
+            config_after_serialization.timestamp_field_name
+        );
+        assert_eq!(
+            config.demux_field_name,
+            config_after_serialization.demux_field_name
+        );
+        assert_eq!(
+            config.sort_by.unwrap(),
+            config_after_serialization.sort_by.unwrap()
+        );
         Ok(())
     }
 
     #[test]
     fn test_parsing_document() -> anyhow::Result<()> {
         let index_config = crate::default_config_for_tests();
-        let document = index_config.doc_from_json(JSON_DOC_VALUE)?;
+        let document = index_config.doc_from_json(JSON_DOC_VALUE.to_string())?;
         let schema = index_config.schema();
         // 7 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
@@ -428,10 +578,34 @@ mod tests {
         index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
-                "unknown_field": "20200415T072306-0700 INFO This is a great log"
-            }"#,
+                "unknown_field": "20200415T072306-0700 INFO This is a great log",
+                "response_date": "2021-12-19T16:39:57+00:00",
+                "response_time": 12,
+                "response_payload": "YWJj"
+            }"#
+            .to_string(),
         )?;
         Ok(())
+    }
+
+    #[test]
+    fn test_fail_parsing_document_with_missing_fast_field() {
+        let index_config = crate::default_config_for_tests();
+        let result = index_config.doc_from_json(
+            r#"{
+                "timestamp": 1586960586000,
+                "unknown_field": "20200415T072306-0700 INFO This is a great log",
+                "response_date": "2021-12-19T16:39:57+00:00",
+                "response_time": 12
+            }"#
+            .to_string(),
+        );
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert_eq!(
+            error,
+            DocParsingError::RequiredFastField("response_payload".to_owned())
+        );
     }
 
     #[test]
@@ -441,7 +615,8 @@ mod tests {
             r#"{
                 "timestamp": 1586960586000,
                 "body": ["text 1", "text 2"]
-            }"#,
+            }"#
+            .to_string(),
         );
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -459,7 +634,8 @@ mod tests {
             r#"{
                 "timestamp": 1586960586000,
                 "body": 1
-            }"#,
+            }"#
+            .to_string(),
         );
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -474,7 +650,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fail_to_build_docmapper_with_non_fast_timestamp_field() -> anyhow::Result<()> {
+    fn test_fail_to_build_index_config_with_non_fast_timestamp_field() -> anyhow::Result<()> {
         let index_config = r#"{
             "type": "default",
             "default_search_fields": [],
@@ -488,7 +664,7 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
-        let expected_msg = "Timestamp field must be a fast field, please add fast property to \
+        let expected_msg = "Timestamp field must be a fast field, please add the fast property to \
                             your field `timestamp`."
             .to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
@@ -561,10 +737,11 @@ mod tests {
             r#"{
             "city": "paris",
             "image": "invalid base64 data"
-        }"#,
+        }"#
+            .to_string(),
         );
         let expected_msg = "The field 'image' could not be parsed: Expected Base64 string, got \
-                            'invalid base64 data'";
+                            'invalid base64 data'.";
         assert_eq!(result.unwrap_err().to_string(), expected_msg);
         Ok(())
     }
@@ -597,7 +774,7 @@ mod tests {
             "city": "tokio",
             "image": "YWJj"
         }"#;
-        let document = index_config.doc_from_json(JSON_DOC_VALUE)?;
+        let document = index_config.doc_from_json(JSON_DOC_VALUE.to_string())?;
 
         // 2 properties, + 1 value for "_source" + 2 values for "_tags"
         assert_eq!(document.len(), 5);
@@ -629,6 +806,172 @@ mod tests {
                 assert!(is_value_in_expected_values);
             }
         });
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_index_config_with_non_fast_sort_by_field() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "sort_by": {
+                "field_name": "timestamp",
+                "order": "asc"
+            },
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "text"
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let expected_msg = "Sort by field must be a fast field, please add the fast property to \
+                            your field `timestamp`."
+            .to_string();
+        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_index_config_with_sort_by_field_asc() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "sort_by": {
+                "field_name": "timestamp",
+                "order": "asc"
+            },
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "u64",
+                    "fast": true
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        match builder.sort_by() {
+            SortBy::SortByFastField { field_name, order } => {
+                assert_eq!(field_name, "timestamp");
+                assert_eq!(order, SortOrder::Asc);
+            }
+            _ => bail!("Sort by must be a SortByFastField."),
+        };
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_index_config_with_sort_by_doc_id_when_no_sort_field_is_specified(
+    ) -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "u64",
+                    "fast": true
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        match builder.sort_by() {
+            SortBy::DocId => (),
+            _ => bail!("Sort by must be DocId."),
+        };
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_config_with_a_u64_demux_field_is_valid_and_is_added_to_tags() -> anyhow::Result<()>
+    {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "tag_fields": [],
+            "demux_field": "demux",
+            "field_mappings": [
+                {
+                    "name": "demux",
+                    "type": "u64",
+                    "fast": true
+                }
+            ]
+        }"#;
+        let config = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        assert_eq!(config.tag_field_names().len(), 1);
+        assert!(config.tag_field_names().contains(&"demux".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_config_with_a_i64_demux_field_is_valid() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "tag_fields": ["demux"],
+            "demux_field": "demux",
+            "field_mappings": [
+                {
+                    "name": "demux",
+                    "type": "u64",
+                    "fast": true
+                }
+            ]
+        }"#;
+        let config = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        assert_eq!(config.tag_field_names().len(), 1);
+        assert!(config.tag_field_names().contains(&"demux".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_index_config_with_non_fast_demux_field() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "demux_field": "demux",
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "demux",
+                    "type": "u64"
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let expected_msg = "Demux field must be a fast field, please add the fast property to \
+                            your field `demux`."
+            .to_string();
+        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_index_config_with_not_indexed_demux_field() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "demux_field": "demux",
+            "tag_fields": [],
+            "field_mappings": [
+                {
+                    "name": "demux",
+                    "type": "u64",
+                    "indexed": false,
+                    "fast": true
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let expected_msg = "Demux field must be indexed, please add the indexed property to your \
+                            field `demux`."
+            .to_string();
+        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
     }
 }

@@ -25,7 +25,7 @@ use std::time::Duration;
 
 use thiserror::Error;
 use tokio::sync::watch::Sender;
-use tracing::{debug, error};
+use tracing::{debug, error, info_span, Span};
 
 use crate::actor_state::{ActorState, AtomicState};
 use crate::channel_with_priority::Priority;
@@ -122,6 +122,9 @@ pub trait Actor: Send + Sync + 'static {
     /// Piece of state that can be copied for assert in unit test, admin, etc.
     type ObservableState: Send + Sync + Clone + fmt::Debug;
     /// A name identifying the type of actor.
+    ///
+    /// Ideally respect the `CamelCase` convention.
+    ///
     /// It does not need to be "instance-unique", and can be the name of
     /// the actor implementation.
     fn name(&self) -> String {
@@ -132,10 +135,24 @@ pub trait Actor: Send + Sync + 'static {
         QueueCapacity::Unbounded
     }
 
-    /// Extracts an observable state. Useful for unit test, and admin UI.
+    /// Extracts an observable state. Useful for unit tests, and admin UI.
     ///
-    /// This function should return fast.
+    /// This function should return quickly.
     fn observable_state(&self) -> Self::ObservableState;
+
+    /// Creates a span associated to all logging happening during the lifetime of an actor instance.
+    fn span(&self, _ctx: &ActorContext<Self::Message>) -> Span {
+        info_span!("", actor = %self.name())
+    }
+
+    /// Returns (optionally) a context span for the processing of a specific
+    /// message.
+    ///
+    /// `msg_id` is an autoincremented message id than can be added to the span.
+    /// The counter starts 0 at the beginning of the life of an actor instance.
+    fn message_span(&self, msg_id: u64, _msg: &Self::Message) -> Span {
+        info_span!("", msg_id = &msg_id)
+    }
 }
 
 // TODO hide all of this public stuff
@@ -213,7 +230,7 @@ impl<Message> ActorContext<Message> {
         &self.kill_switch
     }
 
-    pub(crate) fn progress(&self) -> &Progress {
+    pub fn progress(&self) -> &Progress {
         &self.progress
     }
 
@@ -270,11 +287,7 @@ fn should_activate_kill_switch(exit_status: &ActorExitStatus) -> bool {
 }
 
 impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
-    /// Sends a message in the actor's mailbox.
-    ///
-    /// This method hides logic to prevent an actor from being identified
-    /// as frozen if the destination actor channel is saturated, and we
-    /// are simply experiencing back pressure.
+    /// Blocking version version of `send_message`. See `.send_message(...)`.
     pub fn send_message_blocking<M: fmt::Debug>(
         &self,
         mailbox: &Mailbox<M>,
@@ -283,6 +296,19 @@ impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), msg=?msg, "send");
         mailbox.send_message_blocking(msg)
+    }
+
+    /// Blocking version of `send_exit_with_success`. See `send_exit_with_success`.
+    pub fn send_exit_with_success_blocking<M>(
+        &self,
+        mailbox: &Mailbox<M>,
+    ) -> Result<(), crate::SendError> {
+        let _guard = self.protect_zone();
+        debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
+        mailbox.send_with_priority_blocking(
+            CommandOrMessage::Command(Command::ExitWithSuccess),
+            Priority::Low,
+        )
     }
 
     /// Sends a message to itself.
@@ -317,7 +343,14 @@ impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
 }
 
 impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
-    /// `async` version of `send_message`
+    /// Posts a message in an actor's mailbox.
+    ///
+    /// Regular messages (as opposed to commands) are queued and guaranteed
+    /// to be processed in FIFO order.
+    ///
+    /// This method hides logic to prevent an actor from being identified
+    /// as frozen if the destination actor channel is saturated, and we
+    /// are simply experiencing back pressure.
     pub async fn send_message<M: fmt::Debug>(
         &self,
         mailbox: &Mailbox<M>,
@@ -328,7 +361,25 @@ impl<Message: Send + Sync + fmt::Debug + 'static> ActorContext<Message> {
         mailbox.send_message(msg).await
     }
 
-    /// `async` version of `send_self_message`
+    /// Send the Success message to terminate the destination actor with the Success exit status.
+    ///
+    /// The message is queued like any regular message, so that pending messages will be processed
+    /// first.
+    pub async fn send_exit_with_success<M>(
+        &self,
+        mailbox: &Mailbox<M>,
+    ) -> Result<(), crate::SendError> {
+        let _guard = self.protect_zone();
+        debug!(from=%self.self_mailbox.actor_instance_id(), to=%mailbox.actor_instance_id(), "success");
+        mailbox
+            .send_with_priority(
+                CommandOrMessage::Command(Command::ExitWithSuccess),
+                Priority::Low,
+            )
+            .await
+    }
+
+    /// `async` version of `send_self_message`.
     pub async fn send_self_message(&self, msg: Message) -> Result<(), crate::SendError> {
         debug!(self=%self.self_mailbox.actor_instance_id(), msg=?msg, "self_send");
         self.self_mailbox.send_message(msg).await
@@ -362,6 +413,7 @@ pub(crate) fn process_command<A: Actor>(
             ctx.pause();
             None
         }
+        Command::ExitWithSuccess => Some(ActorExitStatus::Success),
         Command::Quit => Some(ActorExitStatus::Quit),
         Command::Kill => Some(ActorExitStatus::Killed),
         Command::Resume => {

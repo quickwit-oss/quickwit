@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
+use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -31,12 +32,15 @@ use quickwit_cli::*;
 use quickwit_common::net::socket_addr_from_str;
 use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
-use tracing::Level;
+use tracing::{info, Level};
+use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, PartialEq)]
 enum CliCommand {
+    ExtractSplit(ExtractSplitArgs),
+    InspectSplit(InspectSplitArgs),
     New(CreateIndexArgs),
     Index(IndexDataArgs),
     Search(SearchIndexArgs),
@@ -48,8 +52,10 @@ enum CliCommand {
 impl CliCommand {
     fn default_log_level(&self) -> Level {
         match self {
+            CliCommand::ExtractSplit(_) => Level::INFO,
+            CliCommand::InspectSplit(_) => Level::INFO,
             CliCommand::New(_) => Level::WARN,
-            CliCommand::Index(_) => Level::WARN,
+            CliCommand::Index(_) => Level::INFO,
             CliCommand::Search(_) => Level::WARN,
             CliCommand::Serve(_) => Level::INFO,
             CliCommand::GarbageCollect(_) => Level::WARN,
@@ -60,7 +66,7 @@ impl CliCommand {
     fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches_opt) = matches.subcommand();
         let submatches =
-            submatches_opt.ok_or_else(|| anyhow::anyhow!("Unable to parse sub matches"))?;
+            submatches_opt.ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
 
         match subcommand {
             "new" => Self::parse_new_args(submatches),
@@ -69,6 +75,8 @@ impl CliCommand {
             "serve" => Self::parse_serve_args(submatches),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
+            "extract-split" => Self::parse_extract_split_args(submatches),
+            "inspect-split" => Self::parse_inspect_split_args(submatches),
             _ => bail!("Subcommand '{}' is not implemented", subcommand),
         }
     }
@@ -77,6 +85,10 @@ impl CliCommand {
         let index_uri = matches
             .value_of("index-uri")
             .context("'index-uri' is a required arg")?
+            .to_string();
+        let index_id = matches
+            .value_of("index-id")
+            .context("'index-id' is a required arg")?
             .to_string();
         let index_config_path = matches
             .value_of("index-config-path")
@@ -90,9 +102,61 @@ impl CliCommand {
 
         Ok(CliCommand::New(CreateIndexArgs::new(
             metastore_uri,
+            index_id,
             index_uri,
             index_config_path,
             overwrite,
+        )?))
+    }
+
+    fn parse_extract_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let index_id = matches
+            .value_of("index-id")
+            .context("'index-id' is a required arg")?
+            .to_string();
+        let split_id = matches
+            .value_of("split-id")
+            .context("'split-id' is a required arg")?
+            .to_string();
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .map(|metastore_uri_str| metastore_uri_str.to_string())
+            .context("'metastore-uri' is a required arg")?;
+
+        let target_folder = matches
+            .value_of("target-folder")
+            .map(PathBuf::from)
+            .context("'target-folder' is a required arg")?;
+
+        Ok(CliCommand::ExtractSplit(ExtractSplitArgs::new(
+            metastore_uri,
+            index_id,
+            split_id,
+            target_folder,
+        )?))
+    }
+
+    fn parse_inspect_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let index_id = matches
+            .value_of("index-id")
+            .context("'index-id' is a required arg")?
+            .to_string();
+        let split_id = matches
+            .value_of("split-id")
+            .context("'split-id' is a required arg")?
+            .to_string();
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .map(|metastore_uri_str| metastore_uri_str.to_string())
+            .context("'metastore-uri' is a required arg")?;
+
+        let verbose = matches.is_present("verbose");
+
+        Ok(CliCommand::InspectSplit(InspectSplitArgs::new(
+            metastore_uri,
+            index_id,
+            split_id,
+            verbose,
         )?))
     }
 
@@ -100,26 +164,36 @@ impl CliCommand {
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
+            .expect("`metastore-uri` is a required arg.");
         let index_id = matches
             .value_of("index-id")
-            .context("index-id is a required arg")?
+            .expect("`index-id` is a required arg.")
             .to_string();
         let input_path: Option<PathBuf> = matches.value_of("input-path").map(PathBuf::from);
-        let temp_dir: Option<PathBuf> = matches.value_of("temp-dir").map(PathBuf::from);
-        let heap_size_str = matches
+        let source_config_path: Option<PathBuf> =
+            matches.value_of("source-config-path").map(PathBuf::from);
+        let data_dir_path: PathBuf = matches
+            .value_of("data-dir-path")
+            .map(PathBuf::from)
+            .expect("`data-dir-path` is a required arg.");
+        let heap_size = matches
             .value_of("heap-size")
-            .context("heap-size has a default value")?;
-        let heap_size = Byte::from_str(heap_size_str)?;
+            .map(Byte::from_str)
+            .expect("`heap-size` has a default value.")?;
         let overwrite = matches.is_present("overwrite");
+        let demux = matches.is_present("demux");
+        let merge = !matches.is_present("no-merge");
 
         Ok(CliCommand::Index(IndexDataArgs {
             index_id,
             input_path,
-            temp_dir,
+            source_config_path,
+            data_dir_path,
             heap_size,
             metastore_uri,
             overwrite,
+            demux,
+            merge,
         }))
     }
 
@@ -246,38 +320,62 @@ impl CliCommand {
     }
 }
 
+/// Describes the way events should be formatted in the logs.
+fn event_format(
+) -> Format<tracing_subscriber::fmt::format::Full, tracing_subscriber::fmt::time::ChronoUtc> {
+    tracing_subscriber::fmt::format()
+        .with_target(true)
+        .with_timer(tracing_subscriber::fmt::time::ChronoUtc::with_format(
+            // We do not rely on ChronoUtc::from_rfc3339, because it has a nanosecond precision.
+            "%Y-%m-%dT%H:%M:%S%.3f%:z".to_string(),
+        ))
+}
+
 fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     let env_filter = env::var("RUST_LOG")
         .map(|_| EnvFilter::from_default_env())
         .or_else(|_| EnvFilter::try_new(format!("quickwit={}", level)))
         .context("Failed to set up tracing env filter.")?;
-
     global::set_text_map_propagator(TraceContextPropagator::new());
-
-    // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
-    let tracer = opentelemetry_jaeger::new_pipeline()
-        .with_service_name("quickwit")
-        //.install_batch(opentelemetry::runtime::Tokio)
-        .install_simple()
-        .context("Failed to initialize Jaeger exporter.")?;
-    tracing_subscriber::registry()
-        .with(env_filter)
-        .with(tracing_opentelemetry::layer().with_tracer(tracer))
-        .with(tracing_subscriber::fmt::layer())
-        .try_init()
-        .context("Failed to set up tracing.")?;
+    let registry = tracing_subscriber::registry().with(env_filter);
+    if std::env::var_os(QUICKWIT_JAEGER_ENABLED_ENV_KEY).is_some() {
+        // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
+        let tracer = opentelemetry_jaeger::new_pipeline()
+            .with_service_name("quickwit")
+            //.install_batch(opentelemetry::runtime::Tokio)
+            .install_simple()
+            .context("Failed to initialize Jaeger exporter.")?;
+        registry
+            .with(tracing_subscriber::fmt::layer().event_format(event_format()))
+            .with(tracing_opentelemetry::layer().with_tracer(tracer))
+            .try_init()
+            .context("Failed to set up tracing.")?
+    } else {
+        registry
+            .with(tracing_subscriber::fmt::layer().event_format(event_format()))
+            .try_init()
+            .context("Failed to set up tracing.")?
+    }
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "openssl-support")]
+    openssl_probe::init_ssl_cert_env_vars();
+
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
+    let version_text = format!(
+        "{} (commit-hash: {})",
+        env!("CARGO_PKG_VERSION"),
+        env!("GIT_COMMIT_HASH")
+    );
 
     let yaml = load_yaml!("cli.yaml");
     let app = App::from(yaml)
         .setting(AppSettings::ArgRequiredElseHelp)
-        .version(env!("CARGO_PKG_VERSION"))
+        .version(version_text.as_str())
         .about(about_text.as_str());
     let matches = app.get_matches();
 
@@ -290,8 +388,14 @@ async fn main() -> anyhow::Result<()> {
     };
 
     setup_logging_and_tracing(command.default_log_level())?;
+    info!(
+        version = env!("CARGO_PKG_VERSION"),
+        commit = env!("GIT_COMMIT_HASH"),
+    );
 
     let command_res = match command {
+        CliCommand::ExtractSplit(args) => extract_split_cli(args).await,
+        CliCommand::InspectSplit(args) => inspect_split_cli(args).await,
         CliCommand::New(args) => create_index_cli(args).await,
         CliCommand::Index(args) => index_data_cli(args).await,
         CliCommand::Search(args) => search_index_cli(args).await,
@@ -312,15 +416,13 @@ async fn main() -> anyhow::Result<()> {
     telemetry_handle.terminate_telemetry().await;
     global::shutdown_tracer_provider();
 
-    std::process::exit(return_code);
+    std::process::exit(return_code)
 }
 
 /// Return the about text with telemetry info.
 fn about_text() -> String {
-    let mut about_text = format!(
-        "Indexing your large dataset on object storage & making it searchable from the command \
-         line.\nCommit hash: {}\n",
-        env!("GIT_COMMIT_HASH")
+    let mut about_text = String::from(
+        "Indexing your dataset on object storage & making it searchable from the command line.\n",
     );
     if quickwit_telemetry::is_telemetry_enabled() {
         about_text += "Telemetry Enabled";
@@ -356,7 +458,7 @@ pub fn parse_duration_with_unit(duration: &str) -> anyhow::Result<Duration> {
 #[cfg(test)]
 mod tests {
     use std::io::Write;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::time::Duration;
 
     use clap::{load_yaml, App, AppSettings};
@@ -399,6 +501,8 @@ mod tests {
             "new",
             "--index-uri",
             "file:///indexes/wikipedia",
+            "--index-id",
+            "wikipedia",
             "--index-config-path",
             &path_str,
             "--metastore-uri",
@@ -408,6 +512,7 @@ mod tests {
         let expected_cmd = CliCommand::New(
             CreateIndexArgs::new(
                 "file:///indexes".to_string(),
+                "wikipedia".to_string(),
                 "file:///indexes/wikipedia".to_string(),
                 path.to_path_buf(),
                 false,
@@ -416,21 +521,24 @@ mod tests {
         );
         assert_eq!(command.unwrap(), expected_cmd);
 
+        const QUICKWIT_METASTORE_URI_ENV_KEY: &str = "QUICKWIT_METASTORE_URI";
+        env::set_var(QUICKWIT_METASTORE_URI_ENV_KEY, "file:///indexes");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.get_matches_from_safe(vec![
             "new",
             "--index-uri",
             "file:///indexes/wikipedia",
+            "--index-id",
+            "wikipedia",
             "--index-config-path",
             &path_str,
-            "--metastore-uri",
-            "file:///indexes",
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         let expected_cmd = CliCommand::New(
             CreateIndexArgs::new(
                 "file:///indexes".to_string(),
+                "wikipedia".to_string(),
                 "file:///indexes/wikipedia".to_string(),
                 path.to_path_buf(),
                 true,
@@ -438,6 +546,7 @@ mod tests {
             .unwrap(),
         );
         assert_eq!(command.unwrap(), expected_cmd);
+        env::remove_var(QUICKWIT_METASTORE_URI_ENV_KEY);
 
         Ok(())
     }
@@ -452,6 +561,9 @@ mod tests {
             "wikipedia",
             "--metastore-uri",
             "file:///indexes",
+            "--data-dir-path",
+            "/var/lib/quickwit/data",
+            "--demux",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
         assert!(matches!(
@@ -459,11 +571,17 @@ mod tests {
             Ok(CliCommand::Index(IndexDataArgs {
                 index_id,
                 input_path: None,
-                temp_dir: None,
+                source_config_path: None,
+                data_dir_path,
                 heap_size,
                 metastore_uri,
                 overwrite: false,
-            })) if &index_id == "wikipedia" && &metastore_uri == "file:///indexes" && heap_size.get_bytes() == 2_000_000_000
+                demux: true,
+                merge: true,
+            })) if &index_id == "wikipedia"
+                    && &metastore_uri == "file:///indexes"
+                    && data_dir_path == Path::new("/var/lib/quickwit/data")
+                    && heap_size.get_bytes() == 2_000_000_000
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -472,14 +590,15 @@ mod tests {
             "index",
             "--index-id",
             "wikipedia",
-            "--input-path",
-            "/data/wikipedia.json",
-            "--temp-dir",
-            "./tmp",
+            "--source-config-path",
+            "/conf/source_config.json",
+            "--data-dir-path",
+            "/var/lib/quickwit/data",
             "--heap-size",
             "4gib",
             "--metastore-uri",
             "file:///indexes",
+            "--no-merge",
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches);
@@ -487,15 +606,41 @@ mod tests {
             command,
             Ok(CliCommand::Index(IndexDataArgs {
                 index_id,
-                input_path: Some(input_path),
-                temp_dir,
+                input_path: None,
+                source_config_path: Some(source_config_path),
+                data_dir_path,
                 heap_size,
                 metastore_uri,
                 overwrite: true,
-            })) if &index_id == "wikipedia" && input_path == Path::new("/data/wikipedia.json") && temp_dir == Some(PathBuf::from("./tmp")) && &metastore_uri == "file:///indexes"
-                && heap_size.get_bytes() == 4_294_967_296
+                demux: false,
+                merge: false,
+            })) if &index_id == "wikipedia"
+                    && metastore_uri == "file:///indexes"
+                    && source_config_path == Path::new("/conf/source_config.json")
+                    && data_dir_path == Path::new("/var/lib/quickwit/data")
+                    && heap_size.get_bytes() == 4_294_967_296
         ));
+        Ok(())
+    }
 
+    #[test]
+    fn test_source_config_path_and_input_path_args_are_mutually_exclusive() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.get_matches_from_safe(vec![
+            "index",
+            "--index-id",
+            "wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
+            "--input-path",
+            "/data/wikipedia.json",
+            "--source-config-path",
+            "/conf/source_config.json",
+            "--data-dir-path",
+            "/var/lib/quickwit/data",
+        ]);
+        assert!(matches.is_err());
         Ok(())
     }
 

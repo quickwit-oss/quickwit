@@ -22,19 +22,22 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bytes::Bytes;
 
-use crate::{Cache, PutPayload, Storage, StorageFactory, StorageResult};
+use crate::{Cache, OwnedBytes, Storage, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
-struct StorageWithCache {
-    storage: Arc<dyn Storage>,
-    cache: Arc<dyn Cache>,
+pub(crate) struct StorageWithCache {
+    pub storage: Arc<dyn Storage>,
+    pub cache: Arc<dyn Cache>,
 }
 
 #[async_trait]
 impl Storage for StorageWithCache {
-    async fn put(&self, path: &Path, _payload: PutPayload) -> StorageResult<()> {
+    async fn put(
+        &self,
+        path: &Path,
+        _payload: Box<dyn crate::PutPayloadProvider>,
+    ) -> crate::StorageResult<()> {
         unimplemented!("StorageWithCache is readonly. Failed to put {:?}", path)
     }
 
@@ -42,7 +45,7 @@ impl Storage for StorageWithCache {
         self.storage.copy_to_file(path, output_path).await
     }
 
-    async fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> StorageResult<Bytes> {
+    async fn get_slice(&self, path: &Path, byte_range: Range<usize>) -> StorageResult<OwnedBytes> {
         if let Some(bytes) = self.cache.get(path, byte_range.clone()).await {
             Ok(bytes)
         } else {
@@ -54,7 +57,7 @@ impl Storage for StorageWithCache {
         }
     }
 
-    async fn get_all(&self, path: &Path) -> StorageResult<Bytes> {
+    async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         if let Some(bytes) = self.cache.get_all(path).await {
             Ok(bytes)
         } else {
@@ -81,38 +84,6 @@ impl Storage for StorageWithCache {
     }
 }
 
-/// A StorageFactory that wraps all Storage that are produced with a cache.
-///
-/// The cache is shared with all of the storage instances.
-pub struct StorageWithCacheFactory {
-    storage_factory: Arc<dyn StorageFactory>,
-    cache: Arc<dyn Cache>,
-}
-
-impl StorageWithCacheFactory {
-    /// Creates a new StorageFactory with the given cache.
-    pub fn new(storage_factory: Arc<dyn StorageFactory>, cache: Arc<dyn Cache>) -> Self {
-        StorageWithCacheFactory {
-            storage_factory,
-            cache,
-        }
-    }
-}
-
-impl StorageFactory for StorageWithCacheFactory {
-    fn protocol(&self) -> String {
-        self.storage_factory.protocol()
-    }
-
-    fn resolve(&self, uri: &str) -> crate::StorageResult<Arc<dyn Storage>> {
-        let storage = self.storage_factory.resolve(uri)?;
-        Ok(Arc::new(StorageWithCache {
-            storage,
-            cache: self.cache.clone(),
-        }))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -120,13 +91,13 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use crate::{MockCache, MockStorage};
+    use crate::{MockCache, MockStorage, OwnedBytes};
 
     #[tokio::test]
     async fn put_in_cache_test() {
         let mut mock_storage = MockStorage::default();
         let mut mock_cache = MockCache::default();
-        let actual_cache: Arc<Mutex<HashMap<PathBuf, Bytes>>> =
+        let actual_cache: Arc<Mutex<HashMap<PathBuf, OwnedBytes>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
         let cache1 = actual_cache.clone();
@@ -145,7 +116,7 @@ mod tests {
         mock_storage
             .expect_get_all()
             .times(1)
-            .returning(|_path| Ok(Bytes::from_static(&[1, 2, 3])));
+            .returning(|_path| Ok(OwnedBytes::new(vec![1, 2, 3])));
 
         let storage_with_cache = StorageWithCache {
             storage: Arc::new(mock_storage),

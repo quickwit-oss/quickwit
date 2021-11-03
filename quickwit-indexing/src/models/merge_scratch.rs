@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use tantivy::Directory;
+
 use crate::merge_policy::MergeOperation;
 use crate::models::ScratchDirectory;
 
@@ -26,10 +28,5 @@ pub struct MergeScratch {
     /// Scratch directory for computing the merge.
     pub merge_scratch_directory: ScratchDirectory,
     pub downloaded_splits_directory: ScratchDirectory,
-}
-
-impl MergeScratch {
-    pub fn into_merge_scratch_directory(self) -> ScratchDirectory {
-        self.merge_scratch_directory
-    }
+    pub tantivy_dirs: Vec<Box<dyn Directory>>,
 }

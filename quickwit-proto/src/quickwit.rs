@@ -181,7 +181,7 @@ pub struct FetchDocsRequest {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FetchDocsResult {
+pub struct FetchDocsResponse {
     /// List of complete hits.
     #[prost(message, repeated, tag = "1")]
     pub hits: ::prost::alloc::vec::Vec<Hit>,
@@ -213,6 +213,9 @@ pub struct SearchStreamRequest {
     /// Split tag filter
     #[prost(string, repeated, tag = "8")]
     pub tags: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The field by which we want to partition
+    #[prost(string, optional, tag = "9")]
+    pub partition_by_field: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -237,7 +240,7 @@ pub struct LeafSearchStreamRequest {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct LeafSearchStreamResult {
+pub struct LeafSearchStreamResponse {
     /// Row of data serialized in bytes.
     #[prost(bytes = "vec", tag = "1")]
     pub data: ::prost::alloc::vec::Vec<u8>,
@@ -366,7 +369,7 @@ pub mod search_service_client {
         pub async fn fetch_docs(
             &mut self,
             request: impl tonic::IntoRequest<super::FetchDocsRequest>,
-        ) -> Result<tonic::Response<super::FetchDocsResult>, tonic::Status> {
+        ) -> Result<tonic::Response<super::FetchDocsResponse>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
@@ -382,7 +385,7 @@ pub mod search_service_client {
             &mut self,
             request: impl tonic::IntoRequest<super::LeafSearchStreamRequest>,
         ) -> Result<
-            tonic::Response<tonic::codec::Streaming<super::LeafSearchStreamResult>>,
+            tonic::Response<tonic::codec::Streaming<super::LeafSearchStreamResponse>>,
             tonic::Status,
         > {
             self.inner.ready().await.map_err(|e| {
@@ -432,9 +435,9 @@ pub mod search_service_server {
         async fn fetch_docs(
             &self,
             request: tonic::Request<super::FetchDocsRequest>,
-        ) -> Result<tonic::Response<super::FetchDocsResult>, tonic::Status>;
+        ) -> Result<tonic::Response<super::FetchDocsResponse>, tonic::Status>;
         #[doc = "Server streaming response type for the LeafSearchStream method."]
-        type LeafSearchStreamStream: futures_core::Stream<Item = Result<super::LeafSearchStreamResult, tonic::Status>>
+        type LeafSearchStreamStream: futures_core::Stream<Item = Result<super::LeafSearchStreamResponse, tonic::Status>>
             + Send
             + Sync
             + 'static;
@@ -549,7 +552,7 @@ pub mod search_service_server {
                     #[allow(non_camel_case_types)]
                     struct FetchDocsSvc<T: SearchService>(pub Arc<T>);
                     impl<T: SearchService> tonic::server::UnaryService<super::FetchDocsRequest> for FetchDocsSvc<T> {
-                        type Response = super::FetchDocsResult;
+                        type Response = super::FetchDocsResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
@@ -583,7 +586,7 @@ pub mod search_service_server {
                         tonic::server::ServerStreamingService<super::LeafSearchStreamRequest>
                         for LeafSearchStreamSvc<T>
                     {
-                        type Response = super::LeafSearchStreamResult;
+                        type Response = super::LeafSearchStreamResponse;
                         type ResponseStream = T::LeafSearchStreamStream;
                         type Future =
                             BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;

@@ -18,18 +18,17 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod args;
+mod counters;
 mod error;
 mod grpc;
 mod grpc_adapter;
 mod http_handler;
-mod quickwit_cache;
 mod rest;
 
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use quickwit_cache::QuickwitCache;
 use quickwit_cluster::cluster::{read_or_create_host_key, Cluster};
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_metastore::MetastoreUriResolver;
@@ -39,13 +38,13 @@ use quickwit_search::{
 };
 use quickwit_storage::{
     LocalFileStorageFactory, RegionProvider, S3CompatibleObjectStorageFactory, StorageUriResolver,
-    StorageWithCacheFactory,
 };
 use quickwit_telemetry::payload::{ServeEvent, TelemetryEvent};
 use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use tracing::debug;
 
 pub use crate::args::ServeArgs;
+pub use crate::counters::COUNTERS;
 pub use crate::error::ApiError;
 use crate::grpc::start_grpc_service;
 use crate::grpc_adapter::cluster_adapter::GrpcClusterAdapter;
@@ -82,10 +81,7 @@ fn display_help_message(
 /// - s3+localstack://
 /// - file:// uris.
 fn storage_uri_resolver() -> StorageUriResolver {
-    let s3_storage = StorageWithCacheFactory::new(
-        Arc::new(S3CompatibleObjectStorageFactory::default()),
-        Arc::new(QuickwitCache::default()),
-    );
+    let s3_storage = S3CompatibleObjectStorageFactory::default();
     StorageUriResolver::builder()
         .register(LocalFileStorageFactory::default())
         .register(s3_storage)
@@ -156,6 +152,7 @@ mod tests {
     use std::ops::Range;
     use std::sync::Arc;
 
+    use futures::TryStreamExt;
     use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_indexing::mock_split_meta;
     use quickwit_metastore::checkpoint::Checkpoint;
@@ -198,6 +195,7 @@ mod tests {
             end_timestamp: None,
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
+            partition_by_field: None,
             tags: vec![],
         };
         let mut metastore = MockMetastore::new();
@@ -221,7 +219,7 @@ mod tests {
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResult {
+        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
             data: b"123".to_vec(),
             split_id: "split_1".to_string(),
         }))?;
@@ -257,11 +255,11 @@ mod tests {
             clients: Arc::new(RwLock::new(clients)),
         });
         let cluster_client = ClusterClient::new(client_pool.clone());
-        let search_result =
-            root_search_stream(&request, &metastore, &cluster_client, &client_pool).await;
-        assert!(search_result.is_err());
+        let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
+        let result: Result<Vec<_>, SearchError> = stream.try_collect().await;
+        assert!(result.is_err());
         assert_eq!(
-            search_result.unwrap_err().to_string(),
+            result.unwrap_err().to_string(),
             "Internal error: `Internal error: `Error again on `split2``.`."
         );
         Ok(())

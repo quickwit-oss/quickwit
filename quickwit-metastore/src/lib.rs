@@ -28,11 +28,14 @@
 #[macro_use]
 mod tests;
 
-#[cfg(feature = "postgresql")]
+#[cfg(feature = "postgres")]
+extern crate openssl;
+
+#[cfg(feature = "postgres")]
 #[macro_use]
 extern crate diesel_migrations;
 
-#[cfg(feature = "postgresql")]
+#[cfg(feature = "postgres")]
 #[macro_use]
 extern crate diesel;
 
@@ -42,12 +45,12 @@ mod error;
 mod metastore;
 mod metastore_resolver;
 
-#[cfg(feature = "postgresql")]
+#[cfg(feature = "postgres")]
 #[allow(missing_docs)]
 pub mod postgresql;
 
 pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
-#[cfg(feature = "postgresql")]
+#[cfg(feature = "postgres")]
 pub use metastore::postgresql_metastore::PostgresqlMetastore;
 pub use metastore::single_file_metastore::SingleFileMetastore;
 #[cfg(feature = "testsuite")]

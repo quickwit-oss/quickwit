@@ -20,6 +20,8 @@
 mod file_source;
 #[cfg(feature = "kafka")]
 mod kafka_source;
+#[cfg(feature = "kinesis")]
+mod kinesis;
 mod source_factory;
 mod vec_source;
 
@@ -31,6 +33,7 @@ pub use file_source::{FileSource, FileSourceFactory, FileSourceParams};
 pub use kafka_source::{KafkaSource, KafkaSourceFactory, KafkaSourceParams};
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox};
+use serde::{Deserialize, Serialize};
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 pub use vec_source::{VecSource, VecSourceFactory, VecSourceParams};
 
@@ -81,6 +84,9 @@ pub trait Source: Send + Sync + 'static {
         Ok(())
     }
 
+    /// A name identifying the type of source.
+    fn name(&self) -> String;
+
     /// Returns an observable_state for the actor.
     ///
     /// This object is simply a json object, and its content may vary depending on the
@@ -112,6 +118,10 @@ impl fmt::Debug for Loop {
 impl Actor for SourceActor {
     type Message = Loop;
     type ObservableState = serde_json::Value;
+
+    fn name(&self) -> String {
+        self.source.name()
+    }
 
     fn observable_state(&self) -> Self::ObservableState {
         self.source.observable_state()
@@ -161,9 +171,30 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
     })
 }
 
-#[derive(Clone)]
+/// A `SourceConfig` describes the properties of a source. A source config can be created
+/// dynamically or loaded from a file consisting of a JSON object with 3 mandatory properties:
+/// - `source_id`, a name identifying the source uniquely;
+/// - `source_type`, the type of the target source, for instance, `file` or `kafka`;
+/// - `params`, an arbitrary object whose keys and values are specific to the source type.
+///
+/// For instance, a valid source config JSON object for a Kafka source is:
+/// ```json
+/// {
+///     "source_id": "my-kafka-source",
+///     "source_type": "kafka",
+///     "params": {
+///         "topic": "my-kafka-source-topic",
+///         "client_log_level": "warn",
+///         "client_params": {
+///             "bootstrap.servers": "localhost:9092",
+///             "group.id": "my-kafka-source-consumer-group"
+///         }
+///     }
+/// }
+/// ```
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SourceConfig {
-    pub id: String,
+    pub source_id: String,
     pub source_type: String,
     pub params: serde_json::Value,
 }

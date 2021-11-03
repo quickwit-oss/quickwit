@@ -2,7 +2,7 @@
 name = 'quickwit-storage'
 version = '0.1.0'
 authors = ['Quickwit, Inc. <hello@quickwit.io>']
-edition = '2018'
+edition = '2021'
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit's storage abstraction"
 repository = "https://github.com/quickwit-inc/quickwit"
@@ -14,12 +14,12 @@ quickwit-common = { version = "0.1.0", path = "../quickwit-common" }
 async-trait = '0.1'
 md5 = '0.7'
 anyhow = '1'
-futures = '0.3'
 bytes = '1'
+futures = '0.3'
 serde_json = "1"
 base64 = '0.13'
 tracing = '0.1'
-tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="c1d1d84"}
+tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="ff631ec", default-features=false, features = ["mmap", "lz4-compression"] }
 once_cell = '1'
 regex = '1'
 thiserror = '1'
@@ -27,6 +27,7 @@ rand = '0.8'
 lru = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 ec2_instance_metadata = "0.3"
+tempfile = '3'
 
 [dependencies.rusoto_core]
 version = '0.46'
@@ -50,15 +51,10 @@ features = ['full']
 version = "0.9"
 optional = true
 
-[dependencies.tempfile]
-version = "3"
-optional = true
-
 [dev-dependencies]
 tracing-subscriber = '0.2'
-tempfile = '3'
 mockall = '0.9'
 
 [features]
-testsuite = ["mockall", "tempfile"]
+testsuite = ["mockall"]
 ci-test = []

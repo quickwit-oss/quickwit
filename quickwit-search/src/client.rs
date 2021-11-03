@@ -25,7 +25,7 @@ use futures::{StreamExt, TryStreamExt};
 use http::Uri;
 use opentelemetry::global;
 use opentelemetry::propagation::Injector;
-use quickwit_proto::LeafSearchStreamResult;
+use quickwit_proto::LeafSearchStreamResponse;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::{Channel, Endpoint};
 use tonic::Request;
@@ -33,7 +33,7 @@ use tracing::*;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::error::parse_grpc_error;
-use crate::{SearchError, SearchService};
+use crate::SearchService;
 
 struct MetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
 
@@ -107,7 +107,7 @@ impl SearchServiceClient {
     pub async fn root_search(
         &mut self,
         request: quickwit_proto::SearchRequest,
-    ) -> Result<quickwit_proto::SearchResponse, SearchError> {
+    ) -> crate::Result<quickwit_proto::SearchResponse> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);
@@ -125,7 +125,7 @@ impl SearchServiceClient {
     pub async fn leaf_search(
         &mut self,
         request: quickwit_proto::LeafSearchRequest,
-    ) -> Result<quickwit_proto::LeafSearchResponse, SearchError> {
+    ) -> crate::Result<quickwit_proto::LeafSearchResponse> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let mut tonic_request = Request::new(request);
@@ -149,7 +149,7 @@ impl SearchServiceClient {
     pub async fn leaf_search_stream(
         &mut self,
         request: quickwit_proto::LeafSearchStreamRequest,
-    ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResult>> {
+    ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let mut grpc_client_clone = grpc_client.clone();
@@ -209,7 +209,7 @@ impl SearchServiceClient {
     pub async fn fetch_docs(
         &mut self,
         request: quickwit_proto::FetchDocsRequest,
-    ) -> Result<quickwit_proto::FetchDocsResult, SearchError> {
+    ) -> crate::Result<quickwit_proto::FetchDocsResponse> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let mut tonic_request = Request::new(request);

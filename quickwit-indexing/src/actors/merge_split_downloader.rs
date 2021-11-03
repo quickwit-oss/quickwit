@@ -18,22 +18,20 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::path::Path;
-use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, AsyncActor, Mailbox};
-use quickwit_common::split_file;
+use quickwit_actors::{Actor, ActorContext, AsyncActor, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
-use quickwit_storage::Storage;
-use tracing::{debug, info};
+use tantivy::Directory;
+use tracing::{info, info_span, Span};
 
 use crate::merge_policy::MergeOperation;
 use crate::models::{MergeScratch, ScratchDirectory};
+use crate::split_store::IndexingSplitStore;
 
 pub struct MergeSplitDownloader {
     pub scratch_directory: ScratchDirectory,
-    pub storage: Arc<dyn Storage>,
+    pub storage: IndexingSplitStore,
     pub merge_executor_mailbox: Mailbox<MergeScratch>,
 }
 
@@ -41,6 +39,34 @@ impl Actor for MergeSplitDownloader {
     type Message = MergeOperation;
     type ObservableState = ();
     fn observable_state(&self) -> Self::ObservableState {}
+
+    fn queue_capacity(&self) -> QueueCapacity {
+        QueueCapacity::Bounded(1)
+    }
+
+    fn name(&self) -> String {
+        "MergeSplitDownloader".to_string()
+    }
+
+    fn message_span(&self, msg_id: u64, merge_operation: &MergeOperation) -> Span {
+        match merge_operation {
+            MergeOperation::Merge {
+                merge_split_id,
+                splits,
+            } => {
+                let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
+                info_span!("merge",
+                    msg_id=&msg_id,
+                    merge_split_id=%merge_split_id,
+                    num_docs=num_docs,
+                    num_splits=splits.len())
+            }
+            MergeOperation::Demux { .. } => {
+                // FIXME once demux is here.
+                info_span!("demux", msg_id = &msg_id)
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -61,19 +87,22 @@ impl MergeSplitDownloader {
         merge_operation: MergeOperation,
         ctx: &ActorContext<MergeOperation>,
     ) -> anyhow::Result<()> {
-        info!(merge_operation=?merge_operation, "download-merge-splits");
-        let merge_scratch_directory = self.scratch_directory.temp_child()?;
-        let downloaded_splits_directory = merge_scratch_directory.temp_child()?;
-        self.download_splits(
-            &merge_operation.splits,
-            downloaded_splits_directory.path(),
-            ctx,
-        )
-        .await?;
+        let merge_scratch_directory = self.scratch_directory.named_temp_child("merge-")?;
+        info!(dir=%merge_scratch_directory.path().display(), "download-merge-splits");
+        let downloaded_splits_directory =
+            merge_scratch_directory.named_temp_child("downloaded-splits-")?;
+        let tantivy_dirs = self
+            .download_splits(
+                merge_operation.splits(),
+                downloaded_splits_directory.path(),
+                ctx,
+            )
+            .await?;
         let msg = MergeScratch {
             merge_operation,
             merge_scratch_directory,
             downloaded_splits_directory,
+            tantivy_dirs,
         };
         ctx.send_message(&self.merge_executor_mailbox, msg).await?;
         Ok(())
@@ -84,37 +113,36 @@ impl MergeSplitDownloader {
         splits: &[SplitMetadata],
         download_directory: &Path,
         ctx: &ActorContext<MergeOperation>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<Box<dyn Directory>>> {
         // we download all of the split files in the scratch directory.
+        let mut tantivy_dirs = vec![];
         for split in splits {
-            let split_filename = split_file(&split.split_id);
-            let split_file = Path::new(&split_filename);
-            let dest_path = download_directory.join(split_file);
             let _protect_guard = ctx.protect_zone();
-            let start_time = Instant::now();
-            debug!(split_file=?split_file, dest_path=?dest_path, "download-file");
-            self.storage.copy_to_file(split_file, &dest_path).await?;
-            let elapsed = start_time.elapsed();
-            debug!(split_file=?split_file, elapsed=?elapsed, "download-file-end");
+            let tantivy_dir = self
+                .storage
+                .fetch_split(&split.split_id, download_directory)
+                .await?;
+            tantivy_dirs.push(tantivy_dir);
         }
-        Ok(())
+        Ok(tantivy_dirs)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::iter;
+    use std::sync::Arc;
 
     use quickwit_actors::{create_test_mailbox, Universe};
-    use quickwit_storage::RamStorageBuilder;
+    use quickwit_common::split_file;
+    use quickwit_storage::{BundleStorageBuilder, RamStorageBuilder};
 
     use super::*;
-    use crate::merge_policy::MergeOrDemux;
     use crate::new_split_id;
 
     #[tokio::test]
     async fn test_merge_split_downloader() -> anyhow::Result<()> {
-        let scratch_directory = ScratchDirectory::try_new_temp()?;
+        let scratch_directory = ScratchDirectory::for_test()?;
         let splits_to_merge: Vec<SplitMetadata> = iter::repeat_with(|| {
             let split_id = new_split_id();
             SplitMetadata {
@@ -126,14 +154,21 @@ mod tests {
         .take(10)
         .collect();
 
-        let storage = Arc::new({
+        let storage = {
             let mut storage_builder = RamStorageBuilder::default();
             for split in &splits_to_merge {
-                storage_builder =
-                    storage_builder.put(&split_file(&split.split_id), &b"split_payload"[..]);
+                let mut buffer: Vec<u8> = Vec::new();
+                let create_bundle = BundleStorageBuilder::new(&mut buffer)?;
+                create_bundle.finalize()?;
+                // hotcache
+                buffer.extend(&[1, 2, 3]);
+                buffer.extend(3_usize.to_le_bytes());
+
+                storage_builder = storage_builder.put(&split_file(&split.split_id), &buffer);
             }
-            storage_builder.build()
-        });
+            let ram_storage = storage_builder.build();
+            IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage))
+        };
 
         let universe = Universe::new();
         let (merge_executor_mailbox, merge_executor_inbox) = create_test_mailbox();
@@ -144,10 +179,7 @@ mod tests {
         };
         let (merge_split_downloader_mailbox, merge_split_downloader_handler) =
             universe.spawn_actor(merge_split_downloader).spawn_async();
-        let merge_operation = MergeOperation {
-            splits: splits_to_merge,
-            op_type: MergeOrDemux::Merge,
-        };
+        let merge_operation = MergeOperation::new_merge_operation(splits_to_merge);
         universe
             .send_message(&merge_split_downloader_mailbox, merge_operation)
             .await?;
@@ -157,9 +189,12 @@ mod tests {
         let merge_scratchs = merge_executor_inbox.drain_available_message_for_test();
         assert_eq!(merge_scratchs.len(), 1);
         let merge_scratch = merge_scratchs.into_iter().next().unwrap();
-        assert_eq!(merge_scratch.merge_operation.op_type, MergeOrDemux::Merge);
-        assert_eq!(merge_scratch.merge_operation.splits.len(), 10);
-        for split in &merge_scratch.merge_operation.splits {
+        assert!(matches!(
+            merge_scratch.merge_operation,
+            MergeOperation::Merge { .. }
+        ));
+        assert_eq!(merge_scratch.merge_operation.splits().len(), 10);
+        for split in merge_scratch.merge_operation.splits() {
             let split_filename = split_file(&split.split_id);
             let split_filepath = merge_scratch
                 .downloaded_splits_directory

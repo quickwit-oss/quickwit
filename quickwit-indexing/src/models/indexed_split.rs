@@ -22,11 +22,14 @@ use std::ops::RangeInclusive;
 use std::path::Path;
 use std::time::Instant;
 
+use quickwit_actors::{KillSwitch, Progress};
 use quickwit_metastore::checkpoint::CheckpointDelta;
+use tantivy::directory::MmapDirectory;
 use tantivy::merge_policy::NoMergePolicy;
-use tantivy::schema::Schema;
+use tantivy::IndexBuilder;
 
 use crate::actors::IndexerParams;
+use crate::controlled_directory::ControlledDirectory;
 use crate::models::ScratchDirectory;
 use crate::new_split_id;
 
@@ -50,13 +53,18 @@ pub struct IndexedSplit {
     /// This is mostly useful to understand part of the time to search.
     /// However, note that the document may have been waiting for a long time in the source
     /// before actually reaching the indexer.
-    pub start_time: Instant,
+    pub split_date_of_birth: Instant,
+
+    /// Number of demux operations this split has undergone.
+    pub demux_num_ops: usize,
 
     pub checkpoint_delta: CheckpointDelta,
 
     pub index: tantivy::Index,
     pub index_writer: tantivy::IndexWriter,
     pub split_scratch_directory: ScratchDirectory,
+
+    pub controlled_directory_opt: Option<ControlledDirectory>,
 }
 
 impl fmt::Debug for IndexedSplit {
@@ -64,7 +72,6 @@ impl fmt::Debug for IndexedSplit {
         formatter
             .debug_struct("IndexedSplit")
             .field("id", &self.split_id)
-            .field("index", &self.index_id)
             .field("dir", &self.split_scratch_directory.path())
             .finish()
     }
@@ -74,33 +81,50 @@ impl IndexedSplit {
     pub fn new_in_dir(
         index_id: String,
         indexer_params: &IndexerParams,
-        schema: Schema,
+        index_builder: IndexBuilder,
+        progress: Progress,
+        kill_switch: KillSwitch,
     ) -> anyhow::Result<Self> {
         // We avoid intermediary merge, and instead merge all segments in the packager.
         // The benefit is that we don't have to wait for potentially existing merges,
         // and avoid possible race conditions.
-        let split_scratch_directory = indexer_params.scratch_directory.temp_child()?;
-        let index = tantivy::Index::create_in_dir(split_scratch_directory.path(), schema)?;
+        let split_id = new_split_id();
+        let split_scratch_directory_prefix = format!("split-{}-", split_id);
+        let split_scratch_directory = indexer_params
+            .indexing_directory
+            .scratch_directory
+            .named_temp_child(split_scratch_directory_prefix)?;
+        let mmap_directory = MmapDirectory::open(split_scratch_directory.path())?;
+        let box_mmap_directory = Box::new(mmap_directory);
+        let controlled_directory =
+            ControlledDirectory::new(box_mmap_directory, progress, kill_switch);
+        let index = index_builder.open_or_create(controlled_directory.clone())?;
         let index_writer =
             index.writer_with_num_threads(1, indexer_params.heap_size.get_bytes() as usize)?;
         index_writer.set_merge_policy(Box::new(NoMergePolicy));
-        let split_id = new_split_id();
         Ok(IndexedSplit {
             split_id,
             index_id,
             replaced_split_ids: Vec::new(),
             time_range: None,
+            demux_num_ops: 0,
             docs_size_in_bytes: 0,
             num_docs: 0,
-            start_time: Instant::now(),
+            split_date_of_birth: Instant::now(),
             index,
             index_writer,
             split_scratch_directory,
             checkpoint_delta: CheckpointDelta::default(),
+            controlled_directory_opt: Some(controlled_directory),
         })
     }
 
     pub fn path(&self) -> &Path {
         self.split_scratch_directory.path()
     }
+}
+
+#[derive(Debug)]
+pub struct IndexedSplitBatch {
+    pub splits: Vec<IndexedSplit>,
 }

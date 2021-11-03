@@ -20,8 +20,31 @@
 use std::ops::RangeInclusive;
 use std::str::FromStr;
 
+use diesel::sql_types::{Nullable, Text};
+
 use crate::postgresql::schema::{indexes, splits};
 use crate::{IndexMetadata, SplitMetadataAndFooterOffsets, SplitState};
+
+// A raw query that helps figure out if index exist, non-existant
+// splits and not deletable splits.
+pub const SELECT_SPLITS_FOR_INDEX: &str = r#"
+SELECT i.index_id, s.split_id 
+FROM indexes AS i 
+LEFT JOIN (
+    SELECT index_id, split_id 
+    FROM splits
+    WHERE split_id = ANY ($1)
+) AS s 
+ON i.index_id = s.index_id
+WHERE i.index_id = $2"#;
+
+#[derive(Queryable, QueryableByName, Debug, Clone)]
+pub struct IndexIdSplitIdRow {
+    #[sql_type = "Text"]
+    pub index_id: String,
+    #[sql_type = "Nullable<Text>"]
+    pub split_id: Option<String>,
+}
 
 /// A model structure for handling index metadata in a database.
 #[derive(Identifiable, Insertable, Queryable, Debug)]
@@ -56,9 +79,11 @@ pub struct Split {
     /// The state of the split. This is the only mutable attribute of the split.
     pub split_state: String,
     /// If a timestamp field is available, the min timestamp in the split.
-    pub start_time_range: Option<i64>,
+    pub time_range_start: Option<i64>,
     /// If a timestamp field is available, the max timestamp in the split.
-    pub end_time_range: Option<i64>,
+    pub time_range_end: Option<i64>,
+    /// Timestamp for tracking when the split state was last modified.
+    pub update_timestamp: i64,
     /// A list of tags for categorizing and searching group of splits.
     pub tags: Vec<String>,
     // A JSON string containing all of the SplitMetadataAndFooterOffsets.
@@ -70,9 +95,9 @@ pub struct Split {
 impl Split {
     /// Make time range from start_time_range and end_time_range in database model.
     pub fn get_time_range(&self) -> Option<RangeInclusive<i64>> {
-        self.start_time_range.and_then(|start_time_range| {
-            self.end_time_range
-                .map(|end_time_range| RangeInclusive::new(start_time_range, end_time_range))
+        self.time_range_start.and_then(|time_range_start| {
+            self.time_range_end
+                .map(|time_range_end| RangeInclusive::new(time_range_start, time_range_end))
         })
     }
 

@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
@@ -57,10 +58,10 @@ struct Inner {
 
 impl ScratchDirectory {
     /// Creates a new ScratchDirectory in an existing directory.
-    pub fn new_in_path(path: PathBuf) -> ScratchDirectory {
+    pub fn new_in_dir(dir_path: PathBuf) -> ScratchDirectory {
         let inner = Inner {
             _parent: None,
-            dir: ScratchDirectoryType::Path(path),
+            dir: ScratchDirectoryType::Path(dir_path),
         };
         ScratchDirectory {
             inner: Arc::new(inner),
@@ -69,11 +70,11 @@ impl ScratchDirectory {
 
     /// Creates a new ScratchDirectory in an existing directory.
     /// The directory location will depend on the OS settings.
-    pub fn try_new_temp() -> io::Result<ScratchDirectory> {
-        let temp_dir = tempfile::tempdir()?;
+    pub fn for_test() -> io::Result<ScratchDirectory> {
+        let tempdir = tempfile::tempdir()?;
         let inner = Inner {
             _parent: None,
-            dir: ScratchDirectoryType::TempDir(temp_dir),
+            dir: ScratchDirectoryType::TempDir(tempdir),
         };
         Ok(ScratchDirectory {
             inner: Arc::new(inner),
@@ -91,8 +92,10 @@ impl ScratchDirectory {
     ///
     /// A child scratch directory keeps an handle on its father to
     /// prevent its premature deletion.
-    pub fn temp_child(&self) -> io::Result<Self> {
-        let temp_dir = tempfile::tempdir_in(self.path())?;
+    pub fn named_temp_child<S: AsRef<OsStr>>(&self, prefix: S) -> io::Result<Self> {
+        let temp_dir = tempfile::Builder::new()
+            .prefix(prefix.as_ref())
+            .tempdir_in(self.path())?;
         let inner = Inner {
             _parent: Some(self.inner.clone()),
             dir: ScratchDirectoryType::TempDir(temp_dir),
@@ -111,27 +114,36 @@ mod tests {
 
     #[test]
     fn test_scratch_directory() -> io::Result<()> {
-        let pa = ScratchDirectory::try_new_temp()?;
-        let pa_path = pa.path().to_path_buf();
-        let kid = pa.temp_child()?;
-        let kid_path = kid.path().to_path_buf();
-        mem::drop(pa);
-        assert!(pa_path.exists());
-        assert!(kid_path.exists());
-        mem::drop(kid);
-        assert!(!pa_path.exists());
-        assert!(!kid_path.exists());
+        let parent = ScratchDirectory::for_test()?;
+        let parent_path = parent.path().to_path_buf();
+
+        let child = parent.named_temp_child("child-")?;
+        let child_path = child.path().to_path_buf();
+        assert!(child_path
+            .file_name()
+            .and_then(|file_name| file_name.to_str())
+            .map(|file_name| file_name.contains("child-"))
+            .unwrap_or(false));
+
+        mem::drop(parent);
+        assert!(parent_path.exists());
+        assert!(child_path.exists());
+
+        mem::drop(child);
+        assert!(!parent_path.exists());
+        assert!(!child_path.exists());
         Ok(())
     }
 
     #[test]
     fn test_scratch_directory_remove_content() -> io::Result<()> {
-        let pa = ScratchDirectory::try_new_temp()?;
-        let pa_path = pa.path().to_path_buf();
-        std::fs::write(pa.path().join("hello.txt"), b"hello")?;
-        assert!(pa_path.exists());
-        mem::drop(pa);
-        assert!(!pa_path.exists());
+        let parent = ScratchDirectory::for_test()?;
+        let parent_path = parent.path().to_path_buf();
+        std::fs::write(parent.path().join("hello.txt"), b"hello")?;
+        assert!(parent_path.exists());
+
+        mem::drop(parent);
+        assert!(!parent_path.exists());
         Ok(())
     }
 
@@ -140,16 +152,21 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let tempdir_path = tempdir.path().to_path_buf();
         assert!(tempdir_path.exists());
-        let pa = ScratchDirectory::new_in_path(tempdir_path.clone());
-        assert_eq!(pa.path(), tempdir.path());
+
+        let parent = ScratchDirectory::new_in_dir(tempdir_path.clone());
+        assert_eq!(parent.path(), tempdir.path());
         assert!(tempdir.path().exists());
-        let child = pa.temp_child()?;
+
+        let child = parent.named_temp_child("child-")?;
         let child_path = child.path().to_path_buf();
         assert!(child_path.exists());
+
         mem::drop(child);
         assert!(!child_path.exists());
-        mem::drop(pa);
+
+        mem::drop(parent);
         assert!(!child_path.exists());
+
         mem::drop(tempdir);
         assert!(!tempdir_path.exists());
         Ok(())
