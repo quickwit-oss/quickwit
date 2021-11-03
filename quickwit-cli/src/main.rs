@@ -361,6 +361,9 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "openssl-support")]
+    openssl_probe::init_ssl_cert_env_vars();
+
     let telemetry_handle = quickwit_telemetry::start_telemetry_loop();
     let about_text = about_text();
     let version_text = format!(
