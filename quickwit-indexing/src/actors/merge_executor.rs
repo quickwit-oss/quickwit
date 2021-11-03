@@ -23,6 +23,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use anyhow::Context;
+use fail::fail_point;
 use itertools::{izip, Itertools};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SyncActor};
 use quickwit_common::split_file;
@@ -37,6 +38,7 @@ use tantivy::{
 };
 use tracing::{debug, info, info_span, Span};
 
+use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperation;
 use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, ScratchDirectory};
 
@@ -206,10 +208,15 @@ fn merge_split_directories(
     union_index_meta: IndexMeta,
     split_directories: Vec<Box<dyn Directory>>,
     output_path: &Path,
-) -> anyhow::Result<MmapDirectory> {
+    ctx: &ActorContext<MergeScratch>,
+) -> anyhow::Result<ControlledDirectory> {
     let shadowing_meta_json_directory = create_shadowing_meta_json_directory(union_index_meta)?;
     // This directory is here to receive the merged split, as well as the final meta.json file.
-    let output_directory = MmapDirectory::open(output_path)?;
+    let output_directory = ControlledDirectory::new(
+        Box::new(MmapDirectory::open(output_path)?),
+        ctx.progress().clone(),
+        ctx.kill_switch().clone(),
+    );
     let mut directory_stack: Vec<Box<dyn Directory>> = vec![
         output_directory.box_clone(),
         Box::new(shadowing_meta_json_directory),
@@ -217,8 +224,21 @@ fn merge_split_directories(
     directory_stack.extend(split_directories.into_iter());
     let union_directory = UnionDirectory::union_of(directory_stack);
     let union_index = Index::open(union_directory)?;
+    ctx.record_progress();
     merge_all_segments(&union_index)?;
     Ok(output_directory)
+}
+
+fn create_demux_output_directory(
+    directory_path: &Path,
+    ctx: &ActorContext<MergeScratch>,
+) -> tantivy::Result<ControlledDirectory> {
+    let mmap_directory = MmapDirectory::open(directory_path)?;
+    Ok(ControlledDirectory::new(
+        Box::new(mmap_directory),
+        ctx.progress().clone(),
+        ctx.kill_switch().clone(),
+    ))
 }
 
 impl MergeExecutor {
@@ -254,14 +274,14 @@ impl MergeExecutor {
             splits.iter().map(|split| split.split_id.clone()).collect();
         let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
-        let merged_directory = {
-            let _protected_zone_guard = ctx.protect_zone();
-            merge_split_directories(
-                union_index_meta,
-                split_directories,
-                merge_scratch_directory.path(),
-            )?
-        };
+        fail_point!("before-merge-split");
+        let controlled_directory = merge_split_directories(
+            union_index_meta,
+            split_directories,
+            merge_scratch_directory.path(),
+            ctx,
+        )?;
+        fail_point!("after-merge-split");
         info!(
             elapsed_secs = start.elapsed().as_secs_f32(),
             "merge-success"
@@ -273,7 +293,7 @@ impl MergeExecutor {
         let docs_size_in_bytes = sum_doc_sizes_in_bytes(&splits);
         let num_docs = sum_num_docs(&splits);
 
-        let merged_index = Index::open(merged_directory)?;
+        let merged_index = Index::open(controlled_directory.clone())?;
         ctx.record_progress();
         let index_writer = merged_index.writer_with_num_threads(1, 3_000_000)?;
         ctx.record_progress();
@@ -292,7 +312,9 @@ impl MergeExecutor {
             index: merged_index,
             index_writer,
             split_scratch_directory: merge_scratch_directory,
+            controlled_directory_opt: Some(controlled_directory),
         };
+
         ctx.send_message_blocking(
             &self.merge_packager_mailbox,
             IndexedSplitBatch {
@@ -358,23 +380,25 @@ impl MergeExecutor {
         let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..demux_split_ids.len())
             .map(|idx| merge_scratch_directory.named_temp_child(format!("demux-split-{}", idx)))
             .try_collect()?;
-        let demuxed_split_directories: Vec<Box<dyn Directory>> = demuxed_scratched_directories
+        let demuxed_split_directories: Vec<ControlledDirectory> = demuxed_scratched_directories
             .iter()
-            .map(|directory| {
-                MmapDirectory::open(directory.path()).map(|dir| Box::new(dir) as Box<dyn Directory>)
-            })
+            .map(|directory| create_demux_output_directory(directory.path(), ctx))
             .try_collect()?;
+
         ctx.record_progress();
         let union_index_meta = combine_index_meta(index_metas)?;
-        let indexes = {
-            let _protected_zone_guard = ctx.protect_zone();
-            demux(
-                &replaced_segments,
-                &demux_mapping,
-                union_index_meta.index_settings,
-                demuxed_split_directories,
-            )?
-        };
+
+        let boxed_demuxed_split_directories: Vec<Box<dyn Directory>> = demuxed_split_directories
+            .iter()
+            .map(DirectoryClone::box_clone)
+            .collect();
+
+        let indexes = demux(
+            &replaced_segments,
+            &demux_mapping,
+            union_index_meta.index_settings,
+            boxed_demuxed_split_directories,
+        )?;
         info!(elapsed_secs = start.elapsed().as_secs_f32(), "demux-stop");
         let mut indexed_splits = Vec::new();
         // We cannot get the right `docs_size_in_bytes` for demuxed splits as it
@@ -387,9 +411,12 @@ impl MergeExecutor {
             .map(|split| split.demux_num_ops)
             .max()
             .unwrap();
-        for (split_id, index, scratched_directory) in
-            izip!(demux_split_ids, indexes, demuxed_scratched_directories)
-        {
+        for (split_id, index, scratched_directory, controlled_directory) in izip!(
+            demux_split_ids,
+            indexes,
+            demuxed_scratched_directories,
+            demuxed_split_directories
+        ) {
             let searchable_segments = index.searchable_segments()?;
             assert_eq!(
                 searchable_segments.len(),
@@ -421,6 +448,7 @@ impl MergeExecutor {
                 index,
                 index_writer,
                 split_scratch_directory: scratched_directory,
+                controlled_directory_opt: Some(controlled_directory),
             };
             indexed_splits.push(indexed_split);
         }
@@ -828,7 +856,7 @@ mod tests {
                 BundledSplitFile::new(dest_filepath.to_owned())
                     .get_tantivy_directory()
                     .unwrap(),
-            )
+            );
         }
         let merge_scratch = MergeScratch {
             merge_operation: MergeOperation::Merge {

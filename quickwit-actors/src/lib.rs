@@ -48,6 +48,7 @@ pub use actor_handle::{ActorHandle, Health, Supervisable};
 pub use async_actor::AsyncActor;
 pub use kill_switch::KillSwitch;
 pub use observation::{Observation, ObservationType};
+pub use progress::{Progress, ProtectedZoneGuard};
 pub(crate) use scheduler::Scheduler;
 pub use sync_actor::SyncActor;
 pub use universe::Universe;

@@ -35,20 +35,27 @@
 //!
 //! Below we test panics at different steps in the indexing pipeline.
 
+use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use byte_unit::Byte;
 use fail::FailScenario;
-use quickwit_index_config::default_config_for_tests;
-use quickwit_indexing::actors::IndexerParams;
-use quickwit_indexing::index_data;
-use quickwit_indexing::models::{CommitPolicy, IndexingDirectory};
+use quickwit_actors::{create_test_mailbox, ActorExitStatus, Universe};
+use quickwit_common::split_file;
+use quickwit_index_config::{default_config_for_tests, DefaultIndexConfigBuilder};
+use quickwit_indexing::actors::{IndexerParams, MergeExecutor};
+use quickwit_indexing::merge_policy::MergeOperation;
+use quickwit_indexing::models::{CommitPolicy, IndexingDirectory, MergeScratch, ScratchDirectory};
 use quickwit_indexing::source::SourceConfig;
+use quickwit_indexing::{index_data, new_split_id, BundledSplitFile, TestSandbox};
 use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::{IndexMetadata, Metastore, SingleFileMetastore, SplitState};
-use quickwit_storage::{quickwit_storage_uri_resolver, StorageUriResolver};
+use quickwit_metastore::{
+    IndexMetadata, Metastore, SingleFileMetastore, SplitMetadata, SplitState,
+};
+use quickwit_storage::quickwit_storage_uri_resolver;
 use serde_json::json;
+use tantivy::Directory;
 
 #[tokio::test]
 async fn test_failpoint_no_failure() -> anyhow::Result<()> {
@@ -186,7 +193,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
             "batch_num_docs": 1
         }),
     };
-    let storage_uri_resolver = quickwit_storage_uri_resolver();
+    let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
     index_data(
         "test-index".to_string(),
         metastore.clone(),
@@ -208,5 +215,121 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
         splits[1].split_metadata.time_range.clone().unwrap(),
         1629889532..=1629889533
     );
+    Ok(())
+}
+
+const TEST_TEXT: &'static str = r#"His sole child, my lord, and bequeathed to my
+overlooking. I have those hopes of her good that
+her education promises; her dispositions she
+inherits, which makes fair gifts fairer; for where
+an unclean mind carries virtuous qualities, there
+commendations go with pity; they are virtues and
+traitors too; in her they are the better for their
+simpleness; she derives her honesty and achieves her goodness."#;
+
+#[tokio::test]
+async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Result<()> {
+    // This tests checks that if a merger is killed in a middle of
+    // a merge, then the controlled directory makes it possible to
+    // abort the merging operation and return quickly.
+    quickwit_common::setup_logging_for_tests();
+    let index_config = r#"{
+            "default_search_fields": ["body"],
+            "timestamp_field": "ts",
+            "tag_fields": [],
+            "field_mappings": [
+                { "name": "body", "type": "text" },
+                { "name": "ts", "type": "i64", "fast": true }
+            ]
+        }"#;
+
+    let index_config =
+        Arc::new(serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?);
+    let index_id = "test-index";
+    let test_index_builder = TestSandbox::create(index_id, index_config).await?;
+
+    let batch: Vec<serde_json::Value> =
+        std::iter::repeat_with(|| serde_json::json!({"body ": TEST_TEXT, "ts": 1631072713 }))
+            .take(500_000)
+            .collect();
+    for _ in 0..2 {
+        test_index_builder.add_documents(batch.clone()).await?;
+    }
+
+    let metastore = test_index_builder.metastore();
+    let splits_with_footer_offsets = metastore.list_all_splits(index_id).await?;
+    let splits: Vec<SplitMetadata> = splits_with_footer_offsets
+        .into_iter()
+        .map(|split_and_footer_offsets| split_and_footer_offsets.split_metadata)
+        .collect();
+    let merge_scratch_directory = ScratchDirectory::for_test()?;
+
+    let downloaded_splits_directory =
+        merge_scratch_directory.named_temp_child("downloaded-splits-")?;
+    let storage = test_index_builder.index_storage(index_id)?;
+    let mut tantivy_dirs: Vec<Box<dyn Directory>> = vec![];
+    for split in &splits {
+        let split_filename = split_file(&split.split_id);
+        let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
+        storage
+            .copy_to_file(Path::new(&split_filename), &dest_filepath)
+            .await?;
+        tantivy_dirs.push(
+            BundledSplitFile::new(dest_filepath.to_owned())
+                .get_tantivy_directory()
+                .unwrap(),
+        );
+    }
+
+    let merge_scratch = MergeScratch {
+        merge_operation: MergeOperation::Merge {
+            merge_split_id: new_split_id(),
+            splits,
+        },
+        merge_scratch_directory,
+        downloaded_splits_directory,
+        tantivy_dirs,
+    };
+    let (merge_packager_mailbox, _merge_packager_inbox) = create_test_mailbox();
+    let merge_executor = MergeExecutor::new(
+        index_id.to_string(),
+        merge_packager_mailbox,
+        None,
+        None,
+        10_000_000,
+        20_000_000,
+    );
+    let universe = Universe::new();
+    let (merge_executor_mailbox, merge_executor_handle) =
+        universe.spawn_actor(merge_executor).spawn_sync();
+
+    // We want to make sure that the processing of the message gets
+    // aborted not by the actor framework, before the message is being processed.
+    //
+    // To do so, we
+    // - pause the actor right before the merge operation
+    // - send the message
+    // - wait 500ms to make sure the test has reached the "pause" point
+    // - kill the universe
+    // - unpause
+    //
+    // Before the controlled directory, the merge operation would have continued until it
+    // finished, taking hundreds of millisecs to terminate.
+    fail::cfg("before-merge-split", "pause").unwrap();
+    universe
+        .send_message(&merge_executor_mailbox, merge_scratch)
+        .await?;
+
+    std::mem::drop(merge_executor_mailbox);
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    universe.kill();
+
+    let start = Instant::now();
+    fail::cfg("before-merge-split", "off").unwrap();
+
+    let (exit_status, _) = merge_executor_handle.join().await;
+    assert!(start.elapsed() < Duration::from_millis(10));
+    assert!(matches!(exit_status, ActorExitStatus::Killed));
     Ok(())
 }

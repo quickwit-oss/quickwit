@@ -27,6 +27,9 @@ jobs:
           - "4571:4571"
           - "8080:8080"
         env:
+          # `kinesalite` provides a more accurate implementation than
+          # the default Kinesis provider (`kinesis-mock`).
+          KINESIS_PROVIDER: kinesalite
           SERVICES: kinesis,s3
         options: >-
           --health-cmd "curl -k https://localhost:4566"
