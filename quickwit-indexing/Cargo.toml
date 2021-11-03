@@ -41,7 +41,7 @@ tokio-stream = "0.1.6"
 [features]
 kafka = ["rdkafka"]
 kafka-broker-external-service = []
-kafka-vendored = ["kafka", "libz-sys/static", "openssl/vendored"]
+vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored"]
 
 [dev-dependencies]
 mockall = "0.9"

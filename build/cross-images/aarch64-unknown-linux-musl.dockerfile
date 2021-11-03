@@ -67,17 +67,17 @@ RUN apt-get update && \
 
 #RUN ln -s "/usr/bin/g++" "/usr/bin/musl-g++"
 
-ENV AARCH64_UNKNOWN_LINUX_MUSL_OPENSSL_DIR=/usr/local/musl \
-    AARCH64_UNKNOWN_LINUX_MUSL_OPENSSL_STATIC=1 \
-    PQ_LIB_STATIC_AARCH64_UNKNOWN_LINUX_MUSL=1 \
+ENV AARCH64_UNKNOWN_LINUX_MUSL_OPENSSL_STATIC=1 \
+    CC=aarch64-linux-musl-gcc \
+    CFLAGS=-I/usr/local/musl/include \
+    LIBZ_SYS_STATIC=1 \
+    LIB_LDFLAGS=-L/usr/local/musl/lib \
+    OPENSSL_INCLUDE_DIR=/usr/local/musl/include/openssl \
+    OPENSSL_LIB_DIR=/usr/local/musl/lib \
     PG_CONFIG_AARCH64_UNKNOWN_LINUX_GNU=/usr/bin/pg_config \
     PKG_CONFIG_ALLOW_CROSS=true \
     PKG_CONFIG_ALL_STATIC=true \
-    LIBZ_SYS_STATIC=1 \
-    TARGET=musl \
-    LIB_LDFLAGS=-L/usr/local/musl/lib \
-    CFLAGS=-I/usr/local/musl/include \
-    CC=aarch64-linux-musl-gcc \
     PQ_LIB_DIR=/usr/local/musl/lib \
-    OPENSSL_INCLUDE_DIR=/usr/local/musl/include/openssl \
-    OPENSSL_LIB_DIR=/usr/local/musl/lib
+    PQ_LIB_STATIC_AARCH64_UNKNOWN_LINUX_MUSL=1 \
+    TARGET=musl \
+    AARCH64_UNKNOWN_LINUX_MUSL_OPENSSL_DIR=/usr/local/musl

@@ -56,4 +56,4 @@ serial_test = "0.5.1"
 ci-test = []
 openssl-support = ["openssl-probe"]
 release-feature-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka", "openssl-support"]
-release-feature-vendored-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka-vendored", "openssl-support"]
+release-feature-vendored-set = ["quickwit-metastore/postgres", "quickwit-indexing/vendored-kafka", "openssl-support"]
