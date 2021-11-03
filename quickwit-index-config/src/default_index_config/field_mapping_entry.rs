@@ -42,20 +42,22 @@ use crate::default_index_config::is_valid_field_mapping_name;
 )]
 pub struct FieldMappingEntry {
     /// Field name in the index schema.
-    name: String,
+    pub name: String,
     /// Property parameters which defines the type and the way the value must be indexed.
-    mapping_type: FieldMappingType,
+    pub mapping_type: FieldMappingType,
 }
 
 impl FieldMappingEntry {
+    /// Creates a new [`FieldMappingEntry`].
     pub fn new(name: String, mapping_type: FieldMappingType) -> Self {
         assert!(is_valid_field_mapping_name(&name));
         FieldMappingEntry { name, mapping_type }
     }
 
+    /// Creates a new root [`FieldMappingEntry`].
     pub fn root(mapping_type: FieldMappingType) -> Self {
         FieldMappingEntry {
-            name: "".to_owned(),
+            name: "".to_string(),
             mapping_type,
         }
     }
@@ -93,6 +95,7 @@ impl FieldMappingEntry {
         }
     }
 
+    /// Returns the fields entries that map to fast fields.
     pub fn fast_field_entries(&self) -> Vec<(FieldPath, FieldType)> {
         self.field_entries()
             .into_iter()
@@ -107,6 +110,7 @@ impl FieldMappingEntry {
             .collect_vec()
     }
 
+    /// Returns the field mappings.
     pub fn field_mappings(&self) -> Option<Vec<FieldMappingEntry>> {
         match &self.mapping_type {
             FieldMappingType::Object(entries) => Some(entries.clone()),
