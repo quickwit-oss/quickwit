@@ -2385,7 +2385,6 @@ dependencies = [
  "diesel",
  "diesel_migrations",
  "dotenv",
- "futures",
  "mockall 0.9.1",
  "openssl",
  "quickwit-index-config",

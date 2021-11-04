@@ -630,10 +630,12 @@ mod tests {
     use std::ops::RangeInclusive;
     use std::path::Path;
     use std::sync::Arc;
+    use std::thread;
 
     use chrono::Utc;
     use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_storage::{MockStorage, PutPayload, StorageErrorKind};
+    use tokio::runtime::Handle;
 
     use crate::checkpoint::{Checkpoint, CheckpointDelta};
     use crate::metastore::single_file_metastore::meta_path;
@@ -838,59 +840,56 @@ mod tests {
     #[tokio::test]
     async fn test_single_file_metastore_race_condition() {
         let metastore = Arc::new(SingleFileMetastore::for_test());
-
         let index_id = "my-index";
-
         let index_metadata = IndexMetadata {
             index_id: index_id.to_string(),
             index_uri: "ram://indexes/my-index".to_string(),
             index_config: Arc::new(WikipediaIndexConfig::default()),
             checkpoint: Checkpoint::default(),
         };
-
         // Create index
         metastore.create_index(index_metadata).await.unwrap();
 
-        // Stage the split in multiple threads
-        let mut handles = Vec::new();
-        for i in 1..5 {
-            let metastore = metastore.clone();
-            let handle = tokio::spawn(async move {
-                let split_metadata = SplitMetadataAndFooterOffsets {
-                    footer_offsets: 1000..2000,
-                    split_metadata: SplitMetadata {
-                        split_id: format!("split-{}", i),
-                        split_state: SplitState::Staged,
-                        num_records: 1,
-                        size_in_bytes: 2,
-                        time_range: Some(RangeInclusive::new(0, 99)),
-                        update_timestamp: Utc::now().timestamp(),
-                        ..Default::default()
-                    },
-                };
-                // stage split
-                metastore
-                    .stage_split(index_id, split_metadata)
-                    .await
-                    .unwrap();
-            });
-            handles.push(handle);
-        }
+        let threads: Vec<_> = (1..5)
+            .map(|thread_id| {
+                // get the tokio handle
+                let handle = Handle::current();
+                let metastore = metastore.clone();
+                thread::spawn(move || {
+                    let split_id = format!("split-{}", thread_id);
 
-        // Publish the split in multiple threads
-        for i in 1..5 {
-            let metastore = metastore.clone();
-            let handle = tokio::spawn(async move {
-                let split_id = format!("split-{}", i);
-                // stage split
-                metastore
-                    .publish_splits(index_id, &[&split_id], CheckpointDelta::default())
-                    .await
-                    .unwrap();
-            });
-            handles.push(handle);
+                    handle.block_on(async move {
+                        let split_metadata = SplitMetadataAndFooterOffsets {
+                            footer_offsets: 1000..2000,
+                            split_metadata: SplitMetadata {
+                                split_id: split_id.clone(),
+                                split_state: SplitState::Staged,
+                                num_records: 1,
+                                size_in_bytes: 2,
+                                time_range: Some(RangeInclusive::new(0, 99)),
+                                update_timestamp: Utc::now().timestamp(),
+                                ..Default::default()
+                            },
+                        };
+                        // stage split
+                        metastore
+                            .stage_split(index_id, split_metadata)
+                            .await
+                            .unwrap();
+
+                        // publish split
+                        metastore
+                            .publish_splits(index_id, &[&split_id], CheckpointDelta::default())
+                            .await
+                            .unwrap();
+                    });
+                })
+            })
+            .collect();
+
+        for thread in threads {
+            thread.join().expect("threads panicked");
         }
-        futures::future::try_join_all(handles).await.unwrap();
 
         let splits = metastore
             .list_splits(index_id, SplitState::Published, None, &[])
