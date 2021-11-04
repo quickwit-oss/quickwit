@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use arc_swap::ArcSwap;
-use quickwit_actors::{KillSwitch, Progress};
+use quickwit_actors::{KillSwitch, Progress, ProtectedZoneGuard};
 use tantivy::common::{AntiCallToken, TerminatingWrite};
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{FileHandle, WatchCallback, WatchHandle, WritePtr};
@@ -62,7 +62,7 @@ impl ControlledDirectory {
         }
     }
 
-    fn check_if_alive(&self) -> io::Result<()> {
+    fn check_if_alive(&self) -> io::Result<ProtectedZoneGuard> {
         self.inner.controls.load().check_if_alive()
     }
 
@@ -88,15 +88,15 @@ struct Controls {
 }
 
 impl Controls {
-    fn check_if_alive(&self) -> io::Result<()> {
-        self.progress.record_progress();
+    fn check_if_alive(&self) -> io::Result<ProtectedZoneGuard> {
         if self.kill_switch.is_dead() {
             return Err(io::Error::new(
                 io::ErrorKind::Other,
                 "Directory kill switch was activated.",
             ));
         }
-        Ok(())
+        let guard = self.progress.protect_zone();
+        Ok(guard)
     }
 }
 
@@ -112,14 +112,14 @@ struct ControlledWrite {
 }
 
 impl ControlledWrite {
-    fn check_if_alive(&self) -> io::Result<()> {
+    fn check_if_alive(&self) -> io::Result<ProtectedZoneGuard> {
         self.controls.load().check_if_alive()
     }
 }
 
 impl io::Write for ControlledWrite {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.check_if_alive()?;
+        let _guard = self.check_if_alive()?;
         self.underlying_wrt.write(buf)
     }
 
@@ -127,22 +127,22 @@ impl io::Write for ControlledWrite {
         // We voluntarily avoid to check the kill switch on flush.
         // This is because the RAMDirectory currently panics if flush
         // is not called before Drop.
-        let _ = self.check_if_alive();
+        let _guard = self.check_if_alive();
         self.underlying_wrt.flush()
     }
 
     fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
-        self.check_if_alive()?;
+        let _guard = self.check_if_alive()?;
         self.underlying_wrt.write_vectored(bufs)
     }
 
     fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.check_if_alive()?;
+        let _guard = self.check_if_alive()?;
         self.underlying_wrt.write_all(buf)
     }
 
     fn write_fmt(&mut self, fmt: fmt::Arguments<'_>) -> io::Result<()> {
-        self.check_if_alive()?;
+        let _guard = self.check_if_alive()?;
         self.underlying_wrt.write_fmt(fmt)
     }
 }
