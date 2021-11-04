@@ -29,6 +29,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::Utc;
+#[cfg(any(test, feature = "testsuite"))]
+use derivative::Derivative;
 use quickwit_index_config::IndexConfig;
 use serde::{Deserialize, Serialize};
 
@@ -60,7 +62,10 @@ pub struct SplitMetadataAndFooterOffsets {
 }
 
 /// A split metadata carries all meta data about a split.
-#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[cfg_attr(all(not(test), not(feature = "testsuite")), derive(PartialEq, Eq))]
+#[cfg_attr(any(test, feature = "testsuite"), derive(Derivative))]
+#[cfg_attr(any(test, feature = "testsuite"), derivative(PartialEq, Eq))]
 pub struct SplitMetadata {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -86,6 +91,9 @@ pub struct SplitMetadata {
     pub split_state: SplitState,
 
     /// Timestamp for tracking when the split state was last modified.
+    // We want to ignore this field when asserting this struct during tests as we
+    // cannot always predict how much time has elapsed.
+    #[cfg_attr(any(test, feature = "testsuite"), derivative(PartialEq = "ignore"))]
     pub update_timestamp: i64,
 
     /// A set of tags for categorizing and searching group of splits.

@@ -70,30 +70,6 @@ pub mod test_suite {
         assert!(matches!(result, ()));
     }
 
-    pub async fn test_metastore_create_index<MetastoreToTest: Metastore + DefaultForTest>() {
-        let metastore = MetastoreToTest::default_for_test().await;
-
-        let index_id = "create-index-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
-
-        // Create an index
-        let result = metastore
-            .create_index(index_metadata.clone())
-            .await
-            .unwrap();
-        assert!(matches!(result, ()));
-
-        // make sure we can query the index
-        assert_eq!(metastore.list_all_splits(index_id).await.unwrap().len(), 0);
-
-        cleanup_index(&metastore, index_id).await;
-    }
-
     pub async fn test_metastore_delete_index<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
@@ -156,65 +132,6 @@ pub mod test_suite {
         assert_eq!(result.index_uri, index_metadata.index_uri);
         assert!(matches!(result.index_config, Arc { .. }));
         assert_eq!(result.checkpoint, index_metadata.checkpoint);
-
-        cleanup_index(&metastore, index_id).await;
-    }
-
-    pub async fn test_metastore_stage_split<MetastoreToTest: Metastore + DefaultForTest>() {
-        let metastore = MetastoreToTest::default_for_test().await;
-        let current_timestamp = Utc::now().timestamp();
-
-        let index_id = "stage-split-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
-
-        let split_id = "stage-split-my-index-one";
-        let split_metadata = SplitMetadataAndFooterOffsets {
-            split_metadata: SplitMetadata {
-                split_id: split_id.to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-            footer_offsets: 1000..2000,
-        };
-
-        // Stage a split on a non-existent index
-        let result = metastore
-            .stage_split("non-existent-index", split_metadata.clone())
-            .await
-            .unwrap_err();
-        assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
-
-        metastore
-            .create_index(index_metadata.clone())
-            .await
-            .unwrap();
-
-        // Stage a split on an index
-        let result = metastore
-            .stage_split(index_id, split_metadata.clone())
-            .await
-            .unwrap();
-        assert!(matches!(result, ()));
-        assert_eq!(
-            metastore.list_all_splits(index_id).await.unwrap(),
-            vec![split_metadata.clone()]
-        );
-
-        // Stage an existent-split on an index
-        let result = metastore
-            .stage_split(index_id, split_metadata)
-            .await
-            .unwrap_err();
-        assert!(matches!(result, MetastoreError::InternalError { .. }));
 
         cleanup_index(&metastore, index_id).await;
     }
@@ -988,82 +905,6 @@ pub mod test_suite {
                     }
                 ]
             );
-
-            cleanup_index(&metastore, index_id).await;
-        }
-    }
-
-    pub async fn test_metastore_mark_splits_for_deletion<
-        MetastoreToTest: Metastore + DefaultForTest,
-    >() {
-        let metastore = MetastoreToTest::default_for_test().await;
-
-        let current_timestamp = Utc::now().timestamp();
-
-        let index_id = "mark-splits-as-deleted-my-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
-
-        let split_id_1 = "mark-splits-as-deleted-my-index-one";
-        let split_metadata_1 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_1.to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
-
-        // Mark a split for deletion on a non-existent index
-        {
-            let result = metastore
-                .mark_splits_for_deletion("non-existent-index", &["non-existent-split"])
-                .await
-                .unwrap_err();
-            assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
-        }
-
-        // Mark a non-existent split for deletion on an index
-        {
-            metastore
-                .create_index(index_metadata.clone())
-                .await
-                .unwrap();
-
-            let result = metastore
-                .mark_splits_for_deletion(index_id, &["non-existent-split"])
-                .await
-                .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
-
-            cleanup_index(&metastore, index_id).await;
-        }
-
-        // Mark an existent split for deletion on an index
-        {
-            metastore
-                .create_index(index_metadata.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_1.clone())
-                .await
-                .unwrap();
-
-            let result = metastore
-                .mark_splits_for_deletion(index_id, &[split_id_1])
-                .await
-                .unwrap();
-            assert!(matches!(result, ()));
 
             cleanup_index(&metastore, index_id).await;
         }
@@ -1974,11 +1815,6 @@ macro_rules! metastore_test_suite {
         #[cfg(test)]
         mod common_tests {
             #[tokio::test]
-            async fn test_metastore_create_index() {
-                crate::tests::test_suite::test_metastore_create_index::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
             async fn test_metastore_delete_index() {
                 crate::tests::test_suite::test_metastore_delete_index::<$metastore_type>().await;
             }
@@ -1989,11 +1825,6 @@ macro_rules! metastore_test_suite {
             }
 
             #[tokio::test]
-            async fn test_metastore_stage_split() {
-                crate::tests::test_suite::test_metastore_stage_split::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
             async fn test_metastore_publish_splits() {
                 crate::tests::test_suite::test_metastore_publish_splits::<$metastore_type>().await;
             }
@@ -2001,13 +1832,6 @@ macro_rules! metastore_test_suite {
             #[tokio::test]
             async fn test_metastore_replace_splits() {
                 crate::tests::test_suite::test_metastore_replace_splits::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_mark_splits_for_deletion() {
-                crate::tests::test_suite::test_metastore_mark_splits_for_deletion::<$metastore_type>(
-                )
-                .await;
             }
 
             #[tokio::test]
@@ -2041,11 +1865,6 @@ macro_rules! metastore_test_suite_for_postgresql {
         #[cfg(test)]
         mod common_tests {
             #[tokio::test]
-            async fn test_metastore_create_index() {
-                crate::tests::test_suite::test_metastore_create_index::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
             async fn test_metastore_delete_index() {
                 crate::tests::test_suite::test_metastore_delete_index::<$metastore_type>().await;
             }
@@ -2056,11 +1875,6 @@ macro_rules! metastore_test_suite_for_postgresql {
             }
 
             #[tokio::test]
-            async fn test_metastore_stage_split() {
-                crate::tests::test_suite::test_metastore_stage_split::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
             async fn test_metastore_publish_splits() {
                 crate::tests::test_suite::test_metastore_publish_splits::<$metastore_type>().await;
             }
@@ -2068,13 +1882,6 @@ macro_rules! metastore_test_suite_for_postgresql {
             #[tokio::test]
             async fn test_metastore_replace_splits() {
                 crate::tests::test_suite::test_metastore_replace_splits::<$metastore_type>().await;
-            }
-
-            #[tokio::test]
-            async fn test_metastore_mark_splits_for_deletion() {
-                crate::tests::test_suite::test_metastore_mark_splits_for_deletion::<$metastore_type>(
-                )
-                .await;
             }
 
             #[tokio::test]
