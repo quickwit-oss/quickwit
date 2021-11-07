@@ -259,6 +259,7 @@ impl IndexingPipelineSupervisor {
 
         // Merge publisher
         let merge_publisher = Publisher::new(
+            "MergePublisher",
             self.params.metastore.clone(),
             merge_planner_mailbox.clone(),
             garbage_collector_mailbox.clone(),
@@ -333,6 +334,7 @@ impl IndexingPipelineSupervisor {
 
         // Publisher
         let publisher = Publisher::new(
+            "Publisher",
             self.params.metastore.clone(),
             merge_planner_mailbox,
             garbage_collector_mailbox,
