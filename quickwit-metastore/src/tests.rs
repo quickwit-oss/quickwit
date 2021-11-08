@@ -42,14 +42,45 @@ pub mod test_suite {
         tags.iter().map(ToString::to_string).collect()
     }
 
-    fn derive_splits(
+    fn make_index_meta(index_id: String) -> IndexMetadata {
+        IndexMetadata {
+            index_id,
+            index_uri: "ram://indexes/my-index".to_string(),
+            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
+            checkpoint: Checkpoint::default(),
+        }
+    }
+
+    fn make_split_meta(
+        split_id: String,
+        split_state: SplitState,
+        time_range: Option<RangeInclusive<i64>>,
+        timestamp: i64,
+        tags: HashSet<String>,
+    ) -> SplitMetadataAndFooterOffsets {
+        SplitMetadataAndFooterOffsets {
+            footer_offsets: 1000..2000,
+            split_metadata: SplitMetadata {
+                split_id,
+                split_state,
+                num_records: 1,
+                size_in_bytes: 2,
+                time_range,
+                update_timestamp: timestamp,
+                tags,
+                ..Default::default()
+            },
+        }
+    }
+
+    fn derive_split_metas(
         splits_with_states: Vec<(SplitMetadataAndFooterOffsets, SplitState)>,
     ) -> Vec<SplitMetadataAndFooterOffsets> {
         splits_with_states
             .into_iter()
-            .map(|(split, state)| SplitMetadataAndFooterOffsets {
+            .map(|(split, split_state)| SplitMetadataAndFooterOffsets {
                 split_metadata: SplitMetadata {
-                    split_state: state,
+                    split_state,
                     ..split.split_metadata
                 },
                 ..split
@@ -89,12 +120,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "delete-index-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = make_index_meta(index_id.to_string());
 
         // Delete a non-existent index
         let result = metastore
@@ -122,12 +148,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "index-metadata-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = make_index_meta(index_id.to_string());
 
         // Get a non-existent index metadata
         let result = metastore
@@ -157,40 +178,25 @@ pub mod test_suite {
         let current_timestamp = Utc::now().timestamp();
 
         let index_id = "publish-splits-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = make_index_meta(index_id.to_string());
 
         let split_id_1 = "publish-splits-index-one";
-        let split_metadata_1 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_1.to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
+        let split_metadata_1 = make_split_meta(
+            split_id_1.to_string(),
+            SplitState::Staged,
+            Some(RangeInclusive::new(0, 99)),
+            current_timestamp,
+            to_set(&[]),
+        );
 
         let split_id_2 = "publish-splits-index-two";
-        let split_metadata_2 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_2.to_string(),
-                split_state: SplitState::Staged,
-                num_records: 5,
-                size_in_bytes: 6,
-                time_range: Some(RangeInclusive::new(30, 99)),
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
+        let split_metadata_2 = make_split_meta(
+            split_id_2.to_string(),
+            SplitState::Staged,
+            Some(RangeInclusive::new(30, 99)),
+            current_timestamp,
+            to_set(&[]),
+        );
 
         // Publish a split on a non-existent index
         {
@@ -244,7 +250,7 @@ pub mod test_suite {
             assert!(matches!(result, ()));
             assert_eq!(
                 metastore.list_all_splits(index_id).await.unwrap(),
-                derive_splits(vec![(split_metadata_1.clone(), SplitState::Published)])
+                derive_split_metas(vec![(split_metadata_1.clone(), SplitState::Published)])
             );
 
             cleanup_index(&metastore, index_id).await;
@@ -279,7 +285,7 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::SplitsNotStaged { .. }));
             assert_eq!(
                 metastore.list_all_splits(index_id).await.unwrap(),
-                derive_splits(vec![(
+                derive_split_metas(vec![(
                     split_metadata_1.clone(),
                     SplitState::ScheduledForDeletion
                 )])
@@ -311,7 +317,7 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
             assert_eq!(
                 metastore.list_all_splits(index_id).await.unwrap(),
-                derive_splits(vec![(split_metadata_1.clone(), SplitState::Staged)])
+                derive_split_metas(vec![(split_metadata_1.clone(), SplitState::Staged)])
             );
 
             cleanup_index(&metastore, index_id).await;
@@ -350,7 +356,7 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
             assert_eq!(
                 metastore.list_all_splits(index_id).await.unwrap(),
-                derive_splits(vec![(
+                derive_split_metas(vec![(
                     split_metadata_1.clone(),
                     SplitState::ScheduledForDeletion
                 )])
@@ -399,7 +405,7 @@ pub mod test_suite {
             });
             assert_eq!(
                 splits,
-                derive_splits(vec![
+                derive_split_metas(vec![
                     (split_metadata_1.clone(), SplitState::Published),
                     (split_metadata_2.clone(), SplitState::Published)
                 ])
@@ -457,54 +463,34 @@ pub mod test_suite {
         let current_timestamp = Utc::now().timestamp();
 
         let index_id = "replace_splits-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = make_index_meta(index_id.to_string());
 
         let split_id_1 = "replace_splits-index-one";
-        let split_metadata_1 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_1.to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: None,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
+        let split_metadata_1 = make_split_meta(
+            split_id_1.to_string(),
+            SplitState::Staged,
+            None,
+            current_timestamp,
+            to_set(&[]),
+        );
 
         let split_id_2 = "replace_splits-index-two";
-        let split_metadata_2 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_2.to_string(),
-                split_state: SplitState::Staged,
-                num_records: 5,
-                size_in_bytes: 6,
-                time_range: None,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
+        let split_metadata_2 = make_split_meta(
+            split_id_2.to_string(),
+            SplitState::Staged,
+            None,
+            current_timestamp,
+            to_set(&[]),
+        );
 
         let split_id_3 = "replace_splits-index-three";
-        let split_metadata_3 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_3.to_string(),
-                split_state: SplitState::Staged,
-                num_records: 5,
-                size_in_bytes: 6,
-                time_range: None,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
+        let split_metadata_3 = make_split_meta(
+            split_id_3.to_string(),
+            SplitState::Staged,
+            None,
+            current_timestamp,
+            to_set(&[]),
+        );
 
         // Replace splits on a non-existent index
         {
@@ -575,7 +561,7 @@ pub mod test_suite {
             });
             assert_eq!(
                 splits,
-                derive_splits(vec![
+                derive_split_metas(vec![
                     (split_metadata_1.clone(), SplitState::Published),
                     (split_metadata_2.clone(), SplitState::Staged)
                 ])
@@ -626,7 +612,7 @@ pub mod test_suite {
             });
             assert_eq!(
                 splits,
-                derive_splits(vec![
+                derive_split_metas(vec![
                     (split_metadata_1.clone(), SplitState::ScheduledForDeletion),
                     (split_metadata_3.clone(), SplitState::Published),
                     (split_metadata_2.clone(), SplitState::Published)
@@ -643,26 +629,16 @@ pub mod test_suite {
         let current_timestamp = Utc::now().timestamp();
 
         let index_id = "delete-splits-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = make_index_meta(index_id.to_string());
 
         let split_id_1 = "delete-splits-index-one";
-        let split_metadata_1 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_1.to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
+        let split_metadata_1 = make_split_meta(
+            split_id_1.to_string(),
+            SplitState::Staged,
+            Some(RangeInclusive::new(0, 99)),
+            current_timestamp,
+            to_set(&[]),
+        );
 
         // Delete a split on a non-existent index
         {
@@ -766,7 +742,7 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::SplitsNotDeletable { .. }));
             assert_eq!(
                 metastore.list_all_splits(index_id).await.unwrap(),
-                derive_splits(vec![(split_metadata_1.clone(), SplitState::Published)])
+                derive_split_metas(vec![(split_metadata_1.clone(), SplitState::Published)])
             );
 
             cleanup_index(&metastore, index_id).await;
@@ -779,78 +755,47 @@ pub mod test_suite {
         let current_timestamp = Utc::now().timestamp();
 
         let index_id = "list-all-splits-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = make_index_meta(index_id.to_string());
 
-        let split_id_1 = "list-all-splits-index-one";
-        let split_metadata_1 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_1.to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
+        let split_metadata_1 = make_split_meta(
+            "list-all-splits-index-one".to_string(),
+            SplitState::Staged,
+            Some(RangeInclusive::new(0, 99)),
+            current_timestamp,
+            to_set(&[]),
+        );
 
-        let split_metadata_2 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-all-splits-index-two".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(100, 199)),
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
+        let split_metadata_2 = make_split_meta(
+            "list-all-splits-index-two".to_string(),
+            SplitState::Staged,
+            Some(RangeInclusive::new(100, 199)),
+            current_timestamp,
+            to_set(&[]),
+        );
 
-        let split_metadata_3 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-all-splits-index-three".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(200, 299)),
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
+        let split_metadata_3 = make_split_meta(
+            "list-all-splits-index-three".to_string(),
+            SplitState::Staged,
+            Some(RangeInclusive::new(200, 299)),
+            current_timestamp,
+            to_set(&[]),
+        );
 
-        let split_metadata_4 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-all-splits-index-four".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(300, 399)),
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
+        let split_metadata_4 = make_split_meta(
+            "list-all-splits-index-four".to_string(),
+            SplitState::Staged,
+            Some(RangeInclusive::new(300, 399)),
+            current_timestamp,
+            to_set(&[]),
+        );
 
-        let split_metadata_5 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-all-splits-index-five".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: None,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
+        let split_metadata_5 = make_split_meta(
+            "list-all-splits-index-five".to_string(),
+            SplitState::Staged,
+            None,
+            current_timestamp,
+            to_set(&[]),
+        );
 
         // List all splits on a non-existent index
         {
@@ -932,83 +877,47 @@ pub mod test_suite {
         let current_timestamp = Utc::now().timestamp();
 
         let index_id = "list-splits-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = make_index_meta(index_id.to_string());
 
-        let split_id_1 = "list-splits-one";
-        let split_metadata_1 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_1.to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
-                tags: to_set(&["foo", "bar"]),
-                demux_num_ops: 0,
-            },
-        };
+        let split_metadata_1 = make_split_meta(
+            "list-splits-one".to_string(),
+            SplitState::Staged,
+            Some(RangeInclusive::new(0, 99)),
+            current_timestamp,
+            to_set(&["foo", "bar"]),
+        );
 
-        let split_metadata_2 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-splits-two".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(100, 199)),
-                update_timestamp: current_timestamp,
-                tags: to_set(&["bar"]),
-                demux_num_ops: 0,
-            },
-        };
+        let split_metadata_2 = make_split_meta(
+            "list-splits-two".to_string(),
+            SplitState::Staged,
+            Some(RangeInclusive::new(100, 199)),
+            current_timestamp,
+            to_set(&["bar"]),
+        );
 
-        let split_metadata_3 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-splits-three".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(200, 299)),
-                update_timestamp: current_timestamp,
-                tags: to_set(&["foo", "baz"]),
-                demux_num_ops: 0,
-            },
-        };
+        let split_metadata_3 = make_split_meta(
+            "list-splits-three".to_string(),
+            SplitState::Staged,
+            Some(RangeInclusive::new(200, 299)),
+            current_timestamp,
+            to_set(&["foo", "baz"]),
+        );
 
-        let split_metadata_4 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-splits-four".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(300, 399)),
-                update_timestamp: current_timestamp,
-                tags: to_set(&["foo"]),
-                demux_num_ops: 0,
-            },
-        };
+        let split_metadata_4 = make_split_meta(
+            "list-splits-four".to_string(),
+            SplitState::Staged,
+            Some(RangeInclusive::new(300, 399)),
+            current_timestamp,
+            to_set(&["foo"]),
+        );
 
-        let split_metadata_5 = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-splits-five".to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: None,
-                update_timestamp: current_timestamp,
-                tags: to_set(&["baz", "biz"]),
-                demux_num_ops: 0,
-            },
-        };
+        let split_metadata_5 = make_split_meta(
+            "list-splits-five".to_string(),
+            SplitState::Staged,
+            None,
+            current_timestamp,
+            to_set(&["baz", "biz"]),
+        );
 
         // List all splits on a non-existent index
         {
@@ -1134,19 +1043,13 @@ pub mod test_suite {
             assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
 
             // add a split without tag
-            let split_metadata_6 = SplitMetadataAndFooterOffsets {
-                footer_offsets: 1000..2000,
-                split_metadata: SplitMetadata {
-                    split_id: "list-splits-six".to_string(),
-                    split_state: SplitState::Staged,
-                    num_records: 1,
-                    size_in_bytes: 2,
-                    time_range: None,
-                    update_timestamp: current_timestamp,
-                    tags: to_set(&[]),
-                    demux_num_ops: 0,
-                },
-            };
+            let split_metadata_6 = make_split_meta(
+                "list-splits-six".to_string(),
+                SplitState::Staged,
+                None,
+                current_timestamp,
+                to_set(&[]),
+            );
             metastore
                 .stage_split(index_id, split_metadata_6.clone())
                 .await
@@ -1195,26 +1098,16 @@ pub mod test_suite {
         let mut current_timestamp = Utc::now().timestamp();
 
         let index_id = "split-update-timestamp-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = make_index_meta(index_id.to_string());
 
         let split_id = "split-update-timestamp-one";
-        let split_metadata = SplitMetadataAndFooterOffsets {
-            footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id.to_string(),
-                split_state: SplitState::Staged,
-                num_records: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
-        };
+        let split_metadata = make_split_meta(
+            split_id.to_string(),
+            SplitState::Staged,
+            Some(RangeInclusive::new(0, 99)),
+            current_timestamp,
+            to_set(&[]),
+        );
 
         // Create an index
         metastore

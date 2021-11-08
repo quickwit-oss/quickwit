@@ -23,7 +23,6 @@ tokio = { version = "1.6", features = ["full"]}
 tracing = "0.1"
 quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
-derivative = "2.2.0"
 
 [dependencies.mockall]
 version = "0.9"
@@ -31,6 +30,10 @@ optional = true
 
 [dependencies.tempfile]
 version = "3"
+optional = true
+
+[dependencies.derivative]
+version = "2.2"
 optional = true
 
 [dev-dependencies]
@@ -41,6 +44,6 @@ quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config", 
 tempfile = '3'
 
 [features]
-testsuite = ["mockall", "tempfile"]
+testsuite = ["mockall", "tempfile", "derivative"]
 ci-test = []
 postgres = [ "diesel", "diesel_migrations" ]
