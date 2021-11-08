@@ -18,3 +18,5 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod api;
+mod helpers;
+mod shard_consumer;
