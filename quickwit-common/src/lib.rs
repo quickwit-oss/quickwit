@@ -20,9 +20,12 @@
 mod coolid;
 pub mod metrics;
 
+use std::fmt::Debug;
 use std::ops::Range;
+use std::str::FromStr;
 
 pub use coolid::new_coolid;
+use tracing::{error, info};
 
 /// Filenames used for hotcache files.
 pub const HOTCACHE_FILENAME: &str = "hotcache";
@@ -68,6 +71,32 @@ pub fn setup_logging_for_tests() {
 
 pub fn split_file(split_id: &str) -> String {
     format!("{}.split", split_id)
+}
+
+pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {
+    if let Ok(value_str) = std::env::var(key) {
+        if let Ok(value) = T::from_str(&value_str) {
+            info!(value=?value, "Setting `{}` from environment", key);
+            return value;
+        } else {
+            error!(value_str=%value_str, "Failed to parse `{}` from environment", key);
+        }
+    }
+    info!(value=?default_value, "Setting `{}` from default", key);
+    default_value
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_get_from_env() {
+        const TEST_KEY: &str = "TEST_KEY";
+        assert_eq!(super::get_from_env(TEST_KEY, 10), 10);
+        std::env::set_var(TEST_KEY, "15");
+        assert_eq!(super::get_from_env(TEST_KEY, 10), 15);
+        std::env::set_var(TEST_KEY, "1invalidnumber");
+        assert_eq!(super::get_from_env(TEST_KEY, 10), 10);
+    }
 }
 
 pub mod fs {

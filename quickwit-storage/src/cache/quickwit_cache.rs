@@ -22,14 +22,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_common::get_from_env;
 
 use crate::{Cache, OwnedBytes, SliceCache};
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
 
-/// Fast field cache capacity is hardcoded to 3GB.
-/// Once the capacity is reached, a LRU strategy is used.
-const FAST_CACHE_CAPACITY: usize = 3_000_000_000;
+const DEFAULT_FAST_CACHE_CAPACITY: usize = 15_000_000_000; // 15 GB
+const FAST_CACHE_CAPACITY_ENV_KEY: &str = "FAST_CACHE_CAPACITY";
 
 pub(crate) struct QuickwitCache {
     router: Vec<(&'static str, Arc<dyn Cache>)>,
@@ -44,9 +44,10 @@ impl From<Vec<(&'static str, Arc<dyn Cache>)>> for QuickwitCache {
 impl Default for QuickwitCache {
     fn default() -> Self {
         let mut quickwit_cache = QuickwitCache::empty();
+        let fast_cache_cap = get_from_env(FAST_CACHE_CAPACITY_ENV_KEY, DEFAULT_FAST_CACHE_CAPACITY);
         quickwit_cache.add_route(
             ".fast",
-            Arc::new(SimpleCache::with_capacity_in_bytes(FAST_CACHE_CAPACITY)),
+            Arc::new(SimpleCache::with_capacity_in_bytes(fast_cache_cap)),
         );
         quickwit_cache
     }

@@ -38,3 +38,17 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 1. Ensure Docker and Docker Compose are correctly installed on your machine (see above)
 2. Start the Jaeger services (UI, collector, agent, ...) running the command `make docker-compose-up DOCKER_SERVICES=jaeger`
 3. Open your browser and visit [localhost:16686](http://localhost:16686/)
+
+
+## Building binaries
+
+Currently, we use [cross](https://github.com/rust-embedded/cross) to build Quickwit binaries for different architectures.
+For this to work, we've had to customize the docker images cross uses. These customizations can be found in docker files located in `./cross-images` folder. To make cross take into account any change on those 
+docker files, you will need to build and push the images on dockerhub by running `make cross-images`. 
+Also, rather than invoking cross locally to build the binaries, you can build the binaries from our CI pipeline. This has two advantages: 
+- One can easily build and share binaries from his working branch without having to setup cross.
+- We can also make sure our binaries build correctly without going through a release process.
+To build the binaries from our CI, just create a branch from your working branch, name it `make-binaries-from-ci` and push. Once the CI passes, you should find all the binary artifacts under the corresponding `Build release packages` run on the `Artifacts` tab. 
+Please note:
+- The branch `make-binaries-from-ci` can be used by any other contributor, therefore should only be used for creating Quickwit binaries.
+- The artifacts for your CI run are only kept for three days.

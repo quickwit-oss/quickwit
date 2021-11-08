@@ -17,10 +17,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
+
 use quickwit_metastore::checkpoint::CheckpointDelta;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Clone)]
 pub struct RawDocBatch {
     pub docs: Vec<String>,
     pub checkpoint_delta: CheckpointDelta,
+}
+
+impl fmt::Debug for RawDocBatch {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RawDocBatch")
+            .field("docs_len", &self.docs.len())
+            .field("checkpoint_delta", &self.checkpoint_delta)
+            .finish()
+    }
 }

@@ -29,6 +29,9 @@
 mod tests;
 
 #[cfg(feature = "postgres")]
+extern crate openssl;
+
+#[cfg(feature = "postgres")]
 #[macro_use]
 extern crate diesel_migrations;
 

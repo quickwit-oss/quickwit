@@ -23,6 +23,8 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use futures::{FutureExt, StreamExt};
+use once_cell::sync::OnceCell;
+use quickwit_common::get_from_env;
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
@@ -42,8 +44,18 @@ use super::FastFieldCollector;
 use crate::leaf::{open_index, warmup};
 use crate::{Result, SearchError};
 
-// TODO: buffer of 5 seems to be sufficient to do the job locally, needs to be tested on a cluster.
-const CONCURRENT_SPLIT_SEARCH_STREAM: usize = 5;
+const SPLIT_STREAM_CONCURRENCY_ENV_KEY: &str = "CONCURRENT_SPLIT_STREAM";
+const DEFAULT_SPLIT_STREAM_CONCURRENCY: usize = 100;
+
+fn get_split_stream_concurrency() -> usize {
+    static INSTANCE: OnceCell<usize> = OnceCell::new();
+    *INSTANCE.get_or_init(|| {
+        get_from_env(
+            SPLIT_STREAM_CONCURRENCY_ENV_KEY,
+            DEFAULT_SPLIT_STREAM_CONCURRENCY,
+        )
+    })
+}
 
 /// `leaf` step of search stream.
 // Note: we return a stream of a result with a tonic::Status error
@@ -85,6 +97,7 @@ async fn leaf_search_results_stream(
     splits: Vec<SplitIdAndFooterOffsets>,
     index_config: Arc<dyn IndexConfig>,
 ) -> impl futures::Stream<Item = crate::Result<LeafSearchStreamResponse>> + Sync + Send + 'static {
+    let split_stream_concurrency = get_split_stream_concurrency();
     futures::stream::iter(splits)
         .map(move |split| {
             leaf_search_stream_single_split(
@@ -95,7 +108,7 @@ async fn leaf_search_results_stream(
             )
             .shared()
         })
-        .buffer_unordered(CONCURRENT_SPLIT_SEARCH_STREAM)
+        .buffer_unordered(split_stream_concurrency)
 }
 
 /// Apply a leaf search on a single split.
