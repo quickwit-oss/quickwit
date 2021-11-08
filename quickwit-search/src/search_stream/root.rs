@@ -24,14 +24,15 @@ use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
 use quickwit_metastore::{Metastore, SplitMetadataAndFooterOffsets};
 use quickwit_proto::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
+use tokio_stream::StreamMap;
 use tracing::*;
 
 use crate::client_pool::Job;
 use crate::cluster_client::ClusterClient;
-use crate::root::{job_for_splits, MAX_CONCURRENT_LEAF_TASKS};
+use crate::root::job_for_splits;
 use crate::{
     extract_split_and_footer_offsets, list_relevant_splits, ClientPool, SearchClientPool,
-    SearchError,
+    SearchError, SearchServiceClient,
 };
 
 /// Perform a distributed search stream.
@@ -56,7 +57,7 @@ pub async fn root_search_stream(
         .collect();
     let leaf_search_jobs: Vec<Job> =
         job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
-    let assigned_leaf_search_jobs = client_pool
+    let assigned_leaf_search_jobs: Vec<(SearchServiceClient, Vec<Job>)> = client_pool
         .assign_jobs(leaf_search_jobs.clone(), &HashSet::default())
         .await?;
 
@@ -65,30 +66,23 @@ pub async fn root_search_stream(
     let index_config_str = serde_json::to_string(&index_metadata.index_config).map_err(|err| {
         SearchError::InternalError(format!("Could not serialize index config {}", err))
     })?;
-    let result_stream = futures::stream::iter(assigned_leaf_search_jobs.into_iter())
-        .map(move |(client, client_jobs)| {
-            (
-                jobs_to_leaf_request(
-                    &search_stream_request,
-                    &index_config_str,
-                    &index_metadata.index_uri,
-                    &split_metadata_map,
-                    &client_jobs,
-                ),
-                client,
-                cluster_client.clone(),
-            )
-        })
-        .map(|(leaf_request, client, cluster_client)| async move {
-            let result = cluster_client
-                .leaf_search_stream((leaf_request, client))
-                .await;
-            result
-        })
-        .buffer_unordered(MAX_CONCURRENT_LEAF_TASKS)
-        .flatten()
-        .map_ok(|response| Bytes::from(response.data));
-    Ok(result_stream)
+    let mut stream_map: StreamMap<usize, _> = StreamMap::new();
+    for (leaf_ord, (client, client_jobs)) in assigned_leaf_search_jobs.into_iter().enumerate() {
+        let leaf_request: LeafSearchStreamRequest = jobs_to_leaf_request(
+            &search_stream_request,
+            &index_config_str,
+            &index_metadata.index_uri,
+            &split_metadata_map,
+            &client_jobs,
+        );
+        let leaf_stream = cluster_client
+            .leaf_search_stream((leaf_request, client))
+            .await;
+        stream_map.insert(leaf_ord, leaf_stream);
+    }
+    Ok(stream_map
+        .map(|(_leaf_ord, result)| result)
+        .map_ok(|leaf_response| Bytes::from(leaf_response.data)))
 }
 
 fn jobs_to_leaf_request(
