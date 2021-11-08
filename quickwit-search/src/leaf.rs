@@ -49,11 +49,13 @@ use crate::SearchError;
 
 fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
     static INSTANCE: OnceCell<MemorySizedCache<String>> = OnceCell::new();
-    let split_footer_cache_cap = get_from_env(
-        SPLIT_FOOTER_CACHE_CAPACITY_ENV_KEY,
-        DEFAULT_SPLIT_FOOTER_CACHE_CAPACITY,
-    );
-    INSTANCE.get_or_init(|| MemorySizedCache::with_capacity_in_bytes(split_footer_cache_cap))
+    INSTANCE.get_or_init(|| {
+        let split_footer_cache_cap = get_from_env(
+            SPLIT_FOOTER_CACHE_CAPACITY_ENV_KEY,
+            DEFAULT_SPLIT_FOOTER_CACHE_CAPACITY,
+        );
+        MemorySizedCache::with_capacity_in_bytes(split_footer_cache_cap)
+    })
 }
 
 async fn get_split_footer_from_cache_or_fetch(
