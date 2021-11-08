@@ -40,6 +40,8 @@ mockall = '0.9'
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage", features=["testsuite"]}
 quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config", features=["testsuite"] }
 tempfile = '3'
+futures = '0.3'
+rand = "0.8"
 
 [features]
 testsuite = ["mockall", "tempfile"]
