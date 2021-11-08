@@ -801,7 +801,6 @@ mod tests {
     use std::mem;
     use std::sync::Arc;
 
-    use proptest::sample::select;
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::split_file;
     use quickwit_index_config::DefaultIndexConfigBuilder;
@@ -1016,7 +1015,7 @@ mod tests {
     }
 
     #[test]
-    fn test_demux_not_cutting_tenants_docs_into_two_splits_thanks_nice_min_max() {
+    fn test_demux_not_cutting_tenants_docs_into_two_splits_thanks_to_nice_min_max() {
         let mut num_docs_map = BTreeMap::new();
         num_docs_map.insert(0, 1);
         num_docs_map.insert(1, 50);
@@ -1049,6 +1048,18 @@ mod tests {
     }
 
     #[test]
+    fn test_demux_should_cut_one_huge_tenant_into_all_splits() {
+        let mut num_docs_map = BTreeMap::new();
+        num_docs_map.insert(0, 30_000_001);
+        let splits =
+            demux_virtual_split(VirtualSplit::new(num_docs_map), 10_000_000, 20_000_000, 3);
+        assert_eq!(splits.len(), 3);
+        assert_eq!(splits[0].total_num_docs(), 10_000_001);
+        assert_eq!(splits[1].total_num_docs(), 10_000_000);
+        assert_eq!(splits[2].total_num_docs(), 10_000_000);
+    }
+
+    #[test]
     #[should_panic(
         expected = "Input split num docs must be `<= max_split_num_docs * output_num_splits`."
     )]
@@ -1063,23 +1074,46 @@ mod tests {
 
     use proptest::prelude::*;
 
-    fn proptest_config() -> ProptestConfig {
-        let mut proptest_config = ProptestConfig::with_cases(20);
-        proptest_config.max_shrink_iters = 600;
-        proptest_config
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+        #[test]
+        fn test_proptest_simulate_demux_with_huge_tenants(tenants_num_docs in gen_tenants_docs()) {
+            test_demux_aux(&tenants_num_docs[..]);
+        }
     }
 
-    proptest! {
-        #![proptest_config(proptest_config())]
-        #[test]
-        fn test_proptest_simulate_demux_with_huge_tenants(tenants_num_docs in proptest::collection::vec(select(&[10_001, 100_001, 1_000_001, 10_000_001, 19_999_999, 20_000_000][..]), 1..1000)) {
-            let num_splits_out = tenants_num_docs.iter().sum::<usize>() / 20_000_000 + 1;
-            let mut num_docs_map = BTreeMap::new();
-            for (i, num_docs) in tenants_num_docs.iter().enumerate() {
-                num_docs_map.insert(i as u64, *num_docs);
-            }
-            let splits = demux_virtual_split(VirtualSplit::new(num_docs_map), 10_000_000, 20_000_000, num_splits_out);
-            assert_eq!(splits.len(), num_splits_out);
+    fn test_demux_aux(tenants_num_docs: &[usize]) {
+        let total_num_docs = tenants_num_docs.iter().sum::<usize>();
+        // We always generate a total_num_docs >= 10_000_000
+        let output_num_splits = total_num_docs / 5_000_000;
+        let mut num_docs_map = BTreeMap::new();
+        for (i, num_docs) in tenants_num_docs.iter().enumerate() {
+            num_docs_map.insert(i as u64, *num_docs);
         }
+        let splits = demux_virtual_split(
+            VirtualSplit::new(num_docs_map),
+            5_000_000,
+            15_000_000,
+            output_num_splits,
+        );
+        let tenant_count_per_split_mean = splits
+            .iter()
+            .map(|split| split.sorted_demux_values().len())
+            .sum::<usize>()
+            / output_num_splits;
+        // Demux at best can divide by output_num_splits the number of tenants, that means with no
+        // cutting.
+        assert!(tenant_count_per_split_mean >= tenants_num_docs.len() / output_num_splits);
+        // Demux at worse put tenants_num_docs.len() / output_num_splits + 1 tenant in each demuxed
+        // split, that means that we cut one tenant for each split.
+        assert!(tenant_count_per_split_mean <= tenants_num_docs.len() / output_num_splits + 1);
+    }
+
+    fn gen_tenants_docs() -> BoxedStrategy<Vec<usize>> {
+        (100..1_000_usize)
+            .prop_flat_map(move |num_tenants| {
+                proptest::collection::vec(100_000..5_000_000_usize, num_tenants)
+            })
+            .boxed()
     }
 }
