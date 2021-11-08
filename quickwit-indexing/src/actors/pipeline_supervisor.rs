@@ -29,7 +29,7 @@ use quickwit_actors::{
 use quickwit_metastore::{Metastore, SplitState};
 use quickwit_storage::StorageUriResolver;
 use tokio::join;
-use tracing::{debug, error, info, info_span, instrument, Span};
+use tracing::{debug, error, info, info_span, Span};
 
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::{
@@ -90,7 +90,7 @@ impl Actor for IndexingPipelineSupervisor {
     }
 
     fn span(&self, _ctx: &ActorContext<Self::Message>) -> Span {
-        info_span!("")
+        info_span!("", index=%&self.params.index_id, gen=self.generation)
     }
 }
 
@@ -186,7 +186,6 @@ impl IndexingPipelineSupervisor {
     }
 
     // TODO this should return an error saying whether we can retry or not.
-    #[instrument(name="", level="info", skip_all, fields(index=%self.params.index_id, gen=self.generation))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Msg>) -> anyhow::Result<()> {
         self.generation += 1;
         self.previous_generations_statistics = self.statistics.clone();
@@ -213,7 +212,6 @@ impl IndexingPipelineSupervisor {
         info!(
             root_dir=%self.params.indexer_params.indexing_directory.path().display(),
             merge_policy=?merge_policy,
-            index_uri=?index_metadata.index_uri,
             "spawn-indexing-pipeline",
         );
         let split_store = IndexingSplitStore::create_with_local_store(
