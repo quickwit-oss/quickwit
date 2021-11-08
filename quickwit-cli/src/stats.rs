@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
+
 use anyhow::{bail, Context};
 use clap::ArgMatches;
 use colored::*;
@@ -91,11 +93,54 @@ pub async fn demux_stats_cli(args: DemuxStatsArgs) -> anyhow::Result<()> {
     let split_meta_and_footers = metastore
         .list_splits(&args.index_id, SplitState::Published, None, &[])
         .await?;
+    let demux_uniq_values: HashSet<String> = split_meta_and_footers
+        .iter()
+        .map(|metadata_and_footer| {
+            metadata_and_footer
+                .split_metadata
+                .tags
+                .iter()
+                .filter(|tag| match_tag_field_name(&demux_field_name, tag))
+                .cloned()
+        })
+        .flatten()
+        .collect();
+    println!("{}", "Statistic reports on demux:".bold());
+    println!(
+        "{}",
+        format!(
+            "- Found {} `{}` unique values in {} splits.",
+            demux_uniq_values.len(),
+            demux_field_name,
+            split_meta_and_footers.len(),
+        )
+    );
+    // Compute split count per demux value.
+    println!(
+        "{}",
+        format!("- Stats on split count per `{}` value.", demux_field_name)
+    );
+    let mut split_counts_per_demux_values = Vec::new();
+    for demux_value in demux_uniq_values {
+        let split_count = split_meta_and_footers
+            .iter()
+            .filter(|split_meta_and_footer| {
+                split_meta_and_footer
+                    .split_metadata
+                    .tags
+                    .contains(&demux_value)
+            })
+            .count();
+        split_counts_per_demux_values.push(split_count);
+    }
+    print_demux_stats(&split_counts_per_demux_values);
+
+    // Compute demux unique values count per split.
     let (non_demuxed_splits, demuxed_splits): (Vec<_>, Vec<_>) = split_meta_and_footers
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|metadata_and_footer| metadata_and_footer.split_metadata)
         .partition(|split| split.demux_num_ops == 0);
-
     let non_demuxed_split_demux_values_counts = non_demuxed_splits
         .iter()
         .map(|split| {
@@ -118,20 +163,18 @@ pub async fn demux_stats_cli(args: DemuxStatsArgs) -> anyhow::Result<()> {
         })
         .sorted()
         .collect_vec();
-
     println!(
         "{}",
         format!(
-            "Statistics report on `{}` unique values count per split.",
+            "- Stats on `{}` unique values count per split.",
             demux_field_name
         )
-        .bold()
     );
-    println!("{}", "Non demuxed splits:".bold());
+    println!("  -> On {} non demuxed splits:", non_demuxed_splits.len());
     print_demux_stats(&non_demuxed_split_demux_values_counts);
-    println!();
-    println!("{}", "Demuxed splits:".bold());
+    println!("  -> On {} demuxed splits:", demuxed_splits.len());
     print_demux_stats(&demuxed_split_demux_values_counts);
+
     Ok(())
 }
 
@@ -142,24 +185,28 @@ fn print_demux_stats(counts: &[usize]) {
     let max_val = counts.iter().max().unwrap();
     println!(
         "{} ± {} in [{} … {}]:   {} ± {} in [{} … {}]",
-        "Mean".green().bold(),
+        "Mean".green(),
         "σ".green(),
         "min".cyan(),
         "max".purple(),
-        format!("{:>2}", mean_val).green().bold(),
+        format!("{:>2}", mean_val).green(),
         format!("{}", std_val).green(),
         format!("{}", min_val).cyan(),
         format!("{}", max_val).purple(),
     );
-    let q1 = percentile(counts, 25);
-    let q2 = percentile(counts, 50);
-    let q3 = percentile(counts, 75);
+    let q1 = percentile(counts, 1);
+    let q25 = percentile(counts, 50);
+    let q50 = percentile(counts, 50);
+    let q75 = percentile(counts, 75);
+    let q99 = percentile(counts, 75);
     println!(
-        "{} [q1, q2, q3] :   [{}, {}, {}]",
-        "Quartiles".green().bold(),
+        "{} [0.01, 0.25, 0.50, 0.75, 0.99] :   [{}, {}, {}, {}, {}]",
+        "Quantiles".green(),
         format!("{}", q1).green(),
-        format!("{}", q2).green(),
-        format!("{}", q3).green(),
+        format!("{}", q25).green(),
+        format!("{}", q50).green(),
+        format!("{}", q75).green(),
+        format!("{}", q99).green(),
     );
 }
 
