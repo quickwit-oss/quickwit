@@ -28,7 +28,7 @@ use quickwit_storage::{
     quickwit_storage_uri_resolver, PutPayload, Storage, StorageErrorKind, StorageResolverError,
     StorageUriResolver,
 };
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::Mutex;
 
 use crate::checkpoint::CheckpointDelta;
 use crate::metastore::match_tags_filter;
@@ -64,39 +64,12 @@ impl InnerSingleFileMetastore {
             cache: HashMap::new(),
         }
     }
-}
-
-/// Single file metastore implementation.
-pub struct SingleFileMetastore {
-    uri: String,
-    inner: Arc<Mutex<InnerSingleFileMetastore>>,
-}
-
-#[allow(dead_code)]
-impl SingleFileMetastore {
-    /// Creates a [`SingleFileMetastore`] for tests.
-    #[doc(hidden)]
-    pub fn for_test() -> Self {
-        use quickwit_storage::RamStorage;
-        SingleFileMetastore::new(Arc::new(RamStorage::default()))
-    }
-
-    /// Creates a [`SingleFileMetastore`] for a specified storage.
-    pub fn new(storage: Arc<dyn Storage>) -> Self {
-        Self {
-            uri: storage.uri(),
-            inner: Arc::new(Mutex::new(InnerSingleFileMetastore::new(storage))),
-        }
-    }
 
     /// Checks whether the index exists in storage.
-    async fn index_exists(
-        inner_metastore: &MutexGuard<'_, InnerSingleFileMetastore>,
-        index_id: &str,
-    ) -> MetastoreResult<bool> {
+    async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
         let metadata_path = meta_path(index_id);
 
-        let exists = inner_metastore
+        let exists = self
             .storage
             .exists(&metadata_path)
             .await
@@ -116,31 +89,21 @@ impl SingleFileMetastore {
         Ok(exists)
     }
 
-    /// Helper used for testing to checks whether the index exists.
-    #[cfg(test)]
-    async fn index_exists_helper(&self, index_id: &str) -> MetastoreResult<bool> {
-        let inner_metastore = self.inner.lock().await;
-        Self::index_exists(&inner_metastore, index_id).await
-    }
-
     /// Returns all of the data associated with the given index.
     ///
     /// If the value is already in cache, then the call returns right away.
     /// If not, it is fetched from the storage.
-    async fn get_index(
-        inner_metastore: &mut MutexGuard<'_, InnerSingleFileMetastore>,
-        index_id: &str,
-    ) -> MetastoreResult<MetadataSet> {
+    async fn get_index(&mut self, index_id: &str) -> MetastoreResult<MetadataSet> {
         // We first check if the index is in the cache...
         {
-            if let Some(index_metadata) = inner_metastore.cache.get(index_id) {
+            if let Some(index_metadata) = self.cache.get(index_id) {
                 return Ok(index_metadata.clone());
             }
         }
 
         // It is not in the cache yet, let's fetch it from the storage...
         let metadata_path = meta_path(index_id);
-        let content = inner_metastore
+        let content = self
             .storage
             .get_all(&metadata_path)
             .await
@@ -172,25 +135,14 @@ impl SingleFileMetastore {
         }
 
         // Finally, update the cache accordingly
-        inner_metastore
-            .cache
+        self.cache
             .insert(index_id.to_string(), metadata_set.clone());
 
         Ok(metadata_set)
     }
 
-    /// Helper used for testing to obtain the data associated with the given index.
-    #[cfg(test)]
-    async fn get_index_helper(&self, index_id: &str) -> MetastoreResult<MetadataSet> {
-        let mut inner_metastore = self.inner.lock().await;
-        Self::get_index(&mut inner_metastore, index_id).await
-    }
-
     /// Serializes the metadata set and stores the data on the storage.
-    async fn put_index(
-        inner_metastore: &mut MutexGuard<'_, InnerSingleFileMetastore>,
-        metadata_set: MetadataSet,
-    ) -> MetastoreResult<()> {
+    async fn put_index(&mut self, metadata_set: MetadataSet) -> MetastoreResult<()> {
         // Serialize metadata set.
         let content: Vec<u8> = serde_json::to_vec_pretty(&metadata_set).map_err(|serde_err| {
             MetastoreError::InternalError {
@@ -203,8 +155,7 @@ impl SingleFileMetastore {
         let metadata_path = meta_path(&index_id);
 
         // Put data back into storage.
-        inner_metastore
-            .storage
+        self.storage
             .put(&metadata_path, Box::new(PutPayload::from(content)))
             .await
             .map_err(|storage_err| match storage_err.kind() {
@@ -221,7 +172,7 @@ impl SingleFileMetastore {
             })?;
 
         // Update the internal data if the storage is successfully updated.
-        inner_metastore.cache.insert(index_id, metadata_set);
+        self.cache.insert(index_id, metadata_set);
 
         Ok(())
     }
@@ -309,15 +260,10 @@ impl SingleFileMetastore {
 
         Ok(is_modified)
     }
-}
 
-#[async_trait]
-impl Metastore for SingleFileMetastore {
-    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
-        let mut inner_metastore = self.inner.lock().await;
-
+    async fn create_index(&mut self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
         // Check for the existence of index.
-        let exists = Self::index_exists(&inner_metastore, &index_metadata.index_id).await?;
+        let exists = self.index_exists(&index_metadata.index_id).await?;
 
         if exists {
             return Err(MetastoreError::IndexAlreadyExists {
@@ -329,16 +275,14 @@ impl Metastore for SingleFileMetastore {
             index: index_metadata,
             splits: HashMap::new(),
         };
-        Self::put_index(&mut inner_metastore, metadata_set).await?;
+        self.put_index(metadata_set).await?;
 
         Ok(())
     }
 
-    async fn delete_index(&self, index_id: &str) -> MetastoreResult<()> {
-        let mut inner_metastore = self.inner.lock().await;
-
+    async fn delete_index(&mut self, index_id: &str) -> MetastoreResult<()> {
         // Check whether the index exists.
-        let exists = Self::index_exists(&inner_metastore, index_id).await?;
+        let exists = self.index_exists(index_id).await?;
 
         if !exists {
             return Err(MetastoreError::IndexDoesNotExist {
@@ -349,8 +293,7 @@ impl Metastore for SingleFileMetastore {
         let metadata_path = meta_path(index_id);
 
         // Delete metadata set from storage.
-        inner_metastore
-            .storage
+        self.storage
             .delete(&metadata_path)
             .await
             .map_err(|storage_err| match storage_err.kind() {
@@ -367,19 +310,17 @@ impl Metastore for SingleFileMetastore {
             })?;
 
         // Update the internal data if the storage is successfully updated.
-        inner_metastore.cache.remove(index_id);
+        self.cache.remove(index_id);
 
         Ok(())
     }
 
     async fn stage_split(
-        &self,
+        &mut self,
         index_id: &str,
         mut metadata: SplitMetadataAndFooterOffsets,
     ) -> MetastoreResult<()> {
-        let mut inner_metastore = self.inner.lock().await;
-
-        let mut metadata_set = Self::get_index(&mut inner_metastore, index_id).await?;
+        let mut metadata_set = self.get_index(index_id).await?;
 
         // Check whether the split exists.
         // If the split exists, return an error to prevent the split from being registered.
@@ -403,39 +344,35 @@ impl Metastore for SingleFileMetastore {
             .splits
             .insert(metadata.split_metadata.split_id.to_string(), metadata);
 
-        Self::put_index(&mut inner_metastore, metadata_set).await?;
+        self.put_index(metadata_set).await?;
 
         Ok(())
     }
 
     async fn publish_splits<'a>(
-        &self,
+        &mut self,
         index_id: &str,
-        split_ids: &[&'a str],
+        split_ids: &[&'_ str],
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
-        let mut inner_metastore = self.inner.lock().await;
-
-        let mut metadata_set = Self::get_index(&mut inner_metastore, index_id).await?;
+        let mut metadata_set = self.get_index(index_id).await?;
         metadata_set
             .index
             .checkpoint
             .try_apply_delta(checkpoint_delta)?;
 
         Self::publish_splits_helper(split_ids, &mut metadata_set)?;
-        Self::put_index(&mut inner_metastore, metadata_set).await?;
+        self.put_index(metadata_set).await?;
         Ok(())
     }
 
     async fn replace_splits<'a>(
-        &self,
+        &mut self,
         index_id: &str,
         new_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
     ) -> MetastoreResult<()> {
-        let mut inner_metastore = self.inner.lock().await;
-
-        let mut metadata_set = Self::get_index(&mut inner_metastore, index_id).await?;
+        let mut metadata_set = self.get_index(index_id).await?;
 
         // Try to publish splits.
         Self::publish_splits_helper(new_split_ids, &mut metadata_set)?;
@@ -443,12 +380,12 @@ impl Metastore for SingleFileMetastore {
         // Mark splits for deletion.
         Self::mark_splits_for_deletion_helper(replaced_split_ids, &mut metadata_set)?;
 
-        Self::put_index(&mut inner_metastore, metadata_set).await?;
+        self.put_index(metadata_set).await?;
         Ok(())
     }
 
     async fn list_splits(
-        &self,
+        &mut self,
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
@@ -473,8 +410,7 @@ impl Metastore for SingleFileMetastore {
             match_tags_filter(split_tags.as_slice(), tags)
         };
 
-        let mut inner_metastore = self.inner.lock().await;
-        let metadata_set = Self::get_index(&mut inner_metastore, index_id).await?;
+        let metadata_set = self.get_index(index_id).await?;
         let splits = metadata_set
             .splits
             .into_values()
@@ -488,40 +424,35 @@ impl Metastore for SingleFileMetastore {
     }
 
     async fn list_all_splits(
-        &self,
+        &mut self,
         index_id: &str,
     ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
-        let mut inner_metastore = self.inner.lock().await;
-        let metadata_set = Self::get_index(&mut inner_metastore, index_id).await?;
+        let metadata_set = self.get_index(index_id).await?;
         let splits = metadata_set.splits.into_values().collect();
         Ok(splits)
     }
 
     async fn mark_splits_for_deletion<'a>(
-        &self,
+        &mut self,
         index_id: &str,
-        split_ids: &[&'a str],
+        split_ids: &[&'_ str],
     ) -> MetastoreResult<()> {
-        let mut inner_metastore = self.inner.lock().await;
-
-        let mut metadata_set = Self::get_index(&mut inner_metastore, index_id).await?;
+        let mut metadata_set = self.get_index(index_id).await?;
 
         let is_modified = Self::mark_splits_for_deletion_helper(split_ids, &mut metadata_set)?;
         if is_modified {
-            Self::put_index(&mut inner_metastore, metadata_set).await?;
+            self.put_index(metadata_set).await?;
         }
 
         Ok(())
     }
 
     async fn delete_splits<'a>(
-        &self,
+        &mut self,
         index_id: &str,
-        split_ids: &[&'a str],
+        split_ids: &[&'_ str],
     ) -> MetastoreResult<()> {
-        let mut inner_metastore = self.inner.lock().await;
-
-        let mut metadata_set = Self::get_index(&mut inner_metastore, index_id).await?;
+        let mut metadata_set = self.get_index(index_id).await?;
 
         let mut split_not_found_ids = vec![];
         let mut split_not_deletable_ids = vec![];
@@ -558,15 +489,143 @@ impl Metastore for SingleFileMetastore {
             });
         }
 
-        Self::put_index(&mut inner_metastore, metadata_set).await?;
+        self.put_index(metadata_set).await?;
 
         Ok(())
     }
 
+    async fn index_metadata(&mut self, index_id: &str) -> MetastoreResult<IndexMetadata> {
+        let metadata_set = self.get_index(index_id).await?;
+        Ok(metadata_set.index)
+    }
+}
+
+/// Single file metastore implementation.
+pub struct SingleFileMetastore {
+    uri: String,
+    inner: Arc<Mutex<InnerSingleFileMetastore>>,
+}
+
+impl SingleFileMetastore {
+    /// Creates a [`SingleFileMetastore`] for tests.
+    #[doc(hidden)]
+    pub fn for_test() -> Self {
+        use quickwit_storage::RamStorage;
+        SingleFileMetastore::new(Arc::new(RamStorage::default()))
+    }
+
+    /// Creates a [`SingleFileMetastore`] for a specified storage.
+    pub fn new(storage: Arc<dyn Storage>) -> Self {
+        Self {
+            uri: storage.uri(),
+            inner: Arc::new(Mutex::new(InnerSingleFileMetastore::new(storage))),
+        }
+    }
+
+    /// Helper used for testing to checks whether the index exists.
+    #[cfg(test)]
+    async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
+        let inner_metastore = self.inner.lock().await;
+        inner_metastore.index_exists(index_id).await
+    }
+
+    /// Helper used for testing to obtain the data associated with the given index.
+    #[cfg(test)]
+    async fn get_index(&self, index_id: &str) -> MetastoreResult<MetadataSet> {
+        let mut inner_metastore = self.inner.lock().await;
+        inner_metastore.get_index(index_id).await
+    }
+}
+
+#[async_trait]
+impl Metastore for SingleFileMetastore {
+    async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
+        let mut inner_metastore = self.inner.lock().await;
+        inner_metastore.create_index(index_metadata).await
+    }
+
+    async fn delete_index(&self, index_id: &str) -> MetastoreResult<()> {
+        let mut inner_metastore = self.inner.lock().await;
+        inner_metastore.delete_index(index_id).await
+    }
+
+    async fn stage_split(
+        &self,
+        index_id: &str,
+        metadata: SplitMetadataAndFooterOffsets,
+    ) -> MetastoreResult<()> {
+        let mut inner_metastore = self.inner.lock().await;
+        inner_metastore.stage_split(index_id, metadata).await
+    }
+
+    async fn publish_splits<'a>(
+        &self,
+        index_id: &str,
+        split_ids: &[&'a str],
+        checkpoint_delta: CheckpointDelta,
+    ) -> MetastoreResult<()> {
+        let mut inner_metastore = self.inner.lock().await;
+        inner_metastore
+            .publish_splits(index_id, split_ids, checkpoint_delta)
+            .await
+    }
+
+    async fn replace_splits<'a>(
+        &self,
+        index_id: &str,
+        new_split_ids: &[&'a str],
+        replaced_split_ids: &[&'a str],
+    ) -> MetastoreResult<()> {
+        let mut inner_metastore = self.inner.lock().await;
+        inner_metastore
+            .replace_splits(index_id, new_split_ids, replaced_split_ids)
+            .await
+    }
+
+    async fn list_splits(
+        &self,
+        index_id: &str,
+        state: SplitState,
+        time_range_opt: Option<Range<i64>>,
+        tags: &[String],
+    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
+        let mut inner_metastore = self.inner.lock().await;
+        inner_metastore
+            .list_splits(index_id, state, time_range_opt, tags)
+            .await
+    }
+
+    async fn list_all_splits(
+        &self,
+        index_id: &str,
+    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
+        let mut inner_metastore = self.inner.lock().await;
+        inner_metastore.list_all_splits(index_id).await
+    }
+
+    async fn mark_splits_for_deletion<'a>(
+        &self,
+        index_id: &str,
+        split_ids: &[&'a str],
+    ) -> MetastoreResult<()> {
+        let mut inner_metastore = self.inner.lock().await;
+        inner_metastore
+            .mark_splits_for_deletion(index_id, split_ids)
+            .await
+    }
+
+    async fn delete_splits<'a>(
+        &self,
+        index_id: &str,
+        split_ids: &[&'a str],
+    ) -> MetastoreResult<()> {
+        let mut inner_metastore = self.inner.lock().await;
+        inner_metastore.delete_splits(index_id, split_ids).await
+    }
+
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
         let mut inner_metastore = self.inner.lock().await;
-        let metadata_set = Self::get_index(&mut inner_metastore, index_id).await?;
-        Ok(metadata_set.index)
+        inner_metastore.index_metadata(index_id).await
     }
 
     fn uri(&self) -> String {
@@ -651,7 +710,7 @@ mod tests {
 
         {
             // Check for the existence of index.
-            let result = metastore.index_exists_helper(index_id).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = false;
             assert_eq!(result, expected);
 
@@ -666,7 +725,7 @@ mod tests {
             metastore.create_index(index_metadata).await.unwrap();
 
             // Check for the existence of index.
-            let result = metastore.index_exists_helper(index_id).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = true;
             assert_eq!(result, expected);
         }
@@ -679,7 +738,7 @@ mod tests {
 
         {
             // Check for the existence of index.
-            let result = metastore.index_exists_helper(index_id).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = false;
             assert_eq!(result, expected);
 
@@ -697,12 +756,12 @@ mod tests {
                 .unwrap();
 
             // Check for the existence of index.
-            let result = metastore.index_exists_helper(index_id).await.unwrap();
+            let result = metastore.index_exists(index_id).await.unwrap();
             let expected = true;
             assert_eq!(result, expected);
 
             // Open index and check its metadata
-            let created_index = metastore.get_index_helper(index_id).await.unwrap();
+            let created_index = metastore.get_index(index_id).await.unwrap();
             assert_eq!(created_index.index.index_id, index_metadata.index_id);
             assert_eq!(
                 created_index.index.index_uri.clone(),
@@ -715,10 +774,7 @@ mod tests {
             );
 
             // Open a non-existent index.
-            let metastore_error = metastore
-                .get_index_helper("non-existent-index")
-                .await
-                .unwrap_err();
+            let metastore_error = metastore.get_index("non-existent-index").await.unwrap_err();
             assert!(matches!(
                 metastore_error,
                 MetastoreError::IndexDoesNotExist { .. }
@@ -830,7 +886,7 @@ mod tests {
             .unwrap();
 
         // getting metadatset with inconsistent indexi_id should raise an error.
-        let metastore_error = metastore.get_index_helper(index_id).await.unwrap_err();
+        let metastore_error = metastore.get_index(index_id).await.unwrap_err();
         assert!(matches!(
             metastore_error,
             MetastoreError::InternalError { .. }
