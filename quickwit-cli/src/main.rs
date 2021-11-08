@@ -32,6 +32,7 @@ use quickwit_cli::*;
 use quickwit_common::net::socket_addr_from_str;
 use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
+use stats::StatsCliSubCommand;
 use tracing::{info, Level};
 use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::prelude::*;
@@ -39,6 +40,7 @@ use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, PartialEq)]
 enum CliCommand {
+    // Subcommands
     ExtractSplit(ExtractSplitArgs),
     InspectSplit(InspectSplitArgs),
     New(CreateIndexArgs),
@@ -47,11 +49,14 @@ enum CliCommand {
     Serve(ServeArgs),
     GarbageCollect(GarbageCollectIndexArgs),
     Delete(DeleteIndexArgs),
+    // Stats subcommands
+    Stats(StatsCliSubCommand),
 }
 
 impl CliCommand {
     fn default_log_level(&self) -> Level {
         match self {
+            CliCommand::Stats(_) => Level::INFO,
             CliCommand::ExtractSplit(_) => Level::INFO,
             CliCommand::InspectSplit(_) => Level::INFO,
             CliCommand::New(_) => Level::WARN,
@@ -69,6 +74,7 @@ impl CliCommand {
             submatches_opt.ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
 
         match subcommand {
+            "stats" => StatsCliSubCommand::parse_cli_args(submatches).map(CliCommand::Stats),
             "new" => Self::parse_new_args(submatches),
             "index" => Self::parse_index_args(submatches),
             "search" => Self::parse_search_args(submatches),
@@ -394,6 +400,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let command_res = match command {
+        CliCommand::Stats(stats_command) => stats_command.execute().await,
         CliCommand::ExtractSplit(args) => extract_split_cli(args).await,
         CliCommand::InspectSplit(args) => inspect_split_cli(args).await,
         CliCommand::New(args) => create_index_cli(args).await,
