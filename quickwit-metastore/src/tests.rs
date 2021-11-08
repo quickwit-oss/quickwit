@@ -42,6 +42,21 @@ pub mod test_suite {
         tags.iter().map(ToString::to_string).collect()
     }
 
+    fn derive_splits(
+        splits_with_states: Vec<(SplitMetadataAndFooterOffsets, SplitState)>,
+    ) -> Vec<SplitMetadataAndFooterOffsets> {
+        splits_with_states
+            .into_iter()
+            .map(|(split, state)| SplitMetadataAndFooterOffsets {
+                split_metadata: SplitMetadata {
+                    split_state: state,
+                    ..split.split_metadata
+                },
+                ..split
+            })
+            .collect()
+    }
+
     async fn cleanup_index(metastore: &dyn Metastore, index_id: &str) {
         // List all splits.
         let all_splits = metastore.list_all_splits(index_id).await.unwrap();
@@ -99,8 +114,8 @@ pub mod test_suite {
         assert!(matches!(result, ()));
 
         // check index is really gone
-        let result = metastore.list_all_splits(index_id).await.unwrap_err();
-        assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
+        let error = metastore.list_all_splits(index_id).await.unwrap_err();
+        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
     }
 
     pub async fn test_metastore_index_metadata<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -229,52 +244,7 @@ pub mod test_suite {
             assert!(matches!(result, ()));
             assert_eq!(
                 metastore.list_all_splits(index_id).await.unwrap(),
-                vec![SplitMetadataAndFooterOffsets {
-                    split_metadata: SplitMetadata {
-                        split_state: SplitState::Published,
-                        ..split_metadata_1.clone().split_metadata
-                    },
-                    ..split_metadata_1.clone()
-                }]
-            );
-
-            cleanup_index(&metastore, index_id).await;
-        }
-
-        // Publish a published split on an index
-        {
-            metastore
-                .create_index(index_metadata.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_1.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .publish_splits(index_id, &[split_id_1], CheckpointDelta::from(1..12))
-                .await
-                .unwrap();
-
-            let publish_error = metastore
-                .publish_splits(index_id, &[split_id_1], CheckpointDelta::from(1..12))
-                .await
-                .unwrap_err();
-            assert!(matches!(
-                publish_error,
-                MetastoreError::IncompatibleCheckpointDelta(_)
-            ));
-            assert_eq!(
-                metastore.list_all_splits(index_id).await.unwrap(),
-                vec![SplitMetadataAndFooterOffsets {
-                    split_metadata: SplitMetadata {
-                        split_state: SplitState::Published,
-                        ..split_metadata_1.clone().split_metadata
-                    },
-                    ..split_metadata_1.clone()
-                }]
+                derive_splits(vec![(split_metadata_1.clone(), SplitState::Published)])
             );
 
             cleanup_index(&metastore, index_id).await;
@@ -309,13 +279,10 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::SplitsNotStaged { .. }));
             assert_eq!(
                 metastore.list_all_splits(index_id).await.unwrap(),
-                vec![SplitMetadataAndFooterOffsets {
-                    split_metadata: SplitMetadata {
-                        split_state: SplitState::ScheduledForDeletion,
-                        ..split_metadata_1.clone().split_metadata
-                    },
-                    ..split_metadata_1.clone()
-                }]
+                derive_splits(vec![(
+                    split_metadata_1.clone(),
+                    SplitState::ScheduledForDeletion
+                )])
             );
 
             cleanup_index(&metastore, index_id).await;
@@ -344,54 +311,7 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
             assert_eq!(
                 metastore.list_all_splits(index_id).await.unwrap(),
-                vec![SplitMetadataAndFooterOffsets {
-                    split_metadata: SplitMetadata {
-                        split_state: SplitState::Staged,
-                        ..split_metadata_1.clone().split_metadata
-                    },
-                    ..split_metadata_1.clone()
-                }]
-            );
-
-            cleanup_index(&metastore, index_id).await;
-        }
-
-        // Publish a published split and non-existant split on an index
-        {
-            metastore
-                .create_index(index_metadata.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_1.clone())
-                .await
-                .unwrap();
-
-            let result = metastore
-                .publish_splits(index_id, &[split_id_1], CheckpointDelta::from(15..18))
-                .await
-                .unwrap();
-            assert!(matches!(result, ()));
-
-            let result = metastore
-                .publish_splits(
-                    index_id,
-                    &[split_id_1, "non-existent-split"],
-                    CheckpointDelta::from(18..24),
-                )
-                .await
-                .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
-            assert_eq!(
-                metastore.list_all_splits(index_id).await.unwrap(),
-                vec![SplitMetadataAndFooterOffsets {
-                    split_metadata: SplitMetadata {
-                        split_state: SplitState::Published,
-                        ..split_metadata_1.clone().split_metadata
-                    },
-                    ..split_metadata_1.clone()
-                }]
+                derive_splits(vec![(split_metadata_1.clone(), SplitState::Staged)])
             );
 
             cleanup_index(&metastore, index_id).await;
@@ -430,69 +350,10 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
             assert_eq!(
                 metastore.list_all_splits(index_id).await.unwrap(),
-                vec![SplitMetadataAndFooterOffsets {
-                    split_metadata: SplitMetadata {
-                        split_state: SplitState::ScheduledForDeletion,
-                        ..split_metadata_1.clone().split_metadata
-                    },
-                    ..split_metadata_1.clone()
-                }]
-            );
-
-            cleanup_index(&metastore, index_id).await;
-        }
-
-        // Publish staged splits on an index
-        {
-            metastore
-                .create_index(index_metadata.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_1.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_2.clone())
-                .await
-                .unwrap();
-
-            let result = metastore
-                .publish_splits(
-                    index_id,
-                    &[split_id_1, split_id_2],
-                    CheckpointDelta::from(24..26),
-                )
-                .await
-                .unwrap();
-            assert!(matches!(result, ()));
-            let mut splits = metastore.list_all_splits(index_id).await.unwrap();
-            splits.sort_by(|meta1, meta2| {
-                meta1
-                    .split_metadata
-                    .split_id
-                    .cmp(&meta2.split_metadata.split_id)
-            });
-            assert_eq!(
-                splits,
-                vec![
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_state: SplitState::Published,
-                            ..split_metadata_1.clone().split_metadata
-                        },
-                        ..split_metadata_1.clone()
-                    },
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_state: SplitState::Published,
-                            ..split_metadata_2.clone().split_metadata
-                        },
-                        ..split_metadata_2.clone()
-                    },
-                ]
+                derive_splits(vec![(
+                    split_metadata_1.clone(),
+                    SplitState::ScheduledForDeletion
+                )])
             );
 
             cleanup_index(&metastore, index_id).await;
@@ -538,22 +399,10 @@ pub mod test_suite {
             });
             assert_eq!(
                 splits,
-                vec![
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_state: SplitState::Published,
-                            ..split_metadata_1.clone().split_metadata
-                        },
-                        ..split_metadata_1.clone()
-                    },
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_state: SplitState::Published,
-                            ..split_metadata_2.clone().split_metadata
-                        },
-                        ..split_metadata_2.clone()
-                    },
-                ]
+                derive_splits(vec![
+                    (split_metadata_1.clone(), SplitState::Published),
+                    (split_metadata_2.clone(), SplitState::Published)
+                ])
             );
 
             cleanup_index(&metastore, index_id).await;
@@ -690,98 +539,6 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Replace a publish split with a non existing split
-        {
-            metastore
-                .create_index(index_metadata.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_1.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .publish_splits(index_id, &[split_id_1], CheckpointDelta::default())
-                .await
-                .unwrap();
-
-            let result = metastore
-                .replace_splits(index_id, &[split_id_2], &[split_id_1])
-                .await
-                .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitsDoNotExist { .. }));
-
-            cleanup_index(&metastore, index_id).await;
-        }
-
-        // Replace a publish split with a deleted split
-        {
-            metastore
-                .create_index(index_metadata.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_1.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .stage_split(index_id, split_metadata_2.clone())
-                .await
-                .unwrap();
-
-            metastore
-                .publish_splits(
-                    index_id,
-                    &[split_id_1, split_id_2],
-                    CheckpointDelta::default(),
-                )
-                .await
-                .unwrap();
-
-            metastore
-                .mark_splits_for_deletion(index_id, &[split_id_2])
-                .await
-                .unwrap();
-
-            let result = metastore
-                .replace_splits(index_id, &[split_id_2], &[split_id_1])
-                .await
-                .unwrap_err();
-            assert!(matches!(result, MetastoreError::SplitsNotStaged { .. }));
-            let mut splits = metastore.list_all_splits(index_id).await.unwrap();
-            splits.sort_by(|meta1, meta2| {
-                meta1
-                    .split_metadata
-                    .split_id
-                    .cmp(&meta2.split_metadata.split_id)
-            });
-            assert_eq!(
-                splits,
-                vec![
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_state: SplitState::Published,
-                            ..split_metadata_1.clone().split_metadata
-                        },
-                        ..split_metadata_1.clone()
-                    },
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_state: SplitState::ScheduledForDeletion,
-                            ..split_metadata_2.clone().split_metadata
-                        },
-                        ..split_metadata_2.clone()
-                    }
-                ]
-            );
-
-            cleanup_index(&metastore, index_id).await;
-        }
-
         // Replace a publish split with mixed splits
         {
             metastore
@@ -818,22 +575,10 @@ pub mod test_suite {
             });
             assert_eq!(
                 splits,
-                vec![
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_state: SplitState::Published,
-                            ..split_metadata_1.clone().split_metadata
-                        },
-                        ..split_metadata_1.clone()
-                    },
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_state: SplitState::Staged,
-                            ..split_metadata_2.clone().split_metadata
-                        },
-                        ..split_metadata_2.clone()
-                    },
-                ]
+                derive_splits(vec![
+                    (split_metadata_1.clone(), SplitState::Published),
+                    (split_metadata_2.clone(), SplitState::Staged)
+                ])
             );
 
             cleanup_index(&metastore, index_id).await;
@@ -881,29 +626,11 @@ pub mod test_suite {
             });
             assert_eq!(
                 splits,
-                vec![
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_state: SplitState::ScheduledForDeletion,
-                            ..split_metadata_1.clone().split_metadata
-                        },
-                        ..split_metadata_1.clone()
-                    },
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_state: SplitState::Published,
-                            ..split_metadata_3.clone().split_metadata
-                        },
-                        ..split_metadata_3.clone()
-                    },
-                    SplitMetadataAndFooterOffsets {
-                        split_metadata: SplitMetadata {
-                            split_state: SplitState::Published,
-                            ..split_metadata_2.clone().split_metadata
-                        },
-                        ..split_metadata_2.clone()
-                    }
-                ]
+                derive_splits(vec![
+                    (split_metadata_1.clone(), SplitState::ScheduledForDeletion),
+                    (split_metadata_3.clone(), SplitState::Published),
+                    (split_metadata_2.clone(), SplitState::Published)
+                ])
             );
 
             cleanup_index(&metastore, index_id).await;
@@ -937,7 +664,7 @@ pub mod test_suite {
             },
         };
 
-        // Delete a split marked for deletion on a non-existent index
+        // Delete a split on a non-existent index
         {
             let result = metastore
                 .delete_splits("non-existent-index", &["non-existent-split"])
@@ -946,7 +673,7 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
         }
 
-        // Delete a non-existent split marked for deletion on an index
+        // Delete a non-existent split on an index
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -1039,13 +766,7 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::SplitsNotDeletable { .. }));
             assert_eq!(
                 metastore.list_all_splits(index_id).await.unwrap(),
-                vec![SplitMetadataAndFooterOffsets {
-                    split_metadata: SplitMetadata {
-                        split_state: SplitState::Published,
-                        ..split_metadata_1.split_metadata
-                    },
-                    ..split_metadata_1
-                }]
+                derive_splits(vec![(split_metadata_1.clone(), SplitState::Published)])
             );
 
             cleanup_index(&metastore, index_id).await;
@@ -1381,34 +1102,6 @@ pub mod test_suite {
             assert_eq!(splits.get("list-splits-four"), None);
             assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
 
-            let range = Some(Range { start: 0, end: 100 });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), Some(&split_metadata_1));
-            assert_eq!(splits.get("list-splits-two"), None);
-            assert_eq!(splits.get("list-splits-three"), None);
-            assert_eq!(splits.get("list-splits-four"), None);
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range { start: 0, end: 101 });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), Some(&split_metadata_1));
-            assert_eq!(splits.get("list-splits-two"), Some(&split_metadata_2));
-            assert_eq!(splits.get("list-splits-three"), None);
-            assert_eq!(splits.get("list-splits-four"), None);
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
             let range = Some(Range { start: 0, end: 199 });
             let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
                 .list_splits(index_id, SplitState::Staged, range, &[])
@@ -1421,229 +1114,6 @@ pub mod test_suite {
             assert_eq!(splits.get("list-splits-two"), Some(&split_metadata_2));
             assert_eq!(splits.get("list-splits-three"), None);
             assert_eq!(splits.get("list-splits-four"), None);
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range { start: 0, end: 200 });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), Some(&split_metadata_1));
-            assert_eq!(splits.get("list-splits-two"), Some(&split_metadata_2));
-            assert_eq!(splits.get("list-splits-three"), None);
-            assert_eq!(splits.get("list-splits-four"), None);
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range { start: 0, end: 201 });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), Some(&split_metadata_1));
-            assert_eq!(splits.get("list-splits-two"), Some(&split_metadata_2));
-            assert_eq!(splits.get("list-splits-three"), Some(&split_metadata_3));
-            assert_eq!(splits.get("list-splits-four"), None);
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range { start: 0, end: 299 });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), Some(&split_metadata_1));
-            assert_eq!(splits.get("list-splits-two"), Some(&split_metadata_2));
-            assert_eq!(splits.get("list-splits-three"), Some(&split_metadata_3));
-            assert_eq!(splits.get("list-splits-four"), None);
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range { start: 0, end: 300 });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), Some(&split_metadata_1));
-            assert_eq!(splits.get("list-splits-two"), Some(&split_metadata_2));
-            assert_eq!(splits.get("list-splits-three"), Some(&split_metadata_3));
-            assert_eq!(splits.get("list-splits-four"), None);
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range { start: 0, end: 301 });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), Some(&split_metadata_1));
-            assert_eq!(splits.get("list-splits-two"), Some(&split_metadata_2));
-            assert_eq!(splits.get("list-splits-three"), Some(&split_metadata_3));
-            assert_eq!(splits.get("list-splits-four"), Some(&split_metadata_4));
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range {
-                start: 301,
-                end: 400,
-            });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), None);
-            assert_eq!(splits.get("list-splits-two"), None);
-            assert_eq!(splits.get("list-splits-three"), None);
-            assert_eq!(splits.get("list-splits-four"), Some(&split_metadata_4));
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range {
-                start: 300,
-                end: 400,
-            });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), None);
-            assert_eq!(splits.get("list-splits-two"), None);
-            assert_eq!(splits.get("list-splits-three"), None);
-            assert_eq!(splits.get("list-splits-four"), Some(&split_metadata_4));
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range {
-                start: 299,
-                end: 400,
-            });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), None);
-            assert_eq!(splits.get("list-splits-two"), None);
-            assert_eq!(splits.get("list-splits-three"), Some(&split_metadata_3));
-            assert_eq!(splits.get("list-splits-four"), Some(&split_metadata_4));
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range {
-                start: 201,
-                end: 400,
-            });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), None);
-            assert_eq!(splits.get("list-splits-two"), None);
-            assert_eq!(splits.get("list-splits-three"), Some(&split_metadata_3));
-            assert_eq!(splits.get("list-splits-four"), Some(&split_metadata_4));
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range {
-                start: 200,
-                end: 400,
-            });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), None);
-            assert_eq!(splits.get("list-splits-two"), None);
-            assert_eq!(splits.get("list-splits-three"), Some(&split_metadata_3));
-            assert_eq!(splits.get("list-splits-four"), Some(&split_metadata_4));
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range {
-                start: 199,
-                end: 400,
-            });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), None);
-            assert_eq!(splits.get("list-splits-two"), Some(&split_metadata_2));
-            assert_eq!(splits.get("list-splits-three"), Some(&split_metadata_3));
-            assert_eq!(splits.get("list-splits-four"), Some(&split_metadata_4));
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range {
-                start: 101,
-                end: 400,
-            });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), None);
-            assert_eq!(splits.get("list-splits-two"), Some(&split_metadata_2));
-            assert_eq!(splits.get("list-splits-three"), Some(&split_metadata_3));
-            assert_eq!(splits.get("list-splits-four"), Some(&split_metadata_4));
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range {
-                start: 101,
-                end: 400,
-            });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), None);
-            assert_eq!(splits.get("list-splits-two"), Some(&split_metadata_2));
-            assert_eq!(splits.get("list-splits-three"), Some(&split_metadata_3));
-            assert_eq!(splits.get("list-splits-four"), Some(&split_metadata_4));
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range {
-                start: 100,
-                end: 400,
-            });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), None);
-            assert_eq!(splits.get("list-splits-two"), Some(&split_metadata_2));
-            assert_eq!(splits.get("list-splits-three"), Some(&split_metadata_3));
-            assert_eq!(splits.get("list-splits-four"), Some(&split_metadata_4));
             assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
 
             let range = Some(Range {
@@ -1661,23 +1131,6 @@ pub mod test_suite {
             assert_eq!(splits.get("list-splits-two"), Some(&split_metadata_2));
             assert_eq!(splits.get("list-splits-three"), Some(&split_metadata_3));
             assert_eq!(splits.get("list-splits-four"), Some(&split_metadata_4));
-            assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
-
-            let range = Some(Range {
-                start: 1000,
-                end: 1100,
-            });
-            let splits: HashMap<String, SplitMetadataAndFooterOffsets> = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
-                .collect();
-            assert_eq!(splits.get("list-splits-one"), None);
-            assert_eq!(splits.get("list-splits-two"), None);
-            assert_eq!(splits.get("list-splits-three"), None);
-            assert_eq!(splits.get("list-splits-four"), None);
             assert_eq!(splits.get("list-splits-five"), Some(&split_metadata_5));
 
             // add a split without tag
