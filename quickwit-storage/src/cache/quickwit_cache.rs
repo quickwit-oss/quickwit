@@ -28,9 +28,7 @@ use crate::{Cache, OwnedBytes, SliceCache};
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
 
-/// Fast field cache capacity is hardcoded to 3GB.
-/// Once the capacity is reached, a LRU strategy is used.
-const DEFAULT_FAST_CACHE_CAPACITY: usize = 3_000_000_000;
+const DEFAULT_FAST_CACHE_CAPACITY: usize = 15_000_000_000; // 15 GB
 const FAST_CACHE_CAPACITY_ENV_KEY: &str = "FAST_CACHE_CAPACITY";
 
 pub(crate) struct QuickwitCache {
