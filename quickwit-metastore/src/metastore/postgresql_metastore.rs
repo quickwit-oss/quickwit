@@ -483,6 +483,11 @@ impl PostgresqlMetastore {
 
 #[async_trait]
 impl Metastore for PostgresqlMetastore {
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
+        self.connection_pool.get_timeout(CONNECTION_POOL_TIMEOUT)?;
+        Ok(())
+    }
+
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
         // Serialize the index metadata to fit the database model.
         let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {

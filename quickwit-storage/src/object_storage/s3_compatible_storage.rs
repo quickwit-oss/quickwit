@@ -34,8 +34,8 @@ use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
 use rusoto_s3::{
     AbortMultipartUploadRequest, CompleteMultipartUploadRequest, CompletedMultipartUpload,
     CompletedPart, CreateMultipartUploadError, CreateMultipartUploadRequest, DeleteObjectRequest,
-    GetObjectRequest, HeadObjectError, HeadObjectRequest, PutObjectError, PutObjectRequest,
-    S3Client, UploadPartRequest, S3,
+    GetObjectRequest, HeadObjectError, HeadObjectRequest, ListObjectsV2Request, PutObjectError,
+    PutObjectRequest, S3Client, UploadPartRequest, S3,
 };
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -454,6 +454,17 @@ async fn download_all(byte_stream: &mut ByteStream, output: &mut Vec<u8>) -> io:
 
 #[async_trait]
 impl Storage for S3CompatibleObjectStorage {
+    async fn check(&self) -> anyhow::Result<()> {
+        self.s3_client
+            .list_objects_v2(ListObjectsV2Request {
+                bucket: self.bucket.clone(),
+                max_keys: Some(1),
+                ..Default::default()
+            })
+            .await?;
+        Ok(())
+    }
+
     async fn put(
         &self,
         path: &Path,

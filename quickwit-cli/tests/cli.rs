@@ -136,7 +136,7 @@ fn test_cmd_index_on_non_existing_index() -> Result<()> {
     )
     .assert()
     .failure()
-    .stderr(predicate::str::contains("does not exist"));
+    .stderr(predicate::str::contains("❌ index"));
 
     Ok(())
 }

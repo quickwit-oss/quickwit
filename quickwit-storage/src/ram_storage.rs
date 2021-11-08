@@ -68,6 +68,10 @@ impl RamStorage {
 
 #[async_trait]
 impl Storage for RamStorage {
+    async fn check(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     async fn put(
         &self,
         path: &Path,

@@ -198,3 +198,28 @@ pub struct SourceConfig {
     pub source_type: String,
     pub params: serde_json::Value,
 }
+
+impl SourceConfig {
+    pub async fn check_source_available(&self) -> anyhow::Result<()> {
+        match &*self.source_type {
+            "file" => {
+                if let Some(path) = self.params.get("filepath").and_then(|v| v.as_str()) {
+                    if !std::path::Path::new(path).exists() {
+                        anyhow::bail!("Source `{}` does not exist", path)
+                    }
+                }
+                Ok(())
+            }
+            #[cfg(feature = "kafka")]
+            "kafka" => kafka_source::check(self.params.clone()),
+            "vec" => Ok(()),
+            unrecognized_source_type => {
+                tracing::warn!(
+                    "No check implemented for source type `{}`",
+                    unrecognized_source_type
+                );
+                Ok(())
+            }
+        }
+    }
+}

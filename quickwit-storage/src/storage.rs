@@ -155,6 +155,9 @@ impl From<&'static [u8]> for PutPayload {
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Storage: Send + Sync + 'static {
+    /// Check storage connection if applicable
+    async fn check(&self) -> anyhow::Result<()>;
+
     /// Saves a file into the storage.
     async fn put(&self, path: &Path, payload: Box<dyn PutPayloadProvider>) -> StorageResult<()>;
 
