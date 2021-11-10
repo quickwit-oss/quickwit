@@ -171,7 +171,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
             footer_offsets: 1000..2000,
@@ -228,7 +229,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -242,7 +244,8 @@ pub mod test_suite {
                 num_records: 5,
                 size_in_bytes: 6,
                 time_range: Some(RangeInclusive::new(30, 99)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -582,7 +585,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: None,
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -596,7 +600,8 @@ pub mod test_suite {
                 num_records: 5,
                 size_in_bytes: 6,
                 time_range: None,
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -610,7 +615,8 @@ pub mod test_suite {
                 num_records: 5,
                 size_in_bytes: 6,
                 time_range: None,
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -806,7 +812,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -880,7 +887,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -1006,7 +1014,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -1019,7 +1028,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(100, 199)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -1032,7 +1042,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(200, 299)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -1045,7 +1056,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(300, 399)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -1058,7 +1070,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: None,
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -1141,7 +1154,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 tags: to_set(&["foo", "bar"]),
                 demux_num_ops: 0,
             },
@@ -1155,7 +1169,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(100, 199)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 tags: to_set(&["bar"]),
                 demux_num_ops: 0,
             },
@@ -1169,7 +1184,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(200, 299)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 tags: to_set(&["foo", "baz"]),
                 demux_num_ops: 0,
             },
@@ -1183,7 +1199,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(300, 399)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 tags: to_set(&["foo"]),
                 demux_num_ops: 0,
             },
@@ -1197,7 +1214,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: None,
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 tags: to_set(&["baz", "biz"]),
                 demux_num_ops: 0,
             },
@@ -1625,7 +1643,8 @@ pub mod test_suite {
                     num_records: 1,
                     size_in_bytes: 2,
                     time_range: None,
-                    update_timestamp: current_timestamp,
+                    created_at: current_timestamp,
+                    updated_at: current_timestamp,
                     tags: to_set(&[]),
                     demux_num_ops: 0,
                 },
@@ -1696,7 +1715,8 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                update_timestamp: current_timestamp,
+                created_at: current_timestamp,
+                updated_at: current_timestamp,
                 ..Default::default()
             },
         };
@@ -1716,9 +1736,9 @@ pub mod test_suite {
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0]
             .clone()
             .split_metadata;
-        assert!(split_meta.update_timestamp > current_timestamp);
+        assert!(split_meta.updated_at > current_timestamp);
 
-        current_timestamp = split_meta.update_timestamp;
+        current_timestamp = split_meta.updated_at;
 
         // wait for 1s, publish split & check `update_timestamp`
         sleep(Duration::from_secs(1)).await;
@@ -1729,11 +1749,11 @@ pub mod test_suite {
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0]
             .clone()
             .split_metadata;
-        assert!(split_meta.update_timestamp > current_timestamp);
+        assert!(split_meta.updated_at > current_timestamp);
 
-        current_timestamp = split_meta.update_timestamp;
+        current_timestamp = split_meta.updated_at;
 
-        // wait for 1s, mark split for deletion & check `update_timestamp`
+        // wait for 1s, mark split for deletion & check `updated_at`
         sleep(Duration::from_secs(1)).await;
         metastore
             .mark_splits_for_deletion(index_id, &[split_id])
@@ -1742,7 +1762,7 @@ pub mod test_suite {
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0]
             .clone()
             .split_metadata;
-        assert!(split_meta.update_timestamp > current_timestamp);
+        assert!(split_meta.updated_at > current_timestamp);
 
         cleanup_index(&metastore, index_id).await;
     }

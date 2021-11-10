@@ -85,8 +85,11 @@ pub struct SplitMetadata {
     /// The state of the split. This is the only mutable attribute of the split.
     pub split_state: SplitState,
 
-    /// Timestamp for tracking when the split state was last modified.
-    pub update_timestamp: i64,
+    /// Timestamp for tracking when the split was created.
+    pub created_at: i64,
+
+    /// Timestamp for tracking when the split was updated.
+    pub updated_at: i64,
 
     /// A set of tags for categorizing and searching group of splits.
     #[serde(default)]
@@ -106,7 +109,8 @@ impl SplitMetadata {
             num_records: 0,
             size_in_bytes: 0,
             time_range: None,
-            update_timestamp: Utc::now().timestamp(),
+            created_at: Utc::now().timestamp(),
+            updated_at: Utc::now().timestamp(),
             tags: Default::default(),
             demux_num_ops: 0,
         }

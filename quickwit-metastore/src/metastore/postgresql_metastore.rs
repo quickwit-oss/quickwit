@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::NaiveDateTime;
 use diesel::pg::Pg;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::DatabaseErrorKind;
@@ -210,7 +210,6 @@ impl PostgresqlMetastore {
             SplitState::Published.to_string(),
         ];
 
-        let now_timestamp = Utc::now().timestamp();
         let published_split_ids: Vec<String> = diesel::update(
             schema::splits::dsl::splits.filter(
                 schema::splits::dsl::index_id
@@ -219,10 +218,7 @@ impl PostgresqlMetastore {
                     .and(schema::splits::dsl::split_state.eq_any(publishable_states)),
             ),
         )
-        .set((
-            schema::splits::dsl::split_state.eq(SplitState::Published.to_string()),
-            schema::splits::dsl::update_timestamp.eq(now_timestamp),
-        ))
+        .set((schema::splits::dsl::split_state.eq(SplitState::Published.to_string()),))
         .returning(schema::splits::dsl::split_id)
         .get_results(conn)?;
 
@@ -237,7 +233,6 @@ impl PostgresqlMetastore {
         index_id: &str,
         split_ids: &[&str],
     ) -> MetastoreResult<Vec<String>> {
-        let now_timestamp = Utc::now().timestamp();
         let marked_split_ids: Vec<String> = diesel::update(
             schema::splits::dsl::splits.filter(
                 schema::splits::dsl::index_id
@@ -245,10 +240,7 @@ impl PostgresqlMetastore {
                     .and(schema::splits::dsl::split_id.eq_any(split_ids)),
             ),
         )
-        .set((
-            schema::splits::dsl::split_state.eq(SplitState::ScheduledForDeletion.to_string()),
-            schema::splits::dsl::update_timestamp.eq(now_timestamp),
-        ))
+        .set((schema::splits::dsl::split_state.eq(SplitState::ScheduledForDeletion.to_string()),))
         .returning(schema::splits::dsl::split_id)
         .get_results(conn)?;
 
@@ -450,7 +442,14 @@ impl PostgresqlMetastore {
             let split_metadata_and_footer_offsets =
                 match model_split.make_split_metadata_and_footer_offsets() {
                     Ok(mut metadata) => {
-                        metadata.split_metadata.update_timestamp = model_split.update_timestamp;
+                        metadata.split_metadata.created_at = model_split
+                            .created_at
+                            .unwrap_or(NaiveDateTime::from_timestamp(0, 0))
+                            .timestamp();
+                        metadata.split_metadata.updated_at = model_split
+                            .updated_at
+                            .unwrap_or(NaiveDateTime::from_timestamp(0, 0))
+                            .timestamp();
                         metadata.split_metadata.split_state =
                             SplitState::from_str(&model_split.split_state).map_err(|error| {
                                 MetastoreError::InternalError {
@@ -559,10 +558,8 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         mut metadata: SplitMetadataAndFooterOffsets,
     ) -> MetastoreResult<()> {
-        let update_timestamp = Utc::now().timestamp();
         // Modify split state to Staged.
         metadata.split_metadata.split_state = SplitState::Staged;
-        metadata.split_metadata.update_timestamp = update_timestamp;
 
         // Fit the time_range to the database model.
         let time_range_start = metadata
@@ -588,7 +585,8 @@ impl Metastore for PostgresqlMetastore {
             split_state: metadata.split_metadata.split_state.to_string(),
             time_range_start,
             time_range_end,
-            update_timestamp,
+            created_at: None,
+            updated_at: None,
             tags: metadata
                 .split_metadata
                 .tags

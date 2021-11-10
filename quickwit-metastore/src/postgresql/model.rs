@@ -20,6 +20,7 @@
 use std::ops::RangeInclusive;
 use std::str::FromStr;
 
+use chrono::NaiveDateTime;
 use diesel::sql_types::{Nullable, Text};
 
 use crate::postgresql::schema::{indexes, splits};
@@ -82,8 +83,10 @@ pub struct Split {
     pub time_range_start: Option<i64>,
     /// If a timestamp field is available, the max timestamp in the split.
     pub time_range_end: Option<i64>,
-    /// Timestamp for tracking when the split state was last modified.
-    pub update_timestamp: i64,
+    /// Timestamp for tracking when the split was created.
+    pub created_at: Option<NaiveDateTime>,
+    /// Timestamp for tracking when the split was updated.
+    pub updated_at: Option<NaiveDateTime>,
     /// A list of tags for categorizing and searching group of splits.
     pub tags: Vec<String>,
     // A JSON string containing all of the SplitMetadataAndFooterOffsets.
