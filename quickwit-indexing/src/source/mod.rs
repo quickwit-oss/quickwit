@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod empty_source;
 mod file_source;
 #[cfg(feature = "kafka")]
 mod kafka_source;
@@ -28,6 +29,7 @@ mod vec_source;
 use std::fmt;
 
 use async_trait::async_trait;
+pub use empty_source::{EmptySource, EmptySourceFactory, EmptySourceParams};
 pub use file_source::{FileSource, FileSourceFactory, FileSourceParams};
 #[cfg(feature = "kafka")]
 pub use kafka_source::{KafkaSource, KafkaSourceFactory, KafkaSourceParams};
@@ -167,6 +169,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         #[cfg(feature = "kafka")]
         source_factory.add_source("kafka", KafkaSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
+        source_factory.add_source("empty", EmptySourceFactory);
         source_factory
     })
 }
