@@ -165,7 +165,8 @@ mod tests {
             size_in_bytes,
             time_range,
             split_state: SplitState::Published,
-            update_timestamp,
+            created_at: 0,
+            updated_at: update_timestamp,
             tags,
             demux_num_ops: 0,
         }
@@ -204,7 +205,8 @@ mod tests {
                     * demuxed_split.total_num_docs() as u64,
                 time_range: time_range.clone(),
                 split_state: SplitState::Published,
-                update_timestamp,
+                created_at: 0,
+                updated_at: update_timestamp,
                 tags: tags.clone(),
                 demux_num_ops: 1,
             };
@@ -287,7 +289,8 @@ mod tests {
             num_records: num_records as usize,
             size_in_bytes: 256u64 * num_records,
             time_range: Some(time_range),
-            update_timestamp: 0,
+            created_at: 0,
+            updated_at: 0,
             tags: HashSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
             demux_num_ops: 0,
         }
