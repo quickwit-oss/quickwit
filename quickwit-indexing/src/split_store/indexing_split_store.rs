@@ -230,6 +230,7 @@ impl IndexingSplitStore {
         if let Some(local_split_store) = self.local_split_store.as_ref() {
             let published_split_ids: Vec<&str> = published_splits
                 .iter()
+                .filter(|split| !self.merge_policy.is_mature(&split.split_metadata))
                 .map(|split| split.split_metadata.split_id.as_str())
                 .collect();
 
@@ -612,12 +613,12 @@ mod test_split_store {
         let local_dir = tempdir()?;
         let root_path = local_dir.path().join(SPLIT_CACHE_DIR_NAME);
         fs::create_dir_all(root_path.to_path_buf()).await?;
-
         fs::create_dir_all(&root_path.join("a.split")).await?;
-        fs::create_dir_all(&root_path.join("b.split")).await?;
-
-        fs::write(root_path.join("a.split").join("myfile"), b"abcdefgh").await?;
-        fs::write(root_path.join("b.split").join("myfile"), b"abcdefgh").await?;
+        fs::create_dir_all(&root_path.join("a.split")).await?;
+        fs::create_dir_all(&root_path.join("c.split")).await?;
+        fs::write(root_path.join("a.split").join("termdict"), b"a").await?;
+        fs::write(root_path.join("b.split").join("termdict"), b"b").await?;
+        fs::write(root_path.join("c.split").join("termdict"), b"c").await?;
 
         let cache_params = IndexingSplitStoreParams {
             max_num_splits: 100,
@@ -631,18 +632,30 @@ mod test_split_store {
             cache_params,
             merge_policy,
         )?;
-        let published_splits = vec![SplitMetadataAndFooterOffsets {
-            split_metadata: SplitMetadata {
-                split_id: "b".to_string(),
-                split_state: SplitState::Published,
-                ..Default::default()
+        let published_splits = vec![
+            SplitMetadataAndFooterOffsets {
+                split_metadata: SplitMetadata {
+                    split_id: "b".to_string(),
+                    split_state: SplitState::Published,
+                    ..Default::default()
+                },
+                footer_offsets: 5..20,
             },
-            footer_offsets: 5..20,
-        }];
+            SplitMetadataAndFooterOffsets {
+                split_metadata: SplitMetadata {
+                    split_id: "b".to_string(),
+                    split_state: SplitState::Published,
+                    num_docs: 12_000_000,
+                    ..Default::default()
+                },
+                footer_offsets: 5..20,
+            },
+        ];
         split_store
             .remove_dangling_splits(&published_splits)
             .await?;
         assert!(!root_path.join("a.split").as_path().exists());
+        assert!(!root_path.join("c.split").as_path().exists());
         assert!(root_path.join("b.split").as_path().exists());
         Ok(())
     }
