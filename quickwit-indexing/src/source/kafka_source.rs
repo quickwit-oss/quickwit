@@ -541,7 +541,6 @@ fn parse_message_payload(message: &BorrowedMessage) -> Option<String> {
                 offset = ?message.offset(),
                 timestamp = ?message.timestamp(),
                 num_bytes = ?message.payload_len(),
-                doc = ?doc.as_str(),
                 "Message received.",
             );
             return Some(doc);

@@ -141,6 +141,7 @@ impl IndexingPipelineSupervisor {
                 &handlers.merge_executor,
                 &handlers.merge_packager,
                 &handlers.merge_uploader,
+                &handlers.merge_publisher,
             ];
             supervisables
         } else {
@@ -256,6 +257,7 @@ impl IndexingPipelineSupervisor {
 
         // Merge publisher
         let merge_publisher = Publisher::new(
+            "MergePublisher",
             self.params.metastore.clone(),
             merge_planner_mailbox.clone(),
             garbage_collector_mailbox.clone(),
@@ -330,6 +332,7 @@ impl IndexingPipelineSupervisor {
 
         // Publisher
         let publisher = Publisher::new(
+            "Publisher",
             self.params.metastore.clone(),
             merge_planner_mailbox,
             garbage_collector_mailbox,
@@ -435,10 +438,12 @@ impl IndexingPipelineSupervisor {
                 handlers.uploader.kill(),
                 handlers.publisher.kill(),
                 handlers.garbage_collector.kill(),
+                handlers.merge_planner.kill(),
                 handlers.merge_split_downloader.kill(),
                 handlers.merge_executor.kill(),
                 handlers.merge_packager.kill(),
-                handlers.merge_uploader.kill()
+                handlers.merge_uploader.kill(),
+                handlers.merge_publisher.kill(),
             );
         }
     }
