@@ -69,7 +69,7 @@ impl LocalFileStorage {
             .nth(1)
             .ok_or_else(|| {
                 StorageErrorKind::DoesNotExist
-                    .with_error(anyhow::anyhow!("Invalid root path: {}", uri))
+                    .with_error(anyhow::anyhow!("Invalid root path: `{}`.", uri))
             })?
             .to_string();
         if !root_path.starts_with('/') {
@@ -80,8 +80,10 @@ impl LocalFileStorage {
             .iter()
             .any(|segment| segment.to_string_lossy() == "..")
         {
-            return Err(StorageErrorKind::Io
-                .with_error(anyhow::anyhow!("Invalid uri, `..` is forbidden: {}", uri)));
+            return Err(StorageErrorKind::Io.with_error(anyhow::anyhow!(
+                "Invalid uri, `..` is forbidden: `{}`.",
+                uri
+            )));
         }
         Ok(pathbuf)
     }
@@ -200,9 +202,8 @@ impl Storage for LocalFileStorage {
         if parent.is_none() {
             return Ok(());
         }
-        let delete_result = delete_all_dirs(self.root.to_path_buf(), parent.unwrap()).await;
-        if delete_result.is_err() {
-            warn!(path =% path.display(), "failed to clean the path");
+        if let Err(error) = delete_all_dirs(self.root.to_path_buf(), parent.unwrap()).await {
+            warn!(error =? error, path =% path.display(), "Failed to clean up parent directories.");
         }
         Ok(())
     }
@@ -224,8 +225,10 @@ impl Storage for LocalFileStorage {
                 if metadata.is_file() {
                     Ok(metadata.len())
                 } else {
-                    Err(StorageErrorKind::DoesNotExist
-                        .with_error(anyhow::anyhow!("File {} is actually a directory")))
+                    Err(StorageErrorKind::DoesNotExist.with_error(anyhow::anyhow!(
+                        "File `{}` is actually a directory.",
+                        path.display()
+                    )))
                 }
             }
             Err(err) => {
