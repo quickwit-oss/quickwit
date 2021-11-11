@@ -28,6 +28,7 @@ use byte_unit::Byte;
 use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
+use quickwit_cli::job::JobCliSubCommand;
 use quickwit_cli::*;
 use quickwit_common::net::socket_addr_from_str;
 use quickwit_serve::{serve_cli, ServeArgs};
@@ -49,8 +50,8 @@ enum CliCommand {
     Serve(ServeArgs),
     GarbageCollect(GarbageCollectIndexArgs),
     Delete(DeleteIndexArgs),
-    // Stats subcommands
     Stats(StatsCliSubCommand),
+    Job(JobCliSubCommand),
 }
 
 impl CliCommand {
@@ -65,6 +66,7 @@ impl CliCommand {
             CliCommand::Serve(_) => Level::INFO,
             CliCommand::GarbageCollect(_) => Level::WARN,
             CliCommand::Delete(_) => Level::WARN,
+            CliCommand::Job(_) => Level::INFO,
         }
     }
 
@@ -83,6 +85,7 @@ impl CliCommand {
             "delete" => Self::parse_delete_args(submatches),
             "extract-split" => Self::parse_extract_split_args(submatches),
             "inspect-split" => Self::parse_inspect_split_args(submatches),
+            "job" => JobCliSubCommand::parse_cli_args(submatches).map(CliCommand::Job),
             _ => bail!("Subcommand '{}' is not implemented", subcommand),
         }
     }
@@ -409,6 +412,7 @@ async fn main() -> anyhow::Result<()> {
         CliCommand::Serve(args) => serve_cli(args).await,
         CliCommand::GarbageCollect(args) => garbage_collect_index_cli(args).await,
         CliCommand::Delete(args) => delete_index_cli(args).await,
+        CliCommand::Job(job_command) => job_command.execute().await,
     };
 
     let return_code: i32 = if let Err(err) = command_res {

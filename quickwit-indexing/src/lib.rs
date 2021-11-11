@@ -64,6 +64,7 @@ pub async fn index_data(
         storage_uri_resolver,
         merge_enabled: true,
         demux_enabled: false,
+        demux_factor: None,
     };
     let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
     let (_pipeline_mailbox, pipeline_handler) =

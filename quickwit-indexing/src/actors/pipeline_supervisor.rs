@@ -203,12 +203,15 @@ impl IndexingPipelineSupervisor {
             .resolve(&index_metadata.index_uri)?;
         let timestamp_field_name = index_metadata.index_config.timestamp_field_name();
         let demux_field_name = index_metadata.index_config.demux_field_name();
-        let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
+        let mut stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
             demux_field_name: demux_field_name.clone(),
             merge_enabled: self.params.merge_enabled,
             demux_enabled: self.params.demux_enabled,
             ..Default::default()
         };
+        if let Some(demux_factor) = self.params.demux_factor {
+            stable_multitenant_merge_policy.demux_factor = demux_factor;
+        }
         let max_merge_docs = stable_multitenant_merge_policy.max_merge_docs;
         let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
         info!(
@@ -483,6 +486,7 @@ pub struct IndexingPipelineParams {
     pub storage_uri_resolver: StorageUriResolver,
     pub demux_enabled: bool,
     pub merge_enabled: bool,
+    pub demux_factor: Option<usize>,
 }
 
 #[cfg(test)]
@@ -558,6 +562,7 @@ mod tests {
             storage_uri_resolver: StorageUriResolver::for_test(),
             merge_enabled: true,
             demux_enabled: false,
+            demux_factor: None,
         };
         let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) =

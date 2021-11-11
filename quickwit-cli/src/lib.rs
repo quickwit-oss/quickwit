@@ -50,6 +50,7 @@ use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
 
+pub mod job;
 pub mod stats;
 
 /// Throughput calculation window size.
@@ -314,6 +315,7 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
         storage_uri_resolver: storage_uri_resolver.clone(),
         merge_enabled: args.merge,
         demux_enabled: args.demux,
+        demux_factor: None,
     };
 
     let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);

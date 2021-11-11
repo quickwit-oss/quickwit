@@ -19,6 +19,32 @@ subcommands:
                         long: index-id
                         value_name: INDEX ID
                         required: true
+    - job:
+        about: Jobs.
+        subcommands:
+            - demux:
+                args:
+                    - metastore-uri:
+                        help: Location of the metastore
+                        long: metastore-uri
+                        value_name: METASTORE URI
+                        required: true
+                        env: QUICKWIT_METASTORE_URI
+                    - index-id:
+                        help: Index ID
+                        long: index-id
+                        value_name: INDEX ID
+                        required: true
+                    - data-dir-path:
+                        help: Creates indexing directories in this local directory.
+                        long: data-dir-path
+                        value_name: DATA DIR PATH
+                        required: true
+                    - demux-factor:
+                        help: Demux factor
+                        long: demux-factor
+                        value_name: DEMUX FACTOR
+                        required: true
     - extract-split:
         about: Extracts a split into a folder.
         args:
