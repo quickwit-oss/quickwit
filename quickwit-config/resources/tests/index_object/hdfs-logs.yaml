@@ -1,0 +1,55 @@
+index_id: hdfs-logs
+index_uri: s3://quickwit-indexes/hdfs-logs
+
+doc_mapping:
+  field_mappings:
+    - name: cluster_id
+      type: text
+      tokenizer: raw
+    - name: timestamp
+      type: i64
+      fast: true
+    - name: severity_text
+      type: text
+      tokenizer: raw
+    - name: body
+      type: text
+      tokenizer: defaut
+      record: position
+    - name: resource
+      type: object
+      field_mappings:
+        - name: service
+          type: text
+          tokenizer: raw
+  tag_fields: ["cluster_id"]
+  store_source: true
+
+indexing_settings:
+  demux_field: cluster_id
+  timestamp_field: timestamp
+  commit_timeout_secs: 60
+  split_max_num_docs: 10000000
+  merge_policy:
+    demux_factor: 6
+    merge_factor: 10
+    max_merge_factor: 12
+    min_level_num_docs: 100000
+  resources:
+    num_threads: 1
+    heap_size: 1G
+
+search_settings:
+  default_search_fields: ["severity_text", "body"]
+
+sources:
+  - source_id: hdfs-logs-kafka-source
+    source_type: kafka
+    params:
+      bootstrap.servers: host:9092
+      topic: cloudera-cluster-logs
+
+  - source_id: hdfs-logs-kinesis-source
+    source_type: kinesis
+    params:
+      stream_name: emr-cluster-logs
