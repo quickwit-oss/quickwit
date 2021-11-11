@@ -129,7 +129,7 @@ mod tests {
 
     fn get_resource_path(relative_resource_path: &str) -> PathBuf {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("resources/tests/index_object/");
+        path.push("resources/tests/index_config/");
         path.push(relative_resource_path);
         path
     }
