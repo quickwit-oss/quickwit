@@ -24,7 +24,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use chrono::NaiveDateTime;
 use diesel::pg::Pg;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::DatabaseErrorKind;
@@ -442,14 +441,8 @@ impl PostgresqlMetastore {
             let split_metadata_and_footer_offsets =
                 match model_split.make_split_metadata_and_footer_offsets() {
                     Ok(mut metadata) => {
-                        metadata.split_metadata.created_at = model_split
-                            .created_at
-                            .unwrap_or(NaiveDateTime::from_timestamp(0, 0))
-                            .timestamp();
-                        metadata.split_metadata.updated_at = model_split
-                            .updated_at
-                            .unwrap_or(NaiveDateTime::from_timestamp(0, 0))
-                            .timestamp();
+                        metadata.split_metadata.created_at = model_split.created_at.timestamp();
+                        metadata.split_metadata.updated_at = model_split.updated_at.timestamp();
                         metadata.split_metadata.split_state =
                             SplitState::from_str(&model_split.split_state).map_err(|error| {
                                 MetastoreError::InternalError {
@@ -580,58 +573,57 @@ impl Metastore for PostgresqlMetastore {
                 cause: anyhow::anyhow!(err),
             })?;
 
-        let model_split = model::Split {
-            split_id: metadata.split_metadata.split_id,
-            split_state: metadata.split_metadata.split_state.to_string(),
-            time_range_start,
-            time_range_end,
-            created_at: None,
-            updated_at: None,
-            tags: metadata
-                .split_metadata
-                .tags
-                .into_iter()
-                .collect::<Vec<String>>(),
-            split_metadata_json: split_metadata_and_footer_offsets_json,
-            index_id: index_id.to_string(),
-        };
         let conn = self.get_conn()?;
         conn.transaction::<_, MetastoreError, _>(|| {
             // Insert a new split metadata as `Staged` state.
+            let split_id =  metadata.split_metadata.split_id.clone();
             let insert_staged_split_statement =
-                diesel::insert_into(schema::splits::dsl::splits).values(&model_split);
+                diesel::insert_into(schema::splits::dsl::splits)
+                .values((
+                    schema::splits::dsl::split_id.eq(metadata.split_metadata.split_id),
+                    schema::splits::dsl::split_state.eq(metadata.split_metadata.split_state.to_string()),
+                    schema::splits::dsl::time_range_start.eq(time_range_start),
+                    schema::splits::dsl::time_range_end.eq(time_range_end),
+                    schema::splits::dsl::tags.eq(metadata
+                        .split_metadata
+                        .tags
+                        .into_iter()
+                        .collect::<Vec<String>>()),
+                    schema::splits::dsl::split_metadata_json.eq(split_metadata_and_footer_offsets_json),
+                    schema::splits::dsl::index_id.eq(index_id.to_string())
+                ));
             debug!(sql=%debug_query::<Pg, _>(&insert_staged_split_statement).to_string());
             insert_staged_split_statement.execute(&*conn).map_err(|err| {
                 match err {
                     DatabaseError(err_kind, ref err_info) => match err_kind {
                         DatabaseErrorKind::ForeignKeyViolation => {
-                            error!(index_id=?index_id, split_id=?model_split.split_id, "Index does not exist");
+                            error!(index_id=?index_id, split_id=?split_id, "Index does not exist");
                             MetastoreError::IndexDoesNotExist {
                                 index_id: index_id.to_string(),
                             }
                         },
                         DatabaseErrorKind::UniqueViolation => {
-                            error!(index_id=?index_id, split_id=?model_split.split_id, "Split already exists");
+                            error!(index_id=?index_id, split_id=?split_id, "Split already exists");
                             MetastoreError::InternalError {
                                 message: format!(
                                     "Try to stage split that already exists ({})",
-                                    model_split.split_id
+                                    split_id
                                 ),
                                 cause: anyhow::anyhow!(err),
                             }
                         }
                         _ => {
-                            error!(index_id=?index_id, split_id=?model_split.split_id, "An error has occurred in the database operation. {:?}", err_info.message());
+                            error!(index_id=?index_id, split_id=?split_id, "An error has occurred in the database operation. {:?}", err_info.message());
                             MetastoreError::DbError(err)
                         }
                     },
                     _ => {
-                        error!(index_id=?index_id, split_id=?model_split.split_id, "An error has occurred in the database operation. {:?}", err);
+                        error!(index_id=?index_id, split_id=?split_id, "An error has occurred in the database operation. {:?}", err);
                         MetastoreError::DbError(err)
                     }
                 }
             })?;
-            debug!(index_id=?index_id, spliet_id=?model_split.split_id, "The split has been staged");
+            debug!(index_id=?index_id, spliet_id=?split_id, "The split has been staged");
             Ok(())
         })?;
         Ok(())
