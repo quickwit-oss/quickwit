@@ -43,6 +43,7 @@ use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use quickwit_telemetry::payload::TelemetryEvent;
+use serde_json::json;
 use tracing::{debug, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
@@ -99,16 +100,19 @@ pub struct GarbageCollectIndexArgs {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DemuxArgs {
-    // TODO
+pub struct MergeOrDemuxArgs {
+    pub metastore_uri: String,
+    pub index_id: String,
+    pub data_dir_path: PathBuf,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum IndexCliCommand {
     Create(CreateIndexArgs),
-    Delete(DeleteIndexArgs),
-    Demux(DemuxArgs),
     Describe(DescribeIndexArgs),
+    Delete(DeleteIndexArgs),
+    Demux(MergeOrDemuxArgs),
+    Merge(MergeOrDemuxArgs),
     GarbageCollect(GarbageCollectIndexArgs),
     Ingest(IngestDocsArgs),
     Search(SearchIndexArgs),
@@ -118,6 +122,8 @@ impl IndexCliCommand {
     pub fn default_log_level(&self) -> Level {
         match self {
             Self::Ingest(_) => Level::INFO,
+            Self::Merge(_) => Level::INFO,
+            Self::Demux(_) => Level::INFO,
             _ => Level::ERROR,
         }
     }
@@ -129,11 +135,12 @@ impl IndexCliCommand {
         match subcommand {
             "create" => Self::parse_create_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
+            "search" => Self::parse_search_args(submatches),
+            "merge" => Self::parse_merge_args(submatches),
             "demux" => Self::parse_demux_args(submatches),
             "describe" => Self::parse_describe_args(submatches),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "ingest" => Self::parse_ingest_args(submatches),
-            "search" => Self::parse_search_args(submatches),
             _ => bail!("Index subcommand `{}` is not implemented.", subcommand),
         }
     }
@@ -241,9 +248,44 @@ impl IndexCliCommand {
         }))
     }
 
-    fn parse_demux_args(_matches: &ArgMatches) -> anyhow::Result<Self> {
-        // TODO
-        Ok(Self::Demux(DemuxArgs {}))
+    fn parse_merge_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .context("'metastore-uri' is a required arg")
+            .map(normalize_uri)??;
+        let index_id = matches
+            .value_of("index-id")
+            .context("'index-id' is a required arg")?
+            .to_string();
+        let data_dir_path: PathBuf = matches
+            .value_of("data-dir-path")
+            .map(PathBuf::from)
+            .expect("`data-dir-path` is a required arg.");
+        Ok(Self::Merge(MergeOrDemuxArgs {
+            metastore_uri,
+            index_id,
+            data_dir_path,
+        }))
+    }
+
+    fn parse_demux_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .context("'metastore-uri' is a required arg")
+            .map(normalize_uri)??;
+        let index_id = matches
+            .value_of("index-id")
+            .context("'index-id' is a required arg")?
+            .to_string();
+        let data_dir_path: PathBuf = matches
+            .value_of("data-dir-path")
+            .map(PathBuf::from)
+            .expect("`data-dir-path` is a required arg.");
+        Ok(Self::Demux(MergeOrDemuxArgs {
+            metastore_uri,
+            index_id,
+            data_dir_path,
+        }))
     }
 
     fn parse_garbage_collect_args(matches: &ArgMatches) -> anyhow::Result<Self> {
@@ -293,7 +335,8 @@ impl IndexCliCommand {
             Self::Describe(args) => describe_index_cli(args).await,
             Self::Ingest(args) => ingest_docs_cli(args).await,
             Self::Search(args) => search_index_cli(args).await,
-            Self::Demux(args) => demux_index_cli(args).await,
+            Self::Merge(args) => merge_or_demux_cli(args, true, false).await,
+            Self::Demux(args) => merge_or_demux_cli(args, false, true).await,
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::Delete(args) => delete_index_cli(args).await,
         }
@@ -643,8 +686,49 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn demux_index_cli(_args: DemuxArgs) -> anyhow::Result<()> {
-    unimplemented!()
+pub async fn merge_or_demux_cli(
+    args: MergeOrDemuxArgs,
+    merge_enabled: bool,
+    demux_enabled: bool,
+) -> anyhow::Result<()> {
+    debug!(args = ?args, "merge");
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+    let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
+    let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
+
+    let source_config = SourceConfig {
+        source_id: "void-source".to_string(),
+        source_type: "void".to_string(),
+        params: json!(null),
+    };
+    index_metadata.sources = vec![source_config];
+    let indexer_config = IndexerConfig {
+        data_dir_path: args.data_dir_path,
+        ..Default::default()
+    };
+    index_metadata.indexing_settings.demux_enabled = demux_enabled;
+    index_metadata.indexing_settings.merge_enabled = merge_enabled;
+    let pipeline_params =
+        IndexingPipelineParams::try_new(index_metadata, indexer_config, metastore, storage).await?;
+    let pipeline = IndexingPipeline::new(pipeline_params);
+    let universe = Universe::new();
+    let (_pipeline_mailbox, pipeline_handle) = universe.spawn_actor(pipeline).spawn_async();
+    let (supervisor_exit_status, _) = pipeline_handle.join().await;
+    match supervisor_exit_status {
+        ActorExitStatus::Success => {}
+        ActorExitStatus::Quit
+        | ActorExitStatus::DownstreamClosed
+        | ActorExitStatus::Killed
+        | ActorExitStatus::Panicked => {
+            bail!(supervisor_exit_status)
+        }
+        ActorExitStatus::Failure(err) => {
+            bail!(err);
+        }
+    }
+    Ok(())
 }
 
 pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {

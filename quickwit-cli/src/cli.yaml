@@ -116,7 +116,28 @@ subcommands:
                         long: tags
                         value_name: TAG
                         multiple_values: true
+            - merge:
+                display_order: 4
+                about: Merge an index.
+                args:
+                    - index-id:
+                        about: Index ID
+                        long: index-id
+                        value_name: INDEX ID
+                        required: true
+                    - metastore-uri:
+                        about: Location of the metastore
+                        long: metastore-uri
+                        value_name: METASTORE URI
+                        required: true
+                        env: QUICKWIT_METASTORE_URI
+                    - data-dir-path:
+                        about: Creates indexing directories in this local directory.
+                        long: data-dir-path
+                        value_name: DATA DIR PATH
+                        required: true
             - demux:
+                display_order: 5
                 about: Demuxes an index.
                 args:
                     - index-id:
@@ -130,6 +151,11 @@ subcommands:
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
+                    - data-dir-path:
+                        about: Creates indexing directories in this local directory.
+                        long: data-dir-path
+                        value_name: DATA DIR PATH
+                        required: true
             - gc:
                 display_order: 6
                 about: Garbage collects stale staged splits and splits marked for deletion.

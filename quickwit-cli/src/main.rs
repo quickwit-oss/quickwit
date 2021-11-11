@@ -173,12 +173,13 @@ fn about_text() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::time::Duration;
 
     use clap::{load_yaml, App, AppSettings};
     use quickwit_cli::index::{
-        CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IngestDocsArgs, SearchIndexArgs,
+        CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IngestDocsArgs,
+        MergeOrDemuxArgs, SearchIndexArgs,
     };
     use quickwit_cli::service::{RunServiceArgs, ServiceCliCommand};
 
@@ -492,6 +493,78 @@ mod tests {
                 index_id: None,
             })) if service_name == "searcher" && server_config_uri == expected_server_config_uri
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_merge_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "index",
+            "merge",
+            "--index-id",
+            "wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
+            "--data-dir-path",
+            "datadir",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Merge(MergeOrDemuxArgs {
+                index_id,
+                metastore_uri,
+                data_dir_path,
+            })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_demux_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "index",
+            "demux",
+            "--index-id",
+            "wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
+            "--data-dir-path",
+            "datadir",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Demux(MergeOrDemuxArgs {
+                index_id,
+                metastore_uri,
+                data_dir_path,
+            })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_duration_with_unit() -> anyhow::Result<()> {
+        assert_eq!(parse_duration_with_unit("8s")?, Duration::from_secs(8));
+        assert_eq!(parse_duration_with_unit("5m")?, Duration::from_secs(5 * 60));
+        assert_eq!(
+            parse_duration_with_unit("2h")?,
+            Duration::from_secs(2 * 60 * 60)
+        );
+        assert_eq!(
+            parse_duration_with_unit("3d")?,
+            Duration::from_secs(3 * 60 * 60 * 24)
+        );
+
+        assert!(parse_duration_with_unit("").is_err());
+        assert!(parse_duration_with_unit("a2d").is_err());
+        assert!(parse_duration_with_unit("3 d").is_err());
+        assert!(parse_duration_with_unit("3").is_err());
         Ok(())
     }
 }
