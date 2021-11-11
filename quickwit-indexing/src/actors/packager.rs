@@ -348,7 +348,7 @@ mod tests {
                     text_field => format!("timestamp is {}", timestamp),
                     timestamp_field => timestamp
                 );
-                index_writer.add_document(doc);
+                index_writer.add_document(doc)?;
                 num_docs += 1;
                 timerange_opt = Some(
                     timerange_opt
