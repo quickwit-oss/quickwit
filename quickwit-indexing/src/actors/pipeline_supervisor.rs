@@ -29,7 +29,7 @@ use quickwit_actors::{
 use quickwit_metastore::{Metastore, SplitState};
 use quickwit_storage::StorageUriResolver;
 use tokio::join;
-use tracing::{debug, error, info, info_span, Span};
+use tracing::{debug, error, info, info_span, instrument, Span};
 
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::{
@@ -90,7 +90,7 @@ impl Actor for IndexingPipelineSupervisor {
     }
 
     fn span(&self, _ctx: &ActorContext<Self::Message>) -> Span {
-        info_span!("", index=%&self.params.index_id, gen=self.generation)
+        info_span!("")
     }
 }
 
@@ -171,22 +171,23 @@ impl IndexingPipelineSupervisor {
         }
 
         if !failure_or_unhealthy_actors.is_empty() {
-            error!(healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "indexing pipeline error.");
+            error!(index=%self.params.index_id, gen=self.generation, healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "indexing pipeline error.");
             return Health::FailureOrUnhealthy;
         }
 
         if healthy_actors.is_empty() {
             // all actors finished successfully.
-            info!("indexing-pipeline-success");
+            info!(index=%self.params.index_id, gen=self.generation, "indexing-pipeline-success");
             return Health::Success;
         }
 
         // No error at this point, and there are still actors running
-        debug!(healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "pipeline is judged healthy.");
+        debug!(index=%self.params.index_id, gen=self.generation, healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "pipeline is judged healthy.");
         Health::Healthy
     }
 
     // TODO this should return an error saying whether we can retry or not.
+    #[instrument(name="", level="info", skip_all, fields(index=%self.params.index_id, gen=self.generation))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Msg>) -> anyhow::Result<()> {
         self.generation += 1;
         self.previous_generations_statistics = self.statistics.clone();
