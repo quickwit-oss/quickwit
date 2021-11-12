@@ -225,6 +225,7 @@ fn merge_split_directories(
     let union_directory = UnionDirectory::union_of(directory_stack);
     let union_index = Index::open(union_directory)?;
     ctx.record_progress();
+    let _protect_guard = ctx.protect_zone();
     merge_all_segments(&union_index)?;
     Ok(output_directory)
 }
@@ -393,12 +394,15 @@ impl MergeExecutor {
             .map(DirectoryClone::box_clone)
             .collect();
 
-        let indexes = demux(
-            &replaced_segments,
-            &demux_mapping,
-            union_index_meta.index_settings,
-            boxed_demuxed_split_directories,
-        )?;
+        let indexes = {
+            let _protect_guard = ctx.protect_zone();
+            demux(
+                &replaced_segments,
+                &demux_mapping,
+                union_index_meta.index_settings,
+                boxed_demuxed_split_directories,
+            )?
+        };
         info!(elapsed_secs = start.elapsed().as_secs_f32(), "demux-stop");
         let mut indexed_splits = Vec::new();
         // We cannot get the right `docs_size_in_bytes` for demuxed splits as it
