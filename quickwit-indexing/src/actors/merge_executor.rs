@@ -891,7 +891,7 @@ mod tests {
             "default_search_fields": ["body"],
             "timestamp_field": "ts",
             "demux_field": "tenant_id",
-            "tag_fields": [],
+            "tag_fields": ["tenant_id"],
             "field_mappings": [
                 { "name": "body", "type": "text" },
                 { "name": "ts", "type": "i64", "fast": true },
@@ -902,12 +902,21 @@ mod tests {
             Arc::new(serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?);
         let index_id = "test-index-demux";
         let test_index_builder = TestSandbox::create(index_id, index_config).await?;
+        let mut last_tenant_min_timestamp = 0;
+        let mut last_tenant_max_timestamp = 0;
         for split_id in 0..4 {
+            let last_tenant_timestamp = 1631072713 + (1 + split_id) * 20;
             let docs = vec![
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": split_id * 10 }),
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": (split_id + 1) * 10 }),
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": (split_id + 2) * 10 }),
+                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": 10 }),
+                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + (1 + split_id) * 10, "tenant_id": 11 }),
+                serde_json::json!({"body ": format!("split{}", split_id), "ts": last_tenant_timestamp, "tenant_id": 12 }),
             ];
+            if split_id == 0 {
+                last_tenant_min_timestamp = last_tenant_timestamp;
+            }
+            if split_id == 3 {
+                last_tenant_max_timestamp = last_tenant_timestamp;
+            }
             test_index_builder.add_documents(docs).await?;
         }
         let metastore = test_index_builder.metastore();
@@ -942,7 +951,7 @@ mod tests {
         let merge_executor = MergeExecutor::new(
             index_id.to_string(),
             merge_packager_mailbox,
-            None,
+            Some("ts".to_string()),
             Some("tenant_id".to_string()),
             2,
             5,
@@ -959,14 +968,20 @@ mod tests {
         assert_eq!(packager_msgs.len(), 1);
         let mut splits = packager_msgs.pop().unwrap().splits;
         assert_eq!(splits.len(), 3);
-        let first_indexed_split = splits.pop().unwrap();
-        assert_eq!(first_indexed_split.num_docs, 4);
+        // We expect that in the last split, we have the last tenant
+        // and thus the time range of this tenant.
+        let last_indexed_split = splits.pop().unwrap();
         assert_eq!(
-            first_indexed_split.docs_size_in_bytes,
+            last_indexed_split.time_range.unwrap(),
+            last_tenant_min_timestamp..=last_tenant_max_timestamp
+        );
+        assert_eq!(last_indexed_split.num_docs, 4);
+        assert_eq!(
+            last_indexed_split.docs_size_in_bytes,
             total_num_bytes_docs / 3
         );
-        assert_eq!(first_indexed_split.demux_num_ops, 1);
-        let reader = first_indexed_split.index.reader()?;
+        assert_eq!(last_indexed_split.demux_num_ops, 1);
+        let reader = last_indexed_split.index.reader()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
         Ok(())
