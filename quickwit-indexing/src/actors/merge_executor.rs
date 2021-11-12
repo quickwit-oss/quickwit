@@ -31,7 +31,7 @@ use quickwit_directories::{BundleDirectory, UnionDirectory};
 use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::SplitMetadata;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
-use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader, FastValue};
+use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader};
 use tantivy::{
     demux, DemuxMapping, Directory, DocIdToSegmentOrdinal, Index, IndexMeta, Segment, SegmentId,
     SegmentReader, TantivyError,
@@ -432,8 +432,12 @@ impl MergeExecutor {
             let num_docs = segment_reader.num_docs() as usize;
             let docs_size_in_bytes =
                 (num_docs as f32 * total_docs_size_in_bytes as f32 / total_num_docs as f32) as u64;
-            let time_range = if let Some(ref timestamp_field) = self.timestamp_field_name {
-                let reader = make_fast_field_reader::<i64>(&segment_reader, timestamp_field)?;
+            let time_range = if let Some(ref timestamp_field_name) = self.timestamp_field_name {
+                let timestamp_field = segment_reader
+                    .schema()
+                    .get_field(timestamp_field_name)
+                    .ok_or_else(|| TantivyError::SchemaError("Field does not exist".to_owned()))?;
+                let reader = segment_reader.fast_fields().i64(timestamp_field)?;
                 Some(RangeInclusive::new(reader.min_value(), reader.max_value()))
             } else {
                 None
@@ -503,7 +507,11 @@ pub fn demux_field_readers(
     for segment in segments {
         let segment_reader = SegmentReader::open(segment)?;
         segments_num_docs.push(segment_reader.num_docs() as usize);
-        let reader = make_fast_field_reader::<u64>(&segment_reader, demux_field_name)?;
+        let field = segment_reader
+            .schema()
+            .get_field(demux_field_name)
+            .ok_or_else(|| TantivyError::SchemaError("Field does not exist".to_owned()))?;
+        let reader = segment_reader.fast_fields().u64_lenient(field)?;
         segments_demux_value_readers.push(reader);
     }
     Ok((segments_num_docs, segments_demux_value_readers))
@@ -776,28 +784,6 @@ pub fn compute_current_split_bounds(
         "Num docs lower bound must be <= num docs upper bound."
     );
     RangeInclusive::new(num_docs_lower_bound, num_docs_upper_bound)
-}
-
-// TODO: refactor that as such a function is already present in quickwit-search.
-pub fn make_fast_field_reader<T: FastValue>(
-    segment_reader: &SegmentReader,
-    fast_field_to_collect: &str,
-) -> tantivy::Result<DynamicFastFieldReader<T>> {
-    let field = segment_reader
-        .schema()
-        .get_field(fast_field_to_collect)
-        .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
-    assert!(
-        segment_reader
-            .schema()
-            .get_field_entry(field)
-            .field_type()
-            .value_type()
-            == T::to_type(),
-        "Fast field type in segment must be the same as the requested type."
-    );
-    let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
-    DynamicFastFieldReader::open(fast_field_slice)
 }
 
 #[cfg(test)]
