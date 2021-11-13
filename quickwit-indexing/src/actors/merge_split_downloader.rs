@@ -41,7 +41,7 @@ impl Actor for MergeSplitDownloader {
     fn observable_state(&self) -> Self::ObservableState {}
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(1)
+        QueueCapacity::Bounded(0)
     }
 
     fn name(&self) -> String {
