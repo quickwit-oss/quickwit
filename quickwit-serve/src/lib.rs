@@ -31,7 +31,7 @@ use std::sync::Arc;
 
 use quickwit_cluster::cluster::{read_or_create_host_key, Cluster};
 use quickwit_cluster::service::ClusterServiceImpl;
-use quickwit_metastore::MetastoreUriResolver;
+use quickwit_metastore::{do_checks, MetastoreUriResolver};
 use quickwit_search::{
     http_addr_to_grpc_addr, http_addr_to_swim_addr, ClusterClient, SearchClientPool,
     SearchServiceImpl,
@@ -103,6 +103,8 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
     let metastore_resolver = MetastoreUriResolver::default();
     let example_index_name = "my_index".to_string();
     let metastore = metastore_resolver.resolve(&args.metastore_uri).await?;
+
+    do_checks(vec![("metastore", metastore.check_connectivity())]).await?;
 
     let host_key = read_or_create_host_key(args.host_key_path.as_path())?;
     let swim_addr = http_addr_to_swim_addr(args.rest_socket_addr);

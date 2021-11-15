@@ -631,6 +631,16 @@ impl Metastore for SingleFileMetastore {
     fn uri(&self) -> String {
         self.uri.clone()
     }
+
+    async fn check_connectivity(&self) -> anyhow::Result<()> {
+        self.inner
+            .lock()
+            .await
+            .storage
+            .check()
+            .await
+            .map_err(Into::into)
+    }
 }
 
 /// A single file metastore factory

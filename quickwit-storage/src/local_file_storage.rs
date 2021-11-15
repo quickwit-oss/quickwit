@@ -163,6 +163,13 @@ impl From<PathBuf> for LocalFileStorage {
 
 #[async_trait]
 impl Storage for LocalFileStorage {
+    async fn check(&self) -> anyhow::Result<()> {
+        if !self.root.exists() {
+            anyhow::bail!("Missing path `{}`", self.root.display())
+        }
+        Ok(())
+    }
+
     async fn put(
         &self,
         path: &Path,

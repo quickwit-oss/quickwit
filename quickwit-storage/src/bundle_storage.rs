@@ -166,6 +166,18 @@ impl BundleStorageFileOffsets {
 
 #[async_trait]
 impl Storage for BundleStorage {
+    async fn check(&self) -> anyhow::Result<()> {
+        if !self
+            .storage
+            .exists(&self.bundle_filepath)
+            .await
+            .unwrap_or(false)
+        {
+            anyhow::bail!("`{}` not found in storage", self.bundle_filepath.display())
+        }
+        Ok(())
+    }
+
     async fn put(
         &self,
         path: &Path,

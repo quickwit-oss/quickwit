@@ -43,7 +43,7 @@ use quickwit_indexing::actors::{
 use quickwit_indexing::models::{CommitPolicy, IndexingDirectory, IndexingStatistics};
 use quickwit_indexing::source::{FileSourceParams, SourceConfig};
 use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::{IndexMetadata, MetastoreUriResolver};
+use quickwit_metastore::{do_checks, IndexMetadata, MetastoreUriResolver};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
@@ -290,6 +290,13 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+
+    do_checks(vec![
+        ("source", Box::pin(source_config.check_source_available())),
+        ("metastore", metastore.check_connectivity()),
+        ("index", metastore.check_index_available(&args.index_id)),
+    ])
+    .await?;
 
     if args.overwrite {
         reset_index(
