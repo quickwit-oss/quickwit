@@ -193,7 +193,7 @@ fn resolve_timestamp_field(
             )
         }
         match timestamp_field_entry.field_type() {
-            FieldType::I64(options) | FieldType::U64(options) => {
+            FieldType::I64(options) => {
                 if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
                     bail!(
                         "Timestamp field cannot be an array, please change your field `{}` from \
@@ -204,8 +204,8 @@ fn resolve_timestamp_field(
             }
             _ => {
                 bail!(
-                    "Timestamp field must be either of type i64 or u64, please change your field \
-                     type `{}` to i64 or u64.",
+                    "Timestamp field must be either of type i64, please change your field type \
+                     `{}` to i64.",
                     timestamp_field_name
                 )
             }
@@ -271,8 +271,8 @@ fn resolve_demux_field(
             }
             _ => {
                 bail!(
-                    "Demux field must be of type u64, please change your field type `{}` to u64 \
-                     or i64.",
+                    "Demux field must be of type u64 or i64, please change your field type `{}` \
+                     to u64 or i64.",
                     demux_field_name
                 )
             }
