@@ -4,18 +4,18 @@ DROP COLUMN update_timestamp;
 
 -- create new timestamp fields
 ALTER TABLE splits
-ADD created_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC');
+ADD create_timestamp TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC');
 ALTER TABLE splits
-ADD updated_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC');
+ADD update_timestamp TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC');
 
 -- replace diesel helper function to make sure it uses UTC timestamp
 CREATE OR REPLACE FUNCTION diesel_set_updated_at() RETURNS trigger AS $$
 BEGIN
     IF (
         NEW IS DISTINCT FROM OLD AND
-        NEW.updated_at IS NOT DISTINCT FROM OLD.updated_at
+        NEW.update_timestamp IS NOT DISTINCT FROM OLD.update_timestamp
     ) THEN
-        NEW.updated_at := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC');
+        NEW.update_timestamp := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC');
     END IF;
     RETURN NEW;
 END;

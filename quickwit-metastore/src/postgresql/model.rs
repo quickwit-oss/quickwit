@@ -84,9 +84,9 @@ pub struct Split {
     /// If a timestamp field is available, the max timestamp in the split.
     pub time_range_end: Option<i64>,
     /// Timestamp for tracking when the split was created.
-    pub created_at: NaiveDateTime,
+    pub create_timestamp: NaiveDateTime,
     /// Timestamp for tracking when the split was last updated.
-    pub updated_at: NaiveDateTime,
+    pub update_timestamp: NaiveDateTime,
     /// A list of tags for categorizing and searching group of splits.
     pub tags: Vec<String>,
     // A JSON string containing all of the SplitMetadataAndFooterOffsets.

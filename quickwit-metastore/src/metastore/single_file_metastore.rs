@@ -202,7 +202,7 @@ impl InnerSingleFileMetastore {
                 SplitState::Staged => {
                     // The split state needs to be updated.
                     metadata.split_metadata.split_state = SplitState::Published;
-                    metadata.split_metadata.updated_at = Utc::now().timestamp();
+                    metadata.split_metadata.update_timestamp = Utc::now().timestamp();
                 }
                 _ => {
                     split_not_staged_ids.push(split_id.to_string());
@@ -248,7 +248,7 @@ impl InnerSingleFileMetastore {
             }
 
             metadata.split_metadata.split_state = SplitState::ScheduledForDeletion;
-            metadata.split_metadata.updated_at = Utc::now().timestamp();
+            metadata.split_metadata.update_timestamp = Utc::now().timestamp();
             is_modified = true;
         }
 
@@ -339,7 +339,7 @@ impl InnerSingleFileMetastore {
 
         // Insert a new split metadata as `Staged` state.
         metadata.split_metadata.split_state = SplitState::Staged;
-        metadata.split_metadata.updated_at = Utc::now().timestamp();
+        metadata.split_metadata.update_timestamp = Utc::now().timestamp();
         metadata_set
             .splits
             .insert(metadata.split_metadata.split_id.to_string(), metadata);
@@ -827,8 +827,8 @@ mod tests {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                created_at: current_timestamp,
-                updated_at: current_timestamp,
+                create_timestamp: current_timestamp,
+                update_timestamp: current_timestamp,
                 ..Default::default()
             },
         };
@@ -935,8 +935,8 @@ mod tests {
                         num_records: 1,
                         size_in_bytes: 2,
                         time_range: Some(RangeInclusive::new(0, 99)),
-                        created_at: current_timestamp,
-                        updated_at: current_timestamp,
+                        create_timestamp: current_timestamp,
+                        update_timestamp: current_timestamp,
                         ..Default::default()
                     },
                 };

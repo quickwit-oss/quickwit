@@ -441,8 +441,10 @@ impl PostgresqlMetastore {
             let split_metadata_and_footer_offsets =
                 match model_split.make_split_metadata_and_footer_offsets() {
                     Ok(mut metadata) => {
-                        metadata.split_metadata.created_at = model_split.created_at.timestamp();
-                        metadata.split_metadata.updated_at = model_split.updated_at.timestamp();
+                        metadata.split_metadata.create_timestamp =
+                            model_split.create_timestamp.timestamp();
+                        metadata.split_metadata.update_timestamp =
+                            model_split.update_timestamp.timestamp();
                         metadata.split_metadata.split_state =
                             SplitState::from_str(&model_split.split_state).map_err(|error| {
                                 MetastoreError::InternalError {
