@@ -20,10 +20,10 @@
 use std::path::Path;
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, AsyncActor, Mailbox, QueueCapacity};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
 use tantivy::Directory;
-use tracing::{info, info_span, Span};
+use tracing::{info, info_span, warn, Span};
 
 use crate::merge_policy::MergeOperation;
 use crate::models::{MergeScratch, ScratchDirectory};
@@ -93,11 +93,15 @@ impl MergeSplitDownloader {
         &self,
         merge_operation: MergeOperation,
         ctx: &ActorContext<MergeOperation>,
-    ) -> anyhow::Result<()> {
-        let merge_scratch_directory = self.scratch_directory.named_temp_child("merge-")?;
+    ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        let merge_scratch_directory = self
+            .scratch_directory
+            .named_temp_child("merge-")
+            .map_err(|error| anyhow::anyhow!(error))?;
         info!(dir=%merge_scratch_directory.path().display(), "download-merge-splits");
-        let downloaded_splits_directory =
-            merge_scratch_directory.named_temp_child("downloaded-splits-")?;
+        let downloaded_splits_directory = merge_scratch_directory
+            .named_temp_child("downloaded-splits-")
+            .map_err(|error| anyhow::anyhow!(error))?;
         let tantivy_dirs = self
             .download_splits(
                 merge_operation.splits(),
@@ -120,15 +124,20 @@ impl MergeSplitDownloader {
         splits: &[SplitMetadata],
         download_directory: &Path,
         ctx: &ActorContext<MergeOperation>,
-    ) -> anyhow::Result<Vec<Box<dyn Directory>>> {
+    ) -> Result<Vec<Box<dyn Directory>>, quickwit_actors::ActorExitStatus> {
         // we download all of the split files in the scratch directory.
         let mut tantivy_dirs = vec![];
         for split in splits {
+            if ctx.kill_switch().is_dead() {
+                warn!(split_id=?split.split_id, "Kill switch was activated. Cancelling download.");
+                return Err(ActorExitStatus::Killed);
+            }
             let _protect_guard = ctx.protect_zone();
             let tantivy_dir = self
                 .storage
                 .fetch_split(&split.split_id, download_directory)
-                .await?;
+                .await
+                .map_err(|error| anyhow::anyhow!(error))?;
             tantivy_dirs.push(tantivy_dir);
         }
         Ok(tantivy_dirs)
