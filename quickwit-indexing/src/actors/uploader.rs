@@ -93,7 +93,7 @@ impl Actor for Uploader {
     }
 
     fn message_span(&self, msg_id: u64, batch: &PackagedSplitBatch) -> Span {
-        info_span!("", msg_id=&msg_id, split=?batch.split_ids())
+        info_span!("", msg_id=&msg_id, num_splits=%batch.split_ids().len())
     }
 }
 
@@ -161,13 +161,13 @@ async fn stage_and_upload_split(
     );
     let index_id = packaged_split.index_id.clone();
     let split_metadata = split_metadata_and_footer_offsets.split_metadata.clone();
-    info!("staging-split");
+    info!(split_id = packaged_split.split_id.as_str(), "staging-split");
     metastore
         .stage_split(&index_id, split_metadata_and_footer_offsets)
         .await?;
     counters.num_staged_splits.fetch_add(1, Ordering::SeqCst);
 
-    info!("storing-split");
+    info!(split_id = packaged_split.split_id.as_str(), "storing-split");
     split_store
         .store_split(
             &split_metadata,
@@ -218,6 +218,7 @@ impl AsyncActor for Uploader {
         let counters = self.counters.clone();
         let index_id = batch.index_id();
         let span = Span::current();
+        info!(split_ids=?split_ids, "start-stage-and-store-splits");
         tokio::spawn(
             async move {
                 fail_point!("uploader:intask:before");
@@ -231,7 +232,7 @@ impl AsyncActor for Uploader {
                     )
                     .await;
                     if let Err(cause) = upload_result {
-                        warn!(cause=%cause, "Failed to upload split. Killing!");
+                        warn!(cause=%cause, split_id=%split.split_id, "Failed to upload split. Killing!");
                         kill_switch.kill();
                         bail!("Failed to upload split `{}`. Killing!", split.split_id);
                     }
@@ -248,7 +249,7 @@ impl AsyncActor for Uploader {
                         &publisher_message
                     );
                 }
-                info!("success-stage-and-store-split");
+                info!("success-stage-and-store-splits");
                 // We explicitely drop it in order to force move the permit guard into the async
                 // task.
                 mem::drop(permit_guard);
