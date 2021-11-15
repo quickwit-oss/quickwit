@@ -265,7 +265,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::{get_split_payload_streamer, PutPayload, RamStorageBuilder};
+    use crate::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
 
     #[tokio::test]
     async fn bundle_storage_file_offsets() -> anyhow::Result<()> {
@@ -279,7 +279,7 @@ mod tests {
         let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(&[99, 55, 44])?;
 
-        let buffer = get_split_payload_streamer(
+        let buffer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[5, 5, 5],
         )?
@@ -320,7 +320,7 @@ mod tests {
         let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(&[99, 55, 44])?;
 
-        let buffer = get_split_payload_streamer(
+        let buffer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[1, 3, 3, 7],
         )?
@@ -359,7 +359,9 @@ mod tests {
 
     #[tokio::test]
     async fn bundlestorage_test_empty() -> anyhow::Result<()> {
-        let buffer = get_split_payload_streamer(&[], &[])?.read_all().await?;
+        let buffer = SplitPayloadBuilder::get_split_payload(&[], &[])?
+            .read_all()
+            .await?;
 
         let (_hotcache, metadata) =
             BundleStorageFileOffsets::open_from_split_data(FileSlice::from(buffer.to_vec()))?;

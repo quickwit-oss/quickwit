@@ -56,7 +56,7 @@ pub use self::object_storage::{
 };
 pub use self::prefix_storage::add_prefix_to_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
-pub use self::split::{get_split_payload_streamer, SplitPayload, SplitPayloadBuilder};
+pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::storage::MockStorage;
 #[cfg(any(test, feature = "testsuite"))]

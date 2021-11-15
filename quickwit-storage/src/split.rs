@@ -69,51 +69,7 @@ impl PutPayload for SplitPayload {
 
     async fn range_byte_stream(&self, range: Range<u64>) -> io::Result<ByteStream> {
         range_byte_stream_from_payloads(&self.payloads, range).await
-
-        // let requested_payload_ranges = chunk_range(&absolute_payload_ranges, range.start as usize
-        // .. range.end as usize); for payload_range in requested_payload_ranges {
-        // let payload_pos =
-        // absolute_payload_ranges.iter().position(|range|range.contains(&payload_range.start)).
-        // expect("broken");
-
-        // let start=absolute_payload_ranges[payload_pos].start as u64;
-        // let relative_range = payload_range.start as u64 - start .. payload_range.end as u64 -
-        // start;
-
-        // bytestreams.push(self.payloads[payload_pos].range_byte_stream(relative_range).await?);
-
-        //}
-
-        // let mut bytestreams: Vec<_> = Vec::new();
-        // for payload in &self.payloads {
-        // let payload_len = payload.len();
-        // if range.start >= payload.len() {
-        //// The current payload does not intersect with the range
-        // range = (range.start - payload_len)..(range.end - payload_len);
-        // continue;
-        //} else if range.end > payload_len {
-        //// This payload intersects with the range, and it is NOT the last one.
-        // bytestreams.push(payload.range_byte_stream(range.start..payload_len).await?);
-        // range = range.start - payload_len..range.end - payload_len;
-        //} else {
-        //// This is the last chunk
-        // bytestreams.push(payload.range_byte_stream(range.start..range.end).await?);
-        // break;
-        //}
     }
-}
-
-/// compute split offsets used by the SplitStreamer
-pub fn get_split_payload_streamer(
-    split_files: &[PathBuf],
-    hotcache: &[u8],
-) -> io::Result<SplitPayload> {
-    let mut split_offset_computer = SplitPayloadBuilder::new();
-    for file in split_files {
-        split_offset_computer.add_file(file)?;
-    }
-    let offsets = split_offset_computer.finalize(hotcache)?;
-    Ok(offsets)
 }
 
 #[derive(Clone)]
@@ -144,7 +100,7 @@ impl PutPayload for FilePayload {
     }
 }
 
-/// SplitOffsetComputer is used to bundle together multiple files into a single split file.
+/// SplitPayloadBuilder is used to create a `SplitPayload`.
 #[derive(Default, Debug)]
 pub struct SplitPayloadBuilder {
     metadata: BundleStorageFileOffsets,
@@ -152,12 +108,14 @@ pub struct SplitPayloadBuilder {
 }
 
 impl SplitPayloadBuilder {
-    /// Creates a new SplitOffsetComputer, to which files and the hotcache can be added.
-    pub fn new() -> Self {
-        SplitPayloadBuilder {
-            current_offset: 0,
-            metadata: Default::default(),
+    /// Creates a new SplitPayloadBuilder for given files and hotcache.
+    pub fn get_split_payload(split_files: &[PathBuf], hotcache: &[u8]) -> io::Result<SplitPayload> {
+        let mut split_payload_builder = SplitPayloadBuilder::default();
+        for file in split_files {
+            split_payload_builder.add_file(file)?;
         }
+        let offsets = split_payload_builder.finalize(hotcache)?;
+        Ok(offsets)
     }
 
     /// Adds the file to the bundle file.
@@ -226,7 +184,8 @@ impl SplitPayloadBuilder {
     }
 }
 
-fn get_payload_with_range(
+/// Returns the payloads with their absolute ranges.
+fn get_payloads_with_absolute_range(
     payloads: &[Box<dyn PutPayload>],
 ) -> Vec<(Box<dyn PutPayload>, Range<usize>)> {
     let mut current = 0;
@@ -240,10 +199,6 @@ fn get_payload_with_range(
         .collect()
 }
 
-fn do_ranges_overlap(range1: &Range<usize>, range2: &Range<usize>) -> bool {
-    !get_ranges_overlap(range1, range2).is_empty()
-}
-
 fn get_ranges_overlap(range1: &Range<usize>, range2: &Range<usize>) -> Range<usize> {
     range1.start.max(range2.start)..range1.end.min(range2.end)
 }
@@ -253,23 +208,18 @@ fn chunk_payload_ranges(
     payloads: &[Box<dyn PutPayload>],
     range: Range<usize>,
 ) -> Vec<(Box<dyn PutPayload>, Range<usize>)> {
-    let payload_with_range = get_payload_with_range(payloads);
     let mut ranges = vec![];
-    let mut current_range = range;
-
-    while let Some((payload, payload_range)) = payload_with_range
-        .iter()
-        .find(|block| do_ranges_overlap(&block.1, &current_range))
-    {
-        let payload_range_absolute_end = current_range.end.min(payload_range.end);
-        let relative_range_in_payload = current_range.start - payload_range.start
-            ..payload_range_absolute_end - payload_range.start;
-
-        ranges.push((payload.clone(), relative_range_in_payload));
-
-        current_range = payload_range.end..current_range.end;
+    for (payload, payload_absolute_range) in get_payloads_with_absolute_range(payloads) {
+        let absolute_range_overlap = get_ranges_overlap(&payload_absolute_range, &range);
+        if !absolute_range_overlap.is_empty() {
+            // Push the range relative to this payload as we will read from it.
+            ranges.push((
+                payload.clone(),
+                (absolute_range_overlap.start - payload_absolute_range.start)
+                    ..(absolute_range_overlap.end - payload_absolute_range.start),
+            ));
+        }
     }
-
     ranges
 }
 
@@ -293,7 +243,7 @@ mod tests {
         file2.write_all(&[99, 55, 44])?;
 
         let _split_streamer =
-            get_split_payload_streamer(&[test_filepath1, test_filepath2], &[1, 2, 3])?;
+            SplitPayloadBuilder::get_split_payload(&[test_filepath1, test_filepath2], &[1, 2, 3])?;
 
         Ok(())
     }
@@ -311,12 +261,6 @@ mod tests {
             .read_to_end(&mut data)
             .await?;
         Ok(data)
-    }
-
-    #[test]
-    fn test_range_contains() {
-        assert!(do_ranges_overlap(&(0..1), &(0..1)));
-        assert!(do_ranges_overlap(&(0..1), &(0..2)));
     }
 
     #[test]
@@ -405,6 +349,14 @@ mod tests {
             vec![2..3, 0..2]
         );
 
+        assert_eq!(
+            chunk_payload_ranges(&payloads, 7..8)
+                .iter()
+                .map(|el| el.1.clone())
+                .collect::<Vec<_>>(),
+            vec![1..2]
+        );
+
         Ok(())
     }
 
@@ -420,7 +372,7 @@ mod tests {
         let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(&[99, 55, 44])?;
 
-        let split_streamer = get_split_payload_streamer(
+        let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[1, 2, 3],
         )?;

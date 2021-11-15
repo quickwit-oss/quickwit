@@ -180,7 +180,7 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
 
-    use quickwit_storage::{get_split_payload_streamer, PutPayload};
+    use quickwit_storage::{PutPayload, SplitPayloadBuilder};
 
     use super::*;
 
@@ -196,7 +196,7 @@ mod tests {
         let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(&[99, 55, 44])?;
 
-        let split_streamer = get_split_payload_streamer(
+        let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
@@ -227,7 +227,7 @@ mod tests {
         let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(&[99, 55, 44])?;
 
-        let split_streamer = get_split_payload_streamer(
+        let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
@@ -265,7 +265,7 @@ mod tests {
         let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(&[99, 55, 44])?;
 
-        let split_streamer = get_split_payload_streamer(
+        let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
             &[1, 2, 3],
         )?;

@@ -135,7 +135,7 @@ mod tests {
 
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::split_file;
-    use quickwit_storage::{get_split_payload_streamer, PutPayload, RamStorageBuilder};
+    use quickwit_storage::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
 
     use super::*;
     use crate::new_split_id;
@@ -157,7 +157,7 @@ mod tests {
         let storage = {
             let mut storage_builder = RamStorageBuilder::default();
             for split in &splits_to_merge {
-                let buffer = get_split_payload_streamer(&[], &[1, 2, 3])?
+                let buffer = SplitPayloadBuilder::get_split_payload(&[], &[1, 2, 3])?
                     .read_all()
                     .await?;
                 storage_builder = storage_builder.put(&split_file(&split.split_id), &buffer);
