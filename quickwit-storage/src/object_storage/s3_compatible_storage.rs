@@ -194,7 +194,7 @@ impl S3CompatibleObjectStorage {
     async fn put_single_part_single_try<'a>(
         &'a self,
         key: &'a str,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
         len: u64,
     ) -> Result<(), RusotoErrorWrapper<PutObjectError>> {
         let body = payload.byte_stream().await?;
@@ -212,7 +212,7 @@ impl S3CompatibleObjectStorage {
     async fn put_single_part<'a>(
         &'a self,
         key: &'a str,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
         len: u64,
     ) -> StorageResult<()> {
         retry(|| self.put_single_part_single_try(key, payload.clone(), len)).await?;
@@ -244,7 +244,7 @@ impl S3CompatibleObjectStorage {
 
     async fn create_multipart_requests(
         &self,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
         len: u64,
         part_len: u64,
     ) -> io::Result<Vec<Part>> {
@@ -277,7 +277,7 @@ impl S3CompatibleObjectStorage {
         upload_id: MultipartUploadId,
         key: &'a str,
         part: Part,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
     ) -> Result<CompletedPart, Retry<StorageError>> {
         let byte_stream = payload
             .range_byte_stream(part.range.clone())
@@ -316,7 +316,7 @@ impl S3CompatibleObjectStorage {
     async fn put_multi_part<'a>(
         &'a self,
         key: &'a str,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
         part_len: u64,
         total_len: u64,
     ) -> StorageResult<()> {
@@ -468,10 +468,10 @@ impl Storage for S3CompatibleObjectStorage {
     async fn put(
         &self,
         path: &Path,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         let key = self.key(path);
-        let total_len = payload.len().await?;
+        let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
         if part_num_bytes >= total_len {
             self.put_single_part(&key, payload, total_len).await?;

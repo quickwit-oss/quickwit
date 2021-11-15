@@ -41,7 +41,7 @@ impl Storage for PrefixStorage {
     async fn put(
         &self,
         path: &Path,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         self.storage.put(&self.prefix.join(path), payload).await
     }

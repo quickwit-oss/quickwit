@@ -31,22 +31,23 @@
 //! - The `BundleStorage` bundles together multiple files into a single file.
 mod cache;
 mod storage;
-pub use self::storage::{PutPayload, PutPayloadProvider, Storage};
+pub use self::payload::PutPayload;
+pub use self::storage::Storage;
 
 mod bundle_storage;
 mod error;
 mod local_file_storage;
 mod object_storage;
+mod payload;
 mod prefix_storage;
 mod ram_storage;
 mod retry;
+mod split;
 mod storage_resolver;
 
 pub use tantivy::directory::OwnedBytes;
 
-pub use self::bundle_storage::{
-    BundleStorage, BundleStorageBuilder, BundleStorageFileOffsets, BUNDLE_FILENAME,
-};
+pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockCache;
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
@@ -55,6 +56,7 @@ pub use self::object_storage::{
 };
 pub use self::prefix_storage::add_prefix_to_storage;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
+pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::storage::MockStorage;
 #[cfg(any(test, feature = "testsuite"))]
@@ -74,7 +76,7 @@ pub(crate) mod tests {
 
     use anyhow::Context;
 
-    use crate::{PutPayload, Storage, StorageErrorKind};
+    use crate::{Storage, StorageErrorKind};
 
     async fn test_get_inexistent_file(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let err = storage
@@ -90,7 +92,7 @@ pub(crate) mod tests {
         storage
             .put(
                 test_path,
-                Box::new(PutPayload::from(&b"abcdefghiklmnopqrstuvxyz"[..])),
+                Box::new(b"abcdefghiklmnopqrstuvxyz"[..].to_vec()),
             )
             .await?;
         let payload = storage.get_slice(test_path, 3..6).await?;
@@ -101,7 +103,7 @@ pub(crate) mod tests {
     async fn test_write_get_all(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("write_and_read_all");
         storage
-            .put(test_path, Box::new(PutPayload::from(&b"abcdef"[..])))
+            .put(test_path, Box::new(b"abcdef"[..].to_vec()))
             .await?;
         let payload = storage.get_all(test_path).await?;
         assert_eq!(&payload[..], &b"abcdef"[..]);
@@ -112,7 +114,7 @@ pub(crate) mod tests {
         let test_path = Path::new("write_and_cp");
         let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
         storage
-            .put(test_path, Box::new(PutPayload::from(payload_bytes)))
+            .put(test_path, Box::new(payload_bytes.to_vec()))
             .await?;
         let tempdir = tempfile::tempdir()?;
         let dest_path = tempdir.path().to_path_buf();
@@ -127,7 +129,7 @@ pub(crate) mod tests {
         let test_path = Path::new("write_and_delete");
         let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
         storage
-            .put(test_path, Box::new(PutPayload::from(payload_bytes)))
+            .put(test_path, Box::new(payload_bytes.to_vec()))
             .await?;
         storage.delete(test_path).await?;
         let slice_err = storage
@@ -142,7 +144,7 @@ pub(crate) mod tests {
         let test_path = Path::new("write_for_filesize");
         let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
         storage
-            .put(test_path, Box::new(PutPayload::from(payload_bytes)))
+            .put(test_path, Box::new(payload_bytes.to_vec()))
             .await?;
         assert_eq!(storage.file_num_bytes(test_path).await?, 26u64);
         storage.delete(test_path).await?;
@@ -152,9 +154,7 @@ pub(crate) mod tests {
     async fn test_exists(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("exists");
         assert!(matches!(storage.exists(test_path).await, Ok(false)));
-        storage
-            .put(test_path, Box::new(PutPayload::from(b"".as_ref())))
-            .await?;
+        storage.put(test_path, Box::new(vec![])).await?;
         assert!(matches!(storage.exists(test_path).await, Ok(true)));
         assert!(matches!(storage.delete(test_path).await, Ok(())));
         Ok(())
@@ -173,7 +173,7 @@ pub(crate) mod tests {
         let test_path = Path::new("foo/bar/write_and_delete_with_separator");
         let payload_bytes = b"abcdefghijklmnopqrstuvwxyz".as_ref();
         storage
-            .put(test_path, Box::new(PutPayload::from(payload_bytes)))
+            .put(test_path, Box::new(payload_bytes.to_vec()))
             .await?;
         assert!(matches!(
             storage.exists(Path::new("foo/bar")).await,

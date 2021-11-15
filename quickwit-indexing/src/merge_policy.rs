@@ -197,7 +197,7 @@ impl<'a> fmt::Debug for SplitShortDebug<'a> {
 }
 
 fn splits_short_debug(splits: &[SplitMetadata]) -> Vec<SplitShortDebug> {
-    splits.iter().map(|split| SplitShortDebug(split)).collect()
+    splits.iter().map(SplitShortDebug).collect()
 }
 
 impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
