@@ -460,6 +460,13 @@ impl MergeExecutor {
             };
             indexed_splits.push(indexed_split);
         }
+        assert_eq!(
+            splits.iter().map(|split| split.num_records).sum::<usize>() as u64,
+            indexed_splits
+                .iter()
+                .map(|split| split.num_docs)
+                .sum::<u64>()
+        );
         ctx.send_message_blocking(
             &self.merge_packager_mailbox,
             IndexedSplitBatch {
@@ -968,6 +975,10 @@ mod tests {
         assert_eq!(packager_msgs.len(), 1);
         let mut splits = packager_msgs.pop().unwrap().splits;
         assert_eq!(splits.len(), 3);
+        let total_num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
+        assert_eq!(total_num_docs, 12);
+        let first_index_split = splits.first().unwrap();
+        assert_eq!(first_index_split.num_docs, 4);
         // We expect that in the last split, we have the last tenant
         // and thus the time range of this tenant.
         let last_indexed_split = splits.pop().unwrap();
