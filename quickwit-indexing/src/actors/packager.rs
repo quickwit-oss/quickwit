@@ -102,7 +102,7 @@ impl Actor for Packager {
     }
 
     fn message_span(&self, msg_id: u64, batch: &IndexedSplitBatch) -> Span {
-        info_span!("", msg_id=&msg_id, split_ids=?batch.splits.iter().map(|split| split.split_id.clone()).collect_vec())
+        info_span!("", msg_id=&msg_id, num_splits=%batch.splits.len())
     }
 }
 
@@ -130,7 +130,7 @@ fn commit_split(
     split: &mut IndexedSplit,
     ctx: &ActorContext<IndexedSplitBatch>,
 ) -> anyhow::Result<()> {
-    info!("commit-split");
+    info!(split_id=%split.split_id, "commit-split");
     let _protect_guard = ctx.protect_zone();
     split
         .index_writer
@@ -189,7 +189,10 @@ fn merge_segments_if_required(
     split: &mut IndexedSplit,
     ctx: &ActorContext<IndexedSplitBatch>,
 ) -> anyhow::Result<Vec<SegmentMeta>> {
-    debug!("merge-segments-if-required");
+    debug!(
+        split_id = split.split_id.as_str(),
+        "merge-segments-if-required"
+    );
     let segment_metas_before_merge = split.index.searchable_segment_metas()?;
     if is_merge_required(&segment_metas_before_merge[..]) {
         let segment_ids: Vec<SegmentId> = segment_metas_before_merge
@@ -197,7 +200,7 @@ fn merge_segments_if_required(
             .map(|segment_meta| segment_meta.id())
             .collect();
 
-        info!(segment_ids=?segment_ids,"merging-segments");
+        info!(split_id=split.split_id.as_str(), segment_ids=?segment_ids, "merging-segments");
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         let _protected_zone_guard = ctx.protect_zone();
         futures::executor::block_on(split.index_writer.merge(&segment_ids))?;
@@ -218,12 +221,12 @@ fn create_packaged_split(
     tags_field: Field,
     ctx: &ActorContext<IndexedSplitBatch>,
 ) -> anyhow::Result<PackagedSplit> {
-    info!("create-packaged-split");
+    info!(split_id = split.split_id.as_str(), "create-packaged-split");
 
     let split_filepath = split.split_scratch_directory.path().join(BUNDLE_FILENAME); // TODO rename <split_id>.split
     let mut split_file = CountingWriter::wrap(File::create(split_filepath)?);
 
-    debug!("create-file-bundle");
+    debug!(split_id = split.split_id.as_str(), "create-file-bundle");
     let Range {
         start: footer_start,
         end: _,
@@ -255,14 +258,14 @@ fn create_packaged_split(
     }
     ctx.record_progress();
 
-    debug!("build-hotcache");
+    debug!(split_id = split.split_id.as_str(), "build-hotcache");
     let hotcache_offset_start = split_file.written_bytes();
     build_hotcache(split.split_scratch_directory.path(), &mut split_file)?;
     let hotcache_offset_end = split_file.written_bytes();
     let hotcache_num_bytes = hotcache_offset_end - hotcache_offset_start;
     ctx.record_progress();
 
-    debug!("split-write-all");
+    debug!(split_id = split.split_id.as_str(), "split-write-all");
     split_file.write_all(&hotcache_num_bytes.to_le_bytes())?;
     split_file.flush()?;
 
@@ -291,6 +294,7 @@ impl SyncActor for Packager {
         batch: IndexedSplitBatch,
         ctx: &ActorContext<IndexedSplitBatch>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        info!(split_ids=?batch.splits.iter().map(|split| split.split_id.clone()).collect_vec(), "start-packaging-splits");
         for split in &batch.splits {
             if let Some(controlled_directory) = split.controlled_directory_opt.as_ref() {
                 controlled_directory.set_progress_and_kill_switch(
