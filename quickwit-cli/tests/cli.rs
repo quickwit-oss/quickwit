@@ -754,7 +754,7 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     .unwrap();
     // TODO: ditto.
     sleep(Duration::from_secs(2)).await;
-    let mut data = vec![0; 512];
+    let mut data = vec![0; 600];
     server_process
         .stdout
         .as_mut()
@@ -808,7 +808,6 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     create_index_cli(args).await?;
     let index_metadata = test_env.metastore().index_metadata(&index_id).await;
     assert_eq!(index_metadata.is_ok(), true);
-
     index_data(
         &index_id,
         test_env.resource_files["logs"].as_path(),
@@ -843,7 +842,7 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     .unwrap();
     // TODO: ditto.
     sleep(Duration::from_secs(2)).await;
-    let mut data = vec![0; 512];
+    let mut data = vec![0; 600];
     server_process
         .stdout
         .as_mut()
