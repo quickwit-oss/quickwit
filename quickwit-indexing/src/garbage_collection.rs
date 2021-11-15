@@ -85,7 +85,7 @@ pub async fn run_garbage_collect(
         .await?
         .into_iter()
         // TODO: Update metastore API and push this filter down.
-        .filter(|meta| meta.split_metadata.updated_at < grace_period_timestamp)
+        .filter(|meta| meta.split_metadata.update_timestamp < grace_period_timestamp)
         .collect();
     if let Some(ctx) = ctx_opt {
         ctx.record_progress();
@@ -123,7 +123,7 @@ pub async fn run_garbage_collect(
         .await?
         .into_iter()
         // TODO: Update metastore API and push this filter down.
-        .filter(|meta| meta.split_metadata.updated_at <= grace_period_deletion)
+        .filter(|meta| meta.split_metadata.update_timestamp <= grace_period_deletion)
         .collect();
 
     let deleted_files = delete_splits_with_files(
