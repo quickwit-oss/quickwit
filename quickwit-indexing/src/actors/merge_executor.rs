@@ -31,7 +31,7 @@ use quickwit_directories::{BundleDirectory, UnionDirectory};
 use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::SplitMetadata;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
-use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader, FastValue};
+use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader};
 use tantivy::{
     demux, DemuxMapping, Directory, DocIdToSegmentOrdinal, Index, IndexMeta, Segment, SegmentId,
     SegmentReader, TantivyError,
@@ -432,8 +432,12 @@ impl MergeExecutor {
             let num_docs = segment_reader.num_docs() as usize;
             let docs_size_in_bytes =
                 (num_docs as f32 * total_docs_size_in_bytes as f32 / total_num_docs as f32) as u64;
-            let time_range = if let Some(ref timestamp_field) = self.timestamp_field_name {
-                let reader = make_fast_field_reader::<i64>(&segment_reader, timestamp_field)?;
+            let time_range = if let Some(ref timestamp_field_name) = self.timestamp_field_name {
+                let timestamp_field = segment_reader
+                    .schema()
+                    .get_field(timestamp_field_name)
+                    .ok_or_else(|| TantivyError::SchemaError("Field does not exist".to_owned()))?;
+                let reader = segment_reader.fast_fields().i64(timestamp_field)?;
                 Some(RangeInclusive::new(reader.min_value(), reader.max_value()))
             } else {
                 None
@@ -456,6 +460,13 @@ impl MergeExecutor {
             };
             indexed_splits.push(indexed_split);
         }
+        assert_eq!(
+            splits.iter().map(|split| split.num_records).sum::<usize>() as u64,
+            indexed_splits
+                .iter()
+                .map(|split| split.num_docs)
+                .sum::<u64>()
+        );
         ctx.send_message_blocking(
             &self.merge_packager_mailbox,
             IndexedSplitBatch {
@@ -503,7 +514,11 @@ pub fn demux_field_readers(
     for segment in segments {
         let segment_reader = SegmentReader::open(segment)?;
         segments_num_docs.push(segment_reader.num_docs() as usize);
-        let reader = make_fast_field_reader::<u64>(&segment_reader, demux_field_name)?;
+        let field = segment_reader
+            .schema()
+            .get_field(demux_field_name)
+            .ok_or_else(|| TantivyError::SchemaError("Field does not exist".to_owned()))?;
+        let reader = segment_reader.fast_fields().u64_lenient(field)?;
         segments_demux_value_readers.push(reader);
     }
     Ok((segments_num_docs, segments_demux_value_readers))
@@ -778,28 +793,6 @@ pub fn compute_current_split_bounds(
     RangeInclusive::new(num_docs_lower_bound, num_docs_upper_bound)
 }
 
-// TODO: refactor that as such a function is already present in quickwit-search.
-pub fn make_fast_field_reader<T: FastValue>(
-    segment_reader: &SegmentReader,
-    fast_field_to_collect: &str,
-) -> tantivy::Result<DynamicFastFieldReader<T>> {
-    let field = segment_reader
-        .schema()
-        .get_field(fast_field_to_collect)
-        .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
-    assert!(
-        segment_reader
-            .schema()
-            .get_field_entry(field)
-            .field_type()
-            .value_type()
-            == T::to_type(),
-        "Fast field type in segment must be the same as the requested type."
-    );
-    let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
-    DynamicFastFieldReader::open(fast_field_slice)
-}
-
 #[cfg(test)]
 mod tests {
     use std::mem;
@@ -905,7 +898,7 @@ mod tests {
             "default_search_fields": ["body"],
             "timestamp_field": "ts",
             "demux_field": "tenant_id",
-            "tag_fields": [],
+            "tag_fields": ["tenant_id"],
             "field_mappings": [
                 { "name": "body", "type": "text" },
                 { "name": "ts", "type": "i64", "fast": true },
@@ -916,12 +909,21 @@ mod tests {
             Arc::new(serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?);
         let index_id = "test-index-demux";
         let test_index_builder = TestSandbox::create(index_id, index_config).await?;
+        let mut last_tenant_min_timestamp = 0;
+        let mut last_tenant_max_timestamp = 0;
         for split_id in 0..4 {
+            let last_tenant_timestamp = 1631072713 + (1 + split_id) * 20;
             let docs = vec![
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": split_id * 10 }),
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": (split_id + 1) * 10 }),
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": (split_id + 2) * 10 }),
+                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": 10 }),
+                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + (1 + split_id) * 10, "tenant_id": 11 }),
+                serde_json::json!({"body ": format!("split{}", split_id), "ts": last_tenant_timestamp, "tenant_id": 12 }),
             ];
+            if split_id == 0 {
+                last_tenant_min_timestamp = last_tenant_timestamp;
+            }
+            if split_id == 3 {
+                last_tenant_max_timestamp = last_tenant_timestamp;
+            }
             test_index_builder.add_documents(docs).await?;
         }
         let metastore = test_index_builder.metastore();
@@ -956,7 +958,7 @@ mod tests {
         let merge_executor = MergeExecutor::new(
             index_id.to_string(),
             merge_packager_mailbox,
-            None,
+            Some("ts".to_string()),
             Some("tenant_id".to_string()),
             2,
             5,
@@ -973,14 +975,24 @@ mod tests {
         assert_eq!(packager_msgs.len(), 1);
         let mut splits = packager_msgs.pop().unwrap().splits;
         assert_eq!(splits.len(), 3);
-        let first_indexed_split = splits.pop().unwrap();
-        assert_eq!(first_indexed_split.num_docs, 4);
+        let total_num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
+        assert_eq!(total_num_docs, 12);
+        let first_index_split = splits.first().unwrap();
+        assert_eq!(first_index_split.num_docs, 4);
+        // We expect that in the last split, we have the last tenant
+        // and thus the time range of this tenant.
+        let last_indexed_split = splits.pop().unwrap();
         assert_eq!(
-            first_indexed_split.docs_size_in_bytes,
+            last_indexed_split.time_range.unwrap(),
+            last_tenant_min_timestamp..=last_tenant_max_timestamp
+        );
+        assert_eq!(last_indexed_split.num_docs, 4);
+        assert_eq!(
+            last_indexed_split.docs_size_in_bytes,
             total_num_bytes_docs / 3
         );
-        assert_eq!(first_indexed_split.demux_num_ops, 1);
-        let reader = first_indexed_split.index.reader()?;
+        assert_eq!(last_indexed_split.demux_num_ops, 1);
+        let reader = last_indexed_split.index.reader()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
         Ok(())
