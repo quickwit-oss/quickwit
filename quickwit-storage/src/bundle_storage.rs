@@ -22,7 +22,7 @@ use std::convert::TryInto;
 use std::fmt;
 use std::fmt::Debug;
 use std::fs::File;
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -30,16 +30,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_common::chunk_range;
 use serde::{Deserialize, Serialize};
-use tantivy::common::CountingWriter;
 use tantivy::directory::FileSlice;
 use tantivy::HasLen;
 use thiserror::Error;
 use tracing::error;
 
 use crate::{OwnedBytes, Storage, StorageError, StorageResult};
-
-/// Filename used for the bundle.
-pub const BUNDLE_FILENAME: &str = "bundle";
 
 /// BundleStorage bundles together multiple files into a single file.
 /// with some metadata
@@ -50,21 +46,43 @@ pub struct BundleStorage {
 }
 
 impl BundleStorage {
-    /// Creates a new BundleStorage.
+    /// Opens a BundleStorage.
     ///
     /// The provided data must include the footer_bytes at the end of the slice, but it can have
     /// more up front.
-    pub fn new(
+    ///
+    /// Returns (Hotcache, Self)
+    pub fn open_from_split_data_with_owned_bytes(
         storage: Arc<dyn Storage>,
         bundle_filepath: PathBuf,
-        meta_data: &[u8],
-    ) -> Result<Self, CorruptedData> {
-        let metadata = BundleStorageFileOffsets::open(meta_data)?;
-        Ok(BundleStorage {
+        split_data: OwnedBytes,
+    ) -> io::Result<(FileSlice, Self)> {
+        Self::open_from_split_data(
             storage,
             bundle_filepath,
-            metadata,
-        })
+            FileSlice::new(Box::new(split_data)),
+        )
+    }
+    /// Opens a BundleStorage.
+    ///
+    /// The provided data must include the footer_bytes at the end of the slice, but it can have
+    /// more up front.
+    ///
+    /// Returns (Hotcache, Self)
+    pub fn open_from_split_data(
+        storage: Arc<dyn Storage>,
+        bundle_filepath: PathBuf,
+        split_data: FileSlice,
+    ) -> io::Result<(FileSlice, Self)> {
+        let (hotcache, metadata) = BundleStorageFileOffsets::open_from_split_data(split_data)?;
+        Ok((
+            hotcache,
+            BundleStorage {
+                storage,
+                bundle_filepath,
+                metadata,
+            },
+        ))
     }
 
     /// Returns Iterator over files contained in the bundle.
@@ -82,37 +100,51 @@ pub struct CorruptedData {
 }
 
 const SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u64>();
+const BUNDLE_METADATA_LENGTH_NUM_BYTES: usize = std::mem::size_of::<u64>();
 
 /// Returns the file offsets in the file bundle.
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct BundleStorageFileOffsets {
     /// The files and their offsets in the body
-    pub files: HashMap<PathBuf, Range<usize>>,
+    pub files: HashMap<PathBuf, Range<u64>>,
 }
 
 impl BundleStorageFileOffsets {
-    fn open(data: &[u8]) -> Result<Self, CorruptedData> {
-        let (body_and_footer, footer_num_bytes_data) =
-            data.split_at(data.len() - SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES);
-        let footer_num_bytes: u64 = u64::from_le_bytes(footer_num_bytes_data.try_into().unwrap());
-        let footer_slice = &body_and_footer[body_and_footer.len() - footer_num_bytes as usize..];
-        let bundle_storage_file_offsets = serde_json::from_slice(footer_slice)?;
-        Ok(bundle_storage_file_offsets)
+    /// File need to include split data (with hotcache at the end).
+    /// See docs/internals/split-format.md
+    /// [Files, FileMetadata, FileMetadata Len, HotCache, HotCache Len]
+    /// Returns (Hotcache, Self)
+    fn open_from_split_data(file: FileSlice) -> io::Result<(FileSlice, Self)> {
+        let (bundle_and_hotcache_bytes, hotcache_num_bytes_data) =
+            file.split_from_end(SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES);
+
+        let hotcache_num_bytes: u64 = u64::from_le_bytes(
+            hotcache_num_bytes_data
+                .read_bytes()?
+                .as_ref()
+                .try_into()
+                .unwrap(),
+        );
+        let (bundle, hotcache) =
+            bundle_and_hotcache_bytes.split_from_end(hotcache_num_bytes as usize);
+        Ok((hotcache, Self::open(bundle)?))
     }
 
-    /// Read metadata from a file.
-    pub fn open_from_file_slice(file: FileSlice) -> io::Result<Self> {
-        let (body_and_footer, footer_num_bytes_data) =
-            file.split_from_end(SPLIT_HOTBYTES_FOOTER_LENGTH_NUM_BYTES);
+    /// FileSlice needs to end with the bundle (without hotcache from the split at the end).
+    /// See docs/internals/split-format.md
+    /// [Files, FileMetadata, FileMetadata Len]
+    pub fn open(file: FileSlice) -> io::Result<Self> {
+        let (tantivy_files_data, num_bytes_file_metadata) =
+            file.split_from_end(BUNDLE_METADATA_LENGTH_NUM_BYTES);
         let footer_num_bytes: u64 = u64::from_le_bytes(
-            footer_num_bytes_data
+            num_bytes_file_metadata
                 .read_bytes()?
                 .as_slice()
                 .try_into()
                 .unwrap(),
         );
 
-        let bundle_storage_file_offsets_data = body_and_footer
+        let bundle_storage_file_offsets_data = tantivy_files_data
             .slice_from_end(footer_num_bytes as usize)
             .read_bytes()?;
         let bundle_storage_file_offsets =
@@ -122,7 +154,7 @@ impl BundleStorageFileOffsets {
     }
 
     /// Returns file offsets for given path.
-    pub fn get(&self, path: &Path) -> Option<Range<usize>> {
+    pub fn get(&self, path: &Path) -> Option<Range<u64>> {
         self.files.get(path).cloned()
     }
 
@@ -137,7 +169,7 @@ impl Storage for BundleStorage {
     async fn put(
         &self,
         path: &Path,
-        _payload: Box<dyn crate::PutPayloadProvider>,
+        _payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         Err(unsupported_operation(path))
     }
@@ -198,7 +230,7 @@ impl Storage for BundleStorage {
             crate::StorageErrorKind::DoesNotExist
                 .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
         })?;
-        Ok(file_range.len() as u64)
+        Ok(file_range.end - file_range.start as u64)
     }
 
     fn uri(&self) -> String {
@@ -228,90 +260,18 @@ fn unsupported_operation(path: &Path) -> StorageError {
     io::Error::new(io::ErrorKind::Other, format!("{}: {:?}", msg, path)).into()
 }
 
-/// BundleStorage bundles together multiple files into a single file
-/// with some metadata
-pub struct BundleStorageBuilder<W> {
-    metadata: BundleStorageFileOffsets,
-    counting_writer: CountingWriter<W>,
-}
-
-impl<W: io::Write> BundleStorageBuilder<W> {
-    /// Creates a new BundleStorageBuilder, to which files can be added.
-    pub fn new(wrt: W) -> io::Result<Self> {
-        let counting_writer = CountingWriter::wrap(wrt);
-        Ok(BundleStorageBuilder {
-            counting_writer,
-            metadata: Default::default(),
-        })
-    }
-
-    /// Appends a file to the bundle file.
-    ///
-    /// The hotcache needs to be the last file that is added, in order to be able to read
-    /// the hotcache and the metadata in one continous read.
-    pub fn add_file_from_read<R: Read>(
-        &mut self,
-        mut read: R,
-        file_name: PathBuf,
-    ) -> io::Result<()> {
-        let start_offset = self.counting_writer.written_bytes() as usize;
-        io::copy(&mut read, &mut self.counting_writer)?;
-        let end_offset = self.counting_writer.written_bytes() as usize;
-        self.metadata
-            .files
-            .insert(file_name, start_offset..end_offset);
-        Ok(())
-    }
-
-    /// Appends a file to the bundle file.
-    ///
-    /// The hotcache needs to be the last file that is added, in order to be able to read
-    /// the hotcache and the metadata in one continous read.
-    pub fn add_file(&mut self, path: &Path) -> io::Result<()> {
-        let file = File::open(path)?;
-        let file_name = PathBuf::from(path.file_name().ok_or_else(|| {
-            io::Error::new(
-                ErrorKind::InvalidInput,
-                format!("could not extract file_name from path {:?}", path),
-            )
-        })?);
-        self.add_file_from_read(file, file_name)?;
-        Ok(())
-    }
-
-    /// Writes the bundle file offsets metadata at the end of the bundle file,
-    /// and returns the byte-range of this metadata information.
-    pub fn finalize(mut self) -> io::Result<Range<u64>> {
-        // The footer offset, where the footer begins.
-        // The footer includes the footer metadata as json encoded and the size of the footer in
-        // bytes.
-        let file_offsets_metadata_start = self.counting_writer.written_bytes();
-        let metadata_json = serde_json::to_string(&self.metadata)?;
-        self.counting_writer.write_all(metadata_json.as_bytes())?;
-        let metadata_json_len = metadata_json.len() as u64;
-        self.counting_writer
-            .write_all(&metadata_json_len.to_le_bytes())?;
-        let file_offsets_metadata_end = self.counting_writer.written_bytes();
-        Ok(file_offsets_metadata_start..file_offsets_metadata_end)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
 
     use super::*;
-    use crate::RamStorageBuilder;
+    use crate::{PutPayload, RamStorageBuilder, SplitPayloadBuilder};
 
     #[tokio::test]
     async fn bundle_storage_file_offsets() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let test_filepath1 = temp_dir.path().join("f1");
         let test_filepath2 = temp_dir.path().join("f2");
-        let test_bundle_path = temp_dir.path().join("le_bundle");
-
-        let mut bundle_file = File::create(test_bundle_path.to_owned())?;
-        let mut bundle_builder = BundleStorageBuilder::new(&mut bundle_file)?;
 
         let mut file1 = File::create(&test_filepath1)?;
         file1.write_all(&[123, 76])?;
@@ -319,14 +279,18 @@ mod tests {
         let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(&[99, 55, 44])?;
 
-        bundle_builder.add_file(&test_filepath1)?;
-        bundle_builder.add_file(&test_filepath2)?;
-        bundle_builder.finalize()?;
+        let buffer = SplitPayloadBuilder::get_split_payload(
+            &[test_filepath1.clone(), test_filepath2.clone()],
+            &[5, 5, 5],
+        )?
+        .read_all()
+        .await?;
 
         let bundle_filepath = Path::new("bundle");
-        let buffer = fs::read(test_bundle_path)?;
-        let bundle_file_slice = FileSlice::from(buffer.to_owned());
-        let metadata = BundleStorageFileOffsets::open_from_file_slice(bundle_file_slice)?;
+        let bundle_file_slice = FileSlice::new(Box::new(buffer.clone()));
+        let (hotcache, metadata) =
+            BundleStorageFileOffsets::open_from_split_data(bundle_file_slice)?;
+        assert_eq!(hotcache.read_bytes().unwrap().as_ref(), &[5, 5, 5]);
         let ram_storage = RamStorageBuilder::default()
             .put(&bundle_filepath.to_string_lossy(), &buffer)
             .build();
@@ -346,9 +310,6 @@ mod tests {
     }
     #[tokio::test]
     async fn bundle_storage_test() -> anyhow::Result<()> {
-        let mut buffer = Vec::new();
-        let mut bundle_builder = BundleStorageBuilder::new(&mut buffer)?;
-
         let temp_dir = tempfile::tempdir()?;
         let test_filepath1 = temp_dir.path().join("f1");
         let test_filepath2 = temp_dir.path().join("f2");
@@ -359,11 +320,17 @@ mod tests {
         let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(&[99, 55, 44])?;
 
-        bundle_builder.add_file(&test_filepath1)?;
-        bundle_builder.add_file(&test_filepath2)?;
-        bundle_builder.finalize()?;
+        let buffer = SplitPayloadBuilder::get_split_payload(
+            &[test_filepath1.clone(), test_filepath2.clone()],
+            &[1, 3, 3, 7],
+        )?
+        .read_all()
+        .await?;
 
-        let metadata = BundleStorageFileOffsets::open(&buffer)?;
+        let (hotcache, metadata) =
+            BundleStorageFileOffsets::open_from_split_data(FileSlice::from(buffer.to_vec()))?;
+        assert_eq!(hotcache.read_bytes().unwrap().as_ref(), &[1, 3, 3, 7]);
+
         let bundle_filepath = Path::new("bundle");
         let ram_storage = RamStorageBuilder::default()
             .put(&bundle_filepath.to_string_lossy(), &buffer)
@@ -392,12 +359,12 @@ mod tests {
 
     #[tokio::test]
     async fn bundlestorage_test_empty() -> anyhow::Result<()> {
-        let mut buffer: Vec<u8> = Vec::new();
+        let buffer = SplitPayloadBuilder::get_split_payload(&[], &[])?
+            .read_all()
+            .await?;
 
-        let create_bundle = BundleStorageBuilder::new(&mut buffer)?;
-        create_bundle.finalize()?;
-
-        let metadata = BundleStorageFileOffsets::open(&buffer)?;
+        let (_hotcache, metadata) =
+            BundleStorageFileOffsets::open_from_split_data(FileSlice::from(buffer.to_vec()))?;
 
         let bundle_filepath = PathBuf::from("bundle");
         let ram_storage = RamStorageBuilder::default()

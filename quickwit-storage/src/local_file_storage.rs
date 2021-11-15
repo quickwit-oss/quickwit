@@ -166,7 +166,7 @@ impl Storage for LocalFileStorage {
     async fn put(
         &self,
         path: &Path,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         let full_path = self.root.join(path);
         if let Some(parent_dir) = full_path.parent() {

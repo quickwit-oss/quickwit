@@ -18,10 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
-use std::fs::File;
 use std::io;
-use std::io::Write;
-use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
@@ -29,8 +26,6 @@ use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity, SyncActor};
 use quickwit_directories::write_hotcache;
-use quickwit_storage::{BundleStorageBuilder, BUNDLE_FILENAME};
-use tantivy::common::CountingWriter;
 use tantivy::schema::Field;
 use tantivy::{ReloadPolicy, SegmentId, SegmentMeta};
 use tracing::*;
@@ -157,28 +152,8 @@ fn list_split_files(
             }
         }
     }
+    index_files.sort();
     index_files
-}
-
-/// Create the file bundle.
-///
-/// Returns the range of the file offsets metadata (required to open the bundle.)
-fn create_file_bundle(
-    segment_metas: &[SegmentMeta],
-    scratch_dir: &ScratchDirectory,
-    split_file: &mut impl io::Write,
-    ctx: &ActorContext<IndexedSplitBatch>,
-) -> anyhow::Result<Range<u64>> {
-    let _protected_zone_guard = ctx.protect_zone();
-    // List the split files that will be packaged into the bundle.
-    let mut bundle_storage_builder = BundleStorageBuilder::new(split_file)?;
-
-    for split_file in list_split_files(segment_metas, scratch_dir) {
-        bundle_storage_builder.add_file(&split_file)?;
-    }
-
-    let bundle_storage_offsets = bundle_storage_builder.finalize()?;
-    Ok(bundle_storage_offsets)
 }
 
 /// If necessary, merge all segments and returns a PackagedSplit.
@@ -209,9 +184,9 @@ fn merge_segments_if_required(
     Ok(segment_metas_after_merge)
 }
 
-fn build_hotcache<W: io::Write>(split_path: &Path, split_file: &mut W) -> anyhow::Result<()> {
+fn build_hotcache<W: io::Write>(split_path: &Path, out: &mut W) -> anyhow::Result<()> {
     let mmap_directory = tantivy::directory::MmapDirectory::open(split_path)?;
-    write_hotcache(mmap_directory, split_file)?;
+    write_hotcache(mmap_directory, out)?;
     Ok(())
 }
 
@@ -222,21 +197,8 @@ fn create_packaged_split(
     ctx: &ActorContext<IndexedSplitBatch>,
 ) -> anyhow::Result<PackagedSplit> {
     info!(split_id = split.split_id.as_str(), "create-packaged-split");
-
-    let split_filepath = split.split_scratch_directory.path().join(BUNDLE_FILENAME); // TODO rename <split_id>.split
-    let mut split_file = CountingWriter::wrap(File::create(split_filepath)?);
-
+    let split_files = list_split_files(segment_metas, &split.split_scratch_directory);
     debug!(split_id = split.split_id.as_str(), "create-file-bundle");
-    let Range {
-        start: footer_start,
-        end: _,
-    } = create_file_bundle(
-        segment_metas,
-        &split.split_scratch_directory,
-        &mut split_file,
-        ctx,
-    )?;
-
     let num_docs = segment_metas
         .iter()
         .map(|segment_meta| segment_meta.num_docs() as u64)
@@ -259,17 +221,9 @@ fn create_packaged_split(
     ctx.record_progress();
 
     debug!(split_id = split.split_id.as_str(), "build-hotcache");
-    let hotcache_offset_start = split_file.written_bytes();
-    build_hotcache(split.split_scratch_directory.path(), &mut split_file)?;
-    let hotcache_offset_end = split_file.written_bytes();
-    let hotcache_num_bytes = hotcache_offset_end - hotcache_offset_start;
+    let mut hotcache_bytes = vec![];
+    build_hotcache(split.split_scratch_directory.path(), &mut hotcache_bytes)?;
     ctx.record_progress();
-
-    debug!(split_id = split.split_id.as_str(), "split-write-all");
-    split_file.write_all(&hotcache_num_bytes.to_le_bytes())?;
-    split_file.flush()?;
-
-    let footer_end = split_file.written_bytes();
 
     let packaged_split = PackagedSplit {
         split_id: split.split_id.to_string(),
@@ -282,8 +236,9 @@ fn create_packaged_split(
         time_range: split.time_range,
         size_in_bytes: split.docs_size_in_bytes,
         tags,
-        footer_offsets: footer_start..footer_end,
         split_date_of_birth: split.split_date_of_birth,
+        split_files,
+        hotcache_bytes,
     };
     Ok(packaged_split)
 }
