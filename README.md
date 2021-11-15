@@ -1,5 +1,7 @@
-[![codecov](https://codecov.io/gh/quickwit-inc/quickwit/branch/main/graph/badge.svg?token=06SRGAV5SS)](https://codecov.io/gh/quickwit-inc/quickwit) [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md) [![License: AGPL V3](https://img.shields.io/badge/license-AGPL%20V3-blue)](LICENCE.md)
-[![Join the chat at https://discord.gg/rpRRTezWhW]](https://shields.io/discord/908281611840282624?label=chat%20on%20discord)](https://discord.gg/rpRRTezWhW)
+[![codecov](https://codecov.io/gh/quickwit-inc/quickwit/branch/main/graph/badge.svg?token=06SRGAV5SS)](https://codecov.io/gh/quickwit-inc/quickwit)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
+[![License: AGPL V3](https://img.shields.io/badge/license-AGPL%20V3-blue)](LICENCE.md)
+[![Join the discord chat](https://shields.io/discord/908281611840282624?label=chat%20on%20discord)](https://discord.gg/rpRRTezWhW)
 <br/>
 <br/>
 <br/>
