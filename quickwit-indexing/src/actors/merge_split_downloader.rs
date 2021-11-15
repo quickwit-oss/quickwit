@@ -61,9 +61,16 @@ impl Actor for MergeSplitDownloader {
                     num_docs=num_docs,
                     num_splits=splits.len())
             }
-            MergeOperation::Demux { .. } => {
-                // FIXME once demux is here.
-                info_span!("demux", msg_id = &msg_id)
+            MergeOperation::Demux {
+                demux_split_ids,
+                splits,
+            } => {
+                let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
+                info_span!("demux",
+                    msg_id=&msg_id,
+                    demux_split_ids=?demux_split_ids,
+                    num_docs=num_docs,
+                    num_splits=splits.len())
             }
         }
     }
