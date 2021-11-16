@@ -194,6 +194,15 @@ pub struct MetadataSet {
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Metastore: Send + Sync + 'static {
+    /// Checks if the metastore is available.
+    async fn check_connectivity(&self) -> anyhow::Result<()>;
+
+    /// Checks if the given index is in this metastore.
+    async fn check_index_available(&self, index_id: &str) -> anyhow::Result<()> {
+        self.index_metadata(index_id).await?;
+        Ok(())
+    }
+
     /// Creates an index.
     /// This API creates index metadata set in the metastore.
     /// An error will occur if an index that already exists in the storage is specified.

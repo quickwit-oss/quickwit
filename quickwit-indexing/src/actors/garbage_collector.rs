@@ -33,7 +33,7 @@ const RUN_INTERVAL: Duration = Duration::from_secs(60); // 1 minutes
 /// Staged files needs to be deleted if there was a failure.
 /// TODO ideally we want clean up all staged splits every time we restart the indexing pipeline, but
 /// the grace period strategy should do the job for the moment.
-const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60); // 1 hour
+const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60 * 24); // 24 hours
 /// We cannot safely delete splits right away as a in-flight queries could actually
 /// have selected this split.
 /// We deal this probably by introducing a grace period. A split is first marked as delete,

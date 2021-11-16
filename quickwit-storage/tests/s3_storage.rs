@@ -22,9 +22,7 @@
 
 use std::path::Path;
 
-use quickwit_storage::{
-    MultiPartPolicy, PutPayload, RegionProvider, S3CompatibleObjectStorage, Storage,
-};
+use quickwit_storage::{MultiPartPolicy, RegionProvider, S3CompatibleObjectStorage, Storage};
 
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
@@ -36,7 +34,7 @@ async fn test_upload_single_part_file() -> anyhow::Result<()> {
     object_storage
         .put(
             Path::new("test-s3-compatible-storage/hello_small.txt"),
-            Box::new(PutPayload::from(b"hello, happy tax payer!".to_vec())),
+            Box::new(b"hello, happy tax payer!".to_vec()),
         )
         .await?;
     Ok(())
@@ -60,7 +58,7 @@ async fn test_upload_multiple_part_file() -> anyhow::Result<()> {
     object_storage
         .put(
             Path::new("test-s3-compatible-storage/hello_large.txt"),
-            Box::new(PutPayload::from(test_buffer)),
+            Box::new(test_buffer),
         )
         .await?;
     Ok(())

@@ -14,6 +14,7 @@ name = "quickwit"
 path = "src/main.rs"
 
 [dependencies]
+async-trait = "0.1"
 anyhow = "1"
 byte-unit = "4"
 clap = { version = "2", features = ["yaml"] }
@@ -46,6 +47,7 @@ humansize = "1.1.1"
 openssl-probe = { version = "0.1.4", optional = true }
 itertools = "0.10.1"
 colored = "2.0.0"
+futures = "0.3"
 
 [dev-dependencies]
 assert_cmd = "1"

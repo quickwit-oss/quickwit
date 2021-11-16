@@ -24,33 +24,43 @@ use std::{fs, io};
 
 use quickwit_common::split_file;
 use quickwit_directories::BundleDirectory;
-use quickwit_storage::{StorageErrorKind, StorageResult};
+use quickwit_storage::{PutPayload, SplitPayloadBuilder, StorageErrorKind, StorageResult};
 use tantivy::directory::MmapDirectory;
 use tantivy::Directory;
 use tracing::{error, warn};
 
 use super::IndexingSplitStoreParams;
 
-#[derive(Clone, Debug)]
-pub struct BundledSplitFile {
-    pub path: PathBuf,
+pub fn get_tantivy_directory_from_split_bundle(
+    split_file: &Path,
+) -> StorageResult<Box<dyn Directory>> {
+    let mmap_directory = MmapDirectory::open(split_file.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Couldn't find parent for {:?}", &split_file),
+        )
+    })?)?;
+    let split_fileslice = mmap_directory.open_read(Path::new(&split_file))?;
+    Ok(Box::new(BundleDirectory::open_split(split_fileslice)?))
 }
-impl BundledSplitFile {
+
+#[derive(Clone, Debug)]
+pub struct SplitFolder {
+    path: PathBuf,
+}
+impl SplitFolder {
     pub fn new(path: PathBuf) -> Self {
-        BundledSplitFile { path }
+        SplitFolder { path }
+    }
+    fn path(&self) -> &Path {
+        &self.path
     }
 }
 
-impl BundledSplitFile {
+impl SplitFolder {
     pub fn get_tantivy_directory(&self) -> StorageResult<Box<dyn Directory>> {
-        let mmap_directory = MmapDirectory::open(self.path.parent().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("Couldn't find parent for {:?}", &self.path),
-            )
-        })?)?;
-        let split_fileslice = mmap_directory.open_read(Path::new(&self.path))?;
-        Ok(Box::new(BundleDirectory::open_split(split_fileslice)?))
+        let mmap_directory = MmapDirectory::open(&self.path)?;
+        Ok(Box::new(mmap_directory))
     }
 
     /// Moves the underlying data to a new location.
@@ -63,7 +73,7 @@ impl BundledSplitFile {
     }
 
     async fn delete(&self) -> io::Result<()> {
-        missing_file_is_ok(tokio::fs::remove_file(&self.path).await)?;
+        missing_file_is_ok(tokio::fs::remove_dir_all(&self.path).await)?;
         Ok(())
     }
 }
@@ -76,9 +86,8 @@ fn missing_file_is_ok(io_result: io::Result<()>) -> io::Result<()> {
     }
 }
 
-// TODO add folder support
-fn split_id_from_filename(dir_entry: &DirEntry) -> Option<String> {
-    if !dir_entry.path().is_file() {
+fn split_id_from_split_folder(dir_entry: &DirEntry) -> Option<String> {
+    if !dir_entry.path().is_dir() {
         return None;
     }
     let split_filename = dir_entry.file_name().into_string().ok()?;
@@ -98,7 +107,7 @@ pub struct LocalSplitStore {
     params: IndexingSplitStoreParams,
     /// Splits owned by the local split store, which reside in the split_store_folder.
     /// SplitId -> (Split Num Bytes, BundledSplitFile)
-    split_files: HashMap<String, (usize, BundledSplitFile)>,
+    split_files: HashMap<String, (usize, SplitFolder)>,
     /// The root folder where all data is moved into.
     split_store_folder: PathBuf,
 }
@@ -111,14 +120,19 @@ impl LocalSplitStore {
         local_storage_root: PathBuf,
         params: IndexingSplitStoreParams,
     ) -> StorageResult<LocalSplitStore> {
-        let mut split_files: HashMap<String, (usize, BundledSplitFile)> = HashMap::new();
+        let mut split_files: HashMap<String, (usize, SplitFolder)> = HashMap::new();
         let mut total_size_in_bytes: usize = 0;
         for dir_entry_result in fs::read_dir(&local_storage_root)? {
             let dir_entry = dir_entry_result?;
-            if let Some(split_id) = split_id_from_filename(&dir_entry) {
-                // TODO support folder containing tantivy index
-                let split_file = BundledSplitFile::new(dir_entry.path());
-                let split_num_bytes = dir_entry.metadata()?.len() as usize;
+            if let Some(split_id) = split_id_from_split_folder(&dir_entry) {
+                let split_file = SplitFolder::new(dir_entry.path());
+                let paths: Vec<_> = fs::read_dir(dir_entry.path())?
+                    .map(|el| el.map(|el| el.path()))
+                    .collect::<Result<_, _>>()?;
+                // TODO: Do we need the hotcache?
+                let split_streamer = SplitPayloadBuilder::get_split_payload(&paths, &[])?;
+
+                let split_num_bytes = split_streamer.len() as usize;
                 total_size_in_bytes += split_num_bytes;
                 split_files.insert(split_id, (split_num_bytes, split_file));
             }
@@ -179,20 +193,22 @@ impl LocalSplitStore {
     }
 
     /// Moves a split into the store.
-    /// from here is an external path, and to is an internal path.
     pub async fn move_into(
         &self,
-        split: &mut BundledSplitFile,
-        to_full_path: &Path,
+        split: &mut SplitFolder,
+        new_folder: &Path,
         split_id: &str,
     ) -> StorageResult<()> {
-        split.move_to(to_full_path, split_id).await?;
+        split.move_to(new_folder, split_id).await?;
         Ok(())
     }
 
-    /// Moves a split within the store to an external path.
-    /// from here is an internal path, and to is an external path.
-    pub async fn move_out(&mut self, split_id: &str, to: &Path) -> StorageResult<BundledSplitFile> {
+    /// Moves a split within the store to an external folder.
+    pub async fn move_out(
+        &mut self,
+        split_id: &str,
+        to_folder: &Path,
+    ) -> StorageResult<SplitFolder> {
         let mut split_file = self
             .split_files
             .remove(split_id)
@@ -201,15 +217,16 @@ impl LocalSplitStore {
                     .with_error(anyhow::anyhow!("Missing split_id `{}`", split_id))
             })?
             .1;
-        split_file.move_to(to, split_id).await?;
+        split_file.move_to(to_folder, split_id).await?;
         Ok(split_file)
     }
 
+    /// Retuns a cached split.
     pub async fn get_cached_split(
         &mut self,
         split_id: &str,
         output_dir_path: &Path,
-    ) -> StorageResult<Option<BundledSplitFile>> {
+    ) -> StorageResult<Option<SplitFolder>> {
         if !self.split_files.contains_key(split_id) {
             return Ok(None);
         }
@@ -241,9 +258,9 @@ impl LocalSplitStore {
         }
     }
 
-    /// Tries to move a `split` file into the cache.
+    /// Tries to move a `split_folder` file into the cache.
     ///
-    /// Move is not an image here. We are litterally moving files.
+    /// Move is not an image here. We are litterally moving the directory.
     ///
     /// If the cache capacity does not allow it, this function
     /// just logs a warning and returns Ok(false).
@@ -252,9 +269,10 @@ impl LocalSplitStore {
     pub async fn move_into_cache<'a>(
         &'a mut self,
         split_id: &'a str,
-        mut split_file: BundledSplitFile,
+        mut split_folder: SplitFolder,
         split_num_bytes: usize,
     ) -> io::Result<bool> {
+        assert!(split_folder.path().is_dir());
         let size_in_cache = self.size_in_store();
 
         // Avoid storing in the cache when the maximum number of cached files is reached.
@@ -269,39 +287,80 @@ impl LocalSplitStore {
             return Ok(false);
         }
 
-        self.move_into(&mut split_file, &self.split_store_folder, split_id)
+        self.move_into(&mut split_folder, &self.split_store_folder, split_id)
             .await?;
 
         self.split_files
-            .insert(split_id.to_string(), (split_num_bytes, split_file));
+            .insert(split_id.to_string(), (split_num_bytes, split_folder));
         Ok(true)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+    use std::io::Write;
+
+    use quickwit_storage::PutPayload;
+    use tantivy::directory::FileSlice;
+
     use super::*;
 
     #[tokio::test]
     async fn test_local_split_store_load_existing_splits() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        tokio::fs::write(&temp_dir.path().join("split1.split"), b"split-content").await?;
-        tokio::fs::write(&temp_dir.path().join("split2.split"), b"split-content2").await?;
+        tokio::fs::write(&temp_dir.path().join("not-a-split.split"), b"split-content").await?;
+        tokio::fs::write(
+            &temp_dir.path().join("also-not-a-split.split"),
+            b"split-content2",
+        )
+        .await?;
         tokio::fs::write(&temp_dir.path().join("different-file"), b"split-content").await?;
-        tokio::fs::create_dir(&temp_dir.path().join("not-a-split.split")).await?;
+        tokio::fs::create_dir(&temp_dir.path().join("split1.split")).await?;
+        tokio::fs::create_dir(&temp_dir.path().join("split2.split")).await?;
         let params = IndexingSplitStoreParams::default();
         let split_store = LocalSplitStore::open(temp_dir.path().to_path_buf(), params)?;
         let cache_content = split_store.inspect();
         assert_eq!(cache_content.len(), 2);
-        assert_eq!(cache_content.get("split1").cloned(), Some(13));
-        assert_eq!(cache_content.get("split2").cloned(), Some(14));
+        assert_eq!(cache_content.get("split1").cloned(), Some(28));
+        assert_eq!(cache_content.get("split2").cloned(), Some(28));
         assert_eq!(
             split_store.size_in_store(),
             SizeInCache {
                 num_splits: 2,
-                size_in_bytes: 27
+                size_in_bytes: 28 * 2
             }
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_stream_split_to_bundle_and_open() -> anyhow::Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let test_filepath1 = temp_dir.path().join("f1");
+        let test_filepath2 = temp_dir.path().join("f2");
+
+        let mut file1 = File::create(&test_filepath1)?;
+        file1.write_all(&[123, 76])?;
+
+        let mut file2 = File::create(&test_filepath2)?;
+        file2.write_all(&[99, 55, 44])?;
+
+        let split_streamer = SplitPayloadBuilder::get_split_payload(
+            &[test_filepath1.clone(), test_filepath2.clone()],
+            &[1, 2, 3],
+        )?;
+
+        let data = split_streamer.read_all().await?;
+
+        let bundle_dir = BundleDirectory::open_split(FileSlice::from(data.to_vec()))?;
+
+        let f1_data = bundle_dir.atomic_read(Path::new("f1"))?;
+        assert_eq!(&*f1_data, &[123u8, 76u8]);
+
+        let f2_data = bundle_dir.atomic_read(Path::new("f2"))?;
+        assert_eq!(&f2_data[..], &[99, 55, 44]);
+
         Ok(())
     }
 }
