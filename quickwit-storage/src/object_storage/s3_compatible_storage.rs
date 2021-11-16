@@ -34,8 +34,8 @@ use rusoto_core::{ByteStream, HttpClient, HttpConfig, Region, RusotoError};
 use rusoto_s3::{
     AbortMultipartUploadRequest, CompleteMultipartUploadRequest, CompletedMultipartUpload,
     CompletedPart, CreateMultipartUploadError, CreateMultipartUploadRequest, DeleteObjectRequest,
-    GetObjectRequest, HeadObjectError, HeadObjectRequest, PutObjectError, PutObjectRequest,
-    S3Client, UploadPartRequest, S3,
+    GetObjectRequest, HeadObjectError, HeadObjectRequest, ListObjectsV2Request, PutObjectError,
+    PutObjectRequest, S3Client, UploadPartRequest, S3,
 };
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -194,7 +194,7 @@ impl S3CompatibleObjectStorage {
     async fn put_single_part_single_try<'a>(
         &'a self,
         key: &'a str,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
         len: u64,
     ) -> Result<(), RusotoErrorWrapper<PutObjectError>> {
         let body = payload.byte_stream().await?;
@@ -212,7 +212,7 @@ impl S3CompatibleObjectStorage {
     async fn put_single_part<'a>(
         &'a self,
         key: &'a str,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
         len: u64,
     ) -> StorageResult<()> {
         retry(|| self.put_single_part_single_try(key, payload.clone(), len)).await?;
@@ -244,7 +244,7 @@ impl S3CompatibleObjectStorage {
 
     async fn create_multipart_requests(
         &self,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
         len: u64,
         part_len: u64,
     ) -> io::Result<Vec<Part>> {
@@ -277,7 +277,7 @@ impl S3CompatibleObjectStorage {
         upload_id: MultipartUploadId,
         key: &'a str,
         part: Part,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
     ) -> Result<CompletedPart, Retry<StorageError>> {
         let byte_stream = payload
             .range_byte_stream(part.range.clone())
@@ -316,7 +316,7 @@ impl S3CompatibleObjectStorage {
     async fn put_multi_part<'a>(
         &'a self,
         key: &'a str,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
         part_len: u64,
         total_len: u64,
     ) -> StorageResult<()> {
@@ -454,13 +454,24 @@ async fn download_all(byte_stream: &mut ByteStream, output: &mut Vec<u8>) -> io:
 
 #[async_trait]
 impl Storage for S3CompatibleObjectStorage {
+    async fn check(&self) -> anyhow::Result<()> {
+        self.s3_client
+            .list_objects_v2(ListObjectsV2Request {
+                bucket: self.bucket.clone(),
+                max_keys: Some(1),
+                ..Default::default()
+            })
+            .await?;
+        Ok(())
+    }
+
     async fn put(
         &self,
         path: &Path,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         let key = self.key(path);
-        let total_len = payload.len().await?;
+        let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
         if part_num_bytes >= total_len {
             self.put_single_part(&key, payload, total_len).await?;

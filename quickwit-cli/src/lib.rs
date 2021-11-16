@@ -43,7 +43,7 @@ use quickwit_indexing::actors::{
 use quickwit_indexing::models::{CommitPolicy, IndexingDirectory, IndexingStatistics};
 use quickwit_indexing::source::{FileSourceParams, SourceConfig};
 use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::{IndexMetadata, MetastoreUriResolver};
+use quickwit_metastore::{do_checks, IndexMetadata, MetastoreUriResolver};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
@@ -211,7 +211,11 @@ pub async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
     let (_, bundle_footer) = read_split_footer(index_storage.clone(), &split_file).await?;
 
-    let bundle_storage = BundleStorage::new(index_storage, split_file, &bundle_footer)?;
+    let (_hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data_with_owned_bytes(
+        index_storage,
+        split_file,
+        bundle_footer,
+    )?;
 
     std::fs::create_dir_all(args.target_folder.to_owned())?;
 
@@ -286,6 +290,13 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+
+    do_checks(vec![
+        ("source", Box::pin(source_config.check_source_available())),
+        ("metastore", metastore.check_connectivity()),
+        ("index", metastore.check_index_available(&args.index_id)),
+    ])
+    .await?;
 
     if args.overwrite {
         reset_index(

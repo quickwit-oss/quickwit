@@ -163,10 +163,17 @@ impl From<PathBuf> for LocalFileStorage {
 
 #[async_trait]
 impl Storage for LocalFileStorage {
+    async fn check(&self) -> anyhow::Result<()> {
+        if !self.root.exists() {
+            anyhow::bail!("Missing path `{}`", self.root.display())
+        }
+        Ok(())
+    }
+
     async fn put(
         &self,
         path: &Path,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         let full_path = self.root.join(path);
         if let Some(parent_dir) = full_path.parent() {

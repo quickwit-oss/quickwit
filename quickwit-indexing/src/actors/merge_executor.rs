@@ -349,7 +349,7 @@ impl MergeExecutor {
         ctx.record_progress();
         info!("open-readers");
         let (replaced_segments_num_docs, replaced_segments_demux_field_readers) =
-            demux_field_readers(&replaced_segments, demux_field_name)?;
+            demux_field_readers(&replaced_segments, demux_field_name, ctx)?;
         // Build virtual split for all replaced splits = counting demux values in all replaced
         // segments.
         let mut virtual_split_with_all_docs = VirtualSplit::new(BTreeMap::new());
@@ -360,24 +360,22 @@ impl MergeExecutor {
             for doc_id in 0..*num_docs {
                 virtual_split_with_all_docs.add_docs(demux_value_reader.get(doc_id as u32), 1);
             }
+            ctx.record_progress();
         }
-        ctx.record_progress();
-        info!("demux-virtual-split-start");
+        info!("demux-virtual-split");
         let demuxed_virtual_splits = demux_virtual_split(
             virtual_split_with_all_docs,
             self.min_demuxed_split_num_docs,
             self.max_demuxed_split_num_docs,
             demux_split_ids.len(),
         );
-        info!("demux-virtual-split-end");
         ctx.record_progress();
-        info!("demux-build-mapping-start");
+        info!("demux-build-mapping");
         let demux_mapping = build_demux_mapping(
             replaced_segments_num_docs,
             replaced_segments_demux_field_readers,
             demuxed_virtual_splits,
         );
-        info!("demux-build-mapping-end");
         let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..demux_split_ids.len())
             .map(|idx| merge_scratch_directory.named_temp_child(format!("demux-split-{}", idx)))
             .try_collect()?;
@@ -385,15 +383,13 @@ impl MergeExecutor {
             .iter()
             .map(|directory| create_demux_output_directory(directory.path(), ctx))
             .try_collect()?;
-
         ctx.record_progress();
         let union_index_meta = combine_index_meta(index_metas)?;
-
         let boxed_demuxed_split_directories: Vec<Box<dyn Directory>> = demuxed_split_directories
             .iter()
             .map(DirectoryClone::box_clone)
             .collect();
-
+        info!("demux-tantivy");
         let indexes = {
             let _protect_guard = ctx.protect_zone();
             demux(
@@ -403,6 +399,7 @@ impl MergeExecutor {
                 boxed_demuxed_split_directories,
             )?
         };
+        ctx.record_progress();
         info!(elapsed_secs = start.elapsed().as_secs_f32(), "demux-stop");
         let mut indexed_splits = Vec::new();
         // We cannot get the right `docs_size_in_bytes` for demuxed splits as it
@@ -459,6 +456,7 @@ impl MergeExecutor {
                 controlled_directory_opt: Some(controlled_directory),
             };
             indexed_splits.push(indexed_split);
+            ctx.record_progress();
         }
         assert_eq!(
             splits.iter().map(|split| split.num_records).sum::<usize>() as u64,
@@ -508,6 +506,7 @@ pub fn load_metas_and_segments(
 pub fn demux_field_readers(
     segments: &[Segment],
     demux_field_name: &str,
+    ctx: &ActorContext<MergeScratch>,
 ) -> anyhow::Result<(Vec<usize>, Vec<DynamicFastFieldReader<u64>>)> {
     let mut segments_num_docs = Vec::new();
     let mut segments_demux_value_readers = Vec::new();
@@ -520,6 +519,7 @@ pub fn demux_field_readers(
             .ok_or_else(|| TantivyError::SchemaError("Field does not exist".to_owned()))?;
         let reader = segment_reader.fast_fields().u64_lenient(field)?;
         segments_demux_value_readers.push(reader);
+        ctx.record_progress();
     }
     Ok((segments_num_docs, segments_demux_value_readers))
 }
@@ -806,7 +806,7 @@ mod tests {
     use super::*;
     use crate::merge_policy::MergeOperation;
     use crate::models::ScratchDirectory;
-    use crate::{new_split_id, BundledSplitFile, TestSandbox};
+    use crate::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
@@ -848,11 +848,8 @@ mod tests {
             storage
                 .copy_to_file(Path::new(&split_filename), &dest_filepath)
                 .await?;
-            tantivy_dirs.push(
-                BundledSplitFile::new(dest_filepath.to_owned())
-                    .get_tantivy_directory()
-                    .unwrap(),
-            );
+
+            tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap())
         }
         let merge_scratch = MergeScratch {
             merge_operation: MergeOperation::Merge {

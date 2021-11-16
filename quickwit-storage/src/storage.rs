@@ -17,129 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::io::{self, SeekFrom};
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use async_trait::async_trait;
-use rusoto_core::ByteStream;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio_util::io::ReaderStream;
 
-use crate::{OwnedBytes, StorageErrorKind, StorageResult};
-
-#[async_trait]
-/// PutPayloadProvider is used to upload data and support multipart.
-pub trait PutPayloadProvider: PutPayloadProviderClone + Send + Sync {
-    /// Return the total length of the payload.
-    async fn len(&self) -> io::Result<u64>;
-    /// Retrieve bytestream for specified range.
-    async fn range_byte_stream(&self, range: Range<u64>) -> io::Result<ByteStream>;
-
-    /// Retrieve complete bytestream.
-    async fn byte_stream(&self) -> io::Result<ByteStream> {
-        let total_len = self.len().await?;
-        let range = 0..total_len;
-        self.range_byte_stream(range).await
-    }
-
-    /// Load the whole Payload into memory.
-    async fn read_all(&self) -> io::Result<OwnedBytes> {
-        let total_len = self.len().await?;
-        let range = 0..total_len;
-        let mut reader = self.range_byte_stream(range).await?.into_async_read();
-
-        let mut data: Vec<u8> = Vec::with_capacity(total_len as usize);
-        tokio::io::copy(&mut reader, &mut data).await?;
-
-        Ok(OwnedBytes::new(data))
-    }
-}
-
-pub trait PutPayloadProviderClone {
-    fn box_clone(&self) -> Box<dyn PutPayloadProvider>;
-}
-
-impl<T> PutPayloadProviderClone for T
-where T: 'static + PutPayloadProvider + Clone
-{
-    fn box_clone(&self) -> Box<dyn PutPayloadProvider> {
-        Box::new(self.clone())
-    }
-}
-
-impl Clone for Box<dyn PutPayloadProvider> {
-    fn clone(&self) -> Box<dyn PutPayloadProvider> {
-        self.box_clone()
-    }
-}
-
-/// Payload argument of a put request.
-#[derive(Clone)]
-pub enum PutPayload {
-    /// Put data from the local file.
-    LocalFile(PathBuf),
-    /// Put data from a local buffer
-    InMemory(OwnedBytes),
-}
-
-impl PutPayload {
-    // Returns the len of the payload expressed in number of bytes.
-    pub(crate) async fn len(&self) -> io::Result<u64> {
-        match self {
-            Self::LocalFile(path) => {
-                let metadata = tokio::fs::metadata(path).await?;
-                Ok(metadata.len())
-            }
-            Self::InMemory(payload) => Ok(payload.len() as u64),
-        }
-    }
-}
-
-#[async_trait]
-impl PutPayloadProvider for PutPayload {
-    async fn len(&self) -> io::Result<u64> {
-        self.len().await
-    }
-
-    async fn range_byte_stream(&self, range: Range<u64>) -> io::Result<ByteStream> {
-        match self {
-            PutPayload::LocalFile(filepath) => {
-                let mut file: tokio::fs::File = tokio::fs::File::open(&filepath).await?;
-                file.seek(SeekFrom::Start(range.start)).await?;
-                let reader_stream = ReaderStream::new(file.take(range.end - range.start));
-                Ok(ByteStream::new(reader_stream))
-            }
-            PutPayload::InMemory(data) => Ok(ByteStream::from(
-                (&data[range.start as usize..range.end as usize]).to_vec(),
-            )),
-        }
-    }
-}
-
-impl From<PathBuf> for PutPayload {
-    fn from(file_path: PathBuf) -> Self {
-        PutPayload::LocalFile(file_path)
-    }
-}
-
-impl From<OwnedBytes> for PutPayload {
-    fn from(bytes: OwnedBytes) -> Self {
-        PutPayload::InMemory(bytes)
-    }
-}
-
-impl From<Vec<u8>> for PutPayload {
-    fn from(bytes: Vec<u8>) -> Self {
-        PutPayload::InMemory(OwnedBytes::new(bytes))
-    }
-}
-
-impl From<&'static [u8]> for PutPayload {
-    fn from(payload_bytes: &'static [u8]) -> Self {
-        From::from(OwnedBytes::new(payload_bytes))
-    }
-}
+use crate::{OwnedBytes, PutPayload, StorageErrorKind, StorageResult};
 
 /// Storage meant to receive and serve quickwit's split.
 ///
@@ -155,8 +38,11 @@ impl From<&'static [u8]> for PutPayload {
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait Storage: Send + Sync + 'static {
+    /// Check storage connection if applicable
+    async fn check(&self) -> anyhow::Result<()>;
+
     /// Saves a file into the storage.
-    async fn put(&self, path: &Path, payload: Box<dyn PutPayloadProvider>) -> StorageResult<()>;
+    async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()>;
 
     /// Downloads an entire file and writes it into a local file.
     /// `output_path` is expected to be a file path (not a directory path).

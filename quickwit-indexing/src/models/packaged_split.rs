@@ -18,14 +18,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
-use std::ops::{Range, RangeInclusive};
+use std::fmt;
+use std::ops::RangeInclusive;
 use std::time::Instant;
 
 use quickwit_metastore::checkpoint::CheckpointDelta;
 
 use crate::models::ScratchDirectory;
 
-#[derive(Debug)]
 pub struct PackagedSplit {
     pub split_id: String,
     pub replaced_split_ids: Vec<String>,
@@ -33,12 +33,32 @@ pub struct PackagedSplit {
     pub checkpoint_deltas: Vec<CheckpointDelta>,
     pub time_range: Option<RangeInclusive<i64>>,
     pub size_in_bytes: u64,
-    pub footer_offsets: Range<u64>,
     pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,
     pub demux_num_ops: usize,
     pub tags: HashSet<String>,
     pub split_date_of_birth: Instant,
+    pub split_files: Vec<std::path::PathBuf>,
+    pub hotcache_bytes: Vec<u8>,
+}
+
+impl fmt::Debug for PackagedSplit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PackagedSplit")
+            .field("split_id", &self.split_id)
+            .field("replaced_split_ids", &self.replaced_split_ids)
+            .field("index_id", &self.index_id)
+            .field("checkpoint_deltas", &self.checkpoint_deltas)
+            .field("time_range", &self.time_range)
+            .field("size_in_bytes", &self.size_in_bytes)
+            .field("split_scratch_directory", &self.split_scratch_directory)
+            .field("num_docs", &self.num_docs)
+            .field("demux_num_ops", &self.demux_num_ops)
+            .field("tags", &self.tags)
+            .field("split_date_of_birth", &self.split_date_of_birth)
+            .field("split_files", &self.split_files)
+            .finish()
+    }
 }
 
 #[derive(Debug)]
