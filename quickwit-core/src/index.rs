@@ -92,7 +92,7 @@ pub async fn delete_index(
         .await?;
 
     let split_store = IndexingSplitStore::create_with_no_local_store(storage);
-    let deletion_stats = delete_splits_with_files(
+    let deleted_entries = delete_splits_with_files(
         index_id,
         split_store,
         metastore.clone(),
@@ -101,7 +101,7 @@ pub async fn delete_index(
     )
     .await?;
     metastore.delete_index(index_id).await?;
-    Ok(deletion_stats.deleted_entries)
+    Ok(deleted_entries)
 }
 
 /// Detect all dangling splits and associated files from the index and removes them.
@@ -125,7 +125,7 @@ pub async fn garbage_collect_index(
     let storage = storage_resolver.resolve(&index_uri)?;
     let split_store = IndexingSplitStore::create_with_no_local_store(storage);
 
-    let deletion_stats = run_garbage_collect(
+    let deleted_entries = run_garbage_collect(
         index_id,
         split_store,
         metastore,
@@ -137,11 +137,8 @@ pub async fn garbage_collect_index(
         None,
     )
     .await?;
-    if dry_run {
-        Ok(deletion_stats.candidate_entries)
-    } else {
-        Ok(deletion_stats.deleted_entries)
-    }
+
+    Ok(deleted_entries)
 }
 
 /// Clears the index by applying the following actions:
