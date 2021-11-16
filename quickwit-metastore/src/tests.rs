@@ -1753,7 +1753,7 @@ pub mod test_suite {
 
         current_timestamp = split_meta.update_timestamp;
 
-        // wait for 1s, mark split for deletion & check `updated_at`
+        // wait for 1s, mark split for deletion & check `update_timestamp`
         sleep(Duration::from_secs(1)).await;
         metastore
             .mark_splits_for_deletion(index_id, &[split_id])
