@@ -25,7 +25,6 @@ use tracing::{debug, error, info, Instrument};
 
 use crate::actor::{process_command, ActorExitStatus};
 use crate::actor_handle::ActorHandle;
-use crate::actor_state::ActorState;
 use crate::actor_with_state_tx::ActorWithStateTx;
 use crate::mailbox::{CommandOrMessage, Inbox};
 use crate::{Actor, ActorContext, RecvError};
@@ -118,7 +117,7 @@ async fn process_msg<A: Actor + AsyncActor>(
     }
     ctx.progress().record_progress();
 
-    let command_or_msg_recv_res = if ctx.state() == ActorState::Running {
+    let command_or_msg_recv_res = if ctx.state().is_running() {
         inbox.recv_timeout().await
     } else {
         // The actor is paused. We only process command and scheduled message.
@@ -131,13 +130,18 @@ async fn process_msg<A: Actor + AsyncActor>(
     }
 
     match command_or_msg_recv_res {
-        Ok(CommandOrMessage::Command(cmd)) => process_command(actor, cmd, ctx, state_tx),
+        Ok(CommandOrMessage::Command(cmd)) => {
+            ctx.process();
+            process_command(actor, cmd, ctx, state_tx)
+        }
         Ok(CommandOrMessage::Message(msg)) => {
+            ctx.process();
             let span = actor.message_span(msg_id, &msg);
             actor.process_message(msg, ctx).instrument(span).await.err()
         }
         Err(RecvError::Disconnected) => Some(ActorExitStatus::Success),
         Err(RecvError::Timeout) => {
+            ctx.idle();
             if ctx.mailbox().is_last_mailbox() {
                 // No one will be able to send us more messages.
                 // We can exit the actor.
