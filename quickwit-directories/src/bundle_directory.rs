@@ -49,6 +49,9 @@ impl Debug for BundleDirectory {
 }
 
 /// Loads the split footer from a storage and path.
+/// Returns (SplitFooter, BundleFooter)
+/// SplitFooter [BundleMetadata, BundleMetadata Len, Hotcache, Hotcache len]
+/// BundleFooter [BundleMetadata, BundleMetadata Len]
 pub async fn read_split_footer(
     storage: Arc<dyn Storage>,
     path: &Path,
