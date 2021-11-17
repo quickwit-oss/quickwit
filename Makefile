@@ -34,11 +34,11 @@ test-all: docker-compose-up
 
 # This will build and push all custom cross images for cross-compilation.
 # You will need to login into dockerhub with `quickwitinc` account
-IMAGE_TAGS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-musl 
+IMAGE_TAGS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl
 
 .PHONY: cross-images
 cross-images:
 	for tag in ${IMAGE_TAGS}; do \
-		docker build --tag quickwitinc/builder-$$tag --file ./build/cross-images/$$tag.dockerfile ./build/cross-images; \
-		docker push quickwitinc/builder-$$tag:latest; \
+		docker build --tag quickwit/cross-builder:$$tag --file ./build/cross-images/$$tag.dockerfile ./build/cross-images; \
+		docker push quickwit/cross-builder:$$tag; \
 	done
