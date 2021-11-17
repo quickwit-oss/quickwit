@@ -208,13 +208,12 @@ async fn leaf_search_single_split(
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
     let quickwit_collector = make_collector_for_split(
-        split_id,
+        split_id.clone(),
         index_config.as_ref(),
         search_request,
         &split_schema,
     );
     let query = index_config.query(split_schema, search_request)?;
-
     let reader = index
         .reader_builder()
         .num_searchers(1)
@@ -222,12 +221,15 @@ async fn leaf_search_single_split(
         .try_into()?;
     let searcher = reader.searcher();
     warmup(&*searcher, &query, &quickwit_collector.fast_field_names()).await?;
-    let span = info_span!(
-        "search",
-        split_id = %split.split_id,
-    );
-    let _ = span.enter();
-    let leaf_search_response = searcher.search(&query, &quickwit_collector)?;
+    let leaf_search_response = crate::qspawn_blocking(move || {
+        let span = info_span!( "search", split_id = %split.split_id);
+        let _span_guard = span.enter();
+        searcher.search(&query, &quickwit_collector)
+    })
+    .await
+    .map_err(|_| {
+        crate::SearchError::InternalError(format!("Leaf search panicked. split={}", split_id))
+    })??;
     Ok(leaf_search_response)
 }
 

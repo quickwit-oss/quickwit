@@ -2432,6 +2432,7 @@ dependencies = [
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-storage",
+ "rayon",
  "serde",
  "serde_json",
  "tantivy",
