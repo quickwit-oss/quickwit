@@ -171,7 +171,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -229,7 +228,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -244,7 +242,6 @@ pub mod test_suite {
                 num_records: 5,
                 size_in_bytes: 6,
                 time_range: Some(RangeInclusive::new(30, 99)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -585,7 +582,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: None,
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -600,7 +596,6 @@ pub mod test_suite {
                 num_records: 5,
                 size_in_bytes: 6,
                 time_range: None,
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -615,7 +610,6 @@ pub mod test_suite {
                 num_records: 5,
                 size_in_bytes: 6,
                 time_range: None,
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -812,7 +806,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -887,7 +880,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -1014,7 +1006,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -1028,7 +1019,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(100, 199)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -1042,7 +1032,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(200, 299)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -1056,7 +1045,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(300, 399)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -1070,7 +1058,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: None,
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -1154,7 +1141,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 tags: to_set(&["foo", "bar"]),
                 demux_num_ops: 0,
@@ -1169,7 +1155,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(100, 199)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 tags: to_set(&["bar"]),
                 demux_num_ops: 0,
@@ -1184,7 +1169,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(200, 299)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 tags: to_set(&["foo", "baz"]),
                 demux_num_ops: 0,
@@ -1199,7 +1183,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(300, 399)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 tags: to_set(&["foo"]),
                 demux_num_ops: 0,
@@ -1214,7 +1197,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: None,
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 tags: to_set(&["baz", "biz"]),
                 demux_num_ops: 0,
@@ -1643,7 +1625,6 @@ pub mod test_suite {
                     num_records: 1,
                     size_in_bytes: 2,
                     time_range: None,
-                    create_timestamp: current_timestamp,
                     update_timestamp: current_timestamp,
                     tags: to_set(&[]),
                     demux_num_ops: 0,
@@ -1715,7 +1696,6 @@ pub mod test_suite {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },

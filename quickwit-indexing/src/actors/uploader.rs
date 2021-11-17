@@ -108,7 +108,6 @@ fn create_split_metadata(
             time_range: split.time_range.clone(),
             size_in_bytes: split.size_in_bytes,
             split_state: SplitState::New,
-            create_timestamp: Utc::now().timestamp(),
             update_timestamp: Utc::now().timestamp(),
             tags: split.tags.clone(),
             demux_num_ops: split.demux_num_ops,
