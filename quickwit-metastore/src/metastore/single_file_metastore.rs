@@ -827,7 +827,6 @@ mod tests {
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -925,7 +924,6 @@ mod tests {
         for i in 1..=20 {
             let sleep_duration = Duration::from_millis(random_generator.gen_range(0..=200));
             let metastore = metastore.clone();
-            let current_timestamp = Utc::now().timestamp();
             let handle = tokio::spawn(async move {
                 let split_metadata = SplitMetadataAndFooterOffsets {
                     footer_offsets: 1000..2000,
@@ -935,8 +933,7 @@ mod tests {
                         num_records: 1,
                         size_in_bytes: 2,
                         time_range: Some(RangeInclusive::new(0, 99)),
-                        create_timestamp: current_timestamp,
-                        update_timestamp: current_timestamp,
+                        update_timestamp: Utc::now().timestamp(),
                         ..Default::default()
                     },
                 };
