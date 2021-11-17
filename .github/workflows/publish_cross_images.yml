@@ -19,5 +19,5 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
-      - name: Build & push images
+      - name: Build and push cross images
         run: make cross-images

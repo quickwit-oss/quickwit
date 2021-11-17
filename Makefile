@@ -33,12 +33,12 @@ test-all: docker-compose-up
 	QUICKWIT_ENV=local cargo test --all-features
 
 # This will build and push all custom cross images for cross-compilation.
-# You will need to login into dockerhub with `quickwitinc` account
+# You will need to login into Docker Hub with the `quickwit` account.
 IMAGE_TAGS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl
 
 .PHONY: cross-images
 cross-images:
 	for tag in ${IMAGE_TAGS}; do \
-		docker build --tag quickwit/cross-builder:$$tag --file ./build/cross-images/$$tag.dockerfile ./build/cross-images; \
-		docker push quickwit/cross-builder:$$tag; \
+		docker build --tag quickwit/cross:$$tag --file ./build/cross-images/$$tag.dockerfile ./build/cross-images; \
+		docker push quickwit/cross:$$tag; \
 	done
