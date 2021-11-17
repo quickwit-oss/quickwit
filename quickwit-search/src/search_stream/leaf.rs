@@ -20,11 +20,12 @@
 use std::collections::HashSet;
 use std::hash::Hash;
 use std::marker::PhantomData;
+use std::mem;
 use std::sync::Arc;
 
 use futures::{FutureExt, StreamExt};
 use once_cell::sync::OnceCell;
-use quickwit_common::get_from_env;
+use quickwit_common::{get_from_env, quickwit_memory_usage};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
@@ -142,6 +143,15 @@ async fn leaf_search_stream_single_split(
     }
 
     let search_request = Arc::new(SearchRequest::from(stream_request.clone()));
+
+    // See explanation in `src/leaf.rs`.
+    let memory_cushion = quickwit_memory_usage()
+        .use_memory_with_limit(
+            crate::LEAF_REQUEST_MEMORY_CUSHION,
+            crate::memory_threshold_to_start_leaf_request(),
+        )
+        .await;
+
     let query = index_config.query(split_schema.clone(), &search_request)?;
     let reader = index
         .reader_builder()
@@ -155,6 +165,7 @@ async fn leaf_search_stream_single_split(
         &request_fields.fast_fields_for_request(),
     )
     .await?;
+    mem::drop(memory_cushion);
 
     let span = info_span!(
         "collect_fast_field",

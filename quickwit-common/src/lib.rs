@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod coolid;
+pub mod memory_usage;
 pub mod metrics;
 
 use std::fmt::Debug;
@@ -25,6 +26,7 @@ use std::ops::Range;
 use std::str::FromStr;
 
 pub use coolid::new_coolid;
+use once_cell::sync::OnceCell;
 use tracing::{error, info};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -81,6 +83,12 @@ pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {
     }
     info!(value=?default_value, "Setting `{}` from default", key);
     default_value
+}
+
+/// Returns an instance to track the memory usage of quickwit.
+pub fn quickwit_memory_usage() -> &'static memory_usage::MemoryUsage {
+    static MEMORY_USAGE: OnceCell<memory_usage::MemoryUsage> = OnceCell::new();
+    MEMORY_USAGE.get_or_init(Default::default)
 }
 
 #[cfg(test)]

@@ -31,6 +31,7 @@
 //! - The `BundleStorage` bundles together multiple files into a single file.
 mod cache;
 mod storage;
+mod tracking_storage;
 pub use self::payload::PutPayload;
 pub use self::storage::Storage;
 
@@ -45,6 +46,7 @@ mod retry;
 mod split;
 mod storage_resolver;
 
+use quickwit_common::get_from_env;
 pub use tantivy::directory::OwnedBytes;
 
 pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
@@ -68,6 +70,14 @@ pub use self::storage_resolver::{
 pub use self::tests::storage_test_suite;
 pub use crate::cache::{wrap_storage_with_long_term_cache, Cache, MemorySizedCache, SliceCache};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
+
+const DEFAULT_FAST_CACHE_CAPACITY: u64 = 15_000_000_000; // 15 GB
+const FAST_CACHE_CAPACITY_ENV_KEY: &str = "FAST_CACHE_CAPACITY";
+
+/// Returns the fast field cache capacity.
+pub fn fast_cache_capacity() -> u64 {
+    get_from_env(FAST_CACHE_CAPACITY_ENV_KEY, DEFAULT_FAST_CACHE_CAPACITY)
+}
 
 #[cfg(any(test, feature = "testsuite"))]
 pub(crate) mod tests {

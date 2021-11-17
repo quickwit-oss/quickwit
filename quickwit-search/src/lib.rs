@@ -45,6 +45,7 @@ use std::net::SocketAddr;
 use std::ops::Range;
 
 use anyhow::Context;
+use quickwit_common::get_from_env;
 use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadataAndFooterOffsets, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
@@ -62,6 +63,28 @@ pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 use crate::thread_pool::qspawn_blocking;
+
+const DEFAULT_SPLIT_FOOTER_CACHE_CAPACITY: u64 = 500_000_000;
+const SPLIT_FOOTER_CACHE_CAPACITY_ENV_KEY: &str = "SPLIT_FOOTER_CACHE_CAPACITY";
+
+pub(crate) fn split_footer_cache_capacity() -> u64 {
+    get_from_env(
+        SPLIT_FOOTER_CACHE_CAPACITY_ENV_KEY,
+        DEFAULT_SPLIT_FOOTER_CACHE_CAPACITY,
+    )
+}
+
+/// If we already allocated more than this amount of memory avoid
+/// wait before running more leaf_request.
+///
+/// Note this amount of memory includes whatever is stored in the cache,
+/// so this threshold should always be above
+/// `FAST_CACHE_CAPACITY + SPLIT_FOOTER_CACHE_CAPACITY`.
+fn memory_threshold_to_start_leaf_request() -> u64 {
+    split_footer_cache_capacity() + quickwit_storage::fast_cache_capacity() + 2_000_000_000
+}
+
+const LEAF_REQUEST_MEMORY_CUSHION: u64 = 50_000_000u64; // 50 MB
 
 /// Compute the SWIM port from the HTTP port.
 /// Add 1 to the HTTP port to get the SWIM port.

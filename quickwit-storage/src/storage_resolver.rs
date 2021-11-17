@@ -22,16 +22,19 @@ use std::error::Error;
 use std::sync::Arc;
 
 use once_cell::sync::OnceCell;
+use quickwit_common::memory_usage::MemoryUsage;
+use quickwit_common::quickwit_memory_usage;
 
 use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
+use crate::tracking_storage::TrackingStorage;
 use crate::{RegionProvider, S3CompatibleObjectStorageFactory, Storage, StorageResolverError};
 
 /// Quickwit supported storage resolvers.
 pub fn quickwit_storage_uri_resolver() -> &'static StorageUriResolver {
     static STORAGE_URI_RESOLVER: OnceCell<StorageUriResolver> = OnceCell::new();
     STORAGE_URI_RESOLVER.get_or_init(|| {
-        StorageUriResolver::builder()
+        StorageUriResolver::builder(quickwit_memory_usage().clone())
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::default())
@@ -57,11 +60,12 @@ pub trait StorageFactory: Send + Sync + 'static {
 #[derive(Clone)]
 pub struct StorageUriResolver {
     per_protocol_resolver: Arc<HashMap<String, Arc<dyn StorageFactory>>>,
+    memory_usage: MemoryUsage,
 }
 
-#[derive(Default)]
 pub struct StorageUriResolverBuilder {
     per_protocol_resolver: HashMap<String, Arc<dyn StorageFactory>>,
+    memory_usage: MemoryUsage,
 }
 
 impl StorageUriResolverBuilder {
@@ -79,19 +83,23 @@ impl StorageUriResolverBuilder {
     pub fn build(self) -> StorageUriResolver {
         StorageUriResolver {
             per_protocol_resolver: Arc::new(self.per_protocol_resolver),
+            memory_usage: self.memory_usage,
         }
     }
 }
 
 impl StorageUriResolver {
     /// Creates an empty `StorageUriResolver`.
-    pub fn builder() -> StorageUriResolverBuilder {
-        StorageUriResolverBuilder::default()
+    pub fn builder(memory_usage: MemoryUsage) -> StorageUriResolverBuilder {
+        StorageUriResolverBuilder {
+            per_protocol_resolver: Default::default(),
+            memory_usage,
+        }
     }
 
     /// Creates `StorageUriResolver` for testing.
     pub fn for_test() -> Self {
-        StorageUriResolver::builder()
+        StorageUriResolver::builder(MemoryUsage::default())
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::new(
@@ -123,7 +131,8 @@ impl StorageUriResolver {
                     .unwrap_or_else(String::new),
             }
         })?;
-        Ok(storage)
+        let tracking_storage = Arc::new(TrackingStorage::new(self.memory_usage.clone(), storage));
+        Ok(tracking_storage)
     }
 }
 
@@ -147,7 +156,7 @@ mod tests {
                     .build(),
             ))
         });
-        let storage_resolver = StorageUriResolver::builder()
+        let storage_resolver = StorageUriResolver::builder(MemoryUsage::default())
             .register(first)
             .register(second)
             .build();
@@ -173,7 +182,7 @@ mod tests {
                     .build(),
             ))
         });
-        let storage_resolver = StorageUriResolver::builder()
+        let storage_resolver = StorageUriResolver::builder(MemoryUsage::default())
             .register(first)
             .register(second)
             .build();

@@ -25,7 +25,7 @@ use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use once_cell::sync::OnceCell;
-use quickwit_common::get_from_env;
+use quickwit_common::quickwit_memory_usage;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{
@@ -41,20 +41,13 @@ use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 use tracing::*;
 
-const DEFAULT_SPLIT_FOOTER_CACHE_CAPACITY: usize = 500_000_000;
-const SPLIT_FOOTER_CACHE_CAPACITY_ENV_KEY: &str = "SPLIT_FOOTER_CACHE_CAPACITY";
-
 use crate::collector::{make_collector_for_split, make_merge_collector, GenericQuickwitCollector};
-use crate::SearchError;
+use crate::{split_footer_cache_capacity, SearchError};
 
 fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
     static INSTANCE: OnceCell<MemorySizedCache<String>> = OnceCell::new();
     INSTANCE.get_or_init(|| {
-        let split_footer_cache_cap = get_from_env(
-            SPLIT_FOOTER_CACHE_CAPACITY_ENV_KEY,
-            DEFAULT_SPLIT_FOOTER_CACHE_CAPACITY,
-        );
-        MemorySizedCache::with_capacity_in_bytes(split_footer_cache_cap)
+        MemorySizedCache::with_capacity_in_bytes(split_footer_cache_capacity() as usize)
     })
 }
 
@@ -204,6 +197,44 @@ async fn leaf_search_single_split(
     split: SplitIdAndFooterOffsets,
     index_config: Arc<dyn IndexConfig>,
 ) -> crate::Result<LeafSearchResponse> {
+    // We need to make sure that quickwit behaves correctly when a lot of requests arrive.
+    // We DO want to run a lot of leaf requests concurrently: quickwit is designed
+    // to offer good performance when working with an object storage and object storage
+    // typically have a low individual throughput, but can offer a overall high throughput
+    // provided we run queries against it concurrently.
+    //
+    // Leaf requests run in two phases.
+    // - the IO phase: quickwit fetches all of the data that we need for the query.
+    // - the CPU phase: quickwit perform the actual computation over the data it fetched.
+    //
+    // The IO phase however runs on the regular tokio runtime.
+    // The CPU phase is done on a thread pool sized against the number of cores
+    // available.
+    //
+    // We want to work concurrently on a lot of requests for the IO phase, but
+    // with no limitation at all, we could hit a memory limit.
+    //
+    // A simple semaphore on memory allocation is not a good solution at it would
+    // easily lead to some deadlock.
+    //
+    // The solution we offer here is to only start running a leaf request IFF
+    // the memory usage is below a given value.
+    //
+    // Ideally we would have preferred to allocate the memory necessary for a leaf request
+    // upfront, but we do not know at this point how much memory will be needed (and
+    // it would have made the code complicated).
+    //
+    // Instead, we allocate an arbitrary "cushion" at the beginning of phase 1.
+    //
+    // Once a leaf request got the green light, allocation will be tracked but will
+    // not check if the capacity is available.
+    let memory_cushion = quickwit_memory_usage()
+        .use_memory_with_limit(
+            crate::LEAF_REQUEST_MEMORY_CUSHION,
+            crate::memory_threshold_to_start_leaf_request(),
+        )
+        .await;
+
     let split_id = split.split_id.to_string();
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
@@ -221,6 +252,7 @@ async fn leaf_search_single_split(
         .try_into()?;
     let searcher = reader.searcher();
     warmup(&*searcher, &query, &quickwit_collector.fast_field_names()).await?;
+    drop(memory_cushion);
     let leaf_search_response = crate::qspawn_blocking(move || {
         let span = info_span!( "search", split_id = %split.split_id);
         let _span_guard = span.enter();

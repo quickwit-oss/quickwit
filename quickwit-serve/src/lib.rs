@@ -36,9 +36,7 @@ use quickwit_search::{
     http_addr_to_grpc_addr, http_addr_to_swim_addr, ClusterClient, SearchClientPool,
     SearchServiceImpl,
 };
-use quickwit_storage::{
-    LocalFileStorageFactory, RegionProvider, S3CompatibleObjectStorageFactory, StorageUriResolver,
-};
+use quickwit_storage::quickwit_storage_uri_resolver;
 use quickwit_telemetry::payload::{ServeEvent, TelemetryEvent};
 use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use tracing::debug;
@@ -76,22 +74,6 @@ fn display_help_message(
     Ok(())
 }
 
-/// Builds a storage uri resolver that handles
-/// - s3:// uris. This storage comes with a cache that stores hotcache files.
-/// - s3+localstack://
-/// - file:// uris.
-fn storage_uri_resolver() -> StorageUriResolver {
-    let s3_storage = S3CompatibleObjectStorageFactory::default();
-    StorageUriResolver::builder()
-        .register(LocalFileStorageFactory::default())
-        .register(s3_storage)
-        .register(S3CompatibleObjectStorageFactory::new(
-            RegionProvider::Localstack,
-            "s3+localstack",
-        ))
-        .build()
-}
-
 /// Start Quickwit search node.
 pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
     debug!(args=?args, "serve-cli");
@@ -99,7 +81,7 @@ pub async fn serve_cli(args: ServeArgs) -> anyhow::Result<()> {
         has_seed: !args.peer_socket_addrs.is_empty(),
     }))
     .await;
-    let storage_resolver = storage_uri_resolver();
+    let storage_resolver = quickwit_storage_uri_resolver().clone();
     let metastore_resolver = MetastoreUriResolver::default();
     let example_index_name = "my_index".to_string();
     let metastore = metastore_resolver.resolve(&args.metastore_uri).await?;
