@@ -42,3 +42,17 @@ cross-images:
 		docker build --tag quickwit/cross:$$tag --file ./build/cross-images/$$tag.dockerfile ./build/cross-images; \
 		docker push quickwit/cross:$$tag; \
 	done
+
+
+# TODO: To be replaced by https://github.com/quickwit-inc/quickwit/issues/237
+.PHONY: build-x86_64-unknown-linux-gnu
+build-x86_64-unknown-linux-gnu:
+	cross build --release --features release-feature-vendored-set --target x86_64-unknown-linux-gnu
+
+.PHONY: build-aarch64-unknown-linux-gnu
+build-aarch64-unknown-linux-gnu: 
+	cross build --release --features release-feature-vendored-set --target aarch64-unknown-linux-gnu
+
+.PHONY: build-x86_64-unknown-linux-musl
+build-x86_64-unknown-linux-musl:
+	cross build --release --features release-feature-set --target x86_64-unknown-linux-musl 
