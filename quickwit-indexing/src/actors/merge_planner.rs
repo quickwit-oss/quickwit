@@ -109,7 +109,6 @@ mod tests {
 
     use proptest::sample::select;
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
-    use quickwit_metastore::SplitState;
     use tokio::runtime::Runtime;
 
     use super::*;
@@ -164,7 +163,6 @@ mod tests {
             num_records,
             size_in_bytes,
             time_range,
-            split_state: SplitState::Published,
             create_timestamp: 0,
             update_timestamp,
             tags,
@@ -204,7 +202,6 @@ mod tests {
                 size_in_bytes: (size_in_bytes as f32 / num_records as f32) as u64
                     * demuxed_split.total_num_docs() as u64,
                 time_range: time_range.clone(),
-                split_state: SplitState::Published,
                 create_timestamp: 0,
                 update_timestamp,
                 tags: tags.clone(),
@@ -285,7 +282,6 @@ mod tests {
     ) -> SplitMetadata {
         SplitMetadata {
             split_id: crate::new_split_id(),
-            split_state: SplitState::Published,
             num_records: num_records as usize,
             size_in_bytes: 256u64 * num_records,
             time_range: Some(time_range),

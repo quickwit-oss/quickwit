@@ -163,7 +163,6 @@ mod tests {
             let split_id = new_split_id();
             SplitMetadata {
                 split_id,
-                split_state: quickwit_metastore::SplitState::Published,
                 ..Default::default()
             }
         })

@@ -259,7 +259,7 @@ mod test_split_store {
     use std::path::Path;
     use std::sync::Arc;
 
-    use quickwit_metastore::{SplitMetadata, SplitMetadataAndFooterOffsets, SplitState};
+    use quickwit_metastore::{SplitMetadata, SplitMetadataAndFooterOffsets};
     use quickwit_storage::{
         PutPayload, RamStorage, SplitPayloadBuilder, Storage, StorageError, StorageErrorKind,
     };
@@ -634,7 +634,6 @@ mod test_split_store {
         let published_splits = vec![SplitMetadataAndFooterOffsets {
             split_metadata: SplitMetadata {
                 split_id: "b".to_string(),
-                split_state: SplitState::Published,
                 ..Default::default()
             },
             footer_offsets: 5..20,

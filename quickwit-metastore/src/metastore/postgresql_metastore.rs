@@ -19,7 +19,6 @@
 
 use std::collections::HashSet;
 use std::ops::Range;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -430,7 +429,7 @@ impl PostgresqlMetastore {
 
     /// Make the split metadata and footer offsets from database model.
     /// When returning [`SplitMetadataAndFooterOffsets`], we make sure to override the
-    /// `split_state` and `update_timestamp` from the column value since these are the values we
+    /// `update_timestamp` from the column value since these are the values we
     /// keep in sync.
     fn make_split_metadata_and_footer_offsets(
         &self,
@@ -445,16 +444,6 @@ impl PostgresqlMetastore {
                             model_split.create_timestamp.timestamp();
                         metadata.split_metadata.update_timestamp =
                             model_split.update_timestamp.timestamp();
-                        metadata.split_metadata.split_state =
-                            SplitState::from_str(&model_split.split_state).map_err(|error| {
-                                MetastoreError::InternalError {
-                                    message: error.to_string(),
-                                    cause: anyhow::anyhow!(
-                                        "Failed to parse SplitState `{}`.",
-                                        model_split.split_state
-                                    ),
-                                }
-                            })?;
                         metadata
                     }
                     Err(err) => {
@@ -551,11 +540,8 @@ impl Metastore for PostgresqlMetastore {
     async fn stage_split(
         &self,
         index_id: &str,
-        mut metadata: SplitMetadataAndFooterOffsets,
+        metadata: SplitMetadataAndFooterOffsets,
     ) -> MetastoreResult<()> {
-        // Modify split state to Staged.
-        metadata.split_metadata.split_state = SplitState::Staged;
-
         // Fit the time_range to the database model.
         let time_range_start = metadata
             .split_metadata
@@ -583,7 +569,7 @@ impl Metastore for PostgresqlMetastore {
                 diesel::insert_into(schema::splits::dsl::splits)
                 .values((
                     schema::splits::dsl::split_id.eq(metadata.split_metadata.split_id),
-                    schema::splits::dsl::split_state.eq(metadata.split_metadata.split_state.to_string()),
+                    schema::splits::dsl::split_state.eq(SplitState::Staged.to_string()),
                     schema::splits::dsl::time_range_start.eq(time_range_start),
                     schema::splits::dsl::time_range_end.eq(time_range_end),
                     schema::splits::dsl::tags.eq(metadata

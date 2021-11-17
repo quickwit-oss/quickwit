@@ -60,7 +60,7 @@ pub use metastore::single_file_metastore::SingleFileMetastore;
 #[cfg(feature = "testsuite")]
 pub use metastore::MockMetastore;
 pub use metastore::{
-    IndexMetadata, MetadataSet, Metastore, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState,
+    IndexMetadata, Metastore, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState,
 };
 pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};
 

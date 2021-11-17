@@ -29,7 +29,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox, QueueCapacity};
-use quickwit_metastore::{Metastore, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState};
+use quickwit_metastore::{Metastore, SplitMetadata, SplitMetadataAndFooterOffsets};
 use quickwit_storage::SplitPayloadBuilder;
 use tantivy::chrono::Utc;
 use tokio::sync::oneshot::Receiver;
@@ -107,7 +107,6 @@ fn create_split_metadata(
             num_records: split.num_docs as usize,
             time_range: split.time_range.clone(),
             size_in_bytes: split.size_in_bytes,
-            split_state: SplitState::New,
             create_timestamp: Utc::now().timestamp(),
             update_timestamp: Utc::now().timestamp(),
             tags: split.tags.clone(),
@@ -288,7 +287,6 @@ mod tests {
                 (index_id == "test-index")
                     && &metadata.split_metadata.split_id == "test-split"
                     && metadata.split_metadata.time_range == Some(1628203589..=1628203640)
-                    && metadata.split_metadata.split_state == SplitState::New
             })
             .times(1)
             .returning(|_, _| Ok(()));
@@ -362,7 +360,6 @@ mod tests {
                     && vec!["test-split-1".to_owned(), "test-split-2".to_owned()]
                         .contains(&metadata.split_metadata.split_id)
                     && metadata.split_metadata.time_range == Some(1628203589..=1628203640)
-                    && metadata.split_metadata.split_state == SplitState::New
             })
             .times(2)
             .returning(|_, _| Ok(()));

@@ -21,7 +21,7 @@
 pub mod postgresql_metastore;
 pub mod single_file_metastore;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt::{self, Debug};
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
@@ -60,6 +60,27 @@ pub struct SplitMetadataAndFooterOffsets {
 }
 
 /// A split metadata carries all meta data about a split.
+///
+/// Be careful about changes in this struct. It is serialized as JSON into the database, so some
+/// changes are better supported than others:
+///
+/// CHANGING FIELD:
+/// Changing type of a field: Should be avoided, but can be supported with a custom deserializer for
+/// the field. Don't do it if the types are not compatible.
+///
+/// REMOVING FIELD:
+/// Removing non Option<> fields: Dangerous. This very much depends on how updates are rolled out.
+/// If we gradually roll out updates, that means we may have both versions running at the same time.
+/// If one of the new version stores the data without a required field a not yet updated node may
+/// fail.
+///
+/// Removing Option<> fields: This should be fine.
+///
+/// When removing we need to _keep track of removed fields_ in order to not add
+/// them back with different semantics/type!
+///
+/// ADDING FIELD:
+/// Adding field: Only as Option<> or with a default value.
 #[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
 pub struct SplitMetadata {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
@@ -82,9 +103,6 @@ pub struct SplitMetadata {
     /// the split.
     pub time_range: Option<RangeInclusive<i64>>,
 
-    /// The state of the split. This is the only mutable attribute of the split.
-    pub split_state: SplitState,
-
     /// Timestamp for tracking when the split was created.
     pub create_timestamp: i64,
 
@@ -105,7 +123,6 @@ impl SplitMetadata {
     pub fn new(split_id: String) -> Self {
         Self {
             split_id,
-            split_state: SplitState::New,
             num_records: 0,
             size_in_bytes: 0,
             time_range: None,
@@ -157,15 +174,6 @@ impl fmt::Display for SplitState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
     }
-}
-
-/// A MetadataSet carries an index metadata and its split metadata.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MetadataSet {
-    /// Metadata specific to the index.
-    pub index: IndexMetadata,
-    /// List of splits belonging to the index.
-    pub splits: HashMap<String, SplitMetadataAndFooterOffsets>,
 }
 
 /// Metastore meant to manage Quickwit's indexes and their splits.

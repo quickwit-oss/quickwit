@@ -492,7 +492,7 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::Universe;
-    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
+    use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_storage::StorageUriResolver;
     use serde_json::json;
 
@@ -528,9 +528,7 @@ mod tests {
             });
         metastore
             .expect_stage_split()
-            .withf(move |index_id, metadata| -> bool {
-                (index_id == "test-index") && metadata.split_metadata.split_state == SplitState::New
-            })
+            .withf(move |index_id, _| -> bool { index_id == "test-index" })
             .times(1)
             .returning(|_, _| Ok(()));
         metastore

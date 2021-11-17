@@ -26,7 +26,6 @@ use quickwit_index_config::IndexConfig;
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{
     IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadata, SplitMetadataAndFooterOffsets,
-    SplitState,
 };
 use quickwit_storage::{Storage, StorageResolverError, StorageUriResolver};
 
@@ -146,7 +145,6 @@ pub fn mock_split_meta(split_id: &str) -> SplitMetadataAndFooterOffsets {
         footer_offsets: 700..800,
         split_metadata: SplitMetadata {
             split_id: split_id.to_string(),
-            split_state: SplitState::Published,
             num_records: 10,
             size_in_bytes: 256,
             time_range: None,

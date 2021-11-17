@@ -28,15 +28,24 @@ use quickwit_storage::{
     quickwit_storage_uri_resolver, Storage, StorageErrorKind, StorageResolverError,
     StorageUriResolver,
 };
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::checkpoint::CheckpointDelta;
 use crate::metastore::match_tags_filter;
 use crate::{
-    IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreFactory,
-    MetastoreResolverError, MetastoreResult, SplitMetadata, SplitMetadataAndFooterOffsets,
-    SplitState,
+    IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
+    MetastoreResult, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState,
 };
+
+/// A MetadataSet carries an index metadata and its split metadata.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MetadataSet {
+    /// Metadata specific to the index.
+    pub index: IndexMetadata,
+    /// List of splits belonging to the index.
+    pub splits: HashMap<String, (SplitMetadataAndFooterOffsets, SplitState)>,
+}
 
 /// Metadata file managed by [`SingleFileMetastore`].
 const META_FILENAME: &str = "quickwit.json";
@@ -186,22 +195,22 @@ impl InnerSingleFileMetastore {
         let mut split_not_staged_ids = vec![];
         for &split_id in split_ids {
             // Check for the existence of split.
-            let metadata = match metadata_set.splits.get_mut(split_id) {
-                Some(metadata) => metadata,
+            let (metadata, split_state) = match metadata_set.splits.get_mut(split_id) {
+                Some((metadata, split_state)) => (metadata, split_state),
                 _ => {
                     split_not_found_ids.push(split_id.to_string());
                     continue;
                 }
             };
 
-            match metadata.split_metadata.split_state {
+            match split_state {
                 SplitState::Published => {
                     // Split is already published. This is fine, we just skip it.
                     continue;
                 }
                 SplitState::Staged => {
                     // The split state needs to be updated.
-                    metadata.split_metadata.split_state = SplitState::Published;
+                    *split_state = SplitState::Published;
                     metadata.split_metadata.update_timestamp = Utc::now().timestamp();
                 }
                 _ => {
@@ -234,20 +243,20 @@ impl InnerSingleFileMetastore {
         let mut split_not_found_ids = vec![];
         for &split_id in split_ids {
             // Check for the existence of split.
-            let metadata = match metadata_set.splits.get_mut(split_id) {
-                Some(metadata) => metadata,
+            let (metadata, split_state) = match metadata_set.splits.get_mut(split_id) {
+                Some((metadata, split_state)) => (metadata, split_state),
                 None => {
                     split_not_found_ids.push(split_id.to_string());
                     continue;
                 }
             };
 
-            if metadata.split_metadata.split_state == SplitState::ScheduledForDeletion {
+            if *split_state == SplitState::ScheduledForDeletion {
                 // If the split is already scheduled for deletion, This is fine, we just skip it.
                 continue;
             }
 
-            metadata.split_metadata.split_state = SplitState::ScheduledForDeletion;
+            *split_state = SplitState::ScheduledForDeletion;
             metadata.split_metadata.update_timestamp = Utc::now().timestamp();
             is_modified = true;
         }
@@ -338,11 +347,11 @@ impl InnerSingleFileMetastore {
         }
 
         // Insert a new split metadata as `Staged` state.
-        metadata.split_metadata.split_state = SplitState::Staged;
         metadata.split_metadata.update_timestamp = Utc::now().timestamp();
-        metadata_set
-            .splits
-            .insert(metadata.split_metadata.split_id.to_string(), metadata);
+        metadata_set.splits.insert(
+            metadata.split_metadata.split_id.to_string(),
+            (metadata, SplitState::Staged),
+        );
 
         self.put_index(metadata_set).await?;
 
@@ -414,11 +423,12 @@ impl InnerSingleFileMetastore {
         let splits = metadata_set
             .splits
             .into_values()
-            .filter(|metadata| {
-                metadata.split_metadata.split_state == state
+            .filter(|(metadata, split_state)| {
+                *split_state == state
                     && time_range_filter(&metadata.split_metadata)
                     && tag_filter(&metadata.split_metadata)
             })
+            .map(|(metadata, _)| metadata)
             .collect();
         Ok(splits)
     }
@@ -428,7 +438,11 @@ impl InnerSingleFileMetastore {
         index_id: &str,
     ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
         let metadata_set = self.get_index(index_id).await?;
-        let splits = metadata_set.splits.into_values().collect();
+        let splits = metadata_set
+            .splits
+            .into_values()
+            .map(|(metadata, _)| metadata)
+            .collect();
         Ok(splits)
     }
 
@@ -458,15 +472,15 @@ impl InnerSingleFileMetastore {
         let mut split_not_deletable_ids = vec![];
         for &split_id in split_ids {
             // Check for the existence of split.
-            let metadata = match metadata_set.splits.get_mut(split_id) {
-                Some(metadata) => metadata,
+            let (_, split_state) = match metadata_set.splits.get_mut(split_id) {
+                Some((metadata, split_state)) => (metadata, split_state),
                 None => {
                     split_not_found_ids.push(split_id.to_string());
                     continue;
                 }
             };
 
-            match metadata.split_metadata.split_state {
+            match split_state {
                 SplitState::ScheduledForDeletion | SplitState::Staged => {
                     // Only `ScheduledForDeletion` and `Staged` can be deleted
                     metadata_set.splits.remove(split_id);
@@ -707,9 +721,9 @@ mod tests {
     use tokio::time::Duration;
 
     use crate::checkpoint::{Checkpoint, CheckpointDelta};
-    use crate::metastore::single_file_metastore::meta_path;
+    use crate::metastore::single_file_metastore::{meta_path, MetadataSet};
     use crate::{
-        IndexMetadata, MetadataSet, Metastore, MetastoreError, SingleFileMetastore, SplitMetadata,
+        IndexMetadata, Metastore, MetastoreError, SingleFileMetastore, SplitMetadata,
         SplitMetadataAndFooterOffsets, SplitState,
     };
 
@@ -823,7 +837,6 @@ mod tests {
             footer_offsets: 1000..2000,
             split_metadata: SplitMetadata {
                 split_id: split_id.to_string(),
-                split_state: SplitState::Staged,
                 num_records: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
@@ -931,7 +944,6 @@ mod tests {
                     footer_offsets: 1000..2000,
                     split_metadata: SplitMetadata {
                         split_id: format!("split-{}", i),
-                        split_state: SplitState::Staged,
                         num_records: 1,
                         size_in_bytes: 2,
                         time_range: Some(RangeInclusive::new(0, 99)),
