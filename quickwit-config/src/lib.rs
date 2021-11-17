@@ -18,4 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod index_config;
+mod server_config;
+
 pub use index_config::IndexConfig;
+pub use server_config::ServerConfig;

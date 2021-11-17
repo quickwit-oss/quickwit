@@ -35,6 +35,7 @@ mod root;
 mod search_response_rest;
 mod search_stream;
 mod service;
+mod thread_pool;
 
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
@@ -60,6 +61,7 @@ pub use crate::root::root_search;
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
+use crate::thread_pool::qspawn_blocking;
 
 /// Compute the SWIM port from the HTTP port.
 /// Add 1 to the HTTP port to get the SWIM port.

@@ -1,0 +1,28 @@
+{
+    "metastore_uri": "postgres://username:password@host:port/db",
+    "indexer": {
+        "data_dir_path": "/opt/quickwit/data",
+        "rest_listen_port": 7180,
+        "grpc_listen_port": 7181,
+        "split_store_max_num_bytes": "1T",
+        "split_store_max_num_files": 1000
+    },
+    "searcher": {
+        "data_dir_path": "/opt/quickwit/data",
+        "rest_listen_port": 7380,
+        "grpc_listen_port": 7381,
+        "discovery_listen_port": 7382,
+        "peer_seeds": [
+            "quickwit-searcher-0.local",
+            "quickwit-searcher-1.local"
+        ],
+        "fast_field_cache_capacity": "5G",
+        "split_footer_cache_capacity": "1G"
+    },
+    "storage": {
+        "s3": {
+            "region": "us-east-1",
+            "endpoint": "https://s3.us-east-1.amazonaws.com"
+        }
+    }
+}
