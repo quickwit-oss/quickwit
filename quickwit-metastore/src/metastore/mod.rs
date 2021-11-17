@@ -86,9 +86,11 @@ pub struct SplitMetadata {
     pub split_state: SplitState,
 
     /// Timestamp for tracking when the split was created.
+    #[serde(default)]
     pub create_timestamp: i64,
 
     /// Timestamp for tracking when the split was last updated.
+    #[serde(default)]
     pub update_timestamp: i64,
 
     /// A set of tags for categorizing and searching group of splits.
