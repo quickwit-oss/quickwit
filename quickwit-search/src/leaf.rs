@@ -221,7 +221,7 @@ async fn leaf_search_single_split(
         .try_into()?;
     let searcher = reader.searcher();
     warmup(&*searcher, &query, &quickwit_collector.fast_field_names()).await?;
-    let leaf_search_response = crate::qspawn_blocking(move || {
+    let leaf_search_response = crate::run_cpu_intensive(move || {
         let span = info_span!( "search", split_id = %split.split_id);
         let _span_guard = span.enter();
         searcher.search(&query, &quickwit_collector)
