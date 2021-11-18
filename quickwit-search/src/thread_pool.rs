@@ -36,9 +36,9 @@ fn search_thread_pool() -> &'static rayon::ThreadPool {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Panicked;
 
-/// Function similar to tokio::spawn_blocking.
+/// Function similar to `tokio::spawn_blocking`.
 ///
-/// Here are some difference however.
+/// Here are two important differences however:
 ///
 /// 1) The task is running on a rayon thread pool managed by quickwit.
 /// This pool is specifically used only to run CPU intensive work
@@ -46,9 +46,13 @@ pub struct Panicked;
 ///
 /// 2) Before the task is effectively scheduled, we check that
 /// the spawner is still interested by its result.
+///
+/// It is therefore required to `await` the result of this
+/// function to get anywork done.
+///
 /// This is nice, because it makes work that has been scheduled
 /// but is not running yet "cancellable".
-pub async fn qspawn_blocking<F, R>(cpu_heavy_task: F) -> Result<R, Panicked>
+pub async fn run_cpu_intensive<F, R>(cpu_heavy_task: F) -> Result<R, Panicked>
 where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
@@ -73,29 +77,29 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_qspawn_blocking() {
-        assert_eq!(qspawn_blocking(|| 1).await, Ok(1));
+    async fn test_run_cpu_intensive() {
+        assert_eq!(run_cpu_intensive(|| 1).await, Ok(1));
     }
 
     #[tokio::test]
-    async fn test_qspawn_blocking_panicks() {
-        assert!(qspawn_blocking(|| panic!("")).await.is_err());
+    async fn test_run_cpu_intensive_panicks() {
+        assert!(run_cpu_intensive(|| panic!("")).await.is_err());
     }
 
     #[tokio::test]
-    async fn test_qspawn_blocking_panicks_do_not_shrink_thread_pool() {
+    async fn test_run_cpu_intensive_panicks_do_not_shrink_thread_pool() {
         for _ in 0..100 {
-            assert!(qspawn_blocking(|| panic!("")).await.is_err());
+            assert!(run_cpu_intensive(|| panic!("")).await.is_err());
         }
     }
 
     #[tokio::test]
-    async fn test_qspawn_blocking_abort() {
+    async fn test_run_cpu_intensive_abort() {
         let counter: Arc<AtomicU64> = Default::default();
         let mut futures = Vec::new();
         for _ in 0..1_000 {
             let counter_clone = counter.clone();
-            let fut = qspawn_blocking(move || {
+            let fut = run_cpu_intensive(move || {
                 std::thread::sleep(Duration::from_millis(5));
                 counter_clone.fetch_add(1, Ordering::SeqCst)
             });
