@@ -1,7 +1,7 @@
 DOCKER_SERVICES ?= all
 
 help:
-	@grep '^[^#[:space:]].*:' Makefile
+	@grep '^[^\.#[:space:]].*:' Makefile
 
 # Usage:
 # `make docker-compose-up` starts all the services.
@@ -43,16 +43,13 @@ cross-images:
 		docker push quickwit/cross:$$tag; \
 	done
 
-
-# TODO: To be replaced by https://github.com/quickwit-inc/quickwit/issues/237
-.PHONY: build-x86_64-unknown-linux-gnu
-build-x86_64-unknown-linux-gnu:
-	cross build --release --features release-feature-vendored-set --target x86_64-unknown-linux-gnu
-
-.PHONY: build-aarch64-unknown-linux-gnu
-build-aarch64-unknown-linux-gnu: 
-	cross build --release --features release-feature-vendored-set --target aarch64-unknown-linux-gnu
-
-.PHONY: build-x86_64-unknown-linux-musl
-build-x86_64-unknown-linux-musl:
-	cross build --release --features release-feature-set --target x86_64-unknown-linux-musl 
+# TODO: to be replaced by https://github.com/quickwit-inc/quickwit/issues/237
+TARGET ?= x86_64-unknown-linux-gnu
+.PHONY: build
+build:
+	@echo "Building binary for target=${TARGET}"
+	if [ "${TARGET}" = "x86_64-unknown-linux-musl" ]; then \
+        cross build --release --features release-feature-set --target ${TARGET}; \
+    else \
+        cross build --release --features release-feature-vendored-set --target ${TARGET}; \
+    fi
