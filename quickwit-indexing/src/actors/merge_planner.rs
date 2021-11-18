@@ -57,7 +57,7 @@ impl SyncActor for MergePlanner {
         let mut has_new_young_split = false;
         for split in message.new_splits {
             if self.merge_policy.is_mature(&split) {
-                info!(split_id=%split.split_id, num_records=split.num_records, size_in_bytes=split.size_in_bytes, "mature-split");
+                info!(split_id=%split.split_id, num_docs=split.num_docs, size_in_bytes=split.size_in_bytes, "mature-split");
                 continue;
             }
             self.young_splits.push(split);
@@ -154,14 +154,14 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        let num_records = splits.iter().map(|split| split.num_records).sum();
+        let num_docs = splits.iter().map(|split| split.num_docs).sum();
         let size_in_bytes = splits.iter().map(|split| split.size_in_bytes).sum();
         let time_range = merged_timestamp(splits);
         let merged_split_id = new_split_id();
         let tags = compute_merge_tags(splits);
         SplitMetadata {
             split_id: merged_split_id,
-            num_records,
+            num_docs,
             size_in_bytes,
             time_range,
             split_state: SplitState::Published,
@@ -178,13 +178,13 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        let num_records: usize = splits.iter().map(|split| split.num_records).sum();
+        let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
         let size_in_bytes: u64 = splits.iter().map(|split| split.size_in_bytes).sum();
         let time_range = merged_timestamp(splits);
         let tags = compute_merge_tags(splits);
         let mut demux_values_map = BTreeMap::new();
         for split in splits {
-            let mut num_docs = split.num_records;
+            let mut num_docs = split.num_docs;
             let mut demux_value = 0u64;
             while num_docs > 0 {
                 let num_docs_to_insert = std::cmp::min(10_000, num_docs);
@@ -200,8 +200,8 @@ mod tests {
         for demuxed_split in demuxed_splits {
             let split_metadata = SplitMetadata {
                 split_id: new_split_id(),
-                num_records: demuxed_split.total_num_docs(),
-                size_in_bytes: (size_in_bytes as f32 / num_records as f32) as u64
+                num_docs: demuxed_split.total_num_docs(),
+                size_in_bytes: (size_in_bytes as f32 / num_docs as f32) as u64
                     * demuxed_split.total_num_docs() as u64,
                 time_range: time_range.clone(),
                 split_state: SplitState::Published,
@@ -279,15 +279,15 @@ mod tests {
     }
 
     /// Mock split meta helper.
-    fn mock_split_meta_from_num_records(
+    fn mock_split_meta_from_num_docs(
         time_range: RangeInclusive<i64>,
-        num_records: u64,
+        num_docs: u64,
     ) -> SplitMetadata {
         SplitMetadata {
             split_id: crate::new_split_id(),
             split_state: SplitState::Published,
-            num_records: num_records as usize,
-            size_in_bytes: 256u64 * num_records,
+            num_docs: num_docs as usize,
+            size_in_bytes: 256u64 * num_docs,
             time_range: Some(time_range),
             create_timestamp: 0,
             update_timestamp: 0,
@@ -305,11 +305,11 @@ mod tests {
             .iter()
             .cloned()
             .enumerate()
-            .map(|(split_ord, num_records)| {
+            .map(|(split_ord, num_docs)| {
                 let time_first = split_ord as i64 * 1_000;
                 let time_last = time_first + 999;
                 let time_range = time_first..=time_last;
-                mock_split_meta_from_num_records(time_range, num_records as u64)
+                mock_split_meta_from_num_docs(time_range, num_docs as u64)
             })
             .collect();
         test_aux_simulate_merge_planner(merge_policy, split_metadatas, predicate).await?;
@@ -323,7 +323,7 @@ mod tests {
             Arc::new(merge_policy.clone()),
             &vec![10_000; 100_000],
             |splits| {
-                let num_docs = splits.iter().map(|split| split.num_records as u64).sum();
+                let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
                 splits.len() <= merge_policy.max_num_splits_ideal_case(num_docs)
             },
         )
@@ -344,7 +344,7 @@ mod tests {
             |splits| {
                 let num_big_splits = splits
                     .iter()
-                    .filter(|split| split.num_records >= 10_000_000)
+                    .filter(|split| split.num_docs >= 10_000_000)
                     .count();
                 if num_big_splits > 5 {
                     let demuxed_num_splits = splits
@@ -375,15 +375,15 @@ mod tests {
     proptest! {
         #![proptest_config(proptest_config())]
         #[test]
-        fn test_proptest_simulate_stable_multitenant_merge_planner_adversarial(batch_num_records in proptest::collection::vec(select(&[11, 1_990, 10_000, 50_000, 310_000][..]), 1..1_000)) {
+        fn test_proptest_simulate_stable_multitenant_merge_planner_adversarial(batch_num_docs in proptest::collection::vec(select(&[11, 1_990, 10_000, 50_000, 310_000][..]), 1..1_000)) {
             let merge_policy = StableMultitenantWithTimestampMergePolicy::default();
             let rt = Runtime::new().unwrap();
             rt.block_on(
             aux_test_simulate_merge_planner_num_docs(
                 Arc::new(merge_policy.clone()),
-                &batch_num_records,
+                &batch_num_docs,
                 |splits| {
-                    let num_docs = splits.iter().map(|split| split.num_records as u64).sum();
+                    let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
                     splits.len() <= merge_policy.max_num_splits_worst_case(num_docs)
                 },
             )).unwrap();
@@ -397,7 +397,7 @@ mod tests {
             Arc::new(merge_policy.clone()),
             &vec![10_000; 1_000],
             |splits| {
-                let num_docs = splits.iter().map(|split| split.num_records as u64).sum();
+                let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
                 splits.len() <= merge_policy.max_num_splits_ideal_case(num_docs)
             },
         )
@@ -413,7 +413,7 @@ mod tests {
             Arc::new(merge_policy.clone()),
             &vals[..],
             |splits| {
-                let num_docs = splits.iter().map(|split| split.num_records as u64).sum();
+                let num_docs = splits.iter().map(|split| split.num_docs as u64).sum();
                 splits.len() <= merge_policy.max_num_splits_worst_case(num_docs)
             },
         )
