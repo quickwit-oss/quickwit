@@ -2,6 +2,7 @@
 name = "quickwit-backward-compat"
 version = "0.1.0"
 edition = "2021"
+license = 'AGPL-3.0-or-later'  # For a commercial, license, contact hello@quickwit.io
 
 [dev-dependencies]
 anyhow = "1"
