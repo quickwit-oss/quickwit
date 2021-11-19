@@ -42,7 +42,7 @@ fn test_backward_compatibility() -> anyhow::Result<()> {
     for entry in fs::read_dir("./test-data")? {
         let entry = entry?;
         let path = entry.path();
-        if path.ends_with(".expected.json") {
+        if path.to_string_lossy().ends_with(".expected.json") {
             continue;
         }
         test_split_metadata_version(&path)?;
