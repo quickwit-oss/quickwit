@@ -1,7 +1,7 @@
 DOCKER_SERVICES ?= all
 
 help:
-	@grep '^[^#[:space:]].*:' Makefile
+	@grep '^[^\.#[:space:]].*:' Makefile
 
 # Usage:
 # `make docker-compose-up` starts all the services.
@@ -38,7 +38,19 @@ IMAGE_TAGS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-l
 
 .PHONY: cross-images
 cross-images:
-	for tag in ${IMAGE_TAGS}; do \
+	@for tag in ${IMAGE_TAGS}; do \
 		docker build --tag quickwit/cross:$$tag --file ./build/cross-images/$$tag.dockerfile ./build/cross-images; \
 		docker push quickwit/cross:$$tag; \
 	done
+
+# TODO: to be replaced by https://github.com/quickwit-inc/quickwit/issues/237
+TARGET ?= x86_64-unknown-linux-gnu
+.PHONY: build
+build:
+	@echo "Building binary for target=${TARGET}"
+	@which cross > /dev/null 2>&1 || (echo "Cross is not installed. Please install using 'cargo install cross'." && exit 1)
+	@if [ "${TARGET}" = "x86_64-unknown-linux-musl" ]; then \
+		cross build --release --features release-feature-set --target ${TARGET}; \
+	else \
+		cross build --release --features release-feature-vendored-set --target ${TARGET}; \
+	fi
