@@ -83,9 +83,9 @@ impl<'de> Deserialize<'de> for SplitMetadataAndFooterOffsets {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: serde::Deserializer<'de> {
         let split_metadata_value = serde_json::Value::deserialize(deserializer)?;
-        // Unfortunately, it is not possiible to tell serde that in the absence
+        // Unfortunately, it is not possible to tell serde that in the absence
         // of a tag, a given tag should be considered as the default.
-        // We did not populate in the past, and are therefore required to
+        // Old serialized metadata do not contain the version tag and therefore we are required to
         // handle this corner case manually.
         let version_is_present = split_metadata_value
             .as_object()
