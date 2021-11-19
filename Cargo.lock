@@ -2163,6 +2163,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-backward-compat"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "md5",
+ "once_cell",
+ "quickwit-metastore",
+ "serde_json",
+]
+
+[[package]]
 name = "quickwit-cli"
 version = "0.1.0"
 dependencies = [

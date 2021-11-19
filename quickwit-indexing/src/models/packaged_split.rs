@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::ops::RangeInclusive;
 use std::time::Instant;
@@ -36,7 +36,7 @@ pub struct PackagedSplit {
     pub split_scratch_directory: ScratchDirectory,
     pub num_docs: u64,
     pub demux_num_ops: usize,
-    pub tags: HashSet<String>,
+    pub tags: BTreeSet<String>,
     pub split_date_of_birth: Instant,
     pub split_files: Vec<std::path::PathBuf>,
     pub hotcache_bytes: Vec<u8>,

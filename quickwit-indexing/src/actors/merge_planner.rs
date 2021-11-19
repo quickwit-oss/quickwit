@@ -102,7 +102,7 @@ impl MergePlanner {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, HashMap, HashSet};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
     use std::iter::FromIterator;
     use std::ops::RangeInclusive;
     use std::time::UNIX_EPOCH;
@@ -138,8 +138,8 @@ mod tests {
         Some(time_start..=time_end)
     }
 
-    fn compute_merge_tags(splits: &[SplitMetadata]) -> HashSet<String> {
-        let mut tag_set: HashSet<String> = HashSet::new();
+    fn compute_merge_tags(splits: &[SplitMetadata]) -> BTreeSet<String> {
+        let mut tag_set: BTreeSet<String> = BTreeSet::new();
         for split in splits {
             for tag in &split.tags {
                 tag_set.insert(tag.clone());
@@ -291,7 +291,7 @@ mod tests {
             time_range: Some(time_range),
             create_timestamp: 0,
             update_timestamp: 0,
-            tags: HashSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
+            tags: BTreeSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
             demux_num_ops: 0,
         }
     }
