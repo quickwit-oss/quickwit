@@ -25,7 +25,8 @@ use std::str::FromStr;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-/// Carries split and bundle offsets for single read metadata.
+/// Carries split metadata and footer offsets. The footer offsets
+/// make it possible to download the footer in a single call to `.get_slice(...)`.
 ///
 /// This struct can deserialize older format automatically
 /// but can only serialize to the last version.
