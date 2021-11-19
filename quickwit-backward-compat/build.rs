@@ -50,8 +50,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("version should be a string");
     let split_metadata_json = serde_json::to_string_pretty(&split_metadata_value).unwrap();
     let md5sum = md5::compute(&split_metadata_json);
-    let file_regression_test_path =
-        format!("test-data/split_metadata-{}-{:x}.json", version, md5sum);
+    let test_name = format!("test-data/split_metadata-{}-{:x}", version, md5sum);
+    let file_regression_test_path = format!("{}.json", test_name);
     std::fs::write(&file_regression_test_path, split_metadata_json.as_bytes())?;
+    let file_regression_expected_path = format!("{}.expected.json", test_name);
+    std::fs::write(&file_regression_test_path, split_metadata_json.as_bytes())?;
+    std::fs::write(
+        &file_regression_expected_path,
+        split_metadata_json.as_bytes(),
+    )?;
     Ok(())
 }
