@@ -15,5 +15,6 @@ members = [
   "quickwit-storage",
   "quickwit-swim",
   "quickwit-telemetry",
-  "quickwit-indexing"
+  "quickwit-indexing",
+  "quickwit-backward-compat"
 ]

@@ -1,0 +1,15 @@
+[package]
+name = "quickwit-backward-compat"
+version = "0.1.0"
+edition = "2021"
+
+[dev-dependencies]
+anyhow = "1"
+serde_json = "1"
+quickwit-metastore = {path="../quickwit-metastore"}
+once_cell = "1"
+
+[build-dependencies]
+quickwit-metastore = {path="../quickwit-metastore"}
+md5 = "0.7"
+serde_json = "1"

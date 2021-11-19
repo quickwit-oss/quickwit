@@ -532,7 +532,7 @@ fn is_sorted(els: &[usize]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::BTreeSet;
     use std::iter::FromIterator;
     use std::ops::RangeInclusive;
 
@@ -578,7 +578,7 @@ mod tests {
                 tags: (0..tag_count)
                     .into_iter()
                     .map(|i| format!("{}:{}", demux_field_name, i))
-                    .collect::<HashSet<_>>(),
+                    .collect::<BTreeSet<_>>(),
                 ..Default::default()
             })
             .collect()
@@ -611,7 +611,7 @@ mod tests {
         };
         let mut split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
         // Add a number of tags > 1 so that it can be a candidate for demux.
-        let demux_tags = HashSet::from_iter(vec![
+        let demux_tags = BTreeSet::from_iter(vec![
             "demux_field:1".to_string(),
             "demux_field:2".to_string(),
         ]);
@@ -642,7 +642,7 @@ mod tests {
         split.demux_num_ops = 0;
         assert!(merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs, demux_generation of 0 and wrong tags is also mature.
-        let other_tags = HashSet::from_iter(vec![
+        let other_tags = BTreeSet::from_iter(vec![
             "other_field:1".to_string(),
             "other_field:2".to_string(),
         ]);
