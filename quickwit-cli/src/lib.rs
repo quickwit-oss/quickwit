@@ -57,6 +57,8 @@ const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
 /// This environment variable can be set to send telemetry events to a jaeger instance.
 pub const QUICKWIT_JAEGER_ENABLED_ENV_KEY: &str = "QUICKWIT_JAEGER_ENABLED";
+/// This environment variable can be set to send data to tokio console.
+pub const QUICKWIT_TOKIO_CONSOLE_ENABLED_ENV_KEY: &str = "QUICKWIT_TOKIO_CONSOLE_ENABLED";
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ExtractSplitArgs {

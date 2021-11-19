@@ -40,6 +40,13 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 3. Open your browser and visit [localhost:16686](http://localhost:16686/)
 
 
+## Using tokio console
+1. Clone [tokio-console repository](https://github.com/tokio-rs/console) next to your quickwit repo
+2. Build the binary with tokio unstable flag `RUSTFLAGS="--cfg tokio_unstable" cargo build`
+3. Launch a long running command such as index and activate tokio with the: `QUICKWIT_TOKIO_CONSOLE_ENABLED=1 target/debug/quickwit index ...`
+4. Run the console in the tokio-console repo `cargo run`
+
+
 ## Building binaries
 
 Currently, we use [cross](https://github.com/rust-embedded/cross) to build Quickwit binaries for different architectures.
