@@ -17,29 +17,40 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
-
 use anyhow::{bail, Context};
 use clap::ArgMatches;
-use quickwit_common::net::socket_addr_from_str;
 use quickwit_common::uri::normalize_uri;
-use quickwit_serve::{serve_cli, ServeArgs};
+use quickwit_config::{IndexerConfig, SearcherConfig, ServerConfig};
+use quickwit_indexing::index_data;
+use quickwit_metastore::MetastoreUriResolver;
+use quickwit_serve::run_searcher;
+use quickwit_storage::quickwit_storage_uri_resolver;
+use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct StartServiceArgs {
+pub struct RunServiceArgs {
     pub service_name: String,
-    pub rest_socket_addr: SocketAddr,
-    pub host_key_path: PathBuf,
-    pub peer_socket_addrs: Vec<SocketAddr>,
+    pub server_config_uri: String,
+    pub index_id: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct RunIndexerArgs {
     pub metastore_uri: String,
-    pub index_ids: Vec<String>,
+    pub indexer_config: IndexerConfig,
+    pub index_id: String,
+}
+
+#[derive(Debug)]
+pub struct RunSearcherArgs {
+    pub metastore_uri: String,
+    pub searcher_config: SearcherConfig,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum ServiceCliCommand {
-    Start(StartServiceArgs),
+    Run(RunServiceArgs),
 }
 
 impl ServiceCliCommand {
@@ -48,75 +59,89 @@ impl ServiceCliCommand {
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
-            "start" => Self::parse_start_args(submatches),
+            "run" => Self::parse_run_args(submatches),
             _ => bail!("Service subcommand '{}' is not implemented", subcommand),
         }
     }
 
-    fn parse_start_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let name = matches
-            .value_of("name")
-            .map(|service_name_str| service_name_str.to_string())
-            .context("'service-name' is a required arg")?;
-        let metastore_uri = matches
-            .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
-            .map(normalize_uri)??;
-        let host = matches
-            .value_of("host")
-            .context("'host' has a default value")?
+    fn parse_run_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let service_name = matches
+            .value_of("service-name")
+            .expect("`service-name` should be a required arg.")
             .to_string();
-        let port = matches.value_of_t::<u16>("port")?;
-        let rest_addr = format!("{}:{}", host, port);
-        let rest_socket_addr = socket_addr_from_str(&rest_addr)?;
-        let host_key_path_prefix = matches
-            .value_of("host-key-path-prefix")
-            .context("'host-key-path-prefix' has a default  value")?
-            .to_string();
-        let host_key_path =
-            Path::new(format!("{}-{}-{}", host_key_path_prefix, host, port.to_string()).as_str())
-                .to_path_buf();
-        let mut peer_socket_addrs: Vec<SocketAddr> = Vec::new();
-        if matches.is_present("peer-seed") {
-            if let Some(values) = matches.values_of("peer-seed") {
-                for value in values {
-                    peer_socket_addrs.push(socket_addr_from_str(value)?);
-                }
-            }
-        }
-        Ok(ServiceCliCommand::Start(StartServiceArgs {
-            service_name: name,
-            rest_socket_addr,
-            host_key_path,
-            peer_socket_addrs,
-            metastore_uri,
-            index_ids: Vec::new(),
+        let server_config_uri = matches
+            .value_of("server-config-uri")
+            .map(normalize_uri)
+            .expect("`server-config-uri` should be a required arg.")?;
+        let index_id = matches.value_of("index-id").map(String::from);
+        Ok(ServiceCliCommand::Run(RunServiceArgs {
+            service_name,
+            server_config_uri,
+            index_id,
         }))
     }
 
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
-            Self::Start(args) => start_service(args).await,
+            Self::Run(args) => run_service(args).await,
         }
     }
 }
 
-pub async fn start_service(args: StartServiceArgs) -> anyhow::Result<()> {
-    debug!(args = ?args, "start-service");
+// FIXME: Implement `indexer` and `searcher` as subcommands.
+pub async fn run_service(args: RunServiceArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "run-service");
+    let server_config = ServerConfig::from_file(&args.server_config_uri).await?;
 
-    match args.service_name.as_str() {
-        "searcher" => {
-            serve_cli(ServeArgs {
-                host_key_path: args.host_key_path,
-                peer_socket_addrs: args.peer_socket_addrs,
-                metastore_uri: args.metastore_uri,
-                rest_socket_addr: args.rest_socket_addr,
+    match args.service_name.as_ref() {
+        "indexer" => {
+            run_indexer_cli(RunIndexerArgs {
+                metastore_uri: server_config.metastore_uri,
+                indexer_config: server_config
+                    .indexer_config
+                    .context("Indexer config is empty.")?,
+                index_id: args.index_id.expect("`index-id` should be a required arg."),
             })
             .await?
         }
-        // TODO: add indexer.
-        _ => bail!("Service '{}' is not implemented", args.service_name),
+        "searcher" => {
+            run_searcher_cli(RunSearcherArgs {
+                metastore_uri: server_config.metastore_uri,
+                searcher_config: server_config
+                    .searcher_config
+                    .context("Searcher config is empty.")?,
+            })
+            .await?
+        }
+        _ => bail!(
+            "Service `{}` is not implemented. Available services are `indexer` and `searcher`.",
+            args.service_name
+        ),
     }
+    Ok(())
+}
 
+async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "run-indexer");
+    let telemetry_event = TelemetryEvent::RunService("indexer".to_string());
+    quickwit_telemetry::send_telemetry_event(telemetry_event).await;
+
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+    let index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
+    let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
+    index_data(index_metadata, args.indexer_config, metastore, storage).await?;
+    Ok(())
+}
+
+async fn run_searcher_cli(args: RunSearcherArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "run-searcher");
+    let telemetry_event = TelemetryEvent::RunService("searcher".to_string());
+    quickwit_telemetry::send_telemetry_event(telemetry_event).await;
+
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+    run_searcher(args.searcher_config, metastore).await?;
     Ok(())
 }

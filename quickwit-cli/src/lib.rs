@@ -73,3 +73,30 @@ pub fn parse_duration_with_unit(duration: &str) -> anyhow::Result<Duration> {
         Err(err) => Err(anyhow::anyhow!(err)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::parse_duration_with_unit;
+
+    #[test]
+    fn test_parse_duration_with_unit() -> anyhow::Result<()> {
+        assert_eq!(parse_duration_with_unit("8s")?, Duration::from_secs(8));
+        assert_eq!(parse_duration_with_unit("5m")?, Duration::from_secs(5 * 60));
+        assert_eq!(
+            parse_duration_with_unit("2h")?,
+            Duration::from_secs(2 * 60 * 60)
+        );
+        assert_eq!(
+            parse_duration_with_unit("3d")?,
+            Duration::from_secs(3 * 60 * 60 * 24)
+        );
+
+        assert!(parse_duration_with_unit("").is_err());
+        assert!(parse_duration_with_unit("a2d").is_err());
+        assert!(parse_duration_with_unit("3 d").is_err());
+        assert!(parse_duration_with_unit("3").is_err());
+        Ok(())
+    }
+}

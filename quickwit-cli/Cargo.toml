@@ -16,12 +16,13 @@ path = "src/main.rs"
 [dependencies]
 async-trait = "0.1"
 anyhow = "1"
-byte-unit = "4"
+byte-unit = { version = "4", default-features = false, features = ["serde"] }
 clap = { version = "3.0.0-beta.5", features = ["yaml"] }
 quickwit-actors = { version = "0.1.0", path = "../quickwit-actors" }
 quickwit-core = { version = "0.1.0", path = "../quickwit-core" }
 quickwit-directories = { version = "0.1.0", path = "../quickwit-directories" }
 quickwit-common = { version = "0.1.0", path = "../quickwit-common" }
+quickwit-config = { version = "0.1.0", path = "../quickwit-config" }
 quickwit-metastore = { version = "0.1.0", path = "../quickwit-metastore" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
 quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
@@ -41,7 +42,6 @@ atty = "0.2"
 once_cell = "1"
 serde_json = "1.0"
 tempfile = "3"
-json_comments = "0.2"
 chrono = "0.4"
 humansize = "1.1.1"
 openssl-probe = { version = "0.1.4", optional = true }

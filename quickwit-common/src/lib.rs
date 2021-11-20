@@ -157,11 +157,11 @@ pub mod net {
     }
 
     /// Converts this string to a resolved `SocketAddr`.
-    pub fn socket_addr_from_str(addr_str: &str) -> anyhow::Result<SocketAddr> {
-        addr_str
+    pub fn socket_addr_from_str<S: AsRef<str>>(addr: S) -> anyhow::Result<SocketAddr> {
+        addr.as_ref()
             .to_socket_addrs()?
             .next()
-            .ok_or_else(|| anyhow::anyhow!("Failed to resolve address `{}`.", addr_str))
+            .ok_or_else(|| anyhow::anyhow!("Failed to resolve address `{}`.", addr.as_ref()))
     }
 }
 

@@ -21,13 +21,12 @@
 pub mod test_suite {
     use std::collections::{BTreeSet, HashSet};
     use std::ops::{Range, RangeInclusive};
-    use std::sync::Arc;
 
     use async_trait::async_trait;
     use chrono::Utc;
     use tokio::time::{sleep, Duration};
 
-    use crate::checkpoint::{Checkpoint, CheckpointDelta};
+    use crate::checkpoint::CheckpointDelta;
     use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 
     #[async_trait]
@@ -71,12 +70,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "create-index-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         // Create an index
         let result = metastore
@@ -92,12 +86,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "delte-index-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         // Delete a non-existent index
         let result = metastore
@@ -121,12 +110,7 @@ pub mod test_suite {
         let metastore = MetastoreToTest::default_for_test().await;
 
         let index_id = "index-metadata-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         // Get a non-existent index metadata
         let result = metastore
@@ -153,12 +137,7 @@ pub mod test_suite {
         let current_timestamp = Utc::now().timestamp();
 
         let index_id = "stage-split-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         let split_id = "stage-split-my-index-one";
         let split_metadata = SplitMetadata {
@@ -206,12 +185,7 @@ pub mod test_suite {
         let current_timestamp = Utc::now().timestamp();
 
         let index_id = "publish-splits-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         let split_id_1 = "publish-splits-index-one";
         let split_metadata_1 = SplitMetadata {
@@ -554,12 +528,7 @@ pub mod test_suite {
         let current_timestamp = Utc::now().timestamp();
 
         let index_id = "replace_splits-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         let split_id_1 = "replace_splits-index-one";
         let split_metadata_1 = SplitMetadata {
@@ -769,13 +738,7 @@ pub mod test_suite {
         let current_timestamp = Utc::now().timestamp();
 
         let index_id = "mark-splits-as-deleted-my-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
-
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
         let split_id_1 = "mark-splits-as-deleted-my-index-one";
         let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
@@ -840,12 +803,7 @@ pub mod test_suite {
         let current_timestamp = Utc::now().timestamp();
 
         let index_id = "delete-splits-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         let split_id_1 = "delete-splits-index-one";
         let split_metadata_1 = SplitMetadata {
@@ -963,12 +921,7 @@ pub mod test_suite {
         let current_timestamp = Utc::now().timestamp();
 
         let index_id = "list-all-splits-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         let split_id_1 = "list-all-splits-index-one";
         let split_metadata_1 = SplitMetadata {
@@ -1083,12 +1036,7 @@ pub mod test_suite {
         let current_timestamp = Utc::now().timestamp();
 
         let index_id = "list-splits-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         let split_id_1 = "list-splits-one";
         let split_metadata_1 = SplitMetadata {
@@ -1620,12 +1568,7 @@ pub mod test_suite {
         let mut current_timestamp = Utc::now().timestamp();
 
         let index_id = "split-update-timestamp-index";
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         let split_id = "split-update-timestamp-one";
         let split_metadata = SplitMetadata {

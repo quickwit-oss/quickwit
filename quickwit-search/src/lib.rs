@@ -63,22 +63,22 @@ pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 use crate::thread_pool::run_cpu_intensive;
 
-/// Compute the SWIM port from the HTTP port.
-/// Add 1 to the HTTP port to get the SWIM port.
-pub fn http_addr_to_swim_addr(http_addr: SocketAddr) -> SocketAddr {
+/// Compute the gRPC port from the HTTP port.
+/// Add 1 to the HTTP port to get the gRPC port.
+pub fn http_addr_to_grpc_addr(http_addr: SocketAddr) -> SocketAddr {
     SocketAddr::new(http_addr.ip(), http_addr.port() + 1)
 }
 
-/// Compute the gRPC port from the HTTP port.
-/// Add 2 to the HTTP port to get the gRPC port.
-pub fn http_addr_to_grpc_addr(http_addr: SocketAddr) -> SocketAddr {
+/// Compute the SWIM port from the HTTP port.
+/// Add 2 to the HTTP port to get the SWIM port.
+pub fn http_addr_to_swim_addr(http_addr: SocketAddr) -> SocketAddr {
     SocketAddr::new(http_addr.ip(), http_addr.port() + 2)
 }
 
 /// Compute the gRPC port from the SWIM port.
-/// Add 1 to the SWIM port to get the gRPC port.
+/// Subtract 1 to the SWIM port to get the gRPC port.
 pub fn swim_addr_to_grpc_addr(swim_addr: SocketAddr) -> SocketAddr {
-    SocketAddr::new(swim_addr.ip(), swim_addr.port() + 1)
+    SocketAddr::new(swim_addr.ip(), swim_addr.port() - 1)
 }
 
 /// GlobalDocAddress serves as a hit address.
@@ -166,12 +166,14 @@ pub async fn single_node_search(
     let metas = list_relevant_splits(search_request, metastore).await?;
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();
-    let index_config = index_metadata.index_config;
+    let doc_mapper = index_metadata.build_doc_mapper().map_err(|err| {
+        SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
+    })?;
     let leaf_search_response = leaf_search(
         search_request,
         index_storage.clone(),
         &split_metadata[..],
-        index_config,
+        doc_mapper,
     )
     .await
     .context("Failed to perform leaf search.")?;
@@ -193,10 +195,7 @@ pub async fn single_node_search(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use assert_json_diff::assert_json_include;
-    use quickwit_index_config::{DefaultIndexConfigBuilder, WikipediaIndexConfig};
     use quickwit_indexing::TestSandbox;
     use serde_json::json;
 
@@ -205,8 +204,16 @@ mod tests {
     #[tokio::test]
     async fn test_single_node_simple() -> anyhow::Result<()> {
         let index_id = "single-node-simple-1";
-        let test_sandbox =
-            TestSandbox::create(index_id, Arc::new(WikipediaIndexConfig::new())).await?;
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: title
+                type: text
+              - name: body
+                type: text
+              - name: url
+                type: text
+        "#;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
         let docs = vec![
             json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
             json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle"}),
@@ -259,13 +266,21 @@ mod tests {
     #[tokio::test]
     async fn test_single_node_several_splits() -> anyhow::Result<()> {
         let index_id = "single-node-several-splits";
-        let test_sandbox =
-            TestSandbox::create(index_id, Arc::new(WikipediaIndexConfig::new())).await?;
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: title
+                type: text
+              - name: body
+                type: text
+              - name: url
+                type: text
+        "#;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
         for _ in 0..10u32 {
             test_sandbox.add_documents(vec![
-            json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
-            json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle"}),
-        ]).await?;
+                json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
+                json!({"title": "beagle", "body": "The beagle is a breed of small scent hound, similar in appearance to the much larger foxhound.", "url": "http://beagle"}),
+            ]).await?;
         }
         let search_request = SearchRequest {
             index_id: index_id.to_string(),
@@ -297,14 +312,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_node_filtering() -> anyhow::Result<()> {
-        let index_config = r#"{
-            "default_search_fields": ["body"],
-            "timestamp_field": "ts",
-            "sort_by": {
-                "field_name": "ts",
-                "order": "desc"
-            },
-            "tag_fields": [],
+        let index_id = "single-node-filtering";
+        let doc_mapping_json = r#"{
             "field_mappings": [
                 {
                     "name": "body",
@@ -317,10 +326,18 @@ mod tests {
                 }
             ]
         }"#;
-        let index_config =
-            serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
-        let index_id = "single-node-filtering";
-        let test_sandbox = TestSandbox::create(index_id, Arc::new(index_config)).await?;
+        let indexing_settings_json = r#"{
+            "timestamp_field": "ts",
+            "sort_field": "ts",
+            "sort_order": "desc"
+        }"#;
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_json,
+            indexing_settings_json,
+            &["body"],
+        )
+        .await?;
 
         let mut docs = vec![];
         for i in 0..30 {

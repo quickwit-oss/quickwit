@@ -18,30 +18,26 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashSet, VecDeque};
-use std::fs::File;
 use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
-use byte_unit::Byte;
+use chrono::Utc;
 use clap::ArgMatches;
 use colored::Colorize;
 use itertools::Itertools;
-use json_comments::StripComments;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::normalize_uri;
+use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
-use quickwit_index_config::{match_tag_field_name, DefaultIndexConfigBuilder, IndexConfig};
-use quickwit_indexing::actors::{
-    IndexerParams, IndexingPipelineParams, IndexingPipelineSupervisor,
-};
-use quickwit_indexing::models::{CommitPolicy, IndexingDirectory, IndexingStatistics};
-use quickwit_indexing::source::{FileSourceParams, SourceConfig};
+use quickwit_index_config::match_tag_field_name;
+use quickwit_indexing::actors::{IndexingPipeline, IndexingPipelineParams};
+use quickwit_indexing::models::IndexingStatistics;
+use quickwit_indexing::source::FileSourceParams;
 use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::{do_checks, IndexMetadata, MetastoreUriResolver, Split, SplitState};
+use quickwit_metastore::{IndexMetadata, MetastoreUriResolver, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::quickwit_storage_uri_resolver;
@@ -53,83 +49,24 @@ use crate::{parse_duration_with_unit, GREEN_COLOR, THROUGHPUT_WINDOW_SIZE};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
-    metastore_uri: String,
-    index_id: String,
+    pub metastore_uri: String,
+    pub index_id: String,
 }
 
-impl DescribeIndexArgs {
-    pub fn new(metastore_uri: String, index_id: String) -> anyhow::Result<Self> {
-        Ok(Self {
-            metastore_uri,
-            index_id,
-        })
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct CreateIndexArgs {
-    metastore_uri: String,
-    index_id: String,
-    index_uri: String,
-    index_config: Arc<dyn IndexConfig>,
-    overwrite: bool,
-}
-
-impl PartialEq for CreateIndexArgs {
-    // index_config is opaque and not compared currently, need to change the trait to enable
-    // IndexConfig comparison
-    fn eq(&self, other: &Self) -> bool {
-        self.index_uri == other.index_uri
-            && self.overwrite == other.overwrite
-            && self.index_id == other.index_id
-    }
-}
-
-impl CreateIndexArgs {
-    pub fn new(
-        metastore_uri: String,
-        index_id: String,
-        index_uri: String,
-        index_config_path: PathBuf,
-        overwrite: bool,
-    ) -> anyhow::Result<Self> {
-        let json_file = std::fs::File::open(index_config_path.clone())
-            .with_context(|| format!("Cannot open index-config-path {:?}", index_config_path))?;
-        let reader = std::io::BufReader::new(json_file);
-        let strip_comment_reader = StripComments::new(reader);
-        let builder: DefaultIndexConfigBuilder = serde_json::from_reader(strip_comment_reader)
-            .with_context(|| {
-                format!(
-                    "index-config-path {:?} is not a valid JSON file",
-                    index_config_path
-                )
-            })?;
-        let default_index_config = builder.build().with_context(|| {
-            format!("index-config-path file {:?} is invalid", index_config_path)
-        })?;
-        let index_config = Arc::new(default_index_config) as Arc<dyn IndexConfig>;
-
-        Ok(Self {
-            metastore_uri,
-            index_id,
-            index_uri,
-            index_config,
-            overwrite,
-        })
-    }
+    pub metastore_uri: String,
+    pub index_config_uri: String,
+    pub overwrite: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct IndexDataArgs {
+pub struct IngestDocsArgs {
     pub metastore_uri: String,
     pub index_id: String,
-    pub input_path: Option<PathBuf>,
-    pub source_config_path: Option<PathBuf>,
+    pub input_path_opt: Option<PathBuf>,
     pub data_dir_path: PathBuf,
-    pub heap_size: Byte,
     pub overwrite: bool,
-    pub demux: bool,
-    pub merge: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Default)]
@@ -167,19 +104,19 @@ pub struct DemuxArgs {
 
 #[derive(Debug, PartialEq)]
 pub enum IndexCliCommand {
-    Describe(DescribeIndexArgs),
     Create(CreateIndexArgs),
-    Index(IndexDataArgs),
-    Search(SearchIndexArgs),
-    Demux(DemuxArgs),
-    GarbageCollect(GarbageCollectIndexArgs),
     Delete(DeleteIndexArgs),
+    Demux(DemuxArgs),
+    Describe(DescribeIndexArgs),
+    GarbageCollect(GarbageCollectIndexArgs),
+    Ingest(IngestDocsArgs),
+    Search(SearchIndexArgs),
 }
 
 impl IndexCliCommand {
     pub fn default_log_level(&self) -> Level {
         match self {
-            Self::Index(_) => Level::INFO,
+            Self::Ingest(_) => Level::INFO,
             _ => Level::ERROR,
         }
     }
@@ -190,25 +127,25 @@ impl IndexCliCommand {
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
             "create" => Self::parse_create_args(submatches),
-            "describe" => Self::parse_describe_args(submatches),
-            "index" => Self::parse_index_args(submatches),
-            "search" => Self::parse_search_args(submatches),
-            "demux" => Self::parse_demux_args(submatches),
-            "gc" => Self::parse_garbage_collect_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
-            _ => bail!("Stats subcommand '{}' is not implemented", subcommand),
+            "demux" => Self::parse_demux_args(submatches),
+            "describe" => Self::parse_describe_args(submatches),
+            "gc" => Self::parse_garbage_collect_args(submatches),
+            "ingest" => Self::parse_ingest_args(submatches),
+            "search" => Self::parse_search_args(submatches),
+            _ => bail!("Index subcommand `{}` is not implemented.", subcommand),
         }
     }
 
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .value_of("index-id")
-            .context("'index-id' is a required arg")?
+            .expect("`index-id` should be a required arg.")
             .to_string();
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
-            .map(normalize_uri)??;
+            .map(normalize_uri)
+            .expect("`metastore-uri` should be a required arg.")?;
         Ok(Self::Describe(DescribeIndexArgs {
             metastore_uri,
             index_id,
@@ -216,81 +153,60 @@ impl IndexCliCommand {
     }
 
     fn parse_create_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_uri = matches
-            .value_of("index-uri")
-            .context("'index-uri' is a required arg")
-            .map(normalize_uri)??;
-        let index_id = matches
-            .value_of("index-id")
-            .context("'index-id' is a required arg")?
-            .to_string();
-        let index_config_path = matches
-            .value_of("index-config-path")
-            .map(PathBuf::from)
-            .context("'index-config-path' is a required arg")?;
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
-            .map(normalize_uri)??;
+            .map(normalize_uri)
+            .expect("`metastore-uri` should be a required arg.")?;
+        let index_config_uri = matches
+            .value_of("index-config-uri")
+            .map(normalize_uri)
+            .expect("`index-config-uri` should be a required arg.")?;
         let overwrite = matches.is_present("overwrite");
 
-        Ok(Self::Create(CreateIndexArgs::new(
+        Ok(Self::Create(CreateIndexArgs {
             metastore_uri,
-            index_id,
-            index_uri,
-            index_config_path,
+            index_config_uri,
             overwrite,
-        )?))
+        }))
     }
 
-    fn parse_index_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+    fn parse_ingest_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
-            .map(normalize_uri)??;
+            .map(normalize_uri)
+            .expect("`metastore-uri` should be a required arg.")?;
         let index_id = matches
             .value_of("index-id")
-            .expect("`index-id` is a required arg.")
+            .expect("`index-id` should be a required arg.")
             .to_string();
-        let input_path: Option<PathBuf> = matches.value_of("input-path").map(PathBuf::from);
-        let source_config_path: Option<PathBuf> =
-            matches.value_of("source-config-path").map(PathBuf::from);
+        let input_path_opt = matches.value_of("input-path").map(PathBuf::from);
         let data_dir_path: PathBuf = matches
             .value_of("data-dir-path")
             .map(PathBuf::from)
-            .expect("`data-dir-path` is a required arg.");
-        let heap_size = matches
-            .value_of("heap-size")
-            .map(Byte::from_str)
-            .expect("`heap-size` has a default value.")?;
+            .expect("`data-dir-path` should be a required arg.");
         let overwrite = matches.is_present("overwrite");
-        let merge = !matches.is_present("no-merge");
 
-        Ok(Self::Index(IndexDataArgs {
-            index_id,
-            input_path,
-            source_config_path,
-            data_dir_path,
-            heap_size,
+        Ok(Self::Ingest(IngestDocsArgs {
             metastore_uri,
+            index_id,
+            input_path_opt,
+            data_dir_path,
             overwrite,
-            demux: false, // We don't want to expose demux for now.
-            merge,
         }))
     }
 
     fn parse_search_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
-            .map(normalize_uri)??;
+            .map(normalize_uri)
+            .expect("`metastore-uri` should be a required arg.")?;
         let index_id = matches
             .value_of("index-id")
-            .context("'index-id' is a required arg")?
+            .expect("`index-id` should be a required arg.")
             .to_string();
         let query = matches
             .value_of("query")
-            .context("query is a required arg")?
+            .context("query ` should be a required arg.")?
             .to_string();
         let max_hits = matches.value_of_t::<usize>("max-hits")?;
         let start_offset = matches.value_of_t::<usize>("start-offset")?;
@@ -332,16 +248,16 @@ impl IndexCliCommand {
     fn parse_garbage_collect_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
-            .map(normalize_uri)??;
+            .map(normalize_uri)
+            .expect("`metastore-uri` should be a required arg.")?;
         let index_id = matches
             .value_of("index-id")
-            .context("'index-id' is a required arg")?
+            .expect("`index-id` should be a required arg.")
             .to_string();
         let grace_period = matches
             .value_of("grace-period")
             .map(parse_duration_with_unit)
-            .context("'grace-period' should have default")??;
+            .expect("`grace-period` should have a default value.")?;
         let dry_run = matches.is_present("dry-run");
 
         Ok(Self::GarbageCollect(GarbageCollectIndexArgs {
@@ -355,11 +271,11 @@ impl IndexCliCommand {
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
-            .map(normalize_uri)??;
+            .map(normalize_uri)
+            .expect("`metastore-uri` should be a required arg.")?;
         let index_id = matches
             .value_of("index-id")
-            .context("'index-id' is a required arg")?
+            .expect("`index-id` should be a required arg.")
             .to_string();
         let dry_run = matches.is_present("dry-run");
 
@@ -374,7 +290,7 @@ impl IndexCliCommand {
         match self {
             Self::Create(args) => create_index_cli(args).await,
             Self::Describe(args) => describe_index_cli(args).await,
-            Self::Index(args) => index_data_cli(args).await,
+            Self::Ingest(args) => ingest_docs_cli(args).await,
             Self::Search(args) => search_index_cli(args).await,
             Self::Demux(args) => demux_index_cli(args).await,
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
@@ -433,7 +349,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
         "Size of published splits:".color(GREEN_COLOR),
         total_bytes
     );
-    if let Some(timestamp_field_name) = index_metadata.index_config.timestamp_field_name() {
+    if let Some(timestamp_field_name) = &index_metadata.indexing_settings.timestamp_field {
         println!(
             "{:<35} {}",
             "Timestamp field:".color(GREEN_COLOR),
@@ -472,8 +388,8 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     println!("Size in MB stats:");
     print_descriptive_stats(&splits_bytes);
 
-    if let Some(demux_field_name) = index_metadata.index_config.demux_field_name() {
-        show_demux_stats(&demux_field_name, &splits).await;
+    if let Some(demux_field_name) = &index_metadata.indexing_settings.demux_field {
+        show_demux_stats(demux_field_name, &splits).await;
     }
 
     println!();
@@ -604,140 +520,88 @@ fn print_descriptive_stats(values: &[usize]) {
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "create-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
+    let index_config = IndexConfig::from_file(&args.index_config_uri).await?;
 
     if args.overwrite {
-        delete_index(&args.metastore_uri, &args.index_id, false).await?;
+        delete_index(&args.metastore_uri, &index_config.index_id, false).await?;
     }
-
     let index_metadata = IndexMetadata {
-        index_id: args.index_id.to_string(),
-        index_uri: args.index_uri.to_string(),
-        index_config: args.index_config,
+        index_id: index_config.index_id,
+        index_uri: index_config.index_uri,
         checkpoint: Checkpoint::default(),
+        doc_mapping: index_config.doc_mapping,
+        indexing_settings: index_config.indexing_settings,
+        search_settings: index_config.search_settings,
+        sources: index_config.sources,
+        create_timestamp: Utc::now().timestamp(),
     };
     create_index(&args.metastore_uri, index_metadata).await?;
     Ok(())
 }
 
-pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
-    debug!(args = ?args, "index-data");
-    quickwit_telemetry::send_telemetry_event(TelemetryEvent::IndexStart).await;
+pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "ingest-docs");
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
 
-    let source_config_path_opt = args.source_config_path.as_ref();
-    let input_path_opt = args.input_path.as_ref();
-    let source_config =
-        create_source_config_from_args(source_config_path_opt, input_path_opt).await?;
-    let indexing_directory_path = args.data_dir_path.join(args.index_id.as_str());
-    let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
-    let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
-
-    do_checks(vec![
-        ("source", Box::pin(source_config.check_source_available())),
-        ("metastore", metastore.check_connectivity()),
-        ("index", metastore.check_index_available(&args.index_id)),
-    ])
-    .await?;
+    let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
+    let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
 
     if args.overwrite {
-        reset_index(
-            metastore.clone(),
-            &args.index_id,
-            storage_uri_resolver.clone(),
-        )
-        .await?;
+        reset_index(&index_metadata, metastore.clone(), storage.clone()).await?;
     }
-
-    let indexer_params = IndexerParams {
-        indexing_directory,
-        heap_size: args.heap_size,
-        commit_policy: CommitPolicy::default(), //< TODO make the commit policy configurable
+    // Create ad-hoc source config from CLI args.
+    let source_id = args
+        .input_path_opt
+        .as_ref()
+        .map(|_| "file-source")
+        .unwrap_or("stdin-source")
+        .to_string();
+    let source_type = "file".to_string();
+    let params = serde_json::to_value(FileSourceParams {
+        filepath: args.input_path_opt.clone(),
+    })?;
+    let source_config = SourceConfig {
+        source_id,
+        source_type,
+        params,
     };
+    // Override index source config(s) with ad-hoc source config.
+    index_metadata.sources = vec![source_config];
 
-    let indexing_pipeline_params = IndexingPipelineParams {
-        index_id: args.index_id.clone(),
-        source_config,
-        indexer_params,
-        metastore,
-        storage_uri_resolver: storage_uri_resolver.clone(),
-        merge_enabled: args.merge,
-        demux_enabled: args.demux,
+    let indexer_config = IndexerConfig {
+        data_dir_path: args.data_dir_path,
+        ..Default::default()
     };
-
-    let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
-
+    let pipeline_params =
+        IndexingPipelineParams::try_new(index_metadata, indexer_config, metastore, storage).await?;
+    let pipeline = IndexingPipeline::new(pipeline_params);
     let universe = Universe::new();
-    let (_supervisor_mailbox, supervisor_handler) =
-        universe.spawn_actor(indexing_supervisor).spawn_async();
+    let (_pipeline_mailbox, pipeline_handle) = universe.spawn_actor(pipeline).spawn_async();
 
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
-    if args.source_config_path.is_none() && args.input_path.is_none() && is_stdin_atty {
+    if args.input_path_opt.is_none() && is_stdin_atty {
         let eof_shortcut = match env::consts::OS {
             "windows" => "CTRL+Z",
             _ => "CTRL+D",
         };
         println!(
-            "Please enter your new line delimited json documents one line at a time.\nEnd your \
-             input using {}.",
+            "Please, enter JSON documents one line at a time.\nEnd your input using {}.",
             eof_shortcut
         );
     }
     let statistics =
-        start_statistics_reporting_loop(supervisor_handler, args.input_path.clone()).await?;
-
+        start_statistics_reporting_loop(pipeline_handle, args.input_path_opt.clone()).await?;
     if statistics.num_published_splits > 0 {
         println!(
-            "You can now query your index with `quickwit search --index-id {} --metastore-uri {} \
-             --query \"barack obama\"`",
+            "Now, you can query the index with the following command:\nquickwit index search \
+             --index-id {} --metastore-uri {} --query \"my query\"",
             args.index_id, args.metastore_uri
         );
     }
     Ok(())
-}
-
-/// Inspects the CLI arguments and creates the appropriate [`SourceConfig`]. When a source config
-/// path is provided, the source config is loaded from file. Otherwise, a source config for a
-/// [`quickwit_indexing::source::FileSource`] is returned.
-async fn create_source_config_from_args(
-    source_config_path_opt: Option<&PathBuf>,
-    input_path_opt: Option<&PathBuf>,
-) -> anyhow::Result<SourceConfig> {
-    if source_config_path_opt.is_some() && input_path_opt.is_some() {
-        bail!(
-            "The `source-config-path` and `input-path` options are mutually exclusive but both \
-             were provided."
-        );
-    }
-    if let Some(source_config_path) = source_config_path_opt {
-        let source_config_file = File::open(source_config_path).with_context(|| {
-            format!(
-                "Failed to open source config file `{}`.",
-                source_config_path.display()
-            )
-        })?;
-        let source_config: SourceConfig = serde_json::from_reader(source_config_file)
-            .with_context(|| {
-                format!(
-                    "Failed to parse source config file `{}`.",
-                    source_config_path.display()
-                )
-            })?;
-        return Ok(source_config);
-    }
-    let source_id = input_path_opt
-        .map(|_| "file-source")
-        .unwrap_or("stdin-source")
-        .to_string();
-    let file_source_params = serde_json::to_value(FileSourceParams {
-        filepath: input_path_opt.cloned(),
-    })?;
-    let source_config = SourceConfig {
-        source_id,
-        source_type: "file".to_string(),
-        params: file_source_params,
-    };
-    Ok(source_config)
 }
 
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponse> {
@@ -834,7 +698,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
 /// Starts a tokio task that displays the indexing statistics
 /// every once in awhile.
 pub async fn start_statistics_reporting_loop(
-    pipeline_handler: ActorHandle<IndexingPipelineSupervisor>,
+    pipeline_handle: ActorHandle<IndexingPipeline>,
     input_path_opt: Option<PathBuf>,
 ) -> anyhow::Result<IndexingStatistics> {
     let mut stdout_handle = stdout();
@@ -849,7 +713,7 @@ pub async fn start_statistics_reporting_loop(
         report_interval.tick().await;
         // Try to receive with a timeout of 1 second.
         // 1 second is also the frequency at which we update statistic in the console
-        let observation = pipeline_handler.observe().await;
+        let observation = pipeline_handle.observe().await;
 
         // Let's not display live statistics to allow screen to scroll.
         if observation.state.num_docs > 0 {
@@ -865,15 +729,15 @@ pub async fn start_statistics_reporting_loop(
         }
     }
 
-    let (supervisor_exit_status, statistics) = pipeline_handler.join().await;
+    let (pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
 
-    match supervisor_exit_status {
+    match pipeline_exit_status {
         ActorExitStatus::Success => {}
         ActorExitStatus::Quit
         | ActorExitStatus::DownstreamClosed
         | ActorExitStatus::Killed
         | ActorExitStatus::Panicked => {
-            bail!(supervisor_exit_status)
+            bail!(pipeline_exit_status)
         }
         ActorExitStatus::Failure(err) => {
             bail!(err);
@@ -882,32 +746,35 @@ pub async fn start_statistics_reporting_loop(
 
     // If we have received zero docs at this point,
     // there is no point in displaying report.
-    if statistics.num_docs == 0 {
-        return Ok(statistics);
+    if pipeline_statistics.num_docs == 0 {
+        return Ok(pipeline_statistics);
     }
 
     if input_path_opt.is_none() {
-        display_statistics(&mut stdout_handle, &mut throughput_calculator, &statistics)?;
+        display_statistics(
+            &mut stdout_handle,
+            &mut throughput_calculator,
+            &pipeline_statistics,
+        )?;
     }
     // display end of task report
     println!();
     let elapsed_secs = start_time.elapsed().as_secs();
     if elapsed_secs >= 60 {
         println!(
-            "Indexed {} documents in {:.2$}min",
-            statistics.num_docs,
+            "Indexed {} documents in {:.2$}min.",
+            pipeline_statistics.num_docs,
             elapsed_secs.max(1) as f64 / 60f64,
             2
         );
     } else {
         println!(
-            "Indexed {} documents in {}s",
-            statistics.num_docs,
+            "Indexed {} documents in {}s.",
+            pipeline_statistics.num_docs,
             elapsed_secs.max(1)
         );
     }
-
-    Ok(statistics)
+    Ok(pipeline_statistics)
 }
 
 struct Printer<'a> {
@@ -997,57 +864,5 @@ impl ThroughputCalculator {
 
     pub fn elapsed_time(&self) -> Duration {
         self.start_time.elapsed()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use serde_json::json;
-
-    use super::create_source_config_from_args;
-
-    #[tokio::test]
-    async fn test_create_source_config_from_input_path() -> anyhow::Result<()> {
-        {
-            let source_config = create_source_config_from_args(None, None).await?;
-            assert_eq!(source_config.source_id, "stdin-source");
-            assert_eq!(source_config.source_type, "file");
-            assert_eq!(
-                source_config.params.get("filepath"),
-                Some(&json!(None::<&str>))
-            );
-        }
-        {
-            let input_path = PathBuf::from("path/to/file");
-            let source_config = create_source_config_from_args(None, Some(&input_path)).await?;
-            assert_eq!(source_config.source_id, "file-source");
-            assert_eq!(source_config.source_type, "file");
-            assert_eq!(
-                source_config.params.get("filepath"),
-                Some(&json!("path/to/file"))
-            );
-        }
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_create_source_config_from_source_config_file() -> anyhow::Result<()> {
-        let source_config_file = tempfile::NamedTempFile::new()?;
-        let source_config_path = source_config_file.path().to_path_buf();
-        let source_config_json = json!({
-            "source_id": "foo-source",
-            "source_type": "foo",
-            "params": {
-                "foo": "bar",
-            },
-        });
-        serde_json::to_writer(source_config_file.as_file(), &source_config_json)?;
-        let source_config = create_source_config_from_args(Some(&source_config_path), None).await?;
-        assert_eq!(source_config.source_id, "foo-source");
-        assert_eq!(source_config.source_type, "foo");
-        assert_eq!(source_config.params.get("foo"), Some(&json!("bar")));
-        Ok(())
     }
 }

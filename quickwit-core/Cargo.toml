@@ -13,7 +13,7 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"
-byte-unit = "4"
+byte-unit = { version = "4", default-features = false, features = ["serde"] }
 quickwit-actors = {path="../quickwit-actors"}
 quickwit-indexing = { version = "0.1.0", path = "../quickwit-indexing" }
 quickwit-common = {path="../quickwit-common"}

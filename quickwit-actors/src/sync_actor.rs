@@ -72,6 +72,10 @@ pub(crate) fn spawn_sync_actor<A: SyncActor>(
     ctx: ActorContext<A::Message>,
     inbox: Inbox<A::Message>,
 ) -> ActorHandle<A> {
+    debug!(
+        actor_id = %ctx.actor_instance_id(),
+        "spawn-async"
+    );
     let (state_tx, state_rx) = watch::channel(actor.observable_state());
     let ctx_clone = ctx.clone();
     let (exit_status_tx, exit_status_rx) = watch::channel(None);
@@ -143,8 +147,6 @@ fn sync_actor_loop<A: SyncActor>(
 ) -> ActorExitStatus {
     let span = actor.span(&ctx);
     let _span_guard = span.enter();
-    debug!("spawn-sync");
-
     // We rely on this object internally to fetch a post-mortem state,
     // even in case of a panic.
     let mut actor_with_state_tx = ActorWithStateTx { actor, state_tx };
@@ -172,9 +174,11 @@ fn sync_actor_loop<A: SyncActor>(
         error!(error=?finalize_error, "Finalizing failed, set exit status to panicked.");
         exit_status = ActorExitStatus::Panicked;
     }
-
-    info!(exit_status=%exit_status, "exit");
+    info!(
+        actor_id = %ctx.actor_instance_id(),
+        exit_status = %exit_status,
+        "actor-exit"
+    );
     ctx.exit(&exit_status);
-
     exit_status
 }

@@ -794,7 +794,7 @@ pub async fn get_or_init_postgresql_metastore_for_test() -> &'static PostgresqlM
 
             PostgresqlMetastore::new(&uri)
                 .await
-                .expect("PostgreSQL metastore is not initialized")
+                .expect("PostgreSQL metastore is not initialized.")
         })
         .await
 }

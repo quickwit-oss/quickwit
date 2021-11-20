@@ -53,11 +53,15 @@ pub async fn root_search(
     metastore: &dyn Metastore,
     cluster_client: &ClusterClient,
     client_pool: &Arc<SearchClientPool>,
-) -> Result<SearchResponse, SearchError> {
+) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let index_config_str = serde_json::to_string(&index_metadata.index_config)
-        .map_err(|error| SearchError::InternalError(error.to_string()))?;
+    let doc_mapper = index_metadata.build_doc_mapper().map_err(|err| {
+        SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
+    })?;
+    let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
+        SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))
+    })?;
     let split_metadata_list = list_relevant_splits(search_request, metastore).await?;
     let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
         .into_iter()
@@ -71,7 +75,7 @@ pub async fn root_search(
             .map(|(client, client_jobs)| {
                 let leaf_request = jobs_to_leaf_request(
                     search_request,
-                    &index_config_str,
+                    &doc_mapper_str,
                     &index_metadata.index_uri,
                     &split_metadata_map,
                     &client_jobs,
@@ -242,9 +246,7 @@ fn jobs_to_fetch_docs_request(
 mod tests {
     use std::ops::Range;
 
-    use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_indexing::mock_split;
-    use quickwit_metastore::checkpoint::Checkpoint;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::SplitSearchError;
 
@@ -295,12 +297,10 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
@@ -356,12 +356,10 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
@@ -439,12 +437,10 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
@@ -548,12 +544,10 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
@@ -673,12 +667,10 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
@@ -747,12 +739,10 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
@@ -808,12 +798,10 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
@@ -894,12 +882,10 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,

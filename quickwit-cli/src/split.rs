@@ -75,7 +75,7 @@ impl SplitCliCommand {
         match subcommand {
             "describe" => Self::parse_describe_args(submatches),
             "extract" => Self::parse_extract_split_args(submatches),
-            _ => bail!("Subcommand '{}' is not implemented", subcommand),
+            _ => bail!("Subcommand `{}` is not implemented.", subcommand),
         }
     }
 

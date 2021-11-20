@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod pipeline_supervisor;
+mod indexing_pipeline;
 
 mod garbage_collector;
 mod indexer;
@@ -25,15 +25,15 @@ mod packager;
 mod publisher;
 mod uploader;
 
-pub use pipeline_supervisor::{
-    IndexingPipelineHandler, IndexingPipelineParams, IndexingPipelineSupervisor,
+pub use indexing_pipeline::{
+    IndexingPipeline, IndexingPipelineHandler, IndexingPipelineMessage, IndexingPipelineParams,
 };
 mod merge_executor;
 mod merge_planner;
 mod merge_split_downloader;
 
 pub use self::garbage_collector::{GarbageCollector, GarbageCollectorCounters};
-pub use self::indexer::{Indexer, IndexerCounters, IndexerParams};
+pub use self::indexer::{Indexer, IndexerCounters};
 pub use self::merge_executor::MergeExecutor;
 pub use self::merge_planner::MergePlanner;
 pub use self::merge_split_downloader::MergeSplitDownloader;

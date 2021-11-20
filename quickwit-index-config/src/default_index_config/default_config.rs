@@ -35,28 +35,37 @@ use super::field_mapping_entry::{DocParsingError, FieldPath};
 use super::{default_as_true, FieldMappingEntry, FieldMappingType};
 use crate::config::convert_tag_to_string;
 use crate::query_builder::build_query;
-use crate::{IndexConfig, QueryParserError, SortBy, SortOrder, SOURCE_FIELD_NAME, TAGS_FIELD_NAME};
+use crate::sort_by::{SortBy, SortOrder};
+use crate::{IndexConfig, QueryParserError, SOURCE_FIELD_NAME, TAGS_FIELD_NAME};
 
 /// DefaultIndexConfigBuilder is here
 /// to create a valid IndexConfig.
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct DefaultIndexConfigBuilder {
+    /// Stores the original source document when set to true.
     #[serde(default = "default_as_true")]
-    store_source: bool,
-    default_search_fields: Vec<String>,
+    pub store_source: bool,
+    /// Name of the fields that are searched by default, unless overridden.
+    pub default_search_fields: Vec<String>,
+    /// Name of the field storing the timestamp of the event for time series data.
     #[serde(skip_serializing_if = "Option::is_none")]
-    timestamp_field: Option<String>,
+    pub timestamp_field: Option<String>,
+    /// Specifies the name of the sort field and the sort order.
     #[serde(skip_serializing_if = "Option::is_none")]
-    sort_by: Option<SortByConfig>,
-    field_mappings: Vec<FieldMappingEntry>,
+    pub sort_by: Option<SortByConfig>,
+    /// Describes which fields are indexed and how.
+    pub field_mappings: Vec<FieldMappingEntry>,
+    /// Name of the fields that are tagged.
     #[serde(default)]
-    tag_fields: Vec<String>,
+    pub tag_fields: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    demux_field: Option<String>,
+    /// Name of the field to demux by.
+    pub demux_field: Option<String>,
 }
 
+/// Specifies the name of the sort field and the sort order for an index.
 #[derive(Default, Serialize, Deserialize, Clone)]
-struct SortByConfig {
+pub struct SortByConfig {
     /// Sort field name in the index schema.
     pub field_name: String,
     /// Sort order of the field.
@@ -65,7 +74,7 @@ struct SortByConfig {
 
 impl From<SortByConfig> for SortBy {
     fn from(sort_by_config: SortByConfig) -> Self {
-        SortBy::SortByFastField {
+        SortBy::FastField {
             field_name: sort_by_config.field_name,
             order: sort_by_config.order,
         }
@@ -215,10 +224,10 @@ fn resolve_timestamp_field(
 }
 
 fn resolve_sort_field(
-    sort_config_opt: Option<SortByConfig>,
+    sort_by_config_opt: Option<SortByConfig>,
     schema: &Schema,
-) -> anyhow::Result<Option<SortBy>> {
-    if let Some(sort_by_config) = sort_config_opt {
+) -> anyhow::Result<SortBy> {
+    if let Some(sort_by_config) = sort_by_config_opt {
         let sort_by_field = schema
             .get_field(&sort_by_config.field_name)
             .with_context(|| format!("Unknown sort by field: `{}`", sort_by_config.field_name))?;
@@ -231,9 +240,9 @@ fn resolve_sort_field(
                 sort_by_config.field_name
             )
         }
-        return Ok(Some(SortBy::from(sort_by_config)));
+        return Ok(sort_by_config.into());
     }
-    Ok(None)
+    Ok(SortBy::DocId)
 }
 
 fn resolve_demux_field(
@@ -291,26 +300,22 @@ impl TryFrom<DefaultIndexConfigBuilder> for DefaultIndexConfig {
 
 impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
     fn from(value: DefaultIndexConfig) -> Self {
-        let sort_by_config = value
-            .sort_by
-            .as_ref()
-            .map(|sort_by| match sort_by {
-                SortBy::SortByFastField { field_name, order } => Some(SortByConfig {
-                    field_name: field_name.clone(),
-                    order: *order,
-                }),
-                SortBy::DocId => None,
-            })
-            .flatten();
+        let sort_by_config = match &value.sort_by {
+            SortBy::DocId => None,
+            SortBy::FastField { field_name, order } => Some(SortByConfig {
+                field_name: field_name.clone(),
+                order: *order,
+            }),
+        };
         Self {
             store_source: value.store_source,
             timestamp_field: value.timestamp_field_name(),
-            sort_by: sort_by_config,
             field_mappings: value
                 .field_mappings
                 .field_mappings()
                 .unwrap_or_else(Vec::new),
             demux_field: value.demux_field_name(),
+            sort_by: sort_by_config,
             tag_fields: value.tag_field_names,
             default_search_fields: value.default_search_field_names,
         }
@@ -329,22 +334,22 @@ impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
 )]
 pub struct DefaultIndexConfig {
     /// Store the json source in a text field _source.
-    store_source: bool,
+    pub store_source: bool,
     /// Default list of field names used for search.
-    default_search_field_names: Vec<String>,
+    pub default_search_field_names: Vec<String>,
     /// Timestamp field name.
-    timestamp_field_name: Option<String>,
+    pub timestamp_field_name: Option<String>,
     /// Sort field name and order.
-    sort_by: Option<SortBy>,
+    pub sort_by: SortBy,
     /// List of field mappings which defines how a json field is mapped to index fields.
-    field_mappings: FieldMappingEntry,
+    pub field_mappings: FieldMappingEntry,
     /// Schema generated by the store source and field mappings parameters.
     #[serde(skip_serializing)]
     schema: Schema,
     /// List of field names used for tagging.
-    tag_field_names: Vec<String>,
+    pub tag_field_names: Vec<String>,
     /// Demux field name.
-    demux_field_name: Option<String>,
+    pub demux_field_name: Option<String>,
 }
 
 impl DefaultIndexConfig {
@@ -443,8 +448,8 @@ impl IndexConfig for DefaultIndexConfig {
         self.demux_field_name.clone()
     }
 
-    fn sort_by(&self) -> crate::SortBy {
-        self.sort_by.clone().unwrap_or(crate::SortBy::DocId)
+    fn sort_by(&self) -> SortBy {
+        self.sort_by.clone()
     }
 
     fn tag_field_names(&self) -> Vec<String> {
@@ -456,7 +461,6 @@ impl IndexConfig for DefaultIndexConfig {
 mod tests {
     use std::collections::HashMap;
 
-    use anyhow::bail;
     use serde_json::{self, Value as JsonValue};
 
     use super::DefaultIndexConfig;
@@ -533,10 +537,7 @@ mod tests {
             config.demux_field_name,
             config_after_serialization.demux_field_name
         );
-        assert_eq!(
-            config.sort_by.unwrap(),
-            config_after_serialization.sort_by.unwrap()
-        );
+        assert_eq!(config.sort_by, config_after_serialization.sort_by);
         Ok(())
     }
 
@@ -854,13 +855,10 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
-        match builder.sort_by() {
-            SortBy::SortByFastField { field_name, order } => {
-                assert_eq!(field_name, "timestamp");
-                assert_eq!(order, SortOrder::Asc);
-            }
-            _ => bail!("Sort by must be a SortByFastField."),
-        };
+        assert!(
+            matches!(builder.sort_by(), SortBy::FastField { field_name, order } if field_name == "timestamp" && order == SortOrder::Asc
+            )
+        );
         Ok(())
     }
 
@@ -880,10 +878,7 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
-        match builder.sort_by() {
-            SortBy::DocId => (),
-            _ => bail!("Sort by must be DocId."),
-        };
+        assert!(matches!(builder.sort_by(), SortBy::DocId));
         Ok(())
     }
 

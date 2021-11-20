@@ -21,54 +21,11 @@ use std::fmt::Debug;
 
 use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_proto::SearchRequest;
-use serde::{Deserialize, Serialize};
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema, Value};
-use tantivy::{Document, Order};
+use tantivy::Document;
 
-use crate::{DocParsingError, QueryParserError, TAGS_FIELD_NAME};
-
-/// Sorted order (either Ascending or Descending).
-/// To get a regular top-K results search, use `SortOrder::Desc`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SortOrder {
-    /// Descending. This is the default to get Top-K results.
-    Desc,
-    /// Ascending order.
-    Asc,
-}
-
-impl Default for SortOrder {
-    fn default() -> Self {
-        Self::Desc
-    }
-}
-
-impl From<SortOrder> for Order {
-    fn from(order: SortOrder) -> Self {
-        match order {
-            SortOrder::Asc => Order::Asc,
-            SortOrder::Desc => Order::Desc,
-        }
-    }
-}
-
-/// Defines the way documents should be sorted.
-/// In case of a tie, the documents are ordered according to descending `(split_id, segment_ord,
-/// doc_id)`.
-#[derive(Clone, Debug, PartialEq)]
-pub enum SortBy {
-    /// Sort by a specific field.
-    SortByFastField {
-        /// Field to sort by.
-        field_name: String,
-        /// Order to sort by. A usual top-K search implies a Descending order.
-        order: SortOrder,
-    },
-    /// Sort by DocId
-    DocId,
-}
+use crate::{DocParsingError, QueryParserError, SortBy, TAGS_FIELD_NAME};
 
 /// Convert a field (name, value) into a tag string `name:value`.
 pub fn convert_tag_to_string(field_name: &str, field_value: &Value) -> String {
