@@ -3,7 +3,7 @@
 This is just a project used to test backward compatibility of Quickwit.
 Right now, only SplitMetadata is tested.
 
-We want to be able to read all past version of SplitMetadata, but only write the most recent format.
+We want to be able to read all past versions of SplitMetadata, but only write the most recent format.
 The tests consists in pairs of json file.
 XXXX.json and XXXX.expected.json
 
