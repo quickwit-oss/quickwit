@@ -35,6 +35,7 @@ use tantivy::fastfield::FastValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema, Type};
 use tantivy::{LeasedItem, ReloadPolicy, Searcher};
+use tokio::sync::{Semaphore, SemaphorePermit};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::*;
 
@@ -54,6 +55,18 @@ fn get_split_stream_concurrency() -> usize {
             DEFAULT_SPLIT_STREAM_CONCURRENCY,
         )
     })
+}
+
+async fn get_split_stream_semaphore() -> SemaphorePermit<'static> {
+    static INSTANCE: OnceCell<Arc<Semaphore>> = OnceCell::new();
+    INSTANCE
+        .get_or_init(|| {
+            let split_stream_concurrency = get_split_stream_concurrency();
+            Arc::new(Semaphore::new(split_stream_concurrency))
+        })
+        .acquire()
+        .await
+        .expect("Failed to acquire permit. This should never happen. Please report.")
 }
 
 /// `leaf` step of search stream.
@@ -118,6 +131,8 @@ async fn leaf_search_stream_single_split(
     stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResponse> {
+    let _leaf_permit = get_split_stream_semaphore().await;
+
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
 
