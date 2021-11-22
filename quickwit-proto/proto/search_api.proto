@@ -139,7 +139,7 @@ message Hit {
 }
 
 // A partial hit, is a hit for which we have not fetch the content yet.
-// Instead, it holds a record_uri which is enough information to
+// Instead, it holds a document_uri which is enough information to
 // go and fetch the actual document data, by performing a `get_doc(...)`
 // request.
 message PartialHit {

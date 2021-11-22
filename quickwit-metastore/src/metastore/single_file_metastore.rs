@@ -833,7 +833,7 @@ mod tests {
             split_metadata: SplitMetadata {
                 split_id: split_id.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
                 create_timestamp: current_timestamp,
@@ -941,7 +941,7 @@ mod tests {
                     split_metadata: SplitMetadata {
                         split_id: format!("split-{}", i),
                         split_state: SplitState::Staged,
-                        num_records: 1,
+                        num_docs: 1,
                         size_in_bytes: 2,
                         time_range: Some(RangeInclusive::new(0, 99)),
                         create_timestamp: current_timestamp,

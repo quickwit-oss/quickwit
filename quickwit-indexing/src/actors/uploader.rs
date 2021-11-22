@@ -104,7 +104,7 @@ fn create_split_metadata(
     SplitMetadataAndFooterOffsets {
         split_metadata: SplitMetadata {
             split_id: split.split_id.clone(),
-            num_records: split.num_docs as usize,
+            num_docs: split.num_docs as usize,
             time_range: split.time_range.clone(),
             size_in_bytes: split.size_in_bytes,
             split_state: SplitState::New,
