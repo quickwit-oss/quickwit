@@ -21,19 +21,16 @@
 pub mod postgresql_metastore;
 pub mod single_file_metastore;
 
-use std::collections::{HashMap, HashSet};
-use std::fmt::{self, Debug};
-use std::ops::{Range, RangeInclusive};
-use std::str::FromStr;
+use std::fmt::Debug;
+use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chrono::Utc;
 use quickwit_index_config::IndexConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};
-use crate::MetastoreResult;
+use crate::{MetastoreResult, SplitMetadataAndFooterOffsets, SplitState};
 
 /// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -47,127 +44,6 @@ pub struct IndexMetadata {
     pub index_config: Arc<dyn IndexConfig>,
     /// Checkpoint relative to a source. It express up to where documents have been indexed.
     pub checkpoint: Checkpoint,
-}
-
-/// Carries split and bundle offsets for single read metadata.
-#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
-pub struct SplitMetadataAndFooterOffsets {
-    /// A split metadata carries all meta data about a split.
-    pub split_metadata: SplitMetadata,
-    /// Contains the range of bytes of the footer that needs to be downloaded
-    /// in order to open a split.
-    pub footer_offsets: Range<u64>,
-}
-
-/// A split metadata carries all meta data about a split.
-#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
-pub struct SplitMetadata {
-    /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
-    /// should be enough to uniquely identify a split.
-    /// In reality, some information may be implicitly configured
-    /// in the storage URI resolver: for instance, the Amazon S3 region.
-    pub split_id: String,
-
-    /// Number of records (or documents) in the split.
-    /// TODO make u64
-    pub num_records: usize,
-
-    /// Sum of the size (in bytes) of the documents in this split.
-    ///
-    /// Note this is not the split file size. It is the size of the original
-    /// JSON payloads.
-    pub size_in_bytes: u64,
-
-    /// If a timestamp field is available, the min / max timestamp in
-    /// the split.
-    pub time_range: Option<RangeInclusive<i64>>,
-
-    /// The state of the split. This is the only mutable attribute of the split.
-    pub split_state: SplitState,
-
-    /// Timestamp for tracking when the split was created.
-    #[serde(default)]
-    pub create_timestamp: i64,
-
-    /// Timestamp for tracking when the split was last updated.
-    #[serde(default)]
-    pub update_timestamp: i64,
-
-    /// A set of tags for categorizing and searching group of splits.
-    #[serde(default)]
-    pub tags: HashSet<String>,
-
-    /// Number of demux operations this split has undergone.
-    #[serde(default)]
-    pub demux_num_ops: usize,
-}
-
-impl SplitMetadata {
-    /// Creates a new instance of split metadata.
-    pub fn new(split_id: String) -> Self {
-        Self {
-            split_id,
-            split_state: SplitState::New,
-            num_records: 0,
-            size_in_bytes: 0,
-            time_range: None,
-            create_timestamp: Utc::now().timestamp(),
-            update_timestamp: Utc::now().timestamp(),
-            tags: Default::default(),
-            demux_num_ops: 0,
-        }
-    }
-}
-
-/// A split state.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum SplitState {
-    /// The split is newly created.
-    New,
-
-    /// The split is almost ready. Some of its files may have been uploaded in the storage.
-    Staged,
-
-    /// The split is ready and published.
-    Published,
-
-    /// The split is scheduled for deletion.
-    ScheduledForDeletion,
-}
-
-impl Default for SplitState {
-    fn default() -> Self {
-        Self::New
-    }
-}
-
-impl FromStr for SplitState {
-    type Err = &'static str;
-
-    fn from_str(input: &str) -> Result<SplitState, Self::Err> {
-        match input {
-            "New" => Ok(SplitState::New),
-            "Staged" => Ok(SplitState::Staged),
-            "Published" => Ok(SplitState::Published),
-            "ScheduledForDeletion" => Ok(SplitState::ScheduledForDeletion),
-            _ => Err("Unknown split state"),
-        }
-    }
-}
-
-impl fmt::Display for SplitState {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-/// A MetadataSet carries an index metadata and its split metadata.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MetadataSet {
-    /// Metadata specific to the index.
-    pub index: IndexMetadata,
-    /// List of splits belonging to the index.
-    pub splits: HashMap<String, SplitMetadataAndFooterOffsets>,
 }
 
 /// Metastore meant to manage Quickwit's indexes and their splits.

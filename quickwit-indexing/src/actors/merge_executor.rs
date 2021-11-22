@@ -72,7 +72,7 @@ impl Actor for MergeExecutor {
                 merge_split_id,
                 splits,
             } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
+                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
                 let in_merge_split_ids: Vec<String> =
                     splits.iter().map(|split| split.split_id.clone()).collect();
                 info_span!("merge",
@@ -87,7 +87,7 @@ impl Actor for MergeExecutor {
                 demux_split_ids,
                 splits,
             } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
+                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
                 let in_demux_split_idx: Vec<String> =
                     splits.iter().map(|split| split.split_id.clone()).collect();
                 info_span!("demux",
@@ -185,7 +185,7 @@ fn sum_doc_sizes_in_bytes(splits: &[SplitMetadata]) -> u64 {
 }
 
 fn sum_num_docs(splits: &[SplitMetadata]) -> u64 {
-    splits.iter().map(|split| split.num_records as u64).sum()
+    splits.iter().map(|split| split.num_docs as u64).sum()
 }
 
 fn merge_all_segments(index: &Index) -> anyhow::Result<()> {
@@ -459,7 +459,7 @@ impl MergeExecutor {
             ctx.record_progress();
         }
         assert_eq!(
-            splits.iter().map(|split| split.num_records).sum::<usize>() as u64,
+            splits.iter().map(|split| split.num_docs).sum::<usize>() as u64,
             indexed_splits
                 .iter()
                 .map(|split| split.num_docs)

@@ -62,7 +62,7 @@ pub use crate::root::root_search;
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
-use crate::thread_pool::qspawn_blocking;
+use crate::thread_pool::run_cpu_intensive;
 
 const DEFAULT_SPLIT_FOOTER_CACHE_CAPACITY: u64 = 500_000_000;
 const SPLIT_FOOTER_CACHE_CAPACITY_ENV_KEY: &str = "SPLIT_FOOTER_CACHE_CAPACITY";

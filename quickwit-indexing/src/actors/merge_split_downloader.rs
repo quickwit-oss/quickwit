@@ -54,7 +54,7 @@ impl Actor for MergeSplitDownloader {
                 merge_split_id,
                 splits,
             } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
+                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
                 info_span!("merge",
                     msg_id=&msg_id,
                     merge_split_id=%merge_split_id,
@@ -65,7 +65,7 @@ impl Actor for MergeSplitDownloader {
                 demux_split_ids,
                 splits,
             } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
+                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
                 info_span!("demux",
                     msg_id=&msg_id,
                     demux_split_ids=?demux_split_ids,

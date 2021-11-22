@@ -19,7 +19,7 @@
 
 #[cfg(test)]
 pub mod test_suite {
-    use std::collections::HashSet;
+    use std::collections::{BTreeSet, HashSet};
     use std::ops::{Range, RangeInclusive};
     use std::sync::Arc;
 
@@ -38,7 +38,7 @@ pub mod test_suite {
         async fn default_for_test() -> Self;
     }
 
-    fn to_set(tags: &[&str]) -> HashSet<String> {
+    fn to_set(tags: &[&str]) -> BTreeSet<String> {
         tags.iter().map(ToString::to_string).collect()
     }
 
@@ -168,7 +168,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: split_id.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
                 create_timestamp: current_timestamp,
@@ -226,7 +226,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: split_id_1.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
                 create_timestamp: current_timestamp,
@@ -241,7 +241,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: split_id_2.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 5,
+                num_docs: 5,
                 size_in_bytes: 6,
                 time_range: Some(RangeInclusive::new(30, 99)),
                 create_timestamp: current_timestamp,
@@ -582,7 +582,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: split_id_1.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: None,
                 create_timestamp: current_timestamp,
@@ -597,7 +597,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: split_id_2.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 5,
+                num_docs: 5,
                 size_in_bytes: 6,
                 time_range: None,
                 create_timestamp: current_timestamp,
@@ -612,7 +612,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: split_id_3.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 5,
+                num_docs: 5,
                 size_in_bytes: 6,
                 time_range: None,
                 create_timestamp: current_timestamp,
@@ -809,7 +809,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: split_id_1.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
                 create_timestamp: current_timestamp,
@@ -884,7 +884,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: split_id_1.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
                 create_timestamp: current_timestamp,
@@ -1011,7 +1011,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: split_id_1.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
                 create_timestamp: current_timestamp,
@@ -1025,7 +1025,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: "list-all-splits-index-two".to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(100, 199)),
                 create_timestamp: current_timestamp,
@@ -1039,7 +1039,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: "list-all-splits-index-three".to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(200, 299)),
                 create_timestamp: current_timestamp,
@@ -1053,7 +1053,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: "list-all-splits-index-four".to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(300, 399)),
                 create_timestamp: current_timestamp,
@@ -1067,7 +1067,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: "list-all-splits-index-five".to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: None,
                 create_timestamp: current_timestamp,
@@ -1151,7 +1151,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: split_id_1.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
                 create_timestamp: current_timestamp,
@@ -1166,7 +1166,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: "list-splits-two".to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(100, 199)),
                 create_timestamp: current_timestamp,
@@ -1181,7 +1181,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: "list-splits-three".to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(200, 299)),
                 create_timestamp: current_timestamp,
@@ -1196,7 +1196,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: "list-splits-four".to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(300, 399)),
                 create_timestamp: current_timestamp,
@@ -1211,7 +1211,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: "list-splits-five".to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: None,
                 create_timestamp: current_timestamp,
@@ -1640,7 +1640,7 @@ pub mod test_suite {
                 split_metadata: SplitMetadata {
                     split_id: "list-splits-six".to_string(),
                     split_state: SplitState::Staged,
-                    num_records: 1,
+                    num_docs: 1,
                     size_in_bytes: 2,
                     time_range: None,
                     create_timestamp: current_timestamp,
@@ -1712,7 +1712,7 @@ pub mod test_suite {
             split_metadata: SplitMetadata {
                 split_id: split_id.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
                 create_timestamp: current_timestamp,

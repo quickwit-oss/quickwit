@@ -12,7 +12,7 @@
   <a href="https://quickwit.io/docs/getting-started/quickstart">Quickstart</a> |
   <a href="https://quickwit.io/docs/">Docs</a> |
   <a href="https://quickwit.io/blog">Tutorials</a> |
-  <a href="https://gitter.im/quickwit-search/community">Chat</a> |
+  <a href="https://discord.gg/rpRRTezWhW">Chat</a> |
   <a href="https://quickwit.io/docs/getting-started/installation">Download</a>
 </h4>
 <br/>

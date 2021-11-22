@@ -175,7 +175,7 @@ async fn leaf_search_stream_single_split(
 
     let _ = span.enter();
     let m_request_fields = request_fields.clone();
-    let collect_handle = crate::qspawn_blocking(move || {
+    let collect_handle = crate::run_cpu_intensive(move || {
         let mut buffer = Vec::new();
         match m_request_fields.fast_field_types() {
             (Type::I64, None) => {
