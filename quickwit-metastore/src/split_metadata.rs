@@ -117,7 +117,8 @@ pub struct SplitMetadata {
 
     /// Number of records (or documents) in the split.
     /// TODO make u64
-    pub num_records: usize,
+    #[serde(alias = "num_records")]
+    pub num_docs: usize,
 
     /// Sum of the size (in bytes) of the documents in this split.
     ///
@@ -133,11 +134,11 @@ pub struct SplitMetadata {
     pub split_state: SplitState,
 
     /// Timestamp for tracking when the split was created.
-    #[serde(default)]
+    #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
 
     /// Timestamp for tracking when the split was last updated.
-    #[serde(default)]
+    #[serde(default = "utc_now_timestamp")]
     pub update_timestamp: i64,
 
     /// A set of tags for categorizing and searching group of splits.
@@ -155,7 +156,7 @@ impl SplitMetadata {
         Self {
             split_id,
             split_state: SplitState::New,
-            num_records: 0,
+            num_docs: 0,
             size_in_bytes: 0,
             time_range: None,
             create_timestamp: Utc::now().timestamp(),
@@ -206,4 +207,9 @@ impl fmt::Display for SplitState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
     }
+}
+
+/// Helper function to provide a default UTC timestamp.
+fn utc_now_timestamp() -> i64 {
+    Utc::now().timestamp()
 }

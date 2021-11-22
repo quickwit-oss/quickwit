@@ -25,7 +25,7 @@ fn sample_split_metadata_for_regression() -> SplitMetadataAndFooterOffsets {
     SplitMetadataAndFooterOffsets {
         split_metadata: SplitMetadata {
             split_id: "split".to_string(),
-            num_records: 12303,
+            num_docs: 12303,
             size_in_bytes: 234234,
             time_range: Some(121000..=130198),
             split_state: SplitState::Published,
