@@ -7,7 +7,7 @@ We want to be able to read all past versions of SplitMetadata, but only write th
 The tests consists in pairs of json file.
 XXXX.json and XXXX.expected.json
 
-XXXX.json consists in a json file in a possibly old format.
+XXXX.json consists in a json file in an old format.
 XXXX.expected.json consists in the expected result of
 serialize_new_version(deserialize(XXXX.json)).
 
