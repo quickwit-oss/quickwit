@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -205,7 +205,7 @@ fn create_packaged_split(
         .sum();
 
     // Extracts tag values from `_tags` special fields.
-    let mut tags = HashSet::default();
+    let mut tags = BTreeSet::default();
     let index_reader = split
         .index
         .reader_builder()

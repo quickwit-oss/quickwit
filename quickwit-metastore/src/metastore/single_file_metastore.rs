@@ -28,18 +28,27 @@ use quickwit_storage::{
     quickwit_storage_uri_resolver, Storage, StorageErrorKind, StorageResolverError,
     StorageUriResolver,
 };
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::checkpoint::CheckpointDelta;
 use crate::metastore::match_tags_filter;
 use crate::{
-    IndexMetadata, MetadataSet, Metastore, MetastoreError, MetastoreFactory,
-    MetastoreResolverError, MetastoreResult, SplitMetadata, SplitMetadataAndFooterOffsets,
-    SplitState,
+    IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
+    MetastoreResult, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState,
 };
 
 /// Metadata file managed by [`SingleFileMetastore`].
 const META_FILENAME: &str = "quickwit.json";
+
+/// A MetadataSet carries an index metadata and its split metadata.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MetadataSet {
+    /// Metadata specific to the index.
+    pub index: IndexMetadata,
+    /// List of splits belonging to the index.
+    pub splits: HashMap<String, SplitMetadataAndFooterOffsets>,
+}
 
 /// Creates a path to the metadata file from the given index ID.
 fn meta_path(index_id: &str) -> PathBuf {
@@ -707,9 +716,9 @@ mod tests {
     use tokio::time::Duration;
 
     use crate::checkpoint::{Checkpoint, CheckpointDelta};
-    use crate::metastore::single_file_metastore::meta_path;
+    use crate::metastore::single_file_metastore::{meta_path, MetadataSet};
     use crate::{
-        IndexMetadata, MetadataSet, Metastore, MetastoreError, SingleFileMetastore, SplitMetadata,
+        IndexMetadata, Metastore, MetastoreError, SingleFileMetastore, SplitMetadata,
         SplitMetadataAndFooterOffsets, SplitState,
     };
 
@@ -824,9 +833,10 @@ mod tests {
             split_metadata: SplitMetadata {
                 split_id: split_id.to_string(),
                 split_state: SplitState::Staged,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range: Some(RangeInclusive::new(0, 99)),
+                create_timestamp: current_timestamp,
                 update_timestamp: current_timestamp,
                 ..Default::default()
             },
@@ -924,16 +934,18 @@ mod tests {
         for i in 1..=20 {
             let sleep_duration = Duration::from_millis(random_generator.gen_range(0..=200));
             let metastore = metastore.clone();
+            let current_timestamp = Utc::now().timestamp();
             let handle = tokio::spawn(async move {
                 let split_metadata = SplitMetadataAndFooterOffsets {
                     footer_offsets: 1000..2000,
                     split_metadata: SplitMetadata {
                         split_id: format!("split-{}", i),
                         split_state: SplitState::Staged,
-                        num_records: 1,
+                        num_docs: 1,
                         size_in_bytes: 2,
                         time_range: Some(RangeInclusive::new(0, 99)),
-                        update_timestamp: Utc::now().timestamp(),
+                        create_timestamp: current_timestamp,
+                        update_timestamp: current_timestamp,
                         ..Default::default()
                     },
                 };
