@@ -24,6 +24,7 @@ mod kafka_source;
 mod kinesis;
 mod source_factory;
 mod vec_source;
+mod void_source;
 
 use std::fmt;
 
@@ -36,6 +37,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox}
 use serde::{Deserialize, Serialize};
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 pub use vec_source::{VecSource, VecSourceFactory, VecSourceParams};
+pub use void_source::{VoidSource, VoidSourceFactory, VoidSourceParams};
 
 use crate::models::IndexerMessage;
 
@@ -167,6 +169,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         #[cfg(feature = "kafka")]
         source_factory.add_source("kafka", KafkaSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
+        source_factory.add_source("void", VoidSourceFactory);
         source_factory
     })
 }
