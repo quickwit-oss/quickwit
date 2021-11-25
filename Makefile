@@ -34,7 +34,7 @@ test-all: docker-compose-up
 
 # This will build and push all custom cross images for cross-compilation.
 # You will need to login into Docker Hub with the `quickwit` account.
-IMAGE_TAGS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl
+IMAGE_TAGS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-musl
 
 .PHONY: cross-images
 cross-images:
@@ -49,8 +49,11 @@ TARGET ?= x86_64-unknown-linux-gnu
 build:
 	@echo "Building binary for target=${TARGET}"
 	@which cross > /dev/null 2>&1 || (echo "Cross is not installed. Please install using 'cargo install cross'." && exit 1)
-	@if [ "${TARGET}" = "x86_64-unknown-linux-musl" ]; then \
-		cross build --release --features release-feature-set --target ${TARGET}; \
-	else \
-		cross build --release --features release-feature-vendored-set --target ${TARGET}; \
-	fi
+	@case "${TARGET}" in \
+		*musl ) \
+			cross build --release --features release-feature-set --target ${TARGET}; \
+		;; \
+		* ) \
+			cross build --release --features release-feature-vendored-set --target ${TARGET}; \
+		;; \
+	esac

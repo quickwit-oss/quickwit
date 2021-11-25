@@ -1,4 +1,4 @@
-FROM ekidd/rust-musl-builder:latest
+FROM evanxg852000/cross-x86_64-unknown-linux-musl:latest
 
 RUN echo "Upgrading CMake" && \
     sudo apt-get remove cmake -y && \
