@@ -77,9 +77,6 @@ subcommands:
                     - overwrite:
                         about: Overwrites pre-existing index
                         long: overwrite
-                    - demux:
-                        about: Indexing with demux
-                        long: demux
                     - no-merge:
                         about: Indexing without merge
                         long: no-merge
@@ -199,6 +196,8 @@ subcommands:
                         about: Executes the command in dry run mode and displays the list of files to delete
                         long: dry-run
     - split:
+        settings:
+            - ArgRequiredElseHelp
         display_order: 2
         about: Operations (add, delete, describe...) on splits.
         subcommands:
@@ -207,8 +206,6 @@ subcommands:
                 args:
                     - split-id:
                         about: ID of the split
-                        long: split-id
-                        value_name: SPLIT ID
                         required: true
                         index: 1
                     - metastore-uri:
@@ -227,13 +224,18 @@ subcommands:
                         long: index-id
                         value_name: INDEX ID
                         required: true
-            - delete:
-                about: Delete an index or a split.
+            - describe:
+                about: Show files info contained in a split.
                 args:
-                    - index-id:
-                        about: Index ID
+                    - split-id:
+                        about: ID of the split
                         required: true
                         index: 1
+                    - index-id:
+                        about: Index ID
+                        long: index-id
+                        value_name: INDEX ID
+                        required: true
                     - metastore-uri:
                         about: Location of the metastore
                         long: metastore-uri
@@ -247,10 +249,11 @@ subcommands:
             - ArgRequiredElseHelp
         subcommands:
             - start:
-                about: Start a service, either an indexer or a searcher.
+                display_order: 1
+                about: Start a service, currently only `searcher` service is available.
                 args:
                     - name:
-                        about: Name of the service
+                        about: Name of the service, currently only `searcher` is available.
                         required: true
                         index: 1
                     - metastore-uri:
@@ -281,7 +284,7 @@ subcommands:
                         multiple_occurrences: true
                         use_delimiter: true
     - tutorial:
-        about: Build fast on of our tutorial dataset. No copy/paste needed.
+        about: Quick start with one of our tutorial dataset. No copy/paste needed.
         display_order: 4
         settings:
             - ArgRequiredElseHelp
@@ -291,7 +294,5 @@ subcommands:
                 args:
                     - name:
                         about: Name of the dataset
-                        long: config-path
-                        value_name: CONFIG PATH
                         required: true
                         index: 1

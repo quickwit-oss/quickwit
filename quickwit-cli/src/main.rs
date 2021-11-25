@@ -282,7 +282,6 @@ mod tests {
             "file:///indexes",
             "--data-dir-path",
             "/var/lib/quickwit/data",
-            "--demux",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
@@ -296,7 +295,7 @@ mod tests {
                     heap_size,
                     metastore_uri,
                     overwrite: false,
-                    demux: true,
+                    demux: false,
                     merge: true,
                 })) if &index_id == "wikipedia"
                         && &metastore_uri == "file:///indexes"

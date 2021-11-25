@@ -19,15 +19,35 @@
 
 use std::time::Duration;
 
+use colored::Color;
+
 pub mod index;
 pub mod service;
 pub mod split;
+pub mod stats;
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
 /// This environment variable can be set to send telemetry events to a jaeger instance.
 pub const QUICKWIT_JAEGER_ENABLED_ENV_KEY: &str = "QUICKWIT_JAEGER_ENABLED";
+
+/// Quickwit main colors slightly adapted to be readable on a terminal.
+pub const BLUE_COLOR: Color = Color::TrueColor {
+    r: 22,
+    g: 74,
+    b: 209,
+};
+pub const GREEN_COLOR: Color = Color::TrueColor {
+    r: 22,
+    g: 209,
+    b: 142,
+};
+pub const RED_COLOR: Color = Color::TrueColor {
+    r: 230,
+    g: 0,
+    b: 34,
+};
 
 /// Parse duration with unit.
 /// examples: 1s 2m 3h 5d

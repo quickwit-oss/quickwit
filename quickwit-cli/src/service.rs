@@ -44,9 +44,9 @@ pub enum ServiceCliCommand {
 
 impl ServiceCliCommand {
     pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let subcommand_opt = matches.subcommand();
-        let (subcommand, submatches) =
-            subcommand_opt.ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
+        let (subcommand, submatches) = matches
+            .subcommand()
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
             "start" => Self::parse_start_args(submatches),
             _ => bail!("Service subcommand '{}' is not implemented", subcommand),
@@ -114,6 +114,7 @@ pub async fn start_service(args: StartServiceArgs) -> anyhow::Result<()> {
             })
             .await?
         }
+        // TODO: add indexer.
         _ => bail!("Service '{}' is not implemented", args.service_name),
     }
 

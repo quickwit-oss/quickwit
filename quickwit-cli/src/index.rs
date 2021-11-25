@@ -28,7 +28,7 @@ use std::{env, fmt, io};
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use clap::ArgMatches;
-use colored::*;
+use colored::Colorize;
 use itertools::Itertools;
 use json_comments::StripComments;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
@@ -41,14 +41,17 @@ use quickwit_indexing::actors::{
 use quickwit_indexing::models::{CommitPolicy, IndexingDirectory, IndexingStatistics};
 use quickwit_indexing::source::{FileSourceParams, SourceConfig};
 use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::{do_checks, IndexMetadata, MetastoreUriResolver, SplitState};
+use quickwit_metastore::{
+    do_checks, IndexMetadata, MetastoreUriResolver, SplitMetadataAndFooterOffsets, SplitState,
+};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{debug, Level};
 
-use crate::{parse_duration_with_unit, THROUGHPUT_WINDOW_SIZE};
+use crate::stats::{mean, percentile, std_deviation};
+use crate::{parse_duration_with_unit, GREEN_COLOR, THROUGHPUT_WINDOW_SIZE};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
@@ -184,9 +187,9 @@ impl IndexCliCommand {
     }
 
     pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let subcommand_opt = matches.subcommand();
-        let (subcommand, submatches) =
-            subcommand_opt.ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
+        let (subcommand, submatches) = matches
+            .subcommand()
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
             "create" => Self::parse_create_args(submatches),
             "describe" => Self::parse_describe_args(submatches),
@@ -263,7 +266,6 @@ impl IndexCliCommand {
             .map(Byte::from_str)
             .expect("`heap-size` has a default value.")?;
         let overwrite = matches.is_present("overwrite");
-        let demux = matches.is_present("demux");
         let merge = !matches.is_present("no-merge");
 
         Ok(Self::Index(IndexDataArgs {
@@ -274,7 +276,7 @@ impl IndexCliCommand {
             heap_size,
             metastore_uri,
             overwrite,
-            demux,
+            demux: false, // We don't want to expose demux for now.
             merge,
         }))
     }
@@ -390,13 +392,91 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let demux_field_name = index_metadata
-        .index_config
-        .demux_field_name()
-        .ok_or_else(|| anyhow::anyhow!("Index must have a demux field to get demux stats."))?;
     let split_meta_and_footers = metastore
         .list_splits(&args.index_id, SplitState::Published, None, &[])
         .await?;
+
+    let splits_num_docs = split_meta_and_footers
+        .iter()
+        .map(|split_meta_and_footer| split_meta_and_footer.split_metadata.num_docs)
+        .sorted()
+        .collect_vec();
+    let num_docs = splits_num_docs.iter().sum::<usize>();
+
+    println!();
+    println!("1. General infos");
+    println!("===============================================================================");
+    println!(
+        "{} {}",
+        "Index id:".color(GREEN_COLOR),
+        index_metadata.index_id
+    );
+    println!(
+        "{} {}",
+        "Index uri:".color(GREEN_COLOR),
+        index_metadata.index_uri
+    );
+    println!(
+        "{} {}",
+        "Number of published splits:".color(GREEN_COLOR),
+        split_meta_and_footers.len()
+    );
+    println!(
+        "{} {}",
+        "Number of published documents".color(GREEN_COLOR),
+        num_docs
+    );
+    if let Some(timestamp_field_name) = index_metadata.index_config.timestamp_field_name() {
+        println!(
+            "{} {}",
+            "Timestamp field:".color(GREEN_COLOR),
+            timestamp_field_name
+        );
+        let time_min = split_meta_and_footers
+            .iter()
+            .map(|split_meta_and_footer| split_meta_and_footer.split_metadata.time_range.clone())
+            .filter(|time_range| time_range.is_some())
+            .map(|time_range| *time_range.unwrap().start())
+            .min();
+        let time_max = split_meta_and_footers
+            .iter()
+            .map(|split_meta_and_footer| split_meta_and_footer.split_metadata.time_range.clone())
+            .filter(|time_range| time_range.is_some())
+            .map(|time_range| *time_range.unwrap().start())
+            .max();
+        println!(
+            "{} {:?} -> {:?}",
+            "Timestamp range:".color(GREEN_COLOR),
+            time_min,
+            time_max
+        );
+    }
+
+    if split_meta_and_footers.is_empty() {
+        return Ok(());
+    }
+
+    println!();
+    println!("2. Statistics on splits");
+    println!("===============================================================================");
+    println!("{}", "Document count stats:".color(GREEN_COLOR));
+    print_descriptive_stats(&splits_num_docs);
+
+    if let Some(demux_field_name) = index_metadata.index_config.demux_field_name() {
+        show_demux_stats(&demux_field_name, &split_meta_and_footers).await;
+    }
+
+    println!();
+    Ok(())
+}
+
+pub async fn show_demux_stats(
+    demux_field_name: &str,
+    split_meta_and_footers: &[SplitMetadataAndFooterOffsets],
+) {
+    println!();
+    println!("3. Demux stats");
+    println!("===============================================================================");
     let demux_uniq_values: HashSet<String> = split_meta_and_footers
         .iter()
         .map(|metadata_and_footer| {
@@ -404,26 +484,24 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
                 .split_metadata
                 .tags
                 .iter()
-                .filter(|tag| match_tag_field_name(&demux_field_name, tag))
+                .filter(|tag| match_tag_field_name(demux_field_name, tag))
                 .cloned()
         })
         .flatten()
         .collect();
-    println!("{}", "Statistic reports on demux:".bold());
     println!(
-        "{}",
-        format!(
-            "- Found {} `{}` unique values in {} splits.",
-            demux_uniq_values.len(),
-            demux_field_name,
-            split_meta_and_footers.len(),
-        )
+        "{} {}",
+        "Demux field name:".color(GREEN_COLOR),
+        demux_field_name
     );
-    // Compute split count per demux value.
     println!(
-        "{}",
-        format!("- Stats on split count per `{}` value.", demux_field_name)
+        "{} {}",
+        "Demux unique values count:".color(GREEN_COLOR),
+        demux_uniq_values.len()
     );
+    println!();
+    println!("3.1 Split count per `{}` value", demux_field_name);
+    println!("-------------------------------------------------");
     let mut split_counts_per_demux_values = Vec::new();
     for demux_value in demux_uniq_values {
         let split_count = split_meta_and_footers
@@ -437,9 +515,8 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
             .count();
         split_counts_per_demux_values.push(split_count);
     }
-    print_demux_stats(&split_counts_per_demux_values);
+    print_descriptive_stats(&split_counts_per_demux_values);
 
-    // Compute demux unique values count per split.
     let (non_demuxed_splits, demuxed_splits): (Vec<_>, Vec<_>) = split_meta_and_footers
         .iter()
         .cloned()
@@ -451,7 +528,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
             split
                 .tags
                 .iter()
-                .filter(|tag| match_tag_field_name(&demux_field_name, tag))
+                .filter(|tag| match_tag_field_name(demux_field_name, tag))
                 .count()
         })
         .sorted()
@@ -462,95 +539,64 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
             split
                 .tags
                 .iter()
-                .filter(|tag| match_tag_field_name(&demux_field_name, tag))
+                .filter(|tag| match_tag_field_name(demux_field_name, tag))
                 .count()
         })
         .sorted()
         .collect_vec();
+    println!();
+    println!("3.2 Demux unique values count per split");
+    println!("-------------------------------------------------");
     println!(
-        "{}",
-        format!(
-            "- Stats on `{}` unique values count per split.",
-            demux_field_name
-        )
+        "{} {}",
+        "Non demux splits count:".color(GREEN_COLOR),
+        non_demuxed_splits.len()
     );
-    println!("  -> On {} non demuxed splits:", non_demuxed_splits.len());
-    print_demux_stats(&non_demuxed_split_demux_values_counts);
-    println!("  -> On {} demuxed splits:", demuxed_splits.len());
-    print_demux_stats(&demuxed_split_demux_values_counts);
-
-    Ok(())
+    println!(
+        "{} {}",
+        "Demux splits count:".color(GREEN_COLOR),
+        demuxed_splits.len()
+    );
+    if !non_demuxed_splits.is_empty() {
+        println!();
+        println!("{}", "Stats on non demuxed splits:".color(GREEN_COLOR));
+        print_descriptive_stats(&non_demuxed_split_demux_values_counts);
+    }
+    if !demuxed_splits.is_empty() {
+        println!();
+        println!("{}", "Stats on demuxed splits:".color(GREEN_COLOR));
+        print_descriptive_stats(&demuxed_split_demux_values_counts);
+    }
 }
 
-fn print_demux_stats(counts: &[usize]) {
-    let mean_val = mean(counts);
-    let std_val = std_deviation(counts);
-    let min_val = counts.iter().min().unwrap();
-    let max_val = counts.iter().max().unwrap();
+fn print_descriptive_stats(values: &[usize]) {
+    let mean_val = mean(values);
+    let std_val = std_deviation(values);
+    let min_val = values.iter().min().unwrap();
+    let max_val = values.iter().max().unwrap();
     println!(
-        "{} ± {} in [{} … {}]:   {} ± {} in [{} … {}]",
-        "Mean".green(),
-        "σ".green(),
-        "min".cyan(),
-        "max".purple(),
-        format!("{:>2}", mean_val).green(),
-        format!("{}", std_val).green(),
-        format!("{}", min_val).cyan(),
-        format!("{}", max_val).purple(),
+        "{} ± {} in [min … max]:   {} ± {} in [{} … {}]",
+        "Mean".color(GREEN_COLOR),
+        "σ".color(GREEN_COLOR),
+        format!("{:>2}", mean_val),
+        format!("{}", std_val),
+        format!("{}", min_val),
+        format!("{}", max_val),
     );
-    let q1 = percentile(counts, 1);
-    let q25 = percentile(counts, 50);
-    let q50 = percentile(counts, 50);
-    let q75 = percentile(counts, 75);
-    let q99 = percentile(counts, 75);
+    let q1 = percentile(values, 1);
+    let q25 = percentile(values, 50);
+    let q50 = percentile(values, 50);
+    let q75 = percentile(values, 75);
+    let q99 = percentile(values, 75);
     println!(
         "{} [0.01, 0.25, 0.50, 0.75, 0.99] :   [{}, {}, {}, {}, {}]",
-        "Quantiles".green(),
-        format!("{}", q1).green(),
-        format!("{}", q25).green(),
-        format!("{}", q50).green(),
-        format!("{}", q75).green(),
-        format!("{}", q99).green(),
+        "Quantiles".color(GREEN_COLOR),
+        format!("{}", q1),
+        format!("{}", q25),
+        format!("{}", q50),
+        format!("{}", q75),
+        format!("{}", q99),
     );
-}
-
-fn mean(values: &[usize]) -> f32 {
-    assert!(!values.is_empty());
-    let sum: usize = values.iter().sum();
-    sum as f32 / values.len() as f32
-}
-
-fn std_deviation(values: &[usize]) -> f32 {
-    let mean = mean(values);
-    let variance = values
-        .iter()
-        .map(|value| {
-            let diff = mean - (*value as f32);
-            diff * diff
-        })
-        .sum::<f32>()
-        / values.len() as f32;
-    variance.sqrt()
-}
-
-/// Return percentile of sorted values using linear interpolation.
-fn percentile(sorted_values: &[usize], percent: usize) -> f32 {
-    assert!(!sorted_values.is_empty());
-    assert!(percent <= 100);
-    if sorted_values.len() == 1 {
-        return sorted_values[0] as f32;
-    }
-    if percent == 100 {
-        return sorted_values[sorted_values.len() - 1] as f32;
-    }
-    let length = (sorted_values.len() - 1) as f32;
-    let rank = (percent as f32 / 100f32) * length;
-    let lrank = rank.floor();
-    let d = rank - lrank;
-    let n = lrank as usize;
-    let lo = sorted_values[n] as f32;
-    let hi = sorted_values[n + 1] as f32;
-    lo + (hi - lo) * d
 }
 
 pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {

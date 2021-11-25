@@ -69,13 +69,13 @@ pub enum SplitCliCommand {
 
 impl SplitCliCommand {
     pub fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let subcommand_opt = matches.subcommand();
-        let (subcommand, submatches) =
-            subcommand_opt.ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
+        let (subcommand, submatches) = matches
+            .subcommand()
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
             "describe" => Self::parse_describe_args(submatches),
             "extract" => Self::parse_extract_split_args(submatches),
-            _ => bail!("Stats subcommand '{}' is not implemented", subcommand),
+            _ => bail!("Subcommand '{}' is not implemented", subcommand),
         }
     }
 
