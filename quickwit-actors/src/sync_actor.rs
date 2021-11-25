@@ -154,7 +154,7 @@ fn sync_actor_loop<A: SyncActor>(
 
     let mut msg_id = 1;
 
-    let exit_status: ActorExitStatus = loop {
+    let mut exit_status: ActorExitStatus = loop {
         if let Some(exit_status) = exit_status_opt {
             break exit_status;
         }
@@ -167,10 +167,14 @@ fn sync_actor_loop<A: SyncActor>(
         );
         msg_id += 1;
     };
-    ctx.exit(&exit_status);
-    info!(exit_status=%exit_status, "exit");
-    if let Err(error) = actor_with_state_tx.actor.finalize(&exit_status, &ctx) {
-        error!(error=?error, "Finalizing failed");
+
+    if let Err(finalize_error) = actor_with_state_tx.actor.finalize(&exit_status, &ctx) {
+        error!(error=?finalize_error, "Finalizing failed, set exit status to panicked.");
+        exit_status = ActorExitStatus::Panicked;
     }
+
+    info!(exit_status=%exit_status, "exit");
+    ctx.exit(&exit_status);
+
     exit_status
 }
