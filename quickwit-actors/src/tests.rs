@@ -582,3 +582,73 @@ async fn test_actor_spawning_actor() -> anyhow::Result<()> {
     assert_eq!(result, 6);
     Ok(())
 }
+
+struct BuggyFinalizeActor;
+
+impl Actor for BuggyFinalizeActor {
+    type Message = BuggyMessage;
+    type ObservableState = ();
+
+    fn name(&self) -> String {
+        "BuggyFinalizeActor".to_string()
+    }
+
+    fn observable_state(&self) {}
+}
+
+impl SyncActor for BuggyFinalizeActor {
+    fn process_message(
+        &mut self,
+        _message: Self::Message,
+        _ctx: &ActorContext<Self::Message>,
+    ) -> Result<(), ActorExitStatus> {
+        Ok(())
+    }
+
+    fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        _ctx: &ActorContext<Self::Message>,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("Finalize error")
+    }
+}
+
+#[async_trait]
+impl AsyncActor for BuggyFinalizeActor {
+    async fn process_message(
+        &mut self,
+        _: BuggyMessage,
+        _: &ActorContext<Self::Message>,
+    ) -> Result<(), ActorExitStatus> {
+        Ok(())
+    }
+
+    async fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        _: &ActorContext<Self::Message>,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("Finalize error")
+    }
+}
+
+#[tokio::test]
+async fn test_actor_finalize_error_set_exit_status_to_panicked() -> anyhow::Result<()> {
+    let universe = Universe::new();
+    // Sync
+    let (mailbox, handle) = universe.spawn_actor(BuggyFinalizeActor).spawn_sync();
+    assert!(matches!(handle.state(), ActorState::Processing));
+    drop(mailbox);
+    let (exit, _) = handle.join().await;
+    assert!(matches!(exit, ActorExitStatus::Panicked));
+
+    // Async
+    let (mailbox, handle) = universe.spawn_actor(BuggyFinalizeActor).spawn_async();
+    assert!(matches!(handle.state(), ActorState::Processing));
+    drop(mailbox);
+    let (exit, _) = handle.join().await;
+    assert!(matches!(exit, ActorExitStatus::Panicked));
+
+    Ok(())
+}

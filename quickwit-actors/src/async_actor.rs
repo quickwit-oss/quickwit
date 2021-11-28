@@ -167,7 +167,7 @@ async fn async_actor_loop<A: AsyncActor>(
         actor_with_state_tx.actor.initialize(&ctx).await.err();
 
     let mut msg_id: u64 = 1;
-    let exit_status: ActorExitStatus = loop {
+    let mut exit_status: ActorExitStatus = loop {
         tokio::task::yield_now().await;
         if let Some(exit_status) = exit_status_opt {
             break exit_status;
@@ -182,15 +182,19 @@ async fn async_actor_loop<A: AsyncActor>(
         .await;
         msg_id += 1;
     };
-    ctx.exit(&exit_status);
-
+    ctx.record_progress();
     if let Err(finalize_error) = actor_with_state_tx
         .actor
         .finalize(&exit_status, &ctx)
         .await
         .with_context(|| format!("Finalization of actor {}", actor_with_state_tx.actor.name()))
     {
-        error!(err=?finalize_error, "finalize_error");
+        error!(error=?finalize_error, "Finalizing failed, set exit status to panicked.");
+        exit_status = ActorExitStatus::Panicked;
     }
+
+    info!(exit_status=%exit_status, "exit");
+    ctx.exit(&exit_status);
+
     exit_status
 }
