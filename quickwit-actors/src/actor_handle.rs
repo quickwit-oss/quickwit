@@ -73,7 +73,6 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
 
     fn health(&self) -> Health {
         let actor_state = self.state();
-        println!("state {:?}", actor_state);
         if actor_state == ActorState::Exit {
             let actor_exit_status = self
                 .actor_exit_status
@@ -93,7 +92,6 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
         {
             Health::Healthy
         } else {
-            println!("timeout");
             error!(actor = self.name(), "actor-timeout");
             Health::FailureOrUnhealthy
         }
