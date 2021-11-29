@@ -43,9 +43,7 @@ mod test_utils;
 
 pub use test_utils::{mock_split_meta, TestSandbox};
 
-pub use self::garbage_collection::{
-    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionStats,
-};
+pub use self::garbage_collection::{delete_splits_with_files, run_garbage_collect, FileEntry};
 pub use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
 pub async fn index_data(

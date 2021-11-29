@@ -22,21 +22,25 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use quickwit_actors::ActorContext;
-use quickwit_metastore::{Metastore, SplitMetadataAndFooterOffsets, SplitState};
+use quickwit_metastore::{Metastore, MetastoreError, SplitMetadataAndFooterOffsets, SplitState};
+use quickwit_storage::StorageError;
 use tantivy::chrono::Utc;
-use tracing::{error, warn};
+use thiserror::Error;
+use tracing::error;
 
 use crate::split_store::IndexingSplitStore;
 
 const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
 
-/// A struct holding splits deletion statistics.
-#[derive(Default)]
-pub struct SplitDeletionStats {
-    /// Entries subject to be deleted.
-    pub candidate_entries: Vec<FileEntry>,
-    /// Entries that were successfully deleted.
-    pub deleted_entries: Vec<FileEntry>,
+/// SplitDeletionError denotes error that can happen when deleting split
+/// during garbage collection.
+#[derive(Error, Debug)]
+pub enum SplitDeletionError {
+    #[error("Failed to delete splits from storage: '{0:?}'.")]
+    StorageFailure(Vec<(String, StorageError)>),
+
+    #[error("Failed to delete splits from metastore: '{0:?}'.")]
+    MetastoreFailure(MetastoreError),
 }
 
 #[allow(missing_docs)]
@@ -76,7 +80,7 @@ pub async fn run_garbage_collect(
     deletion_grace_period: Duration,
     dry_run: bool,
     ctx_opt: Option<&ActorContext<()>>,
-) -> anyhow::Result<SplitDeletionStats> {
+) -> anyhow::Result<Vec<FileEntry>> {
     // Select staged splits with staging timestamp older than grace period timestamp.
     let grace_period_timestamp = Utc::now().timestamp() - staged_grace_period.as_secs() as i64;
 
@@ -101,10 +105,7 @@ pub async fn run_garbage_collect(
             .iter()
             .map(FileEntry::from)
             .collect();
-        return Ok(SplitDeletionStats {
-            candidate_entries,
-            ..Default::default()
-        });
+        return Ok(candidate_entries);
     }
 
     // Schedule all eligible staged splits for delete
@@ -152,10 +153,10 @@ pub async fn delete_splits_with_files(
     metastore: Arc<dyn Metastore>,
     splits: Vec<SplitMetadataAndFooterOffsets>,
     ctx_opt: Option<&ActorContext<()>>,
-) -> anyhow::Result<SplitDeletionStats> {
-    let mut deletion_stats = SplitDeletionStats::default();
-    let mut deleted_split_ids: Vec<String> = Vec::new();
-    let mut failed_split_ids: Vec<String> = Vec::new();
+) -> anyhow::Result<Vec<FileEntry>, SplitDeletionError> {
+    let mut deleted_file_entries = Vec::new();
+    let mut deleted_split_ids = Vec::new();
+    let mut failed_split_ids_to_error = Vec::new();
 
     let mut delete_splits_results_stream = tokio_stream::iter(splits.into_iter())
         .map(|split| {
@@ -180,21 +181,29 @@ pub async fn delete_splits_with_files(
     while let Some((split_id, file_entry, delete_split_res)) =
         delete_splits_results_stream.next().await
     {
-        deletion_stats.candidate_entries.push(file_entry.clone());
         if let Err(error) = delete_split_res {
             error!(error = ?error, index_id = ?index_id, split_id = ?split_id, "Failed to delete split.");
-            failed_split_ids.push(split_id);
+            failed_split_ids_to_error.push((split_id, error));
         } else {
             deleted_split_ids.push(split_id);
-            deletion_stats.deleted_entries.push(file_entry);
+            deleted_file_entries.push(file_entry);
         };
     }
-    if !failed_split_ids.is_empty() {
-        warn!(index_id = ?index_id, split_ids = ?failed_split_ids, "Failed to delete splits.");
+
+    if !failed_split_ids_to_error.is_empty() {
+        error!(index_id = ?index_id, failed_split_ids_to_error = ?failed_split_ids_to_error, "Failed to delete splits.");
+        return Err(SplitDeletionError::StorageFailure(
+            failed_split_ids_to_error,
+        ));
     }
+
     if !deleted_split_ids.is_empty() {
         let split_ids: Vec<&str> = deleted_split_ids.iter().map(String::as_str).collect();
-        metastore.delete_splits(index_id, &split_ids).await?;
+        metastore
+            .delete_splits(index_id, &split_ids)
+            .await
+            .map_err(SplitDeletionError::MetastoreFailure)?;
     }
-    Ok(deletion_stats)
+
+    Ok(deleted_file_entries)
 }
