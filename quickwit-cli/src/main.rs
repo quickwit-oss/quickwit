@@ -90,8 +90,8 @@ impl CliCommand {
     fn parse_new_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_uri = matches
             .value_of("index-uri")
-            .context("'index-uri' is a required arg")?
-            .to_string();
+            .context("'index-uri' is a required arg")
+            .map(normalize_uri)??;
         let index_id = matches
             .value_of("index-id")
             .context("'index-id' is a required arg")?
@@ -102,8 +102,8 @@ impl CliCommand {
             .context("'index-config-path' is a required arg")?;
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
+            .context("'metastore-uri' is a required arg")
+            .map(normalize_uri)??;
         let overwrite = matches.is_present("overwrite");
 
         Ok(CliCommand::New(CreateIndexArgs::new(
@@ -126,8 +126,8 @@ impl CliCommand {
             .to_string();
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
+            .context("'metastore-uri' is a required arg")
+            .map(normalize_uri)??;
 
         let target_folder = matches
             .value_of("target-folder")
@@ -153,8 +153,8 @@ impl CliCommand {
             .to_string();
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
+            .context("'metastore-uri' is a required arg")
+            .map(normalize_uri)??;
 
         let verbose = matches.is_present("verbose");
 
@@ -169,8 +169,8 @@ impl CliCommand {
     fn parse_index_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .expect("`metastore-uri` is a required arg.");
+            .context("`metastore-uri` is a required arg.")
+            .map(normalize_uri)??;
         let index_id = matches
             .value_of("index-id")
             .expect("`index-id` is a required arg.")
@@ -206,8 +206,8 @@ impl CliCommand {
     fn parse_search_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
+            .context("'metastore-uri' is a required arg")
+            .map(normalize_uri)??;
         let index_id = matches
             .value_of("index-id")
             .context("'index-id' is a required arg")?
@@ -251,8 +251,8 @@ impl CliCommand {
     fn parse_serve_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
+            .context("'metastore-uri' is a required arg")
+            .map(normalize_uri)??;
         let host = matches
             .value_of("host")
             .context("'host' has a default value")?
@@ -286,8 +286,8 @@ impl CliCommand {
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
+            .context("'metastore-uri' is a required arg")
+            .map(normalize_uri)??;
         let index_id = matches
             .value_of("index-id")
             .context("'index-id' is a required arg")?
@@ -304,8 +304,8 @@ impl CliCommand {
     fn parse_garbage_collect_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
+            .context("'metastore-uri' is a required arg")
+            .map(normalize_uri)??;
         let index_id = matches
             .value_of("index-id")
             .context("'index-id' is a required arg")?

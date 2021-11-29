@@ -21,7 +21,7 @@ use std::collections::VecDeque;
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{stdout, Stdout, Write};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
@@ -57,6 +57,9 @@ const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
 /// This environment variable can be set to send telemetry events to a jaeger instance.
 pub const QUICKWIT_JAEGER_ENABLED_ENV_KEY: &str = "QUICKWIT_JAEGER_ENABLED";
+
+/// Default file protocol `file://`
+const FILE_PROTOCOL: &str = "file";
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ExtractSplitArgs {
@@ -654,6 +657,74 @@ impl ThroughputCalculator {
     }
 }
 
+/// Normalizes a URI
+/// A `file://` protocol is assumed if not specified.
+/// File URIs are resolved (normalised) relative to the current working directory
+/// unless an absolute path is specified.
+/// Handles special characters like (~, ., ..)
+pub fn normalize_uri(uri: &str) -> anyhow::Result<String> {
+    let (protocol, mut path) = match uri.split_once("://") {
+        None => (FILE_PROTOCOL, String::from(uri)),
+        Some((protocol, path)) => (protocol, String::from(path)),
+    };
+
+    let current_dir = env::current_dir().context("Could not fetch the current directory.")?;
+
+    if protocol == FILE_PROTOCOL {
+        if path.starts_with('~') {
+            let home_dir_path = home::home_dir()
+                .context("Could not fetch the home directory.")?
+                .to_string_lossy()
+                .to_string();
+
+            path.replace_range(0..1, &home_dir_path);
+        }
+
+        if !path.starts_with('/') {
+            path = current_dir.join(path).to_string_lossy().to_string();
+        }
+
+        path = normalize_path(Path::new(&path))
+            .to_string_lossy()
+            .to_string();
+    }
+
+    Ok(format!("{}://{}", protocol, path))
+}
+
+/// Normalizes a path by resolving the components like (., ..).
+/// This helper does the same thing as `Path::canonicalize`.
+/// It only differs from `Path::canonicalize` by not checking file existence
+/// during resolution.
+/// https://github.com/rust-lang/cargo/blob/fede83ccf973457de319ba6fa0e36ead454d2e20/src/cargo/util/paths.rs#L61
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut components = path.components().peekable();
+    let mut resulting_path_buf =
+        if let Some(component @ Component::Prefix(..)) = components.peek().cloned() {
+            components.next();
+            PathBuf::from(component.as_os_str())
+        } else {
+            PathBuf::new()
+        };
+
+    for component in components {
+        match component {
+            Component::Prefix(..) => unreachable!(),
+            Component::RootDir => {
+                resulting_path_buf.push(component.as_os_str());
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                resulting_path_buf.pop();
+            }
+            Component::Normal(inner_component) => {
+                resulting_path_buf.push(inner_component);
+            }
+        }
+    }
+    resulting_path_buf
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -700,6 +771,81 @@ mod tests {
         assert_eq!(source_config.source_id, "foo-source");
         assert_eq!(source_config.source_type, "foo");
         assert_eq!(source_config.params.get("foo"), Some(&json!("bar")));
+        Ok(())
+    }
+
+    #[test]
+    fn test_normalize_uri() -> anyhow::Result<()> {
+        let home_dir = home::home_dir().unwrap();
+        let current_dir = env::current_dir().unwrap();
+
+        assert_eq!(
+            normalize_uri("home/hommer/docs/dognuts")?,
+            format!("file://{}/home/hommer/docs/dognuts", current_dir.display())
+        );
+
+        assert_eq!(
+            normalize_uri("home/hommer/docs/../dognuts")?,
+            format!("file://{}/home/hommer/dognuts", current_dir.display())
+        );
+
+        assert_eq!(
+            normalize_uri("home/hommer/docs/../../dognuts")?,
+            format!("file://{}/home/dognuts", current_dir.display())
+        );
+
+        assert_eq!(
+            normalize_uri("/home/hommer/docs/dognuts")?,
+            String::from("file:///home/hommer/docs/dognuts")
+        );
+
+        assert_eq!(
+            normalize_uri("~/")?,
+            format!("file://{}", home_dir.display())
+        );
+
+        assert_eq!(
+            normalize_uri("~")?,
+            format!("file://{}", home_dir.display())
+        );
+        assert_eq!(
+            normalize_uri("~/")?,
+            format!("file://{}", home_dir.display())
+        );
+        assert_eq!(
+            normalize_uri("~/.")?,
+            format!("file://{}", home_dir.display())
+        );
+        assert_eq!(
+            normalize_uri("~/..")?,
+            format!("file://{}", home_dir.parent().unwrap().display())
+        );
+
+        assert_eq!(
+            normalize_uri("file://")?,
+            format!("file://{}", current_dir.display())
+        );
+
+        assert_eq!(
+            normalize_uri("file://.")?,
+            format!("file://{}", current_dir.display())
+        );
+
+        assert_eq!(
+            normalize_uri("file://..")?,
+            format!("file://{}", current_dir.parent().unwrap().display())
+        );
+
+        assert_eq!(
+            normalize_uri("s3://home/hommer/docs/dognuts")?,
+            String::from("s3://home/hommer/docs/dognuts")
+        );
+
+        assert_eq!(
+            normalize_uri("s3://home/hommer/docs/../dognuts")?,
+            String::from("s3://home/hommer/docs/../dognuts")
+        );
+
         Ok(())
     }
 }
