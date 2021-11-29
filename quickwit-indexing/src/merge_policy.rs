@@ -235,6 +235,11 @@ enum MergeCandidateSize {
 impl StableMultitenantWithTimestampMergePolicy {
     /// A mature split for merge is a split that won't undergo merge operation in the future.
     fn is_mature_for_merge(&self, split: &SplitMetadata) -> bool {
+        // If merge is disabled, split is considered mature as it will not undergo a merge
+        // operation.
+        if !self.merge_enabled {
+            return true;
+        }
         // Once a split has been demuxed, we don't want to merge it even in the
         // case where its number of docs is under `max_merge_docs`.
         split.num_docs >= self.max_merge_docs || split.demux_num_ops > 0
@@ -251,6 +256,11 @@ impl StableMultitenantWithTimestampMergePolicy {
     ///   protect against too big splits as it will break the building of demux operations, see
     ///   [`build_first_demux_operation`].
     fn is_mature_for_demux(&self, split: &SplitMetadata) -> bool {
+        // If demux is disabled, split is considered mature as it will not undergo a demux
+        // operation.
+        if !self.demux_enabled {
+            return true;
+        }
         let demux_field_name = if let Some(demux_field_name) = self.demux_field_name.as_ref() {
             demux_field_name
         } else {
@@ -590,6 +600,12 @@ mod tests {
         // Split under max_merge_docs and demux_generation = 0 is not mature.
         let mut split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
         assert!(!merge_policy.is_mature(&split));
+        // All splits are mature when merge is disabled.
+        let merge_policy_with_disabled_merge = StableMultitenantWithTimestampMergePolicy {
+            merge_enabled: false,
+            ..Default::default()
+        };
+        assert!(merge_policy_with_disabled_merge.is_mature(&split));
         // Split under max_merge_docs and demux_generation = 1 is mature.
         split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
@@ -607,6 +623,7 @@ mod tests {
     fn test_split_is_mature_with_demux_field() {
         let merge_policy = StableMultitenantWithTimestampMergePolicy {
             demux_field_name: Some("demux_field".to_owned()),
+            demux_enabled: true,
             ..Default::default()
         };
         let mut split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
@@ -627,6 +644,14 @@ mod tests {
         split.num_docs = 100;
         split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
+
+        // All splits are mature when demux is disabled.
+        let merge_policy_with_disabled_demux = StableMultitenantWithTimestampMergePolicy {
+            demux_field_name: Some("demux_field".to_owned()),
+            demux_enabled: false,
+            ..Default::default()
+        };
+        assert!(merge_policy_with_disabled_demux.is_mature(&split));
 
         // Mature splits.
         // Split under max_merge_docs and demux_generation = 1 is mature.
