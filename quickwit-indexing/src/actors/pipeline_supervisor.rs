@@ -23,8 +23,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{
-    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health,
-    KillSwitch, QueueCapacity, Supervisable,
+    create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, AsyncActor,
+    Health, KillSwitch, QueueCapacity, Supervisable,
 };
 use quickwit_metastore::{Metastore, SplitState};
 use quickwit_storage::StorageUriResolver;
@@ -254,7 +254,7 @@ impl IndexingPipelineSupervisor {
             split_store.clone(),
             self.params.metastore.clone(),
         );
-        let (garbage_collector_mailbox, garbage_collector_handler) = ctx
+        let (_garbage_collector_mailbox, garbage_collector_handler) = ctx
             .spawn_actor(garbage_collector)
             .set_kill_switch(self.kill_switch.clone())
             .spawn_async();
@@ -264,7 +264,6 @@ impl IndexingPipelineSupervisor {
             "MergePublisher",
             self.params.metastore.clone(),
             merge_planner_mailbox.clone(),
-            garbage_collector_mailbox.clone(),
         );
         let (merge_publisher_mailbox, merge_publisher_handler) = ctx
             .spawn_actor(merge_publisher)
@@ -336,7 +335,6 @@ impl IndexingPipelineSupervisor {
             "Publisher",
             self.params.metastore.clone(),
             merge_planner_mailbox,
-            garbage_collector_mailbox,
         );
         let (publisher_mailbox, publisher_handler) = ctx
             .spawn_actor(publisher)
@@ -416,7 +414,40 @@ impl IndexingPipelineSupervisor {
             // }
         } else {
             match self.healthcheck() {
-                Health::Healthy => {}
+                Health::Healthy => {
+                    if let Some(handlers) = self.handlers.as_mut() {
+                        // We want to terminate the pipeline once the source is exhausted,
+                        // the indexer has exited and all merge operations have been done.
+                        // This is true when all merging pipeline actors are all in `IDLE` state
+                        // and indexing actors have exited.
+                        if handlers.source.state() == ActorState::Exit
+                            && handlers.indexer.state() == ActorState::Exit
+                            && handlers.packager.state() == ActorState::Exit
+                            && handlers.uploader.state() == ActorState::Exit
+                            && handlers.publisher.state() == ActorState::Exit
+                            && handlers.merge_planner.state() == ActorState::Idle
+                            && handlers.merge_split_downloader.state() == ActorState::Idle
+                            && handlers.merge_executor.state() == ActorState::Idle
+                            && handlers.merge_packager.state() == ActorState::Idle
+                            && handlers.merge_uploader.state() == ActorState::Idle
+                            && handlers.merge_publisher.state() == ActorState::Idle
+                        {
+                            // To stop the pipeline, we stop the merge planner, this will then stop
+                            // all merge actors.
+                            info!(
+                                "Stopping the garbage collector and the merge planner since \
+                                 source is exhausted and there is no more merge operations to \
+                                 make."
+                            );
+                            let _ = ctx
+                                .send_exit_with_success(handlers.merge_planner.mailbox())
+                                .await;
+                            let _ = ctx
+                                .send_exit_with_success(handlers.garbage_collector.mailbox())
+                                .await;
+                        }
+                    }
+                }
                 Health::FailureOrUnhealthy => {
                     self.terminate().await;
                 }

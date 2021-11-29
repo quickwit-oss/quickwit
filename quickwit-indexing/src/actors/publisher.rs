@@ -37,7 +37,6 @@ pub struct Publisher {
     actor_name: &'static str,
     metastore: Arc<dyn Metastore>,
     merge_planner_mailbox: Mailbox<MergePlannerMessage>,
-    garbage_collector_mailbox: Mailbox<()>,
     counters: PublisherCounters,
 }
 
@@ -46,13 +45,11 @@ impl Publisher {
         actor_name: &'static str,
         metastore: Arc<dyn Metastore>,
         merge_planner_mailbox: Mailbox<MergePlannerMessage>,
-        garbage_collector_mailbox: Mailbox<()>,
     ) -> Publisher {
         Publisher {
             actor_name,
             metastore,
             merge_planner_mailbox,
-            garbage_collector_mailbox,
             counters: PublisherCounters::default(),
         }
     }
@@ -157,40 +154,13 @@ impl AsyncActor for Publisher {
         }
 
         let new_splits = publisher_message.operation.extract_new_splits();
-
-        // The merge planner is not necessarily awake and this is not an error.
-        // For instance, when a source reaches its end, and the last "new" split
-        // has been packaged, the packager finalizer sends a message to the merge
-        // planner in order to stop it.
-        let _ = ctx
-            .send_message(
-                &self.merge_planner_mailbox,
-                MergePlannerMessage { new_splits },
-            )
-            .await;
+        ctx.send_message(
+            &self.merge_planner_mailbox,
+            MergePlannerMessage { new_splits },
+        )
+        .await?;
         self.counters.num_published_splits += 1;
         fail_point!("publisher:after");
-        Ok(())
-    }
-
-    async fn finalize(
-        &mut self,
-        _exit_status: &quickwit_actors::ActorExitStatus,
-        ctx: &ActorContext<Self::Message>,
-    ) -> anyhow::Result<()> {
-        // The `garbage_collector` actor runs for ever.
-        // Periodically scheduling new messages for itself.
-        //
-        // The publisher actor being the last standing actor of the pipeline,
-        // its end of life should also means the end of life of never stopping actors.
-        // After all, when the publisher is stopped, there shouldn't be anything to process.
-        // It's fine if the garbage collector is already dead.
-        let _ = ctx
-            .send_exit_with_success(&self.garbage_collector_mailbox)
-            .await;
-        let _ = ctx
-            .send_exit_with_success(&self.merge_planner_mailbox)
-            .await;
         Ok(())
     }
 }
@@ -229,13 +199,8 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
         let (merge_planner_mailbox, _merge_planner_inbox) = create_test_mailbox();
-        let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
-        let publisher = Publisher::new(
-            "publisher",
-            Arc::new(mock_metastore),
-            merge_planner_mailbox,
-            garbage_collector_mailbox,
-        );
+        let publisher =
+            Publisher::new("publisher", Arc::new(mock_metastore), merge_planner_mailbox);
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
         let (split_future_tx1, split_future_rx1) = oneshot::channel::<PublisherMessage>();
@@ -293,13 +258,8 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
-        let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
-        let publisher = Publisher::new(
-            "publisher",
-            Arc::new(mock_metastore),
-            merge_planner_mailbox,
-            garbage_collector_mailbox,
-        );
+        let publisher =
+            Publisher::new("publisher", Arc::new(mock_metastore), merge_planner_mailbox);
         let universe = Universe::new();
         let (publisher_mailbox, publisher_handle) = universe.spawn_actor(publisher).spawn_async();
         let (split_future_tx, split_future_rx) = oneshot::channel::<PublisherMessage>();
