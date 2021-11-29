@@ -386,8 +386,6 @@ impl IndexCliCommand {
 }
 
 pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
-    // TODO: add descriptive stats and show demux stats only if there is a
-    // demux field.
     debug!(args = ?args, "describe");
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
@@ -401,34 +399,47 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
         .map(|split_meta_and_footer| split_meta_and_footer.split_metadata.num_docs)
         .sorted()
         .collect_vec();
-    let num_docs = splits_num_docs.iter().sum::<usize>();
+    let total_num_docs = splits_num_docs.iter().sum::<usize>();
+    let splits_bytes = split_meta_and_footers
+        .iter()
+        .map(|split_meta_and_footer| {
+            (split_meta_and_footer.footer_offsets.end / 1_000_000) as usize
+        })
+        .sorted()
+        .collect_vec();
+    let total_bytes = splits_bytes.iter().sum::<usize>();
 
     println!();
     println!("1. General infos");
     println!("===============================================================================");
     println!(
-        "{} {}",
+        "{:<35} {}",
         "Index id:".color(GREEN_COLOR),
         index_metadata.index_id
     );
     println!(
-        "{} {}",
+        "{:<35} {}",
         "Index uri:".color(GREEN_COLOR),
         index_metadata.index_uri
     );
     println!(
-        "{} {}",
+        "{:<35} {}",
         "Number of published splits:".color(GREEN_COLOR),
         split_meta_and_footers.len()
     );
     println!(
-        "{} {}",
-        "Number of published documents".color(GREEN_COLOR),
-        num_docs
+        "{:<35} {}",
+        "Number of published documents:".color(GREEN_COLOR),
+        total_num_docs
+    );
+    println!(
+        "{:<35} {} MB",
+        "Size of published splits:".color(GREEN_COLOR),
+        total_bytes
     );
     if let Some(timestamp_field_name) = index_metadata.index_config.timestamp_field_name() {
         println!(
-            "{} {}",
+            "{:<35} {}",
             "Timestamp field:".color(GREEN_COLOR),
             timestamp_field_name
         );
@@ -445,7 +456,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
             .map(|time_range| *time_range.unwrap().start())
             .max();
         println!(
-            "{} {:?} -> {:?}",
+            "{:<35} {:?} -> {:?}",
             "Timestamp range:".color(GREEN_COLOR),
             time_min,
             time_max
@@ -459,8 +470,11 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     println!();
     println!("2. Statistics on splits");
     println!("===============================================================================");
-    println!("{}", "Document count stats:".color(GREEN_COLOR));
+    println!("Document count stats:");
     print_descriptive_stats(&splits_num_docs);
+    println!();
+    println!("Size in MB stats:");
+    print_descriptive_stats(&splits_bytes);
 
     if let Some(demux_field_name) = index_metadata.index_config.demux_field_name() {
         show_demux_stats(&demux_field_name, &split_meta_and_footers).await;
@@ -490,12 +504,12 @@ pub async fn show_demux_stats(
         .flatten()
         .collect();
     println!(
-        "{} {}",
+        "{:<35} {}",
         "Demux field name:".color(GREEN_COLOR),
         demux_field_name
     );
     println!(
-        "{} {}",
+        "{:<35} {}",
         "Demux unique values count:".color(GREEN_COLOR),
         demux_uniq_values.len()
     );
@@ -548,23 +562,23 @@ pub async fn show_demux_stats(
     println!("3.2 Demux unique values count per split");
     println!("-------------------------------------------------");
     println!(
-        "{} {}",
+        "{:<35} {}",
         "Non demux splits count:".color(GREEN_COLOR),
         non_demuxed_splits.len()
     );
     println!(
-        "{} {}",
+        "{:<35} {}",
         "Demux splits count:".color(GREEN_COLOR),
         demuxed_splits.len()
     );
     if !non_demuxed_splits.is_empty() {
         println!();
-        println!("{}", "Stats on non demuxed splits:".color(GREEN_COLOR));
+        println!("Stats on non demuxed splits:");
         print_descriptive_stats(&non_demuxed_split_demux_values_counts);
     }
     if !demuxed_splits.is_empty() {
         println!();
-        println!("{}", "Stats on demuxed splits:".color(GREEN_COLOR));
+        println!("Stats on demuxed splits:");
         print_descriptive_stats(&demuxed_split_demux_values_counts);
     }
 }
@@ -575,9 +589,8 @@ fn print_descriptive_stats(values: &[usize]) {
     let min_val = values.iter().min().unwrap();
     let max_val = values.iter().max().unwrap();
     println!(
-        "{} ± {} in [min … max]:   {} ± {} in [{} … {}]",
-        "Mean".color(GREEN_COLOR),
-        "σ".color(GREEN_COLOR),
+        "{:<35} {} ± {} in [{} … {}]",
+        "Mean ± σ in [min … max]:".color(GREEN_COLOR),
         format!("{:>2}", mean_val),
         format!("{}", std_val),
         format!("{}", min_val),
@@ -589,8 +602,8 @@ fn print_descriptive_stats(values: &[usize]) {
     let q75 = percentile(values, 75);
     let q99 = percentile(values, 75);
     println!(
-        "{} [0.01, 0.25, 0.50, 0.75, 0.99] :   [{}, {}, {}, {}, {}]",
-        "Quantiles".color(GREEN_COLOR),
+        "{:<35} [{}, {}, {}, {}, {}]",
+        "Quantiles [1%, 25%, 50%, 75%, 99%]:".color(GREEN_COLOR),
         format!("{}", q1),
         format!("{}", q25),
         format!("{}", q50),
