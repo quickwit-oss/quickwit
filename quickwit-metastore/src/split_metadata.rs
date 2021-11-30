@@ -23,6 +23,8 @@ use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
 use chrono::Utc;
+#[cfg(any(test, feature = "testsuite"))]
+use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 
 /// Carries split metadata and footer offsets. The footer offsets
@@ -107,7 +109,10 @@ impl<'de> Deserialize<'de> for SplitMetadataAndFooterOffsets {
 }
 
 /// A split metadata carries all meta data about a split.
-#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[cfg_attr(all(not(test), not(feature = "testsuite")), derive(PartialEq, Eq))]
+#[cfg_attr(any(test, feature = "testsuite"), derive(Derivative))]
+#[cfg_attr(any(test, feature = "testsuite"), derivative(PartialEq, Eq))]
 pub struct SplitMetadata {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -134,11 +139,15 @@ pub struct SplitMetadata {
     pub split_state: SplitState,
 
     /// Timestamp for tracking when the split was created.
+    /// Ingonre this field during test assertions as we cannot predict elapsed time.
     #[serde(default = "utc_now_timestamp")]
+    #[cfg_attr(any(test, feature = "testsuite"), derivative(PartialEq = "ignore"))]
     pub create_timestamp: i64,
 
     /// Timestamp for tracking when the split was last updated.
+    /// Ingonre this field during test assertions as we cannot predict elapsed time.
     #[serde(default = "utc_now_timestamp")]
+    #[cfg_attr(any(test, feature = "testsuite"), derivative(PartialEq = "ignore"))]
     pub update_timestamp: i64,
 
     /// A set of tags for categorizing and searching group of splits.

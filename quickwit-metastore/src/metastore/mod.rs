@@ -26,9 +26,6 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chrono::Utc;
-#[cfg(any(test, feature = "testsuite"))]
-use derivative::Derivative;
 use quickwit_index_config::IndexConfig;
 use serde::{Deserialize, Serialize};
 

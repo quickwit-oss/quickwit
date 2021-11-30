@@ -19,8 +19,7 @@
 
 #[cfg(test)]
 pub mod test_suite {
-    use std::collections::{HashMap, HashSet};
-    use std::collections::{BTreeSet, HashSet};
+    use std::collections::{BTreeSet, HashMap};
     use std::ops::{Range, RangeInclusive};
     use std::sync::Arc;
 
@@ -30,8 +29,8 @@ pub mod test_suite {
 
     use crate::checkpoint::{Checkpoint, CheckpointDelta};
     use crate::{
-        IndexMetadata, Metastore, MetastoreError, SplitMetadata,
-        SplitMetadataAndFooterOffsets, SplitState,
+        IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitMetadataAndFooterOffsets,
+        SplitState,
     };
 
     #[async_trait]
@@ -57,19 +56,20 @@ pub mod test_suite {
         split_state: SplitState,
         time_range: Option<RangeInclusive<i64>>,
         timestamp: i64,
-        tags: HashSet<String>,
+        tags: BTreeSet<String>,
     ) -> SplitMetadataAndFooterOffsets {
         SplitMetadataAndFooterOffsets {
             footer_offsets: 1000..2000,
             split_metadata: SplitMetadata {
                 split_id,
                 split_state,
-                num_records: 1,
+                num_docs: 1,
                 size_in_bytes: 2,
                 time_range,
+                create_timestamp: timestamp,
                 update_timestamp: timestamp,
                 tags,
-                ..Default::default()
+                demux_num_ops: 0,
             },
         }
     }
@@ -119,7 +119,7 @@ pub mod test_suite {
     async fn index_exists(metastore: &dyn Metastore, index_id: &str) -> bool {
         match metastore.index_metadata(index_id).await {
             Ok(_) => true,
-            Err(MetastoreError::IndexDoesNotExist { index_id }) => false,
+            Err(MetastoreError::IndexDoesNotExist { .. }) => false,
             Err(error) => Err(error).unwrap(),
         }
     }
@@ -236,11 +236,14 @@ pub mod test_suite {
         create_index(&metastore, index_metadata.clone()).await;
 
         // Get index metadata.
-        let index_metadata = metastore.index_metadata(index_id).await.unwrap();
-        assert_eq!(index_metadata.index_id, index_metadata.index_id);
-        assert_eq!(index_metadata.index_uri, index_metadata.index_uri);
-        assert_eq!(index_metadata.checkpoint, index_metadata.checkpoint);
-        assert!(matches!(index_metadata.index_config, Arc { .. }));
+        let returned_index_metadata = metastore.index_metadata(index_id).await.unwrap();
+        assert_eq!(returned_index_metadata.index_id, index_metadata.index_id);
+        assert_eq!(returned_index_metadata.index_uri, index_metadata.index_uri);
+        assert_eq!(
+            returned_index_metadata.checkpoint,
+            index_metadata.checkpoint
+        );
+        assert!(matches!(returned_index_metadata.index_config, Arc { .. }));
 
         cleanup_index(&metastore, index_id).await;
     }
@@ -402,7 +405,7 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Publish a staged split and published split on an index
+        // Publish a staged split and published split on an index.
         {
             create_index(&metastore, index_metadata.clone()).await;
             insert_staged_split(&metastore, index_id, split_metadata_1.clone()).await;
@@ -501,7 +504,7 @@ pub mod test_suite {
             to_set(&[]),
         );
 
-        // Replace splits on a non-existent index
+        // Replace splits on a non-existent index.
         {
             let result = metastore
                 .replace_splits(
@@ -514,7 +517,7 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
         }
 
-        // Replace a non-existent split on an index
+        // Replace a non-existent split on an index.
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -534,7 +537,7 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Replace a publish split with mixed splits
+        // Replace a publish split with mixed splits.
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -579,7 +582,7 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Replace a publish split with staged splits
+        // Replace a publish split with staged splits.
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -649,7 +652,7 @@ pub mod test_suite {
             to_set(&[]),
         );
 
-        // Delete a split on a non-existent index
+        // Delete a split on a non-existent index.
         {
             let result = metastore
                 .delete_splits("non-existent-index", &["non-existent-split"])
@@ -658,7 +661,7 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
         }
 
-        // Delete a non-existent split on an index
+        // Delete a non-existent split on an index.
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -674,7 +677,7 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Delete a staged split on an index
+        // Delete a staged split on an index.
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -700,7 +703,7 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Delete a split that has been marked for deletion on an index
+        // Delete a split that has been marked for deletion on an index.
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -727,7 +730,7 @@ pub mod test_suite {
             cleanup_index(&metastore, index_id).await;
         }
 
-        // Delete a split that is not marked for deletion
+        // Delete a split that is not marked for deletion.
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -806,7 +809,7 @@ pub mod test_suite {
             to_set(&[]),
         );
 
-        // List all splits on a non-existent index
+        // List all splits on a non-existent index.
         {
             let result = metastore
                 .list_all_splits("non-existent-index")
@@ -815,7 +818,7 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
         }
 
-        // List all splits on an index
+        // List all splits on an index.
         {
             metastore
                 .create_index(index_metadata.clone())
@@ -928,7 +931,7 @@ pub mod test_suite {
             to_set(&["baz", "biz"]),
         );
 
-        // List all splits on a non-existent index
+        // List all splits on a non-existent index.
         {
             let result = metastore
                 .list_splits("non-existent-index", SplitState::Staged, None, &[])
@@ -937,7 +940,7 @@ pub mod test_suite {
             assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
         }
 
-        // List all splits on an index
+        // List all splits on an index.
         {
             metastore
                 .create_index(index_metadata.clone())
