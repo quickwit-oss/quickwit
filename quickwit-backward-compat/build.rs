@@ -17,7 +17,44 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_metastore::{SplitMetadata, SplitMetadataAndFooterOffsets, SplitState};
+use std::sync::Arc;
+
+use quickwit_index_config::WikipediaIndexConfig;
+use quickwit_metastore::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
+use quickwit_metastore::{IndexMetadata, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState};
+
+/// Creates a new [`IndexMetadata`] object against which backward compatibility tests will be run.
+fn sample_index_metadata_for_regression() -> IndexMetadata {
+    let mut checkpoint = Checkpoint::default();
+    let delta = CheckpointDelta::from_partition_delta(
+        PartitionId::from(0),
+        Position::Beginning,
+        Position::from(42),
+    );
+    checkpoint.try_apply_delta(delta).unwrap();
+
+    IndexMetadata {
+        index_id: "my-index".to_string(),
+        index_uri: "s3://quickwit-indexes/my-index".to_string(),
+        index_config: Arc::new(WikipediaIndexConfig::new()),
+        checkpoint,
+    }
+}
+
+fn save_index_metadata_test_files() -> anyhow::Result<()> {
+    let index_metadata = sample_index_metadata_for_regression();
+    let index_metadata_value = serde_json::to_value(&index_metadata)?;
+    let mut index_metadata_json = serde_json::to_string_pretty(&index_metadata_value)?;
+    index_metadata_json.push('\n');
+
+    for extension in [".json", ".expected.json"] {
+        std::fs::write(
+            format!("test-data/index-metadata/v0-noversion{}", extension),
+            index_metadata_json.as_bytes(),
+        )?;
+    }
+    Ok(())
+}
 
 /// Creates a split metadata object that will be
 /// used to check for non-regression
@@ -38,7 +75,7 @@ fn sample_split_metadata_for_regression() -> SplitMetadataAndFooterOffsets {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn save_split_metadata_test_files() -> anyhow::Result<()> {
     let split_metadata = sample_split_metadata_for_regression();
     let split_metadata_value = serde_json::to_value(&split_metadata)?;
     let version: &str = split_metadata_value
@@ -48,16 +85,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("Missing version")
         .as_str()
         .expect("version should be a string");
-    let split_metadata_json = serde_json::to_string_pretty(&split_metadata_value).unwrap();
+    let mut split_metadata_json = serde_json::to_string_pretty(&split_metadata_value)?;
+    split_metadata_json.push('\n');
     let md5sum = md5::compute(&split_metadata_json);
-    let test_name = format!("test-data/split_metadata-v{}-{:x}", version, md5sum);
+    let test_name = format!("test-data/split-metadata/v{}-{:x}", version, md5sum);
     let file_regression_test_path = format!("{}.json", test_name);
     std::fs::write(&file_regression_test_path, split_metadata_json.as_bytes())?;
     let file_regression_expected_path = format!("{}.expected.json", test_name);
-    std::fs::write(&file_regression_test_path, split_metadata_json.as_bytes())?;
     std::fs::write(
         &file_regression_expected_path,
         split_metadata_json.as_bytes(),
     )?;
+    Ok(())
+}
+
+fn main() -> anyhow::Result<()> {
+    save_index_metadata_test_files()?;
+    save_split_metadata_test_files()?;
     Ok(())
 }
