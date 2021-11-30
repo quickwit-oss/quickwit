@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, HashSet};
-use std::convert::TryInto;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -36,6 +35,7 @@ use quickwit_storage::{
     wrap_storage_with_long_term_cache, BundleStorage, MemorySizedCache, OwnedBytes, Storage,
 };
 use tantivy::collector::Collector;
+use tantivy::directory::FileSlice;
 use tantivy::query::Query;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
@@ -100,20 +100,19 @@ pub(crate) async fn open_index(
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
 ) -> anyhow::Result<Index> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
-    let mut footer_data =
+    let footer_data =
         get_split_footer_from_cache_or_fetch(index_storage.clone(), split_and_footer_offsets)
             .await?;
-    let hotcache_len_bytes = footer_data.split_off(footer_data.len() - 8);
-    let hotcache_num_bytes =
-        u64::from_le_bytes((&*hotcache_len_bytes).try_into().unwrap()) as usize;
 
-    let hotcache_bytes = footer_data.split_off(footer_data.len() - hotcache_num_bytes);
-
-    let bundle_storage = BundleStorage::new(index_storage, split_file, &footer_data)?;
+    let (hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data(
+        index_storage,
+        split_file,
+        FileSlice::new(Box::new(footer_data)),
+    )?;
     let bundle_storage_with_cache = wrap_storage_with_long_term_cache(Arc::new(bundle_storage));
     let directory = StorageDirectory::new(bundle_storage_with_cache);
     let caching_directory = CachingDirectory::new_with_unlimited_capacity(Arc::new(directory));
-    let hot_directory = HotDirectory::open(caching_directory, hotcache_bytes)?;
+    let hot_directory = HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?;
     let index = Index::open(hot_directory)?;
     Ok(index)
 }
@@ -209,13 +208,12 @@ async fn leaf_search_single_split(
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
     let quickwit_collector = make_collector_for_split(
-        split_id,
+        split_id.clone(),
         index_config.as_ref(),
         search_request,
         &split_schema,
     );
     let query = index_config.query(split_schema, search_request)?;
-
     let reader = index
         .reader_builder()
         .num_searchers(1)
@@ -223,12 +221,15 @@ async fn leaf_search_single_split(
         .try_into()?;
     let searcher = reader.searcher();
     warmup(&*searcher, &query, &quickwit_collector.fast_field_names()).await?;
-    let span = info_span!(
-        "search",
-        split_id = %split.split_id,
-    );
-    let _ = span.enter();
-    let leaf_search_response = searcher.search(&query, &quickwit_collector)?;
+    let leaf_search_response = crate::run_cpu_intensive(move || {
+        let span = info_span!( "search", split_id = %split.split_id);
+        let _span_guard = span.enter();
+        searcher.search(&query, &quickwit_collector)
+    })
+    .await
+    .map_err(|_| {
+        crate::SearchError::InternalError(format!("Leaf search panicked. split={}", split_id))
+    })??;
     Ok(leaf_search_response)
 }
 

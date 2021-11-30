@@ -28,8 +28,7 @@ use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
-use crossterm::execute;
-use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
+use colored::*;
 use humansize::{file_size_opts, FileSize};
 use json_comments::StripComments;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
@@ -44,12 +43,14 @@ use quickwit_indexing::actors::{
 use quickwit_indexing::models::{CommitPolicy, IndexingDirectory, IndexingStatistics};
 use quickwit_indexing::source::{FileSourceParams, SourceConfig};
 use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::{IndexMetadata, MetastoreUriResolver};
+use quickwit_metastore::{do_checks, IndexMetadata, MetastoreUriResolver};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
+
+pub mod stats;
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
@@ -210,7 +211,11 @@ pub async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
     let (_, bundle_footer) = read_split_footer(index_storage.clone(), &split_file).await?;
 
-    let bundle_storage = BundleStorage::new(index_storage, split_file, &bundle_footer)?;
+    let (_hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data_with_owned_bytes(
+        index_storage,
+        split_file,
+        bundle_footer,
+    )?;
 
     std::fs::create_dir_all(args.target_folder.to_owned())?;
 
@@ -285,6 +290,13 @@ pub async fn index_data_cli(args: IndexDataArgs) -> anyhow::Result<()> {
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+
+    do_checks(vec![
+        ("source", Box::pin(source_config.check_source_available())),
+        ("metastore", metastore.check_connectivity()),
+        ("index", metastore.check_index_available(&args.index_id)),
+    ])
+    .await?;
 
     if args.overwrite {
         reset_index(
@@ -481,7 +493,6 @@ pub async fn start_statistics_reporting_loop(
 ) -> anyhow::Result<IndexingStatistics> {
     let mut stdout_handle = stdout();
     let start_time = Instant::now();
-    let is_tty = atty::is(atty::Stream::Stdout);
     let mut throughput_calculator = ThroughputCalculator::new(start_time);
     let mut report_interval = tokio::time::interval(Duration::from_secs(1));
 
@@ -500,7 +511,6 @@ pub async fn start_statistics_reporting_loop(
                 &mut stdout_handle,
                 &mut throughput_calculator,
                 &observation.state,
-                is_tty,
             )?;
         }
 
@@ -531,12 +541,7 @@ pub async fn start_statistics_reporting_loop(
     }
 
     if input_path_opt.is_none() {
-        display_statistics(
-            &mut stdout_handle,
-            &mut throughput_calculator,
-            &statistics,
-            is_tty,
-        )?;
+        display_statistics(&mut stdout_handle, &mut throughput_calculator, &statistics)?;
     }
     // display end of task report
     println!();
@@ -561,22 +566,11 @@ pub async fn start_statistics_reporting_loop(
 
 struct Printer<'a> {
     pub stdout: &'a mut Stdout,
-    pub colored: bool,
 }
 
 impl<'a> Printer<'a> {
     fn print_header(&mut self, header: &str) -> io::Result<()> {
-        if self.colored {
-            self.stdout.write_all(b" ")?;
-            execute!(
-                &mut self.stdout,
-                SetForegroundColor(Color::Blue),
-                Print(header),
-                ResetColor
-            )?;
-        } else {
-            write!(&mut self.stdout, " {}:", header)?;
-        }
+        write!(&mut self.stdout, " {}", header.bright_blue())?;
         Ok(())
     }
 
@@ -593,7 +587,6 @@ fn display_statistics(
     stdout: &mut Stdout,
     throughput_calculator: &mut ThroughputCalculator,
     statistics: &IndexingStatistics,
-    is_tty: bool,
 ) -> anyhow::Result<()> {
     let elapsed_duration = chrono::Duration::from_std(throughput_calculator.elapsed_time())?;
     let elapsed_time = format!(
@@ -603,10 +596,7 @@ fn display_statistics(
         elapsed_duration.num_seconds() % 60
     );
     let throughput_mb_s = throughput_calculator.calculate(statistics.total_bytes_processed);
-    let mut printer = Printer {
-        stdout,
-        colored: is_tty,
-    };
+    let mut printer = Printer { stdout };
     printer.print_header("Num docs")?;
     printer.print_value(format_args!("{:>7}", statistics.num_docs))?;
     printer.print_header("Parse errs")?;

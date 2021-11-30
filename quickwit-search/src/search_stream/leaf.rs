@@ -35,7 +35,7 @@ use tantivy::fastfield::FastValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema, Type};
 use tantivy::{LeasedItem, ReloadPolicy, Searcher};
-use tokio::task::spawn_blocking;
+use tokio::sync::{Semaphore, SemaphorePermit};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::*;
 
@@ -55,6 +55,18 @@ fn get_split_stream_concurrency() -> usize {
             DEFAULT_SPLIT_STREAM_CONCURRENCY,
         )
     })
+}
+
+async fn get_split_stream_semaphore() -> SemaphorePermit<'static> {
+    static INSTANCE: OnceCell<Arc<Semaphore>> = OnceCell::new();
+    INSTANCE
+        .get_or_init(|| {
+            let split_stream_concurrency = get_split_stream_concurrency();
+            Arc::new(Semaphore::new(split_stream_concurrency))
+        })
+        .acquire()
+        .await
+        .expect("Failed to acquire permit. This should never happen. Please report.")
 }
 
 /// `leaf` step of search stream.
@@ -119,6 +131,8 @@ async fn leaf_search_stream_single_split(
     stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResponse> {
+    let _leaf_permit = get_split_stream_semaphore().await;
+
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
 
@@ -165,7 +179,7 @@ async fn leaf_search_stream_single_split(
 
     let _ = span.enter();
     let m_request_fields = request_fields.clone();
-    let collect_handle = spawn_blocking(move || {
+    let collect_handle = crate::run_cpu_intensive(move || {
         let mut buffer = Vec::new();
         match m_request_fields.fast_field_types() {
             (Type::I64, None) => {
@@ -239,11 +253,10 @@ async fn leaf_search_stream_single_split(
         };
         Result::<Vec<u8>>::Ok(buffer)
     });
-    let buffer = collect_handle.await.map_err(|error| {
-        error!(split_id = %split.split_id, request_fields=%request_fields, error_message=%error, "Failed to collect fast field");
-        SearchError::InternalError(format!("Error when collecting fast field values for split {}: {:?}", split.split_id, error))
+    let buffer = collect_handle.await.map_err(|_| {
+        error!(split_id = %split.split_id, request_fields=%request_fields, "Failed to collect fast field");
+        SearchError::InternalError(format!("Error when collecting fast field values for split {}", split.split_id))
     })??;
-
     Ok(LeafSearchStreamResponse {
         data: buffer,
         split_id: split.split_id,

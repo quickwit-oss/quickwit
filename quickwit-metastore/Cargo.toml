@@ -16,12 +16,14 @@ async-trait = "0.1"
 chrono = "0.4"
 diesel = { version = "1.4", features = ["postgres", "chrono", "extras"], optional = true }
 diesel_migrations =  { version = "1.4", optional = true }
+futures = "0.3.17"
+openssl = { version = "0.10.36", optional = true }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 thiserror = "1.0"
 tokio = { version = "1.6", features = ["full"]}
 tracing = "0.1"
-openssl = { version = "0.10.36", optional = true }
+
 quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
 
@@ -43,6 +45,8 @@ mockall = '0.9'
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage", features=["testsuite"]}
 quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config", features=["testsuite"] }
 tempfile = '3'
+futures = '0.3'
+rand = "0.8"
 
 [features]
 testsuite = ["mockall", "tempfile", "derivative"]

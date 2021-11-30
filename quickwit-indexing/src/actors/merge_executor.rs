@@ -31,7 +31,7 @@ use quickwit_directories::{BundleDirectory, UnionDirectory};
 use quickwit_metastore::checkpoint::CheckpointDelta;
 use quickwit_metastore::SplitMetadata;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
-use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader, FastValue};
+use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader};
 use tantivy::{
     demux, DemuxMapping, Directory, DocIdToSegmentOrdinal, Index, IndexMeta, Segment, SegmentId,
     SegmentReader, TantivyError,
@@ -72,7 +72,7 @@ impl Actor for MergeExecutor {
                 merge_split_id,
                 splits,
             } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
+                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
                 let in_merge_split_ids: Vec<String> =
                     splits.iter().map(|split| split.split_id.clone()).collect();
                 info_span!("merge",
@@ -87,7 +87,7 @@ impl Actor for MergeExecutor {
                 demux_split_ids,
                 splits,
             } => {
-                let num_docs: usize = splits.iter().map(|split| split.num_records).sum();
+                let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
                 let in_demux_split_idx: Vec<String> =
                     splits.iter().map(|split| split.split_id.clone()).collect();
                 info_span!("demux",
@@ -185,7 +185,7 @@ fn sum_doc_sizes_in_bytes(splits: &[SplitMetadata]) -> u64 {
 }
 
 fn sum_num_docs(splits: &[SplitMetadata]) -> u64 {
-    splits.iter().map(|split| split.num_records as u64).sum()
+    splits.iter().map(|split| split.num_docs as u64).sum()
 }
 
 fn merge_all_segments(index: &Index) -> anyhow::Result<()> {
@@ -225,6 +225,7 @@ fn merge_split_directories(
     let union_directory = UnionDirectory::union_of(directory_stack);
     let union_index = Index::open(union_directory)?;
     ctx.record_progress();
+    let _protect_guard = ctx.protect_zone();
     merge_all_segments(&union_index)?;
     Ok(output_directory)
 }
@@ -348,7 +349,7 @@ impl MergeExecutor {
         ctx.record_progress();
         info!("open-readers");
         let (replaced_segments_num_docs, replaced_segments_demux_field_readers) =
-            demux_field_readers(&replaced_segments, demux_field_name)?;
+            demux_field_readers(&replaced_segments, demux_field_name, ctx)?;
         // Build virtual split for all replaced splits = counting demux values in all replaced
         // segments.
         let mut virtual_split_with_all_docs = VirtualSplit::new(BTreeMap::new());
@@ -359,24 +360,22 @@ impl MergeExecutor {
             for doc_id in 0..*num_docs {
                 virtual_split_with_all_docs.add_docs(demux_value_reader.get(doc_id as u32), 1);
             }
+            ctx.record_progress();
         }
-        ctx.record_progress();
-        info!("demux-virtual-split-start");
+        info!("demux-virtual-split");
         let demuxed_virtual_splits = demux_virtual_split(
             virtual_split_with_all_docs,
             self.min_demuxed_split_num_docs,
             self.max_demuxed_split_num_docs,
             demux_split_ids.len(),
         );
-        info!("demux-virtual-split-end");
         ctx.record_progress();
-        info!("demux-build-mapping-start");
+        info!("demux-build-mapping");
         let demux_mapping = build_demux_mapping(
             replaced_segments_num_docs,
             replaced_segments_demux_field_readers,
             demuxed_virtual_splits,
         );
-        info!("demux-build-mapping-end");
         let demuxed_scratched_directories: Vec<ScratchDirectory> = (0..demux_split_ids.len())
             .map(|idx| merge_scratch_directory.named_temp_child(format!("demux-split-{}", idx)))
             .try_collect()?;
@@ -384,21 +383,23 @@ impl MergeExecutor {
             .iter()
             .map(|directory| create_demux_output_directory(directory.path(), ctx))
             .try_collect()?;
-
         ctx.record_progress();
         let union_index_meta = combine_index_meta(index_metas)?;
-
         let boxed_demuxed_split_directories: Vec<Box<dyn Directory>> = demuxed_split_directories
             .iter()
             .map(DirectoryClone::box_clone)
             .collect();
-
-        let indexes = demux(
-            &replaced_segments,
-            &demux_mapping,
-            union_index_meta.index_settings,
-            boxed_demuxed_split_directories,
-        )?;
+        info!("demux-tantivy");
+        let indexes = {
+            let _protect_guard = ctx.protect_zone();
+            demux(
+                &replaced_segments,
+                &demux_mapping,
+                union_index_meta.index_settings,
+                boxed_demuxed_split_directories,
+            )?
+        };
+        ctx.record_progress();
         info!(elapsed_secs = start.elapsed().as_secs_f32(), "demux-stop");
         let mut indexed_splits = Vec::new();
         // We cannot get the right `docs_size_in_bytes` for demuxed splits as it
@@ -428,8 +429,12 @@ impl MergeExecutor {
             let num_docs = segment_reader.num_docs() as usize;
             let docs_size_in_bytes =
                 (num_docs as f32 * total_docs_size_in_bytes as f32 / total_num_docs as f32) as u64;
-            let time_range = if let Some(ref timestamp_field) = self.timestamp_field_name {
-                let reader = make_fast_field_reader::<i64>(&segment_reader, timestamp_field)?;
+            let time_range = if let Some(ref timestamp_field_name) = self.timestamp_field_name {
+                let timestamp_field = segment_reader
+                    .schema()
+                    .get_field(timestamp_field_name)
+                    .ok_or_else(|| TantivyError::SchemaError("Field does not exist".to_owned()))?;
+                let reader = segment_reader.fast_fields().i64(timestamp_field)?;
                 Some(RangeInclusive::new(reader.min_value(), reader.max_value()))
             } else {
                 None
@@ -451,7 +456,15 @@ impl MergeExecutor {
                 controlled_directory_opt: Some(controlled_directory),
             };
             indexed_splits.push(indexed_split);
+            ctx.record_progress();
         }
+        assert_eq!(
+            splits.iter().map(|split| split.num_docs).sum::<usize>() as u64,
+            indexed_splits
+                .iter()
+                .map(|split| split.num_docs)
+                .sum::<u64>()
+        );
         ctx.send_message_blocking(
             &self.merge_packager_mailbox,
             IndexedSplitBatch {
@@ -493,14 +506,20 @@ pub fn load_metas_and_segments(
 pub fn demux_field_readers(
     segments: &[Segment],
     demux_field_name: &str,
+    ctx: &ActorContext<MergeScratch>,
 ) -> anyhow::Result<(Vec<usize>, Vec<DynamicFastFieldReader<u64>>)> {
     let mut segments_num_docs = Vec::new();
     let mut segments_demux_value_readers = Vec::new();
     for segment in segments {
         let segment_reader = SegmentReader::open(segment)?;
         segments_num_docs.push(segment_reader.num_docs() as usize);
-        let reader = make_fast_field_reader::<u64>(&segment_reader, demux_field_name)?;
+        let field = segment_reader
+            .schema()
+            .get_field(demux_field_name)
+            .ok_or_else(|| TantivyError::SchemaError("Field does not exist".to_owned()))?;
+        let reader = segment_reader.fast_fields().u64_lenient(field)?;
         segments_demux_value_readers.push(reader);
+        ctx.record_progress();
     }
     Ok((segments_num_docs, segments_demux_value_readers))
 }
@@ -774,34 +793,11 @@ pub fn compute_current_split_bounds(
     RangeInclusive::new(num_docs_lower_bound, num_docs_upper_bound)
 }
 
-// TODO: refactor that as such a function is already present in quickwit-search.
-pub fn make_fast_field_reader<T: FastValue>(
-    segment_reader: &SegmentReader,
-    fast_field_to_collect: &str,
-) -> tantivy::Result<DynamicFastFieldReader<T>> {
-    let field = segment_reader
-        .schema()
-        .get_field(fast_field_to_collect)
-        .ok_or_else(|| TantivyError::SchemaError("field does not exist".to_owned()))?;
-    assert!(
-        segment_reader
-            .schema()
-            .get_field_entry(field)
-            .field_type()
-            .value_type()
-            == T::to_type(),
-        "Fast field type in segment must be the same as the requested type."
-    );
-    let fast_field_slice = segment_reader.fast_fields().fast_field_data(field, 0)?;
-    DynamicFastFieldReader::open(fast_field_slice)
-}
-
 #[cfg(test)]
 mod tests {
     use std::mem;
     use std::sync::Arc;
 
-    use proptest::sample::select;
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::split_file;
     use quickwit_index_config::DefaultIndexConfigBuilder;
@@ -810,7 +806,7 @@ mod tests {
     use super::*;
     use crate::merge_policy::MergeOperation;
     use crate::models::ScratchDirectory;
-    use crate::{new_split_id, BundledSplitFile, TestSandbox};
+    use crate::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
 
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
@@ -852,11 +848,8 @@ mod tests {
             storage
                 .copy_to_file(Path::new(&split_filename), &dest_filepath)
                 .await?;
-            tantivy_dirs.push(
-                BundledSplitFile::new(dest_filepath.to_owned())
-                    .get_tantivy_directory()
-                    .unwrap(),
-            );
+
+            tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap())
         }
         let merge_scratch = MergeScratch {
             merge_operation: MergeOperation::Merge {
@@ -902,7 +895,7 @@ mod tests {
             "default_search_fields": ["body"],
             "timestamp_field": "ts",
             "demux_field": "tenant_id",
-            "tag_fields": [],
+            "tag_fields": ["tenant_id"],
             "field_mappings": [
                 { "name": "body", "type": "text" },
                 { "name": "ts", "type": "i64", "fast": true },
@@ -913,12 +906,21 @@ mod tests {
             Arc::new(serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?);
         let index_id = "test-index-demux";
         let test_index_builder = TestSandbox::create(index_id, index_config).await?;
+        let mut last_tenant_min_timestamp = 0;
+        let mut last_tenant_max_timestamp = 0;
         for split_id in 0..4 {
+            let last_tenant_timestamp = 1631072713 + (1 + split_id) * 20;
             let docs = vec![
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": split_id * 10 }),
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": (split_id + 1) * 10 }),
-                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": (split_id + 2) * 10 }),
+                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id, "tenant_id": 10 }),
+                serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + (1 + split_id) * 10, "tenant_id": 11 }),
+                serde_json::json!({"body ": format!("split{}", split_id), "ts": last_tenant_timestamp, "tenant_id": 12 }),
             ];
+            if split_id == 0 {
+                last_tenant_min_timestamp = last_tenant_timestamp;
+            }
+            if split_id == 3 {
+                last_tenant_max_timestamp = last_tenant_timestamp;
+            }
             test_index_builder.add_documents(docs).await?;
         }
         let metastore = test_index_builder.metastore();
@@ -953,7 +955,7 @@ mod tests {
         let merge_executor = MergeExecutor::new(
             index_id.to_string(),
             merge_packager_mailbox,
-            None,
+            Some("ts".to_string()),
             Some("tenant_id".to_string()),
             2,
             5,
@@ -970,14 +972,24 @@ mod tests {
         assert_eq!(packager_msgs.len(), 1);
         let mut splits = packager_msgs.pop().unwrap().splits;
         assert_eq!(splits.len(), 3);
-        let first_indexed_split = splits.pop().unwrap();
-        assert_eq!(first_indexed_split.num_docs, 4);
+        let total_num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
+        assert_eq!(total_num_docs, 12);
+        let first_index_split = splits.first().unwrap();
+        assert_eq!(first_index_split.num_docs, 4);
+        // We expect that in the last split, we have the last tenant
+        // and thus the time range of this tenant.
+        let last_indexed_split = splits.pop().unwrap();
         assert_eq!(
-            first_indexed_split.docs_size_in_bytes,
+            last_indexed_split.time_range.unwrap(),
+            last_tenant_min_timestamp..=last_tenant_max_timestamp
+        );
+        assert_eq!(last_indexed_split.num_docs, 4);
+        assert_eq!(
+            last_indexed_split.docs_size_in_bytes,
             total_num_bytes_docs / 3
         );
-        assert_eq!(first_indexed_split.demux_num_ops, 1);
-        let reader = first_indexed_split.index.reader()?;
+        assert_eq!(last_indexed_split.demux_num_ops, 1);
+        let reader = last_indexed_split.index.reader()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
         Ok(())
@@ -1016,7 +1028,7 @@ mod tests {
     }
 
     #[test]
-    fn test_demux_not_cutting_tenants_docs_into_two_splits_thanks_nice_min_max() {
+    fn test_demux_not_cutting_tenants_docs_into_two_splits_thanks_to_nice_min_max() {
         let mut num_docs_map = BTreeMap::new();
         num_docs_map.insert(0, 1);
         num_docs_map.insert(1, 50);
@@ -1049,6 +1061,18 @@ mod tests {
     }
 
     #[test]
+    fn test_demux_should_cut_one_huge_tenant_into_all_splits() {
+        let mut num_docs_map = BTreeMap::new();
+        num_docs_map.insert(0, 30_000_001);
+        let splits =
+            demux_virtual_split(VirtualSplit::new(num_docs_map), 10_000_000, 20_000_000, 3);
+        assert_eq!(splits.len(), 3);
+        assert_eq!(splits[0].total_num_docs(), 10_000_001);
+        assert_eq!(splits[1].total_num_docs(), 10_000_000);
+        assert_eq!(splits[2].total_num_docs(), 10_000_000);
+    }
+
+    #[test]
     #[should_panic(
         expected = "Input split num docs must be `<= max_split_num_docs * output_num_splits`."
     )]
@@ -1063,23 +1087,46 @@ mod tests {
 
     use proptest::prelude::*;
 
-    fn proptest_config() -> ProptestConfig {
-        let mut proptest_config = ProptestConfig::with_cases(20);
-        proptest_config.max_shrink_iters = 600;
-        proptest_config
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+        #[test]
+        fn test_proptest_simulate_demux_with_huge_tenants(tenants_num_docs in gen_tenants_docs()) {
+            test_demux_aux(&tenants_num_docs[..]);
+        }
     }
 
-    proptest! {
-        #![proptest_config(proptest_config())]
-        #[test]
-        fn test_proptest_simulate_demux_with_huge_tenants(tenants_num_docs in proptest::collection::vec(select(&[10_001, 100_001, 1_000_001, 10_000_001, 19_999_999, 20_000_000][..]), 1..1000)) {
-            let num_splits_out = tenants_num_docs.iter().sum::<usize>() / 20_000_000 + 1;
-            let mut num_docs_map = BTreeMap::new();
-            for (i, num_docs) in tenants_num_docs.iter().enumerate() {
-                num_docs_map.insert(i as u64, *num_docs);
-            }
-            let splits = demux_virtual_split(VirtualSplit::new(num_docs_map), 10_000_000, 20_000_000, num_splits_out);
-            assert_eq!(splits.len(), num_splits_out);
+    fn test_demux_aux(tenants_num_docs: &[usize]) {
+        let total_num_docs = tenants_num_docs.iter().sum::<usize>();
+        // We always generate a total_num_docs >= 10_000_000
+        let output_num_splits = total_num_docs / 5_000_000;
+        let mut num_docs_map = BTreeMap::new();
+        for (i, num_docs) in tenants_num_docs.iter().enumerate() {
+            num_docs_map.insert(i as u64, *num_docs);
         }
+        let splits = demux_virtual_split(
+            VirtualSplit::new(num_docs_map),
+            5_000_000,
+            15_000_000,
+            output_num_splits,
+        );
+        let tenant_count_per_split_mean = splits
+            .iter()
+            .map(|split| split.sorted_demux_values().len())
+            .sum::<usize>()
+            / output_num_splits;
+        // Demux at best can divide by output_num_splits the number of tenants, that means with no
+        // cutting.
+        assert!(tenant_count_per_split_mean >= tenants_num_docs.len() / output_num_splits);
+        // Demux at worse put tenants_num_docs.len() / output_num_splits + 1 tenant in each demuxed
+        // split, that means that we cut one tenant for each split.
+        assert!(tenant_count_per_split_mean <= tenants_num_docs.len() / output_num_splits + 1);
+    }
+
+    fn gen_tenants_docs() -> BoxedStrategy<Vec<usize>> {
+        (100..1_000_usize)
+            .prop_flat_map(move |num_tenants| {
+                proptest::collection::vec(100_000..5_000_000_usize, num_tenants)
+            })
+            .boxed()
     }
 }

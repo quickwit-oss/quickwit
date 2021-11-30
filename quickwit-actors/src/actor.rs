@@ -255,6 +255,14 @@ impl<Message> ActorContext<Message> {
         self.actor_state.get_state()
     }
 
+    pub(crate) fn process(&mut self) {
+        self.actor_state.process();
+    }
+
+    pub(crate) fn idle(&mut self) {
+        self.actor_state.idle();
+    }
+
     pub(crate) fn pause(&mut self) {
         self.actor_state.pause();
     }

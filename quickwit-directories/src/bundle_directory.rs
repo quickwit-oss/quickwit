@@ -49,6 +49,9 @@ impl Debug for BundleDirectory {
 }
 
 /// Loads the split footer from a storage and path.
+/// Returns (SplitFooter, BundleFooter)
+/// SplitFooter [BundleMetadata, BundleMetadata Len, Hotcache, Hotcache len]
+/// BundleFooter [BundleMetadata, BundleMetadata Len]
 pub async fn read_split_footer(
     storage: Arc<dyn Storage>,
     path: &Path,
@@ -90,11 +93,10 @@ pub fn get_hotcache_from_split(data: OwnedBytes) -> io::Result<OwnedBytes> {
 
 impl BundleDirectory {
     /// Get files and their sizes in a split.
-    pub fn get_stats_split(data: OwnedBytes) -> io::Result<Vec<(PathBuf, usize)>> {
+    pub fn get_stats_split(data: OwnedBytes) -> io::Result<Vec<(PathBuf, u64)>> {
         let split_file = FileSlice::new(Box::new(data));
         let (body_and_bundle_metadata, hot_cache) = split_footer(split_file)?;
-        let file_offsets =
-            BundleStorageFileOffsets::open_from_file_slice(body_and_bundle_metadata)?;
+        let file_offsets = BundleStorageFileOffsets::open(body_and_bundle_metadata)?;
 
         let mut files_and_size: Vec<(_, _)> = file_offsets
             .files
@@ -102,7 +104,10 @@ impl BundleDirectory {
             .map(|(file, range)| (file, range.end - range.start))
             .collect();
 
-        files_and_size.push((PathBuf::from("hotcache".to_string()), hot_cache.len()));
+        files_and_size.push((
+            PathBuf::from("hotcache".to_string()),
+            hot_cache.len() as u64,
+        ));
 
         files_and_size.sort();
         Ok(files_and_size)
@@ -117,7 +122,7 @@ impl BundleDirectory {
 
     /// Opens a BundleDirectory, given a file containing the bundle data.
     pub fn open_bundle(file: FileSlice) -> io::Result<BundleDirectory> {
-        let file_offsets = BundleStorageFileOffsets::open_from_file_slice(file.clone())?;
+        let file_offsets = BundleStorageFileOffsets::open(file.clone())?;
         Ok(BundleDirectory { file, file_offsets })
     }
 }
@@ -133,7 +138,9 @@ impl Directory for BundleDirectory {
             .file_offsets
             .get(path)
             .ok_or_else(|| OpenReadError::FileDoesNotExist(path.to_path_buf()))?;
-        Ok(self.file.slice(byte_range))
+        Ok(self
+            .file
+            .slice(byte_range.start as usize..byte_range.end as usize))
     }
 
     fn atomic_read(&self, path: &Path) -> Result<Vec<u8>, OpenReadError> {
@@ -173,26 +180,18 @@ impl Directory for BundleDirectory {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::{self, File};
+    use std::fs::File;
     use std::io::Write;
 
-    use quickwit_storage::BundleStorageBuilder;
-    use tantivy::common::CountingWriter;
+    use quickwit_storage::{PutPayload, SplitPayloadBuilder};
 
     use super::*;
 
-    #[test]
-    fn test_bundle_directory_stats() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_bundle_directory_stats() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let test_filepath1 = temp_dir.path().join("f1");
         let test_filepath2 = temp_dir.path().join("f2");
-        let test_bundle_path = temp_dir.path().join("le_bundle");
-
-        // Simulating split file which is created in packager.rs, which contains the bundle and
-        // appends the footer. The bundle directory can read the format created by
-        // packager.rs
-        let mut split_file = CountingWriter::wrap(File::create(test_bundle_path.to_owned())?);
-        let mut bundle_builder = BundleStorageBuilder::new(&mut split_file)?;
 
         let mut file1 = File::create(&test_filepath1)?;
         file1.write_all(&[123, 76])?;
@@ -200,42 +199,30 @@ mod tests {
         let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(&[99, 55, 44])?;
 
-        bundle_builder.add_file(&test_filepath1)?;
-        bundle_builder.add_file(&test_filepath2)?;
-        bundle_builder.finalize()?;
+        let split_streamer = SplitPayloadBuilder::get_split_payload(
+            &[test_filepath1.clone(), test_filepath2.clone()],
+            &[
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+            ],
+        )?;
 
-        // append hotcache and hotcache len
-        let hotcache_offset_start = split_file.written_bytes();
-        split_file.write_all(&[
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-        ])?;
-
-        let hotcache_offset_end = split_file.written_bytes();
-        let hotcache_num_bytes = hotcache_offset_end - hotcache_offset_start;
-
-        split_file.write_all(&hotcache_num_bytes.to_le_bytes())?;
-
-        let buffer = fs::read(test_bundle_path)?;
+        let buffer = split_streamer.read_all().await?;
 
         // check stats
-        let stats = BundleDirectory::get_stats_split(OwnedBytes::new(buffer))?;
+        let stats = BundleDirectory::get_stats_split(buffer)?;
 
-        assert_eq!(stats[0], (PathBuf::from("f1".to_string()), 2_usize));
-        assert_eq!(stats[1], (PathBuf::from("f2".to_string()), 3_usize));
-        assert_eq!(stats[2], (PathBuf::from("hotcache".to_string()), 18_usize));
+        assert_eq!(stats[0], (PathBuf::from("f1".to_string()), 2_u64));
+        assert_eq!(stats[1], (PathBuf::from("f2".to_string()), 3_u64));
+        assert_eq!(stats[2], (PathBuf::from("hotcache".to_string()), 18_u64));
 
         Ok(())
     }
 
-    #[test]
-    fn test_bundle_directory() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_bundle_directory() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let test_filepath1 = temp_dir.path().join("f1");
         let test_filepath2 = temp_dir.path().join("f2");
-        let test_bundle_path = temp_dir.path().join("le_bundle");
-
-        let mut bundle_file = File::create(test_bundle_path.to_owned())?;
-        let mut bundle_builder = BundleStorageBuilder::new(&mut bundle_file)?;
 
         let mut file1 = File::create(&test_filepath1)?;
         file1.write_all(&[123, 76])?;
@@ -243,18 +230,52 @@ mod tests {
         let mut file2 = File::create(&test_filepath2)?;
         file2.write_all(&[99, 55, 44])?;
 
-        bundle_builder.add_file(&test_filepath1)?;
-        bundle_builder.add_file(&test_filepath2)?;
-        bundle_builder.finalize()?;
+        let split_streamer = SplitPayloadBuilder::get_split_payload(
+            &[test_filepath1.clone(), test_filepath2.clone()],
+            &[
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+            ],
+        )?;
 
-        let buffer = fs::read(test_bundle_path)?;
-        let bundle_file_slice = FileSlice::from(buffer);
+        let buffer = split_streamer.read_all().await?;
 
-        let bundle_dir = BundleDirectory::open_bundle(bundle_file_slice)?;
+        let bundle_file_slice = FileSlice::from(buffer.to_vec());
+
+        let bundle_dir = BundleDirectory::open_split(bundle_file_slice)?;
 
         assert!(bundle_dir.exists(Path::new("f1")).unwrap());
         assert!(bundle_dir.exists(Path::new("f2")).unwrap());
         assert!(!bundle_dir.exists(Path::new("f3")).unwrap());
+
+        let f1_data = bundle_dir.atomic_read(Path::new("f1"))?;
+        assert_eq!(&*f1_data, &[123u8, 76u8]);
+
+        let f2_data = bundle_dir.atomic_read(Path::new("f2"))?;
+        assert_eq!(&f2_data[..], &[99, 55, 44]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_stream_split_to_bundle_and_open() -> anyhow::Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let test_filepath1 = temp_dir.path().join("f1");
+        let test_filepath2 = temp_dir.path().join("f2");
+
+        let mut file1 = File::create(&test_filepath1)?;
+        file1.write_all(&[123, 76])?;
+
+        let mut file2 = File::create(&test_filepath2)?;
+        file2.write_all(&[99, 55, 44])?;
+
+        let split_streamer = SplitPayloadBuilder::get_split_payload(
+            &[test_filepath1.clone(), test_filepath2.clone()],
+            &[1, 2, 3],
+        )?;
+
+        let data = split_streamer.read_all().await?;
+
+        let bundle_dir = BundleDirectory::open_split(FileSlice::from(data.to_vec()))?;
 
         let f1_data = bundle_dir.atomic_read(Path::new("f1"))?;
         assert_eq!(&*f1_data, &[123u8, 76u8]);

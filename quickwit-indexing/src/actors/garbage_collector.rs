@@ -33,7 +33,7 @@ const RUN_INTERVAL: Duration = Duration::from_secs(60); // 1 minutes
 /// Staged files needs to be deleted if there was a failure.
 /// TODO ideally we want clean up all staged splits every time we restart the indexing pipeline, but
 /// the grace period strategy should do the job for the moment.
-const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60); // 1 hour
+const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60 * 24); // 24 hours
 /// We cannot safely delete splits right away as a in-flight queries could actually
 /// have selected this split.
 /// We deal this probably by introducing a grace period. A split is first marked as delete,
@@ -50,8 +50,6 @@ pub struct GarbageCollectorCounters {
     pub num_deleted_files: usize,
     /// The number of bytes deleted.
     pub num_deleted_bytes: usize,
-    /// The number of failed to delete files.
-    pub num_failed_files: usize,
 }
 
 /// An actor for collecting garbage periodically from an index.
@@ -107,7 +105,7 @@ impl AsyncActor for GarbageCollector {
         info!("garbage-collect-operation");
         self.counters.num_passes += 1;
 
-        let deletion_stats = run_garbage_collect(
+        let deleted_file_entries = run_garbage_collect(
             &self.index_id,
             self.split_store.clone(),
             self.metastore.clone(),
@@ -118,29 +116,19 @@ impl AsyncActor for GarbageCollector {
         )
         .await?;
 
-        if !deletion_stats.candidate_entries.is_empty() {
-            let deletion_success: HashSet<&str> = deletion_stats
-                .deleted_entries
+        if !deleted_file_entries.is_empty() {
+            let deleted_files: HashSet<&str> = deleted_file_entries
                 .iter()
                 .map(|deleted_entry| deleted_entry.file_name.as_str())
                 .collect();
-            let deletion_failures: Vec<&str> = deletion_stats
-                .candidate_entries
-                .iter()
-                .map(|file_entry| file_entry.file_name.as_str())
-                .filter(|file_name| !deletion_success.contains(file_name))
-                .collect();
-            info!(deletion_success=?deletion_success, deletion_failures=?deletion_failures, "gc-delete");
-        }
+            info!(deleted_files=?deleted_files, "gc-delete");
 
-        self.counters.num_deleted_files += deletion_stats.deleted_entries.len();
-        self.counters.num_deleted_bytes += deletion_stats
-            .deleted_entries
-            .iter()
-            .map(|entry| entry.file_size_in_bytes as usize)
-            .sum::<usize>();
-        self.counters.num_failed_files +=
-            deletion_stats.candidate_entries.len() - deletion_stats.deleted_entries.len();
+            self.counters.num_deleted_files += deleted_file_entries.len();
+            self.counters.num_deleted_bytes += deleted_file_entries
+                .iter()
+                .map(|entry| entry.file_size_in_bytes as usize)
+                .sum::<usize>();
+        }
 
         ctx.schedule_self_msg(RUN_INTERVAL, ()).await;
         Ok(())
@@ -155,7 +143,7 @@ mod tests {
     use quickwit_metastore::{
         MockMetastore, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState,
     };
-    use quickwit_storage::{MockStorage, StorageErrorKind};
+    use quickwit_storage::MockStorage;
 
     use super::*;
 
@@ -181,11 +169,6 @@ mod tests {
                     || path == Path::new("b.split")
                     || path == Path::new("c.split")
             );
-            if path == Path::new("c.split") {
-                return Err(
-                    StorageErrorKind::InternalError.with_error(anyhow::anyhow!("Some error"))
-                );
-            }
             Ok(())
         });
 
@@ -216,7 +199,7 @@ mod tests {
             .times(1)
             .returning(|index_id, split_ids| {
                 assert_eq!(index_id, "foo-index");
-                assert_eq!(split_ids, vec!["a", "b"]);
+                assert_eq!(split_ids, vec!["a", "b", "c"]);
                 Ok(())
             });
 
@@ -230,9 +213,8 @@ mod tests {
 
         let state_after_initialization = handler.process_pending_and_observe().await.state;
         assert_eq!(state_after_initialization.num_passes, 1);
-        assert_eq!(state_after_initialization.num_deleted_files, 2);
-        assert_eq!(state_after_initialization.num_deleted_bytes, 40);
-        assert_eq!(state_after_initialization.num_failed_files, 1);
+        assert_eq!(state_after_initialization.num_deleted_files, 3);
+        assert_eq!(state_after_initialization.num_deleted_bytes, 60);
     }
 
     #[tokio::test]
@@ -287,7 +269,6 @@ mod tests {
         assert_eq!(state_after_initialization.num_passes, 1);
         assert_eq!(state_after_initialization.num_deleted_files, 2);
         assert_eq!(state_after_initialization.num_deleted_bytes, 40);
-        assert_eq!(state_after_initialization.num_failed_files, 0);
 
         // 30 secs later
         universe.simulate_time_shift(Duration::from_secs(30)).await;
@@ -295,7 +276,6 @@ mod tests {
         assert_eq!(state_after_initialization.num_passes, 1);
         assert_eq!(state_after_initialization.num_deleted_files, 2);
         assert_eq!(state_after_initialization.num_deleted_bytes, 40);
-        assert_eq!(state_after_initialization.num_failed_files, 0);
 
         // 60 secs later
         universe.simulate_time_shift(RUN_INTERVAL).await;
@@ -303,6 +283,5 @@ mod tests {
         assert_eq!(state_after_initialization.num_passes, 2);
         assert_eq!(state_after_initialization.num_deleted_files, 4);
         assert_eq!(state_after_initialization.num_deleted_bytes, 80);
-        assert_eq!(state_after_initialization.num_failed_files, 0);
     }
 }

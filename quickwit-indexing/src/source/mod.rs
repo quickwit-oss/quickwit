@@ -24,6 +24,7 @@ mod kafka_source;
 mod kinesis;
 mod source_factory;
 mod vec_source;
+mod void_source;
 
 use std::fmt;
 
@@ -36,6 +37,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox}
 use serde::{Deserialize, Serialize};
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 pub use vec_source::{VecSource, VecSourceFactory, VecSourceParams};
+pub use void_source::{VoidSource, VoidSourceFactory, VoidSourceParams};
 
 use crate::models::IndexerMessage;
 
@@ -167,6 +169,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         #[cfg(feature = "kafka")]
         source_factory.add_source("kafka", KafkaSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
+        source_factory.add_source("void", VoidSourceFactory);
         source_factory
     })
 }
@@ -197,4 +200,29 @@ pub struct SourceConfig {
     pub source_id: String,
     pub source_type: String,
     pub params: serde_json::Value,
+}
+
+impl SourceConfig {
+    pub async fn check_source_available(&self) -> anyhow::Result<()> {
+        match &*self.source_type {
+            "file" => {
+                if let Some(path) = self.params.get("filepath").and_then(|v| v.as_str()) {
+                    if !std::path::Path::new(path).exists() {
+                        anyhow::bail!("Source `{}` does not exist", path)
+                    }
+                }
+                Ok(())
+            }
+            #[cfg(feature = "kafka")]
+            "kafka" => kafka_source::check(self.params.clone()),
+            "vec" => Ok(()),
+            unrecognized_source_type => {
+                tracing::warn!(
+                    "No check implemented for source type `{}`",
+                    unrecognized_source_type
+                );
+                Ok(())
+            }
+        }
+    }
 }

@@ -193,7 +193,7 @@ fn resolve_timestamp_field(
             )
         }
         match timestamp_field_entry.field_type() {
-            FieldType::I64(options) | FieldType::U64(options) => {
+            FieldType::I64(options) => {
                 if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
                     bail!(
                         "Timestamp field cannot be an array, please change your field `{}` from \
@@ -204,8 +204,8 @@ fn resolve_timestamp_field(
             }
             _ => {
                 bail!(
-                    "Timestamp field must be either of type i64 or u64, please change your field \
-                     type `{}` to i64 or u64.",
+                    "Timestamp field must be either of type i64, please change your field type \
+                     `{}` to i64.",
                     timestamp_field_name
                 )
             }
@@ -260,7 +260,7 @@ fn resolve_demux_field(
             )
         }
         match demux_field_entry.field_type() {
-            FieldType::U64(options) => {
+            FieldType::U64(options) | FieldType::I64(options) => {
                 if options.get_fastfield_cardinality() == Some(Cardinality::MultiValues) {
                     bail!(
                         "Demux field cannot be an array, please change your field `{}` from an \
@@ -271,7 +271,8 @@ fn resolve_demux_field(
             }
             _ => {
                 bail!(
-                    "Demux field must be of type u64, please change your field type `{}` to u64.",
+                    "Demux field must be of type u64 or i64, please change your field type `{}` \
+                     to u64 or i64.",
                     demux_field_name
                 )
             }
@@ -910,6 +911,27 @@ mod tests {
 
     #[test]
     fn test_index_config_with_a_i64_demux_field_is_valid() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "tag_fields": ["demux"],
+            "demux_field": "demux",
+            "field_mappings": [
+                {
+                    "name": "demux",
+                    "type": "i64",
+                    "fast": true
+                }
+            ]
+        }"#;
+        let config = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        assert_eq!(config.tag_field_names().len(), 1);
+        assert!(config.tag_field_names().contains(&"demux".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_config_with_a_u64_demux_field_is_valid() -> anyhow::Result<()> {
         let index_config = r#"{
             "type": "default",
             "default_search_fields": [],

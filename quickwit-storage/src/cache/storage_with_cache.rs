@@ -33,10 +33,14 @@ pub(crate) struct StorageWithCache {
 
 #[async_trait]
 impl Storage for StorageWithCache {
+    async fn check(&self) -> anyhow::Result<()> {
+        self.storage.check().await
+    }
+
     async fn put(
         &self,
         path: &Path,
-        _payload: Box<dyn crate::PutPayloadProvider>,
+        _payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         unimplemented!("StorageWithCache is readonly. Failed to put {:?}", path)
     }

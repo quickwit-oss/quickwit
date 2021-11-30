@@ -191,13 +191,13 @@ impl<'a> fmt::Debug for SplitShortDebug<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Split")
             .field("split_id", &self.0.split_id)
-            .field("ndocs", &self.0.num_records)
+            .field("num_docs", &self.0.num_docs)
             .finish()
     }
 }
 
 fn splits_short_debug(splits: &[SplitMetadata]) -> Vec<SplitShortDebug> {
-    splits.iter().map(|split| SplitShortDebug(split)).collect()
+    splits.iter().map(SplitShortDebug).collect()
 }
 
 impl MergePolicy for StableMultitenantWithTimestampMergePolicy {
@@ -235,9 +235,14 @@ enum MergeCandidateSize {
 impl StableMultitenantWithTimestampMergePolicy {
     /// A mature split for merge is a split that won't undergo merge operation in the future.
     fn is_mature_for_merge(&self, split: &SplitMetadata) -> bool {
+        // If merge is disabled, split is considered mature as it will not undergo a merge
+        // operation.
+        if !self.merge_enabled {
+            return true;
+        }
         // Once a split has been demuxed, we don't want to merge it even in the
         // case where its number of docs is under `max_merge_docs`.
-        split.num_records >= self.max_merge_docs || split.demux_num_ops > 0
+        split.num_docs >= self.max_merge_docs || split.demux_num_ops > 0
     }
 
     /// A mature split for demux is a split that won't undergo demux operation in the future.
@@ -251,6 +256,11 @@ impl StableMultitenantWithTimestampMergePolicy {
     ///   protect against too big splits as it will break the building of demux operations, see
     ///   [`build_first_demux_operation`].
     fn is_mature_for_demux(&self, split: &SplitMetadata) -> bool {
+        // If demux is disabled, split is considered mature as it will not undergo a demux
+        // operation.
+        if !self.demux_enabled {
+            return true;
+        }
         let demux_field_name = if let Some(demux_field_name) = self.demux_field_name.as_ref() {
             demux_field_name
         } else {
@@ -258,7 +268,7 @@ impl StableMultitenantWithTimestampMergePolicy {
             // split will be demuxed.
             return true;
         };
-        if split.num_records >= self.demux_factor * self.max_merge_docs {
+        if split.num_docs >= self.demux_factor * self.max_merge_docs {
             return true;
         }
         let split_tags_contains_less_than_2_demux_values = split
@@ -268,7 +278,7 @@ impl StableMultitenantWithTimestampMergePolicy {
             .count()
             < 2;
         split_tags_contains_less_than_2_demux_values
-            || (split.num_records < self.max_merge_docs || split.demux_num_ops > 0)
+            || (split.num_docs < self.max_merge_docs || split.demux_num_ops > 0)
     }
 
     fn merge_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
@@ -286,7 +296,7 @@ impl StableMultitenantWithTimestampMergePolicy {
                 .time_range
                 .as_ref()
                 .map(|time_range| Reverse(*time_range.end()));
-            (time_end, split.num_records)
+            (time_end, split.num_docs)
         });
         debug!(splits=?splits_short_debug(&splits[..]), "merge-policy-run");
 
@@ -353,10 +363,10 @@ impl StableMultitenantWithTimestampMergePolicy {
         assert!(
             splits
                 .iter()
-                .all(|split| split.num_records < self.max_merge_docs * self.demux_factor),
+                .all(|split| split.num_docs < self.max_merge_docs * self.demux_factor),
             "Each split size must satisfy `max_merge_docs <= size < demux_factor * max_merge_docs`"
         );
-        let mut total_num_docs_left: usize = splits.iter().map(|split| split.num_records).sum();
+        let mut total_num_docs_left: usize = splits.iter().map(|split| split.num_docs).sum();
         if splits.is_empty() || total_num_docs_left < self.demux_factor * self.max_merge_docs {
             return Vec::new();
         }
@@ -365,7 +375,7 @@ impl StableMultitenantWithTimestampMergePolicy {
             let mut end_split_idx = 0;
             let mut num_docs_to_demux = 0;
             for (split_idx, split) in splits.iter().enumerate().take(self.demux_factor) {
-                num_docs_to_demux += split.num_records;
+                num_docs_to_demux += split.num_docs;
                 if num_docs_to_demux >= self.demux_factor * self.max_merge_docs {
                     end_split_idx = split_idx;
                     break;
@@ -392,13 +402,13 @@ impl StableMultitenantWithTimestampMergePolicy {
     /// It assumes that splits are almost sorted by their increasing size,
     /// but should behave decently (not create too many levels) if they are not.
     ///
-    /// All splits are required to have a number of records lower than
+    /// All splits are required to have a number of documents lower than
     /// `self.max_merge_docs`
     pub(crate) fn build_split_levels(&self, splits: &[SplitMetadata]) -> Vec<Range<usize>> {
         assert!(
             splits
                 .iter()
-                .all(|split| split.num_records < self.max_merge_docs),
+                .all(|split| split.num_docs < self.max_merge_docs),
             "All splits are expected to be smaller than `max_merge_docs`."
         );
         if splits.is_empty() {
@@ -407,15 +417,15 @@ impl StableMultitenantWithTimestampMergePolicy {
 
         let mut split_levels: Vec<Range<usize>> = Vec::new();
         let mut current_level_start_ord = 0;
-        let mut current_level_max_docs = (splits[0].num_records * 3).max(self.min_level_num_docs);
+        let mut current_level_max_docs = (splits[0].num_docs * 3).max(self.min_level_num_docs);
 
         let mut levels = vec![(0..current_level_max_docs)]; // for logging only
         for (split_ord, split) in splits.iter().enumerate() {
-            if split.num_records >= current_level_max_docs {
+            if split.num_docs >= current_level_max_docs {
                 split_levels.push(current_level_start_ord..split_ord);
                 current_level_start_ord = split_ord;
-                current_level_max_docs = 3 * split.num_records;
-                levels.push(split.num_records..current_level_max_docs)
+                current_level_max_docs = 3 * split.num_docs;
+                levels.push(split.num_docs..current_level_max_docs)
             }
         }
         debug!(levels=?levels);
@@ -460,7 +470,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         if splits.len() >= self.merge_factor_max {
             return MergeCandidateSize::OneMoreSplitWouldBeTooBig;
         }
-        let num_docs_in_merge: usize = splits.iter().map(|split| split.num_records).sum();
+        let num_docs_in_merge: usize = splits.iter().map(|split| split.num_docs).sum();
 
         // The resulting split will exceed `max_merge_docs`.
         if num_docs_in_merge >= self.max_merge_docs {
@@ -532,20 +542,20 @@ fn is_sorted(els: &[usize]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::BTreeSet;
     use std::iter::FromIterator;
     use std::ops::RangeInclusive;
 
     use super::*;
 
     fn create_splits(num_docs_vec: Vec<usize>) -> Vec<SplitMetadata> {
-        let num_records_with_timestamp = num_docs_vec
+        let num_docs_with_timestamp = num_docs_vec
             .into_iter()
             // we give the same timestamp to all of them and rely on stable sort to keep the split
             // order.
-            .map(|num_records| (num_records, (1630563067..=1630564067)))
+            .map(|num_docs| (num_docs, (1630563067..=1630564067)))
             .collect();
-        create_splits_with_timestamps(num_records_with_timestamp)
+        create_splits_with_timestamps(num_docs_with_timestamp)
     }
 
     fn create_splits_with_timestamps(
@@ -554,9 +564,9 @@ mod tests {
         num_docs_vec
             .into_iter()
             .enumerate()
-            .map(|(split_ord, (num_records, time_range))| SplitMetadata {
+            .map(|(split_ord, (num_docs, time_range))| SplitMetadata {
                 split_id: format!("split_{:02}", split_ord),
-                num_records,
+                num_docs,
                 time_range: Some(time_range),
                 ..Default::default()
             })
@@ -572,13 +582,13 @@ mod tests {
             .into_iter()
             .zip(tag_counts.iter())
             .enumerate()
-            .map(|(split_ord, (num_records, &tag_count))| SplitMetadata {
+            .map(|(split_ord, (num_docs, &tag_count))| SplitMetadata {
                 split_id: format!("split_{:02}", split_ord),
-                num_records,
+                num_docs,
                 tags: (0..tag_count)
                     .into_iter()
                     .map(|i| format!("{}:{}", demux_field_name, i))
-                    .collect::<HashSet<_>>(),
+                    .collect::<BTreeSet<_>>(),
                 ..Default::default()
             })
             .collect()
@@ -590,15 +600,21 @@ mod tests {
         // Split under max_merge_docs and demux_generation = 0 is not mature.
         let mut split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
         assert!(!merge_policy.is_mature(&split));
+        // All splits are mature when merge is disabled.
+        let merge_policy_with_disabled_merge = StableMultitenantWithTimestampMergePolicy {
+            merge_enabled: false,
+            ..Default::default()
+        };
+        assert!(merge_policy_with_disabled_merge.is_mature(&split));
         // Split under max_merge_docs and demux_generation = 1 is mature.
         split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs and demux_generation = 0 is mature.
-        split.num_records = merge_policy.max_merge_docs + 1;
+        split.num_docs = merge_policy.max_merge_docs + 1;
         split.demux_num_ops = 0;
         assert!(merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs and demux_generation = 1 is mature.
-        split.num_records = merge_policy.max_merge_docs + 1;
+        split.num_docs = merge_policy.max_merge_docs + 1;
         split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
     }
@@ -607,11 +623,12 @@ mod tests {
     fn test_split_is_mature_with_demux_field() {
         let merge_policy = StableMultitenantWithTimestampMergePolicy {
             demux_field_name: Some("demux_field".to_owned()),
+            demux_enabled: true,
             ..Default::default()
         };
         let mut split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
         // Add a number of tags > 1 so that it can be a candidate for demux.
-        let demux_tags = HashSet::from_iter(vec![
+        let demux_tags = BTreeSet::from_iter(vec![
             "demux_field:1".to_string(),
             "demux_field:2".to_string(),
         ]);
@@ -620,34 +637,42 @@ mod tests {
         // Split under max_merge_docs and demux_generation = 0 is not mature.
         assert!(!merge_policy.is_mature(&split));
         // Split with docs >= max_merge_docs and demux_generation = 0 is not mature.
-        split.num_records = merge_policy.max_merge_docs + 1;
+        split.num_docs = merge_policy.max_merge_docs + 1;
         split.demux_num_ops = 0;
         assert!(!merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs, demux_generation of 0 and wrong tags is also mature.
-        split.num_records = 100;
+        split.num_docs = 100;
         split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
 
+        // All splits are mature when demux is disabled.
+        let merge_policy_with_disabled_demux = StableMultitenantWithTimestampMergePolicy {
+            demux_field_name: Some("demux_field".to_owned()),
+            demux_enabled: false,
+            ..Default::default()
+        };
+        assert!(merge_policy_with_disabled_demux.is_mature(&split));
+
         // Mature splits.
         // Split under max_merge_docs and demux_generation = 1 is mature.
-        split.num_records = 100;
+        split.num_docs = 100;
         split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs and demux_generation = 1 is mature.
-        split.num_records = merge_policy.max_merge_docs + 1;
+        split.num_docs = merge_policy.max_merge_docs + 1;
         split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
         // Split with num docs >= max_merge_docs * demux_factor is mature.
-        split.num_records = merge_policy.demux_factor * merge_policy.max_merge_docs;
+        split.num_docs = merge_policy.demux_factor * merge_policy.max_merge_docs;
         split.demux_num_ops = 0;
         assert!(merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs, demux_generation of 0 and wrong tags is also mature.
-        let other_tags = HashSet::from_iter(vec![
+        let other_tags = BTreeSet::from_iter(vec![
             "other_field:1".to_string(),
             "other_field:2".to_string(),
         ]);
         split.tags = other_tags;
-        split.num_records = merge_policy.max_merge_docs + 1;
+        split.num_docs = merge_policy.max_merge_docs + 1;
         split.demux_num_ops = 0;
         assert!(merge_policy.is_mature(&split));
     }
@@ -802,7 +827,7 @@ mod tests {
         ]);
         let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 1);
-        assert_eq!(splits[0].num_records, 10_000_000);
+        assert_eq!(splits[0].num_docs, 10_000_000);
         assert_eq!(merge_ops.len(), 1);
     }
 
@@ -812,8 +837,8 @@ mod tests {
         let mut splits = create_splits(vec![9_999_999, 10_000_000]);
         let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 2);
-        assert_eq!(splits[0].num_records, 9_999_999);
-        assert_eq!(splits[1].num_records, 10_000_000);
+        assert_eq!(splits[0].num_docs, 9_999_999);
+        assert_eq!(splits[1].num_docs, 10_000_000);
         assert!(merge_ops.is_empty());
     }
 
@@ -834,7 +859,7 @@ mod tests {
         let mut splits = create_splits(vec![9_999_997, 9_999_998, 9_999_999]);
         let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 1);
-        assert_eq!(splits[0].num_records, 9_999_997);
+        assert_eq!(splits[0].num_docs, 9_999_997);
         assert_eq!(merge_ops.len(), 1);
         assert!(matches!(merge_ops[0], MergeOperation::Merge { .. }));
         assert_eq!(merge_ops[0].splits().len(), 2);
@@ -846,7 +871,7 @@ mod tests {
         let mut splits = create_splits(vec![9_999_999]);
         let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 1);
-        assert_eq!(splits[0].num_records, 9_999_999);
+        assert_eq!(splits[0].num_docs, 9_999_999);
         assert!(merge_ops.is_empty());
     }
 

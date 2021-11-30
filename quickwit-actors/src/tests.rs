@@ -24,8 +24,8 @@ use async_trait::async_trait;
 use crate::mailbox::Command;
 use crate::observation::ObservationType;
 use crate::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health, Mailbox, Observation,
-    Supervisable, SyncActor, Universe,
+    message_timeout, Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, AsyncActor,
+    Health, Mailbox, Observation, Supervisable, SyncActor, Universe,
 };
 
 // An actor that receives ping messages.
@@ -328,6 +328,30 @@ async fn test_pause_sync_actor() {
 }
 
 #[tokio::test]
+async fn test_sync_actor_running_states() {
+    quickwit_common::setup_logging_for_tests();
+    let universe = Universe::new();
+    let actor = PingReceiverSyncActor::default();
+    let (ping_mailbox, ping_handle) = universe.spawn_actor(actor).spawn_sync();
+    assert!(ping_handle.state() == ActorState::Processing);
+    for _ in 0..10 {
+        assert!(ping_mailbox.send_message(Ping).await.is_ok());
+    }
+    assert!(ping_handle.state() == ActorState::Processing);
+    ping_handle.process_pending_and_observe().await;
+    // Actor is still in processing state and will go idle after message timeout.
+    assert!(ping_handle.state() == ActorState::Processing);
+    tokio::time::sleep(message_timeout().mul_f32(1.1)).await;
+    assert!(ping_handle.state() == ActorState::Idle);
+    assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
+    // Return into processing on sending a command and go back to idle after message timeout.
+    tokio::time::sleep(message_timeout()).await;
+    assert!(ping_handle.state() == ActorState::Processing);
+    tokio::time::sleep(message_timeout()).await;
+    assert!(ping_handle.state() == ActorState::Idle);
+}
+
+#[tokio::test]
 async fn test_pause_async_actor() {
     quickwit_common::setup_logging_for_tests();
     let universe = Universe::new();
@@ -345,6 +369,29 @@ async fn test_pause_async_actor() {
     assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
     let end_state = ping_handle.process_pending_and_observe().await.state;
     assert_eq!(end_state, 1000);
+}
+
+#[tokio::test]
+async fn test_async_actor_running_states() {
+    quickwit_common::setup_logging_for_tests();
+    let universe = Universe::new();
+    let (ping_mailbox, ping_handle) = universe
+        .spawn_actor(PingReceiverAsyncActor::default())
+        .spawn_async();
+    assert!(ping_handle.state() == ActorState::Processing);
+    for _ in 0u32..10u32 {
+        assert!(ping_mailbox.send_message(Ping).await.is_ok());
+    }
+    // Actor is still in processing state and will go idle after message timeout.
+    assert!(ping_handle.state() == ActorState::Processing);
+    tokio::time::sleep(message_timeout().mul_f32(1.1)).await;
+    assert!(ping_handle.state() == ActorState::Idle);
+    assert!(ping_mailbox.send_command(Command::Resume).await.is_ok());
+    // Return into processing on sending a command and go back to idle after message timeout.
+    tokio::time::sleep(message_timeout()).await;
+    assert!(ping_handle.state() == ActorState::Processing);
+    tokio::time::sleep(message_timeout()).await;
+    assert!(ping_handle.state() == ActorState::Idle);
 }
 
 #[derive(Default, Debug, Clone)]
@@ -533,5 +580,75 @@ async fn test_actor_spawning_actor() -> anyhow::Result<()> {
     let (exit, result) = handle.join().await;
     assert!(matches!(exit, ActorExitStatus::Success));
     assert_eq!(result, 6);
+    Ok(())
+}
+
+struct BuggyFinalizeActor;
+
+impl Actor for BuggyFinalizeActor {
+    type Message = BuggyMessage;
+    type ObservableState = ();
+
+    fn name(&self) -> String {
+        "BuggyFinalizeActor".to_string()
+    }
+
+    fn observable_state(&self) {}
+}
+
+impl SyncActor for BuggyFinalizeActor {
+    fn process_message(
+        &mut self,
+        _message: Self::Message,
+        _ctx: &ActorContext<Self::Message>,
+    ) -> Result<(), ActorExitStatus> {
+        Ok(())
+    }
+
+    fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        _ctx: &ActorContext<Self::Message>,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("Finalize error")
+    }
+}
+
+#[async_trait]
+impl AsyncActor for BuggyFinalizeActor {
+    async fn process_message(
+        &mut self,
+        _: BuggyMessage,
+        _: &ActorContext<Self::Message>,
+    ) -> Result<(), ActorExitStatus> {
+        Ok(())
+    }
+
+    async fn finalize(
+        &mut self,
+        _exit_status: &ActorExitStatus,
+        _: &ActorContext<Self::Message>,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("Finalize error")
+    }
+}
+
+#[tokio::test]
+async fn test_actor_finalize_error_set_exit_status_to_panicked() -> anyhow::Result<()> {
+    let universe = Universe::new();
+    // Sync
+    let (mailbox, handle) = universe.spawn_actor(BuggyFinalizeActor).spawn_sync();
+    assert!(matches!(handle.state(), ActorState::Processing));
+    drop(mailbox);
+    let (exit, _) = handle.join().await;
+    assert!(matches!(exit, ActorExitStatus::Panicked));
+
+    // Async
+    let (mailbox, handle) = universe.spawn_actor(BuggyFinalizeActor).spawn_async();
+    assert!(matches!(handle.state(), ActorState::Processing));
+    drop(mailbox);
+    let (exit, _) = handle.join().await;
+    assert!(matches!(exit, ActorExitStatus::Panicked));
+
     Ok(())
 }

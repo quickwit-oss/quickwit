@@ -25,7 +25,6 @@ use tracing::{debug, error, info, Instrument};
 
 use crate::actor::{process_command, ActorExitStatus};
 use crate::actor_handle::ActorHandle;
-use crate::actor_state::ActorState;
 use crate::actor_with_state_tx::ActorWithStateTx;
 use crate::mailbox::{CommandOrMessage, Inbox};
 use crate::{Actor, ActorContext, RecvError};
@@ -118,7 +117,7 @@ async fn process_msg<A: Actor + AsyncActor>(
     }
     ctx.progress().record_progress();
 
-    let command_or_msg_recv_res = if ctx.state() == ActorState::Running {
+    let command_or_msg_recv_res = if ctx.state().is_running() {
         inbox.recv_timeout().await
     } else {
         // The actor is paused. We only process command and scheduled message.
@@ -131,13 +130,18 @@ async fn process_msg<A: Actor + AsyncActor>(
     }
 
     match command_or_msg_recv_res {
-        Ok(CommandOrMessage::Command(cmd)) => process_command(actor, cmd, ctx, state_tx),
+        Ok(CommandOrMessage::Command(cmd)) => {
+            ctx.process();
+            process_command(actor, cmd, ctx, state_tx)
+        }
         Ok(CommandOrMessage::Message(msg)) => {
+            ctx.process();
             let span = actor.message_span(msg_id, &msg);
             actor.process_message(msg, ctx).instrument(span).await.err()
         }
         Err(RecvError::Disconnected) => Some(ActorExitStatus::Success),
         Err(RecvError::Timeout) => {
+            ctx.idle();
             if ctx.mailbox().is_last_mailbox() {
                 // No one will be able to send us more messages.
                 // We can exit the actor.
@@ -163,7 +167,7 @@ async fn async_actor_loop<A: AsyncActor>(
         actor_with_state_tx.actor.initialize(&ctx).await.err();
 
     let mut msg_id: u64 = 1;
-    let exit_status: ActorExitStatus = loop {
+    let mut exit_status: ActorExitStatus = loop {
         tokio::task::yield_now().await;
         if let Some(exit_status) = exit_status_opt {
             break exit_status;
@@ -178,15 +182,19 @@ async fn async_actor_loop<A: AsyncActor>(
         .await;
         msg_id += 1;
     };
-    ctx.exit(&exit_status);
-
+    ctx.record_progress();
     if let Err(finalize_error) = actor_with_state_tx
         .actor
         .finalize(&exit_status, &ctx)
         .await
         .with_context(|| format!("Finalization of actor {}", actor_with_state_tx.actor.name()))
     {
-        error!(err=?finalize_error, "finalize_error");
+        error!(error=?finalize_error, "Finalizing failed, set exit status to panicked.");
+        exit_status = ActorExitStatus::Panicked;
     }
+
+    info!(exit_status=%exit_status, "exit");
+    ctx.exit(&exit_status);
+
     exit_status
 }

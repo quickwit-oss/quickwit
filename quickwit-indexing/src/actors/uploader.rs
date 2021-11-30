@@ -20,6 +20,7 @@
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::mem;
+use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -29,7 +30,7 @@ use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox, QueueCapacity};
 use quickwit_metastore::{Metastore, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState};
-use quickwit_storage::BUNDLE_FILENAME;
+use quickwit_storage::SplitPayloadBuilder;
 use tantivy::chrono::Utc;
 use tokio::sync::oneshot::Receiver;
 use tokio::sync::Semaphore;
@@ -92,23 +93,27 @@ impl Actor for Uploader {
     }
 
     fn message_span(&self, msg_id: u64, batch: &PackagedSplitBatch) -> Span {
-        info_span!("", msg_id=&msg_id, split=?batch.split_ids())
+        info_span!("", msg_id=&msg_id, num_splits=%batch.split_ids().len())
     }
 }
 
-fn create_split_metadata(split: &PackagedSplit) -> SplitMetadataAndFooterOffsets {
+fn create_split_metadata(
+    split: &PackagedSplit,
+    footer_offsets: Range<u64>,
+) -> SplitMetadataAndFooterOffsets {
     SplitMetadataAndFooterOffsets {
         split_metadata: SplitMetadata {
             split_id: split.split_id.clone(),
-            num_records: split.num_docs as usize,
+            num_docs: split.num_docs as usize,
             time_range: split.time_range.clone(),
             size_in_bytes: split.size_in_bytes,
             split_state: SplitState::New,
+            create_timestamp: Utc::now().timestamp(),
             update_timestamp: Utc::now().timestamp(),
             tags: split.tags.clone(),
             demux_num_ops: split.demux_num_ops,
         },
-        footer_offsets: split.footer_offsets.clone(),
+        footer_offsets,
     }
 }
 
@@ -146,22 +151,30 @@ async fn stage_and_upload_split(
     metastore: &dyn Metastore,
     counters: UploaderCounters,
 ) -> anyhow::Result<SplitMetadata> {
-    let split_metadata_and_footer_offsets = create_split_metadata(packaged_split);
+    let split_streamer = SplitPayloadBuilder::get_split_payload(
+        &packaged_split.split_files,
+        &packaged_split.hotcache_bytes,
+    )?;
+
+    let split_metadata_and_footer_offsets = create_split_metadata(
+        packaged_split,
+        split_streamer.footer_range.start as u64..split_streamer.footer_range.end as u64,
+    );
     let index_id = packaged_split.index_id.clone();
     let split_metadata = split_metadata_and_footer_offsets.split_metadata.clone();
-    info!("staging-split");
+    info!(split_id = packaged_split.split_id.as_str(), "staging-split");
     metastore
         .stage_split(&index_id, split_metadata_and_footer_offsets)
         .await?;
     counters.num_staged_splits.fetch_add(1, Ordering::SeqCst);
-    let bundle_path = packaged_split
-        .split_scratch_directory
-        .path()
-        .join(BUNDLE_FILENAME);
 
-    info!("storing-split");
+    info!(split_id = packaged_split.split_id.as_str(), "storing-split");
     split_store
-        .store_split(&split_metadata, &bundle_path)
+        .store_split(
+            &split_metadata,
+            packaged_split.split_scratch_directory.path(),
+            Box::new(split_streamer),
+        )
         .await?;
     counters.num_uploaded_splits.fetch_add(1, Ordering::SeqCst);
     Ok(split_metadata)
@@ -206,6 +219,7 @@ impl AsyncActor for Uploader {
         let counters = self.counters.clone();
         let index_id = batch.index_id();
         let span = Span::current();
+        info!(split_ids=?split_ids, "start-stage-and-store-splits");
         tokio::spawn(
             async move {
                 fail_point!("uploader:intask:before");
@@ -219,7 +233,7 @@ impl AsyncActor for Uploader {
                     )
                     .await;
                     if let Err(cause) = upload_result {
-                        warn!(cause=%cause, "Failed to upload split. Killing!");
+                        warn!(cause=%cause, split_id=%split.split_id, "Failed to upload split. Killing!");
                         kill_switch.kill();
                         bail!("Failed to upload split `{}`. Killing!", split.split_id);
                     }
@@ -236,7 +250,7 @@ impl AsyncActor for Uploader {
                         &publisher_message
                     );
                 }
-                info!("success-stage-and-store-split");
+                info!("success-stage-and-store-splits");
                 // We explicitely drop it in order to force move the permit guard into the async
                 // task.
                 mem::drop(permit_guard);
@@ -263,7 +277,7 @@ mod tests {
     use crate::models::ScratchDirectory;
 
     #[tokio::test]
-    async fn test_uploader() -> anyhow::Result<()> {
+    async fn test_uploader_1() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
@@ -289,10 +303,6 @@ mod tests {
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
         let split_scratch_directory = ScratchDirectory::for_test()?;
-        std::fs::write(
-            split_scratch_directory.path().join(BUNDLE_FILENAME),
-            &b"bubu"[..],
-        )?;
         universe
             .send_message(
                 &uploader_mailbox,
@@ -302,13 +312,14 @@ mod tests {
                     checkpoint_deltas: vec![CheckpointDelta::from(3..15)],
                     time_range: Some(1_628_203_589i64..=1_628_203_640i64),
                     size_in_bytes: 1_000,
-                    footer_offsets: 1000..2000,
                     split_scratch_directory,
                     num_docs: 10,
                     demux_num_ops: 0,
                     tags: Default::default(),
                     replaced_split_ids: Vec::new(),
                     split_date_of_birth: Instant::now(),
+                    hotcache_bytes: vec![],
+                    split_files: vec![],
                 }]),
             )
             .await?;
@@ -367,21 +378,12 @@ mod tests {
         let (uploader_mailbox, uploader_handle) = universe.spawn_actor(uploader).spawn_async();
         let split_scratch_directory_1 = ScratchDirectory::for_test()?;
         let split_scratch_directory_2 = ScratchDirectory::for_test()?;
-        std::fs::write(
-            split_scratch_directory_1.path().join(BUNDLE_FILENAME),
-            &b"bubu"[..],
-        )?;
-        std::fs::write(
-            split_scratch_directory_2.path().join(BUNDLE_FILENAME),
-            &b"bubu"[..],
-        )?;
         let packaged_split_1 = PackagedSplit {
             split_id: "test-split-1".to_string(),
             index_id: "test-index".to_string(),
             checkpoint_deltas: vec![CheckpointDelta::from(3..15), CheckpointDelta::from(16..18)],
             time_range: Some(1_628_203_589i64..=1_628_203_640i64),
             size_in_bytes: 1_000,
-            footer_offsets: 1000..2000,
             split_scratch_directory: split_scratch_directory_1,
             num_docs: 10,
             demux_num_ops: 1,
@@ -391,6 +393,8 @@ mod tests {
                 "replaced-split-2".to_string(),
             ],
             split_date_of_birth: Instant::now(),
+            split_files: vec![],
+            hotcache_bytes: vec![],
         };
         let package_split_2 = PackagedSplit {
             split_id: "test-split-2".to_string(),
@@ -398,7 +402,6 @@ mod tests {
             checkpoint_deltas: vec![CheckpointDelta::from(3..15), CheckpointDelta::from(16..18)],
             time_range: Some(1_628_203_589i64..=1_628_203_640i64),
             size_in_bytes: 1_000,
-            footer_offsets: 1000..2000,
             split_scratch_directory: split_scratch_directory_2,
             num_docs: 10,
             demux_num_ops: 1,
@@ -408,6 +411,8 @@ mod tests {
                 "replaced-split-2".to_string(),
             ],
             split_date_of_birth: Instant::now(),
+            split_files: vec![],
+            hotcache_bytes: vec![],
         };
         universe
             .send_message(

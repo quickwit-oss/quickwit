@@ -34,10 +34,14 @@ struct PrefixStorage {
 
 #[async_trait]
 impl Storage for PrefixStorage {
+    async fn check(&self) -> anyhow::Result<()> {
+        self.storage.check().await
+    }
+
     async fn put(
         &self,
         path: &Path,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         self.storage.put(&self.prefix.join(path), payload).await
     }

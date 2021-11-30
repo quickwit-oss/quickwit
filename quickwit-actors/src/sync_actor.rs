@@ -22,7 +22,6 @@ use tokio::task::{spawn_blocking, JoinHandle};
 use tracing::{debug, error, info, Span};
 
 use crate::actor::{process_command, ActorExitStatus};
-use crate::actor_state::ActorState;
 use crate::actor_with_state_tx::ActorWithStateTx;
 use crate::mailbox::{CommandOrMessage, Inbox};
 use crate::{Actor, ActorContext, ActorHandle, RecvError};
@@ -102,7 +101,7 @@ fn process_msg<A: Actor + SyncActor>(
 
     ctx.progress().record_progress();
 
-    let command_or_msg_recv_res = if ctx.state() == ActorState::Running {
+    let command_or_msg_recv_res = if ctx.state().is_running() {
         inbox.recv_timeout_blocking()
     } else {
         // The actor is paused. We only process command and scheduled message.
@@ -114,13 +113,18 @@ fn process_msg<A: Actor + SyncActor>(
         return Some(ActorExitStatus::Killed);
     }
     match command_or_msg_recv_res {
-        Ok(CommandOrMessage::Command(cmd)) => process_command(actor, cmd, ctx, state_tx),
+        Ok(CommandOrMessage::Command(cmd)) => {
+            ctx.process();
+            process_command(actor, cmd, ctx, state_tx)
+        }
         Ok(CommandOrMessage::Message(msg)) => {
+            ctx.process();
             let span = actor.message_span(msg_id, &msg);
             let _span_guard = span.enter();
             actor.process_message(msg, ctx).err()
         }
         Err(RecvError::Timeout) => {
+            ctx.idle();
             if ctx.mailbox().is_last_mailbox() {
                 Some(ActorExitStatus::Success)
             } else {
@@ -150,7 +154,7 @@ fn sync_actor_loop<A: SyncActor>(
 
     let mut msg_id = 1;
 
-    let exit_status: ActorExitStatus = loop {
+    let mut exit_status: ActorExitStatus = loop {
         if let Some(exit_status) = exit_status_opt {
             break exit_status;
         }
@@ -163,10 +167,14 @@ fn sync_actor_loop<A: SyncActor>(
         );
         msg_id += 1;
     };
-    ctx.exit(&exit_status);
-    info!(exit_status=%exit_status, "exit");
-    if let Err(error) = actor_with_state_tx.actor.finalize(&exit_status, &ctx) {
-        error!(error=?error, "Finalizing failed");
+
+    if let Err(finalize_error) = actor_with_state_tx.actor.finalize(&exit_status, &ctx) {
+        error!(error=?finalize_error, "Finalizing failed, set exit status to panicked.");
+        exit_status = ActorExitStatus::Panicked;
     }
+
+    info!(exit_status=%exit_status, "exit");
+    ctx.exit(&exit_status);
+
     exit_status
 }

@@ -322,7 +322,7 @@ struct PartitionDelta {
 /// The `CheckpointDelta` not only ships for each
 /// partition not only a new position, but also an expected
 /// `from` position. This makes it possible to defensively check that
-/// we are not trying to add records to the index that were already indexed.
+/// we are not trying to add documents to the index that were already indexed.
 #[derive(Default, Clone, Eq, PartialEq)]
 pub struct CheckpointDelta {
     per_partition: BTreeMap<PartitionId, PartitionDelta>,

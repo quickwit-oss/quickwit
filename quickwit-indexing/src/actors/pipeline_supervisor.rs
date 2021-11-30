@@ -171,18 +171,18 @@ impl IndexingPipelineSupervisor {
         }
 
         if !failure_or_unhealthy_actors.is_empty() {
-            error!(healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "indexing pipeline error.");
+            error!(index=%self.params.index_id, gen=self.generation, healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "indexing pipeline error.");
             return Health::FailureOrUnhealthy;
         }
 
         if healthy_actors.is_empty() {
             // all actors finished successfully.
-            info!("indexing-pipeline-success");
+            info!(index=%self.params.index_id, gen=self.generation, "indexing-pipeline-success");
             return Health::Success;
         }
 
         // No error at this point, and there are still actors running
-        debug!(healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "pipeline is judged healthy.");
+        debug!(index=%self.params.index_id, gen=self.generation, healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "pipeline is judged healthy.");
         Health::Healthy
     }
 
@@ -214,7 +214,6 @@ impl IndexingPipelineSupervisor {
         info!(
             root_dir=%self.params.indexer_params.indexing_directory.path().display(),
             merge_policy=?merge_policy,
-            index_uri=?index_metadata.index_uri,
             "spawn-indexing-pipeline",
         );
         let split_store = IndexingSplitStore::create_with_local_store(

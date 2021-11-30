@@ -1,0 +1,23 @@
+name: Publish custom cross images
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "build/cross-images/**"
+
+jobs:
+  build-cross-images:
+    name: Publish cross images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v2
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+      - name: Build and push cross images
+        run: make cross-images

@@ -68,10 +68,14 @@ impl RamStorage {
 
 #[async_trait]
 impl Storage for RamStorage {
+    async fn check(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     async fn put(
         &self,
         path: &Path,
-        payload: Box<dyn crate::PutPayloadProvider>,
+        payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
         let payload_bytes = payload.read_all().await?;
         self.put_data(path, payload_bytes).await;

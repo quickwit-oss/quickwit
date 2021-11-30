@@ -31,7 +31,9 @@ mod query_builder;
 mod wikipedia_config;
 
 pub use config::{match_tag_field_name, IndexConfig, SortBy, SortOrder};
-pub use default_index_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError};
+pub use default_index_config::{
+    DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry,
+};
 pub use error::QueryParserError;
 pub use wikipedia_config::WikipediaIndexConfig;
 

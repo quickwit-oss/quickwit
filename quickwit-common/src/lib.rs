@@ -27,9 +27,6 @@ use std::str::FromStr;
 pub use coolid::new_coolid;
 use tracing::{error, info};
 
-/// Filenames used for hotcache files.
-pub const HOTCACHE_FILENAME: &str = "hotcache";
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum QuickwitEnv {
     UNSET,

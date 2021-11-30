@@ -218,7 +218,10 @@ impl IndexerState {
                         record_timestamp(timestamp, &mut indexed_split.time_range);
                     }
                     let _protect_guard = ctx.protect_zone();
-                    indexed_split.index_writer.add_document(document);
+                    indexed_split
+                        .index_writer
+                        .add_document(document)
+                        .with_context(|| "Failed to add document.")?;
                 }
             }
             ctx.record_progress();

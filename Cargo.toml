@@ -4,6 +4,7 @@ members = [
   "quickwit-actors",
   "quickwit-cli",
   "quickwit-cluster",
+  "quickwit-config",
   "quickwit-core",
   "quickwit-index-config",
   "quickwit-directories",
@@ -14,5 +15,6 @@ members = [
   "quickwit-storage",
   "quickwit-swim",
   "quickwit-telemetry",
-  "quickwit-indexing"
+  "quickwit-indexing",
+  "quickwit-backward-compat"
 ]

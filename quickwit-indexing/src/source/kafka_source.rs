@@ -305,6 +305,12 @@ fn previous_position_for_offset(offset: i64) -> Position {
     }
 }
 
+/// Checks if connecting with the given parameters works.
+pub(super) fn check(client_params: serde_json::Value) -> anyhow::Result<()> {
+    create_consumer(None, client_params)?;
+    Ok(())
+}
+
 /// Creates a new `KafkaSourceConsumer`.
 fn create_consumer(
     client_log_level: Option<String>,

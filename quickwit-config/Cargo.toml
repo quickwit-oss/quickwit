@@ -1,0 +1,20 @@
+[package]
+name = "quickwit-config"
+version = "0.1.0"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
+license = "AGPL-3.0-or-later" # For a commercial license, contact hello@quickwit.io
+description = "Quickwit configuration"
+repository = "https://github.com/quickwit-inc/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
+
+[dependencies]
+anyhow = "1"
+byte-unit = { version = "4", features = ["serde"] }
+quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.8"
+toml = "0.5"
+tracing = '0.1'

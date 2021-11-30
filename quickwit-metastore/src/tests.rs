@@ -20,6 +20,7 @@
 #[cfg(test)]
 pub mod test_suite {
     use std::collections::{HashMap, HashSet};
+    use std::collections::{BTreeSet, HashSet};
     use std::ops::{Range, RangeInclusive};
     use std::sync::Arc;
 
@@ -38,7 +39,7 @@ pub mod test_suite {
         async fn default_for_test() -> Self;
     }
 
-    fn to_set(tags: &[&str]) -> HashSet<String> {
+    fn to_set(tags: &[&str]) -> BTreeSet<String> {
         tags.iter().map(ToString::to_string).collect()
     }
 

@@ -27,7 +27,10 @@ use quickwit_storage::StorageUriResolver;
 use crate::actors::{IndexerParams, IndexingPipelineParams, IndexingPipelineSupervisor};
 use crate::models::IndexingStatistics;
 use crate::source::SourceConfig;
-pub use crate::split_store::{BundledSplitFile, IndexingSplitStore, IndexingSplitStoreParams};
+pub use crate::split_store::{
+    get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
+    SplitFolder,
+};
 
 pub mod actors;
 mod controlled_directory;
@@ -40,9 +43,7 @@ mod test_utils;
 
 pub use test_utils::{mock_split_meta, TestSandbox};
 
-pub use self::garbage_collection::{
-    delete_splits_with_files, run_garbage_collect, FileEntry, SplitDeletionStats,
-};
+pub use self::garbage_collection::{delete_splits_with_files, run_garbage_collect, FileEntry};
 pub use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
 pub async fn index_data(
