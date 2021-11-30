@@ -2390,6 +2390,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "derivative",
  "diesel",
  "diesel_migrations",
  "dotenv",

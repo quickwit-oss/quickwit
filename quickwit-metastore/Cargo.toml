@@ -35,6 +35,10 @@ optional = true
 version = "3"
 optional = true
 
+[dependencies.derivative]
+version = "2.2"
+optional = true
+
 [dev-dependencies]
 dotenv = "0.15"
 mockall = '0.9'
@@ -45,6 +49,6 @@ futures = '0.3'
 rand = "0.8"
 
 [features]
-testsuite = ["mockall", "tempfile"]
+testsuite = ["mockall", "tempfile", "derivative"]
 ci-test = []
 postgres = [ "diesel", "diesel_migrations", "openssl"]

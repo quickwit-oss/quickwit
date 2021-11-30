@@ -141,7 +141,7 @@ impl<'a> From<&'a str> for Position {
 ///
 /// If a partition is missing, it implicitely means that none of its message
 /// has been processed.
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq)]
 pub struct Checkpoint {
     per_partition: BTreeMap<PartitionId, Position>,
 }
