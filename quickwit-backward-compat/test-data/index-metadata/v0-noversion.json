@@ -1,0 +1,10 @@
+{
+  "checkpoint": {
+    "0000000000": "0000000042"
+  },
+  "index_config": {
+    "type": "wikipedia"
+  },
+  "index_id": "my-index",
+  "index_uri": "s3://quickwit-indexes/my-index"
+}
