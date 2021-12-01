@@ -20,7 +20,7 @@
 use std::env;
 use std::fmt::Debug;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
@@ -265,8 +265,7 @@ impl CliCommand {
             .context("'host-key-path-prefix' has a default  value")?
             .to_string();
         let host_key_path =
-            Path::new(format!("{}-{}-{}", host_key_path_prefix, host, port.to_string()).as_str())
-                .to_path_buf();
+            PathBuf::from(format!("{}-{}-{}", host_key_path_prefix, host, port).as_str());
         let mut peer_socket_addrs: Vec<SocketAddr> = Vec::new();
         if matches.is_present("peer-seed") {
             if let Some(values) = matches.values_of("peer-seed") {

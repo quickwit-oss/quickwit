@@ -28,6 +28,7 @@
 #[macro_use]
 mod tests;
 mod split_metadata;
+mod split_metadata_version;
 
 #[cfg(feature = "postgres")]
 extern crate openssl;
@@ -62,7 +63,8 @@ pub use metastore::single_file_metastore::SingleFileMetastore;
 pub use metastore::MockMetastore;
 pub use metastore::{IndexMetadata, Metastore};
 pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};
-pub use split_metadata::{SplitMetadata, SplitMetadataAndFooterOffsets, SplitState};
+pub use split_metadata::{SplitInfo, SplitMetadata, SplitState};
+pub(crate) use split_metadata_version::VersionedSplitMetadataDeserializeHelper;
 
 fn decorate_results_with_output<F: Future<Output = anyhow::Result<()>>>(
     description: &str,

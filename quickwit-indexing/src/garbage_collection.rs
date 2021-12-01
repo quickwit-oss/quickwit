@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use quickwit_actors::ActorContext;
-use quickwit_metastore::{Metastore, MetastoreError, SplitMetadataAndFooterOffsets, SplitState};
+use quickwit_metastore::{Metastore, MetastoreError, SplitMetadata, SplitState};
 use quickwit_storage::StorageError;
 use tantivy::chrono::Utc;
 use thiserror::Error;
@@ -52,10 +52,10 @@ pub struct FileEntry {
     pub file_size_in_bytes: u64, //< TODO switch to `byte_unit::Byte`.
 }
 
-impl From<&SplitMetadataAndFooterOffsets> for FileEntry {
-    fn from(split: &SplitMetadataAndFooterOffsets) -> Self {
+impl From<&SplitMetadata> for FileEntry {
+    fn from(split: &SplitMetadata) -> Self {
         FileEntry {
-            file_name: quickwit_common::split_file(&split.split_metadata.split_id),
+            file_name: quickwit_common::split_file(split.split_id()),
             file_size_in_bytes: split.footer_offsets.end,
         }
     }
@@ -84,12 +84,13 @@ pub async fn run_garbage_collect(
     // Select staged splits with staging timestamp older than grace period timestamp.
     let grace_period_timestamp = Utc::now().timestamp() - staged_grace_period.as_secs() as i64;
 
-    let deletable_staged_splits: Vec<SplitMetadataAndFooterOffsets> = metastore
+    let deletable_staged_splits: Vec<SplitMetadata> = metastore
         .list_splits(index_id, SplitState::Staged, None, &[])
         .await?
         .into_iter()
         // TODO: Update metastore API and push this filter down.
-        .filter(|meta| meta.split_metadata.update_timestamp < grace_period_timestamp)
+        .filter(|meta| meta.update_timestamp < grace_period_timestamp)
+        .map(|meta| meta.split_metadata)
         .collect();
     if let Some(ctx) = ctx_opt {
         ctx.record_progress();
@@ -98,7 +99,10 @@ pub async fn run_garbage_collect(
     if dry_run {
         let mut scheduled_for_delete_splits = metastore
             .list_splits(index_id, SplitState::ScheduledForDeletion, None, &[])
-            .await?;
+            .await?
+            .into_iter()
+            .map(|meta| meta.split_metadata)
+            .collect::<Vec<_>>();
         scheduled_for_delete_splits.extend(deletable_staged_splits);
 
         let candidate_entries: Vec<FileEntry> = scheduled_for_delete_splits
@@ -111,7 +115,7 @@ pub async fn run_garbage_collect(
     // Schedule all eligible staged splits for delete
     let split_ids: Vec<&str> = deletable_staged_splits
         .iter()
-        .map(|meta| meta.split_metadata.split_id.as_str())
+        .map(|meta| meta.split_id())
         .collect();
     metastore
         .mark_splits_for_deletion(index_id, &split_ids)
@@ -124,7 +128,8 @@ pub async fn run_garbage_collect(
         .await?
         .into_iter()
         // TODO: Update metastore API and push this filter down.
-        .filter(|meta| meta.split_metadata.update_timestamp <= grace_period_deletion)
+        .filter(|meta| meta.update_timestamp <= grace_period_deletion)
+        .map(|meta| meta.split_metadata)
         .collect();
 
     let deleted_files = delete_splits_with_files(
@@ -151,7 +156,7 @@ pub async fn delete_splits_with_files(
     index_id: &str,
     indexing_split_store: IndexingSplitStore,
     metastore: Arc<dyn Metastore>,
-    splits: Vec<SplitMetadataAndFooterOffsets>,
+    splits: Vec<SplitMetadata>,
     ctx_opt: Option<&ActorContext<()>>,
 ) -> anyhow::Result<Vec<FileEntry>, SplitDeletionError> {
     let mut deleted_file_entries = Vec::new();
@@ -163,17 +168,11 @@ pub async fn delete_splits_with_files(
             let moved_indexing_split_store = indexing_split_store.clone();
             async move {
                 let file_entry = FileEntry::from(&split);
-                let delete_result = moved_indexing_split_store
-                    .delete(&split.split_metadata.split_id)
-                    .await;
+                let delete_result = moved_indexing_split_store.delete(split.split_id()).await;
                 if let Some(ctx) = ctx_opt {
                     ctx.record_progress();
                 }
-                (
-                    split.split_metadata.split_id.clone(),
-                    file_entry,
-                    delete_result,
-                )
+                (split.split_id().to_string(), file_entry, delete_result)
             }
         })
         .buffer_unordered(MAX_CONCURRENT_STORAGE_REQUESTS);

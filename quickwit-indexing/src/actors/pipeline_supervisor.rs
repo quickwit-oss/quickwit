@@ -230,7 +230,10 @@ impl IndexingPipelineSupervisor {
             .params
             .metastore
             .list_splits(&self.params.index_id, SplitState::Published, None, &[])
-            .await?;
+            .await?
+            .into_iter()
+            .map(|split| split.split_metadata)
+            .collect::<Vec<_>>();
         split_store
             .remove_dangling_splits(&published_splits)
             .await?;
@@ -316,10 +319,7 @@ impl IndexingPipelineSupervisor {
             .spawn_async();
 
         // Merge planner
-        let published_split_metadatas = published_splits
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect_vec();
+        let published_split_metadatas = published_splits.into_iter().collect_vec();
         let merge_planner = MergePlanner::new(
             published_split_metadatas,
             merge_policy.clone(),
@@ -492,7 +492,7 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::Universe;
-    use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
+    use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_storage::StorageUriResolver;
     use serde_json::json;
 
@@ -528,9 +528,7 @@ mod tests {
             });
         metastore
             .expect_stage_split()
-            .withf(move |index_id, metadata| -> bool {
-                (index_id == "test-index") && metadata.split_metadata.split_state == SplitState::New
-            })
+            .withf(move |index_id, _metadata| -> bool { index_id == "test-index" })
             .times(1)
             .returning(|_, _| Ok(()));
         metastore

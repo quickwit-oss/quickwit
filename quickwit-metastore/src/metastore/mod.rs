@@ -30,7 +30,7 @@ use quickwit_index_config::IndexConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};
-use crate::{MetastoreResult, SplitMetadataAndFooterOffsets, SplitState};
+use crate::{MetastoreResult, SplitInfo, SplitMetadata, SplitState};
 
 /// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -108,7 +108,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn stage_split(
         &self,
         index_id: &str,
-        split_metadata: SplitMetadataAndFooterOffsets,
+        split_metadata: SplitMetadata,
     ) -> MetastoreResult<()>;
 
     /// Publishes a list splits.
@@ -143,14 +143,11 @@ pub trait Metastore: Send + Sync + 'static {
         split_state: SplitState,
         time_range: Option<Range<i64>>,
         tags: &[String],
-    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>>;
+    ) -> MetastoreResult<Vec<SplitInfo>>;
 
     /// Lists the splits without filtering.
     /// Returns a list of all splits currently known to the metastore regardless of their state.
-    async fn list_all_splits(
-        &self,
-        index_id: &str,
-    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>>;
+    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitInfo>>;
 
     /// Marks a list of splits for deletion.
     /// This API will change the state to `ScheduledForDeletion` so that it is not referenced by the

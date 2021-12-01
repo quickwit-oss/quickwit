@@ -129,13 +129,13 @@ impl MergeSplitDownloader {
         let mut tantivy_dirs = vec![];
         for split in splits {
             if ctx.kill_switch().is_dead() {
-                warn!(split_id=?split.split_id, "Kill switch was activated. Cancelling download.");
+                warn!(split_id=?split.split_id(), "Kill switch was activated. Cancelling download.");
                 return Err(ActorExitStatus::Killed);
             }
             let _protect_guard = ctx.protect_zone();
             let tantivy_dir = self
                 .storage
-                .fetch_split(&split.split_id, download_directory)
+                .fetch_split(split.split_id(), download_directory)
                 .await
                 .map_err(|error| anyhow::anyhow!(error))?;
             tantivy_dirs.push(tantivy_dir);
@@ -163,7 +163,6 @@ mod tests {
             let split_id = new_split_id();
             SplitMetadata {
                 split_id,
-                split_state: quickwit_metastore::SplitState::Published,
                 ..Default::default()
             }
         })
@@ -176,7 +175,7 @@ mod tests {
                 let buffer = SplitPayloadBuilder::get_split_payload(&[], &[1, 2, 3])?
                     .read_all()
                     .await?;
-                storage_builder = storage_builder.put(&split_file(&split.split_id), &buffer);
+                storage_builder = storage_builder.put(&split_file(split.split_id()), &buffer);
             }
             let ram_storage = storage_builder.build();
             IndexingSplitStore::create_with_no_local_store(Arc::new(ram_storage))
@@ -207,7 +206,7 @@ mod tests {
         ));
         assert_eq!(merge_scratch.merge_operation.splits().len(), 10);
         for split in merge_scratch.merge_operation.splits() {
-            let split_filename = split_file(&split.split_id);
+            let split_filename = split_file(split.split_id());
             let split_filepath = merge_scratch
                 .downloaded_splits_directory
                 .path()

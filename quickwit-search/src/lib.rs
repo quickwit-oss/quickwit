@@ -45,7 +45,7 @@ use std::net::SocketAddr;
 use std::ops::Range;
 
 use anyhow::Context;
-use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadataAndFooterOffsets, SplitState};
+use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
 use tantivy::DocAddress;
@@ -125,16 +125,11 @@ fn extract_time_range(search_request: &SearchRequest) -> Option<Range<i64>> {
     }
 }
 
-fn extract_split_and_footer_offsets(
-    split_metadata_and_footer_offsets: &SplitMetadataAndFooterOffsets,
-) -> SplitIdAndFooterOffsets {
+fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAndFooterOffsets {
     SplitIdAndFooterOffsets {
-        split_id: split_metadata_and_footer_offsets
-            .split_metadata
-            .split_id
-            .clone(),
-        split_footer_start: split_metadata_and_footer_offsets.footer_offsets.start as u64,
-        split_footer_end: split_metadata_and_footer_offsets.footer_offsets.end as u64,
+        split_id: split_metadata.split_id.clone(),
+        split_footer_start: split_metadata.footer_offsets.start as u64,
+        split_footer_end: split_metadata.footer_offsets.end as u64,
     }
 }
 
@@ -142,7 +137,7 @@ fn extract_split_and_footer_offsets(
 async fn list_relevant_splits(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
-) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
+) -> MetastoreResult<Vec<SplitMetadata>> {
     let time_range_opt = extract_time_range(search_request);
     let split_metas = metastore
         .list_splits(
@@ -152,7 +147,10 @@ async fn list_relevant_splits(
             &search_request.tags,
         )
         .await?;
-    Ok(split_metas)
+    Ok(split_metas
+        .into_iter()
+        .map(|metadata| metadata.split_metadata)
+        .collect::<Vec<_>>())
 }
 
 /// Performs a search on the current node.

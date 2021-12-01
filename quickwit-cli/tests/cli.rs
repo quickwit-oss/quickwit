@@ -29,7 +29,7 @@ use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::{create_index_cli, CreateIndexArgs};
 use quickwit_common::rand::append_random_suffix;
-use quickwit_metastore::{Metastore, MetastoreUriResolver, SplitState};
+use quickwit_metastore::{Metastore, MetastoreUriResolver};
 use serde_json::{Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
@@ -377,7 +377,7 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
     let index_path = test_env.indexes_dir_path.join(&index_id);
     assert_eq!(index_path.exists(), true);
 
-    let split_ids = [splits[0].split_metadata.split_id.as_str()];
+    let split_ids = [splits[0].split_id()];
     metastore
         .mark_splits_for_deletion(&index_id, &split_ids)
         .await?;
@@ -468,19 +468,18 @@ async fn test_cmd_garbage_collect_spares_files_within_grace_period() -> Result<(
     ));
 
     let index_path = test_env.indexes_dir_path.join(&index_id);
-    let split_filename = quickwit_common::split_file(splits[0].split_metadata.split_id.as_str());
+    let split_filename = quickwit_common::split_file(splits[0].split_id());
     let split_path = index_path.join(&split_filename);
     assert_eq!(split_path.exists(), true);
 
     // The following steps help turn an existing published split into a staged one
     // without deleting the files.
-    let split_ids = vec![splits[0].split_metadata.split_id.as_str()];
+    let split_ids = vec![splits[0].split_id()];
     metastore
         .mark_splits_for_deletion(&index_id, &split_ids)
         .await?;
     metastore.delete_splits(&index_id, &split_ids).await?;
-    let mut meta = splits[0].clone();
-    meta.split_metadata.split_state = SplitState::New;
+    let meta = splits[0].split_metadata.clone();
     metastore.stage_split(&index_id, meta).await?;
     assert_eq!(split_path.exists(), true);
 

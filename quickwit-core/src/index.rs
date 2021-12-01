@@ -63,7 +63,12 @@ pub async fn delete_index(
     let storage = storage_resolver.resolve(&index_uri)?;
 
     if dry_run {
-        let all_splits = metastore.list_all_splits(index_id).await?;
+        let all_splits = metastore
+            .list_all_splits(index_id)
+            .await?
+            .into_iter()
+            .map(|metadata| metadata.split_metadata)
+            .collect::<Vec<_>>();
 
         let file_entries_to_delete: Vec<FileEntry> =
             all_splits.iter().map(FileEntry::from).collect();
@@ -80,7 +85,7 @@ pub async fn delete_index(
     let split_ids = staged_splits
         .iter()
         .chain(published_splits.iter())
-        .map(|meta| meta.split_metadata.split_id.as_ref())
+        .map(|meta| meta.split_id())
         .collect::<Vec<_>>();
     metastore
         .mark_splits_for_deletion(index_id, &split_ids)
@@ -89,7 +94,10 @@ pub async fn delete_index(
     // Select split to delete
     let splits_to_delete = metastore
         .list_splits(index_id, SplitState::ScheduledForDeletion, None, &[])
-        .await?;
+        .await?
+        .into_iter()
+        .map(|metadata| metadata.split_metadata)
+        .collect::<Vec<_>>();
 
     let split_store = IndexingSplitStore::create_with_no_local_store(storage);
     let deleted_entries = delete_splits_with_files(
@@ -158,10 +166,15 @@ pub async fn reset_index(
     let storage = storage_resolver.resolve(&index_uri)?;
     let split_store = IndexingSplitStore::create_with_no_local_store(storage);
 
-    let splits = metastore.list_all_splits(index_id).await?;
+    let splits = metastore
+        .list_all_splits(index_id)
+        .await?
+        .into_iter()
+        .map(|metadata| metadata.split_metadata)
+        .collect::<Vec<_>>();
     let split_ids = splits
         .iter()
-        .map(|meta| meta.split_metadata.split_id.as_str())
+        .map(|meta| meta.split_id())
         .collect::<Vec<_>>();
     metastore
         .mark_splits_for_deletion(index_id, &split_ids)

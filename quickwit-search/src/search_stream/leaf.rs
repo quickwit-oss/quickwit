@@ -480,9 +480,9 @@ mod tests {
         let splits_offsets = splits
             .into_iter()
             .map(|split_meta| SplitIdAndFooterOffsets {
-                split_id: split_meta.split_metadata.split_id,
-                split_footer_start: split_meta.footer_offsets.start,
-                split_footer_end: split_meta.footer_offsets.end,
+                split_id: split_meta.split_id().to_string(),
+                split_footer_start: split_meta.split_metadata.footer_offsets.start,
+                split_footer_end: split_meta.split_metadata.footer_offsets.end,
             })
             .collect();
         let mut single_node_stream = leaf_search_stream(
@@ -584,9 +584,9 @@ mod tests {
         let splits_offsets = splits
             .into_iter()
             .map(|split_meta| SplitIdAndFooterOffsets {
-                split_id: split_meta.split_metadata.split_id,
-                split_footer_start: split_meta.footer_offsets.start,
-                split_footer_end: split_meta.footer_offsets.end,
+                split_id: split_meta.split_id().to_string(),
+                split_footer_start: split_meta.split_metadata.footer_offsets.start,
+                split_footer_end: split_meta.split_metadata.footer_offsets.end,
             })
             .collect();
         let mut single_node_stream = leaf_search_stream(

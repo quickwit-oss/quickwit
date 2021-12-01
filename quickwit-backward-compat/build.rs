@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use quickwit_index_config::WikipediaIndexConfig;
 use quickwit_metastore::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
-use quickwit_metastore::{IndexMetadata, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState};
+use quickwit_metastore::{IndexMetadata, SplitMetadata};
 
 /// Creates a new [`IndexMetadata`] object against which backward compatibility tests will be run.
 fn sample_index_metadata_for_regression() -> IndexMetadata {
@@ -58,19 +58,15 @@ fn save_index_metadata_test_files() -> anyhow::Result<()> {
 
 /// Creates a split metadata object that will be
 /// used to check for non-regression
-fn sample_split_metadata_for_regression() -> SplitMetadataAndFooterOffsets {
-    SplitMetadataAndFooterOffsets {
-        split_metadata: SplitMetadata {
-            split_id: "split".to_string(),
-            num_docs: 12303,
-            size_in_bytes: 234234,
-            time_range: Some(121000..=130198),
-            split_state: SplitState::Published,
-            create_timestamp: 3,
-            update_timestamp: 1,
-            tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
-            demux_num_ops: 1,
-        },
+fn sample_split_metadata_for_regression() -> SplitMetadata {
+    SplitMetadata {
+        split_id: "split".to_string(),
+        num_docs: 12303,
+        original_size_in_bytes: 234234,
+        time_range: Some(121000..=130198),
+        create_timestamp: 3,
+        tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
+        demux_num_ops: 1,
         footer_offsets: 1000..2000,
     }
 }

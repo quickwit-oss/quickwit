@@ -17,97 +17,62 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use core::fmt;
 use std::collections::BTreeSet;
-use std::fmt;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-/// Carries split metadata and footer offsets. The footer offsets
-/// make it possible to download the footer in a single call to `.get_slice(...)`.
-///
+use crate::VersionedSplitMetadataDeserializeHelper;
+
+/// Carries split metadata.
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SplitInfo {
+    /// The state of the split.
+    pub split_state: SplitState,
+
+    /// Timestamp for tracking when the split was last updated.
+    pub update_timestamp: i64,
+
+    /// Immutable part of the split.
+    pub split_metadata: SplitMetadata,
+}
+
+impl SplitInfo {
+    /// Creates a new instance of split metadata.
+    pub fn new(split_id: String) -> Self {
+        let split_metadata = SplitMetadata {
+            split_id,
+            num_docs: 0,
+            original_size_in_bytes: 0,
+            time_range: None,
+            create_timestamp: utc_now_timestamp(),
+            tags: Default::default(),
+            demux_num_ops: 0,
+            footer_offsets: Default::default(),
+        };
+
+        SplitInfo {
+            split_metadata,
+            update_timestamp: Utc::now().timestamp(),
+
+            split_state: SplitState::New,
+        }
+    }
+
+    /// Returns the split_id.
+    pub fn split_id(&self) -> &str {
+        &self.split_metadata.split_id
+    }
+}
+
+/// Carries immutable split metadata.
 /// This struct can deserialize older format automatically
 /// but can only serialize to the last version.
 #[derive(Clone, Eq, PartialEq, Default, Debug, Serialize)]
 #[serde(into = "VersionedSplitMetadataDeserializeHelper")]
-pub struct SplitMetadataAndFooterOffsets {
-    /// A split metadata carries all meta data about a split.
-    pub split_metadata: SplitMetadata,
-    /// Contains the range of bytes of the footer that needs to be downloaded
-    /// in order to open a split.
-    pub footer_offsets: Range<u64>,
-}
-
-#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
-pub(crate) struct SplitMetadataAndFooterOffsetsV0 {
-    split_metadata: SplitMetadata,
-    footer_offsets: Range<u64>,
-}
-
-impl From<SplitMetadataAndFooterOffsetsV0> for SplitMetadataAndFooterOffsets {
-    fn from(v0: SplitMetadataAndFooterOffsetsV0) -> Self {
-        SplitMetadataAndFooterOffsets {
-            split_metadata: v0.split_metadata,
-            footer_offsets: v0.footer_offsets,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "version")]
-pub(crate) enum VersionedSplitMetadataDeserializeHelper {
-    #[serde(rename = "0")]
-    V0(SplitMetadataAndFooterOffsetsV0),
-}
-
-impl From<VersionedSplitMetadataDeserializeHelper> for SplitMetadataAndFooterOffsets {
-    fn from(versioned_helper: VersionedSplitMetadataDeserializeHelper) -> Self {
-        match versioned_helper {
-            VersionedSplitMetadataDeserializeHelper::V0(split_metadata) => split_metadata.into(),
-        }
-    }
-}
-
-impl From<SplitMetadataAndFooterOffsets> for VersionedSplitMetadataDeserializeHelper {
-    fn from(split_metadata_and_footer_offsets: SplitMetadataAndFooterOffsets) -> Self {
-        VersionedSplitMetadataDeserializeHelper::V0(SplitMetadataAndFooterOffsetsV0 {
-            split_metadata: split_metadata_and_footer_offsets.split_metadata,
-            footer_offsets: split_metadata_and_footer_offsets.footer_offsets,
-        })
-    }
-}
-
-impl<'de> Deserialize<'de> for SplitMetadataAndFooterOffsets {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> {
-        let split_metadata_value = serde_json::Value::deserialize(deserializer)?;
-        // Unfortunately, it is not possible to tell serde that in the absence
-        // of a tag, a given tag should be considered as the default.
-        // Old serialized metadata do not contain the version tag and therefore we are required to
-        // handle this corner case manually.
-        let version_is_present = split_metadata_value
-            .as_object()
-            .map(|obj| obj.contains_key("version"))
-            .unwrap_or(false);
-        if !version_is_present {
-            return Ok(serde_json::from_value::<SplitMetadataAndFooterOffsetsV0>(
-                split_metadata_value,
-            )
-            .map_err(serde::de::Error::custom)?
-            .into());
-        }
-        Ok(
-            serde_json::from_value::<VersionedSplitMetadataDeserializeHelper>(split_metadata_value)
-                .map_err(serde::de::Error::custom)?
-                .into(),
-        )
-    }
-}
-
-/// A split metadata carries all meta data about a split.
-#[derive(Clone, Eq, PartialEq, Default, Debug, Serialize, Deserialize)]
 pub struct SplitMetadata {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
     /// should be enough to uniquely identify a split.
@@ -117,29 +82,21 @@ pub struct SplitMetadata {
 
     /// Number of records (or documents) in the split.
     /// TODO make u64
-    #[serde(alias = "num_records")]
     pub num_docs: usize,
 
     /// Sum of the size (in bytes) of the documents in this split.
     ///
     /// Note this is not the split file size. It is the size of the original
     /// JSON payloads.
-    pub size_in_bytes: u64,
+    pub original_size_in_bytes: u64,
 
     /// If a timestamp field is available, the min / max timestamp in
     /// the split.
     pub time_range: Option<RangeInclusive<i64>>,
 
-    /// The state of the split. This is the only mutable attribute of the split.
-    pub split_state: SplitState,
-
     /// Timestamp for tracking when the split was created.
     #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
-
-    /// Timestamp for tracking when the split was last updated.
-    #[serde(default = "utc_now_timestamp")]
-    pub update_timestamp: i64,
 
     /// A set of tags for categorizing and searching group of splits.
     #[serde(default)]
@@ -148,6 +105,13 @@ pub struct SplitMetadata {
     /// Number of demux operations this split has undergone.
     #[serde(default)]
     pub demux_num_ops: usize,
+
+    /// Contains the range of bytes of the footer that needs to be downloaded
+    /// in order to open a split.
+    ///
+    /// The footer offsets
+    /// make it possible to download the footer in a single call to `.get_slice(...)`.
+    pub footer_offsets: Range<u64>,
 }
 
 impl SplitMetadata {
@@ -155,15 +119,19 @@ impl SplitMetadata {
     pub fn new(split_id: String) -> Self {
         Self {
             split_id,
-            split_state: SplitState::New,
             num_docs: 0,
-            size_in_bytes: 0,
+            original_size_in_bytes: 0,
             time_range: None,
-            create_timestamp: Utc::now().timestamp(),
-            update_timestamp: Utc::now().timestamp(),
+            create_timestamp: utc_now_timestamp(),
             tags: Default::default(),
             demux_num_ops: 0,
+            footer_offsets: Default::default(),
         }
+    }
+
+    /// Returns the split_id.
+    pub fn split_id(&self) -> &str {
+        &self.split_id
     }
 }
 
@@ -210,6 +178,6 @@ impl fmt::Display for SplitState {
 }
 
 /// Helper function to provide a default UTC timestamp.
-fn utc_now_timestamp() -> i64 {
+pub fn utc_now_timestamp() -> i64 {
     Utc::now().timestamp()
 }

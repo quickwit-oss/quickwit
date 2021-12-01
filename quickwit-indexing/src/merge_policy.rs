@@ -65,7 +65,7 @@ impl fmt::Debug for MergeOperation {
             } => {
                 write!(f, "Merge(merged_split_id={},splits=[", split_id)?;
                 for split in splits {
-                    write!(f, "{},", &split.split_id)?;
+                    write!(f, "{},", split.split_id())?;
                 }
                 write!(f, "])")?;
             }
@@ -79,7 +79,7 @@ impl fmt::Debug for MergeOperation {
                 }
                 write!(f, "], input_splits=[")?;
                 for split in splits {
-                    write!(f, "{},", &split.split_id)?;
+                    write!(f, "{},", split.split_id())?;
                 }
                 write!(f, "])")?;
             }
@@ -190,7 +190,7 @@ struct SplitShortDebug<'a>(&'a SplitMetadata);
 impl<'a> fmt::Debug for SplitShortDebug<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Split")
-            .field("split_id", &self.0.split_id)
+            .field("split_id", &self.0.split_id())
             .field("num_docs", &self.0.num_docs)
             .finish()
     }
@@ -742,7 +742,7 @@ mod tests {
         let mut merge_segment_ids: Vec<String> = merge_op
             .splits()
             .iter()
-            .map(|split| split.split_id.clone())
+            .map(|split| split.split_id().to_string())
             .collect();
         merge_segment_ids.sort();
         assert!(matches!(merge_op, MergeOperation::Merge { .. }));
@@ -761,13 +761,13 @@ mod tests {
         let mut splits = create_splits(vec![100; 13]);
         let mut merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 1);
-        assert_eq!(splits[0].split_id, "split_00");
+        assert_eq!(splits[0].split_id(), "split_00");
         assert_eq!(merge_ops.len(), 1);
         let merge_op = merge_ops.pop().unwrap();
         let mut merge_split_ids: Vec<String> = merge_op
             .splits()
             .iter()
-            .map(|split| split.split_id.clone())
+            .map(|split| split.split_id().to_string())
             .collect();
         merge_split_ids.sort();
         assert_eq!(
@@ -793,7 +793,7 @@ mod tests {
         let mut merge_split_ids: Vec<String> = merge_op
             .splits()
             .iter()
-            .map(|split| split.split_id.clone())
+            .map(|split| split.split_id().to_string())
             .collect();
         merge_split_ids.sort();
         assert_eq!(
@@ -952,7 +952,7 @@ mod tests {
         );
         let merge_ops = merge_policy.demux_operations(&mut demux_candidates);
         assert_eq!(demux_candidates.len(), 1);
-        assert_eq!(demux_candidates[0].split_id, "split_02");
+        assert_eq!(demux_candidates[0].split_id(), "split_02");
         assert_eq!(merge_ops.len(), 1);
         assert!(matches!(merge_ops[0], MergeOperation::Demux { .. }));
         assert_eq!(merge_ops[0].splits().len(), 2);
