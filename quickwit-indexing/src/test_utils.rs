@@ -25,7 +25,7 @@ use byte_unit::Byte;
 use quickwit_index_config::IndexConfig;
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{
-    IndexMetadata, Metastore, MetastoreUriResolver, SplitInfo, SplitMetadata, SplitState,
+    IndexMetadata, Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState,
 };
 use quickwit_storage::{Storage, StorageResolverError, StorageUriResolver};
 
@@ -139,9 +139,9 @@ impl TestSandbox {
     }
 }
 
-/// Mock split info helper.
-pub fn mock_split_info(split_id: &str) -> SplitInfo {
-    SplitInfo {
+/// Mock split helper.
+pub fn mock_split(split_id: &str) -> Split {
+    Split {
         split_state: SplitState::Published,
         update_timestamp: 0,
         split_metadata: SplitMetadata {

@@ -90,22 +90,20 @@ pub async fn demux_stats_cli(args: DemuxStatsArgs) -> anyhow::Result<()> {
         .index_config
         .demux_field_name()
         .ok_or_else(|| anyhow::anyhow!("Index must have a demux field to get demux stats."))?;
-    let split_infos = metastore
+    let splits = metastore
         .list_splits(&args.index_id, SplitState::Published, None, &[])
         .await?
         .into_iter()
         .map(|metadata| metadata.split_metadata)
         .collect::<Vec<_>>();
-    let demux_uniq_values: HashSet<String> = split_infos
+    let demux_uniq_values: HashSet<&String> = splits
         .iter()
-        .map(|metadata| {
+        .flat_map(|metadata| {
             metadata
                 .tags
                 .iter()
                 .filter(|tag| match_tag_field_name(&demux_field_name, tag))
-                .cloned()
         })
-        .flatten()
         .collect();
     println!("{}", "Statistic reports on demux:".bold());
     println!(
@@ -114,7 +112,7 @@ pub async fn demux_stats_cli(args: DemuxStatsArgs) -> anyhow::Result<()> {
             "- Found {} `{}` unique values in {} splits.",
             demux_uniq_values.len(),
             demux_field_name,
-            split_infos.len(),
+            splits.len(),
         )
     );
     // Compute split count per demux value.
@@ -124,16 +122,16 @@ pub async fn demux_stats_cli(args: DemuxStatsArgs) -> anyhow::Result<()> {
     );
     let mut split_counts_per_demux_values = Vec::new();
     for demux_value in demux_uniq_values {
-        let split_count = split_infos
+        let split_count = splits
             .iter()
-            .filter(|split_meta| split_meta.tags.contains(&demux_value))
+            .filter(|split_meta| split_meta.tags.contains(demux_value))
             .count();
         split_counts_per_demux_values.push(split_count);
     }
     print_demux_stats(&split_counts_per_demux_values);
 
     // Compute demux unique values count per split.
-    let (non_demuxed_splits, demuxed_splits): (Vec<_>, Vec<_>) = split_infos
+    let (non_demuxed_splits, demuxed_splits): (Vec<_>, Vec<_>) = splits
         .iter()
         .cloned()
         .partition(|split| split.demux_num_ops == 0);
