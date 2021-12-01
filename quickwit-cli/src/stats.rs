@@ -90,14 +90,16 @@ pub async fn demux_stats_cli(args: DemuxStatsArgs) -> anyhow::Result<()> {
         .index_config
         .demux_field_name()
         .ok_or_else(|| anyhow::anyhow!("Index must have a demux field to get demux stats."))?;
-    let split_meta_and_footers = metastore
+    let split_infos = metastore
         .list_splits(&args.index_id, SplitState::Published, None, &[])
-        .await?;
-    let demux_uniq_values: HashSet<String> = split_meta_and_footers
+        .await?
+        .into_iter()
+        .map(|metadata| metadata.split_metadata)
+        .collect::<Vec<_>>();
+    let demux_uniq_values: HashSet<String> = split_infos
         .iter()
-        .map(|metadata_and_footer| {
-            metadata_and_footer
-                .split_metadata
+        .map(|metadata| {
+            metadata
                 .tags
                 .iter()
                 .filter(|tag| match_tag_field_name(&demux_field_name, tag))
@@ -112,7 +114,7 @@ pub async fn demux_stats_cli(args: DemuxStatsArgs) -> anyhow::Result<()> {
             "- Found {} `{}` unique values in {} splits.",
             demux_uniq_values.len(),
             demux_field_name,
-            split_meta_and_footers.len(),
+            split_infos.len(),
         )
     );
     // Compute split count per demux value.
@@ -122,24 +124,18 @@ pub async fn demux_stats_cli(args: DemuxStatsArgs) -> anyhow::Result<()> {
     );
     let mut split_counts_per_demux_values = Vec::new();
     for demux_value in demux_uniq_values {
-        let split_count = split_meta_and_footers
+        let split_count = split_infos
             .iter()
-            .filter(|split_meta_and_footer| {
-                split_meta_and_footer
-                    .split_metadata
-                    .tags
-                    .contains(&demux_value)
-            })
+            .filter(|split_meta| split_meta.tags.contains(&demux_value))
             .count();
         split_counts_per_demux_values.push(split_count);
     }
     print_demux_stats(&split_counts_per_demux_values);
 
     // Compute demux unique values count per split.
-    let (non_demuxed_splits, demuxed_splits): (Vec<_>, Vec<_>) = split_meta_and_footers
+    let (non_demuxed_splits, demuxed_splits): (Vec<_>, Vec<_>) = split_infos
         .iter()
         .cloned()
-        .map(|metadata_and_footer| metadata_and_footer.split_metadata)
         .partition(|split| split.demux_num_ops == 0);
     let non_demuxed_split_demux_values_counts = non_demuxed_splits
         .iter()

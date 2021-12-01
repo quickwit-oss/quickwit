@@ -140,20 +140,19 @@ mod tests {
     use std::path::Path;
 
     use quickwit_actors::Universe;
-    use quickwit_metastore::{
-        MockMetastore, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState,
-    };
+    use quickwit_metastore::{MockMetastore, SplitInfo, SplitMetadata, SplitState};
     use quickwit_storage::MockStorage;
 
     use super::*;
 
-    fn make_split(id: &str) -> SplitMetadataAndFooterOffsets {
-        SplitMetadataAndFooterOffsets {
+    fn make_split(id: &str) -> SplitInfo {
+        SplitInfo {
             split_metadata: SplitMetadata {
                 split_id: id.to_string(),
+                footer_offsets: 5..20,
                 ..Default::default()
             },
-            footer_offsets: 5..20,
+            ..Default::default()
         }
     }
 

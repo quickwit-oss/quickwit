@@ -48,7 +48,7 @@ impl fmt::Debug for PublishOperation {
                 split_date_of_birth: start_time,
             } => f
                 .debug_struct("PublishNewSplit")
-                .field("new_split_id", &new_split_id.split_id)
+                .field("new_split_id", &new_split_id.split_id())
                 .field("checkpoint_delta", checkpoint_delta)
                 .field("tts_in_secs", &start_time.elapsed().as_secs_f32())
                 .finish(),
@@ -58,7 +58,7 @@ impl fmt::Debug for PublishOperation {
             } => {
                 let new_split_ids: Vec<String> = new_splits
                     .iter()
-                    .map(|split| split.split_id.clone())
+                    .map(|split| split.split_id().to_string())
                     .collect();
                 f.debug_struct("ReplaceSplits")
                     .field("new_split_ids", &new_split_ids)

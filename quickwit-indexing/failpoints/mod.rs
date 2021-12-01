@@ -205,14 +205,14 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
     let mut splits = metastore
         .list_splits("test-index", SplitState::Published, None, &[])
         .await?;
-    splits.sort_by_key(|split| *split.split_metadata.time_range.clone().unwrap().start());
+    splits.sort_by_key(|split| *split.time_range.clone().unwrap().start());
     assert_eq!(splits.len(), 2);
     assert_eq!(
-        splits[0].split_metadata.time_range.clone().unwrap(),
+        splits[0].time_range.clone().unwrap(),
         1629889530..=1629889531
     );
     assert_eq!(
-        splits[1].split_metadata.time_range.clone().unwrap(),
+        splits[1].time_range.clone().unwrap(),
         1629889532..=1629889533
     );
     Ok(())
@@ -257,11 +257,8 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     }
 
     let metastore = test_index_builder.metastore();
-    let splits_with_footer_offsets = metastore.list_all_splits(index_id).await?;
-    let splits: Vec<SplitMetadata> = splits_with_footer_offsets
-        .into_iter()
-        .map(|split_and_footer_offsets| split_and_footer_offsets.split_metadata)
-        .collect();
+    let split_infos = metastore.list_all_splits(index_id).await?;
+    let splits: Vec<SplitMetadata> = split_infos.into_iter().collect();
     let merge_scratch_directory = ScratchDirectory::for_test()?;
 
     let downloaded_splits_directory =
@@ -269,7 +266,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     let storage = test_index_builder.index_storage(index_id)?;
     let mut tantivy_dirs: Vec<Box<dyn Directory>> = vec![];
     for split in &splits {
-        let split_filename = split_file(&split.split_id);
+        let split_filename = split_file(split.split_id());
         let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
         storage
             .copy_to_file(Path::new(&split_filename), &dest_filepath)

@@ -156,7 +156,7 @@ mod tests {
 
     use futures::TryStreamExt;
     use quickwit_index_config::WikipediaIndexConfig;
-    use quickwit_indexing::mock_split_meta;
+    use quickwit_indexing::mock_split_info;
     use quickwit_metastore::checkpoint::Checkpoint;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::search_service_server::SearchServiceServer;
@@ -216,7 +216,7 @@ mod tests {
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
              _tags: &[String]| {
-                Ok(vec![mock_split_meta("split_1"), mock_split_meta("split_2")])
+                Ok(vec![mock_split_info("split_1"), mock_split_info("split_2")])
             },
         );
         let mut mock_search_service = MockSearchService::new();

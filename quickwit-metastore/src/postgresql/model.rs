@@ -24,7 +24,7 @@ use chrono::NaiveDateTime;
 use diesel::sql_types::{Nullable, Text};
 
 use crate::postgresql::schema::{indexes, splits};
-use crate::{IndexMetadata, SplitMetadataAndFooterOffsets, SplitState};
+use crate::{IndexMetadata, SplitMetadata, SplitState};
 
 // A raw query that helps figure out if index exist, non-existant
 // splits and not deletable splits.
@@ -89,7 +89,7 @@ pub struct Split {
     pub update_timestamp: NaiveDateTime,
     /// A list of tags for categorizing and searching group of splits.
     pub tags: Vec<String>,
-    // A JSON string containing all of the SplitMetadataAndFooterOffsets.
+    // A JSON string containing all of the SplitMetadata.
     pub split_metadata_json: String,
     /// Index ID. It is used as a foreign key in the database.
     pub index_id: String,
@@ -109,16 +109,12 @@ impl Split {
         SplitState::from_str(&self.split_state).ok()
     }
 
-    /// Make SplitMetadataAndFooterOffsets from stored JSON string.
-    pub fn make_split_metadata_and_footer_offsets(
-        &self,
-    ) -> anyhow::Result<SplitMetadataAndFooterOffsets> {
-        let split_metadata_and_fotter_offsets =
-            serde_json::from_str::<SplitMetadataAndFooterOffsets>(
-                self.split_metadata_json.as_str(),
-            )
-            .map_err(|err| anyhow::anyhow!(err))?;
+    /// Make SplitMetadata from stored JSON string.
+    pub fn make_split_metadata(&self) -> anyhow::Result<SplitMetadata> {
+        let split_metadata =
+            serde_json::from_str::<SplitMetadata>(self.split_metadata_json.as_str())
+                .map_err(|err| anyhow::anyhow!(err))?;
 
-        Ok(split_metadata_and_fotter_offsets)
+        Ok(split_metadata)
     }
 }

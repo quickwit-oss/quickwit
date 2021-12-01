@@ -57,7 +57,7 @@ impl SyncActor for MergePlanner {
         let mut has_new_young_split = false;
         for split in message.new_splits {
             if self.merge_policy.is_mature(&split) {
-                info!(split_id=%split.split_id, num_docs=split.num_docs, size_in_bytes=split.size_in_bytes, "mature-split");
+                info!(split_id=%split.split_id(), num_docs=split.num_docs, size_in_bytes=split.original_size_in_bytes, "mature-split");
                 continue;
             }
             self.young_splits.push(split);
@@ -105,11 +105,9 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet, HashMap};
     use std::iter::FromIterator;
     use std::ops::RangeInclusive;
-    use std::time::UNIX_EPOCH;
 
     use proptest::sample::select;
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
-    use quickwit_metastore::SplitState;
     use tokio::runtime::Runtime;
 
     use super::*;
@@ -150,36 +148,33 @@ mod tests {
 
     fn fake_merge(splits: &[SplitMetadata]) -> SplitMetadata {
         assert!(!splits.is_empty(), "Splits is not empty.");
-        let update_timestamp = std::time::SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
         let num_docs = splits.iter().map(|split| split.num_docs).sum();
-        let size_in_bytes = splits.iter().map(|split| split.size_in_bytes).sum();
+        let size_in_bytes = splits
+            .iter()
+            .map(|split| split.original_size_in_bytes)
+            .sum();
         let time_range = merged_timestamp(splits);
         let merged_split_id = new_split_id();
         let tags = compute_merge_tags(splits);
         SplitMetadata {
             split_id: merged_split_id,
             num_docs,
-            size_in_bytes,
+            original_size_in_bytes: size_in_bytes,
             time_range,
-            split_state: SplitState::Published,
             create_timestamp: 0,
-            update_timestamp,
             tags,
             demux_num_ops: 0,
+            footer_offsets: 0..100,
         }
     }
 
     fn fake_demux(splits: &[SplitMetadata]) -> Vec<SplitMetadata> {
         assert!(!splits.is_empty(), "Splits must not be empty.");
-        let update_timestamp = std::time::SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
         let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
-        let size_in_bytes: u64 = splits.iter().map(|split| split.size_in_bytes).sum();
+        let size_in_bytes: u64 = splits
+            .iter()
+            .map(|split| split.original_size_in_bytes)
+            .sum();
         let time_range = merged_timestamp(splits);
         let tags = compute_merge_tags(splits);
         let mut demux_values_map = BTreeMap::new();
@@ -201,14 +196,13 @@ mod tests {
             let split_metadata = SplitMetadata {
                 split_id: new_split_id(),
                 num_docs: demuxed_split.total_num_docs(),
-                size_in_bytes: (size_in_bytes as f32 / num_docs as f32) as u64
+                original_size_in_bytes: (size_in_bytes as f32 / num_docs as f32) as u64
                     * demuxed_split.total_num_docs() as u64,
                 time_range: time_range.clone(),
-                split_state: SplitState::Published,
                 create_timestamp: 0,
-                update_timestamp,
                 tags: tags.clone(),
                 demux_num_ops: 1,
+                footer_offsets: 0..100,
             };
             splits_metadata.push(split_metadata);
         }
@@ -220,7 +214,7 @@ mod tests {
         merge_op: &MergeOperation,
     ) -> Vec<SplitMetadata> {
         for split in merge_op.splits() {
-            assert!(split_index.remove(&split.split_id).is_some());
+            assert!(split_index.remove(split.split_id()).is_some());
         }
         let splits = match merge_op {
             MergeOperation::Merge { splits, .. } => {
@@ -229,7 +223,7 @@ mod tests {
             MergeOperation::Demux { splits, .. } => fake_demux(splits),
         };
         for split in splits.iter() {
-            split_index.insert(split.split_id.clone(), split.clone());
+            split_index.insert(split.split_id().to_string(), split.clone());
         }
         splits
     }
@@ -246,7 +240,7 @@ mod tests {
         let (merge_planner_mailbox, merge_planner_handler) =
             universe.spawn_actor(merge_planner).spawn_sync();
         for split in incoming_splits {
-            split_index.insert(split.split_id.clone(), split.clone());
+            split_index.insert(split.split_id().to_string(), split.clone());
             universe
                 .send_message(
                     &merge_planner_mailbox,
@@ -285,14 +279,13 @@ mod tests {
     ) -> SplitMetadata {
         SplitMetadata {
             split_id: crate::new_split_id(),
-            split_state: SplitState::Published,
             num_docs: num_docs as usize,
-            size_in_bytes: 256u64 * num_docs,
+            original_size_in_bytes: 256u64 * num_docs,
             time_range: Some(time_range),
             create_timestamp: 0,
-            update_timestamp: 0,
             tags: BTreeSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
             demux_num_ops: 0,
+            footer_offsets: 0..100,
         }
     }
 

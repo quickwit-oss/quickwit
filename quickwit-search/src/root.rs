@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
-use quickwit_metastore::{Metastore, SplitMetadata, SplitMetadataAndFooterOffsets};
+use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse, PartialHit,
     SearchRequest, SearchResponse,
@@ -59,9 +59,9 @@ pub async fn root_search(
     let index_config_str = serde_json::to_string(&index_metadata.index_config)
         .map_err(|error| SearchError::InternalError(error.to_string()))?;
     let split_metadata_list = list_relevant_splits(search_request, metastore).await?;
-    let split_metadata_map: HashMap<String, SplitMetadataAndFooterOffsets> = split_metadata_list
+    let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
         .into_iter()
-        .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
+        .map(|metadata| (metadata.split_id().to_string(), metadata))
         .collect();
     let jobs: Vec<Job> = job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
     let assigned_leaf_search_jobs = client_pool.assign_jobs(jobs, &HashSet::default()).await?;
@@ -173,7 +173,7 @@ fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
 
 pub(crate) fn job_for_splits(
     split_ids: &HashSet<&String>,
-    split_metadata_map: &HashMap<String, SplitMetadataAndFooterOffsets>,
+    split_metadata_map: &HashMap<String, SplitMetadata>,
 ) -> Vec<Job> {
     // Create a job for fetching docs and assign the splits that the node is responsible for based
     // on the job.
@@ -182,7 +182,7 @@ pub(crate) fn job_for_splits(
         .filter(|(split_id, _)| split_ids.contains(split_id))
         .map(|(split_id, metadata)| Job {
             split_id: split_id.to_string(),
-            cost: compute_split_cost(&metadata.split_metadata),
+            cost: compute_split_cost(metadata),
         })
         .collect();
     leaf_search_jobs
@@ -192,7 +192,7 @@ fn jobs_to_leaf_request(
     request: &SearchRequest,
     index_config_str: &str,
     index_uri: &str,
-    split_metadata_map: &HashMap<String, SplitMetadataAndFooterOffsets>,
+    split_metadata_map: &HashMap<String, SplitMetadata>,
     jobs: &[Job],
 ) -> LeafSearchRequest {
     let mut request_with_offset_0 = request.clone();
@@ -215,7 +215,7 @@ fn jobs_to_leaf_request(
 fn jobs_to_fetch_docs_request(
     index_id: &str,
     index_uri: &str,
-    split_metadata_map: &HashMap<String, SplitMetadataAndFooterOffsets>,
+    split_metadata_map: &HashMap<String, SplitMetadata>,
     partial_hits_map: &mut HashMap<String, Vec<PartialHit>>,
     jobs: &[Job],
 ) -> FetchDocsRequest {
@@ -243,7 +243,7 @@ mod tests {
     use std::ops::Range;
 
     use quickwit_index_config::WikipediaIndexConfig;
-    use quickwit_indexing::mock_split_meta;
+    use quickwit_indexing::mock_split_info;
     use quickwit_metastore::checkpoint::Checkpoint;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::SplitSearchError;
@@ -306,7 +306,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_info("split1")]) },
         );
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().returning(
@@ -368,7 +368,7 @@ mod tests {
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
              _tags: &[String]| {
-                Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
+                Ok(vec![mock_split_info("split1"), mock_split_info("split2")])
             },
         );
         let mut mock_search_service1 = MockSearchService::new();
@@ -453,7 +453,7 @@ mod tests {
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
              _tags: &[String]| {
-                Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
+                Ok(vec![mock_split_info("split1"), mock_split_info("split2")])
             },
         );
 
@@ -564,7 +564,7 @@ mod tests {
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
              _tags: &[String]| {
-                Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
+                Ok(vec![mock_split_info("split1"), mock_split_info("split2")])
             },
         );
         let mut mock_search_service1 = MockSearchService::new();
@@ -690,7 +690,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_info("split1")]) },
         );
         let mut first_call = true;
         let mut mock_search_service1 = MockSearchService::new();
@@ -764,7 +764,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_info("split1")]) },
         );
 
         let mut mock_search_service1 = MockSearchService::new();
@@ -825,7 +825,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_info("split1")]) },
         );
         // Service1 - broken node.
         let mut mock_search_service1 = MockSearchService::new();
@@ -911,7 +911,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_info("split1")]) },
         );
 
         // Service1 - working node.

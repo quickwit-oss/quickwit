@@ -41,7 +41,7 @@ pub mod source;
 mod split_store;
 mod test_utils;
 
-pub use test_utils::{mock_split_meta, TestSandbox};
+pub use test_utils::{mock_split_info, mock_split_meta, TestSandbox};
 
 pub use self::garbage_collection::{delete_splits_with_files, run_garbage_collect, FileEntry};
 pub use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};

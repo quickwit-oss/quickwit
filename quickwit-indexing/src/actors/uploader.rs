@@ -29,7 +29,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox, QueueCapacity};
-use quickwit_metastore::{Metastore, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState};
+use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
 use tantivy::chrono::Utc;
 use tokio::sync::oneshot::Receiver;
@@ -97,22 +97,15 @@ impl Actor for Uploader {
     }
 }
 
-fn create_split_metadata(
-    split: &PackagedSplit,
-    footer_offsets: Range<u64>,
-) -> SplitMetadataAndFooterOffsets {
-    SplitMetadataAndFooterOffsets {
-        split_metadata: SplitMetadata {
-            split_id: split.split_id.clone(),
-            num_docs: split.num_docs as usize,
-            time_range: split.time_range.clone(),
-            size_in_bytes: split.size_in_bytes,
-            split_state: SplitState::New,
-            create_timestamp: Utc::now().timestamp(),
-            update_timestamp: Utc::now().timestamp(),
-            tags: split.tags.clone(),
-            demux_num_ops: split.demux_num_ops,
-        },
+fn create_split_metadata(split: &PackagedSplit, footer_offsets: Range<u64>) -> SplitMetadata {
+    SplitMetadata {
+        split_id: split.split_id.clone(),
+        num_docs: split.num_docs as usize,
+        time_range: split.time_range.clone(),
+        original_size_in_bytes: split.size_in_bytes,
+        create_timestamp: Utc::now().timestamp(),
+        tags: split.tags.clone(),
+        demux_num_ops: split.demux_num_ops,
         footer_offsets,
     }
 }
@@ -156,15 +149,15 @@ async fn stage_and_upload_split(
         &packaged_split.hotcache_bytes,
     )?;
 
-    let split_metadata_and_footer_offsets = create_split_metadata(
+    let split_metadata = create_split_metadata(
         packaged_split,
         split_streamer.footer_range.start as u64..split_streamer.footer_range.end as u64,
     );
     let index_id = packaged_split.index_id.clone();
-    let split_metadata = split_metadata_and_footer_offsets.split_metadata.clone();
+    let split_metadata = split_metadata.clone();
     info!(split_id = packaged_split.split_id.as_str(), "staging-split");
     metastore
-        .stage_split(&index_id, split_metadata_and_footer_offsets)
+        .stage_split(&index_id, split_metadata.clone())
         .await?;
     counters.num_staged_splits.fetch_add(1, Ordering::SeqCst);
 
@@ -286,9 +279,8 @@ mod tests {
             .expect_stage_split()
             .withf(move |index_id, metadata| -> bool {
                 (index_id == "test-index")
-                    && &metadata.split_metadata.split_id == "test-split"
-                    && metadata.split_metadata.time_range == Some(1628203589..=1628203640)
-                    && metadata.split_metadata.split_state == SplitState::New
+                    && metadata.split_id() == "test-split"
+                    && metadata.time_range == Some(1628203589..=1628203640)
             })
             .times(1)
             .returning(|_, _| Ok(()));
@@ -338,7 +330,7 @@ mod tests {
             ..
         } = publisher_message.operation
         {
-            assert_eq!(&new_split.split_id, "test-split");
+            assert_eq!(new_split.split_id(), "test-split");
             assert_eq!(checkpoint_delta, CheckpointDelta::from(3..15));
         } else {
             panic!("Expected publish new split operation");
@@ -360,9 +352,8 @@ mod tests {
             .withf(move |index_id, metadata| -> bool {
                 (index_id == "test-index")
                     && vec!["test-split-1".to_owned(), "test-split-2".to_owned()]
-                        .contains(&metadata.split_metadata.split_id)
-                    && metadata.split_metadata.time_range == Some(1628203589..=1628203640)
-                    && metadata.split_metadata.split_state == SplitState::New
+                        .contains(&metadata.split_id().to_string())
+                    && metadata.time_range == Some(1628203589..=1628203640)
             })
             .times(2)
             .returning(|_, _| Ok(()));
@@ -437,8 +428,8 @@ mod tests {
             // Sort first to avoid test failing.
             replaced_split_ids.sort();
             assert_eq!(new_splits.len(), 2);
-            assert_eq!(new_splits[0].split_id, "test-split-1");
-            assert_eq!(new_splits[1].split_id, "test-split-2");
+            assert_eq!(new_splits[0].split_id(), "test-split-1");
+            assert_eq!(new_splits[1].split_id(), "test-split-2");
             assert_eq!(
                 &replaced_split_ids,
                 &[

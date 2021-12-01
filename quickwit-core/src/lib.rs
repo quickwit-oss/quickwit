@@ -47,7 +47,13 @@ mod tests {
         test_sandbox.add_documents(vec![
             serde_json::json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
         ]).await?;
-        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits = test_sandbox
+            .metastore()
+            .list_all_splits(index_id)
+            .await?
+            .into_iter()
+            .map(|metadata| metadata.split_metadata)
+            .collect::<Vec<_>>();
         let file_entries: Vec<FileEntry> = splits.iter().map(FileEntry::from).collect();
         assert_eq!(file_entries.len(), 1);
         let index_meta = test_sandbox.metastore().index_metadata(index_id).await?;

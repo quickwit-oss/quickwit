@@ -73,8 +73,10 @@ impl Actor for MergeExecutor {
                 splits,
             } => {
                 let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
-                let in_merge_split_ids: Vec<String> =
-                    splits.iter().map(|split| split.split_id.clone()).collect();
+                let in_merge_split_ids: Vec<String> = splits
+                    .iter()
+                    .map(|split| split.split_id().to_string())
+                    .collect();
                 info_span!("merge",
                     msg_id=&msg_id,
                     dir=%merge_scratch.merge_scratch_directory.path().display(),
@@ -88,8 +90,10 @@ impl Actor for MergeExecutor {
                 splits,
             } => {
                 let num_docs: usize = splits.iter().map(|split| split.num_docs).sum();
-                let in_demux_split_idx: Vec<String> =
-                    splits.iter().map(|split| split.split_id.clone()).collect();
+                let in_demux_split_idx: Vec<String> = splits
+                    .iter()
+                    .map(|split| split.split_id().to_string())
+                    .collect();
                 info_span!("demux",
                     msg_id=&msg_id,
                     dir=%merge_scratch.merge_scratch_directory.path().display(),
@@ -181,7 +185,10 @@ fn merge_time_range(splits: &[SplitMetadata]) -> Option<RangeInclusive<i64>> {
 }
 
 fn sum_doc_sizes_in_bytes(splits: &[SplitMetadata]) -> u64 {
-    splits.iter().map(|split| split.size_in_bytes).sum::<u64>()
+    splits
+        .iter()
+        .map(|split| split.original_size_in_bytes)
+        .sum::<u64>()
 }
 
 fn sum_num_docs(splits: &[SplitMetadata]) -> u64 {
@@ -271,8 +278,10 @@ impl MergeExecutor {
     ) -> anyhow::Result<()> {
         let start = Instant::now();
         info!("merge-start");
-        let replaced_split_ids: Vec<String> =
-            splits.iter().map(|split| split.split_id.clone()).collect();
+        let replaced_split_ids: Vec<String> = splits
+            .iter()
+            .map(|split| split.split_id().to_string())
+            .collect();
         let (union_index_meta, split_directories) = open_split_directories(&tantivy_dirs)?;
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         fail_point!("before-merge-split");
@@ -342,7 +351,7 @@ impl MergeExecutor {
         let demux_field_name = self.demux_field_name.as_ref().unwrap();
         let replaced_split_ids = splits
             .iter()
-            .map(|split| split.split_id.clone())
+            .map(|split| split.split_id().to_string())
             .collect_vec();
         let (index_metas, replaced_segments) =
             load_metas_and_segments(downloaded_splits_directory.path(), &replaced_split_ids)?;
@@ -405,7 +414,10 @@ impl MergeExecutor {
         // We cannot get the right `docs_size_in_bytes` for demuxed splits as it
         // is obtained at indexing. Thus we do a simple ratio `num docs * total_docs_size_in_bytes /
         // total_num_docs`. TODO: should we use another proxy to have a better estimate?
-        let total_docs_size_in_bytes = splits.iter().map(|split| split.size_in_bytes).sum::<u64>();
+        let total_docs_size_in_bytes = splits
+            .iter()
+            .map(|split| split.original_size_in_bytes)
+            .sum::<u64>();
         let total_num_docs = sum_num_docs(&splits);
         let initial_demux_num_ops = splits
             .iter()
@@ -831,11 +843,12 @@ mod tests {
             test_index_builder.add_documents(docs).await?;
         }
         let metastore = test_index_builder.metastore();
-        let splits_with_footer_offsets = metastore.list_all_splits(index_id).await?;
-        let splits: Vec<SplitMetadata> = splits_with_footer_offsets
+        let splits = metastore
+            .list_all_splits(index_id)
+            .await?
             .into_iter()
-            .map(|split_and_footer_offsets| split_and_footer_offsets.split_metadata)
-            .collect();
+            .map(|meta| meta.split_metadata)
+            .collect::<Vec<_>>();
         assert_eq!(splits.len(), 4);
         let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory =
@@ -843,7 +856,7 @@ mod tests {
         let storage = test_index_builder.index_storage(index_id)?;
         let mut tantivy_dirs: Vec<Box<dyn Directory>> = vec![];
         for split in &splits {
-            let split_filename = split_file(&split.split_id);
+            let split_filename = split_file(split.split_id());
             let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
             storage
                 .copy_to_file(Path::new(&split_filename), &dest_filepath)
@@ -924,19 +937,22 @@ mod tests {
             test_index_builder.add_documents(docs).await?;
         }
         let metastore = test_index_builder.metastore();
-        let splits_with_footer_offsets = metastore.list_all_splits(index_id).await?;
-        let splits: Vec<SplitMetadata> = splits_with_footer_offsets
+        let split_infos = metastore.list_all_splits(index_id).await?;
+        let splits: Vec<SplitMetadata> = split_infos
             .into_iter()
-            .map(|split_and_footer_offsets| split_and_footer_offsets.split_metadata)
+            .map(|split| split.split_metadata)
             .collect();
         let demux_split_ids = (0..splits.len() - 1).map(|_| new_split_id()).collect_vec();
-        let total_num_bytes_docs = splits.iter().map(|split| split.size_in_bytes).sum::<u64>();
+        let total_num_bytes_docs = splits
+            .iter()
+            .map(|split| split.original_size_in_bytes)
+            .sum::<u64>();
         let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits")?;
         let storage = test_index_builder.index_storage(index_id)?;
         for split in &splits {
-            let split_filename = split_file(&split.split_id);
+            let split_filename = split_file(split.split_id());
             let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
             storage
                 .copy_to_file(Path::new(&split_filename), &dest_filepath)

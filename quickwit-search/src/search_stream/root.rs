@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
-use quickwit_metastore::{Metastore, SplitMetadataAndFooterOffsets};
+use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
 use tokio_stream::StreamMap;
 use tracing::*;
@@ -50,10 +50,10 @@ pub async fn root_search_stream(
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
 
     // Create a hash map of SplitMetadata with split id as a key.
-    let split_metadata_map: HashMap<String, SplitMetadataAndFooterOffsets> = split_metadata_list
+    let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
         .clone()
         .into_iter()
-        .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
+        .map(|metadata| (metadata.split_id().to_string(), metadata))
         .collect();
     let leaf_search_jobs: Vec<Job> =
         job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
@@ -89,7 +89,7 @@ fn jobs_to_leaf_request(
     request: &SearchStreamRequest,
     index_config_str: &str,
     index_uri: &str,
-    split_metadata_map: &HashMap<String, SplitMetadataAndFooterOffsets>,
+    split_metadata_map: &HashMap<String, SplitMetadata>,
     jobs: &[Job],
 ) -> LeafSearchStreamRequest {
     LeafSearchStreamRequest {
@@ -110,7 +110,7 @@ mod tests {
     use std::ops::Range;
 
     use quickwit_index_config::WikipediaIndexConfig;
-    use quickwit_indexing::mock_split_meta;
+    use quickwit_indexing::mock_split_info;
     use quickwit_metastore::checkpoint::Checkpoint;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::OutputFormat;
@@ -147,7 +147,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_info("split1")]) },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -209,7 +209,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split_info("split1")]) },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -268,7 +268,7 @@ mod tests {
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
              _tags: &[String]| {
-                Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
+                Ok(vec![mock_split_info("split1"), mock_split_info("split2")])
             },
         );
         let mut mock_search_service = MockSearchService::new();

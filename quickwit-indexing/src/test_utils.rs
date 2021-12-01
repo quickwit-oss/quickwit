@@ -25,8 +25,7 @@ use byte_unit::Byte;
 use quickwit_index_config::IndexConfig;
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{
-    IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadata, SplitMetadataAndFooterOffsets,
-    SplitState,
+    IndexMetadata, Metastore, MetastoreUriResolver, SplitInfo, SplitMetadata, SplitState,
 };
 use quickwit_storage::{Storage, StorageResolverError, StorageUriResolver};
 
@@ -140,21 +139,35 @@ impl TestSandbox {
     }
 }
 
-/// Mock split meta helper.
-pub fn mock_split_meta(split_id: &str) -> SplitMetadataAndFooterOffsets {
-    SplitMetadataAndFooterOffsets {
-        footer_offsets: 700..800,
+/// Mock split info helper.
+pub fn mock_split_info(split_id: &str) -> SplitInfo {
+    SplitInfo {
+        split_state: SplitState::Published,
+        update_timestamp: 0,
         split_metadata: SplitMetadata {
             split_id: split_id.to_string(),
-            split_state: SplitState::Published,
             num_docs: 10,
-            size_in_bytes: 256,
+            original_size_in_bytes: 256,
             time_range: None,
             create_timestamp: 0,
-            update_timestamp: 0,
             tags: Default::default(),
             demux_num_ops: 0,
+            footer_offsets: 700..800,
         },
+    }
+}
+
+/// Mock split meta helper.
+pub fn mock_split_meta(split_id: &str) -> SplitMetadata {
+    SplitMetadata {
+        split_id: split_id.to_string(),
+        num_docs: 10,
+        original_size_in_bytes: 256,
+        time_range: None,
+        create_timestamp: 0,
+        tags: Default::default(),
+        demux_num_ops: 0,
+        footer_offsets: 700..800,
     }
 }
 

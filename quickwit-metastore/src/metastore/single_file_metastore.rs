@@ -35,7 +35,7 @@ use crate::checkpoint::CheckpointDelta;
 use crate::metastore::match_tags_filter;
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
-    MetastoreResult, SplitMetadata, SplitMetadataAndFooterOffsets, SplitState,
+    MetastoreResult, SplitInfo, SplitMetadata, SplitState,
 };
 
 /// Metadata file managed by [`SingleFileMetastore`].
@@ -47,7 +47,7 @@ pub struct MetadataSet {
     /// Metadata specific to the index.
     pub index: IndexMetadata,
     /// List of splits belonging to the index.
-    pub splits: HashMap<String, SplitMetadataAndFooterOffsets>,
+    pub splits: HashMap<String, SplitInfo>,
 }
 
 /// Creates a path to the metadata file from the given index ID.
@@ -203,15 +203,15 @@ impl InnerSingleFileMetastore {
                 }
             };
 
-            match metadata.split_metadata.split_state {
+            match metadata.split_state {
                 SplitState::Published => {
                     // Split is already published. This is fine, we just skip it.
                     continue;
                 }
                 SplitState::Staged => {
                     // The split state needs to be updated.
-                    metadata.split_metadata.split_state = SplitState::Published;
-                    metadata.split_metadata.update_timestamp = Utc::now().timestamp();
+                    metadata.split_state = SplitState::Published;
+                    metadata.update_timestamp = Utc::now().timestamp();
                 }
                 _ => {
                     split_not_staged_ids.push(split_id.to_string());
@@ -251,13 +251,13 @@ impl InnerSingleFileMetastore {
                 }
             };
 
-            if metadata.split_metadata.split_state == SplitState::ScheduledForDeletion {
+            if metadata.split_state == SplitState::ScheduledForDeletion {
                 // If the split is already scheduled for deletion, This is fine, we just skip it.
                 continue;
             }
 
-            metadata.split_metadata.split_state = SplitState::ScheduledForDeletion;
-            metadata.split_metadata.update_timestamp = Utc::now().timestamp();
+            metadata.split_state = SplitState::ScheduledForDeletion;
+            metadata.update_timestamp = Utc::now().timestamp();
             is_modified = true;
         }
 
@@ -327,31 +327,33 @@ impl InnerSingleFileMetastore {
     async fn stage_split(
         &mut self,
         index_id: &str,
-        mut metadata: SplitMetadataAndFooterOffsets,
+        split_metadata: SplitMetadata,
     ) -> MetastoreResult<()> {
         let mut metadata_set = self.get_index(index_id).await?;
 
         // Check whether the split exists.
         // If the split exists, return an error to prevent the split from being registered.
-        if metadata_set
-            .splits
-            .contains_key(&metadata.split_metadata.split_id)
-        {
+        if metadata_set.splits.contains_key(split_metadata.split_id()) {
             return Err(MetastoreError::InternalError {
                 message: format!(
                     "Try to stage split that already exists ({})",
-                    metadata.split_metadata.split_id
+                    split_metadata.split_id()
                 ),
                 cause: anyhow::anyhow!(""),
             });
         }
 
-        // Insert a new split metadata as `Staged` state.
-        metadata.split_metadata.split_state = SplitState::Staged;
-        metadata.split_metadata.update_timestamp = Utc::now().timestamp();
+        let metadata = SplitInfo {
+            split_state: SplitState::Staged,
+
+            update_timestamp: Utc::now().timestamp(),
+
+            split_metadata,
+        };
+
         metadata_set
             .splits
-            .insert(metadata.split_metadata.split_id.to_string(), metadata);
+            .insert(metadata.split_id().to_string(), metadata);
 
         self.put_index(metadata_set).await?;
 
@@ -399,7 +401,7 @@ impl InnerSingleFileMetastore {
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
         tags: &[String],
-    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
+    ) -> MetastoreResult<Vec<SplitInfo>> {
         let time_range_filter = |split_metadata: &SplitMetadata| match (
             time_range_opt.as_ref(),
             split_metadata.time_range.as_ref(),
@@ -424,7 +426,7 @@ impl InnerSingleFileMetastore {
             .splits
             .into_values()
             .filter(|metadata| {
-                metadata.split_metadata.split_state == state
+                metadata.split_state == state
                     && time_range_filter(&metadata.split_metadata)
                     && tag_filter(&metadata.split_metadata)
             })
@@ -432,10 +434,7 @@ impl InnerSingleFileMetastore {
         Ok(splits)
     }
 
-    async fn list_all_splits(
-        &mut self,
-        index_id: &str,
-    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
+    async fn list_all_splits(&mut self, index_id: &str) -> MetastoreResult<Vec<SplitInfo>> {
         let metadata_set = self.get_index(index_id).await?;
         let splits = metadata_set.splits.into_values().collect();
         Ok(splits)
@@ -475,7 +474,7 @@ impl InnerSingleFileMetastore {
                 }
             };
 
-            match metadata.split_metadata.split_state {
+            match metadata.split_state {
                 SplitState::ScheduledForDeletion | SplitState::Staged => {
                     // Only `ScheduledForDeletion` and `Staged` can be deleted
                     metadata_set.splits.remove(split_id);
@@ -558,11 +557,7 @@ impl Metastore for SingleFileMetastore {
         inner_metastore.delete_index(index_id).await
     }
 
-    async fn stage_split(
-        &self,
-        index_id: &str,
-        metadata: SplitMetadataAndFooterOffsets,
-    ) -> MetastoreResult<()> {
+    async fn stage_split(&self, index_id: &str, metadata: SplitMetadata) -> MetastoreResult<()> {
         let mut inner_metastore = self.inner.lock().await;
         inner_metastore.stage_split(index_id, metadata).await
     }
@@ -597,17 +592,14 @@ impl Metastore for SingleFileMetastore {
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
         tags: &[String],
-    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
+    ) -> MetastoreResult<Vec<SplitInfo>> {
         let mut inner_metastore = self.inner.lock().await;
         inner_metastore
             .list_splits(index_id, state, time_range_opt, tags)
             .await
     }
 
-    async fn list_all_splits(
-        &self,
-        index_id: &str,
-    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
+    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitInfo>> {
         let mut inner_metastore = self.inner.lock().await;
         inner_metastore.list_all_splits(index_id).await
     }
@@ -718,8 +710,7 @@ mod tests {
     use crate::checkpoint::{Checkpoint, CheckpointDelta};
     use crate::metastore::single_file_metastore::{meta_path, MetadataSet};
     use crate::{
-        IndexMetadata, Metastore, MetastoreError, SingleFileMetastore, SplitMetadata,
-        SplitMetadataAndFooterOffsets, SplitState,
+        IndexMetadata, Metastore, MetastoreError, SingleFileMetastore, SplitMetadata, SplitState,
     };
 
     #[tokio::test]
@@ -828,18 +819,14 @@ mod tests {
 
         let index_id = "my-index";
         let split_id = "split-one";
-        let split_metadata = SplitMetadataAndFooterOffsets {
+        let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id.to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: split_id.to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
         let index_metadata = IndexMetadata {
@@ -936,18 +923,14 @@ mod tests {
             let metastore = metastore.clone();
             let current_timestamp = Utc::now().timestamp();
             let handle = tokio::spawn(async move {
-                let split_metadata = SplitMetadataAndFooterOffsets {
+                let split_metadata = SplitMetadata {
                     footer_offsets: 1000..2000,
-                    split_metadata: SplitMetadata {
-                        split_id: format!("split-{}", i),
-                        split_state: SplitState::Staged,
-                        num_docs: 1,
-                        size_in_bytes: 2,
-                        time_range: Some(RangeInclusive::new(0, 99)),
-                        create_timestamp: current_timestamp,
-                        update_timestamp: current_timestamp,
-                        ..Default::default()
-                    },
+                    split_id: format!("split-{}", i),
+                    num_docs: 1,
+                    original_size_in_bytes: 2,
+                    time_range: Some(RangeInclusive::new(0, 99)),
+                    create_timestamp: current_timestamp,
+                    ..Default::default()
                 };
                 // stage split
                 metastore

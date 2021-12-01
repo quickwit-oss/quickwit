@@ -28,10 +28,7 @@ pub mod test_suite {
     use tokio::time::{sleep, Duration};
 
     use crate::checkpoint::{Checkpoint, CheckpointDelta};
-    use crate::{
-        IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitMetadataAndFooterOffsets,
-        SplitState,
-    };
+    use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 
     #[async_trait]
     pub trait DefaultForTest {
@@ -49,7 +46,7 @@ pub mod test_suite {
         if !all_splits.is_empty() {
             let all_split_ids = all_splits
                 .iter()
-                .map(|meta| meta.split_metadata.split_id.as_ref())
+                .map(|meta| meta.split_id())
                 .collect::<Vec<_>>();
 
             // Mark splits for deletion.
@@ -164,18 +161,14 @@ pub mod test_suite {
         };
 
         let split_id = "stage-split-my-index-one";
-        let split_metadata = SplitMetadataAndFooterOffsets {
-            split_metadata: SplitMetadata {
-                split_id: split_id.to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+        let split_metadata = SplitMetadata {
+            split_id: split_id.to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            create_timestamp: current_timestamp,
             footer_offsets: 1000..2000,
+            ..Default::default()
         };
 
         // Stage a split on a non-existent index
@@ -221,33 +214,25 @@ pub mod test_suite {
         };
 
         let split_id_1 = "publish-splits-index-one";
-        let split_metadata_1 = SplitMetadataAndFooterOffsets {
+        let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_1.to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: split_id_1.to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
         let split_id_2 = "publish-splits-index-two";
-        let split_metadata_2 = SplitMetadataAndFooterOffsets {
+        let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_2.to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 5,
-                size_in_bytes: 6,
-                time_range: Some(RangeInclusive::new(30, 99)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: split_id_2.to_string(),
+            num_docs: 5,
+            original_size_in_bytes: 6,
+            time_range: Some(RangeInclusive::new(30, 99)),
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
         // Publish a split on a non-existent index
@@ -577,48 +562,36 @@ pub mod test_suite {
         };
 
         let split_id_1 = "replace_splits-index-one";
-        let split_metadata_1 = SplitMetadataAndFooterOffsets {
+        let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_1.to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: None,
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: split_id_1.to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: None,
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
         let split_id_2 = "replace_splits-index-two";
-        let split_metadata_2 = SplitMetadataAndFooterOffsets {
+        let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_2.to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 5,
-                size_in_bytes: 6,
-                time_range: None,
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: split_id_2.to_string(),
+            num_docs: 5,
+            original_size_in_bytes: 6,
+            time_range: None,
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
         let split_id_3 = "replace_splits-index-three";
-        let split_metadata_3 = SplitMetadataAndFooterOffsets {
+        let split_metadata_3 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_3.to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 5,
-                size_in_bytes: 6,
-                time_range: None,
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: split_id_3.to_string(),
+            num_docs: 5,
+            original_size_in_bytes: 6,
+            time_range: None,
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
         // Replace splits on a non-existent index
@@ -804,18 +777,14 @@ pub mod test_suite {
         };
 
         let split_id_1 = "mark-splits-as-deleted-my-index-one";
-        let split_metadata_1 = SplitMetadataAndFooterOffsets {
+        let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_1.to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: split_id_1.to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
         // Mark a split for deletion on a non-existent index
@@ -879,18 +848,14 @@ pub mod test_suite {
         };
 
         let split_id_1 = "delete-splits-index-one";
-        let split_metadata_1 = SplitMetadataAndFooterOffsets {
+        let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_1.to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: split_id_1.to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
         // Delete a split marked for deletion on a non-existent index
@@ -1006,74 +971,54 @@ pub mod test_suite {
         };
 
         let split_id_1 = "list-all-splits-index-one";
-        let split_metadata_1 = SplitMetadataAndFooterOffsets {
+        let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_1.to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: split_id_1.to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
-        let split_metadata_2 = SplitMetadataAndFooterOffsets {
+        let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-all-splits-index-two".to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(100, 199)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: "list-all-splits-index-two".to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(100, 199)),
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
-        let split_metadata_3 = SplitMetadataAndFooterOffsets {
+        let split_metadata_3 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-all-splits-index-three".to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(200, 299)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: "list-all-splits-index-three".to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(200, 299)),
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
-        let split_metadata_4 = SplitMetadataAndFooterOffsets {
+        let split_metadata_4 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-all-splits-index-four".to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(300, 399)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: "list-all-splits-index-four".to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(300, 399)),
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
-        let split_metadata_5 = SplitMetadataAndFooterOffsets {
+        let split_metadata_5 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-all-splits-index-five".to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: None,
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: "list-all-splits-index-five".to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: None,
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
         // List all splits on a non-existent index
@@ -1120,7 +1065,7 @@ pub mod test_suite {
             let splits = metastore.list_all_splits(index_id).await.unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-all-splits-index-one"), true);
             assert_eq!(split_ids.contains("list-all-splits-index-two"), true);
@@ -1146,79 +1091,59 @@ pub mod test_suite {
         };
 
         let split_id_1 = "list-splits-one";
-        let split_metadata_1 = SplitMetadataAndFooterOffsets {
+        let split_metadata_1 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id_1.to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                tags: to_set(&["foo", "bar"]),
-                demux_num_ops: 0,
-            },
+            split_id: split_id_1.to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            create_timestamp: current_timestamp,
+            tags: to_set(&["foo", "bar"]),
+            demux_num_ops: 0,
         };
 
-        let split_metadata_2 = SplitMetadataAndFooterOffsets {
+        let split_metadata_2 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-splits-two".to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(100, 199)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                tags: to_set(&["bar"]),
-                demux_num_ops: 0,
-            },
+            split_id: "list-splits-two".to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(100, 199)),
+            create_timestamp: current_timestamp,
+            tags: to_set(&["bar"]),
+            demux_num_ops: 0,
         };
 
-        let split_metadata_3 = SplitMetadataAndFooterOffsets {
+        let split_metadata_3 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-splits-three".to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(200, 299)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                tags: to_set(&["foo", "baz"]),
-                demux_num_ops: 0,
-            },
+            split_id: "list-splits-three".to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(200, 299)),
+            create_timestamp: current_timestamp,
+            tags: to_set(&["foo", "baz"]),
+            demux_num_ops: 0,
         };
 
-        let split_metadata_4 = SplitMetadataAndFooterOffsets {
+        let split_metadata_4 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-splits-four".to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(300, 399)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                tags: to_set(&["foo"]),
-                demux_num_ops: 0,
-            },
+            split_id: "list-splits-four".to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(300, 399)),
+            create_timestamp: current_timestamp,
+            tags: to_set(&["foo"]),
+            demux_num_ops: 0,
         };
 
-        let split_metadata_5 = SplitMetadataAndFooterOffsets {
+        let split_metadata_5 = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: "list-splits-five".to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: None,
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                tags: to_set(&["baz", "biz"]),
-                demux_num_ops: 0,
-            },
+            split_id: "list-splits-five".to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: None,
+            create_timestamp: current_timestamp,
+            tags: to_set(&["baz", "biz"]),
+            demux_num_ops: 0,
         };
 
         // List all splits on a non-existent index
@@ -1272,7 +1197,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), false);
@@ -1290,7 +1215,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), false);
             assert_eq!(split_ids.contains("list-splits-two"), false);
@@ -1308,7 +1233,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1323,7 +1248,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), false);
@@ -1338,7 +1263,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1353,7 +1278,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1368,7 +1293,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1383,7 +1308,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1398,7 +1323,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1413,7 +1338,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1428,7 +1353,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1446,7 +1371,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), false);
             assert_eq!(split_ids.contains("list-splits-two"), false);
@@ -1464,7 +1389,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), false);
             assert_eq!(split_ids.contains("list-splits-two"), false);
@@ -1482,7 +1407,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), false);
             assert_eq!(split_ids.contains("list-splits-two"), false);
@@ -1500,7 +1425,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), false);
             assert_eq!(split_ids.contains("list-splits-two"), false);
@@ -1518,7 +1443,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), false);
             assert_eq!(split_ids.contains("list-splits-two"), false);
@@ -1536,7 +1461,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), false);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1554,7 +1479,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), false);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1572,7 +1497,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), false);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1590,7 +1515,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), false);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1608,7 +1533,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1626,7 +1551,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), false);
             assert_eq!(split_ids.contains("list-splits-two"), false);
@@ -1635,19 +1560,15 @@ pub mod test_suite {
             assert_eq!(split_ids.contains("list-splits-five"), true);
 
             // add a split without tag
-            let split_metadata_6 = SplitMetadataAndFooterOffsets {
+            let split_metadata_6 = SplitMetadata {
                 footer_offsets: 1000..2000,
-                split_metadata: SplitMetadata {
-                    split_id: "list-splits-six".to_string(),
-                    split_state: SplitState::Staged,
-                    num_docs: 1,
-                    size_in_bytes: 2,
-                    time_range: None,
-                    create_timestamp: current_timestamp,
-                    update_timestamp: current_timestamp,
-                    tags: to_set(&[]),
-                    demux_num_ops: 0,
-                },
+                split_id: "list-splits-six".to_string(),
+                num_docs: 1,
+                original_size_in_bytes: 2,
+                time_range: None,
+                create_timestamp: current_timestamp,
+                tags: to_set(&[]),
+                demux_num_ops: 0,
             };
             metastore
                 .stage_split(index_id, split_metadata_6.clone())
@@ -1661,7 +1582,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|metadata| metadata.split_metadata.split_id)
+                .map(|metadata| metadata.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1678,7 +1599,7 @@ pub mod test_suite {
                 .unwrap();
             let split_ids: HashSet<String> = splits
                 .into_iter()
-                .map(|meta| meta.split_metadata.split_id)
+                .map(|meta| meta.split_id().to_string())
                 .collect();
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), true);
@@ -1707,18 +1628,14 @@ pub mod test_suite {
         };
 
         let split_id = "split-update-timestamp-one";
-        let split_metadata = SplitMetadataAndFooterOffsets {
+        let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
-            split_metadata: SplitMetadata {
-                split_id: split_id.to_string(),
-                split_state: SplitState::Staged,
-                num_docs: 1,
-                size_in_bytes: 2,
-                time_range: Some(RangeInclusive::new(0, 99)),
-                create_timestamp: current_timestamp,
-                update_timestamp: current_timestamp,
-                ..Default::default()
-            },
+            split_id: split_id.to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(RangeInclusive::new(0, 99)),
+            create_timestamp: current_timestamp,
+            ..Default::default()
         };
 
         // Create an index
@@ -1733,9 +1650,7 @@ pub mod test_suite {
             .stage_split(index_id, split_metadata.clone())
             .await
             .unwrap();
-        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0]
-            .clone()
-            .split_metadata;
+        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
 
         current_timestamp = split_meta.update_timestamp;
@@ -1746,9 +1661,7 @@ pub mod test_suite {
             .publish_splits(index_id, &[split_id], CheckpointDelta::from(0..5))
             .await
             .unwrap();
-        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0]
-            .clone()
-            .split_metadata;
+        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
 
         current_timestamp = split_meta.update_timestamp;
@@ -1759,9 +1672,7 @@ pub mod test_suite {
             .mark_splits_for_deletion(index_id, &[split_id])
             .await
             .unwrap();
-        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0]
-            .clone()
-            .split_metadata;
+        let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
 
         cleanup_index(&metastore, index_id).await;

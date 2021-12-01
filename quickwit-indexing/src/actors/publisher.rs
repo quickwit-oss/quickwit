@@ -71,7 +71,7 @@ impl Publisher {
                 self.metastore
                     .publish_splits(
                         &publisher_message.index_id,
-                        &[&new_split.split_id],
+                        &[new_split.split_id()],
                         checkpoint_delta.clone(),
                     )
                     .await
@@ -84,10 +84,8 @@ impl Publisher {
             } => {
                 info!("replace-split-start");
                 // TODO change the metastore API to take &[String]
-                let new_split_ids_ref_vec: Vec<&str> = new_split_id
-                    .iter()
-                    .map(|split| split.split_id.as_str())
-                    .collect();
+                let new_split_ids_ref_vec: Vec<&str> =
+                    new_split_id.iter().map(|split| split.split_id()).collect();
                 let replaced_split_ids_ref_vec: Vec<&str> =
                     replaced_split_ids.iter().map(String::as_str).collect();
                 self.metastore
@@ -144,7 +142,7 @@ impl AsyncActor for Publisher {
                 checkpoint_delta,
                 split_date_of_birth,
             } => {
-                info!(new_split=new_split.split_id.as_str(), tts=%split_date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta, "publish-new-splits");
+                info!(new_split=new_split.split_id(), tts=%split_date_of_birth.elapsed().as_secs_f32(), checkpoint_delta=?checkpoint_delta, "publish-new-splits");
             }
             PublishOperation::ReplaceSplits {
                 new_splits,
@@ -152,7 +150,7 @@ impl AsyncActor for Publisher {
             } => {
                 let new_split_ids: Vec<&str> = new_splits
                     .iter()
-                    .map(|new_split| new_split.split_id.as_str())
+                    .map(|new_split| new_split.split_id())
                     .collect();
                 info!(new_splits=?new_split_ids, replaced_splits=?replaced_split_ids, "replace-splits");
             }
