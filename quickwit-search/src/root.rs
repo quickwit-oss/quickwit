@@ -243,7 +243,7 @@ mod tests {
     use std::ops::Range;
 
     use quickwit_index_config::WikipediaIndexConfig;
-    use quickwit_indexing::mock_split_info;
+    use quickwit_indexing::mock_split;
     use quickwit_metastore::checkpoint::Checkpoint;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::SplitSearchError;
@@ -306,7 +306,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_info("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split("split1")]) },
         );
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().returning(
@@ -367,9 +367,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| {
-                Ok(vec![mock_split_info("split1"), mock_split_info("split2")])
-            },
+             _tags: &[String]| { Ok(vec![mock_split("split1"), mock_split("split2")]) },
         );
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1.expect_leaf_search().returning(
@@ -452,9 +450,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| {
-                Ok(vec![mock_split_info("split1"), mock_split_info("split2")])
-            },
+             _tags: &[String]| { Ok(vec![mock_split("split1"), mock_split("split2")]) },
         );
 
         let mut mock_search_service1 = MockSearchService::new();
@@ -563,9 +559,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| {
-                Ok(vec![mock_split_info("split1"), mock_split_info("split2")])
-            },
+             _tags: &[String]| { Ok(vec![mock_split("split1"), mock_split("split2")]) },
         );
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1
@@ -690,7 +684,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_info("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split("split1")]) },
         );
         let mut first_call = true;
         let mut mock_search_service1 = MockSearchService::new();
@@ -764,7 +758,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_info("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split("split1")]) },
         );
 
         let mut mock_search_service1 = MockSearchService::new();
@@ -825,7 +819,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_info("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split("split1")]) },
         );
         // Service1 - broken node.
         let mut mock_search_service1 = MockSearchService::new();
@@ -911,7 +905,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_info("split1")]) },
+             _tags: &[String]| { Ok(vec![mock_split("split1")]) },
         );
 
         // Service1 - working node.

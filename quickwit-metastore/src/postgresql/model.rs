@@ -17,14 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::ops::RangeInclusive;
+use std::convert::TryInto;
 use std::str::FromStr;
 
 use chrono::NaiveDateTime;
 use diesel::sql_types::{Nullable, Text};
+use tracing::error;
 
 use crate::postgresql::schema::{indexes, splits};
-use crate::{IndexMetadata, SplitMetadata, SplitState};
+use crate::{
+    IndexMetadata, MetastoreError, MetastoreResult, Split as QuickwitSplit, SplitMetadata,
+    SplitState,
+};
 
 // A raw query that helps figure out if index exist, non-existant
 // splits and not deletable splits.
@@ -77,11 +81,12 @@ impl Index {
 pub struct Split {
     /// Split ID.
     pub split_id: String,
-    /// The state of the split. This is the only mutable attribute of the split.
+    /// The state of the split. With `update_timestamp`, this is the only mutable attribute of the
+    /// split.
     pub split_state: String,
-    /// If a timestamp field is available, the min timestamp in the split.
+    /// If a timestamp field is available, the min timestamp of the split.
     pub time_range_start: Option<i64>,
-    /// If a timestamp field is available, the max timestamp in the split.
+    /// If a timestamp field is available, the max timestamp of the split.
     pub time_range_end: Option<i64>,
     /// Timestamp for tracking when the split was created.
     pub create_timestamp: NaiveDateTime,
@@ -89,32 +94,64 @@ pub struct Split {
     pub update_timestamp: NaiveDateTime,
     /// A list of tags for categorizing and searching group of splits.
     pub tags: Vec<String>,
-    // A JSON string containing all of the SplitMetadata.
+    // The split's metadata serialized as a JSON string.
     pub split_metadata_json: String,
     /// Index ID. It is used as a foreign key in the database.
     pub index_id: String,
 }
 
 impl Split {
-    /// Make time range from start_time_range and end_time_range in database model.
-    pub fn get_time_range(&self) -> Option<RangeInclusive<i64>> {
-        self.time_range_start.and_then(|time_range_start| {
-            self.time_range_end
-                .map(|time_range_end| RangeInclusive::new(time_range_start, time_range_end))
+    /// Deserializes and returns the split's metadata.
+    fn split_metadata(&self) -> MetastoreResult<SplitMetadata> {
+        serde_json::from_str::<SplitMetadata>(&self.split_metadata_json).map_err(|err| {
+            error!(
+                index_id = %self.index_id, split_id = %self.split_id,
+                "Failed to deserialize split metadata."
+            );
+            let message = format!(
+                "Failed to deserialize split metadata. index_id=`{}`, split_id=`{}`.",
+                self.index_id, self.split_id
+            );
+            MetastoreError::InternalError {
+                message,
+                cause: anyhow::anyhow!(err),
+            }
         })
     }
 
-    /// Get split state from split_state in database model.
-    pub fn get_split_state(&self) -> Option<SplitState> {
-        SplitState::from_str(&self.split_state).ok()
+    /// Deserializes and returns the split's state.
+    fn split_state(&self) -> MetastoreResult<SplitState> {
+        SplitState::from_str(&self.split_state).map_err(|err| {
+            error!(
+                index_id = %self.index_id, split_id = %self.split_id, split_state = %self.split_state,
+                "Failed to deserialize split state."
+            );
+            let message = format!(
+                "Failed to deserialize split state: `{}`. index_id=`{}`, split_id=`{}`.",
+                self.split_state, self.index_id, self.split_id
+            );
+            MetastoreError::InternalError {
+                message,
+                cause: anyhow::anyhow!(err)
+            }
+        })
     }
+}
 
-    /// Make SplitMetadata from stored JSON string.
-    pub fn make_split_metadata(&self) -> anyhow::Result<SplitMetadata> {
-        let split_metadata =
-            serde_json::from_str::<SplitMetadata>(self.split_metadata_json.as_str())
-                .map_err(|err| anyhow::anyhow!(err))?;
+impl TryInto<QuickwitSplit> for Split {
+    type Error = MetastoreError;
 
-        Ok(split_metadata)
+    fn try_into(self) -> Result<QuickwitSplit, Self::Error> {
+        let mut split_metadata = self.split_metadata()?;
+        // `create_timestamp` is duplicated in `SplitMetadata` and needs to be overridden with the
+        // "true" value stored in a column.
+        split_metadata.create_timestamp = self.create_timestamp.timestamp();
+        let split_state = self.split_state()?;
+        let update_timestamp = self.update_timestamp.timestamp();
+        Ok(QuickwitSplit {
+            split_metadata,
+            split_state,
+            update_timestamp,
+        })
     }
 }

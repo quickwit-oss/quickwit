@@ -937,8 +937,9 @@ mod tests {
             test_index_builder.add_documents(docs).await?;
         }
         let metastore = test_index_builder.metastore();
-        let split_infos = metastore.list_all_splits(index_id).await?;
-        let splits: Vec<SplitMetadata> = split_infos
+        let splits: Vec<SplitMetadata> = metastore
+            .list_all_splits(index_id)
+            .await?
             .into_iter()
             .map(|split| split.split_metadata)
             .collect();
@@ -952,7 +953,7 @@ mod tests {
             merge_scratch_directory.named_temp_child("downloaded-splits")?;
         let storage = test_index_builder.index_storage(index_id)?;
         for split in &splits {
-            let split_filename = split_file(split.split_id());
+            let split_filename = split_file(&split.split_id);
             let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
             storage
                 .copy_to_file(Path::new(&split_filename), &dest_filepath)

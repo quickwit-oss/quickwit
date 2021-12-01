@@ -29,7 +29,7 @@ use crate::VersionedSplitMetadataDeserializeHelper;
 
 /// Carries split metadata.
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SplitInfo {
+pub struct Split {
     /// The state of the split.
     pub split_state: SplitState,
 
@@ -40,8 +40,8 @@ pub struct SplitInfo {
     pub split_metadata: SplitMetadata,
 }
 
-impl SplitInfo {
-    /// Creates a new instance of split metadata.
+impl Split {
+    /// Creates a new empty split with ID `split_id`.
     pub fn new(split_id: String) -> Self {
         let split_metadata = SplitMetadata {
             split_id,
@@ -54,11 +54,10 @@ impl SplitInfo {
             footer_offsets: Default::default(),
         };
 
-        SplitInfo {
+        Split {
             split_metadata,
-            update_timestamp: Utc::now().timestamp(),
-
             split_state: SplitState::New,
+            update_timestamp: Utc::now().timestamp(),
         }
     }
 

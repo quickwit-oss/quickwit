@@ -35,7 +35,7 @@ use crate::checkpoint::CheckpointDelta;
 use crate::metastore::match_tags_filter;
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
-    MetastoreResult, SplitInfo, SplitMetadata, SplitState,
+    MetastoreResult, Split, SplitMetadata, SplitState,
 };
 
 /// Metadata file managed by [`SingleFileMetastore`].
@@ -47,7 +47,7 @@ pub struct MetadataSet {
     /// Metadata specific to the index.
     pub index: IndexMetadata,
     /// List of splits belonging to the index.
-    pub splits: HashMap<String, SplitInfo>,
+    pub splits: HashMap<String, Split>,
 }
 
 /// Creates a path to the metadata file from the given index ID.
@@ -343,7 +343,7 @@ impl InnerSingleFileMetastore {
             });
         }
 
-        let metadata = SplitInfo {
+        let metadata = Split {
             split_state: SplitState::Staged,
 
             update_timestamp: Utc::now().timestamp(),
@@ -401,7 +401,7 @@ impl InnerSingleFileMetastore {
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
         tags: &[String],
-    ) -> MetastoreResult<Vec<SplitInfo>> {
+    ) -> MetastoreResult<Vec<Split>> {
         let time_range_filter = |split_metadata: &SplitMetadata| match (
             time_range_opt.as_ref(),
             split_metadata.time_range.as_ref(),
@@ -434,7 +434,7 @@ impl InnerSingleFileMetastore {
         Ok(splits)
     }
 
-    async fn list_all_splits(&mut self, index_id: &str) -> MetastoreResult<Vec<SplitInfo>> {
+    async fn list_all_splits(&mut self, index_id: &str) -> MetastoreResult<Vec<Split>> {
         let metadata_set = self.get_index(index_id).await?;
         let splits = metadata_set.splits.into_values().collect();
         Ok(splits)
@@ -592,14 +592,14 @@ impl Metastore for SingleFileMetastore {
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
         tags: &[String],
-    ) -> MetastoreResult<Vec<SplitInfo>> {
+    ) -> MetastoreResult<Vec<Split>> {
         let mut inner_metastore = self.inner.lock().await;
         inner_metastore
             .list_splits(index_id, state, time_range_opt, tags)
             .await
     }
 
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitInfo>> {
+    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
         let mut inner_metastore = self.inner.lock().await;
         inner_metastore.list_all_splits(index_id).await
     }

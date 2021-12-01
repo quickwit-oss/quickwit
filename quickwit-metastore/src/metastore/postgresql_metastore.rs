@@ -19,7 +19,6 @@
 
 use std::collections::HashSet;
 use std::ops::Range;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -40,7 +39,7 @@ use crate::postgresql::model::SELECT_SPLITS_FOR_INDEX;
 use crate::postgresql::{model, schema};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
-    MetastoreResult, SplitInfo, SplitMetadata, SplitState,
+    MetastoreResult, Split, SplitMetadata, SplitState,
 };
 
 embed_migrations!("migrations/postgresql");
@@ -309,7 +308,7 @@ impl PostgresqlMetastore {
         state_opt: Option<SplitState>,
         time_range_opt: Option<Range<i64>>,
         tags_opt: Option<&[String]>,
-    ) -> MetastoreResult<Vec<SplitInfo>> {
+    ) -> MetastoreResult<Vec<Split>> {
         let mut select_statement = schema::splits::dsl::splits
             .filter(schema::splits::dsl::index_id.eq(index_id))
             .into_boxed();
@@ -350,8 +349,7 @@ impl PostgresqlMetastore {
             }
             return Ok(Vec::new());
         }
-
-        self.make_split_infos(splits)
+        splits.into_iter().map(|split| split.try_into()).collect()
     }
 
     /// Query the database to find out if:
@@ -427,49 +425,6 @@ impl PostgresqlMetastore {
             .map(|split_id| split_id.to_string())
             .collect())
     }
-
-    /// Make the split metadata and footer offsets from database model.
-    /// When returning [`SplitMetadata`], we make sure to override the
-    /// `split_state` and `update_timestamp` from the column value since these are the values we
-    /// keep in sync.
-    fn make_split_infos(&self, splits: Vec<model::Split>) -> MetastoreResult<Vec<SplitInfo>> {
-        let mut split_metadata_footer_offset_list = Vec::new();
-        for model_split in splits {
-            let split_infos = match model_split.make_split_metadata() {
-                Ok(mut metadata) => {
-                    metadata.create_timestamp = model_split.create_timestamp.timestamp();
-                    let split_state =
-                        SplitState::from_str(&model_split.split_state).map_err(|error| {
-                            MetastoreError::InternalError {
-                                message: error.to_string(),
-                                cause: anyhow::anyhow!(
-                                    "Failed to parse SplitState `{}`.",
-                                    model_split.split_state
-                                ),
-                            }
-                        })?;
-                    SplitInfo {
-                        split_metadata: metadata,
-                        update_timestamp: model_split.update_timestamp.timestamp(),
-                        split_state,
-                    }
-                }
-                Err(err) => {
-                    let msg = format!(
-                        "Failed to make split metadata and footer offsets split_id={:?}",
-                        model_split.split_id
-                    );
-                    error!("{:?} {:?}", msg, err);
-                    return Err(MetastoreError::InternalError {
-                        message: msg,
-                        cause: err,
-                    });
-                }
-            };
-            split_metadata_footer_offset_list.push(split_infos);
-        }
-        Ok(split_metadata_footer_offset_list)
-    }
 }
 
 #[async_trait]
@@ -483,7 +438,7 @@ impl Metastore for PostgresqlMetastore {
         // Serialize the index metadata to fit the database model.
         let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
             MetastoreError::InternalError {
-                message: "Failed to serialize checkpoint".to_string(),
+                message: "Failed to serialize index metadata.".to_string(),
                 cause: anyhow::anyhow!(err),
             }
         })?;
@@ -698,12 +653,12 @@ impl Metastore for PostgresqlMetastore {
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
         tags: &[String],
-    ) -> MetastoreResult<Vec<SplitInfo>> {
+    ) -> MetastoreResult<Vec<Split>> {
         let conn = self.get_conn()?;
         self.list_splits_helper(&conn, index_id, Some(state), time_range_opt, Some(tags))
     }
 
-    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<SplitInfo>> {
+    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
         let conn = self.get_conn()?;
         self.list_splits_helper(&conn, index_id, None, None, None)
     }
