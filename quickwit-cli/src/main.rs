@@ -28,9 +28,6 @@ use quickwit_cli::index::IndexCliCommand;
 use quickwit_cli::service::ServiceCliCommand;
 use quickwit_cli::split::SplitCliCommand;
 use quickwit_cli::*;
-use quickwit_common::net::socket_addr_from_str;
-use quickwit_common::uri::normalize_uri;
-use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{info, Level};
 use tracing_subscriber::fmt::format::Format;
@@ -219,6 +216,7 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "create",
+            "--index-id",
             "wikipedia",
             "--index-uri",
             "file:///indexes/wikipedia",
@@ -246,6 +244,7 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "create",
+            "--index-id",
             "wikipedia",
             "--index-uri",
             "file:///indexes/wikipedia",
@@ -277,6 +276,7 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "index",
+            "--index-id",
             "wikipedia",
             "--metastore-uri",
             "file:///indexes",
@@ -308,6 +308,7 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "index",
+            "--index-id",
             "wikipedia",
             "--source-config-path",
             "/conf/source_config.json",
@@ -350,6 +351,7 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "index",
+            "--index-id",
             "wikipedia",
             "--metastore-uri",
             "file:///indexes",
@@ -371,6 +373,7 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "search",
+            "--index-id",
             "wikipedia",
             "--query",
             "Barack Obama",
@@ -398,6 +401,7 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "search",
+            "--index-id",
             "wikipedia",
             "--metastore-uri",
             "file:///indexes",
@@ -446,6 +450,7 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "delete",
+            "--index-id",
             "wikipedia",
             "--metastore-uri",
             "file:///indexes",
@@ -465,6 +470,7 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "delete",
+            "--index-id",
             "wikipedia",
             "--metastore-uri",
             "file:///indexes",
@@ -489,6 +495,7 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "gc",
+            "--index-id",
             "wikipedia",
             "--metastore-uri",
             "file:///indexes",
@@ -509,6 +516,7 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "gc",
+            "--index-id",
             "wikipedia",
             "--grace-period",
             "5m",

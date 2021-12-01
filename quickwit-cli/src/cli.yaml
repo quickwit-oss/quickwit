@@ -14,8 +14,9 @@ subcommands:
                 args:
                     - index-id:
                         about: Index ID
+                        long: index-id
+                        value_name: INDEX ID
                         required: true
-                        index: 1
                     - index-uri:
                         about: Index URI
                         long: index-uri
@@ -41,8 +42,9 @@ subcommands:
                 args:
                     - index-id:
                         about: Index ID
+                        long: index-id
+                        value_name: INDEX ID
                         required: true
-                        index: 1
                     - metastore-uri:
                         about: Location of the metastore
                         long: metastore-uri
@@ -86,8 +88,9 @@ subcommands:
                 args:
                     - index-id:
                         about: Index ID
+                        long: index-id
+                        value_name: INDEX ID
                         required: true
-                        index: 1
                     - metastore-uri:
                         about: Location of the metastore
                         long: metastore-uri
@@ -100,8 +103,9 @@ subcommands:
                 args:
                     - index-id:
                         about: Index id
+                        long: index-id
+                        value_name: INDEX ID
                         required: true
-                        index: 1
                     - metastore-uri:
                         about: Location of the metastore
                         long: metastore-uri
@@ -149,7 +153,6 @@ subcommands:
                         long: index-id
                         value_name: INDEX ID
                         required: true
-                        index: 5
                     - metastore-uri:
                         about: Location of the metastore
                         long: metastore-uri
@@ -162,8 +165,9 @@ subcommands:
                 args:
                     - index-id:
                         about: Index ID
+                        long: index-id
+                        value_name: INDEX ID
                         required: true
-                        index: 1
                     - metastore-uri:
                         about: Location of the metastore
                         long: metastore-uri
@@ -184,8 +188,9 @@ subcommands:
                 args:
                     - index-id:
                         about: Index ID
+                        long: index-id
+                        value_name: INDEX ID
                         required: true
-                        index: 1
                     - metastore-uri:
                         about: Location of the metastore
                         long: metastore-uri
@@ -204,6 +209,11 @@ subcommands:
             - extract:
                 about: Extracts a split into a folder.
                 args:
+                    - index-id:
+                        about: Index ID
+                        long: index-id
+                        value_name: INDEX ID
+                        required: true
                     - split-id:
                         about: ID of the split
                         required: true
@@ -219,23 +229,18 @@ subcommands:
                         long: target-folder
                         value_name: TARGET FOLDER
                         required: true
+            - describe:
+                about: Show files info contained in a split.
+                args:
                     - index-id:
                         about: Index ID
                         long: index-id
                         value_name: INDEX ID
                         required: true
-            - describe:
-                about: Show files info contained in a split.
-                args:
                     - split-id:
                         about: ID of the split
                         required: true
                         index: 1
-                    - index-id:
-                        about: Index ID
-                        long: index-id
-                        value_name: INDEX ID
-                        required: true
                     - metastore-uri:
                         about: Location of the metastore
                         long: metastore-uri
@@ -294,5 +299,6 @@ subcommands:
                 args:
                     - name:
                         about: Name of the dataset
+                        long: dataset_name
+                        value_name: DATASET NAME
                         required: true
-                        index: 1

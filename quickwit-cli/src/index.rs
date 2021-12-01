@@ -41,9 +41,7 @@ use quickwit_indexing::actors::{
 use quickwit_indexing::models::{CommitPolicy, IndexingDirectory, IndexingStatistics};
 use quickwit_indexing::source::{FileSourceParams, SourceConfig};
 use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::{
-    do_checks, IndexMetadata, MetastoreUriResolver, SplitMetadataAndFooterOffsets, SplitState,
-};
+use quickwit_metastore::{do_checks, IndexMetadata, MetastoreUriResolver, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::quickwit_storage_uri_resolver;
@@ -390,21 +388,19 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let split_meta_and_footers = metastore
+    let splits = metastore
         .list_splits(&args.index_id, SplitState::Published, None, &[])
         .await?;
 
-    let splits_num_docs = split_meta_and_footers
+    let splits_num_docs = splits
         .iter()
-        .map(|split_meta_and_footer| split_meta_and_footer.split_metadata.num_docs)
+        .map(|split| split.split_metadata.num_docs)
         .sorted()
         .collect_vec();
     let total_num_docs = splits_num_docs.iter().sum::<usize>();
-    let splits_bytes = split_meta_and_footers
+    let splits_bytes = splits
         .iter()
-        .map(|split_meta_and_footer| {
-            (split_meta_and_footer.footer_offsets.end / 1_000_000) as usize
-        })
+        .map(|split| (split.split_metadata.footer_offsets.end / 1_000_000) as usize)
         .sorted()
         .collect_vec();
     let total_bytes = splits_bytes.iter().sum::<usize>();
@@ -425,7 +421,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     println!(
         "{:<35} {}",
         "Number of published splits:".color(GREEN_COLOR),
-        split_meta_and_footers.len()
+        splits.len()
     );
     println!(
         "{:<35} {}",
@@ -443,15 +439,15 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
             "Timestamp field:".color(GREEN_COLOR),
             timestamp_field_name
         );
-        let time_min = split_meta_and_footers
+        let time_min = splits
             .iter()
-            .map(|split_meta_and_footer| split_meta_and_footer.split_metadata.time_range.clone())
+            .map(|split| split.split_metadata.time_range.clone())
             .filter(|time_range| time_range.is_some())
             .map(|time_range| *time_range.unwrap().start())
             .min();
-        let time_max = split_meta_and_footers
+        let time_max = splits
             .iter()
-            .map(|split_meta_and_footer| split_meta_and_footer.split_metadata.time_range.clone())
+            .map(|split| split.split_metadata.time_range.clone())
             .filter(|time_range| time_range.is_some())
             .map(|time_range| *time_range.unwrap().start())
             .max();
@@ -463,7 +459,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
         );
     }
 
-    if split_meta_and_footers.is_empty() {
+    if splits.is_empty() {
         return Ok(());
     }
 
@@ -477,24 +473,21 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     print_descriptive_stats(&splits_bytes);
 
     if let Some(demux_field_name) = index_metadata.index_config.demux_field_name() {
-        show_demux_stats(&demux_field_name, &split_meta_and_footers).await;
+        show_demux_stats(&demux_field_name, &splits).await;
     }
 
     println!();
     Ok(())
 }
 
-pub async fn show_demux_stats(
-    demux_field_name: &str,
-    split_meta_and_footers: &[SplitMetadataAndFooterOffsets],
-) {
+pub async fn show_demux_stats(demux_field_name: &str, splits: &[Split]) {
     println!();
     println!("3. Demux stats");
     println!("===============================================================================");
-    let demux_uniq_values: HashSet<String> = split_meta_and_footers
+    let demux_uniq_values: HashSet<String> = splits
         .iter()
-        .map(|metadata_and_footer| {
-            metadata_and_footer
+        .map(|split| {
+            split
                 .split_metadata
                 .tags
                 .iter()
@@ -518,28 +511,23 @@ pub async fn show_demux_stats(
     println!("-------------------------------------------------");
     let mut split_counts_per_demux_values = Vec::new();
     for demux_value in demux_uniq_values {
-        let split_count = split_meta_and_footers
+        let split_count = splits
             .iter()
-            .filter(|split_meta_and_footer| {
-                split_meta_and_footer
-                    .split_metadata
-                    .tags
-                    .contains(&demux_value)
-            })
+            .filter(|split| split.split_metadata.tags.contains(&demux_value))
             .count();
         split_counts_per_demux_values.push(split_count);
     }
     print_descriptive_stats(&split_counts_per_demux_values);
 
-    let (non_demuxed_splits, demuxed_splits): (Vec<_>, Vec<_>) = split_meta_and_footers
+    let (non_demuxed_splits, demuxed_splits): (Vec<_>, Vec<_>) = splits
         .iter()
         .cloned()
-        .map(|metadata_and_footer| metadata_and_footer.split_metadata)
-        .partition(|split| split.demux_num_ops == 0);
+        .partition(|split| split.split_metadata.demux_num_ops == 0);
     let non_demuxed_split_demux_values_counts = non_demuxed_splits
         .iter()
         .map(|split| {
             split
+                .split_metadata
                 .tags
                 .iter()
                 .filter(|tag| match_tag_field_name(demux_field_name, tag))
@@ -551,6 +539,7 @@ pub async fn show_demux_stats(
         .iter()
         .map(|split| {
             split
+                .split_metadata
                 .tags
                 .iter()
                 .filter(|tag| match_tag_field_name(demux_field_name, tag))
