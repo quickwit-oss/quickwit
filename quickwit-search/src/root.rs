@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
+use quickwit_index_config::extract_tags_from_query;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse, PartialHit,
@@ -58,7 +59,20 @@ pub async fn root_search(
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let index_config_str = serde_json::to_string(&index_metadata.index_config)
         .map_err(|error| SearchError::InternalError(error.to_string()))?;
-    let split_metadata_list = list_relevant_splits(search_request, metastore).await?;
+
+    let tags_from_query = extract_tags_from_query(
+        &search_request.query,
+        &index_metadata.index_config.tag_field_names(),
+    )?;
+    let tags = [&search_request.tags[..], &tags_from_query[..]].concat();
+    let split_metadata_list = list_relevant_splits(
+        metastore,
+        &search_request.index_id,
+        search_request.start_timestamp,
+        search_request.end_timestamp,
+        tags,
+    )
+    .await?;
     let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
         .into_iter()
         .map(|metadata| (metadata.split_id().to_string(), metadata))

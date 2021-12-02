@@ -35,6 +35,7 @@ pub use default_index_config::{
     DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry,
 };
 pub use error::QueryParserError;
+pub use query_builder::extract_tags_from_query;
 pub use wikipedia_config::WikipediaIndexConfig;
 
 /// Field name reserved for storing the source document.

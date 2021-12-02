@@ -45,6 +45,7 @@ use std::net::SocketAddr;
 use std::ops::Range;
 
 use anyhow::Context;
+use quickwit_index_config::extract_tags_from_query;
 use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
@@ -107,8 +108,11 @@ fn partial_hit_sorting_key(partial_hit: &PartialHit) -> (Reverse<u64>, GlobalDoc
     )
 }
 
-fn extract_time_range(search_request: &SearchRequest) -> Option<Range<i64>> {
-    match (search_request.start_timestamp, search_request.end_timestamp) {
+fn extract_time_range(
+    start_timestamp_opt: Option<i64>,
+    end_timestamp_opt: Option<i64>,
+) -> Option<Range<i64>> {
+    match (start_timestamp_opt, end_timestamp_opt) {
         (Some(start_timestamp), Some(end_timestamp)) => Some(Range {
             start: start_timestamp,
             end: end_timestamp,
@@ -135,17 +139,16 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
 
 /// Extract the list of relevant splits for a given search request.
 async fn list_relevant_splits(
-    search_request: &SearchRequest,
     metastore: &dyn Metastore,
+    index_id: &str,
+    start_timestamp_opt: Option<i64>,
+    end_timestamp_opt: Option<i64>,
+    tags: Vec<String>,
 ) -> MetastoreResult<Vec<SplitMetadata>> {
-    let time_range_opt = extract_time_range(search_request);
+    let time_range_opt = extract_time_range(start_timestamp_opt, end_timestamp_opt);
+    // let tags = [&search_request.tags[..], &tags_from_query[..]].concat();
     let split_metas = metastore
-        .list_splits(
-            &search_request.index_id,
-            SplitState::Published,
-            time_range_opt,
-            &search_request.tags,
-        )
+        .list_splits(index_id, SplitState::Published, time_range_opt, &tags)
         .await?;
     Ok(split_metas
         .into_iter()
@@ -163,7 +166,19 @@ pub async fn single_node_search(
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let index_storage = storage_resolver.resolve(&index_metadata.index_uri)?;
-    let metas = list_relevant_splits(search_request, metastore).await?;
+    let tags_from_query = extract_tags_from_query(
+        &search_request.query,
+        &index_metadata.index_config.tag_field_names(),
+    )?;
+    let tags = [&search_request.tags[..], &tags_from_query[..]].concat();
+    let metas = list_relevant_splits(
+        metastore,
+        &search_request.index_id,
+        search_request.start_timestamp,
+        search_request.end_timestamp,
+        tags,
+    )
+    .await?;
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();
     let index_config = index_metadata.index_config;
@@ -391,6 +406,77 @@ mod tests {
         .await?;
         assert_eq!(single_node_response.num_hits, 0);
         assert_eq!(single_node_response.hits.len(), 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
+        let index_config = r#"{
+            "default_search_fields": ["body"],
+            "tag_fields": ["owner"],
+            "field_mappings": [
+                {
+                    "name": "body",
+                    "type": "text"
+                },
+                {
+                    "name": "owner",
+                    "type": "text"
+                }
+            ]
+        }"#;
+        let index_config =
+            serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        let index_id = "single-node-pruning-by-tags";
+        let test_sandbox = TestSandbox::create(index_id, Arc::new(index_config)).await?;
+
+        let owners = ["paul", "adrien"];
+        for owner in owners {
+            let mut docs = vec![];
+            for i in 0..10 {
+                docs.push(json!({"body": format!("content num #{}", i + 1), "owner": owner}));
+            }
+            test_sandbox.add_documents(docs).await?;
+        }
+
+        let selected_splits = list_relevant_splits(
+            &*test_sandbox.metastore(),
+            index_id,
+            None,
+            None,
+            vec!["owner:francois".to_string()],
+        )
+        .await?;
+        assert_eq!(selected_splits.len(), 0);
+
+        let selected_splits =
+            list_relevant_splits(&*test_sandbox.metastore(), index_id, None, None, vec![]).await?;
+        assert_eq!(selected_splits.len(), 2);
+
+        let selected_splits = list_relevant_splits(
+            &*test_sandbox.metastore(),
+            index_id,
+            None,
+            None,
+            vec![
+                "owner:paul".to_string(),
+                "owner:francois".to_string(),
+                "owner:adrien".to_string(),
+            ],
+        )
+        .await?;
+        assert_eq!(selected_splits.len(), 2);
+
+        let mut split_tags = selected_splits
+            .iter()
+            .flat_map(|split| split.tags.clone())
+            .collect::<Vec<_>>();
+        split_tags.sort();
+        assert_eq!(
+            split_tags,
+            vec!["owner:adrien".to_string(), "owner:paul".to_string()]
+        );
 
         Ok(())
     }

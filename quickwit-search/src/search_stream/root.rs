@@ -22,8 +22,9 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
+use quickwit_index_config::extract_tags_from_query;
 use quickwit_metastore::{Metastore, SplitMetadata};
-use quickwit_proto::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
+use quickwit_proto::{LeafSearchStreamRequest, SearchStreamRequest};
 use tokio_stream::StreamMap;
 use tracing::*;
 
@@ -45,9 +46,22 @@ pub async fn root_search_stream(
 ) -> crate::Result<impl futures::Stream<Item = crate::Result<Bytes>>> {
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
-    let search_request = SearchRequest::from(search_stream_request.clone());
-    let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
-    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+    let index_metadata = metastore
+        .index_metadata(&search_stream_request.index_id)
+        .await?;
+    let tags_from_query = extract_tags_from_query(
+        &search_stream_request.query,
+        &index_metadata.index_config.tag_field_names(),
+    )?;
+    let tags = [&search_stream_request.tags[..], &tags_from_query[..]].concat();
+    let split_metadata_list = list_relevant_splits(
+        metastore,
+        &search_stream_request.index_id,
+        search_stream_request.start_timestamp,
+        search_stream_request.end_timestamp,
+        tags,
+    )
+    .await?;
 
     // Create a hash map of SplitMetadata with split id as a key.
     let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
