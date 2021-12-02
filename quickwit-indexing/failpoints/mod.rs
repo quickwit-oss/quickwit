@@ -48,7 +48,9 @@ use quickwit_indexing::actors::{IndexerParams, MergeExecutor};
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::{CommitPolicy, IndexingDirectory, MergeScratch, ScratchDirectory};
 use quickwit_indexing::source::SourceConfig;
-use quickwit_indexing::{index_data, new_split_id, BundledSplitFile, TestSandbox};
+use quickwit_indexing::{
+    get_tantivy_directory_from_split_bundle, index_data, new_split_id, TestSandbox,
+};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{
     IndexMetadata, Metastore, SingleFileMetastore, SplitMetadata, SplitState,
@@ -205,14 +207,14 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
     let mut splits = metastore
         .list_splits("test-index", SplitState::Published, None, &[])
         .await?;
-    splits.sort_by_key(|split| *split.time_range.clone().unwrap().start());
+    splits.sort_by_key(|split| *split.split_metadata.time_range.clone().unwrap().start());
     assert_eq!(splits.len(), 2);
     assert_eq!(
-        splits[0].time_range.clone().unwrap(),
+        splits[0].split_metadata.time_range.clone().unwrap(),
         1629889530..=1629889531
     );
     assert_eq!(
-        splits[1].time_range.clone().unwrap(),
+        splits[1].split_metadata.time_range.clone().unwrap(),
         1629889532..=1629889533
     );
     Ok(())
@@ -258,7 +260,10 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
 
     let metastore = test_index_builder.metastore();
     let split_infos = metastore.list_all_splits(index_id).await?;
-    let splits: Vec<SplitMetadata> = split_infos.into_iter().collect();
+    let splits: Vec<SplitMetadata> = split_infos
+        .into_iter()
+        .map(|split| split.split_metadata)
+        .collect();
     let merge_scratch_directory = ScratchDirectory::for_test()?;
 
     let downloaded_splits_directory =
@@ -271,11 +276,8 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         storage
             .copy_to_file(Path::new(&split_filename), &dest_filepath)
             .await?;
-        tantivy_dirs.push(
-            BundledSplitFile::new(dest_filepath.to_owned())
-                .get_tantivy_directory()
-                .unwrap(),
-        );
+
+        tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap());
     }
 
     let merge_scratch = MergeScratch {
