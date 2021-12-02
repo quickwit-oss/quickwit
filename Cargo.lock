@@ -2196,7 +2196,6 @@ dependencies = [
  "clap",
  "colored",
  "futures",
- "home",
  "humansize",
  "itertools",
  "json_comments",
@@ -2256,6 +2255,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "env_logger",
+ "home",
  "once_cell",
  "prometheus",
  "rand 0.8.4",

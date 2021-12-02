@@ -19,6 +19,7 @@ regex = "1"
 tokio = { version = "1", features = ["fs", "macros", "rt"] }
 warp = '0.3'
 tracing = "0.1"
+home = "0.5.3"
 
 [dev-dependencies]
 tempfile = "3"

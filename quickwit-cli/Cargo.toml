@@ -48,7 +48,6 @@ openssl-probe = { version = "0.1.4", optional = true }
 itertools = "0.10.1"
 colored = "2.0.0"
 futures = "0.3"
-home = "0.5.3"
 
 [dev-dependencies]
 assert_cmd = "1"

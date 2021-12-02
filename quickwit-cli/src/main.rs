@@ -30,6 +30,7 @@ use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use quickwit_cli::*;
 use quickwit_common::net::socket_addr_from_str;
+use quickwit_common::uri::normalize_uri;
 use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
 use stats::StatsCliSubCommand;

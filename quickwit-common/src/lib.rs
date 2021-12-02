@@ -19,6 +19,7 @@
 
 mod coolid;
 pub mod metrics;
+pub mod uri;
 
 use std::fmt::Debug;
 use std::ops::Range;
