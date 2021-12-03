@@ -18,12 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashSet, VecDeque};
+use std::env;
 use std::fs::File;
-use std::io::{stdout, Stdout, Write};
+use std::io::{stdout, Stdout};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
@@ -49,7 +49,7 @@ use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{debug, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
-use crate::{parse_duration_with_unit, GREEN_COLOR, THROUGHPUT_WINDOW_SIZE};
+use crate::{parse_duration_with_unit, Printer, GREEN_COLOR, THROUGHPUT_WINDOW_SIZE};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
@@ -908,25 +908,6 @@ pub async fn start_statistics_reporting_loop(
     }
 
     Ok(statistics)
-}
-
-struct Printer<'a> {
-    pub stdout: &'a mut Stdout,
-}
-
-impl<'a> Printer<'a> {
-    fn print_header(&mut self, header: &str) -> io::Result<()> {
-        write!(&mut self.stdout, " {}", header.bright_blue())?;
-        Ok(())
-    }
-
-    fn print_value(&mut self, fmt_args: fmt::Arguments) -> io::Result<()> {
-        write!(&mut self.stdout, " {}", fmt_args)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.stdout.flush()
-    }
 }
 
 fn display_statistics(

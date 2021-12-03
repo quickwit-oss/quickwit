@@ -25,6 +25,10 @@ pub mod index;
 pub mod service;
 pub mod split;
 pub mod stats;
+use std::io::{Stdout, Write};
+use std::{fmt, io};
+
+use colored::Colorize;
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
@@ -71,5 +75,25 @@ pub fn parse_duration_with_unit(duration: &str) -> anyhow::Result<Duration> {
             _ => Err(anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]`")),
         },
         Err(err) => Err(anyhow::anyhow!(err)),
+    }
+}
+
+/// A struct to print data on the standard output.
+pub struct Printer<'a> {
+    pub stdout: &'a mut Stdout,
+}
+
+impl<'a> Printer<'a> {
+    pub fn print_header(&mut self, header: &str) -> io::Result<()> {
+        write!(&mut self.stdout, " {}", header.bright_blue())?;
+        Ok(())
+    }
+
+    pub fn print_value(&mut self, fmt_args: fmt::Arguments) -> io::Result<()> {
+        write!(&mut self.stdout, " {}", fmt_args)
+    }
+
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.stdout.flush()
     }
 }

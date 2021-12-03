@@ -160,11 +160,11 @@ impl FromStr for SplitState {
     type Err = &'static str;
 
     fn from_str(input: &str) -> Result<SplitState, Self::Err> {
-        match input {
-            "New" => Ok(SplitState::New),
-            "Staged" => Ok(SplitState::Staged),
-            "Published" => Ok(SplitState::Published),
-            "ScheduledForDeletion" => Ok(SplitState::ScheduledForDeletion),
+        match input.to_lowercase().as_str() {
+            "new" => Ok(SplitState::New),
+            "staged" => Ok(SplitState::Staged),
+            "published" => Ok(SplitState::Published),
+            "scheduledfordeletion" => Ok(SplitState::ScheduledForDeletion),
             _ => Err("Unknown split state"),
         }
     }

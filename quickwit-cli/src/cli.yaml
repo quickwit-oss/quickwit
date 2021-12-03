@@ -206,6 +206,39 @@ subcommands:
         display_order: 2
         about: Operations (add, delete, describe...) on splits.
         subcommands:
+            - list:
+                about: List all splits of an index.
+                args:
+                    - metastore-uri:
+                        about: Location of the metastore
+                        long: metastore-uri
+                        value_name: METASTORE URI
+                        required: true
+                        env: QUICKWIT_METASTORE_URI
+                    - index-id:
+                        about: Index ID
+                        long: index-id
+                        value_name: INDEX ID
+                        required: true
+                    - state:
+                        about: Split state to filter on.
+                        long: state
+                        value_name: SPLIT STATE
+                        required: true
+                    - from:
+                        about: Start date to filter on.
+                        long: from
+                        value_name: START TIMESTAMP
+                    - to:
+                        about: End date to filter on.
+                        long: to
+                        value_name: END TIMESTAMP
+                    - tags:
+                        about: Comma-separated list of tags to filter on.
+                        long: tags
+                        value_name: TAGS
+                        multiple_occurrences: true
+                        use_delimiter: true
             - extract:
                 about: Extracts a split into a folder.
                 args:

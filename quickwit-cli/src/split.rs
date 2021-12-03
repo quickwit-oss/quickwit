@@ -17,18 +17,34 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::io::stdout;
+use std::ops::Range;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use anyhow::{bail, Context};
+use chrono::{NaiveDate, NaiveDateTime};
 use clap::ArgMatches;
 use humansize::{file_size_opts, FileSize};
 use quickwit_common::uri::normalize_uri;
 use quickwit_directories::{
     get_hotcache_from_split, read_split_footer, BundleDirectory, HotDirectory,
 };
-use quickwit_metastore::MetastoreUriResolver;
+use quickwit_metastore::{MetastoreUriResolver, SplitState};
 use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
 use tracing::debug;
+
+use crate::Printer;
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct ListSplitArgs {
+    pub metastore_uri: String,
+    pub index_id: String,
+    pub state: SplitState,
+    pub from: Option<i64>,
+    pub to: Option<i64>,
+    pub tags: Vec<String>,
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeSplitArgs {
@@ -63,6 +79,7 @@ impl ExtractSplitArgs {
 
 #[derive(Debug, PartialEq)]
 pub enum SplitCliCommand {
+    ListSplit(ListSplitArgs),
     DescribeSplit(DescribeSplitArgs),
     ExtractSplit(ExtractSplitArgs),
 }
@@ -73,10 +90,61 @@ impl SplitCliCommand {
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
+            "list" => Self::parse_list_args(submatches),
             "describe" => Self::parse_describe_args(submatches),
             "extract" => Self::parse_extract_split_args(submatches),
             _ => bail!("Subcommand '{}' is not implemented", subcommand),
         }
+    }
+
+    fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .context("'metastore-uri' is a required arg")
+            .map(normalize_uri)??;
+        let index_id = matches
+            .value_of("index-id")
+            .context("'index-id' is a required arg")?
+            .to_string();
+
+        let state = matches
+            .value_of("state")
+            .context("'state' is a required arg")
+            .map(SplitState::from_str)?
+            .map_err(|err_str| anyhow::anyhow!(err_str))?;
+
+        let from = if let Some(date_str) = matches.value_of("from") {
+            let from_date_time = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                .map(|date| date.and_hms(0, 0, 0))
+                .or_else(|_err| NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S"))
+                .context("'from' should be of the format `2020-10-31` or `2020-10-31T02:00:00`")?;
+            Some(from_date_time.timestamp())
+        } else {
+            None
+        };
+
+        let to = if let Some(date_str) = matches.value_of("to") {
+            let to_date_time = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+                .map(|date| date.and_hms(0, 0, 0))
+                .or_else(|_err| NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S"))
+                .context("'to' should be of the format `2020-10-31` or `2020-10-31T02:00:00`")?;
+            Some(to_date_time.timestamp())
+        } else {
+            None
+        };
+
+        let tags = matches.values_of("tags").map_or(vec![], |values| {
+            values.into_iter().map(str::to_string).collect::<Vec<_>>()
+        });
+
+        Ok(Self::ListSplit(ListSplitArgs {
+            metastore_uri,
+            index_id,
+            state,
+            from,
+            to,
+            tags,
+        }))
     }
 
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
@@ -129,10 +197,73 @@ impl SplitCliCommand {
 
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
+            Self::ListSplit(args) => list_split_cli(args).await,
             Self::DescribeSplit(args) => describe_split_cli(args).await,
             Self::ExtractSplit(args) => extract_split_cli(args).await,
         }
     }
+}
+
+pub async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
+    debug!(args = ?args, "list-split");
+
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+    let time_range_opt = match (args.from, args.to) {
+        (None, None) => None,
+        (None, Some(to)) => Some(Range {
+            start: i64::MIN,
+            end: to,
+        }),
+        (Some(from), None) => Some(Range {
+            start: from,
+            end: i64::MAX,
+        }),
+        (Some(from), Some(to)) => Some(Range {
+            start: from,
+            end: to,
+        }),
+    };
+    let splits = metastore
+        .list_splits(&args.index_id, args.state, time_range_opt, &args.tags)
+        .await?;
+
+    let mut stdout_handle = stdout();
+    let mut printer = Printer {
+        stdout: &mut stdout_handle,
+    };
+    for split in splits {
+        printer.print_header("Id")?;
+        printer.print_value(format_args!("{:>7}", split.split_metadata.split_id))?;
+        printer.print_header("Created at")?;
+        printer.print_value(format_args!(
+            "{:>5}",
+            NaiveDateTime::from_timestamp(split.split_metadata.create_timestamp, 0)
+        ))?;
+        printer.print_header("Updated at")?;
+        printer.print_value(format_args!(
+            "{:>3}",
+            NaiveDateTime::from_timestamp(split.update_timestamp, 0)
+        ))?;
+        printer.print_header("Num docs")?;
+        printer.print_value(format_args!("{:>7}", split.split_metadata.num_docs))?;
+        printer.print_header("Size")?;
+        printer.print_value(format_args!(
+            "{:>5}MB",
+            split.split_metadata.original_size_in_bytes / 1_000_000
+        ))?;
+        printer.print_header("Demux ops")?;
+        printer.print_value(format_args!("{:>7}", split.split_metadata.demux_num_ops))?;
+        printer.print_header("Time range")?;
+        if let Some(time_range) = split.split_metadata.time_range {
+            printer.print_value(format_args!("[{:?}]\n", time_range))?;
+        } else {
+            printer.print_value(format_args!("[*]\n"))?;
+        }
+        printer.flush()?;
+    }
+
+    Ok(())
 }
 
 pub async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {

@@ -162,7 +162,7 @@ async fn main() -> anyhow::Result<()> {
 /// Return the about text with telemetry info.
 fn about_text() -> String {
     let mut about_text = String::from(
-        "Index your dataset on object storage & making it searchable from the command line.\n  Find more information at https://quickwit.io/docs\n\n",
+        "Index your dataset on object storage & make it searchable from the command line.\n  Find more information at https://quickwit.io/docs\n\n",
     );
     if quickwit_telemetry::is_telemetry_enabled() {
         about_text += "Telemetry: enabled";
@@ -176,12 +176,15 @@ mod tests {
     use std::path::Path;
     use std::time::Duration;
 
+    use chrono::NaiveDateTime;
     use clap::{load_yaml, App, AppSettings};
     use quickwit_cli::index::{
         CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IndexDataArgs, SearchIndexArgs,
     };
     use quickwit_cli::service::{ServiceCliCommand, StartServiceArgs};
+    use quickwit_cli::split::ListSplitArgs;
     use quickwit_common::net::socket_addr_from_str;
+    use quickwit_metastore::SplitState;
     use tempfile::NamedTempFile;
 
     use super::*;
@@ -588,6 +591,58 @@ mod tests {
                 rest_socket_addr, host_key_path, peer_socket_addrs, metastore_uri, ..
             })) if rest_socket_addr == socket_addr_from_str("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![socket_addr_from_str("192.168.1.13:9090").unwrap(), socket_addr_from_str("192.168.1.14:9090").unwrap()] && &metastore_uri == "file:///indexes"
         ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_list_split_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "split",
+            "list",
+            "--metastore-uri",
+            "file:///indexes",
+            "--index-id",
+            "wikipedia",
+            "--state",
+            "published",
+            "--from",
+            "2021-12-03",
+            "--to",
+            "2021-12-05T00:30:25",
+            "--tags",
+            "foo:bar,bar:baz",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Split(SplitCliCommand::ListSplit(ListSplitArgs {
+                index_id, metastore_uri, state, from, to, tags
+            })) if &index_id == "wikipedia"
+            && &metastore_uri == "file:///indexes"
+            && state == SplitState::Published
+            && from == Some(NaiveDateTime::parse_from_str("2021-12-03T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap().timestamp())
+            && to == Some(NaiveDateTime::parse_from_str("2021-12-05T00:30:25", "%Y-%m-%dT%H:%M:%S").unwrap().timestamp())
+            && tags == vec!["foo:bar".to_string(), "bar:baz".to_string()]
+        ));
+
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "split",
+            "list",
+            "--metastore-uri",
+            "file:///indexes",
+            "--index-id",
+            "wikipedia",
+            "--state",
+            "published",
+            "--from",
+            "2021-12-03T", // <- expect time
+        ])?;
+        assert!(matches!(CliCommand::parse_cli_args(&matches), Err { .. }));
 
         Ok(())
     }
