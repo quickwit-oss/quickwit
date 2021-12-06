@@ -23,48 +23,31 @@ use anyhow::{bail, Context};
 use clap::ArgMatches;
 use humansize::{file_size_opts, FileSize};
 use quickwit_common::uri::normalize_uri;
-use quickwit_directories::{
-    get_hotcache_from_split, read_split_footer, BundleDirectory, HotDirectory,
-};
+use quickwit_directories::{get_hotcache_from_split, read_split_footer, HotDirectory};
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
 use tracing::debug;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeSplitArgs {
-    metastore_uri: String,
-    index_id: String,
-    split_id: String,
+    pub metastore_uri: String,
+    pub index_id: String,
+    pub split_id: String,
+    pub verbose: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ExtractSplitArgs {
-    metastore_uri: String,
-    index_id: String,
-    split_id: String,
-    target_folder: PathBuf,
-}
-
-impl ExtractSplitArgs {
-    pub fn new(
-        metastore_uri: String,
-        index_id: String,
-        split_id: String,
-        target_folder: PathBuf,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
-            metastore_uri,
-            index_id,
-            split_id,
-            target_folder,
-        })
-    }
+    pub metastore_uri: String,
+    pub index_id: String,
+    pub split_id: String,
+    pub target_folder: PathBuf,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum SplitCliCommand {
-    DescribeSplit(DescribeSplitArgs),
-    ExtractSplit(ExtractSplitArgs),
+    Describe(DescribeSplitArgs),
+    Extract(ExtractSplitArgs),
 }
 
 impl SplitCliCommand {
@@ -92,11 +75,13 @@ impl SplitCliCommand {
             .value_of("metastore-uri")
             .context("'metastore-uri' is a required arg")
             .map(normalize_uri)??;
+        let verbose = matches.is_present("verbose");
 
-        Ok(Self::DescribeSplit(DescribeSplitArgs {
+        Ok(Self::Describe(DescribeSplitArgs {
             metastore_uri,
             index_id,
             split_id,
+            verbose,
         }))
     }
 
@@ -119,18 +104,18 @@ impl SplitCliCommand {
             .map(PathBuf::from)
             .context("'target-folder' is a required arg")?;
 
-        Ok(Self::ExtractSplit(ExtractSplitArgs::new(
+        Ok(Self::Extract(ExtractSplitArgs {
             metastore_uri,
             index_id,
             split_id,
             target_folder,
-        )?))
+        }))
     }
 
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
-            Self::DescribeSplit(args) => describe_split_cli(args).await,
-            Self::ExtractSplit(args) => extract_split_cli(args).await,
+            Self::Describe(args) => describe_split_cli(args).await,
+            Self::Extract(args) => extract_split_cli(args).await,
         }
     }
 }
@@ -146,18 +131,13 @@ pub async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
 
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
     let (split_footer, _) = read_split_footer(index_storage, &split_file).await?;
-
-    let stats = BundleDirectory::get_stats_split(split_footer.clone())?;
     let hotcache_bytes = get_hotcache_from_split(split_footer)?;
-
-    for (path, size) in stats {
-        let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
-        println!("{:?} {}", path, readable_size);
-    }
-    let hotcache_stats = HotDirectory::get_stats_per_file(hotcache_bytes)?;
-    for (path, size) in hotcache_stats {
-        let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
-        println!("HotCache {:?} {}", path, readable_size);
+    if args.verbose {
+        let hotcache_stats = HotDirectory::get_stats_per_file(hotcache_bytes)?;
+        for (path, size) in hotcache_stats {
+            let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
+            println!("HotCache {:?} {}", path, readable_size);
+        }
     }
     Ok(())
 }

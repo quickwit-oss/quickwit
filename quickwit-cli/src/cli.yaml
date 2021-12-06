@@ -216,7 +216,6 @@ subcommands:
                         long: split-id
                         value_name: SPLIT ID
                         required: true
-                        index: 1
                     - metastore-uri:
                         about: Location of the metastore.
                         value_name: METASTORE URI
@@ -240,13 +239,15 @@ subcommands:
                         long: split-id
                         value_name: SPLIT ID
                         required: true
-                        index: 1
                     - metastore-uri:
                         about: Location of the metastore.
                         long: metastore-uri
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
+                    - verbose:
+                        about: Print also hotcache info.
+                        long: verbose
     - service:
         about: Launches services.
         display_order: 3

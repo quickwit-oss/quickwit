@@ -55,6 +55,15 @@ pub struct DescribeIndexArgs {
     pub index_id: String,
 }
 
+impl DescribeIndexArgs {
+    pub fn new(metastore_uri: String, index_id: String) -> anyhow::Result<Self> {
+        Ok(Self {
+            metastore_uri,
+            index_id,
+        })
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct CreateIndexArgs {
     pub metastore_uri: String,

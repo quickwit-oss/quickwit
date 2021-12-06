@@ -178,10 +178,11 @@ mod tests {
 
     use clap::{load_yaml, App, AppSettings};
     use quickwit_cli::index::{
-        CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IngestDocsArgs,
-        MergeOrDemuxArgs, SearchIndexArgs,
+        CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, GarbageCollectIndexArgs,
+        IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
     };
     use quickwit_cli::service::{RunServiceArgs, ServiceCliCommand};
+    use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs};
 
     use super::*;
     use crate::CliCommand;
@@ -544,6 +545,85 @@ mod tests {
                 metastore_uri,
                 data_dir_path,
             })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_describe_index_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "index",
+            "describe",
+            "--index-id",
+            "wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Describe(DescribeIndexArgs {
+                index_id,
+                metastore_uri,
+            })) if &index_id == "wikipedia" && &metastore_uri == "file:///indexes"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_split_describe_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "split",
+            "describe",
+            "--index-id",
+            "wikipedia",
+            "--split-id",
+            "ABC",
+            "--metastore-uri",
+            "file:///indexes",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Split(SplitCliCommand::Describe(DescribeSplitArgs {
+                index_id,
+                split_id,
+                metastore_uri,
+                verbose: false,
+            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_split_extract_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "split",
+            "extract",
+            "--index-id",
+            "wikipedia",
+            "--split-id",
+            "ABC",
+            "--target-folder",
+            "datadir",
+            "--metastore-uri",
+            "file:///indexes",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Split(SplitCliCommand::Extract(ExtractSplitArgs {
+                index_id,
+                split_id,
+                metastore_uri,
+                target_folder
+            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_folder == PathBuf::from("datadir")
         ));
         Ok(())
     }
