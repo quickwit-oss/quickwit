@@ -29,9 +29,9 @@ use quickwit_metastore::{
 };
 use quickwit_storage::{Storage, StorageResolverError, StorageUriResolver};
 
-use crate::actors::IndexerParams;
+use crate::actors::{IndexerParams, PipelineObservableState};
 use crate::index_data;
-use crate::models::{CommitPolicy, IndexingDirectory, IndexingStatistics};
+use crate::models::{CommitPolicy, IndexingDirectory};
 use crate::source::{SourceConfig, VecSourceParams};
 
 /// Creates a Test environment.
@@ -81,7 +81,7 @@ impl TestSandbox {
     ///
     /// The documents are expected to be `serde_json::Value`.
     /// They can be created using the `serde_json::json!` macro.
-    pub async fn add_documents<I>(&self, split_docs: I) -> anyhow::Result<IndexingStatistics>
+    pub async fn add_documents<I>(&self, split_docs: I) -> anyhow::Result<PipelineObservableState>
     where
         I: IntoIterator<Item = serde_json::Value> + 'static,
         I::IntoIter: Send,
@@ -108,7 +108,7 @@ impl TestSandbox {
                 num_docs_threshold: 5_000_000,
             },
         };
-        let statistics = index_data(
+        let state = index_data(
             self.index_id.clone(),
             self.metastore.clone(),
             indexer_params,
@@ -116,7 +116,7 @@ impl TestSandbox {
             self.storage_uri_resolver.clone(),
         )
         .await?;
-        Ok(statistics)
+        Ok(state)
     }
 
     /// Returns the metastore of the TestIndex
@@ -184,11 +184,11 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let index_config = Arc::new(WikipediaIndexConfig::new());
         let test_index_builder = TestSandbox::create("test_index", index_config).await?;
-        let statistics = test_index_builder.add_documents(vec![
+        let state = test_index_builder.add_documents(vec![
             serde_json::json!({"title": "Hurricane Fay", "body": "...", "url": "http://hurricane-fay"}),
             serde_json::json!({"title": "Ganimede", "body": "...", "url": "http://ganimede"}),
         ]).await?;
-        assert_eq!(statistics.num_uploaded_splits, 1);
+        assert_eq!(state.indexing_statistics.num_uploaded_splits, 1);
         let metastore = test_index_builder.metastore();
         {
             let splits = metastore.list_all_splits("test_index").await?;

@@ -59,6 +59,17 @@ pub struct IndexingPipelineHandler {
     pub merge_publisher: ActorHandle<Publisher>,
 }
 
+impl IndexingPipelineHandler {
+    pub fn merge_pipeline_idle(&self) -> bool {
+        self.merge_planner.state() == ActorState::Idle
+            && self.merge_split_downloader.state() == ActorState::Idle
+            && self.merge_executor.state() == ActorState::Idle
+            && self.merge_packager.state() == ActorState::Idle
+            && self.merge_uploader.state() == ActorState::Idle
+            && self.merge_publisher.state() == ActorState::Idle
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Msg {
     Supervise,
@@ -67,22 +78,28 @@ pub enum Msg {
 
 /// TODO have a clear strategy on when we should retry, and when we should not.
 pub struct IndexingPipelineSupervisor {
-    generation: usize,
     params: IndexingPipelineParams,
     previous_generations_statistics: IndexingStatistics,
-    statistics: IndexingStatistics,
+    state: PipelineObservableState,
     handlers: Option<IndexingPipelineHandler>,
     // Killswitch used for the actors in the pipeline. This is not the supervisor killswitch.
     kill_switch: KillSwitch,
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct PipelineObservableState {
+    pub indexing_statistics: IndexingStatistics,
+    pub generation: usize,
+    pub merge_pipeline_idle_on_last_healthcheck: bool,
+}
+
 impl Actor for IndexingPipelineSupervisor {
     type Message = Msg;
 
-    type ObservableState = IndexingStatistics;
+    type ObservableState = PipelineObservableState;
 
     fn observable_state(&self) -> Self::ObservableState {
-        self.statistics.clone()
+        self.state.clone()
     }
 
     fn name(&self) -> String {
@@ -101,8 +118,7 @@ impl IndexingPipelineSupervisor {
             previous_generations_statistics: Default::default(),
             handlers: None,
             kill_switch: KillSwitch::default(),
-            statistics: IndexingStatistics::default(),
-            generation: 0,
+            state: PipelineObservableState::default(),
         }
     }
 
@@ -113,7 +129,7 @@ impl IndexingPipelineSupervisor {
                 handlers.uploader.observe(),
                 handlers.publisher.observe(),
             );
-            self.statistics = self
+            self.state.indexing_statistics = self
                 .previous_generations_statistics
                 .clone()
                 .add_actor_counters(
@@ -171,26 +187,27 @@ impl IndexingPipelineSupervisor {
         }
 
         if !failure_or_unhealthy_actors.is_empty() {
-            error!(index=%self.params.index_id, gen=self.generation, healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "indexing pipeline error.");
+            error!(index=%self.params.index_id, gen=self.state.generation, healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "indexing pipeline error.");
             return Health::FailureOrUnhealthy;
         }
 
         if healthy_actors.is_empty() {
             // all actors finished successfully.
-            info!(index=%self.params.index_id, gen=self.generation, "indexing-pipeline-success");
+            info!(index=%self.params.index_id, gen=self.state.generation, "indexing-pipeline-success");
             return Health::Success;
         }
 
         // No error at this point, and there are still actors running
-        debug!(index=%self.params.index_id, gen=self.generation, healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "pipeline is judged healthy.");
+        debug!(index=%self.params.index_id, gen=self.state.generation, healthy=?healthy_actors, failure_or_unhealthy_actors=?failure_or_unhealthy_actors, success=?success_actors, "pipeline is judged healthy.");
         Health::Healthy
     }
 
     // TODO this should return an error saying whether we can retry or not.
-    #[instrument(name="", level="info", skip_all, fields(index=%self.params.index_id, gen=self.generation))]
+    #[instrument(name="", level="info", skip_all, fields(index=%self.params.index_id, gen=self.state.generation))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Msg>) -> anyhow::Result<()> {
-        self.generation += 1;
-        self.previous_generations_statistics = self.statistics.clone();
+        self.state.merge_pipeline_idle_on_last_healthcheck = false;
+        self.state.generation += 1;
+        self.previous_generations_statistics = self.state.indexing_statistics.clone();
         self.kill_switch = KillSwitch::default();
         let index_metadata = self
             .params
@@ -416,35 +433,43 @@ impl IndexingPipelineSupervisor {
             match self.healthcheck() {
                 Health::Healthy => {
                     if let Some(handlers) = self.handlers.as_mut() {
-                        // We want to terminate the pipeline once the source is exhausted,
-                        // the indexer has exited and all merge operations have been done.
-                        // This is true when all merging pipeline actors are all in `IDLE` state
-                        // and indexing actors have exited.
+                        // We want to terminate the pipeline once the source
+                        // is exhausted and all pending operations, either indexing operations or
+                        // or merge operations are done.
+                        // This is true when all indexing actors have exited and that all merge
+                        // actors `IDLE` state. As we may encounter racing
+                        // conditions on the combination of merge actors
+                        // idle states, we wait for merge actors to remain in `IDLE` during
+                        // two healthchecks (almost equivalent to two `HEARTBEAT`).
                         if handlers.source.state() == ActorState::Exit
                             && handlers.indexer.state() == ActorState::Exit
                             && handlers.packager.state() == ActorState::Exit
                             && handlers.uploader.state() == ActorState::Exit
                             && handlers.publisher.state() == ActorState::Exit
-                            && handlers.merge_planner.state() == ActorState::Idle
-                            && handlers.merge_split_downloader.state() == ActorState::Idle
-                            && handlers.merge_executor.state() == ActorState::Idle
-                            && handlers.merge_packager.state() == ActorState::Idle
-                            && handlers.merge_uploader.state() == ActorState::Idle
-                            && handlers.merge_publisher.state() == ActorState::Idle
                         {
-                            // To stop the pipeline, we stop the merge planner, this will then stop
-                            // all merge actors.
-                            info!(
-                                "Stopping the garbage collector and the merge planner since \
-                                 source is exhausted and there is no more merge operations to \
-                                 make."
-                            );
-                            let _ = ctx
-                                .send_exit_with_success(handlers.merge_planner.mailbox())
-                                .await;
-                            let _ = ctx
-                                .send_exit_with_success(handlers.garbage_collector.mailbox())
-                                .await;
+                            let merge_pipeline_currently_idle = handlers.merge_pipeline_idle();
+                            if merge_pipeline_currently_idle
+                                && self.state.merge_pipeline_idle_on_last_healthcheck
+                            {
+                                // We reach the termination condition. To stop the pipeline,
+                                // we stop the merge planner that will then stop all other merge
+                                // actors and the garbage collector.
+                                info!(
+                                    "Stopping the garbage collector and the merge planner since \
+                                     source is exhausted and there is no more merge operations to \
+                                     make."
+                                );
+                                let _ = ctx
+                                    .send_exit_with_success(handlers.merge_planner.mailbox())
+                                    .await;
+                                let _ = ctx
+                                    .send_exit_with_success(handlers.garbage_collector.mailbox())
+                                    .await;
+                            } else if merge_pipeline_currently_idle {
+                                self.state.merge_pipeline_idle_on_last_healthcheck = true;
+                            } else {
+                                self.state.merge_pipeline_idle_on_last_healthcheck = false;
+                            }
                         }
                     }
                 }
@@ -495,7 +520,6 @@ impl AsyncActor for IndexingPipelineSupervisor {
     async fn process_message(
         &mut self,
         message: Self::Message,
-
         ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
         match message {
@@ -591,9 +615,11 @@ mod tests {
         let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) =
             universe.spawn_actor(indexing_supervisor).spawn_async();
-        let (pipeline_termination, pipeline_statistics) = pipeline_handler.join().await;
+        let (pipeline_termination, pipeline_state) = pipeline_handler.join().await;
         assert!(pipeline_termination.is_success());
-        assert_eq!(pipeline_statistics.num_published_splits, 1);
+        assert_eq!(pipeline_state.generation, 1);
+        assert!(pipeline_state.merge_pipeline_idle_on_last_healthcheck);
+        assert_eq!(pipeline_state.indexing_statistics.num_published_splits, 1);
         Ok(())
     }
 }

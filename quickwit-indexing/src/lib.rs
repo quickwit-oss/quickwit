@@ -19,13 +19,13 @@
 
 use std::sync::Arc;
 
+use actors::PipelineObservableState;
 use anyhow::bail;
 use quickwit_actors::Universe;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageUriResolver;
 
 use crate::actors::{IndexerParams, IndexingPipelineParams, IndexingPipelineSupervisor};
-use crate::models::IndexingStatistics;
 use crate::source::SourceConfig;
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
@@ -52,7 +52,7 @@ pub async fn index_data(
     indexer_params: IndexerParams,
     source_config: SourceConfig,
     storage_uri_resolver: StorageUriResolver,
-) -> anyhow::Result<IndexingStatistics> {
+) -> anyhow::Result<PipelineObservableState> {
     let universe = Universe::new();
     let indexing_pipeline_params = IndexingPipelineParams {
         index_id,
@@ -66,11 +66,11 @@ pub async fn index_data(
     let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
     let (_pipeline_mailbox, pipeline_handler) =
         universe.spawn_actor(indexing_supervisor).spawn_async();
-    let (pipeline_termination, statistics) = pipeline_handler.join().await;
+    let (pipeline_termination, state) = pipeline_handler.join().await;
     if !pipeline_termination.is_success() {
         bail!(pipeline_termination);
     }
-    Ok(statistics)
+    Ok(state)
 }
 
 pub fn new_split_id() -> String {

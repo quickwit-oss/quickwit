@@ -27,6 +27,7 @@ mod uploader;
 
 pub use pipeline_supervisor::{
     IndexingPipelineHandler, IndexingPipelineParams, IndexingPipelineSupervisor,
+    PipelineObservableState,
 };
 mod merge_executor;
 mod merge_planner;

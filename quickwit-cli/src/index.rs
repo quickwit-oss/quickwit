@@ -852,11 +852,11 @@ pub async fn start_statistics_reporting_loop(
         let observation = pipeline_handler.observe().await;
 
         // Let's not display live statistics to allow screen to scroll.
-        if observation.state.num_docs > 0 {
+        if observation.state.indexing_statistics.num_docs > 0 {
             display_statistics(
                 &mut stdout_handle,
                 &mut throughput_calculator,
-                &observation.state,
+                &observation.state.indexing_statistics,
             )?;
         }
 
@@ -865,7 +865,7 @@ pub async fn start_statistics_reporting_loop(
         }
     }
 
-    let (supervisor_exit_status, statistics) = pipeline_handler.join().await;
+    let (supervisor_exit_status, state) = pipeline_handler.join().await;
 
     match supervisor_exit_status {
         ActorExitStatus::Success => {}
@@ -882,12 +882,16 @@ pub async fn start_statistics_reporting_loop(
 
     // If we have received zero docs at this point,
     // there is no point in displaying report.
-    if statistics.num_docs == 0 {
-        return Ok(statistics);
+    if state.indexing_statistics.num_docs == 0 {
+        return Ok(state.indexing_statistics);
     }
 
     if input_path_opt.is_none() {
-        display_statistics(&mut stdout_handle, &mut throughput_calculator, &statistics)?;
+        display_statistics(
+            &mut stdout_handle,
+            &mut throughput_calculator,
+            &state.indexing_statistics,
+        )?;
     }
     // display end of task report
     println!();
@@ -895,19 +899,19 @@ pub async fn start_statistics_reporting_loop(
     if elapsed_secs >= 60 {
         println!(
             "Indexed {} documents in {:.2$}min",
-            statistics.num_docs,
+            state.indexing_statistics.num_docs,
             elapsed_secs.max(1) as f64 / 60f64,
             2
         );
     } else {
         println!(
             "Indexed {} documents in {}s",
-            statistics.num_docs,
+            state.indexing_statistics.num_docs,
             elapsed_secs.max(1)
         );
     }
 
-    Ok(statistics)
+    Ok(state.indexing_statistics)
 }
 
 struct Printer<'a> {
