@@ -606,8 +606,8 @@ mod tests {
             "file:///indexes",
             "--index-id",
             "wikipedia",
-            "--state",
-            "published",
+            "--states",
+            "published,staged",
             "--from",
             "2021-12-03",
             "--to",
@@ -619,10 +619,10 @@ mod tests {
         assert!(matches!(
             command,
             CliCommand::Split(SplitCliCommand::ListSplit(ListSplitArgs {
-                index_id, metastore_uri, state, from, to, tags
+                index_id, metastore_uri, states, from, to, tags
             })) if &index_id == "wikipedia"
             && &metastore_uri == "file:///indexes"
-            && state == SplitState::Published
+            && states == vec![SplitState::Published, SplitState::Staged]
             && from == Some(NaiveDateTime::parse_from_str("2021-12-03T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap().timestamp())
             && to == Some(NaiveDateTime::parse_from_str("2021-12-05T00:30:25", "%Y-%m-%dT%H:%M:%S").unwrap().timestamp())
             && tags == vec!["foo:bar".to_string(), "bar:baz".to_string()]
@@ -637,7 +637,7 @@ mod tests {
             "file:///indexes",
             "--index-id",
             "wikipedia",
-            "--state",
+            "--states",
             "published",
             "--from",
             "2021-12-03T", // <- expect time

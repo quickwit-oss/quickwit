@@ -204,7 +204,7 @@ subcommands:
         settings:
             - ArgRequiredElseHelp
         display_order: 2
-        about: Operations (add, delete, describe...) on splits.
+        about: Operations (list, add, delete, describe...) on splits.
         subcommands:
             - list:
                 about: List all splits of an index.
@@ -220,11 +220,12 @@ subcommands:
                         long: index-id
                         value_name: INDEX ID
                         required: true
-                    - state:
-                        about: Split state to filter on.
-                        long: state
-                        value_name: SPLIT STATE
-                        required: true
+                    - states:
+                        about: Comma-separated list of SplitState to filter on.
+                        long: states
+                        value_name: SPLIT STATES
+                        multiple_occurrences: true
+                        use_delimiter: true
                     - from:
                         about: Start date to filter on.
                         long: from

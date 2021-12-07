@@ -17,8 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
 use std::io::stdout;
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -40,7 +41,7 @@ use crate::Printer;
 pub struct ListSplitArgs {
     pub metastore_uri: String,
     pub index_id: String,
-    pub state: SplitState,
+    pub states: Vec<SplitState>,
     pub from: Option<i64>,
     pub to: Option<i64>,
     pub tags: Vec<String>,
@@ -107,10 +108,13 @@ impl SplitCliCommand {
             .context("'index-id' is a required arg")?
             .to_string();
 
-        let state = matches
-            .value_of("state")
-            .context("'state' is a required arg")
-            .map(SplitState::from_str)?
+        let states = matches
+            .values_of("states")
+            .map_or(vec![], |values| {
+                values.into_iter().map(SplitState::from_str).collect()
+            })
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
             .map_err(|err_str| anyhow::anyhow!(err_str))?;
 
         let from = if let Some(date_str) = matches.value_of("from") {
@@ -140,7 +144,7 @@ impl SplitCliCommand {
         Ok(Self::ListSplit(ListSplitArgs {
             metastore_uri,
             index_id,
-            state,
+            states,
             from,
             to,
             tags,
@@ -224,9 +228,34 @@ pub async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
             end: to,
         }),
     };
-    let splits = metastore
-        .list_splits(&args.index_id, args.state, time_range_opt, &args.tags)
-        .await?;
+    let is_disjoint_time_range = |left: &Range<i64>, right: &RangeInclusive<i64>| {
+        left.end <= *right.start() || *right.end() < left.start
+    };
+    let filter_tag_set = args.tags.iter().cloned().collect::<BTreeSet<_>>();
+
+    let mut splits = vec![];
+    // apply tags & time range filter.
+    for split in metastore.list_all_splits(&args.index_id).await? {
+        if !filter_tag_set.is_empty() && split.split_metadata.tags.is_disjoint(&filter_tag_set) {
+            continue;
+        }
+        if let (Some(filter_time_range), Some(split_time_range)) =
+            (&time_range_opt, &split.split_metadata.time_range)
+        {
+            if is_disjoint_time_range(filter_time_range, split_time_range) {
+                continue;
+            }
+        }
+        splits.push(split);
+    }
+
+    // apply SplitState filter.
+    if !args.states.is_empty() {
+        splits = splits
+            .into_iter()
+            .filter(|split| args.states.contains(&split.split_state))
+            .collect::<Vec<_>>();
+    }
 
     let mut stdout_handle = stdout();
     let mut printer = Printer {
