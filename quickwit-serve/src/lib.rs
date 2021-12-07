@@ -31,6 +31,7 @@ use std::sync::Arc;
 
 use quickwit_cluster::cluster::{read_or_create_host_key, Cluster};
 use quickwit_cluster::service::ClusterServiceImpl;
+use quickwit_common::run_checklist;
 use quickwit_config::SearcherConfig;
 use quickwit_metastore::Metastore;
 use quickwit_search::{http_addr_to_swim_addr, ClusterClient, SearchClientPool, SearchServiceImpl};
@@ -91,6 +92,7 @@ pub async fn run_searcher(
     searcher_config: SearcherConfig,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<()> {
+    run_checklist(vec![("metastore", metastore.check_connectivity())]).await;
     let host_key = read_or_create_host_key(&searcher_config.host_key_path)?;
     let cluster = Arc::new(Cluster::new(
         host_key,

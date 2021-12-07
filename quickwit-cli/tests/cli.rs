@@ -138,7 +138,7 @@ fn test_cmd_ingest_on_non_existing_index() -> Result<()> {
     )
     .assert()
     .failure();
-    // .stderr(predicate::str::contains("❌ index")); TODO: Re-enable.
+    // .stderr(predicate::str::contains("✖ index")); TODO: Re-enable.
     Ok(())
 }
 
@@ -162,7 +162,7 @@ fn test_cmd_ingest_on_non_existing_file() -> Result<()> {
     )
     .assert()
     .failure()
-    .stderr(predicate::str::contains("Command failed"));
+    .stderr(predicate::str::contains("✖ source"));
     Ok(())
 }
 

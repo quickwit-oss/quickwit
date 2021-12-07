@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod checklist;
 mod coolid;
 pub mod metrics;
 pub mod uri;
@@ -25,6 +26,7 @@ use std::fmt::Debug;
 use std::ops::Range;
 use std::str::FromStr;
 
+pub use checklist::{run_checklist, BLUE_COLOR, GREEN_COLOR, RED_COLOR};
 pub use coolid::new_coolid;
 use tracing::{error, info};
 

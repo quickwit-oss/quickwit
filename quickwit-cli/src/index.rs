@@ -30,6 +30,7 @@ use colored::Colorize;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::normalize_uri;
+use quickwit_common::{run_checklist, GREEN_COLOR};
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_index_config::match_tag_field_name;
@@ -45,7 +46,7 @@ use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{debug, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
-use crate::{parse_duration_with_unit, GREEN_COLOR, THROUGHPUT_WINDOW_SIZE};
+use crate::{parse_duration_with_unit, THROUGHPUT_WINDOW_SIZE};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
@@ -548,6 +549,12 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
+
+    run_checklist(vec![
+        ("metastore", metastore.check_connectivity()),
+        ("index", metastore.check_index_available(&args.index_id)),
+    ])
+    .await;
 
     if args.overwrite {
         reset_index(&index_metadata, metastore.clone(), storage.clone()).await?;
