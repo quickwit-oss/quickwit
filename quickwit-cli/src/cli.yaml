@@ -271,17 +271,3 @@ subcommands:
                         about: ID of the index to run the indexer for.
                         long: index-id
                         value_name: INDEX ID
-    - tutorial:
-        about: Get started quickly with one of our pre-configured datasets. No copy-paste needed.
-        display_order: 4
-        settings:
-            - ArgRequiredElseHelp
-        subcommands:
-            - index:
-                about: Indexes a dataset.
-                args:
-                    - name:
-                        about: Name of the dataset.
-                        long: name
-                        value_name: DATASET NAME
-                        required: true
