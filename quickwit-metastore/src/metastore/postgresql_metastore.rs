@@ -32,6 +32,9 @@ use diesel::{
     debug_query, sql_query, BoolExpressionMethods, Connection, ExpressionMethods,
     PgArrayExpressionMethods, PgConnection, QueryDsl, RunQueryDsl,
 };
+use quickwit_index_config::{
+    escape_tag_value, extract_field_name_from_tag_value, make_too_many_tag_value,
+};
 use tracing::{debug, error, info, warn};
 
 use crate::metastore::CheckpointDelta;
@@ -330,8 +333,21 @@ impl PostgresqlMetastore {
 
         if let Some(tags) = tags_opt {
             if !tags.is_empty() {
-                select_statement =
-                    select_statement.filter(schema::splits::dsl::tags.overlaps_with(tags));
+                // Rebuild split tags by escaping values & taking into account
+                // splits with wilcard tags.
+                let mut filter_tags = HashSet::new();
+                for tag_value in tags {
+                    let escaped_tag_value = escape_tag_value(tag_value);
+                    filter_tags.insert(escaped_tag_value);
+                    if let Some(field_name) = extract_field_name_from_tag_value(tag_value) {
+                        filter_tags.insert(make_too_many_tag_value(&field_name));
+                    }
+                }
+
+                select_statement = select_statement.filter(
+                    schema::splits::dsl::tags
+                        .overlaps_with(filter_tags.into_iter().collect::<Vec<_>>()),
+                );
             }
         }
 

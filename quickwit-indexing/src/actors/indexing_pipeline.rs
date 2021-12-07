@@ -20,6 +20,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use async_trait::async_trait;
 use byte_unit::Byte;
 use itertools::Itertools;
@@ -238,6 +239,25 @@ impl IndexingPipeline {
             .remove_dangling_splits(&published_splits)
             .await?;
 
+        let tags_field = index_metadata
+            .index_config
+            .tags_field(&index_metadata.index_config.schema());
+
+        // Collect a map of tag field name and their corresponding field.
+        let tag_fields_list = index_metadata
+            .index_config
+            .tag_field_names()
+            .iter()
+            .map(|field_name| {
+                index_metadata
+                    .index_config
+                    .schema()
+                    .get_field(field_name)
+                    .context(format!("Field `{}` must exist in the schema.", field_name))
+                    .map(|field| (field_name.clone(), field))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         let (merge_planner_mailbox, merge_planner_inbox) =
             create_mailbox::<<MergePlanner as Actor>::Message>(
                 "MergePlanner".to_string(),
@@ -280,11 +300,12 @@ impl IndexingPipeline {
             .spawn_async();
 
         // Merge Packager
-        let tags_field = self
-            .params
-            .doc_mapper
-            .tags_field(&self.params.doc_mapper.schema());
-        let merge_packager = Packager::new("MergePackager", tags_field, merge_uploader_mailbox);
+        let merge_packager = Packager::new(
+            "MergePackager",
+            tag_fields_list.clone(),
+            tags_field,
+            merge_uploader_mailbox,
+        );
         let (merge_packager_mailbox, merge_packager_handler) = ctx
             .spawn_actor(merge_packager)
             .set_kill_switch(self.kill_switch.clone())
@@ -351,7 +372,7 @@ impl IndexingPipeline {
             .spawn_async();
 
         // Packager
-        let packager = Packager::new("Packager", tags_field, uploader_mailbox);
+        let packager = Packager::new("Packager", tag_fields_list, tags_field, uploader_mailbox);
         let (packager_mailbox, packager_handler) = ctx
             .spawn_actor(packager)
             .set_kill_switch(self.kill_switch.clone())

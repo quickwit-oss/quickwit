@@ -21,6 +21,7 @@
 pub mod postgresql_metastore;
 pub mod single_file_metastore;
 
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::ops::Range;
 use std::sync::Arc;
@@ -33,7 +34,7 @@ use quickwit_config::{
 };
 use quickwit_index_config::{
     DefaultIndexConfig as DefaultDocMapper, DefaultIndexConfigBuilder as DocMapperBuilder,
-    IndexConfig as DocMapper, SortBy, SortByConfig, SortOrder,
+    IndexConfig as DocMapper, SortBy, SortByConfig, SortOrder, escape_tag_value, extract_field_name_from_tag_value, make_too_many_tag_value,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -447,9 +448,22 @@ pub fn match_tags_filter(split_tags: &[String], filter_tags: &[String]) -> bool 
     if filter_tags.is_empty() {
         return true;
     }
-    for filter_tag in filter_tags {
-        if split_tags.contains(filter_tag) {
+
+    let mut field_names = HashSet::new();
+    for filter_tag_value in filter_tags {
+        let escaped_tag_value = escape_tag_value(filter_tag_value);
+        if split_tags.contains(&escaped_tag_value) {
             return true;
+        }
+
+        // Match if split tags has a wildcard tag for this field.
+        if let Some(field_name) = extract_field_name_from_tag_value(filter_tag_value) {
+            if !field_names.contains(&field_name)
+                && split_tags.contains(&make_too_many_tag_value(&field_name))
+            {
+                return true;
+            }
+            field_names.insert(field_name);
         }
     }
     false

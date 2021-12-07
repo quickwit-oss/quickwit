@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -26,6 +26,9 @@ use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity, SyncActor};
 use quickwit_directories::write_hotcache;
+use quickwit_index_config::{
+    extract_field_name_from_tag_value, make_too_many_tag_value, MAX_VALUES_PER_TAG_FIELD,
+};
 use tantivy::schema::Field;
 use tantivy::{ReloadPolicy, SegmentId, SegmentMeta};
 use tracing::*;
@@ -48,6 +51,9 @@ use crate::models::{
 pub struct Packager {
     actor_name: &'static str,
     uploader_mailbox: Mailbox<PackagedSplitBatch>,
+    /// A list of tag fields specified in the index config and their
+    /// corresponding schema field.
+    tag_fields_list: Vec<(String, Field)>,
     /// The special field for extracting tags.
     tags_field: Field,
 }
@@ -55,12 +61,14 @@ pub struct Packager {
 impl Packager {
     pub fn new(
         actor_name: &'static str,
+        tag_fields_list: Vec<(String, Field)>,
         tags_field: Field,
         uploader_mailbox: Mailbox<PackagedSplitBatch>,
     ) -> Packager {
         Packager {
             actor_name,
             uploader_mailbox,
+            tag_fields_list,
             tags_field,
         }
     }
@@ -72,8 +80,13 @@ impl Packager {
     ) -> anyhow::Result<PackagedSplit> {
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
-        let packaged_split =
-            create_packaged_split(&segment_metas[..], split, self.tags_field, ctx)?;
+        let packaged_split = create_packaged_split(
+            &segment_metas[..],
+            split,
+            &self.tag_fields_list,
+            self.tags_field,
+            ctx,
+        )?;
         Ok(packaged_split)
     }
 }
@@ -193,6 +206,7 @@ fn build_hotcache<W: io::Write>(split_path: &Path, out: &mut W) -> anyhow::Resul
 fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
+    tag_fields_list: &[(String, Field)],
     tags_field: Field,
     ctx: &ActorContext<IndexedSplitBatch>,
 ) -> anyhow::Result<PackagedSplit> {
@@ -205,17 +219,47 @@ fn create_packaged_split(
         .sum();
 
     // Extracts tag values from `_tags` special fields.
-    let mut tags = BTreeSet::default();
     let index_reader = split
         .index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
+    let mut tag_fields_to_token_count: HashMap<String, usize> = HashMap::default();
+    for reader in index_reader.searcher().segment_readers() {
+        for (tag_field_name, tag_field) in tag_fields_list {
+            let inv_index = reader.inverted_index(*tag_field)?;
+            let token_count = tag_fields_to_token_count
+                .entry(tag_field_name.clone())
+                .or_insert(0);
+            *token_count += inv_index.terms().num_terms() as usize;
+        }
+    }
+    ctx.record_progress();
+
+    let mut tags = BTreeSet::default();
     for reader in index_reader.searcher().segment_readers() {
         let inv_index = reader.inverted_index(tags_field)?;
         let mut terms_streamer = inv_index.terms().stream()?;
         while let Some((term_data, _)) = terms_streamer.next() {
-            tags.insert(String::from_utf8_lossy(term_data).to_string());
+            let tag_value = String::from_utf8_lossy(term_data).to_string();
+            if let Some(field_name) = extract_field_name_from_tag_value(&tag_value)
+                .and_then(|field_name| {
+                    tag_fields_to_token_count
+                        .get(&field_name)
+                        .map(|token_count| (field_name, token_count))
+                })
+                .and_then(|(field_name, token_count)| {
+                    if token_count >= &MAX_VALUES_PER_TAG_FIELD {
+                        Some(field_name)
+                    } else {
+                        None
+                    }
+                })
+            {
+                tags.insert(make_too_many_tag_value(&field_name));
+            } else {
+                tags.insert(tag_value);
+            }
         }
     }
     ctx.record_progress();
@@ -291,7 +335,9 @@ mod tests {
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field("text", TEXT);
         let timestamp_field = schema_builder.add_u64_field("timestamp", FAST);
-        let _tags_field =
+        let tag_field_1 = schema_builder.add_text_field("tag_field_1", TEXT);
+        let tag_field_2 = schema_builder.add_text_field("tag_field_2", TEXT);
+        let tags_field =
             schema_builder.add_text_field(quickwit_index_config::TAGS_FIELD_NAME, STRING);
         let schema = schema_builder.build();
         let index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
@@ -303,21 +349,27 @@ mod tests {
                 index_writer.commit()?;
             }
             for &timestamp in segment_timestamps.iter() {
-                let doc = doc!(
-                    text_field => format!("timestamp is {}", timestamp),
-                    timestamp_field => timestamp
-                );
-                index_writer.add_document(doc)?;
-                num_docs += 1;
-                timerange_opt = Some(
-                    timerange_opt
-                        .map(|timestamp_range| {
-                            let start = timestamp.min(*timestamp_range.start());
-                            let end = timestamp.max(*timestamp_range.end());
-                            RangeInclusive::new(start, end)
-                        })
-                        .unwrap_or_else(|| RangeInclusive::new(timestamp, timestamp)),
-                )
+                for num in 1..10 {
+                    let doc = doc!(
+                        text_field => format!("timestamp is {}", timestamp),
+                        timestamp_field => timestamp,
+                        tag_field_1 => "value",
+                        tag_field_2 => format!("value-{}", num),
+                        tags_field => "tag_field_1:value",
+                        tags_field => format!("tag_field_2:value-{}", num),
+                    );
+                    index_writer.add_document(doc)?;
+                    num_docs += 1;
+                    timerange_opt = Some(
+                        timerange_opt
+                            .map(|timestamp_range| {
+                                let start = timestamp.min(*timestamp_range.start());
+                                let end = timestamp.max(*timestamp_range.end());
+                                RangeInclusive::new(start, end)
+                            })
+                            .unwrap_or_else(|| RangeInclusive::new(timestamp, timestamp)),
+                    )
+                }
             }
         }
         // We don't commit, that's the job of the packager.
@@ -342,6 +394,18 @@ mod tests {
         Ok(indexed_split)
     }
 
+    fn get_tag_fields_map(schema: Schema, field_names: &[&str]) -> Vec<(String, Field)> {
+        field_names
+            .iter()
+            .map(|field_name| {
+                (
+                    field_name.to_string(),
+                    schema.get_field(field_name).unwrap(),
+                )
+            })
+            .collect()
+    }
+
     #[tokio::test]
     async fn test_packager_no_merge_required() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
@@ -354,7 +418,12 @@ mod tests {
             .schema()
             .get_field(quickwit_index_config::TAGS_FIELD_NAME)
             .unwrap();
-        let packager = Packager::new("TestPackager", tags_field, mailbox);
+
+        let tag_fields_map = get_tag_fields_map(
+            indexed_split.index.schema(),
+            &["tag_field_1", "tag_field_2"],
+        );
+        let packager = Packager::new("TestPackager", tag_fields_map, tags_field, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
@@ -370,6 +439,11 @@ mod tests {
         );
         let packaged_splits = inbox.drain_available_message_for_test();
         assert_eq!(packaged_splits.len(), 1);
+
+        let split = &packaged_splits[0].splits[0];
+        assert_eq!(split.tags.len(), 2);
+        assert!(split.tags.contains("tag_field_1:value"));
+        assert!(split.tags.contains("tag_field_2:*"));
         Ok(())
     }
 
@@ -384,7 +458,11 @@ mod tests {
             .schema()
             .get_field(quickwit_index_config::TAGS_FIELD_NAME)
             .unwrap();
-        let packager = Packager::new("TestPackager", tags_field, mailbox);
+        let tag_fields_map = get_tag_fields_map(
+            indexed_split.index.schema(),
+            &["tag_field_1", "tag_field_2"],
+        );
+        let packager = Packager::new("TestPackager", tag_fields_map, tags_field, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
@@ -415,7 +493,11 @@ mod tests {
             .schema()
             .get_field(quickwit_index_config::TAGS_FIELD_NAME)
             .unwrap();
-        let packager = Packager::new("TestPackager", tags_field, mailbox);
+        let tag_fields_map = get_tag_fields_map(
+            indexed_split_1.index.schema(),
+            &["tag_field_1", "tag_field_2"],
+        );
+        let packager = Packager::new("TestPackager", tag_fields_map, tags_field, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(

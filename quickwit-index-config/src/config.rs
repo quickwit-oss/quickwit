@@ -23,18 +23,84 @@ use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_proto::SearchRequest;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema, Value};
-use tantivy::Document;
+use tantivy::{Document, Order};
+
+use crate::{DocParsingError, QueryParserError, TAGS_FIELD_NAME};
+
+/// Separator used to format tags into `{field_name}:{value}`
+pub const TAG_FIELD_VALUE_SEPARATOR: &str = ":";
+
+/// Wilcard value use to collapse too many tag values into one.
+pub const MANY_TAG_VALUES: &str = "*";
+
+/// Character use to escape tag value when there is collision with the wilcard
+/// tag values.
+pub const TAGS_VALUE_ESCAPE: &str = "\\";
+
+/// Sorted order (either Ascending or Descending).
+/// To get a regular top-K results search, use `SortOrder::Desc`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SortOrder {
+    /// Descending. This is the default to get Top-K results.
+    Desc,
+    /// Ascending order.
+    Asc,
+}
+
+impl Default for SortOrder {
+    fn default() -> Self {
+        Self::Desc
+    }
+}
 
 use crate::{DocParsingError, QueryParserError, SortBy, TAGS_FIELD_NAME};
 
-/// Convert a field (name, value) into a tag string `name:value`.
+/// Converts a field (name, value) into a tag string `name:value`.
 pub fn convert_tag_to_string(field_name: &str, field_value: &Value) -> String {
-    format!("{}:{}", field_name, tantivy_value_to_string(field_value))
+    let field_value_str = tantivy_value_to_string(field_value);
+    if field_value_str == MANY_TAG_VALUES {
+        return format!(
+            "{}{}{}{}",
+            field_name, TAG_FIELD_VALUE_SEPARATOR, TAGS_VALUE_ESCAPE, field_value_str
+        );
+    }
+    format!(
+        "{}{}{}",
+        field_name, TAG_FIELD_VALUE_SEPARATOR, field_value_str
+    )
 }
 
 /// Returns true if tag_string is of form `{field_name}:any_value`.
 pub fn match_tag_field_name(field_name: &str, tag_string: &str) -> bool {
-    tag_string.starts_with(&format!("{}:", field_name))
+    tag_string.starts_with(&format!("{}{}", field_name, TAG_FIELD_VALUE_SEPARATOR))
+}
+
+/// Extracts the field name from a tag value of the form `{field_name}:any_value`.
+pub fn extract_field_name_from_tag_value(tag_value: &str) -> Option<String> {
+    tag_value
+        .split_once(TAG_FIELD_VALUE_SEPARATOR)
+        .map(|(field_name, _)| field_name.to_string())
+}
+
+/// Escapes the tag value by prefixing the value part of this format `{field_name}:any_value`
+/// by `\` if `any_value` is the wildcard value `*`.
+pub fn escape_tag_value(tag_value: &str) -> String {
+    match tag_value.split_once(TAG_FIELD_VALUE_SEPARATOR) {
+        Some((field_name, value)) if value == MANY_TAG_VALUES => format!(
+            "{}{}{}{}",
+            field_name, TAG_FIELD_VALUE_SEPARATOR, TAGS_VALUE_ESCAPE, value
+        ),
+        _ => tag_value.to_string(),
+    }
+}
+
+/// Creates the wildcard tag value for a field name: `{field_name}:*`.
+pub fn make_too_many_tag_value(field_name: &str) -> String {
+    format!(
+        "{}{}{}",
+        field_name, TAG_FIELD_VALUE_SEPARATOR, MANY_TAG_VALUES
+    )
 }
 
 /// Converts a [`tantivy::Value`] to it's [`String`] value.
