@@ -239,10 +239,6 @@ impl IndexingPipeline {
             .remove_dangling_splits(&published_splits)
             .await?;
 
-        let tags_field = index_metadata
-            .index_config
-            .tags_field(&index_metadata.index_config.schema());
-
         // Collect a map of tag field name and their corresponding field.
         let tag_fields_list = index_metadata
             .index_config
@@ -303,7 +299,6 @@ impl IndexingPipeline {
         let merge_packager = Packager::new(
             "MergePackager",
             tag_fields_list.clone(),
-            tags_field,
             merge_uploader_mailbox,
         );
         let (merge_packager_mailbox, merge_packager_handler) = ctx
@@ -372,7 +367,7 @@ impl IndexingPipeline {
             .spawn_async();
 
         // Packager
-        let packager = Packager::new("Packager", tag_fields_list, tags_field, uploader_mailbox);
+        let packager = Packager::new("Packager", tag_fields_list, uploader_mailbox);
         let (packager_mailbox, packager_handler) = ctx
             .spawn_actor(packager)
             .set_kill_switch(self.kill_switch.clone())

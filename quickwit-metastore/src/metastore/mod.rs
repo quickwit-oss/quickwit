@@ -456,6 +456,7 @@ pub fn match_tags_filter(split_tags: &[String], filter_tags: &[String]) -> bool 
             return true;
         }
 
+        // TODO: remove this?
         // Match if split tags has a wildcard tag for this field.
         if let Some(field_name) = extract_field_name_from_tag_value(filter_tag_value) {
             if !field_names.contains(&field_name)

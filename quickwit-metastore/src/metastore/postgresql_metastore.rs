@@ -333,6 +333,7 @@ impl PostgresqlMetastore {
 
         if let Some(tags) = tags_opt {
             if !tags.is_empty() {
+                // TODO: remove this?
                 // Rebuild split tags by escaping values & taking into account
                 // splits with wilcard tags.
                 let mut filter_tags = HashSet::new();

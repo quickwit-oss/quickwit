@@ -31,7 +31,7 @@ use crate::{DocParsingError, QueryParserError, TAGS_FIELD_NAME};
 pub const TAG_FIELD_VALUE_SEPARATOR: &str = ":";
 
 /// Wilcard value use to collapse too many tag values into one.
-pub const MANY_TAG_VALUES: &str = "*";
+pub const TOO_MANY_TAG_VALUES: &str = "*";
 
 /// Character use to escape tag value when there is collision with the wilcard
 /// tag values.
@@ -59,7 +59,7 @@ use crate::{DocParsingError, QueryParserError, SortBy, TAGS_FIELD_NAME};
 /// Converts a field (name, value) into a tag string `name:value`.
 pub fn convert_tag_to_string(field_name: &str, field_value: &Value) -> String {
     let field_value_str = tantivy_value_to_string(field_value);
-    if field_value_str == MANY_TAG_VALUES {
+    if field_value_str == TOO_MANY_TAG_VALUES {
         return format!(
             "{}{}{}{}",
             field_name, TAG_FIELD_VALUE_SEPARATOR, TAGS_VALUE_ESCAPE, field_value_str
@@ -87,7 +87,7 @@ pub fn extract_field_name_from_tag_value(tag_value: &str) -> Option<String> {
 /// by `\` if `any_value` is the wildcard value `*`.
 pub fn escape_tag_value(tag_value: &str) -> String {
     match tag_value.split_once(TAG_FIELD_VALUE_SEPARATOR) {
-        Some((field_name, value)) if value == MANY_TAG_VALUES => format!(
+        Some((field_name, value)) if value == TOO_MANY_TAG_VALUES => format!(
             "{}{}{}{}",
             field_name, TAG_FIELD_VALUE_SEPARATOR, TAGS_VALUE_ESCAPE, value
         ),
@@ -99,8 +99,13 @@ pub fn escape_tag_value(tag_value: &str) -> String {
 pub fn make_too_many_tag_value(field_name: &str) -> String {
     format!(
         "{}{}{}",
-        field_name, TAG_FIELD_VALUE_SEPARATOR, MANY_TAG_VALUES
+        field_name, TAG_FIELD_VALUE_SEPARATOR, TOO_MANY_TAG_VALUES
     )
+}
+
+/// Creates a tag value for a field name of this format `{field_name}:value`.
+pub fn make_tag_value(field_name: &str, field_value: &str) -> String {
+    format!("{}{}{}", field_name, TAG_FIELD_VALUE_SEPARATOR, field_value)
 }
 
 /// Converts a [`tantivy::Value`] to it's [`String`] value.
