@@ -99,7 +99,7 @@ subcommands:
                         env: QUICKWIT_METASTORE_URI
             - search:
                 display_order: 4
-                about: Searches an index or a split.
+                about: Searches an index.
                 args:
                     - index-id:
                         about: Index id
