@@ -34,7 +34,7 @@ use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, Metastore, SplitState};
 use quickwit_storage::Storage;
 use tokio::join;
-use tracing::{debug, error, info, info_span, instrument, Span};
+use tracing::{debug, error, info, info_span, instrument, warn, Span};
 
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::{
@@ -68,6 +68,7 @@ pub struct IndexingPipelineHandler {
 pub enum IndexingPipelineMessage {
     Supervise,
     Observe,
+    Spawn { retry_count: usize },
 }
 
 /// TODO have a clear strategy on when we should retry, and when we should not.
@@ -203,6 +204,7 @@ impl IndexingPipeline {
         self.generation += 1;
         self.previous_generations_statistics = self.statistics.clone();
         self.kill_switch = KillSwitch::default();
+
         let stable_multitenant_merge_policy = StableMultitenantWithTimestampMergePolicy {
             demux_enabled: self.params.indexing_settings.demux_enabled,
             demux_factor: self.params.indexing_settings.merge_policy.demux_factor,
@@ -419,19 +421,44 @@ impl IndexingPipeline {
         Ok(())
     }
 
+    async fn process_spawn(
+        &mut self,
+        ctx: &ActorContext<Msg>,
+        retry_count: usize,
+    ) -> Result<(), ActorExitStatus> {
+        match retry_count {
+            0 | 1 | 2 => {
+                let duration = if retry_count == 0 {
+                    Duration::from_millis(1000)
+                } else if retry_count == 1 {
+                    Duration::from_millis(2000)
+                } else {
+                    Duration::from_millis(5000)
+                };
+
+                if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
+                    warn!(err=?spawn_error, "Error while spawn_pipeline, waiting 1000ms");
+                    self.terminate().await;
+                    ctx.schedule_self_msg_blocking(
+                        duration,
+                        Msg::Spawn {
+                            retry_count: retry_count + 1,
+                        },
+                    );
+                }
+            }
+            _ => {
+                self.spawn_pipeline(ctx).await?;
+            }
+        };
+        Ok(())
+    }
+
     async fn process_supervise(
         &mut self,
         ctx: &ActorContext<IndexingPipelineMessage>,
     ) -> Result<(), ActorExitStatus> {
-        if self.handlers.is_none() {
-            // TODO Accept errors in spawning. See #463.
-            self.spawn_pipeline(ctx).await?;
-            // if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
-            //    // only retry n-times.
-            //    error!(err=?spawn_error, "Error while spawning");
-            //    self.terminate().await;
-            // }
-        } else {
+        if self.handlers.is_some() {
             match self.healthcheck() {
                 Health::Healthy => {}
                 Health::FailureOrUnhealthy => {
@@ -477,6 +504,7 @@ impl AsyncActor for IndexingPipeline {
         ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
         self.process_observe(ctx).await?;
+        self.process_spawn(ctx, 0).await?;
         self.process_supervise(ctx).await?;
         Ok(())
     }
@@ -490,6 +518,7 @@ impl AsyncActor for IndexingPipeline {
         match message {
             IndexingPipelineMessage::Observe => self.process_observe(ctx).await?,
             IndexingPipelineMessage::Supervise => self.process_supervise(ctx).await?,
+            Msg::Spawn { retry_count } => self.process_spawn(ctx, retry_count).await?,
         }
         Ok(())
     }
@@ -549,6 +578,98 @@ mod tests {
 
     use super::{IndexingPipeline, *};
     use crate::models::IndexingDirectory;
+
+    async fn test_indexing_pipeline_num_fails_before_success(
+        mut num_fails: usize,
+    ) -> anyhow::Result<bool> {
+        quickwit_common::setup_logging_for_tests();
+        let mut metastore = MockMetastore::default();
+        metastore
+            .expect_list_splits()
+            .returning(|_, _, _, _| Ok(Vec::new()));
+        metastore
+            .expect_mark_splits_for_deletion()
+            .returning(|_, _| Ok(()));
+
+        metastore
+            .expect_index_metadata()
+            .withf(|index_id| index_id == "test-index")
+            .returning(move |_| {
+                if num_fails != 0 {
+                    num_fails -= num_fails.saturating_sub(1);
+                    Err(MetastoreError::ConnectionError {
+                        message: "MetastoreError Alarm".to_string(),
+                    })
+                } else {
+                    let index_metadata = IndexMetadata {
+                        index_id: "test-index".to_string(),
+                        index_uri: "ram://test-index".to_string(),
+                        index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
+                        checkpoint: Default::default(),
+                    };
+                    Ok(index_metadata)
+                }
+            });
+        metastore
+            .expect_stage_split()
+            .withf(move |index_id, _metadata| -> bool { index_id == "test-index" })
+            .returning(|_, _| Ok(()));
+        metastore
+            .expect_publish_splits()
+            .withf(move |index_id, splits, checkpoint_delta| -> bool {
+                index_id == "test-index"
+                    && splits.len() == 1
+                    && format!("{:?}", checkpoint_delta)
+                        .ends_with(":(00000000000000000000..00000000000000000070])")
+            })
+            .returning(|_, _, _| Ok(()));
+        let universe = Universe::new();
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            source_type: "file".to_string(),
+            params: json!({ "filepath": PathBuf::from("data/test_corpus.json") }),
+        };
+        let indexer_params = IndexerParams::for_test().await?;
+        let indexing_pipeline_params = IndexingPipelineParams {
+            index_id: "test-index".to_string(),
+            source_config,
+            indexer_params,
+            metastore: Arc::new(metastore),
+            storage_uri_resolver: StorageUriResolver::for_test(),
+            merge_enabled: true,
+            demux_enabled: false,
+        };
+        let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
+        let (_pipeline_mailbox, pipeline_handler) =
+            universe.spawn_actor(indexing_supervisor).spawn_async();
+        let (pipeline_termination, _pipeline_statistics) = pipeline_handler.join().await;
+        Ok(pipeline_termination.is_success())
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_retry_1() -> anyhow::Result<()> {
+        test_indexing_pipeline_num_fails_before_success(0).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_retry_2() -> anyhow::Result<()> {
+        test_indexing_pipeline_num_fails_before_success(2).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_retry_3() -> anyhow::Result<()> {
+        test_indexing_pipeline_num_fails_before_success(3).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_indexing_pipeline_retry_4() -> anyhow::Result<()> {
+        let success = test_indexing_pipeline_num_fails_before_success(500).await?;
+        assert!(!success);
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_indexing_pipeline() -> anyhow::Result<()> {
