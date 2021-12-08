@@ -29,7 +29,7 @@ use quickwit_directories::write_hotcache;
 use quickwit_index_config::{make_tag_value, make_too_many_tag_value, MAX_VALUES_PER_TAG_FIELD};
 use tantivy::schema::Field;
 use tantivy::{ReloadPolicy, SegmentId, SegmentMeta};
-use tracing::*;
+use tracing::{debug, info, info_span, Span};
 
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch, ScratchDirectory,

@@ -29,15 +29,12 @@ use diesel::result::DatabaseErrorKind;
 use diesel::result::Error::DatabaseError;
 use diesel::sql_types::{Array, Text};
 use diesel::{
-    debug_query, sql_query, BoolExpressionMethods, Connection, ExpressionMethods,
-    PgArrayExpressionMethods, PgConnection, QueryDsl, RunQueryDsl,
-};
-use quickwit_index_config::{
-    escape_tag_value, extract_field_name_from_tag_value, make_too_many_tag_value,
+    debug_query, sql_query, BoolExpressionMethods, Connection, ExpressionMethods, PgConnection,
+    QueryDsl, RunQueryDsl,
 };
 use tracing::{debug, error, info, warn};
 
-use crate::metastore::CheckpointDelta;
+use crate::metastore::{match_tags_filter, CheckpointDelta};
 use crate::postgresql::model::SELECT_SPLITS_FOR_INDEX;
 use crate::postgresql::{model, schema};
 use crate::{
@@ -310,7 +307,7 @@ impl PostgresqlMetastore {
         index_id: &str,
         state_opt: Option<SplitState>,
         time_range_opt: Option<Range<i64>>,
-        tags_opt: Option<&[String]>,
+        tags_opt: Option<&[Vec<String>]>,
     ) -> MetastoreResult<Vec<Split>> {
         let mut select_statement = schema::splits::dsl::splits
             .filter(schema::splits::dsl::index_id.eq(index_id))
@@ -331,31 +328,17 @@ impl PostgresqlMetastore {
             );
         }
 
-        if let Some(tags) = tags_opt {
-            if !tags.is_empty() {
-                // TODO: remove this?
-                // Rebuild split tags by escaping values & taking into account
-                // splits with wilcard tags.
-                let mut filter_tags = HashSet::new();
-                for tag_value in tags {
-                    let escaped_tag_value = escape_tag_value(tag_value);
-                    filter_tags.insert(escaped_tag_value);
-                    if let Some(field_name) = extract_field_name_from_tag_value(tag_value) {
-                        filter_tags.insert(make_too_many_tag_value(&field_name));
-                    }
-                }
-
-                select_statement = select_statement.filter(
-                    schema::splits::dsl::tags
-                        .overlaps_with(filter_tags.into_iter().collect::<Vec<_>>()),
-                );
-            }
-        }
-
         debug!(sql=%debug_query::<Pg, _>(&select_statement).to_string());
-        let splits: Vec<model::Split> = select_statement
+        let mut splits: Vec<model::Split> = select_statement
             .load(conn)
             .map_err(MetastoreError::DbError)?;
+
+        if let Some(tags) = tags_opt {
+            splits = splits
+                .into_iter()
+                .filter(|split| match_tags_filter(&split.tags, tags))
+                .collect();
+        }
 
         if splits.is_empty() {
             // Check for the existence of index.
@@ -669,7 +652,7 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-        tags: &[String],
+        tags: &[Vec<String>],
     ) -> MetastoreResult<Vec<Split>> {
         let conn = self.get_conn()?;
         self.list_splits_helper(&conn, index_id, Some(state), time_range_opt, Some(tags))

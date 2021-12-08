@@ -21,8 +21,6 @@
 pub mod postgresql_metastore;
 pub mod single_file_metastore;
 
-use std::collections::HashSet;
-use std::fmt::Debug;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -413,7 +411,7 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
         split_state: SplitState,
         time_range: Option<Range<i64>>,
-        tags: &[String],
+        tags: &[Vec<String>],
     ) -> MetastoreResult<Vec<Split>>;
 
     /// Lists the splits without filtering.
@@ -442,30 +440,54 @@ pub trait Metastore: Send + Sync + 'static {
     fn uri(&self) -> String;
 }
 
-// Returns true if filter_tags is empty (unspecified),
-// or if filter_tags is specified and split_tags contains at least one of the tags in filter_tags.
-pub fn match_tags_filter(split_tags: &[String], filter_tags: &[String]) -> bool {
+/// Finds out if a split matches a tag filter expression.
+///
+/// `filter_tags` tags is an array representing a boolean expression
+/// of the form `[ [A OR B] AND  [C OR D] ]`
+/// Returns true if filter_tags is empty, or if the split's tags matches
+/// the filter_tags expression.
+pub fn match_tags_filter(split_tags: &[String], filter_tags: &[Vec<String>]) -> bool {
     if filter_tags.is_empty() {
         return true;
     }
 
-    let mut field_names = HashSet::new();
-    for filter_tag_value in filter_tags {
-        let escaped_tag_value = escape_tag_value(filter_tag_value);
-        if split_tags.contains(&escaped_tag_value) {
-            return true;
-        }
-
-        // TODO: remove this?
-        // Match if split tags has a wildcard tag for this field.
-        if let Some(field_name) = extract_field_name_from_tag_value(filter_tag_value) {
-            if !field_names.contains(&field_name)
-                && split_tags.contains(&make_too_many_tag_value(&field_name))
-            {
-                return true;
-            }
-            field_names.insert(field_name);
+    for or_tags in filter_tags {
+        let is_match = or_tags
+            .iter()
+            .map(|tag| split_tags.contains(tag))
+            .any(|contains| contains);
+        if !is_match {
+            return false;
         }
     }
-    false
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_match_tags_filter() {
+        assert!(match_tags_filter(&["foo".to_string()], &[]));
+        assert!(!match_tags_filter(&[], &[vec!["foo".to_string()]]));
+
+        assert!(match_tags_filter(
+            &["foo:bar".to_string()],
+            &[vec!["foo:bar".to_string()]]
+        ));
+        assert!(match_tags_filter(
+            &["foo:*".to_string()],
+            &[vec!["foo:bar".to_string(), "foo:*".to_string()]]
+        ));
+
+        assert!(!match_tags_filter(
+            &["foo".to_string()],
+            &[vec!["foo".to_string()], vec!["bar".to_string()]]
+        ));
+        assert!(match_tags_filter(
+            &["foo".to_string(), "bar".to_string()],
+            &[vec!["foo".to_string()], vec!["bar".to_string()]]
+        ));
+    }
 }

@@ -400,7 +400,7 @@ impl InnerSingleFileMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-        tags: &[String],
+        tags: &[Vec<String>],
     ) -> MetastoreResult<Vec<Split>> {
         let time_range_filter = |split_metadata: &SplitMetadata| match (
             time_range_opt.as_ref(),
@@ -591,7 +591,7 @@ impl Metastore for SingleFileMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-        tags: &[String],
+        tags: &[Vec<String>],
     ) -> MetastoreResult<Vec<Split>> {
         let mut inner_metastore = self.inner.lock().await;
         inner_metastore

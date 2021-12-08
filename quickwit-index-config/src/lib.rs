@@ -31,8 +31,7 @@ mod query_builder;
 mod sort_by;
 
 pub use config::{
-    escape_tag_value, extract_field_name_from_tag_value, make_tag_value, make_too_many_tag_value,
-    match_tag_field_name, IndexConfig, SortBy, SortOrder,
+    make_tag_value, make_too_many_tag_value, match_tag_field_name, IndexConfig, SortBy, SortOrder,
 };
 pub use default_index_config::{
     DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry, SortByConfig,

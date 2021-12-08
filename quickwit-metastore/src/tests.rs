@@ -1057,7 +1057,7 @@ pub mod test_suite {
             original_size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(100, 199)),
             create_timestamp: current_timestamp,
-            tags: to_set(&["device:*"]),
+            tags: to_set(&["bar"]),
             demux_num_ops: 0,
         };
 
@@ -1079,7 +1079,7 @@ pub mod test_suite {
             original_size_in_bytes: 2,
             time_range: Some(RangeInclusive::new(300, 399)),
             create_timestamp: current_timestamp,
-            tags: to_set(&["foo", "fiz:\\*"]),
+            tags: to_set(&["foo"]),
             demux_num_ops: 0,
         };
 
@@ -1540,12 +1540,7 @@ pub mod test_suite {
             assert_eq!(split_ids.contains("list-splits-six"), true);
 
             let range = None;
-            let tags = vec![
-                "bar".to_string(),
-                "baz".to_string(),
-                "device:rpi".to_string(),
-                "fiz:*".to_string(),
-            ];
+            let tags = vec![vec!["bar".to_string(), "baz".to_string()]];
             let splits = metastore
                 .list_splits(index_id, SplitState::Staged, range, &tags)
                 .await
@@ -1557,7 +1552,7 @@ pub mod test_suite {
             assert_eq!(split_ids.contains("list-splits-one"), true);
             assert_eq!(split_ids.contains("list-splits-two"), true);
             assert_eq!(split_ids.contains("list-splits-three"), true);
-            assert_eq!(split_ids.contains("list-splits-four"), true);
+            assert_eq!(split_ids.contains("list-splits-four"), false);
             assert_eq!(split_ids.contains("list-splits-five"), true);
             assert_eq!(split_ids.contains("list-splits-six"), false);
 

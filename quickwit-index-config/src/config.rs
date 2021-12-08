@@ -59,40 +59,12 @@ use crate::{DocParsingError, QueryParserError, SortBy, TAGS_FIELD_NAME};
 /// Converts a field (name, value) into a tag string `name:value`.
 pub fn convert_tag_to_string(field_name: &str, field_value: &Value) -> String {
     let field_value_str = tantivy_value_to_string(field_value);
-    if field_value_str == TOO_MANY_TAG_VALUES {
-        return format!(
-            "{}{}{}{}",
-            field_name, TAG_FIELD_VALUE_SEPARATOR, TAGS_VALUE_ESCAPE, field_value_str
-        );
-    }
-    format!(
-        "{}{}{}",
-        field_name, TAG_FIELD_VALUE_SEPARATOR, field_value_str
-    )
+    make_tag_value(field_name, &field_value_str)
 }
 
 /// Returns true if tag_string is of form `{field_name}:any_value`.
 pub fn match_tag_field_name(field_name: &str, tag_string: &str) -> bool {
     tag_string.starts_with(&format!("{}{}", field_name, TAG_FIELD_VALUE_SEPARATOR))
-}
-
-/// Extracts the field name from a tag value of the form `{field_name}:any_value`.
-pub fn extract_field_name_from_tag_value(tag_value: &str) -> Option<String> {
-    tag_value
-        .split_once(TAG_FIELD_VALUE_SEPARATOR)
-        .map(|(field_name, _)| field_name.to_string())
-}
-
-/// Escapes the tag value by prefixing the value part of this format `{field_name}:any_value`
-/// by `\` if `any_value` is the wildcard value `*`.
-pub fn escape_tag_value(tag_value: &str) -> String {
-    match tag_value.split_once(TAG_FIELD_VALUE_SEPARATOR) {
-        Some((field_name, value)) if value == TOO_MANY_TAG_VALUES => format!(
-            "{}{}{}{}",
-            field_name, TAG_FIELD_VALUE_SEPARATOR, TAGS_VALUE_ESCAPE, value
-        ),
-        _ => tag_value.to_string(),
-    }
 }
 
 /// Creates the wildcard tag value for a field name: `{field_name}:*`.
@@ -105,6 +77,12 @@ pub fn make_too_many_tag_value(field_name: &str) -> String {
 
 /// Creates a tag value for a field name of this format `{field_name}:value`.
 pub fn make_tag_value(field_name: &str, field_value: &str) -> String {
+    if field_value == TOO_MANY_TAG_VALUES {
+        return format!(
+            "{}{}{}{}",
+            field_name, TAG_FIELD_VALUE_SEPARATOR, TAGS_VALUE_ESCAPE, field_value
+        );
+    }
     format!("{}{}{}", field_name, TAG_FIELD_VALUE_SEPARATOR, field_value)
 }
 

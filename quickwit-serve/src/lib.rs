@@ -195,7 +195,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| {
+             _tags: &[Vec<String>]| {
                 Ok(vec![mock_split("split_1"), mock_split("split_2")])
             },
         );
