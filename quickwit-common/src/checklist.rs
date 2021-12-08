@@ -55,7 +55,6 @@ fn print_checklist(check_list_results: &[(&'static str, anyhow::Result<()>)]) {
     );
     let mut errors = Vec::new();
     for (check_item_name, check_item_result) in check_list_results {
-        // for (check_item_name, check_item_result) in &.items {
         let outcome_symbol = if check_item_result.is_ok() {
             "✔".color(GREEN_COLOR) // '✓'
         } else {
@@ -98,9 +97,9 @@ async fn compute_checklist(
     check_named_results
 }
 
-/// Run a checklist and print out its success and failures on stdout.
+/// Run a checklist and print out its successes and failures on stdout.
 ///
-/// If an error is encounterred, the proccess will exit with exit code 1.
+/// If an error is encountered, the proccess will exit with exit code 1.
 pub async fn run_checklist(checks: Vec<(&'static str, CheckFuture<'_>)>) {
     let checklist = compute_checklist(checks).await;
     print_checklist(&checklist);
