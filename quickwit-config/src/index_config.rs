@@ -208,7 +208,6 @@ pub struct IndexConfig {
     pub indexing_settings: IndexingSettings,
     pub search_settings: SearchSettings,
     #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<SourceConfig>,
 }
 
