@@ -610,7 +610,7 @@ mod tests {
             "wikipedia",
             "--split-id",
             "ABC",
-            "--target-folder",
+            "--target-dir",
             "datadir",
             "--metastore-uri",
             "file:///indexes",
@@ -622,8 +622,8 @@ mod tests {
                 index_id,
                 split_id,
                 metastore_uri,
-                target_folder
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_folder == PathBuf::from("datadir")
+                target_dir
+            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == PathBuf::from("datadir")
         ));
         Ok(())
     }

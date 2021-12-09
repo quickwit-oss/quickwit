@@ -43,7 +43,7 @@ pub struct ExtractSplitArgs {
     pub metastore_uri: String,
     pub index_id: String,
     pub split_id: String,
-    pub target_folder: PathBuf,
+    pub target_dir: PathBuf,
 }
 
 #[derive(Debug, PartialEq)]
@@ -100,17 +100,16 @@ impl SplitCliCommand {
             .value_of("metastore-uri")
             .context("'metastore-uri' is a required arg")
             .map(normalize_uri)??;
-
-        let target_folder = matches
-            .value_of("target-folder")
+        let target_dir = matches
+            .value_of("target-dir")
             .map(PathBuf::from)
-            .context("'target-folder' is a required arg")?;
+            .context("'target-dir' is a required arg")?;
 
         Ok(Self::Extract(ExtractSplitArgs {
             metastore_uri,
             index_id,
             split_id,
-            target_folder,
+            target_dir,
         }))
     }
 
@@ -164,9 +163,9 @@ pub async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
         split_file,
         split_data,
     )?;
-    std::fs::create_dir_all(args.target_folder.to_owned())?;
+    std::fs::create_dir_all(args.target_dir.to_owned())?;
     for path in bundle_storage.iter_files() {
-        let mut out_path = args.target_folder.to_owned();
+        let mut out_path = args.target_dir.to_owned();
         out_path.push(path.to_owned());
         println!("Copying {:?}", out_path);
         bundle_storage.copy_to_file(path, &out_path).await?;

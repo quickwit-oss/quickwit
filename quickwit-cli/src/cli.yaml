@@ -218,6 +218,7 @@ subcommands:
                         required: true
                     - metastore-uri:
                         about: Location of the metastore.
+                        long: metastore-uri
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
