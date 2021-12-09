@@ -207,8 +207,10 @@ impl Cluster {
 
     /// Specify the address of a running node and join the cluster to which the node belongs.
     pub async fn add_peer_node(&self, peer_addr: SocketAddr) {
-        info!(self_addr = ?self.listen_addr, peer_addr = ?peer_addr, "Adding peer node.");
-        self.artillery_cluster.add_seed_node(peer_addr);
+        if peer_addr != self.listen_addr {
+            info!(self_addr = ?self.listen_addr, peer_addr = ?peer_addr, "Adding peer node.");
+            self.artillery_cluster.add_seed_node(peer_addr);
+        }
     }
 
     /// Leave the cluster.
