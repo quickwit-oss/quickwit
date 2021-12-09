@@ -30,12 +30,13 @@ use colored::Colorize;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::normalize_uri;
+use quickwit_common::{run_checklist, GREEN_COLOR};
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_index_config::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingPipelineParams};
 use quickwit_indexing::models::IndexingStatistics;
-use quickwit_indexing::source::FileSourceParams;
+use quickwit_indexing::source::{check_source_connectivity, FileSourceParams};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, MetastoreUriResolver, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
@@ -45,7 +46,7 @@ use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{debug, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
-use crate::{parse_duration_with_unit, GREEN_COLOR, THROUGHPUT_WINDOW_SIZE};
+use crate::{parse_duration_with_unit, THROUGHPUT_WINDOW_SIZE};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
@@ -552,7 +553,8 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     if args.overwrite {
         reset_index(&index_metadata, metastore.clone(), storage.clone()).await?;
     }
-    // Create ad-hoc source config from CLI args.
+
+    // Override index source config(s) with ad-hoc source config.
     let source_id = args
         .input_path_opt
         .as_ref()
@@ -568,9 +570,18 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         source_type,
         params,
     };
-    // Override index source config(s) with ad-hoc source config.
-    index_metadata.sources = vec![source_config];
 
+    run_checklist(vec![
+        (
+            "source",
+            Box::pin(check_source_connectivity(&source_config)),
+        ),
+        ("metastore", metastore.check_connectivity()),
+        ("index", metastore.check_index_available(&args.index_id)),
+    ])
+    .await;
+
+    index_metadata.sources = vec![source_config];
     let indexer_config = IndexerConfig {
         data_dir_path: args.data_dir_path,
         ..Default::default()
