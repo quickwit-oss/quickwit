@@ -80,7 +80,7 @@ fn test_cmd_help() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_cmd_create() -> Result<()> {
+async fn test_cmd_create_fail() -> Result<()> {
     let index_id = append_random_suffix("test-create-cmd");
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     create_logs_index(&test_env);

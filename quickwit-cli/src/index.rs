@@ -35,6 +35,7 @@ use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_index_config::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingPipelineParams};
+use quickwit_indexing::index_data;
 use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::source::{check_source_connectivity, FileSourceParams};
 use quickwit_metastore::checkpoint::Checkpoint;
@@ -53,15 +54,6 @@ use crate::{parse_duration_with_unit, THROUGHPUT_WINDOW_SIZE};
 pub struct DescribeIndexArgs {
     pub metastore_uri: String,
     pub index_id: String,
-}
-
-impl DescribeIndexArgs {
-    pub fn new(metastore_uri: String, index_id: String) -> anyhow::Result<Self> {
-        Ok(Self {
-            metastore_uri,
-            index_id,
-        })
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -700,7 +692,7 @@ pub async fn merge_or_demux_cli(
     merge_enabled: bool,
     demux_enabled: bool,
 ) -> anyhow::Result<()> {
-    debug!(args = ?args, "merge");
+    debug!(args = ?args, merge_enabled=merge_enabled, demux_enabled=demux_enabled, "run-merge-operations");
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
@@ -719,25 +711,9 @@ pub async fn merge_or_demux_cli(
     };
     index_metadata.indexing_settings.demux_enabled = demux_enabled;
     index_metadata.indexing_settings.merge_enabled = merge_enabled;
-    let pipeline_params =
-        IndexingPipelineParams::try_new(index_metadata, indexer_config, metastore, storage).await?;
-    let pipeline = IndexingPipeline::new(pipeline_params);
-    let universe = Universe::new();
-    let (_pipeline_mailbox, pipeline_handle) = universe.spawn_actor(pipeline).spawn_async();
-    let (supervisor_exit_status, _) = pipeline_handle.join().await;
-    match supervisor_exit_status {
-        ActorExitStatus::Success => {}
-        ActorExitStatus::Quit
-        | ActorExitStatus::DownstreamClosed
-        | ActorExitStatus::Killed
-        | ActorExitStatus::Panicked => {
-            bail!(supervisor_exit_status)
-        }
-        ActorExitStatus::Failure(err) => {
-            bail!(err);
-        }
-    }
-    Ok(())
+    index_data(index_metadata, indexer_config, metastore, storage)
+        .await
+        .map(|_| Ok(()))?
 }
 
 pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
