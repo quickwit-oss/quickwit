@@ -442,9 +442,9 @@ pub trait Metastore: Send + Sync + 'static {
 
 /// Finds out if a split matches a tag filter expression.
 ///
-/// `filter_tags` tags is an array representing a boolean expression
+/// `filter_tags` is an array representing a boolean expression
 /// of the form `[ [A OR B] AND  [C OR D] ]`
-/// Returns true if filter_tags is empty, or if the split's tags matches
+/// Returns true if filter_tags is empty, or if the split's tags matche
 /// the filter_tags expression.
 pub fn match_tags_filter(split_tags: &[String], filter_tags: &[Vec<String>]) -> bool {
     if filter_tags.is_empty() {

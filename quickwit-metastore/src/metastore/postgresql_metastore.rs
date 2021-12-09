@@ -29,12 +29,12 @@ use diesel::result::DatabaseErrorKind;
 use diesel::result::Error::DatabaseError;
 use diesel::sql_types::{Array, Text};
 use diesel::{
-    debug_query, sql_query, BoolExpressionMethods, Connection, ExpressionMethods, PgConnection,
-    QueryDsl, RunQueryDsl,
+    debug_query, sql_query, BoolExpressionMethods, Connection, ExpressionMethods,
+    PgArrayExpressionMethods, PgConnection, QueryDsl, RunQueryDsl,
 };
 use tracing::{debug, error, info, warn};
 
-use crate::metastore::{match_tags_filter, CheckpointDelta};
+use crate::metastore::CheckpointDelta;
 use crate::postgresql::model::SELECT_SPLITS_FOR_INDEX;
 use crate::postgresql::{model, schema};
 use crate::{
@@ -328,17 +328,19 @@ impl PostgresqlMetastore {
             );
         }
 
+        if let Some(tags) = tags_opt {
+            if !tags.is_empty() {
+                for inner_tags in tags {
+                    select_statement = select_statement
+                        .filter(schema::splits::dsl::tags.overlaps_with(inner_tags));
+                }
+            }
+        }
+
         debug!(sql=%debug_query::<Pg, _>(&select_statement).to_string());
-        let mut splits: Vec<model::Split> = select_statement
+        let splits: Vec<model::Split> = select_statement
             .load(conn)
             .map_err(MetastoreError::DbError)?;
-
-        if let Some(tags) = tags_opt {
-            splits = splits
-                .into_iter()
-                .filter(|split| match_tags_filter(&split.tags, tags))
-                .collect();
-        }
 
         if splits.is_empty() {
             // Check for the existence of index.
