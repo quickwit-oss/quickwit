@@ -17,12 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub type CheckFuture<'a> = Pin<Box<(dyn Future<Output = anyhow::Result<()>> + Send + 'a)>>;
-use std::pin::Pin;
-
 use colored::{Color, Colorize};
-use futures::stream::{FuturesOrdered, StreamExt};
-use futures::Future;
 
 /// Quickwit main colors slightly adapted to be readable on a terminal.
 pub const BLUE_COLOR: Color = Color::TrueColor {
@@ -47,7 +42,7 @@ pub const RED_COLOR: Color = Color::TrueColor {
     b: 34,
 };
 
-fn print_checklist(check_list_results: &[(&'static str, anyhow::Result<()>)]) {
+pub fn print_checklist(check_list_results: &[(&'static str, anyhow::Result<()>)]) {
     eprintln!(
         "\n\n{}\n{}",
         "---------------------------------------------------".color(GREEN_COLOR),
@@ -83,27 +78,12 @@ fn print_checklist(check_list_results: &[(&'static str, anyhow::Result<()>)]) {
     eprintln!("\n\n");
 }
 
-async fn compute_checklist(
-    checks: Vec<(&'static str, CheckFuture<'_>)>,
-) -> Vec<(&'static str, anyhow::Result<()>)> {
-    let mut check_named_futures: FuturesOrdered<_> = checks
-        .into_iter()
-        .map(|(name, check_item)| async { (&*name, check_item.await) })
-        .collect();
-    let mut check_named_results: Vec<(&'static str, anyhow::Result<()>)> = Vec::new();
-    while let Some((check_item_name, check_item_result)) = check_named_futures.next().await {
-        check_named_results.push((check_item_name, check_item_result));
-    }
-    check_named_results
-}
-
 /// Run a checklist and print out its successes and failures on stdout.
 ///
 /// If an error is encountered, the proccess will exit with exit code 1.
-pub async fn run_checklist(checks: Vec<(&'static str, CheckFuture<'_>)>) {
-    let checklist = compute_checklist(checks).await;
-    print_checklist(&checklist);
-    if !checklist
+pub fn run_checklist(checks: Vec<(&'static str, anyhow::Result<()>)>) {
+    print_checklist(&checks);
+    if !checks
         .iter()
         .all(|(_, check_items_res)| check_items_res.is_ok())
     {

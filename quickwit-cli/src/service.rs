@@ -132,16 +132,11 @@ async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
-    // TODO: check all sources connectivity.
-    run_checklist(vec![
-        (
-            "source",
-            Box::pin(check_source_connectivity(&index_metadata.sources[0])),
-        ),
-        ("metastore", metastore.check_connectivity()),
-        ("index", metastore.check_index_available(&args.index_id)),
-    ])
-    .await;
+    let mut checks = vec![("metastore", Ok(())), ("storage", storage.check().await)];
+    for source_config in index_metadata.sources.iter() {
+        checks.push(("source", check_source_connectivity(source_config).await));
+    }
+    run_checklist(checks);
     index_data(index_metadata, args.indexer_config, metastore, storage).await?;
     Ok(())
 }
@@ -153,7 +148,7 @@ async fn run_searcher_cli(args: RunSearcherArgs) -> anyhow::Result<()> {
 
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
-    run_checklist(vec![("metastore", metastore.check_connectivity())]).await;
+    run_checklist(vec![("metastore", metastore.check_connectivity().await)]);
     run_searcher(args.searcher_config, metastore).await?;
     Ok(())
 }

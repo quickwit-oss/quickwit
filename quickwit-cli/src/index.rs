@@ -594,10 +594,6 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
 
-    if args.overwrite {
-        reset_index(&index_metadata, metastore.clone(), storage.clone()).await?;
-    }
-
     // Override index source config(s) with ad-hoc source config.
     let source_id = args
         .input_path_opt
@@ -614,22 +610,22 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         source_type,
         params,
     };
-
-    run_checklist(vec![
-        (
-            "source",
-            Box::pin(check_source_connectivity(&source_config)),
-        ),
-        ("metastore", metastore.check_connectivity()),
-        ("index", metastore.check_index_available(&args.index_id)),
-    ])
-    .await;
-
-    index_metadata.sources = vec![source_config];
+    index_metadata.sources = vec![source_config.clone()];
     let indexer_config = IndexerConfig {
         data_dir_path: args.data_dir_path,
         ..Default::default()
     };
+
+    let checks = vec![
+        ("metastore", Ok(())), // We put it here just to make it nice in the temrinal.
+        ("storage", storage.check().await),
+        ("source", check_source_connectivity(&source_config).await),
+    ];
+    run_checklist(checks);
+
+    if args.overwrite {
+        reset_index(&index_metadata, metastore.clone(), storage.clone()).await?;
+    }
     let pipeline_params =
         IndexingPipelineParams::try_new(index_metadata, indexer_config, metastore, storage).await?;
     let pipeline = IndexingPipeline::new(pipeline_params);
