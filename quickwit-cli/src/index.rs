@@ -36,7 +36,7 @@ use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_ind
 use quickwit_index_config::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingPipelineParams};
 use quickwit_indexing::models::IndexingStatistics;
-use quickwit_indexing::source::FileSourceParams;
+use quickwit_indexing::source::{check_source_connectivity, FileSourceParams};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, MetastoreUriResolver, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
@@ -550,16 +550,11 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
 
-    run_checklist(vec![
-        ("metastore", metastore.check_connectivity()),
-        ("index", metastore.check_index_available(&args.index_id)),
-    ])
-    .await;
-
     if args.overwrite {
         reset_index(&index_metadata, metastore.clone(), storage.clone()).await?;
     }
-    // Create ad-hoc source config from CLI args.
+
+    // Override index source config(s) with ad-hoc source config.
     let source_id = args
         .input_path_opt
         .as_ref()
@@ -575,9 +570,18 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         source_type,
         params,
     };
-    // Override index source config(s) with ad-hoc source config.
-    index_metadata.sources = vec![source_config];
 
+    run_checklist(vec![
+        (
+            "source",
+            Box::pin(check_source_connectivity(&source_config)),
+        ),
+        ("metastore", metastore.check_connectivity()),
+        ("index", metastore.check_index_available(&args.index_id)),
+    ])
+    .await;
+
+    index_metadata.sources = vec![source_config];
     let indexer_config = IndexerConfig {
         data_dir_path: args.data_dir_path,
         ..Default::default()
