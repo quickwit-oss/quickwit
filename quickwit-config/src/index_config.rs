@@ -253,19 +253,14 @@ impl IndexConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
 
     fn get_resource_path(resource_filename: &str) -> String {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resources")
-            .join("tests")
-            .join("index_config")
-            .join(resource_filename)
-            .to_str()
-            .expect("Invalid resource file name.")
-            .to_string()
+        format!(
+            "{}/resources/tests/index_config/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            resource_filename
+        )
     }
 
     macro_rules! test_parser {
