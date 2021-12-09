@@ -137,8 +137,11 @@ fn test_cmd_ingest_on_non_existing_index() -> Result<()> {
         .as_str(),
     )
     .assert()
-    .failure();
-    // .stderr(predicate::str::contains("✖ index")); TODO: Re-enable.
+    .failure()
+    .stderr(predicate::str::contains(
+        "Index `index-does-no-exist` does not exist",
+    ));
+
     Ok(())
 }
 
@@ -179,25 +182,23 @@ fn test_cmd_ingest_simple() -> Result<()> {
         test_env.data_dir_path.as_path(),
     );
 
-    // using piped input.
-    // let log_path = test_env.resource_files["logs"].clone();
-    // make_command(
-    //     format!(
-    //         "index ingest --index-id {} --metastore-uri {} --data-dir-path {}",
-    //         test_env.index_id,
-    //         test_env.metastore_uri,
-    //         test_env.data_dir_path.display()
-    //     )
-    //     .as_str(),
-    // )
-    // .pipe_stdin(log_path)?
-    // .assert()
-    // .success()
-    // .stdout(predicate::str::contains("Indexed"))
-    // .stdout(predicate::str::contains("documents in"))
-    // .stdout(predicate::str::contains(
-    //     "You can now query your index with",
-    // ));
+    // Using piped input
+    let log_path = test_env.resource_files["logs"].clone();
+    make_command(
+        format!(
+            "index ingest --index-id {} --metastore-uri {} --data-dir-path {}",
+            test_env.index_id,
+            test_env.metastore_uri,
+            test_env.data_dir_path.display()
+        )
+        .as_str(),
+    )
+    .pipe_stdin(log_path)?
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("Indexed"))
+    .stdout(predicate::str::contains("documents in"))
+    .stdout(predicate::str::contains("Now, you can query the index"));
     Ok(())
 }
 

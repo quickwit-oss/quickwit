@@ -46,7 +46,9 @@ pub fn print_checklist(check_list_results: &[(&str, anyhow::Result<()>)]) {
     eprintln!(
         "\n{}\n{}",
         "---------------------------------------------------".color(GREEN_COLOR),
-        " Connectivity checklist ".color(WHITE_COLOR).on_color(GREEN_COLOR)
+        " Connectivity checklist "
+            .color(WHITE_COLOR)
+            .on_color(GREEN_COLOR)
     );
     let mut errors = Vec::new();
     for (check_item_name, check_item_result) in check_list_results {
@@ -61,6 +63,7 @@ pub fn print_checklist(check_list_results: &[(&str, anyhow::Result<()>)]) {
         }
     }
     if errors.is_empty() {
+        println!();
         return;
     }
     eprintln!(

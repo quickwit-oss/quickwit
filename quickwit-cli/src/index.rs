@@ -35,9 +35,9 @@ use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_index_config::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingPipelineParams};
-use quickwit_indexing::index_data;
 use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::source::{check_source_connectivity, FileSourceParams};
+use quickwit_indexing::{index_data, STD_IN_SOURCE_ID};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, MetastoreUriResolver, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
@@ -600,7 +600,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         .input_path_opt
         .as_ref()
         .map(|_| "file-source")
-        .unwrap_or("stdin-source")
+        .unwrap_or(STD_IN_SOURCE_ID)
         .to_string();
     let source_type = "file".to_string();
     let params = serde_json::to_value(FileSourceParams {
@@ -618,7 +618,6 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     };
 
     let checks = vec![
-        ("metastore", Ok(())), // We put it here just to make it nice in the temrinal.
         ("storage", storage.check().await),
         ("source", check_source_connectivity(&source_config).await),
     ];
@@ -708,9 +707,8 @@ pub async fn merge_or_demux_cli(
     };
     index_metadata.indexing_settings.demux_enabled = demux_enabled;
     index_metadata.indexing_settings.merge_enabled = merge_enabled;
-    index_data(index_metadata, indexer_config, metastore, storage)
-        .await
-        .map(|_| Ok(()))?
+    index_data(index_metadata, indexer_config, metastore, storage).await?;
+    Ok(())
 }
 
 pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {

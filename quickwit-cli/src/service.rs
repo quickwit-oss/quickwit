@@ -132,9 +132,12 @@ async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
-    let mut checks = vec![("metastore", Ok(())), ("storage", storage.check().await)];
+    let mut checks = vec![("storage", storage.check().await)];
     for source_config in index_metadata.sources.iter() {
-        checks.push((source_config.source_id.as_str(), check_source_connectivity(source_config).await));
+        checks.push((
+            source_config.source_id.as_str(),
+            check_source_connectivity(source_config).await,
+        ));
     }
     run_checklist(checks);
     index_data(index_metadata, args.indexer_config, metastore, storage).await?;
