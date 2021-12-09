@@ -32,7 +32,6 @@ use serde::{Deserialize, Serialize};
 pub struct DocMapping {
     pub field_mappings: Vec<FieldMappingEntry>,
     #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tag_fields: Vec<String>,
     #[serde(default = "DocMapping::default_store_source")]
     pub store_source: bool,
