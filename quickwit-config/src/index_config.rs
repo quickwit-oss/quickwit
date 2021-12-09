@@ -117,7 +117,6 @@ pub struct IndexingSettings {
     pub demux_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub demux_field: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp_field: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort_field: Option<String>,
