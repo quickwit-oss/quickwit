@@ -215,7 +215,7 @@ impl IndexingPipeline {
             merge_enabled: self.params.indexing_settings.merge_enabled,
             merge_factor: self.params.indexing_settings.merge_policy.merge_factor,
             max_merge_factor: self.params.indexing_settings.merge_policy.max_merge_factor,
-            split_max_num_docs: self.params.indexing_settings.split_max_num_docs,
+            split_num_docs_target: self.params.indexing_settings.split_num_docs_target,
             ..Default::default()
         };
         let merge_policy: Arc<dyn MergePolicy> = Arc::new(stable_multitenant_merge_policy);
@@ -315,8 +315,8 @@ impl IndexingPipeline {
             merge_packager_mailbox,
             self.params.indexing_settings.timestamp_field.clone(),
             self.params.indexing_settings.demux_field.clone(),
-            self.params.indexing_settings.split_max_num_docs as usize,
-            self.params.indexing_settings.split_max_num_docs as usize * 2,
+            self.params.indexing_settings.split_num_docs_target as usize,
+            self.params.indexing_settings.split_num_docs_target as usize * 2,
         );
         let (merge_executor_mailbox, merge_executor_handler) = ctx
             .spawn_actor(merge_executor)
