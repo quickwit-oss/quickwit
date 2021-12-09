@@ -32,7 +32,7 @@ use quickwit_config::{
 };
 use quickwit_index_config::{
     DefaultIndexConfig as DefaultDocMapper, DefaultIndexConfigBuilder as DocMapperBuilder,
-    IndexConfig as DocMapper, SortBy, SortByConfig, SortOrder, escape_tag_value, extract_field_name_from_tag_value, make_too_many_tag_value,
+    IndexConfig as DocMapper, SortBy, SortByConfig, SortOrder,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -442,9 +442,9 @@ pub trait Metastore: Send + Sync + 'static {
 
 /// Finds out if a split matches a tag filter expression.
 ///
-/// `filter_tags` is an array representing a boolean expression
-/// of the form `[ [A OR B] AND  [C OR D] ]`
-/// Returns true if filter_tags is empty, or if the split's tags matche
+/// `filter_tags` is an array of array of tags representing a boolean expression
+/// of the form `[ [A OR B OR...] AND [C OR D OR ...] AND ...]`
+/// Returns true if filter_tags is empty, or if the split's tags match
 /// the filter_tags expression.
 pub fn match_tags_filter(split_tags: &[String], filter_tags: &[Vec<String>]) -> bool {
     if filter_tags.is_empty() {

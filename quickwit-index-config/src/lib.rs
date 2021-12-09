@@ -30,9 +30,7 @@ mod error;
 mod query_builder;
 mod sort_by;
 
-pub use config::{
-    make_tag_value, make_too_many_tag_value, match_tag_field_name, IndexConfig, SortBy, SortOrder,
-};
+pub use config::{build_tag_value, build_too_many_tag_value, match_tag_field_name, IndexConfig};
 pub use default_index_config::{
     DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry, SortByConfig,
 };

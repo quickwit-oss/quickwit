@@ -28,6 +28,7 @@ mod uploader;
 pub use indexing_pipeline::{
     IndexingPipeline, IndexingPipelineHandler, IndexingPipelineMessage, IndexingPipelineParams,
 };
+use tantivy::schema::Field;
 mod merge_executor;
 mod merge_planner;
 mod merge_split_downloader;
@@ -40,3 +41,12 @@ pub use self::merge_split_downloader::MergeSplitDownloader;
 pub use self::packager::Packager;
 pub use self::publisher::{Publisher, PublisherCounters};
 pub use self::uploader::{Uploader, UploaderCounters};
+
+/// A struct to wrap a tantivy field with its name.
+#[derive(Clone, Debug)]
+pub struct NamedField {
+    /// Name of the field.
+    pub name: String,
+    /// Tantivy schema field.
+    pub field: Field,
+}

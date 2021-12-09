@@ -23,9 +23,9 @@ use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_proto::SearchRequest;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema, Value};
-use tantivy::{Document, Order};
+use tantivy::Document;
 
-use crate::{DocParsingError, QueryParserError, TAGS_FIELD_NAME};
+use crate::{DocParsingError, QueryParserError, SortBy, TAGS_FIELD_NAME};
 
 /// Separator used to format tags into `{field_name}:{value}`
 pub const TAG_FIELD_VALUE_SEPARATOR: &str = ":";
@@ -37,29 +37,10 @@ pub const TOO_MANY_TAG_VALUES: &str = "*";
 /// tag values.
 pub const TAGS_VALUE_ESCAPE: &str = "\\";
 
-/// Sorted order (either Ascending or Descending).
-/// To get a regular top-K results search, use `SortOrder::Desc`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SortOrder {
-    /// Descending. This is the default to get Top-K results.
-    Desc,
-    /// Ascending order.
-    Asc,
-}
-
-impl Default for SortOrder {
-    fn default() -> Self {
-        Self::Desc
-    }
-}
-
-use crate::{DocParsingError, QueryParserError, SortBy, TAGS_FIELD_NAME};
-
 /// Converts a field (name, value) into a tag string `name:value`.
 pub fn convert_tag_to_string(field_name: &str, field_value: &Value) -> String {
     let field_value_str = tantivy_value_to_string(field_value);
-    make_tag_value(field_name, &field_value_str)
+    build_tag_value(field_name, &field_value_str)
 }
 
 /// Returns true if tag_string is of form `{field_name}:any_value`.
@@ -68,7 +49,7 @@ pub fn match_tag_field_name(field_name: &str, tag_string: &str) -> bool {
 }
 
 /// Creates the wildcard tag value for a field name: `{field_name}:*`.
-pub fn make_too_many_tag_value(field_name: &str) -> String {
+pub fn build_too_many_tag_value(field_name: &str) -> String {
     format!(
         "{}{}{}",
         field_name, TAG_FIELD_VALUE_SEPARATOR, TOO_MANY_TAG_VALUES
@@ -76,7 +57,7 @@ pub fn make_too_many_tag_value(field_name: &str) -> String {
 }
 
 /// Creates a tag value for a field name of this format `{field_name}:value`.
-pub fn make_tag_value(field_name: &str, field_value: &str) -> String {
+pub fn build_tag_value(field_name: &str, field_value: &str) -> String {
     if field_value == TOO_MANY_TAG_VALUES {
         return format!(
             "{}{}{}{}",

@@ -38,7 +38,8 @@ use tracing::{debug, error, info, info_span, instrument, Span};
 
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::{
-    GarbageCollector, Indexer, MergeExecutor, MergePlanner, Packager, Publisher, Uploader,
+    GarbageCollector, Indexer, MergeExecutor, MergePlanner, NamedField, Packager, Publisher,
+    Uploader,
 };
 use crate::models::{IndexingDirectory, IndexingStatistics};
 use crate::source::{quickwit_supported_sources, SourceActor};
@@ -239,21 +240,6 @@ impl IndexingPipeline {
             .remove_dangling_splits(&published_splits)
             .await?;
 
-        // Collect a map of tag field name and their corresponding field.
-        let tag_fields_list = index_metadata
-            .index_config
-            .tag_field_names()
-            .iter()
-            .map(|field_name| {
-                index_metadata
-                    .index_config
-                    .schema()
-                    .get_field(field_name)
-                    .context(format!("Field `{}` must exist in the schema.", field_name))
-                    .map(|field| (field_name.clone(), field))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
         let (merge_planner_mailbox, merge_planner_inbox) =
             create_mailbox::<<MergePlanner as Actor>::Message>(
                 "MergePlanner".to_string(),
@@ -296,11 +282,24 @@ impl IndexingPipeline {
             .spawn_async();
 
         // Merge Packager
-        let merge_packager = Packager::new(
-            "MergePackager",
-            tag_fields_list.clone(),
-            merge_uploader_mailbox,
-        );
+        let index_schema = self.params.doc_mapper.schema();
+        let tag_fields = self
+            .params
+            .doc_mapper
+            .tag_field_names()
+            .iter()
+            .map(|field_name| {
+                index_schema
+                    .get_field(field_name)
+                    .context(format!("Field `{}` must exist in the schema.", field_name))
+                    .map(|field| NamedField {
+                        name: field_name.clone(),
+                        field,
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let merge_packager =
+            Packager::new("MergePackager", tag_fields.clone(), merge_uploader_mailbox);
         let (merge_packager_mailbox, merge_packager_handler) = ctx
             .spawn_actor(merge_packager)
             .set_kill_switch(self.kill_switch.clone())
@@ -367,7 +366,7 @@ impl IndexingPipeline {
             .spawn_async();
 
         // Packager
-        let packager = Packager::new("Packager", tag_fields_list, uploader_mailbox);
+        let packager = Packager::new("Packager", tag_fields, uploader_mailbox);
         let (packager_mailbox, packager_handler) = ctx
             .spawn_actor(packager)
             .set_kill_switch(self.kill_switch.clone())

@@ -26,11 +26,11 @@ use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity, SyncActor};
 use quickwit_directories::write_hotcache;
-use quickwit_index_config::{make_tag_value, make_too_many_tag_value, MAX_VALUES_PER_TAG_FIELD};
-use tantivy::schema::Field;
+use quickwit_index_config::{build_tag_value, build_too_many_tag_value, MAX_VALUES_PER_TAG_FIELD};
 use tantivy::{ReloadPolicy, SegmentId, SegmentMeta};
 use tracing::{debug, info, info_span, Span};
 
+use super::NamedField;
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch, ScratchDirectory,
 };
@@ -49,21 +49,20 @@ use crate::models::{
 pub struct Packager {
     actor_name: &'static str,
     uploader_mailbox: Mailbox<PackagedSplitBatch>,
-    /// A list of tag fields specified in the index config and their
-    /// corresponding schema field.
-    tag_fields_list: Vec<(String, Field)>,
+    /// List of tag fields ([`Vec<NamedField>`]) defined in the index config.
+    tag_fields: Vec<NamedField>,
 }
 
 impl Packager {
     pub fn new(
         actor_name: &'static str,
-        tag_fields_list: Vec<(String, Field)>,
+        tag_fields: Vec<NamedField>,
         uploader_mailbox: Mailbox<PackagedSplitBatch>,
     ) -> Packager {
         Packager {
             actor_name,
             uploader_mailbox,
-            tag_fields_list,
+            tag_fields,
         }
     }
 
@@ -75,7 +74,7 @@ impl Packager {
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
         let packaged_split =
-            create_packaged_split(&segment_metas[..], split, &self.tag_fields_list, ctx)?;
+            create_packaged_split(&segment_metas[..], split, &self.tag_fields, ctx)?;
         Ok(packaged_split)
     }
 }
@@ -195,7 +194,7 @@ fn build_hotcache<W: io::Write>(split_path: &Path, out: &mut W) -> anyhow::Resul
 fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
-    tag_fields_list: &[(String, Field)],
+    tag_fields: &[NamedField],
     ctx: &ActorContext<IndexedSplitBatch>,
 ) -> anyhow::Result<PackagedSplit> {
     info!(split_id = split.split_id.as_str(), "create-packaged-split");
@@ -213,12 +212,12 @@ fn create_packaged_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let mut tags = BTreeSet::default();
-    for (tag_field_name, tag_field) in tag_fields_list {
+    for named_field in tag_fields {
         let inverted_indexes = index_reader
             .searcher()
             .segment_readers()
             .iter()
-            .map(|segment| segment.inverted_index(*tag_field))
+            .map(|segment| segment.inverted_index(named_field.field))
             .collect::<Result<Vec<_>, _>>()?;
 
         if inverted_indexes
@@ -227,7 +226,7 @@ fn create_packaged_split(
             .sum::<usize>()
             >= MAX_VALUES_PER_TAG_FIELD
         {
-            tags.insert(make_too_many_tag_value(tag_field_name));
+            tags.insert(build_too_many_tag_value(&named_field.name));
             continue;
         }
 
@@ -235,7 +234,7 @@ fn create_packaged_split(
             let mut terms_streamer = inv_index.terms().stream()?;
             while let Some((term_data, _)) = terms_streamer.next() {
                 let tag_value = String::from_utf8_lossy(term_data).to_string();
-                tags.insert(make_tag_value(tag_field_name, &tag_value));
+                tags.insert(build_tag_value(&named_field.name, &tag_value));
             }
         }
     }
@@ -371,14 +370,12 @@ mod tests {
         Ok(indexed_split)
     }
 
-    fn get_tag_fields_map(schema: Schema, field_names: &[&str]) -> Vec<(String, Field)> {
+    fn get_tag_fields(schema: Schema, field_names: &[&str]) -> Vec<NamedField> {
         field_names
             .iter()
-            .map(|field_name| {
-                (
-                    field_name.to_string(),
-                    schema.get_field(field_name).unwrap(),
-                )
+            .map(|field_name| NamedField {
+                name: field_name.to_string(),
+                field: schema.get_field(field_name).unwrap(),
             })
             .collect()
     }
@@ -389,11 +386,11 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]])?;
-        let tag_fields_map = get_tag_fields_map(
+        let tag_fields = get_tag_fields(
             indexed_split.index.schema(),
             &["tag_field_1", "tag_field_2"],
         );
-        let packager = Packager::new("TestPackager", tag_fields_map, mailbox);
+        let packager = Packager::new("TestPackager", tag_fields, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
@@ -423,11 +420,11 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
-        let tag_fields_map = get_tag_fields_map(
+        let tag_fields = get_tag_fields(
             indexed_split.index.schema(),
             &["tag_field_1", "tag_field_2"],
         );
-        let packager = Packager::new("TestPackager", tag_fields_map, mailbox);
+        let packager = Packager::new("TestPackager", tag_fields, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
@@ -453,11 +450,11 @@ mod tests {
         let (mailbox, inbox) = create_test_mailbox();
         let indexed_split_1 = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
         let indexed_split_2 = make_indexed_split_for_test(&[&[1628204589], &[1629203640]])?;
-        let tag_fields_map = get_tag_fields_map(
+        let tag_fields = get_tag_fields(
             indexed_split_1.index.schema(),
             &["tag_field_1", "tag_field_2"],
         );
-        let packager = Packager::new("TestPackager", tag_fields_map, mailbox);
+        let packager = Packager::new("TestPackager", tag_fields, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
