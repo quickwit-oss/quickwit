@@ -196,11 +196,6 @@ mod tests {
             .try_get_matches_from(vec!["new", "--index-uri", "file:///indexes/wikipedia"])
             .unwrap_err();
 
-        let expected_index_config_uri = format!(
-            "file://{}{}conf.yaml",
-            std::env::current_dir().unwrap().display(),
-            std::path::MAIN_SEPARATOR
-        );
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
@@ -208,9 +203,13 @@ mod tests {
             "--index-config-uri",
             "conf.yaml",
             "--metastore-uri",
-            "file:///indexes",
+            "/indexes",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
+        let expected_index_config_uri = format!(
+            "file://{}/conf.yaml",
+            std::env::current_dir().unwrap().display()
+        );
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
             metastore_uri: "file:///indexes".to_string(),
             index_config_uri: expected_index_config_uri.clone(),
@@ -219,7 +218,8 @@ mod tests {
         assert_eq!(command, expected_cmd);
 
         const QUICKWIT_METASTORE_URI_ENV_KEY: &str = "QUICKWIT_METASTORE_URI";
-        env::set_var(QUICKWIT_METASTORE_URI_ENV_KEY, "file:///indexes");
+        env::set_var(QUICKWIT_METASTORE_URI_ENV_KEY, "/indexes");
+
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
@@ -482,9 +482,8 @@ mod tests {
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         let expected_server_config_uri = format!(
-            "file://{}{}conf.toml",
-            std::env::current_dir().unwrap().display(),
-            std::path::MAIN_SEPARATOR
+            "file://{}/conf.toml",
+            std::env::current_dir().unwrap().display()
         );
         assert!(matches!(
             command,

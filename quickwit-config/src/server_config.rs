@@ -301,14 +301,11 @@ mod tests {
     use super::*;
 
     fn get_resource_path(resource_filename: &str) -> String {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resources")
-            .join("tests")
-            .join("server_config")
-            .join(resource_filename)
-            .to_str()
-            .expect("Invalid resource file name.")
-            .to_string()
+        format!(
+            "{}/resources/tests/server_config/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            resource_filename
+        )
     }
 
     fn set_data_dir_path(server_config: &mut ServerConfig, path: PathBuf) {
