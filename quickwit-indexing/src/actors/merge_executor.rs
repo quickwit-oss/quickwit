@@ -808,11 +808,9 @@ pub fn compute_current_split_bounds(
 #[cfg(test)]
 mod tests {
     use std::mem;
-    use std::sync::Arc;
 
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::split_file;
-    use quickwit_index_config::DefaultIndexConfigBuilder;
     use quickwit_metastore::SplitMetadata;
 
     use super::*;
@@ -823,42 +821,39 @@ mod tests {
     #[tokio::test]
     async fn test_merge_executor() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let index_config = r#"{
-            "default_search_fields": ["body"],
-            "timestamp_field": "ts",
-            "tag_fields": [],
-            "field_mappings": [
-                { "name": "body", "type": "text" },
-                { "name": "ts", "type": "i64", "fast": true }
-            ]
-        }"#;
-        let index_config =
-            Arc::new(serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?);
         let index_id = "test-index";
-        let test_index_builder = TestSandbox::create(index_id, index_config).await?;
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: i64
+                fast: true
+        "#;
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
         for split_id in 0..4 {
             let docs = vec![
                 serde_json::json!({"body ": format!("split{}", split_id), "ts": 1631072713 + split_id }),
             ];
-            test_index_builder.add_documents(docs).await?;
+            test_sandbox.add_documents(docs).await?;
         }
-        let metastore = test_index_builder.metastore();
-        let splits = metastore
+        let metastore = test_sandbox.metastore();
+        let split_metas: Vec<SplitMetadata> = metastore
             .list_all_splits(index_id)
             .await?
             .into_iter()
-            .map(|meta| meta.split_metadata)
-            .collect::<Vec<_>>();
-        assert_eq!(splits.len(), 4);
+            .map(|split| split.split_metadata)
+            .collect();
+        assert_eq!(split_metas.len(), 4);
         let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits-")?;
-        let storage = test_index_builder.index_storage(index_id)?;
         let mut tantivy_dirs: Vec<Box<dyn Directory>> = vec![];
-        for split in &splits {
-            let split_filename = split_file(split.split_id());
+        for split_meta in &split_metas {
+            let split_filename = split_file(split_meta.split_id());
             let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
-            storage
+            test_sandbox
+                .storage()
                 .copy_to_file(Path::new(&split_filename), &dest_filepath)
                 .await?;
 
@@ -867,7 +862,7 @@ mod tests {
         let merge_scratch = MergeScratch {
             merge_operation: MergeOperation::Merge {
                 merge_split_id: crate::new_split_id(),
-                splits,
+                splits: split_metas,
             },
             tantivy_dirs,
             merge_scratch_directory,
@@ -904,21 +899,30 @@ mod tests {
     #[tokio::test]
     async fn test_demux_execution() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let index_config = r#"{
-            "default_search_fields": ["body"],
-            "timestamp_field": "ts",
-            "demux_field": "tenant_id",
-            "tag_fields": ["tenant_id"],
-            "field_mappings": [
-                { "name": "body", "type": "text" },
-                { "name": "ts", "type": "i64", "fast": true },
-                { "name": "tenant_id", "type": "u64", "fast": true }
-            ]
-        }"#;
-        let index_config =
-            Arc::new(serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?);
         let index_id = "test-index-demux";
-        let test_index_builder = TestSandbox::create(index_id, index_config).await?;
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: i64
+                fast: true
+              - name: tenant_id
+                type: u64
+                fast: true
+            tag_fields: [tenant_id]
+        "#;
+        let indexing_settings_yaml = r#"
+            demux_field: tenant_id
+            timestamp_field: ts
+        "#;
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_yaml,
+            indexing_settings_yaml,
+            &["body"],
+        )
+        .await?;
         let mut last_tenant_min_timestamp = 0;
         let mut last_tenant_max_timestamp = 0;
         for split_id in 0..4 {
@@ -934,34 +938,36 @@ mod tests {
             if split_id == 3 {
                 last_tenant_max_timestamp = last_tenant_timestamp;
             }
-            test_index_builder.add_documents(docs).await?;
+            test_sandbox.add_documents(docs).await?;
         }
-        let metastore = test_index_builder.metastore();
-        let splits: Vec<SplitMetadata> = metastore
+        let metastore = test_sandbox.metastore();
+        let split_metas: Vec<SplitMetadata> = metastore
             .list_all_splits(index_id)
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
             .collect();
-        let demux_split_ids = (0..splits.len() - 1).map(|_| new_split_id()).collect_vec();
-        let total_num_bytes_docs = splits
+        let demux_split_ids = (0..split_metas.len() - 1)
+            .map(|_| new_split_id())
+            .collect_vec();
+        let total_num_bytes_docs = split_metas
             .iter()
-            .map(|split| split.original_size_in_bytes)
+            .map(|meta| meta.original_size_in_bytes)
             .sum::<u64>();
         let merge_scratch_directory = ScratchDirectory::for_test()?;
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits")?;
-        let storage = test_index_builder.index_storage(index_id)?;
-        for split in &splits {
-            let split_filename = split_file(&split.split_id);
+        for split_meta in &split_metas {
+            let split_filename = split_file(split_meta.split_id());
             let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
-            storage
+            test_sandbox
+                .storage()
                 .copy_to_file(Path::new(&split_filename), &dest_filepath)
                 .await?;
         }
         let merge_scratch = MergeScratch {
             merge_operation: MergeOperation::Demux {
-                splits,
+                splits: split_metas,
                 demux_split_ids,
             },
             merge_scratch_directory,

@@ -702,12 +702,11 @@ mod tests {
     use std::sync::Arc;
 
     use chrono::Utc;
-    use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_storage::{MockStorage, StorageErrorKind};
     use rand::Rng;
     use tokio::time::Duration;
 
-    use crate::checkpoint::{Checkpoint, CheckpointDelta};
+    use crate::checkpoint::CheckpointDelta;
     use crate::metastore::single_file_metastore::{meta_path, MetadataSet};
     use crate::{
         IndexMetadata, Metastore, MetastoreError, SingleFileMetastore, SplitMetadata, SplitState,
@@ -724,12 +723,7 @@ mod tests {
             let expected = false;
             assert_eq!(result, expected);
 
-            let index_metadata = IndexMetadata {
-                index_id: index_id.to_string(),
-                index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Arc::new(WikipediaIndexConfig::default()),
-                checkpoint: Checkpoint::default(),
-            };
+            let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
             // Create index
             metastore.create_index(index_metadata).await.unwrap();
@@ -752,12 +746,7 @@ mod tests {
             let expected = false;
             assert_eq!(result, expected);
 
-            let index_metadata = IndexMetadata {
-                index_id: index_id.to_string(),
-                index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Arc::new(WikipediaIndexConfig::default()),
-                checkpoint: Checkpoint::default(),
-            };
+            let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
             // Create index
             metastore
@@ -773,16 +762,7 @@ mod tests {
             // Open index and check its metadata
             let created_index = metastore.get_index(index_id).await.unwrap();
             assert_eq!(created_index.index.index_id, index_metadata.index_id);
-            assert_eq!(
-                created_index.index.index_uri.clone(),
-                index_metadata.index_uri
-            );
-
-            assert_eq!(
-                format!("{:?}", created_index.index.index_config),
-                "WikipediaIndexConfig".to_string()
-            );
-
+            assert_eq!(created_index.index.index_uri, index_metadata.index_uri);
             // Open a non-existent index.
             let metastore_error = metastore.get_index("non-existent-index").await.unwrap_err();
             assert!(matches!(
@@ -829,12 +809,7 @@ mod tests {
             ..Default::default()
         };
 
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(quickwit_index_config::default_config_for_tests()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         // create index
         metastore.create_index(index_metadata).await.unwrap();
@@ -870,15 +845,12 @@ mod tests {
     async fn test_single_file_metastore_get_index_checks_for_inconsistent_index_id() {
         let metastore = SingleFileMetastore::for_test();
         let index_id = "my-index";
+        let index_metadata =
+            IndexMetadata::for_test("my-inconsistent-index", "ram://indexes/my-index");
 
-        // put inconsitent index into storage
+        // Put inconsistent index into storage.
         let metadata_set = MetadataSet {
-            index: IndexMetadata {
-                index_id: "inconsistent_index_id".to_string(),
-                index_uri: "ram://indexes/my-index".to_string(),
-                index_config: Arc::new(WikipediaIndexConfig::default()),
-                checkpoint: Checkpoint::default(),
-            },
+            index: index_metadata,
             splits: HashMap::new(),
         };
         let content: Vec<u8> = serde_json::to_vec(&metadata_set).unwrap();
@@ -892,7 +864,7 @@ mod tests {
             .await
             .unwrap();
 
-        // getting metadatset with inconsistent indexi_id should raise an error.
+        // Getting index with inconsistent index ID should raise an error.
         let metastore_error = metastore.get_index(index_id).await.unwrap_err();
         assert!(matches!(
             metastore_error,
@@ -905,12 +877,7 @@ mod tests {
         let metastore = Arc::new(SingleFileMetastore::for_test());
         let index_id = "my-index";
 
-        let index_metadata = IndexMetadata {
-            index_id: index_id.to_string(),
-            index_uri: "ram://indexes/my-index".to_string(),
-            index_config: Arc::new(WikipediaIndexConfig::default()),
-            checkpoint: Checkpoint::default(),
-        };
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
         // Create index
         metastore.create_index(index_metadata).await.unwrap();

@@ -2216,11 +2216,14 @@ name = "quickwit-backward-compat"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "byte-unit",
  "md5",
  "once_cell",
+ "quickwit-config",
  "quickwit-index-config",
  "quickwit-metastore",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
@@ -2238,7 +2241,6 @@ dependencies = [
  "futures",
  "humansize",
  "itertools",
- "json_comments",
  "once_cell",
  "openssl-probe",
  "opentelemetry",
@@ -2246,6 +2248,7 @@ dependencies = [
  "predicates 2.0.3",
  "quickwit-actors",
  "quickwit-common",
+ "quickwit-config",
  "quickwit-core",
  "quickwit-directories",
  "quickwit-index-config",
@@ -2312,10 +2315,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "byte-unit",
+ "json_comments",
+ "quickwit-common",
  "quickwit-index-config",
+ "quickwit-storage",
  "serde",
  "serde_json",
  "serde_yaml",
+ "tempfile",
+ "tokio",
  "toml",
  "tracing",
 ]
@@ -2415,6 +2423,7 @@ dependencies = [
  "proptest",
  "quickwit-actors",
  "quickwit-common",
+ "quickwit-config",
  "quickwit-directories",
  "quickwit-index-config",
  "quickwit-metastore",
@@ -2425,6 +2434,7 @@ dependencies = [
  "rusoto_kinesis",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tantivy",
  "tempfile",
  "thiserror",
@@ -2440,6 +2450,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "byte-unit",
  "chrono",
  "diesel",
  "diesel_migrations",
@@ -2447,6 +2458,7 @@ dependencies = [
  "futures",
  "mockall 0.9.1",
  "openssl",
+ "quickwit-config",
  "quickwit-index-config",
  "quickwit-storage",
  "rand 0.8.4",
@@ -2526,6 +2538,7 @@ dependencies = [
  "prometheus",
  "quickwit-cluster",
  "quickwit-common",
+ "quickwit-config",
  "quickwit-core",
  "quickwit-directories",
  "quickwit-index-config",

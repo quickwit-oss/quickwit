@@ -28,14 +28,14 @@ mod config;
 mod default_index_config;
 mod error;
 mod query_builder;
-mod wikipedia_config;
+mod sort_by;
 
-pub use config::{match_tag_field_name, IndexConfig, SortBy, SortOrder};
+pub use config::{match_tag_field_name, IndexConfig};
 pub use default_index_config::{
-    DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry,
+    DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry, SortByConfig,
 };
 pub use error::QueryParserError;
-pub use wikipedia_config::WikipediaIndexConfig;
+pub use sort_by::{SortBy, SortOrder};
 
 /// Field name reserved for storing the source document.
 pub static SOURCE_FIELD_NAME: &str = "_source";

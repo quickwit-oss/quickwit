@@ -3,7 +3,7 @@ settings:
     - ArgRequiredElseHelp
 subcommands:
     - index:
-        about: Operations (create, index, search, ...) on indexes.
+        about: Index operation commands such as `create`, `index`, or `search`...
         display_order: 1
         settings:
             - ArgRequiredElseHelp
@@ -12,87 +12,58 @@ subcommands:
                 about: Creates an index.
                 display_order: 1
                 args:
-                    - index-id:
-                        about: Index ID
-                        long: index-id
-                        value_name: INDEX ID
-                        required: true
-                    - index-uri:
-                        about: Index URI
-                        long: index-uri
-                        value_name: INDEX URI
-                        required: true
-                    - index-config-path:
-                        about: Path of the index config configuration
-                        long: index-config-path
-                        value_name: INDEX CONFIG PATH
-                        required: true
-                    - overwrite:
-                        about: Overwrites pre-existing index
-                        long: overwrite
                     - metastore-uri:
-                        about: Location of the metastore
+                        about: Location of the metastore.
                         long: metastore-uri
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
-            - index:
+                    - index-config-uri:
+                        about: Location of the index config file.
+                        long: index-config-uri
+                        value_name: INDEX CONFIG URI
+                        required: true
+                    - overwrite:
+                        about: Overwrites pre-existing index.
+                        long: overwrite
+            - ingest:
                 display_order: 2
-                about: Indexes a dataset
+                about: Indexes JSON documents read from a file or streamed from stdin.
                 args:
                     - index-id:
-                        about: Index ID
+                        about: ID of the target index.
                         long: index-id
                         value_name: INDEX ID
                         required: true
                     - metastore-uri:
-                        about: Location of the metastore
+                        about: Location of the metastore.
                         long: metastore-uri
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
                     - input-path:
-                        about: Location of the source dataset
+                        about: Location of the input file.
                         long: input-path
                         value_name: INPUT PATH
-                    - source-config-path:
-                        about: Location of the source config file
-                        long: source-config-path
-                        value_name: SOURCE CONFIG PATH
-                        conflicts_with:
-                            - input-path
                     - data-dir-path:
-                        about: Creates indexing directories in this local directory.
+                        about: Creates cached and intermediate data structures in this local directory.
                         long: data-dir-path
                         value_name: DATA DIR PATH
                         required: true
-                    - num-threads:
-                        about: Number of threads allocated to the process
-                        long: num-threads
-                        value_name: NUM THREADS
-                        default_value: '1'
-                    - heap-size:
-                        about: Amount of memory allocated to the process and split between the indexing threads
-                        long: heap-size
-                        value_name: HEAP SIZE
-                        default_value: 2G
                     - overwrite:
-                        about: Overwrites pre-existing index
+                        about: Overwrites pre-existing index.
                         long: overwrite
-                    - no-merge:
-                        about: Indexing without merge
-                        long: no-merge
             - describe:
                 display_order: 3
                 about: Display descriptive statistics about the index.
                 args:
                     - index-id:
-                        about: Index ID
+                        about: ID of the target index.
                         long: index-id
                         value_name: INDEX ID
                         required: true
                     - metastore-uri:
-                        about: Location of the metastore
+                        about: Location of the metastore.
                         long: metastore-uri
                         value_name: METASTORE URI
                         required: true
@@ -102,103 +73,103 @@ subcommands:
                 about: Searches an index.
                 args:
                     - index-id:
-                        about: Index id
+                        about: id of the target index.
                         long: index-id
                         value_name: INDEX ID
                         required: true
                     - metastore-uri:
-                        about: Location of the metastore
+                        about: Location of the metastore.
                         long: metastore-uri
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
                     - query:
-                        about: Query expressed in Tantivy syntax
+                        about: Query expressed in Tantivy syntax.
                         long: query
                         value_name: QUERY
                         required: true
                     - max-hits:
-                        about: Maximum number of hits returned
+                        about: Maximum number of hits returned.
                         long: max-hits
                         value_name: MAX HITS
                         default_value: '20'
                     - start-offset:
-                        about: Offset in the global result set of the first hit returned
+                        about: Offset in the global result set of the first hit returned.
                         long: start-offset
                         value_name: OFFSET
                         default_value: '0'
                     - search-fields:
-                        about: Searches only in those fields
+                        about: Searches only in those fields.
                         long: search-fields
                         value_name: FIELD NAME
                         multiple_values: true
                     - start-timestamp:
-                        about: Filters out documents before that timestamp (time-series indexes only)
+                        about: Filters out documents before that timestamp (time-series indexes only).
                         long: start-timestamp
                         value_name: TIMESTAMP
                     - end-timestamp:
-                        about: Filters out documents after that timestamp (time-series indexes only)
+                        about: Filters out documents after that timestamp (time-series indexes only).
                         long: end-timestamp
                         value_name: TIMESTAMP
                     - tags:
-                        about: Searches only in splits matching specified tags
+                        about: Restricts search to splits matching the specified tags.
                         long: tags
                         value_name: TAG
                         multiple_values: true
             - demux:
-                about: Demux an index.
+                about: Demuxes an index.
                 args:
                     - index-id:
-                        about: Index ID
+                        about: ID of the target index.
                         long: index-id
                         value_name: INDEX ID
                         required: true
                     - metastore-uri:
-                        about: Location of the metastore
+                        about: Location of the metastore.
                         long: metastore-uri
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
             - gc:
                 display_order: 6
-                about: Garbage collect an index.
+                about: Garbage collects stale staged splits and splits marked for deletion.
                 args:
                     - index-id:
-                        about: Index ID
+                        about: ID of the target index.
                         long: index-id
                         value_name: INDEX ID
                         required: true
                     - metastore-uri:
-                        about: Location of the metastore
+                        about: Location of the metastore.
                         long: metastore-uri
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
                     - grace-period:
-                        about: Threshold period after which intermediate files can be garbage collected.
+                        about: Threshold period after which stale staged splits are garbage collected.
                         long: grace-period
                         value_name: GRACE PERIOD
                         default_value: '1h'
                     - dry-run:
-                        about: Executes the command in dry run mode and displays the list of files to remove
+                        about: Executes the command in dry run mode and only displays the list of splits candidate for garbage collection.
                         long: dry-run
             - delete:
                 display_order: 7
                 about: Delete an index.
                 args:
                     - index-id:
-                        about: Index ID
+                        about: ID of the target index.
                         long: index-id
                         value_name: INDEX ID
                         required: true
                     - metastore-uri:
-                        about: Location of the metastore
+                        about: Location of the metastore.
                         long: metastore-uri
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
                     - dry-run:
-                        about: Executes the command in dry run mode and displays the list of files to delete
+                        about: Executes the command in dry run mode and only displays the list of splits candidate for deletion.
                         long: dry-run
     - split:
         settings:
@@ -207,98 +178,83 @@ subcommands:
         about: Operations (add, delete, describe...) on splits.
         subcommands:
             - extract:
-                about: Extracts a split into a folder.
+                about: Downloads and extracts a split to a directory. 
                 args:
                     - index-id:
-                        about: Index ID
+                        about: ID of the target index.
                         long: index-id
                         value_name: INDEX ID
                         required: true
                     - split-id:
-                        about: ID of the split
+                        about: ID of the target split.
+                        long: split-id
+                        value_name: SPLIT ID
                         required: true
                         index: 1
                     - metastore-uri:
-                        about: Location of the metastore
-                        long: metastore-uri
+                        about: Location of the metastore.
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
-                    - target-folder:
-                        about: Folder to extract the split to.
-                        long: target-folder
-                        value_name: TARGET FOLDER
+                    - target-dir:
+                        about: Directory to extract the split to.
+                        long: target-dir
+                        value_name: TARGET DIR
                         required: true
             - describe:
-                about: Show files info contained in a split.
+                about: Displays metadata about the split.
                 args:
                     - index-id:
-                        about: Index ID
+                        about: ID of the target index.
                         long: index-id
                         value_name: INDEX ID
                         required: true
                     - split-id:
-                        about: ID of the split
+                        about: ID of the target split.
+                        long: split-id
+                        value_name: SPLIT ID
                         required: true
                         index: 1
                     - metastore-uri:
-                        about: Location of the metastore
+                        about: Location of the metastore.
                         long: metastore-uri
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
     - service:
-        about: Start, stop, reload a service.
+        about: Launches services.
         display_order: 3
         settings:
             - ArgRequiredElseHelp
         subcommands:
-            - start:
+            - run:
                 display_order: 1
-                about: Start a service, currently only `searcher` service is available.
+                about: Starts a service. Currently, the only services available are `indexer` and `searcher`.
                 args:
-                    - name:
-                        about: Name of the service, currently only `searcher` is available.
+                    - service-name:
+                        about: Name of the service.
+                        value_name: SERVICE NAME
                         required: true
-                        index: 1
-                    - metastore-uri:
-                        about: Location of the metastore
-                        long: metastore-uri
-                        value_name: METASTORE URI
+                    - server-config-uri:
+                        about: Location of the server config.
+                        long: server-config-uri
+                        value_name: SERVER CONFIG URI
                         required: true
-                        env: QUICKWIT_METASTORE_URI
-                    - host:
-                        about: Hostname the web server should bind to.
-                        long: host
-                        default_value: '0.0.0.0'
-                        value_name: HOSTNAME
-                    - port:
-                        about: Port the web server should bind to.
-                        long: port
-                        default_value: '8080'
-                        value_name: PORT
-                    - host-key-path-prefix:
-                        about: Path prefix to the host key file where the data that makes a host unique in the cluster is stored.
-                        long: host-key-path-prefix
-                        default_value: '/tmp/quickwit-host-key'
-                        value_name: HOST KEY PREFIX
-                    - peer-seed:
-                        about: Comma-separated list of node addresses (e.g. 10.0.0.1:8080) used as seeds for cluster peer discovery.
-                        long: peer-seed
-                        value_name: PEER SEED
-                        multiple_occurrences: true
-                        use_delimiter: true
+                    - index-id:
+                        about: ID of the index to run the indexer for.
+                        long: index-id
+                        value_name: INDEX ID
     - tutorial:
-        about: Quick start with one of our tutorial dataset. No copy/paste needed.
+        about: Get started quickly with one of our pre-configured datasets. No copy-paste needed.
         display_order: 4
         settings:
             - ArgRequiredElseHelp
         subcommands:
             - index:
-                about: Index a dataset.
+                about: Indexes a dataset.
                 args:
                     - name:
-                        about: Name of the dataset
-                        long: dataset_name
+                        about: Name of the dataset.
+                        long: name
                         value_name: DATASET NAME
                         required: true

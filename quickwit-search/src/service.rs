@@ -40,7 +40,7 @@ use crate::{fetch_docs, leaf_search, root_search, ClusterClient, SearchClientPoo
 /// The search service implementation.
 pub struct SearchServiceImpl {
     metastore: Arc<dyn Metastore>,
-    storage_resolver: StorageUriResolver,
+    storage_uri_resolver: StorageUriResolver,
     cluster_client: ClusterClient,
     client_pool: Arc<SearchClientPool>,
 }
@@ -91,13 +91,13 @@ impl SearchServiceImpl {
     /// Creates a new search service.
     pub fn new(
         metastore: Arc<dyn Metastore>,
-        storage_resolver: StorageUriResolver,
+        storage_uri_resolver: StorageUriResolver,
         cluster_client: ClusterClient,
         client_pool: Arc<SearchClientPool>,
     ) -> Self {
         SearchServiceImpl {
             metastore,
-            storage_resolver,
+            storage_uri_resolver,
             cluster_client,
             client_pool,
         }
@@ -138,7 +138,7 @@ impl SearchService for SearchServiceImpl {
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
         info!(index=?search_request.index_id, splits=?leaf_search_request.split_metadata, "leaf_search");
         let storage = self
-            .storage_resolver
+            .storage_uri_resolver
             .resolve(&leaf_search_request.index_uri)?;
         let split_ids = leaf_search_request.split_metadata;
         let index_config = deserialize_index_config(&leaf_search_request.index_config)?;
@@ -159,7 +159,7 @@ impl SearchService for SearchServiceImpl {
         fetch_docs_request: FetchDocsRequest,
     ) -> crate::Result<FetchDocsResponse> {
         let storage = self
-            .storage_resolver
+            .storage_uri_resolver
             .resolve(&fetch_docs_request.index_uri)?;
 
         let fetch_docs_response = fetch_docs(
@@ -195,7 +195,7 @@ impl SearchService for SearchServiceImpl {
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
         info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_metadata, "leaf_search");
         let storage = self
-            .storage_resolver
+            .storage_uri_resolver
             .resolve(&leaf_stream_request.index_uri)?;
         let index_config = deserialize_index_config(&leaf_stream_request.index_config)?;
         let leaf_receiver = leaf_search_stream(
