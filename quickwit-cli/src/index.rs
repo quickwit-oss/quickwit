@@ -571,7 +571,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         delete_index(&args.metastore_uri, &index_config.index_id, false).await?;
     }
     let index_metadata = IndexMetadata {
-        index_id: index_config.index_id,
+        index_id: index_config.index_id.clone(),
         index_uri: index_config.index_uri,
         checkpoint: Checkpoint::default(),
         doc_mapping: index_config.doc_mapping,
@@ -581,6 +581,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         create_timestamp: Utc::now().timestamp(),
     };
     create_index(&args.metastore_uri, index_metadata).await?;
+    println!("Index `{}` successfully created.", index_config.index_id);
     Ok(())
 }
 

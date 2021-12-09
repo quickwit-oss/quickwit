@@ -42,11 +42,11 @@ pub const RED_COLOR: Color = Color::TrueColor {
     b: 34,
 };
 
-pub fn print_checklist(check_list_results: &[(&'static str, anyhow::Result<()>)]) {
+pub fn print_checklist(check_list_results: &[(&str, anyhow::Result<()>)]) {
     eprintln!(
-        "\n\n{}\n{}",
+        "\n{}\n{}",
         "---------------------------------------------------".color(GREEN_COLOR),
-        " Checklist ".color(WHITE_COLOR).on_color(GREEN_COLOR)
+        " Connectivity checklist ".color(WHITE_COLOR).on_color(GREEN_COLOR)
     );
     let mut errors = Vec::new();
     for (check_item_name, check_item_result) in check_list_results {
@@ -81,7 +81,7 @@ pub fn print_checklist(check_list_results: &[(&'static str, anyhow::Result<()>)]
 /// Run a checklist and print out its successes and failures on stdout.
 ///
 /// If an error is encountered, the proccess will exit with exit code 1.
-pub fn run_checklist(checks: Vec<(&'static str, anyhow::Result<()>)>) {
+pub fn run_checklist(checks: Vec<(&str, anyhow::Result<()>)>) {
     print_checklist(&checks);
     if !checks
         .iter()

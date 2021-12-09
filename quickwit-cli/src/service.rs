@@ -134,7 +134,7 @@ async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
     let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
     let mut checks = vec![("metastore", Ok(())), ("storage", storage.check().await)];
     for source_config in index_metadata.sources.iter() {
-        checks.push(("source", check_source_connectivity(source_config).await));
+        checks.push((source_config.source_id.as_str(), check_source_connectivity(source_config).await));
     }
     run_checklist(checks);
     index_data(index_metadata, args.indexer_config, metastore, storage).await?;
