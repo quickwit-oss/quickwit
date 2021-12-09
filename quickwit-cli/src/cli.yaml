@@ -118,15 +118,15 @@ subcommands:
                         multiple_values: true
             - merge:
                 display_order: 4
-                about: Merge an index.
+                about: Merges an index.
                 args:
                     - index-id:
-                        about: Index ID
+                        about: Index ID.
                         long: index-id
                         value_name: INDEX ID
                         required: true
                     - metastore-uri:
-                        about: Location of the metastore
+                        about: Location of the metastore.
                         long: metastore-uri
                         value_name: METASTORE URI
                         required: true
@@ -247,7 +247,7 @@ subcommands:
                         required: true
                         env: QUICKWIT_METASTORE_URI
                     - verbose:
-                        about: Print also hotcache info.
+                        about: Displays additional metadata about the hotcache.
                         long: verbose
     - service:
         about: Launches services.
