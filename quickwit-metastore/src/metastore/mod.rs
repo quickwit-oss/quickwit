@@ -21,7 +21,6 @@
 pub mod postgresql_metastore;
 pub mod single_file_metastore;
 
-use std::fmt::Debug;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -412,7 +411,7 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
         split_state: SplitState,
         time_range: Option<Range<i64>>,
-        tags: &[String],
+        tags: &[Vec<String>],
     ) -> MetastoreResult<Vec<Split>>;
 
     /// Lists the splits without filtering.
@@ -441,16 +440,54 @@ pub trait Metastore: Send + Sync + 'static {
     fn uri(&self) -> String;
 }
 
-// Returns true if filter_tags is empty (unspecified),
-// or if filter_tags is specified and split_tags contains at least one of the tags in filter_tags.
-pub fn match_tags_filter(split_tags: &[String], filter_tags: &[String]) -> bool {
+/// Finds out if a split matches a tag filter expression.
+///
+/// `filter_tags` is an array of array of tags representing a boolean expression
+/// of the form `[ [A OR B OR...] AND [C OR D OR ...] AND ...]`
+/// Returns true if filter_tags is empty, or if the split's tags match
+/// the filter_tags expression.
+pub fn match_tags_filter(split_tags: &[String], filter_tags: &[Vec<String>]) -> bool {
     if filter_tags.is_empty() {
         return true;
     }
-    for filter_tag in filter_tags {
-        if split_tags.contains(filter_tag) {
-            return true;
+
+    for or_tags in filter_tags {
+        let is_match = or_tags
+            .iter()
+            .map(|tag| split_tags.contains(tag))
+            .any(|contains| contains);
+        if !is_match {
+            return false;
         }
     }
-    false
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_match_tags_filter() {
+        assert!(match_tags_filter(&["foo".to_string()], &[]));
+        assert!(!match_tags_filter(&[], &[vec!["foo".to_string()]]));
+
+        assert!(match_tags_filter(
+            &["foo:bar".to_string()],
+            &[vec!["foo:bar".to_string()]]
+        ));
+        assert!(match_tags_filter(
+            &["foo:*".to_string()],
+            &[vec!["foo:bar".to_string(), "foo:*".to_string()]]
+        ));
+
+        assert!(!match_tags_filter(
+            &["foo".to_string()],
+            &[vec!["foo".to_string()], vec!["bar".to_string()]]
+        ));
+        assert!(match_tags_filter(
+            &["foo".to_string(), "bar".to_string()],
+            &[vec!["foo".to_string()], vec!["bar".to_string()]]
+        ));
+    }
 }

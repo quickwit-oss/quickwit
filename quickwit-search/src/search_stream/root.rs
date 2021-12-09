@@ -145,7 +145,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split("split1")]) },
+             _tags: &[Vec<String>]| { Ok(vec![mock_split("split1")]) },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -205,7 +205,7 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split("split1")]) },
+             _tags: &[Vec<String>]| { Ok(vec![mock_split("split1")]) },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -261,7 +261,9 @@ mod tests {
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split("split1"), mock_split("split2")]) },
+             _tags: &[Vec<String>]| {
+                Ok(vec![mock_split("split1"), mock_split("split2")])
+            },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();

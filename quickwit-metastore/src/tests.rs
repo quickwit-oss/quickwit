@@ -1540,7 +1540,7 @@ pub mod test_suite {
             assert_eq!(split_ids.contains("list-splits-six"), true);
 
             let range = None;
-            let tags = vec!["bar".to_string(), "baz".to_string()];
+            let tags = vec![vec!["bar".to_string(), "baz".to_string()]];
             let splits = metastore
                 .list_splits(index_id, SplitState::Staged, range, &tags)
                 .await

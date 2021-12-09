@@ -139,12 +139,18 @@ async fn list_relevant_splits(
     metastore: &dyn Metastore,
 ) -> MetastoreResult<Vec<SplitMetadata>> {
     let time_range_opt = extract_time_range(search_request);
+    // TODO: will be removed after #issues/823 is solved
+    let tags_filter = if search_request.tags.is_empty() {
+        vec![]
+    } else {
+        vec![search_request.tags.clone()]
+    };
     let split_metas = metastore
         .list_splits(
             &search_request.index_id,
             SplitState::Published,
             time_range_opt,
-            &search_request.tags,
+            &tags_filter,
         )
         .await?;
     Ok(split_metas

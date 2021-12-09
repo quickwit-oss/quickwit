@@ -307,7 +307,7 @@ impl PostgresqlMetastore {
         index_id: &str,
         state_opt: Option<SplitState>,
         time_range_opt: Option<Range<i64>>,
-        tags_opt: Option<&[String]>,
+        tags_opt: Option<&[Vec<String>]>,
     ) -> MetastoreResult<Vec<Split>> {
         let mut select_statement = schema::splits::dsl::splits
             .filter(schema::splits::dsl::index_id.eq(index_id))
@@ -330,8 +330,10 @@ impl PostgresqlMetastore {
 
         if let Some(tags) = tags_opt {
             if !tags.is_empty() {
-                select_statement =
-                    select_statement.filter(schema::splits::dsl::tags.overlaps_with(tags));
+                for inner_tags in tags {
+                    select_statement = select_statement
+                        .filter(schema::splits::dsl::tags.overlaps_with(inner_tags));
+                }
             }
         }
 
@@ -652,7 +654,7 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-        tags: &[String],
+        tags: &[Vec<String>],
     ) -> MetastoreResult<Vec<Split>> {
         let conn = self.get_conn()?;
         self.list_splits_helper(&conn, index_id, Some(state), time_range_opt, Some(tags))
