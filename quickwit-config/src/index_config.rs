@@ -162,6 +162,7 @@ impl IndexingSettings {
         SortBy::DocId
     }
 
+    // TODO(guilload) Hide this method if possible.
     pub fn for_test() -> Self {
         Self {
             resources: IndexingResources::for_test(),
