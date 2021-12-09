@@ -350,7 +350,7 @@ impl Indexer {
             ctx,
         )?;
         if self.counters.num_docs_in_split
-            >= self.indexer_state.indexing_settings.split_max_num_docs as u64
+            >= self.indexer_state.indexing_settings.split_num_docs_target as u64
         {
             self.send_to_packager(CommitTrigger::NumDocsLimit, ctx)?;
         }
@@ -428,7 +428,7 @@ mod tests {
         let doc_mapper = Arc::new(quickwit_index_config::default_config_for_tests());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let mut indexing_settings = IndexingSettings::for_test();
-        indexing_settings.split_max_num_docs = 3;
+        indexing_settings.split_num_docs_target = 3;
         indexing_settings.sort_field = Some("timestamp".to_string());
         indexing_settings.sort_order = Some(SortOrder::Desc);
         indexing_settings.timestamp_field = Some("timestamp".to_string());
