@@ -66,21 +66,16 @@ impl From<TelemetryEvent> for EventWithTimestamp {
 pub enum TelemetryEvent {
     /// Create command is called.
     Create,
-    /// Index command is called.
-    IndexStart,
+    /// Ingest command is called.
+    Ingest,
     /// Delete command
     Delete,
     /// Garbage Collect command
     GarbageCollect,
     /// Serve command is called.
-    Serve(ServeEvent),
+    RunService(String),
     /// EndCommand (with the return code)
     EndCommand { return_code: i32 },
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ServeEvent {
-    pub has_seed: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

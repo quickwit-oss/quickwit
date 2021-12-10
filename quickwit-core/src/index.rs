@@ -23,9 +23,11 @@ use std::time::Duration;
 use quickwit_indexing::{
     delete_splits_with_files, run_garbage_collect, FileEntry, IndexingSplitStore,
 };
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreUriResolver, SplitState};
-use quickwit_storage::{quickwit_storage_uri_resolver, StorageUriResolver};
-use tracing::warn;
+use quickwit_metastore::{
+    IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadata, SplitState,
+};
+use quickwit_storage::{quickwit_storage_uri_resolver, Storage};
+use tracing::error;
 
 /// Creates an index at `index-path` extracted from `metastore_uri`. The command fails if an index
 /// already exists at `index-path`.
@@ -63,7 +65,12 @@ pub async fn delete_index(
     let storage = storage_resolver.resolve(&index_uri)?;
 
     if dry_run {
-        let all_splits = metastore.list_all_splits(index_id).await?;
+        let all_splits = metastore
+            .list_all_splits(index_id)
+            .await?
+            .into_iter()
+            .map(|metadata| metadata.split_metadata)
+            .collect::<Vec<_>>();
 
         let file_entries_to_delete: Vec<FileEntry> =
             all_splits.iter().map(FileEntry::from).collect();
@@ -80,7 +87,7 @@ pub async fn delete_index(
     let split_ids = staged_splits
         .iter()
         .chain(published_splits.iter())
-        .map(|meta| meta.split_metadata.split_id.as_ref())
+        .map(|meta| meta.split_id())
         .collect::<Vec<_>>();
     metastore
         .mark_splits_for_deletion(index_id, &split_ids)
@@ -89,7 +96,10 @@ pub async fn delete_index(
     // Select split to delete
     let splits_to_delete = metastore
         .list_splits(index_id, SplitState::ScheduledForDeletion, None, &[])
-        .await?;
+        .await?
+        .into_iter()
+        .map(|metadata| metadata.split_metadata)
+        .collect::<Vec<_>>();
 
     let split_store = IndexingSplitStore::create_with_no_local_store(storage);
     let deleted_entries = delete_splits_with_files(
@@ -150,27 +160,26 @@ pub async fn garbage_collect_index(
 /// * `index_id` - The target index Id.
 /// * `storage_resolver` - A storage resolver object to access the storage.
 pub async fn reset_index(
+    index_metadata: &IndexMetadata,
     metastore: Arc<dyn Metastore>,
-    index_id: &str,
-    storage_resolver: StorageUriResolver,
+    storage: Arc<dyn Storage>,
 ) -> anyhow::Result<()> {
-    let index_uri = metastore.index_metadata(index_id).await?.index_uri;
-    let storage = storage_resolver.resolve(&index_uri)?;
-    let split_store = IndexingSplitStore::create_with_no_local_store(storage);
-
+    let index_id = index_metadata.index_id.as_ref();
     let splits = metastore.list_all_splits(index_id).await?;
-    let split_ids = splits
-        .iter()
-        .map(|meta| meta.split_metadata.split_id.as_str())
-        .collect::<Vec<_>>();
+    let split_ids: Vec<&str> = splits.iter().map(|split| split.split_id()).collect();
     metastore
         .mark_splits_for_deletion(index_id, &split_ids)
         .await?;
-
-    let garbage_removal_result =
-        delete_splits_with_files(index_id, split_store, metastore.clone(), splits, None).await;
-    if garbage_removal_result.is_err() {
-        warn!(metastore_uri = %metastore.uri(), "All split files could not be removed during garbage collection.");
+    let split_metas: Vec<SplitMetadata> = splits
+        .into_iter()
+        .map(|split| split.split_metadata)
+        .collect();
+    let split_store = IndexingSplitStore::create_with_no_local_store(storage);
+    // FIXME: return an error.
+    if let Err(err) =
+        delete_splits_with_files(index_id, split_store, metastore.clone(), split_metas, None).await
+    {
+        error!(metastore_uri = %metastore.uri(), index_id = %index_id, error = %err, "Not all split files could be deleted during garbage collection.");
     }
     Ok(())
 }

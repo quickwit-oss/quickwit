@@ -45,6 +45,10 @@ mod retry;
 mod split;
 mod storage_resolver;
 
+use std::path::Path;
+
+use anyhow::Context;
+use quickwit_common::uri::normalize_uri;
 pub use tantivy::directory::OwnedBytes;
 
 pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
@@ -65,12 +69,45 @@ pub use self::storage_resolver::{
     quickwit_storage_uri_resolver, StorageFactory, StorageUriResolver,
 };
 #[cfg(feature = "testsuite")]
-pub use self::tests::storage_test_suite;
+pub use self::test_suite::storage_test_suite;
 pub use crate::cache::{wrap_storage_with_long_term_cache, Cache, MemorySizedCache, SliceCache};
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
+/// Loads an entire local or remote file into memory.
+pub async fn load_file(uri: &str) -> anyhow::Result<OwnedBytes> {
+    let normalized_uri = normalize_uri(uri)?;
+    // TODO: Converting to a `Path` for conveniency but we want to move to the URI type eventually.
+    // See https://github.com/quickwit-inc/quickwit/issues/834.
+    let path = Path::new(&normalized_uri);
+    let parent_dir = path
+        .parent()
+        .with_context(|| format!("`{}` is not a valid file URI.", normalized_uri))?
+        .to_str()
+        .with_context(|| format!("Failed to convert URI `{}` to str.", normalized_uri))?;
+    let storage = quickwit_storage_uri_resolver().resolve(parent_dir)?;
+    let file_name = path
+        .file_name()
+        .with_context(|| format!("`{}` is not a valid file URI.", normalized_uri))?;
+    let bytes = storage.get_all(Path::new(file_name)).await?;
+    Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_load_file() {
+        let expected_bytes = tokio::fs::read_to_string("Cargo.toml").await.unwrap();
+        assert_eq!(
+            load_file("Cargo.toml").await.unwrap().as_slice(),
+            expected_bytes.as_bytes()
+        );
+    }
+}
+
 #[cfg(any(test, feature = "testsuite"))]
-pub(crate) mod tests {
+pub(crate) mod test_suite {
 
     use std::path::Path;
 

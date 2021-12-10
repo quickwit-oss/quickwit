@@ -17,13 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod checklist;
 mod coolid;
 pub mod metrics;
+pub mod uri;
 
 use std::fmt::Debug;
 use std::ops::Range;
 use std::str::FromStr;
 
+pub use checklist::{run_checklist, BLUE_COLOR, GREEN_COLOR, RED_COLOR};
 pub use coolid::new_coolid;
 use tracing::{error, info};
 
@@ -156,11 +159,11 @@ pub mod net {
     }
 
     /// Converts this string to a resolved `SocketAddr`.
-    pub fn socket_addr_from_str(addr_str: &str) -> anyhow::Result<SocketAddr> {
-        addr_str
+    pub fn socket_addr_from_str<S: AsRef<str>>(addr: S) -> anyhow::Result<SocketAddr> {
+        addr.as_ref()
             .to_socket_addrs()?
             .next()
-            .ok_or_else(|| anyhow::anyhow!("Failed to resolve address `{}`.", addr_str))
+            .ok_or_else(|| anyhow::anyhow!("Failed to resolve address `{}`.", addr.as_ref()))
     }
 }
 

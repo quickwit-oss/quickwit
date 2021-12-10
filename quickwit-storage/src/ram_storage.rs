@@ -189,7 +189,7 @@ impl StorageFactory for RamStorageFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::storage_test_suite;
+    use crate::test_suite::storage_test_suite;
 
     #[tokio::test]
     async fn test_storage() -> anyhow::Result<()> {

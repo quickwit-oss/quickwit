@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod commit_policy;
 mod indexed_split;
 mod indexer_message;
 mod indexing_directory;
@@ -29,7 +28,6 @@ mod publisher_message;
 mod raw_doc_batch;
 mod scratch_directory;
 
-pub use commit_policy::CommitPolicy;
 pub use indexed_split::{IndexedSplit, IndexedSplitBatch};
 pub use indexer_message::IndexerMessage;
 pub use indexing_directory::IndexingDirectory;

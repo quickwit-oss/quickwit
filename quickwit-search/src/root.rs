@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
-use quickwit_metastore::{Metastore, SplitMetadata, SplitMetadataAndFooterOffsets};
+use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse, PartialHit,
     SearchRequest, SearchResponse,
@@ -53,15 +53,19 @@ pub async fn root_search(
     metastore: &dyn Metastore,
     cluster_client: &ClusterClient,
     client_pool: &Arc<SearchClientPool>,
-) -> Result<SearchResponse, SearchError> {
+) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let index_config_str = serde_json::to_string(&index_metadata.index_config)
-        .map_err(|error| SearchError::InternalError(error.to_string()))?;
+    let doc_mapper = index_metadata.build_doc_mapper().map_err(|err| {
+        SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
+    })?;
+    let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
+        SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))
+    })?;
     let split_metadata_list = list_relevant_splits(search_request, metastore).await?;
-    let split_metadata_map: HashMap<String, SplitMetadataAndFooterOffsets> = split_metadata_list
+    let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
         .into_iter()
-        .map(|metadata| (metadata.split_metadata.split_id.clone(), metadata))
+        .map(|metadata| (metadata.split_id().to_string(), metadata))
         .collect();
     let jobs: Vec<Job> = job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
     let assigned_leaf_search_jobs = client_pool.assign_jobs(jobs, &HashSet::default()).await?;
@@ -71,7 +75,7 @@ pub async fn root_search(
             .map(|(client, client_jobs)| {
                 let leaf_request = jobs_to_leaf_request(
                     search_request,
-                    &index_config_str,
+                    &doc_mapper_str,
                     &index_metadata.index_uri,
                     &split_metadata_map,
                     &client_jobs,
@@ -173,7 +177,7 @@ fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
 
 pub(crate) fn job_for_splits(
     split_ids: &HashSet<&String>,
-    split_metadata_map: &HashMap<String, SplitMetadataAndFooterOffsets>,
+    split_metadata_map: &HashMap<String, SplitMetadata>,
 ) -> Vec<Job> {
     // Create a job for fetching docs and assign the splits that the node is responsible for based
     // on the job.
@@ -182,7 +186,7 @@ pub(crate) fn job_for_splits(
         .filter(|(split_id, _)| split_ids.contains(split_id))
         .map(|(split_id, metadata)| Job {
             split_id: split_id.to_string(),
-            cost: compute_split_cost(&metadata.split_metadata),
+            cost: compute_split_cost(metadata),
         })
         .collect();
     leaf_search_jobs
@@ -192,7 +196,7 @@ fn jobs_to_leaf_request(
     request: &SearchRequest,
     index_config_str: &str,
     index_uri: &str,
-    split_metadata_map: &HashMap<String, SplitMetadataAndFooterOffsets>,
+    split_metadata_map: &HashMap<String, SplitMetadata>,
     jobs: &[Job],
 ) -> LeafSearchRequest {
     let mut request_with_offset_0 = request.clone();
@@ -215,7 +219,7 @@ fn jobs_to_leaf_request(
 fn jobs_to_fetch_docs_request(
     index_id: &str,
     index_uri: &str,
-    split_metadata_map: &HashMap<String, SplitMetadataAndFooterOffsets>,
+    split_metadata_map: &HashMap<String, SplitMetadata>,
     partial_hits_map: &mut HashMap<String, Vec<PartialHit>>,
     jobs: &[Job],
 ) -> FetchDocsRequest {
@@ -242,9 +246,7 @@ fn jobs_to_fetch_docs_request(
 mod tests {
     use std::ops::Range;
 
-    use quickwit_index_config::WikipediaIndexConfig;
-    use quickwit_indexing::mock_split_meta;
-    use quickwit_metastore::checkpoint::Checkpoint;
+    use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::SplitSearchError;
 
@@ -295,18 +297,16 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[Vec<String>]| { Ok(vec![mock_split("split1")]) },
         );
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().returning(
@@ -356,19 +356,17 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| {
-                Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
+             _tags: &[Vec<String>]| {
+                Ok(vec![mock_split("split1"), mock_split("split2")])
             },
         );
         let mut mock_search_service1 = MockSearchService::new();
@@ -441,19 +439,17 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| {
-                Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
+             _tags: &[Vec<String>]| {
+                Ok(vec![mock_split("split1"), mock_split("split2")])
             },
         );
 
@@ -552,19 +548,17 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| {
-                Ok(vec![mock_split_meta("split1"), mock_split_meta("split2")])
+             _tags: &[Vec<String>]| {
+                Ok(vec![mock_split("split1"), mock_split("split2")])
             },
         );
         let mut mock_search_service1 = MockSearchService::new();
@@ -679,18 +673,16 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[Vec<String>]| { Ok(vec![mock_split("split1")]) },
         );
         let mut first_call = true;
         let mut mock_search_service1 = MockSearchService::new();
@@ -753,18 +745,16 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[Vec<String>]| { Ok(vec![mock_split("split1")]) },
         );
 
         let mut mock_search_service1 = MockSearchService::new();
@@ -814,18 +804,16 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[Vec<String>]| { Ok(vec![mock_split("split1")]) },
         );
         // Service1 - broken node.
         let mut mock_search_service1 = MockSearchService::new();
@@ -900,18 +888,16 @@ mod tests {
         metastore
             .expect_index_metadata()
             .returning(|_index_id: &str| {
-                Ok(IndexMetadata {
-                    index_id: "test-idx".to_string(),
-                    index_uri: "file:///path/to/index/test-idx".to_string(),
-                    index_config: Arc::new(WikipediaIndexConfig::new()),
-                    checkpoint: Checkpoint::default(),
-                })
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
             });
         metastore.expect_list_splits().returning(
             |_index_id: &str,
              _split_state: SplitState,
              _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split_meta("split1")]) },
+             _tags: &[Vec<String>]| { Ok(vec![mock_split("split1")]) },
         );
 
         // Service1 - working node.

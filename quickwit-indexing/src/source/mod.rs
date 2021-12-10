@@ -27,14 +27,16 @@ mod vec_source;
 mod void_source;
 
 use std::fmt;
+use std::path::Path;
 
+use anyhow::bail;
 use async_trait::async_trait;
 pub use file_source::{FileSource, FileSourceFactory, FileSourceParams};
 #[cfg(feature = "kafka")]
 pub use kafka_source::{KafkaSource, KafkaSourceFactory, KafkaSourceParams};
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox};
-use serde::{Deserialize, Serialize};
+use quickwit_config::SourceConfig;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 pub use vec_source::{VecSource, VecSourceFactory, VecSourceParams};
 pub use void_source::{VoidSource, VoidSourceFactory, VoidSourceParams};
@@ -174,55 +176,30 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
     })
 }
 
-/// A `SourceConfig` describes the properties of a source. A source config can be created
-/// dynamically or loaded from a file consisting of a JSON object with 3 mandatory properties:
-/// - `source_id`, a name identifying the source uniquely;
-/// - `source_type`, the type of the target source, for instance, `file` or `kafka`;
-/// - `params`, an arbitrary object whose keys and values are specific to the source type.
-///
-/// For instance, a valid source config JSON object for a Kafka source is:
-/// ```json
-/// {
-///     "source_id": "my-kafka-source",
-///     "source_type": "kafka",
-///     "params": {
-///         "topic": "my-kafka-source-topic",
-///         "client_log_level": "warn",
-///         "client_params": {
-///             "bootstrap.servers": "localhost:9092",
-///             "group.id": "my-kafka-source-consumer-group"
-///         }
-///     }
-/// }
-/// ```
-#[derive(Clone, Serialize, Deserialize)]
-pub struct SourceConfig {
-    pub source_id: String,
-    pub source_type: String,
-    pub params: serde_json::Value,
-}
-
-impl SourceConfig {
-    pub async fn check_source_available(&self) -> anyhow::Result<()> {
-        match &*self.source_type {
-            "file" => {
-                if let Some(path) = self.params.get("filepath").and_then(|v| v.as_str()) {
-                    if !std::path::Path::new(path).exists() {
-                        anyhow::bail!("Source `{}` does not exist", path)
-                    }
+pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::Result<()> {
+    match source_config.source_type.as_ref() {
+        "file" => match source_config.params.get("filepath") {
+            Some(serde_json::Value::String(path)) => {
+                if Path::new(&path).exists() {
+                    Ok(())
+                } else {
+                    bail!("File `{}` does not exist.", path)
                 }
-                Ok(())
             }
-            #[cfg(feature = "kafka")]
-            "kafka" => kafka_source::check(self.params.clone()),
-            "vec" => Ok(()),
-            unrecognized_source_type => {
-                tracing::warn!(
-                    "No check implemented for source type `{}`",
-                    unrecognized_source_type
-                );
-                Ok(())
+            Some(_) => {
+                bail!("Failed to parse source config params: property `filepath` is not a string.")
             }
+            None => bail!("Failed to parse source config params: property `filepath` is missing."),
+        },
+        #[cfg(feature = "kafka")]
+        "kafka" => kafka_source::check_connectivity(source_config.params.clone()),
+        "vec" => Ok(()),
+        unrecognized_source_type => {
+            tracing::warn!(
+                "No check implemented for source type `{}`",
+                unrecognized_source_type
+            );
+            Ok(())
         }
     }
 }

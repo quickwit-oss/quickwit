@@ -421,9 +421,7 @@ mod tests {
     use std::collections::HashMap;
     use std::convert::TryInto;
     use std::str::from_utf8;
-    use std::sync::Arc;
 
-    use quickwit_index_config::DefaultIndexConfigBuilder;
     use quickwit_indexing::TestSandbox;
     use serde_json::json;
 
@@ -431,26 +429,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_leaf_search_stream_to_csv_output_with_filtering() -> anyhow::Result<()> {
-        let index_config = r#"{
-            "default_search_fields": ["body"],
-            "timestamp_field": "ts",
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "body",
-                    "type": "text"
-                },
-                {
-                    "name": "ts",
-                    "type": "i64",
-                    "fast": true
-                }
-            ]
-        }"#;
-        let index_config =
-            Arc::new(serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?);
         let index_id = "single-node-simple";
-        let test_sandbox = TestSandbox::create(index_id, index_config.clone()).await?;
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: i64
+                fast: true
+        "#;
+        let indexing_settings_yaml = r#"
+            timestamp_field: ts
+        "#;
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_yaml,
+            indexing_settings_yaml,
+            &["body"],
+        )
+        .await?;
 
         let mut docs = vec![];
         let mut filtered_timestamp_values = vec![];
@@ -475,23 +472,20 @@ mod tests {
             partition_by_field: None,
             tags: vec![],
         };
-        let index_metadata = test_sandbox.metastore().index_metadata(index_id).await?;
         let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
         let splits_offsets = splits
             .into_iter()
             .map(|split_meta| SplitIdAndFooterOffsets {
-                split_id: split_meta.split_metadata.split_id,
-                split_footer_start: split_meta.footer_offsets.start,
-                split_footer_end: split_meta.footer_offsets.end,
+                split_id: split_meta.split_id().to_string(),
+                split_footer_start: split_meta.split_metadata.footer_offsets.start,
+                split_footer_end: split_meta.split_metadata.footer_offsets.end,
             })
             .collect();
         let mut single_node_stream = leaf_search_stream(
             request,
-            test_sandbox
-                .storage_uri_resolver()
-                .resolve(&index_metadata.index_uri)?,
+            test_sandbox.storage(),
             splits_offsets,
-            index_config,
+            test_sandbox.doc_mapper(),
         )
         .await;
         let res = single_node_stream.next().await.expect("no leaf result")?;
@@ -505,37 +499,31 @@ mod tests {
     #[tokio::test]
     async fn test_leaf_search_stream_to_partitionned_clickhouse_binary_output_with_filtering(
     ) -> anyhow::Result<()> {
-        let index_config = r#"{
-            "default_search_fields": ["body"],
-            "timestamp_field": "ts",
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "body",
-                    "type": "text"
-                },
-                {
-                    "name": "ts",
-                    "type": "i64",
-                    "fast": true
-                },
-                {
-                    "name": "partition_by_fast_field",
-                    "type": "u64",
-                    "fast": true
-                },
-                {
-                    "name": "fast_field",
-                    "type": "u64",
-                    "fast": true
-                }
-
-            ]
-        }"#;
-        let index_config =
-            Arc::new(serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?);
         let index_id = "single-node-simple-2";
-        let test_sandbox = TestSandbox::create(index_id, index_config.clone()).await?;
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: i64
+                fast: true
+              - name: partition_by_fast_field
+                type: u64
+                fast: true
+              - name: fast_field
+                type: u64
+                fast: true
+        "#;
+        let indexing_settings_yaml = r#"
+            timestamp_field: ts
+        "#;
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_yaml,
+            indexing_settings_yaml,
+            &["body"],
+        )
+        .await?;
 
         let mut docs = vec![];
         let partition_by_fast_field_values = vec![1, 2, 3, 4, 5];
@@ -547,7 +535,7 @@ mod tests {
             let fast_field: u64 = (i * 2).try_into().unwrap();
             docs.push(json!({
                 "body": body,
-                "ts": i+1,
+                "ts": i + 1,
                 "partition_by_fast_field": partition_number,
                 "fast_field": fast_field,
             }));
@@ -579,23 +567,20 @@ mod tests {
             partition_by_field: Some(String::from("partition_by_fast_field")),
             tags: vec![],
         };
-        let index_metadata = test_sandbox.metastore().index_metadata(index_id).await?;
         let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
         let splits_offsets = splits
             .into_iter()
             .map(|split_meta| SplitIdAndFooterOffsets {
-                split_id: split_meta.split_metadata.split_id,
-                split_footer_start: split_meta.footer_offsets.start,
-                split_footer_end: split_meta.footer_offsets.end,
+                split_id: split_meta.split_id().to_string(),
+                split_footer_start: split_meta.split_metadata.footer_offsets.start,
+                split_footer_end: split_meta.split_metadata.footer_offsets.end,
             })
             .collect();
         let mut single_node_stream = leaf_search_stream(
             request,
-            test_sandbox
-                .storage_uri_resolver()
-                .resolve(&index_metadata.index_uri)?,
+            test_sandbox.storage(),
             splits_offsets,
-            index_config,
+            test_sandbox.doc_mapper(),
         )
         .await;
         let res = single_node_stream.next().await.expect("no leaf result")?;

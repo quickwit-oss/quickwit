@@ -33,29 +33,39 @@ pub use index::{create_index, delete_index, garbage_collect_index, reset_index};
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-    use std::sync::Arc;
 
-    use quickwit_index_config::WikipediaIndexConfig;
     use quickwit_indexing::{FileEntry, TestSandbox};
 
     #[tokio::test]
     async fn test_file_entry_from_split() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let index_id = "test-index";
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: title
+                type: text
+              - name: body
+                type: text
+              - name: url
+                type: text
+        "#;
         let test_sandbox =
-            TestSandbox::create(index_id, Arc::new(WikipediaIndexConfig::new())).await?;
+            TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["title", "body"]).await?;
         test_sandbox.add_documents(vec![
             serde_json::json!({"title": "snoopy", "body": "Snoopy is an anthropomorphic beagle[5] in the comic strip...", "url": "http://snoopy"}),
         ]).await?;
-        let splits = test_sandbox.metastore().list_all_splits(index_id).await?;
+        let splits = test_sandbox
+            .metastore()
+            .list_all_splits(index_id)
+            .await?
+            .into_iter()
+            .map(|metadata| metadata.split_metadata)
+            .collect::<Vec<_>>();
         let file_entries: Vec<FileEntry> = splits.iter().map(FileEntry::from).collect();
         assert_eq!(file_entries.len(), 1);
-        let index_meta = test_sandbox.metastore().index_metadata(index_id).await?;
-        let storage = test_sandbox
-            .storage_uri_resolver()
-            .resolve(&index_meta.index_uri)?;
         for file_entry in file_entries {
-            let split_num_bytes = storage
+            let split_num_bytes = test_sandbox
+                .storage()
                 .file_num_bytes(Path::new(file_entry.file_name.as_str()))
                 .await?;
             assert_eq!(split_num_bytes, file_entry.file_size_in_bytes);

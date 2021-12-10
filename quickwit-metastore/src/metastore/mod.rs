@@ -21,29 +21,298 @@
 pub mod postgresql_metastore;
 pub mod single_file_metastore;
 
-use std::fmt::Debug;
 use std::ops::Range;
 use std::sync::Arc;
 
+use anyhow::bail;
 use async_trait::async_trait;
-use quickwit_index_config::IndexConfig;
-use serde::{Deserialize, Serialize};
+use chrono::Utc;
+use quickwit_config::{
+    DocMapping, IndexingResources, IndexingSettings, SearchSettings, SourceConfig,
+};
+use quickwit_index_config::{
+    DefaultIndexConfig as DefaultDocMapper, DefaultIndexConfigBuilder as DocMapperBuilder,
+    IndexConfig as DocMapper, SortBy, SortByConfig, SortOrder,
+};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};
-use crate::{MetastoreResult, SplitMetadataAndFooterOffsets, SplitState};
+use crate::{MetastoreResult, Split, SplitMetadata, SplitState};
 
 /// An index metadata carries all meta data about an index.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
+#[serde(into = "VersionedIndexMetadata")]
 pub struct IndexMetadata {
-    /// Index ID. The index ID identifies the index when querying the metastore.
+    /// Index ID, uniquely identifies an index when querying the metastore.
     pub index_id: String,
-    /// Index URI. The index URI defines the location of the storage that contains the
-    /// split files.
+    /// Index URI, defines the location of the storage that holds the split files.
     pub index_uri: String,
-    /// The config used for this index.
-    pub index_config: Arc<dyn IndexConfig>,
-    /// Checkpoint relative to a source. It express up to where documents have been indexed.
+    /// Checkpoint relative to a source or a set of sources. It expresses up to which point
+    /// documents have been indexed.
     pub checkpoint: Checkpoint,
+    /// Describes how ingested JSON documents are indexed.
+    pub doc_mapping: DocMapping,
+    /// Configures various indexing settings such as commit timeout, max split size, indexing
+    /// resources.
+    pub indexing_settings: IndexingSettings,
+    /// Configures various search settings such as default search fields.
+    pub search_settings: SearchSettings,
+    /// Data sources.
+    pub sources: Vec<SourceConfig>,
+    /// Time at which the index was created.
+    pub create_timestamp: i64,
+}
+
+impl IndexMetadata {
+    /// Returns an [`IndexMetadata`] object with multiple hard coded values for tests.
+    pub fn for_test(index_id: &str, index_uri: &str) -> Self {
+        let doc_mapping_json = r#"{
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "i64",
+                    "fast": true
+                },
+                {
+                    "name": "body",
+                    "type": "text",
+                    "stored": true
+                },
+                {
+                    "name": "response_date",
+                    "type": "date",
+                    "fast": true
+                },
+                {
+                    "name": "response_time",
+                    "type": "f64",
+                    "fast": true
+                },
+                {
+                    "name": "response_payload",
+                    "type": "bytes",
+                    "fast": true
+                },
+                {
+                    "name": "owner",
+                    "type": "text"
+                },
+                {
+                    "name": "attributes",
+                    "type": "object",
+                    "field_mappings": [
+                        {
+                            "name": "tags",
+                            "type": "array<i64>"
+                        },
+                        {
+                            "name": "server",
+                            "type": "text"
+                        },
+                        {
+                            "name": "server.status",
+                            "type": "array<text>"
+                        },
+                        {
+                            "name": "server.payload",
+                            "type": "array<bytes>"
+                        }
+                    ]
+                }
+            ],
+            "tag_fields": ["owner"],
+            "store_source": true
+        }"#;
+        let doc_mapping = serde_json::from_str(doc_mapping_json).unwrap();
+        let indexing_settings = IndexingSettings {
+            timestamp_field: Some("timestamp".to_string()),
+            sort_field: Some("timestamp".to_string()),
+            sort_order: Some(SortOrder::Desc),
+            resources: IndexingResources::for_test(),
+            ..Default::default()
+        };
+        let search_settings = SearchSettings {
+            default_search_fields: vec![
+                "body".to_string(),
+                "attributes.server".to_string(),
+                "attributes.server.status".to_string(),
+            ],
+        };
+        Self {
+            index_id: index_id.to_string(),
+            index_uri: index_uri.to_string(),
+            checkpoint: Checkpoint::default(),
+            doc_mapping,
+            indexing_settings,
+            search_settings,
+            sources: Vec::new(),
+            create_timestamp: Utc::now().timestamp(),
+        }
+    }
+
+    /// Returns the data source configured for the index.
+    // TODO: Remove when support for multi-sources index is added.
+    pub fn source(&self) -> anyhow::Result<SourceConfig> {
+        if self.sources.is_empty() {
+            bail!("No source is configured for the `{}` index.", self.index_id)
+        };
+        if self.sources.len() > 1 {
+            bail!("Multi-sources indexes are not supported (yet).")
+        }
+        Ok(self.sources[0].clone())
+    }
+
+    /// Builds and returns the doc mapper associated with index.
+    pub fn build_doc_mapper(&self) -> anyhow::Result<Arc<dyn DocMapper>> {
+        let mut builder = DocMapperBuilder::new();
+        builder.default_search_fields = self.search_settings.default_search_fields.clone();
+        builder.demux_field = self.indexing_settings.demux_field.clone();
+        builder.sort_by = match self.indexing_settings.sort_by() {
+            SortBy::DocId => None,
+            SortBy::FastField { field_name, order } => Some(SortByConfig { field_name, order }),
+        };
+        builder.timestamp_field = self.indexing_settings.timestamp_field.clone();
+        builder.field_mappings = self.doc_mapping.field_mappings.clone();
+        builder.tag_fields = self.doc_mapping.tag_fields.clone();
+        builder.store_source = self.doc_mapping.store_source;
+        Ok(Arc::new(builder.build()?))
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct UnversionedIndexMetadata {
+    pub index_id: String,
+    pub index_uri: String,
+    pub index_config: DefaultDocMapper,
+    pub checkpoint: Checkpoint,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "version")]
+pub(crate) enum VersionedIndexMetadata {
+    #[serde(rename = "0")]
+    V0(IndexMetadataV0),
+    #[serde(rename = "unversioned")]
+    Unversioned(UnversionedIndexMetadata),
+}
+
+impl From<IndexMetadata> for VersionedIndexMetadata {
+    fn from(index_metadata: IndexMetadata) -> Self {
+        VersionedIndexMetadata::V0(index_metadata.into())
+    }
+}
+
+impl From<VersionedIndexMetadata> for IndexMetadata {
+    fn from(index_metadata: VersionedIndexMetadata) -> Self {
+        match index_metadata {
+            VersionedIndexMetadata::Unversioned(unversioned) => unversioned.into(),
+            VersionedIndexMetadata::V0(v0) => v0.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct IndexMetadataV0 {
+    pub index_id: String,
+    pub index_uri: String,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Checkpoint::is_empty")]
+    pub checkpoint: Checkpoint,
+    pub doc_mapping: DocMapping,
+    #[serde(default)]
+    pub indexing_settings: IndexingSettings,
+    pub search_settings: SearchSettings,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<SourceConfig>,
+    pub create_timestamp: i64,
+}
+
+impl From<IndexMetadata> for IndexMetadataV0 {
+    fn from(index_metadata: IndexMetadata) -> Self {
+        Self {
+            index_id: index_metadata.index_id,
+            index_uri: index_metadata.index_uri,
+            checkpoint: index_metadata.checkpoint,
+            doc_mapping: index_metadata.doc_mapping,
+            indexing_settings: index_metadata.indexing_settings,
+            search_settings: index_metadata.search_settings,
+            sources: index_metadata.sources,
+            create_timestamp: index_metadata.create_timestamp,
+        }
+    }
+}
+
+impl From<IndexMetadataV0> for IndexMetadata {
+    fn from(v0: IndexMetadataV0) -> Self {
+        Self {
+            index_id: v0.index_id,
+            index_uri: v0.index_uri,
+            checkpoint: v0.checkpoint,
+            doc_mapping: v0.doc_mapping,
+            indexing_settings: v0.indexing_settings,
+            search_settings: v0.search_settings,
+            sources: v0.sources,
+            create_timestamp: v0.create_timestamp,
+        }
+    }
+}
+
+impl From<UnversionedIndexMetadata> for IndexMetadata {
+    fn from(unversioned: UnversionedIndexMetadata) -> Self {
+        let doc_mapping = DocMapping {
+            field_mappings: unversioned
+                .index_config
+                .field_mappings
+                .field_mappings()
+                .unwrap_or_else(Vec::new),
+            tag_fields: unversioned.index_config.tag_field_names,
+            store_source: unversioned.index_config.store_source,
+        };
+        let (sort_field, sort_order) = match unversioned.index_config.sort_by {
+            SortBy::DocId => (None, None),
+            SortBy::FastField { field_name, order } => (Some(field_name), Some(order)),
+        };
+        let indexing_settings = IndexingSettings {
+            demux_field: unversioned.index_config.demux_field_name,
+            timestamp_field: unversioned.index_config.timestamp_field_name,
+            sort_field,
+            sort_order,
+            ..Default::default()
+        };
+        let search_settings = SearchSettings {
+            default_search_fields: unversioned.index_config.default_search_field_names,
+        };
+        Self {
+            index_id: unversioned.index_id,
+            index_uri: unversioned.index_uri,
+            checkpoint: unversioned.checkpoint,
+            doc_mapping,
+            indexing_settings,
+            search_settings,
+            sources: Vec::new(),
+            create_timestamp: Utc::now().timestamp(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for IndexMetadata {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let value: serde_json::value::Value = serde_json::value::Value::deserialize(deserializer)?;
+        let has_version_tag = value
+            .as_object()
+            .map(|obj| obj.contains_key("version"))
+            .unwrap_or(false);
+        if has_version_tag {
+            return Ok(serde_json::from_value::<VersionedIndexMetadata>(value)
+                .map_err(serde::de::Error::custom)?
+                .into());
+        };
+        Ok(serde_json::from_value::<UnversionedIndexMetadata>(value)
+            .map_err(serde::de::Error::custom)?
+            .into())
+    }
 }
 
 /// Metastore meant to manage Quickwit's indexes and their splits.
@@ -108,7 +377,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn stage_split(
         &self,
         index_id: &str,
-        split_metadata: SplitMetadataAndFooterOffsets,
+        split_metadata: SplitMetadata,
     ) -> MetastoreResult<()>;
 
     /// Publishes a list splits.
@@ -142,15 +411,12 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
         split_state: SplitState,
         time_range: Option<Range<i64>>,
-        tags: &[String],
-    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>>;
+        tags: &[Vec<String>],
+    ) -> MetastoreResult<Vec<Split>>;
 
     /// Lists the splits without filtering.
     /// Returns a list of all splits currently known to the metastore regardless of their state.
-    async fn list_all_splits(
-        &self,
-        index_id: &str,
-    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>>;
+    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>>;
 
     /// Marks a list of splits for deletion.
     /// This API will change the state to `ScheduledForDeletion` so that it is not referenced by the
@@ -174,16 +440,54 @@ pub trait Metastore: Send + Sync + 'static {
     fn uri(&self) -> String;
 }
 
-// Returns true if filter_tags is empty (unspecified),
-// or if filter_tags is specified and split_tags contains at least one of the tags in filter_tags.
-pub fn match_tags_filter(split_tags: &[String], filter_tags: &[String]) -> bool {
+/// Finds out if a split matches a tag filter expression.
+///
+/// `filter_tags` is an array of array of tags representing a boolean expression
+/// of the form `[ [A OR B OR...] AND [C OR D OR ...] AND ...]`
+/// Returns true if filter_tags is empty, or if the split's tags match
+/// the filter_tags expression.
+pub fn match_tags_filter(split_tags: &[String], filter_tags: &[Vec<String>]) -> bool {
     if filter_tags.is_empty() {
         return true;
     }
-    for filter_tag in filter_tags {
-        if split_tags.contains(filter_tag) {
-            return true;
+
+    for or_tags in filter_tags {
+        let is_match = or_tags
+            .iter()
+            .map(|tag| split_tags.contains(tag))
+            .any(|contains| contains);
+        if !is_match {
+            return false;
         }
     }
-    false
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_match_tags_filter() {
+        assert!(match_tags_filter(&["foo".to_string()], &[]));
+        assert!(!match_tags_filter(&[], &[vec!["foo".to_string()]]));
+
+        assert!(match_tags_filter(
+            &["foo:bar".to_string()],
+            &[vec!["foo:bar".to_string()]]
+        ));
+        assert!(match_tags_filter(
+            &["foo:*".to_string()],
+            &[vec!["foo:bar".to_string(), "foo:*".to_string()]]
+        ));
+
+        assert!(!match_tags_filter(
+            &["foo".to_string()],
+            &[vec!["foo".to_string()], vec!["bar".to_string()]]
+        ));
+        assert!(match_tags_filter(
+            &["foo".to_string(), "bar".to_string()],
+            &[vec!["foo".to_string()], vec!["bar".to_string()]]
+        ));
+    }
 }

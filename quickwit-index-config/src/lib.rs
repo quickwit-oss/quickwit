@@ -28,20 +28,27 @@ mod config;
 mod default_index_config;
 mod error;
 mod query_builder;
-mod wikipedia_config;
+mod sort_by;
 
-pub use config::{match_tag_field_name, IndexConfig, SortBy, SortOrder};
+pub use config::{build_tag_value, build_too_many_tag_value, match_tag_field_name, IndexConfig};
 pub use default_index_config::{
-    DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry,
+    DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry, SortByConfig,
 };
 pub use error::QueryParserError;
-pub use wikipedia_config::WikipediaIndexConfig;
+pub use sort_by::{SortBy, SortOrder};
 
 /// Field name reserved for storing the source document.
-pub static SOURCE_FIELD_NAME: &str = "_source";
+pub const SOURCE_FIELD_NAME: &str = "_source";
 
 /// Field name reserved for storing the tags.
-pub static TAGS_FIELD_NAME: &str = "_tags";
+pub const TAGS_FIELD_NAME: &str = "_tags";
+
+/// Maximum distinct values allowed for a tag field within a split.
+pub const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")) {
+    6
+} else {
+    1000
+};
 
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]

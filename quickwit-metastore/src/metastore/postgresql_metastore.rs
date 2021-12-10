@@ -19,7 +19,6 @@
 
 use std::collections::HashSet;
 use std::ops::Range;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -40,7 +39,7 @@ use crate::postgresql::model::SELECT_SPLITS_FOR_INDEX;
 use crate::postgresql::{model, schema};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
-    MetastoreResult, SplitMetadataAndFooterOffsets, SplitState,
+    MetastoreResult, Split, SplitMetadata, SplitState,
 };
 
 embed_migrations!("migrations/postgresql");
@@ -308,8 +307,8 @@ impl PostgresqlMetastore {
         index_id: &str,
         state_opt: Option<SplitState>,
         time_range_opt: Option<Range<i64>>,
-        tags_opt: Option<&[String]>,
-    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
+        tags_opt: Option<&[Vec<String>]>,
+    ) -> MetastoreResult<Vec<Split>> {
         let mut select_statement = schema::splits::dsl::splits
             .filter(schema::splits::dsl::index_id.eq(index_id))
             .into_boxed();
@@ -331,8 +330,10 @@ impl PostgresqlMetastore {
 
         if let Some(tags) = tags_opt {
             if !tags.is_empty() {
-                select_statement =
-                    select_statement.filter(schema::splits::dsl::tags.overlaps_with(tags));
+                for inner_tags in tags {
+                    select_statement = select_statement
+                        .filter(schema::splits::dsl::tags.overlaps_with(inner_tags));
+                }
             }
         }
 
@@ -350,8 +351,7 @@ impl PostgresqlMetastore {
             }
             return Ok(Vec::new());
         }
-
-        self.make_split_metadata_and_footer_offsets(splits)
+        splits.into_iter().map(|split| split.try_into()).collect()
     }
 
     /// Query the database to find out if:
@@ -427,52 +427,6 @@ impl PostgresqlMetastore {
             .map(|split_id| split_id.to_string())
             .collect())
     }
-
-    /// Make the split metadata and footer offsets from database model.
-    /// When returning [`SplitMetadataAndFooterOffsets`], we make sure to override the
-    /// `split_state` and `update_timestamp` from the column value since these are the values we
-    /// keep in sync.
-    fn make_split_metadata_and_footer_offsets(
-        &self,
-        splits: Vec<model::Split>,
-    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
-        let mut split_metadata_footer_offset_list = Vec::new();
-        for model_split in splits {
-            let split_metadata_and_footer_offsets =
-                match model_split.make_split_metadata_and_footer_offsets() {
-                    Ok(mut metadata) => {
-                        metadata.split_metadata.create_timestamp =
-                            model_split.create_timestamp.timestamp();
-                        metadata.split_metadata.update_timestamp =
-                            model_split.update_timestamp.timestamp();
-                        metadata.split_metadata.split_state =
-                            SplitState::from_str(&model_split.split_state).map_err(|error| {
-                                MetastoreError::InternalError {
-                                    message: error.to_string(),
-                                    cause: anyhow::anyhow!(
-                                        "Failed to parse SplitState `{}`.",
-                                        model_split.split_state
-                                    ),
-                                }
-                            })?;
-                        metadata
-                    }
-                    Err(err) => {
-                        let msg = format!(
-                            "Failed to make split metadata and footer offsets split_id={:?}",
-                            model_split.split_id
-                        );
-                        error!("{:?} {:?}", msg, err);
-                        return Err(MetastoreError::InternalError {
-                            message: msg,
-                            cause: err,
-                        });
-                    }
-                };
-            split_metadata_footer_offset_list.push(split_metadata_and_footer_offsets);
-        }
-        Ok(split_metadata_footer_offset_list)
-    }
 }
 
 #[async_trait]
@@ -486,7 +440,7 @@ impl Metastore for PostgresqlMetastore {
         // Serialize the index metadata to fit the database model.
         let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
             MetastoreError::InternalError {
-                message: "Failed to serialize checkpoint".to_string(),
+                message: "Failed to serialize index metadata.".to_string(),
                 cause: anyhow::anyhow!(err),
             }
         })?;
@@ -548,28 +502,13 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
-    async fn stage_split(
-        &self,
-        index_id: &str,
-        mut metadata: SplitMetadataAndFooterOffsets,
-    ) -> MetastoreResult<()> {
-        // Modify split state to Staged.
-        metadata.split_metadata.split_state = SplitState::Staged;
-
+    async fn stage_split(&self, index_id: &str, metadata: SplitMetadata) -> MetastoreResult<()> {
         // Fit the time_range to the database model.
-        let time_range_start = metadata
-            .split_metadata
-            .time_range
-            .clone()
-            .map(|range| *range.start());
-        let time_range_end = metadata
-            .split_metadata
-            .time_range
-            .clone()
-            .map(|range| *range.end());
+        let time_range_start = metadata.time_range.clone().map(|range| *range.start());
+        let time_range_end = metadata.time_range.clone().map(|range| *range.end());
 
         // Serialize the split metadata and footer offsets to fit the database model.
-        let split_metadata_and_footer_offsets_json =
+        let split_metadata_json =
             serde_json::to_string(&metadata).map_err(|err| MetastoreError::InternalError {
                 message: "Failed to serialize split metadata and footer offsets".to_string(),
                 cause: anyhow::anyhow!(err),
@@ -578,20 +517,19 @@ impl Metastore for PostgresqlMetastore {
         let conn = self.get_conn()?;
         conn.transaction::<_, MetastoreError, _>(|| {
             // Insert a new split metadata as `Staged` state.
-            let split_id =  metadata.split_metadata.split_id.clone();
+            let split_id =  metadata.split_id.clone();
             let insert_staged_split_statement =
                 diesel::insert_into(schema::splits::dsl::splits)
                 .values((
-                    schema::splits::dsl::split_id.eq(metadata.split_metadata.split_id),
-                    schema::splits::dsl::split_state.eq(metadata.split_metadata.split_state.to_string()),
+                    schema::splits::dsl::split_id.eq(metadata.split_id),
+                    schema::splits::dsl::split_state.eq(SplitState::Staged.to_string()),
                     schema::splits::dsl::time_range_start.eq(time_range_start),
                     schema::splits::dsl::time_range_end.eq(time_range_end),
                     schema::splits::dsl::tags.eq(metadata
-                        .split_metadata
                         .tags
                         .into_iter()
                         .collect::<Vec<String>>()),
-                    schema::splits::dsl::split_metadata_json.eq(split_metadata_and_footer_offsets_json),
+                    schema::splits::dsl::split_metadata_json.eq(split_metadata_json),
                     schema::splits::dsl::index_id.eq(index_id.to_string())
                 ));
             debug!(sql=%debug_query::<Pg, _>(&insert_staged_split_statement).to_string());
@@ -716,16 +654,13 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-        tags: &[String],
-    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
+        tags: &[Vec<String>],
+    ) -> MetastoreResult<Vec<Split>> {
         let conn = self.get_conn()?;
         self.list_splits_helper(&conn, index_id, Some(state), time_range_opt, Some(tags))
     }
 
-    async fn list_all_splits(
-        &self,
-        index_id: &str,
-    ) -> MetastoreResult<Vec<SplitMetadataAndFooterOffsets>> {
+    async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
         let conn = self.get_conn()?;
         self.list_splits_helper(&conn, index_id, None, None, None)
     }
@@ -861,7 +796,7 @@ pub async fn get_or_init_postgresql_metastore_for_test() -> &'static PostgresqlM
 
             PostgresqlMetastore::new(&uri)
                 .await
-                .expect("PostgreSQL metastore is not initialized")
+                .expect("PostgreSQL metastore is not initialized.")
         })
         .await
 }

@@ -269,7 +269,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::tests::storage_test_suite;
+    use crate::test_suite::storage_test_suite;
     use crate::StorageError;
 
     #[tokio::test]

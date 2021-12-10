@@ -21,63 +21,50 @@ use std::fmt::Debug;
 
 use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_proto::SearchRequest;
-use serde::{Deserialize, Serialize};
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema, Value};
-use tantivy::{Document, Order};
+use tantivy::Document;
 
-use crate::{DocParsingError, QueryParserError, TAGS_FIELD_NAME};
+use crate::{DocParsingError, QueryParserError, SortBy, TAGS_FIELD_NAME};
 
-/// Sorted order (either Ascending or Descending).
-/// To get a regular top-K results search, use `SortOrder::Desc`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SortOrder {
-    /// Descending. This is the default to get Top-K results.
-    Desc,
-    /// Ascending order.
-    Asc,
-}
+/// Separator used to format tags into `{field_name}:{value}`
+pub const TAG_FIELD_VALUE_SEPARATOR: &str = ":";
 
-impl Default for SortOrder {
-    fn default() -> Self {
-        Self::Desc
-    }
-}
+/// Wilcard value use to collapse too many tag values into one.
+pub const TOO_MANY_TAG_VALUES: &str = "*";
 
-impl From<SortOrder> for Order {
-    fn from(order: SortOrder) -> Self {
-        match order {
-            SortOrder::Asc => Order::Asc,
-            SortOrder::Desc => Order::Desc,
-        }
-    }
-}
+/// Character use to escape tag value when there is collision with the wilcard
+/// tag values.
+pub const TAGS_VALUE_ESCAPE: &str = "\\";
 
-/// Defines the way documents should be sorted.
-/// In case of a tie, the documents are ordered according to descending `(split_id, segment_ord,
-/// doc_id)`.
-#[derive(Clone, Debug, PartialEq)]
-pub enum SortBy {
-    /// Sort by a specific field.
-    SortByFastField {
-        /// Field to sort by.
-        field_name: String,
-        /// Order to sort by. A usual top-K search implies a Descending order.
-        order: SortOrder,
-    },
-    /// Sort by DocId
-    DocId,
-}
-
-/// Convert a field (name, value) into a tag string `name:value`.
+/// Converts a field (name, value) into a tag string `name:value`.
 pub fn convert_tag_to_string(field_name: &str, field_value: &Value) -> String {
-    format!("{}:{}", field_name, tantivy_value_to_string(field_value))
+    let field_value_str = tantivy_value_to_string(field_value);
+    build_tag_value(field_name, &field_value_str)
 }
 
 /// Returns true if tag_string is of form `{field_name}:any_value`.
 pub fn match_tag_field_name(field_name: &str, tag_string: &str) -> bool {
-    tag_string.starts_with(&format!("{}:", field_name))
+    tag_string.starts_with(&format!("{}{}", field_name, TAG_FIELD_VALUE_SEPARATOR))
+}
+
+/// Creates the wildcard tag value for a field name: `{field_name}:*`.
+pub fn build_too_many_tag_value(field_name: &str) -> String {
+    format!(
+        "{}{}{}",
+        field_name, TAG_FIELD_VALUE_SEPARATOR, TOO_MANY_TAG_VALUES
+    )
+}
+
+/// Creates a tag value for a field name of this format `{field_name}:value`.
+pub fn build_tag_value(field_name: &str, field_value: &str) -> String {
+    if field_value == TOO_MANY_TAG_VALUES {
+        return format!(
+            "{}{}{}{}",
+            field_name, TAG_FIELD_VALUE_SEPARATOR, TAGS_VALUE_ESCAPE, field_value
+        );
+    }
+    format!("{}{}{}", field_name, TAG_FIELD_VALUE_SEPARATOR, field_value)
 }
 
 /// Converts a [`tantivy::Value`] to it's [`String`] value.

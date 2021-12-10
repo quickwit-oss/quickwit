@@ -48,7 +48,9 @@ use quickwit_indexing::actors::{IndexerParams, MergeExecutor};
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::{CommitPolicy, IndexingDirectory, MergeScratch, ScratchDirectory};
 use quickwit_indexing::source::SourceConfig;
-use quickwit_indexing::{index_data, new_split_id, BundledSplitFile, TestSandbox};
+use quickwit_indexing::{
+    get_tantivy_directory_from_split_bundle, index_data, new_split_id, TestSandbox,
+};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{
     IndexMetadata, Metastore, SingleFileMetastore, SplitMetadata, SplitState,
@@ -257,28 +259,25 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     }
 
     let metastore = test_index_builder.metastore();
-    let splits_with_footer_offsets = metastore.list_all_splits(index_id).await?;
-    let splits: Vec<SplitMetadata> = splits_with_footer_offsets
+    let split_infos = metastore.list_all_splits(index_id).await?;
+    let splits: Vec<SplitMetadata> = split_infos
         .into_iter()
-        .map(|split_and_footer_offsets| split_and_footer_offsets.split_metadata)
+        .map(|split| split.split_metadata)
         .collect();
     let merge_scratch_directory = ScratchDirectory::for_test()?;
 
     let downloaded_splits_directory =
         merge_scratch_directory.named_temp_child("downloaded-splits-")?;
-    let storage = test_index_builder.index_storage(index_id)?;
+    let storage = test_index_builder.storage(index_id)?;
     let mut tantivy_dirs: Vec<Box<dyn Directory>> = vec![];
     for split in &splits {
-        let split_filename = split_file(&split.split_id);
+        let split_filename = split_file(split.split_id());
         let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
         storage
             .copy_to_file(Path::new(&split_filename), &dest_filepath)
             .await?;
-        tantivy_dirs.push(
-            BundledSplitFile::new(dest_filepath.to_owned())
-                .get_tantivy_directory()
-                .unwrap(),
-        );
+
+        tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap());
     }
 
     let merge_scratch = MergeScratch {

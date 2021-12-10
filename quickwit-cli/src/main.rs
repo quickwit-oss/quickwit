@@ -19,20 +19,16 @@
 
 use std::env;
 use std::fmt::Debug;
-use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use anyhow::{bail, Context};
-use byte_unit::Byte;
-use clap::{load_yaml, value_t, App, AppSettings, ArgMatches};
+use clap::{load_yaml, App, AppSettings, ArgMatches};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
+use quickwit_cli::index::IndexCliCommand;
+use quickwit_cli::service::ServiceCliCommand;
+use quickwit_cli::split::SplitCliCommand;
 use quickwit_cli::*;
-use quickwit_common::net::socket_addr_from_str;
-use quickwit_serve::{serve_cli, ServeArgs};
 use quickwit_telemetry::payload::TelemetryEvent;
-use stats::StatsCliSubCommand;
 use tracing::{info, Level};
 use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::prelude::*;
@@ -40,289 +36,38 @@ use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, PartialEq)]
 enum CliCommand {
-    // Subcommands
-    ExtractSplit(ExtractSplitArgs),
-    InspectSplit(InspectSplitArgs),
-    New(CreateIndexArgs),
-    Index(IndexDataArgs),
-    Search(SearchIndexArgs),
-    Serve(ServeArgs),
-    GarbageCollect(GarbageCollectIndexArgs),
-    Delete(DeleteIndexArgs),
-    // Stats subcommands
-    Stats(StatsCliSubCommand),
+    Index(IndexCliCommand),
+    Split(SplitCliCommand),
+    Service(ServiceCliCommand),
 }
 
 impl CliCommand {
     fn default_log_level(&self) -> Level {
         match self {
-            CliCommand::Stats(_) => Level::INFO,
-            CliCommand::ExtractSplit(_) => Level::INFO,
-            CliCommand::InspectSplit(_) => Level::INFO,
-            CliCommand::New(_) => Level::WARN,
-            CliCommand::Index(_) => Level::INFO,
-            CliCommand::Search(_) => Level::WARN,
-            CliCommand::Serve(_) => Level::INFO,
-            CliCommand::GarbageCollect(_) => Level::WARN,
-            CliCommand::Delete(_) => Level::WARN,
+            CliCommand::Index(subcommand) => subcommand.default_log_level(),
+            CliCommand::Split(_) => Level::ERROR,
+            CliCommand::Service(_) => Level::INFO,
         }
     }
 
     fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let (subcommand, submatches_opt) = matches.subcommand();
-        let submatches =
-            submatches_opt.ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
-
+        let subcommand_opt = matches.subcommand();
+        let (subcommand, submatches) =
+            subcommand_opt.ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
-            "stats" => StatsCliSubCommand::parse_cli_args(submatches).map(CliCommand::Stats),
-            "new" => Self::parse_new_args(submatches),
-            "index" => Self::parse_index_args(submatches),
-            "search" => Self::parse_search_args(submatches),
-            "serve" => Self::parse_serve_args(submatches),
-            "gc" => Self::parse_garbage_collect_args(submatches),
-            "delete" => Self::parse_delete_args(submatches),
-            "extract-split" => Self::parse_extract_split_args(submatches),
-            "inspect-split" => Self::parse_inspect_split_args(submatches),
-            _ => bail!("Subcommand '{}' is not implemented", subcommand),
+            "index" => IndexCliCommand::parse_cli_args(submatches).map(CliCommand::Index),
+            "split" => SplitCliCommand::parse_cli_args(submatches).map(CliCommand::Split),
+            "service" => ServiceCliCommand::parse_cli_args(submatches).map(CliCommand::Service),
+            _ => bail!("Subcommand `{}` is not implemented.", subcommand),
         }
     }
 
-    fn parse_new_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_uri = matches
-            .value_of("index-uri")
-            .context("'index-uri' is a required arg")?
-            .to_string();
-        let index_id = matches
-            .value_of("index-id")
-            .context("'index-id' is a required arg")?
-            .to_string();
-        let index_config_path = matches
-            .value_of("index-config-path")
-            .map(PathBuf::from)
-            .context("'index-config-path' is a required arg")?;
-        let metastore_uri = matches
-            .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
-        let overwrite = matches.is_present("overwrite");
-
-        Ok(CliCommand::New(CreateIndexArgs::new(
-            metastore_uri,
-            index_id,
-            index_uri,
-            index_config_path,
-            overwrite,
-        )?))
-    }
-
-    fn parse_extract_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_id = matches
-            .value_of("index-id")
-            .context("'index-id' is a required arg")?
-            .to_string();
-        let split_id = matches
-            .value_of("split-id")
-            .context("'split-id' is a required arg")?
-            .to_string();
-        let metastore_uri = matches
-            .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
-
-        let target_folder = matches
-            .value_of("target-folder")
-            .map(PathBuf::from)
-            .context("'target-folder' is a required arg")?;
-
-        Ok(CliCommand::ExtractSplit(ExtractSplitArgs::new(
-            metastore_uri,
-            index_id,
-            split_id,
-            target_folder,
-        )?))
-    }
-
-    fn parse_inspect_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_id = matches
-            .value_of("index-id")
-            .context("'index-id' is a required arg")?
-            .to_string();
-        let split_id = matches
-            .value_of("split-id")
-            .context("'split-id' is a required arg")?
-            .to_string();
-        let metastore_uri = matches
-            .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
-
-        let verbose = matches.is_present("verbose");
-
-        Ok(CliCommand::InspectSplit(InspectSplitArgs::new(
-            metastore_uri,
-            index_id,
-            split_id,
-            verbose,
-        )?))
-    }
-
-    fn parse_index_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let metastore_uri = matches
-            .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .expect("`metastore-uri` is a required arg.");
-        let index_id = matches
-            .value_of("index-id")
-            .expect("`index-id` is a required arg.")
-            .to_string();
-        let input_path: Option<PathBuf> = matches.value_of("input-path").map(PathBuf::from);
-        let source_config_path: Option<PathBuf> =
-            matches.value_of("source-config-path").map(PathBuf::from);
-        let data_dir_path: PathBuf = matches
-            .value_of("data-dir-path")
-            .map(PathBuf::from)
-            .expect("`data-dir-path` is a required arg.");
-        let heap_size = matches
-            .value_of("heap-size")
-            .map(Byte::from_str)
-            .expect("`heap-size` has a default value.")?;
-        let overwrite = matches.is_present("overwrite");
-        let demux = matches.is_present("demux");
-        let merge = !matches.is_present("no-merge");
-
-        Ok(CliCommand::Index(IndexDataArgs {
-            index_id,
-            input_path,
-            source_config_path,
-            data_dir_path,
-            heap_size,
-            metastore_uri,
-            overwrite,
-            demux,
-            merge,
-        }))
-    }
-
-    fn parse_search_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let metastore_uri = matches
-            .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
-        let index_id = matches
-            .value_of("index-id")
-            .context("'index-id' is a required arg")?
-            .to_string();
-        let query = matches
-            .value_of("query")
-            .context("query is a required arg")?
-            .to_string();
-        let max_hits = value_t!(matches, "max-hits", usize)?;
-        let start_offset = value_t!(matches, "start-offset", usize)?;
-        let search_fields = matches
-            .values_of("search-fields")
-            .map(|values| values.map(|value| value.to_string()).collect());
-        let start_timestamp = if matches.is_present("start-timestamp") {
-            Some(value_t!(matches, "start-timestamp", i64)?)
-        } else {
-            None
-        };
-        let end_timestamp = if matches.is_present("end-timestamp") {
-            Some(value_t!(matches, "end-timestamp", i64)?)
-        } else {
-            None
-        };
-        let tags = matches
-            .values_of("tags")
-            .map(|values| values.map(|value| value.to_string()).collect());
-
-        Ok(CliCommand::Search(SearchIndexArgs {
-            index_id,
-            query,
-            max_hits,
-            start_offset,
-            search_fields,
-            start_timestamp,
-            end_timestamp,
-            tags,
-            metastore_uri,
-        }))
-    }
-
-    fn parse_serve_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let metastore_uri = matches
-            .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
-        let host = matches
-            .value_of("host")
-            .context("'host' has a default value")?
-            .to_string();
-        let port = value_t!(matches, "port", u16)?;
-        let rest_addr = format!("{}:{}", host, port);
-        let rest_socket_addr = socket_addr_from_str(&rest_addr)?;
-        let host_key_path_prefix = matches
-            .value_of("host-key-path-prefix")
-            .context("'host-key-path-prefix' has a default  value")?
-            .to_string();
-        let host_key_path =
-            Path::new(format!("{}-{}-{}", host_key_path_prefix, host, port.to_string()).as_str())
-                .to_path_buf();
-        let mut peer_socket_addrs: Vec<SocketAddr> = Vec::new();
-        if matches.is_present("peer-seed") {
-            if let Some(values) = matches.values_of("peer-seed") {
-                for value in values {
-                    peer_socket_addrs.push(socket_addr_from_str(value)?);
-                }
-            }
+    pub async fn execute(self) -> anyhow::Result<()> {
+        match self {
+            CliCommand::Index(sub_command) => sub_command.execute().await,
+            CliCommand::Split(sub_command) => sub_command.execute().await,
+            CliCommand::Service(sub_command) => sub_command.execute().await,
         }
-
-        Ok(CliCommand::Serve(ServeArgs {
-            rest_socket_addr,
-            host_key_path,
-            peer_socket_addrs,
-            metastore_uri,
-        }))
-    }
-
-    fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let metastore_uri = matches
-            .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
-        let index_id = matches
-            .value_of("index-id")
-            .context("'index-id' is a required arg")?
-            .to_string();
-        let dry_run = matches.is_present("dry-run");
-
-        Ok(CliCommand::Delete(DeleteIndexArgs {
-            index_id,
-            metastore_uri,
-            dry_run,
-        }))
-    }
-
-    fn parse_garbage_collect_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let metastore_uri = matches
-            .value_of("metastore-uri")
-            .map(|metastore_uri_str| metastore_uri_str.to_string())
-            .context("'metastore-uri' is a required arg")?;
-        let index_id = matches
-            .value_of("index-id")
-            .context("'index-id' is a required arg")?
-            .to_string();
-        let grace_period = matches
-            .value_of("grace-period")
-            .map(parse_duration_with_unit)
-            .context("'grace-period' should have default")??;
-        let dry_run = matches.is_present("dry-run");
-
-        Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
-            index_id,
-            grace_period,
-            metastore_uri,
-            dry_run,
-        }))
     }
 }
 
@@ -379,11 +124,12 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let yaml = load_yaml!("cli.yaml");
-    let app = App::from(yaml)
-        .setting(AppSettings::ArgRequiredElseHelp)
+    let matches = App::from(yaml)
         .version(version_text.as_str())
-        .about(about_text.as_str());
-    let matches = app.get_matches();
+        .about(about_text.as_str())
+        .license("AGPLv3.0")
+        .setting(AppSettings::DisableHelpSubcommand)
+        .get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
         Ok(command) => command,
@@ -399,19 +145,7 @@ async fn main() -> anyhow::Result<()> {
         commit = env!("GIT_COMMIT_HASH"),
     );
 
-    let command_res = match command {
-        CliCommand::Stats(stats_command) => stats_command.execute().await,
-        CliCommand::ExtractSplit(args) => extract_split_cli(args).await,
-        CliCommand::InspectSplit(args) => inspect_split_cli(args).await,
-        CliCommand::New(args) => create_index_cli(args).await,
-        CliCommand::Index(args) => index_data_cli(args).await,
-        CliCommand::Search(args) => search_index_cli(args).await,
-        CliCommand::Serve(args) => serve_cli(args).await,
-        CliCommand::GarbageCollect(args) => garbage_collect_index_cli(args).await,
-        CliCommand::Delete(args) => delete_index_cli(args).await,
-    };
-
-    let return_code: i32 = if let Err(err) = command_res {
+    let return_code: i32 = if let Err(err) = command.execute().await {
         eprintln!("Command failed: {:?}", err);
         1
     } else {
@@ -429,225 +163,137 @@ async fn main() -> anyhow::Result<()> {
 /// Return the about text with telemetry info.
 fn about_text() -> String {
     let mut about_text = String::from(
-        "Indexing your dataset on object storage & making it searchable from the command line.\n",
+        "Index your dataset on object storage & making it searchable from the command line.\n  Find more information at https://quickwit.io/docs\n\n",
     );
     if quickwit_telemetry::is_telemetry_enabled() {
-        about_text += "Telemetry Enabled";
+        about_text += "Telemetry: enabled";
     }
     about_text
 }
 
-/// Parse duration with unit.
-/// examples: 1s 2m 3h 5d
-pub fn parse_duration_with_unit(duration: &str) -> anyhow::Result<Duration> {
-    let mut value = "".to_string();
-    let mut unit = "".to_string();
-    for character in duration.chars() {
-        if character.is_numeric() {
-            value.push(character);
-        } else {
-            unit.push(character);
-        }
-    }
-
-    match value.parse::<u64>() {
-        Ok(value) => match unit.as_str() {
-            "s" => Ok(Duration::from_secs(value)),
-            "m" => Ok(Duration::from_secs(value * 60)),
-            "h" => Ok(Duration::from_secs(value * 60 * 60)),
-            "d" => Ok(Duration::from_secs(value * 60 * 60 * 24)),
-            _ => Err(anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]`")),
-        },
-        Err(err) => Err(anyhow::anyhow!(err)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
     use std::path::Path;
     use std::time::Duration;
 
     use clap::{load_yaml, App, AppSettings};
-    use quickwit_serve::ServeArgs;
-    use tempfile::NamedTempFile;
+    use quickwit_cli::index::{
+        CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IngestDocsArgs, SearchIndexArgs,
+    };
+    use quickwit_cli::service::{RunServiceArgs, ServiceCliCommand};
 
     use super::*;
-    use crate::{
-        parse_duration_with_unit, CliCommand, CreateIndexArgs, DeleteIndexArgs,
-        GarbageCollectIndexArgs, IndexDataArgs, SearchIndexArgs,
-    };
+    use crate::CliCommand;
 
     #[test]
-    fn test_parse_new_args() -> anyhow::Result<()> {
+    fn test_parse_create_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches_result =
-            app.get_matches_from_safe(vec!["new", "--index-uri", "file:///indexes/wikipedia"]);
-        assert!(matches!(matches_result, Err(_)));
-        let mut index_config_file = NamedTempFile::new()?;
-        let index_config_str = r#"{
-            "type": "default",
-            "store_source": true,
-            "default_search_fields": ["timestamp"],
-            "timestamp_field": "timestamp",
-            "tag_fields": [],
-            "field_mappings": [
-                {
-                    "name": "timestamp",
-                    "type": "i64",
-                    "fast": true
-                }
-            ]
-        }"#;
-        index_config_file.write_all(index_config_str.as_bytes())?;
-        let path = index_config_file.into_temp_path();
-        let path_str = path.to_string_lossy().to_string();
+
+        let _ = app
+            .try_get_matches_from(vec!["new", "--index-uri", "file:///indexes/wikipedia"])
+            .unwrap_err();
+
+        let expected_index_config_uri = format!(
+            "file://{}{}conf.yaml",
+            std::env::current_dir().unwrap().display(),
+            std::path::MAIN_SEPARATOR
+        );
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
-            "new",
-            "--index-uri",
-            "file:///indexes/wikipedia",
-            "--index-id",
-            "wikipedia",
-            "--index-config-path",
-            &path_str,
+        let matches = app.try_get_matches_from(vec![
+            "index",
+            "create",
+            "--index-config-uri",
+            "conf.yaml",
             "--metastore-uri",
             "file:///indexes",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches);
-        let expected_cmd = CliCommand::New(
-            CreateIndexArgs::new(
-                "file:///indexes".to_string(),
-                "wikipedia".to_string(),
-                "file:///indexes/wikipedia".to_string(),
-                path.to_path_buf(),
-                false,
-            )
-            .unwrap(),
-        );
-        assert_eq!(command.unwrap(), expected_cmd);
+        let command = CliCommand::parse_cli_args(&matches)?;
+        let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
+            metastore_uri: "file:///indexes".to_string(),
+            index_config_uri: expected_index_config_uri.clone(),
+            overwrite: false,
+        }));
+        assert_eq!(command, expected_cmd);
 
         const QUICKWIT_METASTORE_URI_ENV_KEY: &str = "QUICKWIT_METASTORE_URI";
         env::set_var(QUICKWIT_METASTORE_URI_ENV_KEY, "file:///indexes");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
-            "new",
-            "--index-uri",
-            "file:///indexes/wikipedia",
-            "--index-id",
-            "wikipedia",
-            "--index-config-path",
-            &path_str,
+        let matches = app.try_get_matches_from(vec![
+            "index",
+            "create",
+            "--index-config-uri",
+            "conf.yaml",
             "--overwrite",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches);
-        let expected_cmd = CliCommand::New(
-            CreateIndexArgs::new(
-                "file:///indexes".to_string(),
-                "wikipedia".to_string(),
-                "file:///indexes/wikipedia".to_string(),
-                path.to_path_buf(),
-                true,
-            )
-            .unwrap(),
-        );
-        assert_eq!(command.unwrap(), expected_cmd);
+        let command = CliCommand::parse_cli_args(&matches)?;
+        let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
+            metastore_uri: "file:///indexes".to_string(),
+            index_config_uri: expected_index_config_uri,
+            overwrite: true,
+        }));
+        assert_eq!(command, expected_cmd);
         env::remove_var(QUICKWIT_METASTORE_URI_ENV_KEY);
 
         Ok(())
     }
 
     #[test]
-    fn test_parse_index_args() -> anyhow::Result<()> {
+    fn test_parse_ingest_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
+        let matches = app.try_get_matches_from(vec![
             "index",
+            "ingest",
             "--index-id",
             "wikipedia",
             "--metastore-uri",
-            "file:///indexes",
+            "/indexes",
             "--data-dir-path",
             "/var/lib/quickwit/data",
-            "--demux",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches);
+        let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
-            Ok(CliCommand::Index(IndexDataArgs {
-                index_id,
-                input_path: None,
-                source_config_path: None,
-                data_dir_path,
-                heap_size,
-                metastore_uri,
-                overwrite: false,
-                demux: true,
-                merge: true,
-            })) if &index_id == "wikipedia"
-                    && &metastore_uri == "file:///indexes"
-                    && data_dir_path == Path::new("/var/lib/quickwit/data")
-                    && heap_size.get_bytes() == 2_000_000_000
+            CliCommand::Index(IndexCliCommand::Ingest(
+                IngestDocsArgs {
+                    metastore_uri,
+                    index_id,
+                    input_path_opt: None,
+                    data_dir_path,
+                    overwrite: false,
+                })) if &index_id == "wikipedia"
+                       && &metastore_uri == "file:///indexes"
+                       && data_dir_path == Path::new("/var/lib/quickwit/data")
         ));
 
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
+        let matches = app.try_get_matches_from(vec![
             "index",
+            "ingest",
             "--index-id",
             "wikipedia",
-            "--source-config-path",
-            "/conf/source_config.json",
+            "--metastore-uri",
+            "/indexes",
             "--data-dir-path",
             "/var/lib/quickwit/data",
-            "--heap-size",
-            "4gib",
-            "--metastore-uri",
-            "file:///indexes",
-            "--no-merge",
             "--overwrite",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches);
+        let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
-            Ok(CliCommand::Index(IndexDataArgs {
-                index_id,
-                input_path: None,
-                source_config_path: Some(source_config_path),
-                data_dir_path,
-                heap_size,
-                metastore_uri,
-                overwrite: true,
-                demux: false,
-                merge: false,
-            })) if &index_id == "wikipedia"
-                    && metastore_uri == "file:///indexes"
-                    && source_config_path == Path::new("/conf/source_config.json")
-                    && data_dir_path == Path::new("/var/lib/quickwit/data")
-                    && heap_size.get_bytes() == 4_294_967_296
+            CliCommand::Index(IndexCliCommand::Ingest(
+                IngestDocsArgs {
+                    metastore_uri,
+                    index_id,
+                    input_path_opt: None,
+                    data_dir_path,
+                    overwrite: true,
+                })) if &index_id == "wikipedia"
+                        && metastore_uri == "file:///indexes"
+                        && data_dir_path == Path::new("/var/lib/quickwit/data")
         ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_source_config_path_and_input_path_args_are_mutually_exclusive() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
-            "index",
-            "--index-id",
-            "wikipedia",
-            "--metastore-uri",
-            "file:///indexes",
-            "--input-path",
-            "/data/wikipedia.json",
-            "--source-config-path",
-            "/conf/source_config.json",
-            "--data-dir-path",
-            "/var/lib/quickwit/data",
-        ]);
-        assert!(matches.is_err());
         Ok(())
     }
 
@@ -655,7 +301,8 @@ mod tests {
     fn test_parse_search_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
+        let matches = app.try_get_matches_from(vec![
+            "index",
             "search",
             "--index-id",
             "wikipedia",
@@ -664,10 +311,10 @@ mod tests {
             "--metastore-uri",
             "file:///indexes",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches);
+        let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
-            Ok(CliCommand::Search(SearchIndexArgs {
+            CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
                 index_id,
                 query,
                 max_hits: 20,
@@ -682,7 +329,8 @@ mod tests {
 
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
+        let matches = app.try_get_matches_from(vec![
+            "index",
             "search",
             "--index-id",
             "wikipedia",
@@ -694,9 +342,6 @@ mod tests {
             "50",
             "--start-offset",
             "100",
-            "--search-fields",
-            "title",
-            "url",
             "--start-timestamp",
             "0",
             "--end-timestamp",
@@ -704,11 +349,14 @@ mod tests {
             "--tags",
             "device:rpi",
             "city:paris",
+            "--search-fields",
+            "title",
+            "url",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches);
+        let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
-            Ok(CliCommand::Search(SearchIndexArgs {
+            CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
                 index_id,
                 query,
                 max_hits: 50,
@@ -722,7 +370,6 @@ mod tests {
                 && field_names == vec!["title".to_string(), "url".to_string()]
                 && tags == vec!["device:rpi".to_string(), "city:paris".to_string()] && &metastore_uri == "file:///indexes"
         ));
-
         Ok(())
     }
 
@@ -730,17 +377,18 @@ mod tests {
     fn test_parse_delete_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
+        let matches = app.try_get_matches_from(vec![
+            "index",
             "delete",
             "--index-id",
             "wikipedia",
             "--metastore-uri",
             "file:///indexes",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches);
+        let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
-            Ok(CliCommand::Delete(DeleteIndexArgs {
+            CliCommand::Index(IndexCliCommand::Delete(DeleteIndexArgs {
                 index_id,
                 metastore_uri,
                 dry_run: false
@@ -749,7 +397,8 @@ mod tests {
 
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
+        let matches = app.try_get_matches_from(vec![
+            "index",
             "delete",
             "--index-id",
             "wikipedia",
@@ -757,10 +406,10 @@ mod tests {
             "file:///indexes",
             "--dry-run",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches);
+        let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
-            Ok(CliCommand::Delete(DeleteIndexArgs {
+            CliCommand::Index(IndexCliCommand::Delete(DeleteIndexArgs {
                 index_id,
                 metastore_uri,
                 dry_run: true
@@ -773,17 +422,18 @@ mod tests {
     fn test_parse_garbage_collect_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
+        let matches = app.try_get_matches_from(vec![
+            "index",
             "gc",
             "--index-id",
             "wikipedia",
             "--metastore-uri",
             "file:///indexes",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches);
+        let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
-            Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
+            CliCommand::Index(IndexCliCommand::GarbageCollect(GarbageCollectIndexArgs {
                 index_id,
                 grace_period,
                 metastore_uri,
@@ -793,7 +443,8 @@ mod tests {
 
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
+        let matches = app.try_get_matches_from(vec![
+            "index",
             "gc",
             "--index-id",
             "wikipedia",
@@ -803,15 +454,15 @@ mod tests {
             "file:///indexes",
             "--dry-run",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches);
+        let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
-            Ok(CliCommand::GarbageCollect(GarbageCollectIndexArgs {
+            CliCommand::Index(IndexCliCommand::GarbageCollect(GarbageCollectIndexArgs {
                 index_id,
                 grace_period,
                 metastore_uri,
                 dry_run: true
-            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(5 * 60) && &metastore_uri == "file:///indexes"
+            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(5 * 60) && metastore_uri == "file:///indexes"
         ));
         Ok(())
     }
@@ -820,70 +471,27 @@ mod tests {
     fn test_parse_serve_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
-            "serve",
-            "--metastore-uri",
-            "file:///indexes",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            "9090",
-            "--host-key-path-prefix",
-            "/etc/quickwit-host-key",
-            "--peer-seed",
-            "192.168.1.13:9090",
+        let matches = app.try_get_matches_from(vec![
+            "service",
+            "run",
+            "searcher",
+            "--server-config-uri",
+            "conf.toml",
         ])?;
-        let command = CliCommand::parse_cli_args(&matches);
+        let command = CliCommand::parse_cli_args(&matches)?;
+        let expected_server_config_uri = format!(
+            "file://{}{}conf.toml",
+            std::env::current_dir().unwrap().display(),
+            std::path::MAIN_SEPARATOR
+        );
         assert!(matches!(
             command,
-            Ok(CliCommand::Serve(ServeArgs {
-                rest_socket_addr, host_key_path, peer_socket_addrs, metastore_uri,
-            })) if rest_socket_addr == socket_addr_from_str("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![socket_addr_from_str("192.168.1.13:9090").unwrap()] && &metastore_uri == "file:///indexes"
+            CliCommand::Service(ServiceCliCommand::Run(RunServiceArgs {
+                service_name,
+                server_config_uri,
+                index_id: None,
+            })) if service_name == "searcher" && server_config_uri == expected_server_config_uri
         ));
-
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.get_matches_from_safe(vec![
-            "serve",
-            "--metastore-uri",
-            "file:///indexes",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            "9090",
-            "--host-key-path-prefix",
-            "/etc/quickwit-host-key",
-            "--peer-seed",
-            "192.168.1.13:9090,192.168.1.14:9090",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches);
-        assert!(matches!(
-            command,
-            Ok(CliCommand::Serve(ServeArgs {
-                rest_socket_addr, host_key_path, peer_socket_addrs, metastore_uri,
-            })) if rest_socket_addr == socket_addr_from_str("127.0.0.1:9090").unwrap() && host_key_path == Path::new("/etc/quickwit-host-key-127.0.0.1-9090").to_path_buf() && peer_socket_addrs == vec![socket_addr_from_str("192.168.1.13:9090").unwrap(), socket_addr_from_str("192.168.1.14:9090").unwrap()] && &metastore_uri == "file:///indexes"
-        ));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_duration_with_unit() -> anyhow::Result<()> {
-        assert_eq!(parse_duration_with_unit("8s")?, Duration::from_secs(8));
-        assert_eq!(parse_duration_with_unit("5m")?, Duration::from_secs(5 * 60));
-        assert_eq!(
-            parse_duration_with_unit("2h")?,
-            Duration::from_secs(2 * 60 * 60)
-        );
-        assert_eq!(
-            parse_duration_with_unit("3d")?,
-            Duration::from_secs(3 * 60 * 60 * 24)
-        );
-
-        assert!(parse_duration_with_unit("").is_err());
-        assert!(parse_duration_with_unit("a2d").is_err());
-        assert!(parse_duration_with_unit("3 d").is_err());
-        assert!(parse_duration_with_unit("3").is_err());
         Ok(())
     }
 }

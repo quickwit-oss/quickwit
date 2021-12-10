@@ -24,7 +24,7 @@ mod field_mapping_type;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-pub use self::default_config::{DefaultIndexConfig, DefaultIndexConfigBuilder};
+pub use self::default_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, SortByConfig};
 pub use self::field_mapping_entry::{DocParsingError, FieldMappingEntry};
 pub use self::field_mapping_type::FieldMappingType;
 

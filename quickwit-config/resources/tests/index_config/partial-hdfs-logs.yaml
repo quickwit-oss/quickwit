@@ -1,0 +1,24 @@
+version: 0
+index_id: hdfs-logs
+index_uri: s3://quickwit-indexes/hdfs-logs
+
+doc_mapping:
+  field_mappings:
+    - name: body
+      type: text
+      tokenizer: default
+      record: position
+    - name: timestamp
+      type: i64
+      fast: true
+
+indexing_settings:
+  sort_field: timestamp
+  commit_timeout_secs: 42
+  merge_policy:
+    demux_factor: 7
+  resources:
+    num_threads: 3
+
+search_settings:
+  default_search_fields: [body]
