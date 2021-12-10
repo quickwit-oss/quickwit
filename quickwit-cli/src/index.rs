@@ -149,12 +149,12 @@ impl IndexCliCommand {
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .value_of("index-id")
-            .expect("`index-id` should be a required arg.")
+            .expect("`index-id` is a required arg.")
             .to_string();
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(normalize_uri)
-            .expect("`metastore-uri` should be a required arg.")?;
+            .expect("`metastore-uri` is a required arg.")?;
         Ok(Self::Describe(DescribeIndexArgs {
             metastore_uri,
             index_id,
@@ -165,11 +165,11 @@ impl IndexCliCommand {
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(normalize_uri)
-            .expect("`metastore-uri` should be a required arg.")?;
+            .expect("`metastore-uri` is a required arg.")?;
         let index_config_uri = matches
             .value_of("index-config-uri")
             .map(normalize_uri)
-            .expect("`index-config-uri` should be a required arg.")?;
+            .expect("`index-config-uri` is a required arg.")?;
         let overwrite = matches.is_present("overwrite");
 
         Ok(Self::Create(CreateIndexArgs {
@@ -183,16 +183,16 @@ impl IndexCliCommand {
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(normalize_uri)
-            .expect("`metastore-uri` should be a required arg.")?;
+            .expect("`metastore-uri` is a required arg.")?;
         let index_id = matches
             .value_of("index-id")
-            .expect("`index-id` should be a required arg.")
+            .expect("`index-id` is a required arg.")
             .to_string();
         let input_path_opt = matches.value_of("input-path").map(PathBuf::from);
         let data_dir_path: PathBuf = matches
             .value_of("data-dir-path")
             .map(PathBuf::from)
-            .expect("`data-dir-path` should be a required arg.");
+            .expect("`data-dir-path` is a required arg.");
         let overwrite = matches.is_present("overwrite");
 
         Ok(Self::Ingest(IngestDocsArgs {
@@ -208,14 +208,14 @@ impl IndexCliCommand {
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(normalize_uri)
-            .expect("`metastore-uri` should be a required arg.")?;
+            .expect("`metastore-uri` is a required arg.")?;
         let index_id = matches
             .value_of("index-id")
-            .expect("`index-id` should be a required arg.")
+            .expect("`index-id` is a required arg.")
             .to_string();
         let query = matches
             .value_of("query")
-            .context("query ` should be a required arg.")?
+            .context("`query` is a required arg.")?
             .to_string();
         let max_hits = matches.value_of_t::<usize>("max-hits")?;
         let start_offset = matches.value_of_t::<usize>("start-offset")?;
@@ -252,11 +252,11 @@ impl IndexCliCommand {
     fn parse_merge_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
+            .context("'metastore-uri' is a required arg.")
             .map(normalize_uri)??;
         let index_id = matches
             .value_of("index-id")
-            .context("'index-id' is a required arg")?
+            .context("'index-id' is a required arg.")?
             .to_string();
         let data_dir_path: PathBuf = matches
             .value_of("data-dir-path")
@@ -272,11 +272,11 @@ impl IndexCliCommand {
     fn parse_demux_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
+            .context("'metastore-uri' is a required arg.")
             .map(normalize_uri)??;
         let index_id = matches
             .value_of("index-id")
-            .context("'index-id' is a required arg")?
+            .context("'index-id' is a required arg.")?
             .to_string();
         let data_dir_path: PathBuf = matches
             .value_of("data-dir-path")
@@ -293,10 +293,10 @@ impl IndexCliCommand {
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(normalize_uri)
-            .expect("`metastore-uri` should be a required arg.")?;
+            .expect("`metastore-uri` is a required arg.")?;
         let index_id = matches
             .value_of("index-id")
-            .expect("`index-id` should be a required arg.")
+            .expect("`index-id` is a required arg.")
             .to_string();
         let grace_period = matches
             .value_of("grace-period")
@@ -316,10 +316,10 @@ impl IndexCliCommand {
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(normalize_uri)
-            .expect("`metastore-uri` should be a required arg.")?;
+            .expect("`metastore-uri` is a required arg.")?;
         let index_id = matches
             .value_of("index-id")
-            .expect("`index-id` should be a required arg.")
+            .expect("`index-id` is a required arg.")
             .to_string();
         let dry_run = matches.is_present("dry-run");
 

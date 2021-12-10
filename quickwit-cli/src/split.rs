@@ -67,15 +67,15 @@ impl SplitCliCommand {
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .value_of("index-id")
-            .context("'index-id' is a required arg")?
+            .context("'index-id' is a required arg.")?
             .to_string();
         let split_id = matches
             .value_of("split-id")
-            .context("'split-id' is a required arg")?
+            .context("'split-id' is a required arg.")?
             .to_string();
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
+            .context("'metastore-uri' is a required arg.")
             .map(normalize_uri)??;
         let verbose = matches.is_present("verbose");
 
@@ -90,20 +90,20 @@ impl SplitCliCommand {
     fn parse_extract_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .value_of("index-id")
-            .context("'index-id' is a required arg")?
+            .context("'index-id' is a required arg.")?
             .to_string();
         let split_id = matches
             .value_of("split-id")
-            .context("'split-id' is a required arg")?
+            .context("'split-id' is a required arg.")?
             .to_string();
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
+            .context("'metastore-uri' is a required arg.")
             .map(normalize_uri)??;
         let target_dir = matches
             .value_of("target-dir")
             .map(PathBuf::from)
-            .context("'target-dir' is a required arg")?;
+            .context("'target-dir' is a required arg.")?;
 
         Ok(Self::Extract(ExtractSplitArgs {
             metastore_uri,

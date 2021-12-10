@@ -75,7 +75,7 @@ impl ServiceCliCommand {
         let server_config_uri = matches
             .value_of("server-config-uri")
             .map(normalize_uri)
-            .expect("`server-config-uri` should be a required arg.")?;
+            .expect("`server-config-uri` is a required arg.")?;
         Ok(ServiceCliCommand::RunSearcher(RunSearcherArgs {
             server_config_uri,
         }))
