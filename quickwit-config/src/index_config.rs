@@ -280,10 +280,7 @@ mod tests {
                 assert_eq!(index_config.index_uri, "s3://quickwit-indexes/hdfs-logs");
 
                 assert_eq!(index_config.doc_mapping.field_mappings.len(), 5);
-                assert_eq!(
-                    index_config.doc_mapping.field_mappings[0].name,
-                    "cluster_id"
-                );
+                assert_eq!(index_config.doc_mapping.field_mappings[0].name, "tenant_id");
                 assert_eq!(index_config.doc_mapping.field_mappings[1].name, "timestamp");
                 assert_eq!(
                     index_config.doc_mapping.field_mappings[2].name,
@@ -294,13 +291,13 @@ mod tests {
 
                 assert_eq!(
                     index_config.doc_mapping.tag_fields,
-                    vec!["cluster_id".to_string()]
+                    vec!["tenant_id".to_string()]
                 );
                 assert_eq!(index_config.doc_mapping.store_source, true);
 
                 assert_eq!(
                     index_config.indexing_settings.demux_field.unwrap(),
-                    "cluster_id"
+                    "tenant_id"
                 );
                 assert_eq!(
                     index_config.indexing_settings.timestamp_field.unwrap(),
