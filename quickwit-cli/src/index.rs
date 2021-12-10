@@ -30,13 +30,13 @@ use colored::Colorize;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::normalize_uri;
-use quickwit_common::{run_checklist, GREEN_COLOR};
+use quickwit_common::GREEN_COLOR;
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_index_config::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingPipelineParams};
 use quickwit_indexing::models::IndexingStatistics;
-use quickwit_indexing::source::{check_source_connectivity, FileSourceParams};
+use quickwit_indexing::source::FileSourceParams;
 use quickwit_indexing::{index_data, STD_IN_SOURCE_ID};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, MetastoreUriResolver, Split, SplitState};
@@ -48,7 +48,7 @@ use serde_json::json;
 use tracing::{debug, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
-use crate::{parse_duration_with_unit, THROUGHPUT_WINDOW_SIZE};
+use crate::{parse_duration_with_unit, run_index_checklist, THROUGHPUT_WINDOW_SIZE};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
@@ -589,6 +589,23 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "ingest-docs");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
 
+    // Override index source config(s) with ad-hoc source config.
+    let source_id = args
+        .input_path_opt
+        .as_ref()
+        .map(|_| "file-source")
+        .unwrap_or(STD_IN_SOURCE_ID)
+        .to_string();
+    let source_type = "file".to_string();
+    let params = serde_json::to_value(FileSourceParams {
+        filepath: args.input_path_opt.clone(),
+    })?;
+    let source_config = SourceConfig {
+        source_id,
+        source_type,
+        params,
+    };
+    run_index_checklist(&args.metastore_uri, &args.index_id, Some(&source_config)).await?;
     let metastore_uri_resolver = MetastoreUriResolver::default();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
@@ -616,12 +633,6 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         data_dir_path: args.data_dir_path,
         ..Default::default()
     };
-
-    let checks = vec![
-        ("storage", storage.check().await),
-        ("source", check_source_connectivity(&source_config).await),
-    ];
-    run_checklist(checks);
 
     if args.overwrite {
         reset_index(&index_metadata, metastore.clone(), storage.clone()).await?;
@@ -689,17 +700,17 @@ pub async fn merge_or_demux_cli(
     demux_enabled: bool,
 ) -> anyhow::Result<()> {
     debug!(args = ?args, merge_enabled=merge_enabled, demux_enabled=demux_enabled, "run-merge-operations");
-    let metastore_uri_resolver = MetastoreUriResolver::default();
-    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
-    let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
-
     let source_config = SourceConfig {
         source_id: "void-source".to_string(),
         source_type: "void".to_string(),
         params: json!(null),
     };
+    run_index_checklist(&args.metastore_uri, &args.index_id, Some(&source_config)).await?;
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+    let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
+    let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
     index_metadata.sources = vec![source_config];
     let indexer_config = IndexerConfig {
         data_dir_path: args.data_dir_path,

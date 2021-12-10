@@ -21,6 +21,11 @@ use std::time::Duration;
 
 use anyhow::bail;
 use once_cell::sync::Lazy;
+use quickwit_common::run_checklist;
+use quickwit_config::SourceConfig;
+use quickwit_indexing::check_source_connectivity;
+use quickwit_metastore::MetastoreUriResolver;
+use quickwit_storage::quickwit_storage_uri_resolver;
 use regex::Regex;
 
 pub mod index;
@@ -53,6 +58,43 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
         "d" => Ok(Duration::from_secs(value * 60 * 60 * 24)),
         _ => bail!("Invalid duration format: `[0-9]+[smhd]`"),
     };
+}
+
+/// Run connectivity checks for a given metastore_uri and index id.
+/// Optionnaly, it takes a `SourceConfig` that will be checked instead
+/// replacing the checks on the index source.
+pub async fn run_index_checklist(
+    metastore_uri: &str,
+    index_id: &str,
+    source_to_check: Option<&SourceConfig>,
+) -> anyhow::Result<()> {
+    let mut checks: Vec<(&str, anyhow::Result<()>)> = Vec::new();
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
+    checks.push(("metastore", metastore.check_connectivity().await));
+
+    let index_metadata = metastore.index_metadata(index_id).await?;
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
+    let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
+    checks.push(("storage", storage.check().await));
+
+    if let Some(source_config) = source_to_check {
+        checks.push((
+            source_config.source_id.as_str(),
+            check_source_connectivity(source_config).await,
+        ));
+    } else {
+        for source_config in index_metadata.sources.iter() {
+            checks.push((
+                source_config.source_id.as_str(),
+                check_source_connectivity(source_config).await,
+            ));
+        }
+    }
+
+    run_checklist(checks);
+
+    Ok(())
 }
 
 #[cfg(test)]
