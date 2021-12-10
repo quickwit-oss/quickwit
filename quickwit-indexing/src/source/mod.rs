@@ -179,7 +179,6 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
 pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::Result<()> {
     match source_config.source_type.as_ref() {
         "file" => {
-            // Spe
             if source_config.source_id == STD_IN_SOURCE_ID {
                 return Ok(());
             }
