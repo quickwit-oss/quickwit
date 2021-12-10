@@ -6,9 +6,9 @@
     "doc_mapping": {
         "field_mappings": [
             {
-                "name": "cluster_id",
-                "type": "text",
-                "tokenizer": "raw"
+                "name": "tenant_id",
+                "type": "u64",
+                "fast": true
             },
             {
                 "name": "timestamp",
@@ -38,11 +38,11 @@
                 ]
             }
         ],
-        "tag_fields": ["cluster_id"],
+        "tag_fields": ["tenant_id"],
         "store_source": true
     },
     "indexing_settings": {
-        "demux_field": "cluster_id",
+        "demux_field": "tenant_id",
         "timestamp_field": "timestamp",
         "sort_field": "timestamp",
         "sort_order": "asc",

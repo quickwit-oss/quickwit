@@ -173,14 +173,16 @@ fn about_text() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::time::Duration;
 
     use clap::{load_yaml, App, AppSettings};
     use quickwit_cli::index::{
-        CreateIndexArgs, DeleteIndexArgs, GarbageCollectIndexArgs, IngestDocsArgs, SearchIndexArgs,
+        CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, GarbageCollectIndexArgs,
+        IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
     };
-    use quickwit_cli::service::{RunServiceArgs, ServiceCliCommand};
+    use quickwit_cli::service::{RunIndexerArgs, RunSearcherArgs, ServiceCliCommand};
+    use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs};
 
     use super::*;
     use crate::CliCommand;
@@ -468,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_serve_args() -> anyhow::Result<()> {
+    fn test_parse_run_searcher_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
@@ -486,11 +488,170 @@ mod tests {
         );
         assert!(matches!(
             command,
-            CliCommand::Service(ServiceCliCommand::Run(RunServiceArgs {
-                service_name,
+            CliCommand::Service(ServiceCliCommand::RunSearcher(RunSearcherArgs {
                 server_config_uri,
-                index_id: None,
-            })) if service_name == "searcher" && server_config_uri == expected_server_config_uri
+            })) if server_config_uri == expected_server_config_uri
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_run_indexer_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "service",
+            "run",
+            "indexer",
+            "--index-id",
+            "wikipedia",
+            "--server-config-uri",
+            "conf.toml",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        let expected_server_config_uri = format!(
+            "file://{}{}conf.toml",
+            std::env::current_dir().unwrap().display(),
+            std::path::MAIN_SEPARATOR
+        );
+        println!("{} {:?}", expected_server_config_uri, command);
+        assert!(matches!(
+            command,
+            CliCommand::Service(ServiceCliCommand::RunIndexer(RunIndexerArgs {
+                server_config_uri,
+                index_id,
+            })) if index_id == "wikipedia" && server_config_uri == expected_server_config_uri
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_merge_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "index",
+            "merge",
+            "--index-id",
+            "wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
+            "--data-dir-path",
+            "datadir",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Merge(MergeOrDemuxArgs {
+                index_id,
+                metastore_uri,
+                data_dir_path,
+            })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_demux_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "index",
+            "demux",
+            "--index-id",
+            "wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
+            "--data-dir-path",
+            "datadir",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Demux(MergeOrDemuxArgs {
+                index_id,
+                metastore_uri,
+                data_dir_path,
+            })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_describe_index_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "index",
+            "describe",
+            "--index-id",
+            "wikipedia",
+            "--metastore-uri",
+            "file:///indexes",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Describe(DescribeIndexArgs {
+                index_id,
+                metastore_uri,
+            })) if &index_id == "wikipedia" && &metastore_uri == "file:///indexes"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_split_describe_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "split",
+            "describe",
+            "--index-id",
+            "wikipedia",
+            "--split-id",
+            "ABC",
+            "--metastore-uri",
+            "file:///indexes",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Split(SplitCliCommand::Describe(DescribeSplitArgs {
+                index_id,
+                split_id,
+                metastore_uri,
+                verbose: false,
+            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_split_extract_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "split",
+            "extract",
+            "--index-id",
+            "wikipedia",
+            "--split-id",
+            "ABC",
+            "--target-dir",
+            "datadir",
+            "--metastore-uri",
+            "file:///indexes",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Split(SplitCliCommand::Extract(ExtractSplitArgs {
+                index_id,
+                split_id,
+                metastore_uri,
+                target_dir
+            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == PathBuf::from("datadir")
         ));
         Ok(())
     }

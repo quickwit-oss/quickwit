@@ -32,39 +32,24 @@ use tracing::debug;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeSplitArgs {
-    metastore_uri: String,
-    index_id: String,
-    split_id: String,
+    pub metastore_uri: String,
+    pub index_id: String,
+    pub split_id: String,
+    pub verbose: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ExtractSplitArgs {
-    metastore_uri: String,
-    index_id: String,
-    split_id: String,
-    target_folder: PathBuf,
-}
-
-impl ExtractSplitArgs {
-    pub fn new(
-        metastore_uri: String,
-        index_id: String,
-        split_id: String,
-        target_folder: PathBuf,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
-            metastore_uri,
-            index_id,
-            split_id,
-            target_folder,
-        })
-    }
+    pub metastore_uri: String,
+    pub index_id: String,
+    pub split_id: String,
+    pub target_dir: PathBuf,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum SplitCliCommand {
-    DescribeSplit(DescribeSplitArgs),
-    ExtractSplit(ExtractSplitArgs),
+    Describe(DescribeSplitArgs),
+    Extract(ExtractSplitArgs),
 }
 
 impl SplitCliCommand {
@@ -82,55 +67,56 @@ impl SplitCliCommand {
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .value_of("index-id")
-            .context("'index-id' is a required arg")?
+            .context("'index-id' is a required arg.")?
             .to_string();
         let split_id = matches
             .value_of("split-id")
-            .context("'split-id' is a required arg")?
+            .context("'split-id' is a required arg.")?
             .to_string();
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
+            .context("'metastore-uri' is a required arg.")
             .map(normalize_uri)??;
+        let verbose = matches.is_present("verbose");
 
-        Ok(Self::DescribeSplit(DescribeSplitArgs {
+        Ok(Self::Describe(DescribeSplitArgs {
             metastore_uri,
             index_id,
             split_id,
+            verbose,
         }))
     }
 
     fn parse_extract_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .value_of("index-id")
-            .context("'index-id' is a required arg")?
+            .context("'index-id' is a required arg.")?
             .to_string();
         let split_id = matches
             .value_of("split-id")
-            .context("'split-id' is a required arg")?
+            .context("'split-id' is a required arg.")?
             .to_string();
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg")
+            .context("'metastore-uri' is a required arg.")
             .map(normalize_uri)??;
-
-        let target_folder = matches
-            .value_of("target-folder")
+        let target_dir = matches
+            .value_of("target-dir")
             .map(PathBuf::from)
-            .context("'target-folder' is a required arg")?;
+            .context("'target-dir' is a required arg.")?;
 
-        Ok(Self::ExtractSplit(ExtractSplitArgs::new(
+        Ok(Self::Extract(ExtractSplitArgs {
             metastore_uri,
             index_id,
             split_id,
-            target_folder,
-        )?))
+            target_dir,
+        }))
     }
 
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
-            Self::DescribeSplit(args) => describe_split_cli(args).await,
-            Self::ExtractSplit(args) => extract_split_cli(args).await,
+            Self::Describe(args) => describe_split_cli(args).await,
+            Self::Extract(args) => extract_split_cli(args).await,
         }
     }
 }
@@ -146,18 +132,18 @@ pub async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
 
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
     let (split_footer, _) = read_split_footer(index_storage, &split_file).await?;
-
     let stats = BundleDirectory::get_stats_split(split_footer.clone())?;
     let hotcache_bytes = get_hotcache_from_split(split_footer)?;
-
     for (path, size) in stats {
         let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
         println!("{:?} {}", path, readable_size);
     }
-    let hotcache_stats = HotDirectory::get_stats_per_file(hotcache_bytes)?;
-    for (path, size) in hotcache_stats {
-        let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
-        println!("HotCache {:?} {}", path, readable_size);
+    if args.verbose {
+        let hotcache_stats = HotDirectory::get_stats_per_file(hotcache_bytes)?;
+        for (path, size) in hotcache_stats {
+            let readable_size = size.file_size(file_size_opts::DECIMAL).unwrap();
+            println!("HotCache {:?} {}", path, readable_size);
+        }
     }
     Ok(())
 }
@@ -170,20 +156,16 @@ pub async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
-
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
-    let (_, bundle_footer) = read_split_footer(index_storage.clone(), &split_file).await?;
-
+    let split_data = index_storage.get_all(split_file.as_path()).await?;
     let (_hotcache_bytes, bundle_storage) = BundleStorage::open_from_split_data_with_owned_bytes(
         index_storage,
         split_file,
-        bundle_footer,
+        split_data,
     )?;
-
-    std::fs::create_dir_all(args.target_folder.to_owned())?;
-
+    std::fs::create_dir_all(args.target_dir.to_owned())?;
     for path in bundle_storage.iter_files() {
-        let mut out_path = args.target_folder.to_owned();
+        let mut out_path = args.target_dir.to_owned();
         out_path.push(path.to_owned());
         println!("Copying {:?}", out_path);
         bundle_storage.copy_to_file(path, &out_path).await?;
