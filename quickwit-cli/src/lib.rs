@@ -19,6 +19,10 @@
 
 use std::time::Duration;
 
+use anyhow::bail;
+use once_cell::sync::Lazy;
+use regex::Regex;
+
 pub mod index;
 pub mod service;
 pub mod split;
@@ -30,29 +34,25 @@ const THROUGHPUT_WINDOW_SIZE: usize = 5;
 /// This environment variable can be set to send telemetry events to a jaeger instance.
 pub const QUICKWIT_JAEGER_ENABLED_ENV_KEY: &str = "QUICKWIT_JAEGER_ENABLED";
 
-/// Parse duration with unit.
-/// examples: 1s 2m 3h 5d
-pub fn parse_duration_with_unit(duration: &str) -> anyhow::Result<Duration> {
-    let mut value = "".to_string();
-    let mut unit = "".to_string();
-    for character in duration.chars() {
-        if character.is_numeric() {
-            value.push(character);
-        } else {
-            unit.push(character);
-        }
-    }
+/// Regular expression representing a valid duration with unit.
+pub const DURATION_WITH_UNIT_PATTERN: &str = r#"^(\d{1,3})(s|m|h|d)$"#;
 
-    match value.parse::<u64>() {
-        Ok(value) => match unit.as_str() {
-            "s" => Ok(Duration::from_secs(value)),
-            "m" => Ok(Duration::from_secs(value * 60)),
-            "h" => Ok(Duration::from_secs(value * 60 * 60)),
-            "d" => Ok(Duration::from_secs(value * 60 * 60 * 24)),
-            _ => Err(anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]`")),
-        },
-        Err(err) => Err(anyhow::anyhow!(err)),
-    }
+/// Parse duration with unit like `1s`, `2m`, `3h`, `5d`.
+pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<Duration> {
+    static DURATION_WITH_UNIT_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(DURATION_WITH_UNIT_PATTERN).unwrap());
+    let captures = DURATION_WITH_UNIT_RE
+        .captures(duration_with_unit_str)
+        .ok_or_else(|| anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]`"))?;
+    let value = captures.get(1).unwrap().as_str().parse::<u64>().unwrap();
+    let unit = captures.get(2).unwrap().as_str();
+    return match unit {
+        "s" => Ok(Duration::from_secs(value)),
+        "m" => Ok(Duration::from_secs(value * 60)),
+        "h" => Ok(Duration::from_secs(value * 60 * 60)),
+        "d" => Ok(Duration::from_secs(value * 60 * 60 * 24)),
+        _ => bail!("Invalid duration format: `[0-9]+[smhd]`"),
+    };
 }
 
 #[cfg(test)]
@@ -78,6 +78,7 @@ mod tests {
         assert!(parse_duration_with_unit("a2d").is_err());
         assert!(parse_duration_with_unit("3 d").is_err());
         assert!(parse_duration_with_unit("3").is_err());
+        assert!(parse_duration_with_unit("1h30").is_err());
         Ok(())
     }
 }
