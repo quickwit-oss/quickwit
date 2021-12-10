@@ -26,17 +26,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
 use tantivy::schema::{
-    Cardinality, FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, Value, STORED, STRING,
+    Cardinality, FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, Value, STORED,
 };
 use tantivy::Document;
 use tracing::info;
 
 use super::field_mapping_entry::{DocParsingError, FieldPath};
 use super::{default_as_true, FieldMappingEntry, FieldMappingType};
-use crate::config::convert_tag_to_string;
 use crate::query_builder::build_query;
 use crate::sort_by::{SortBy, SortOrder};
-use crate::{IndexConfig, QueryParserError, SOURCE_FIELD_NAME, TAGS_FIELD_NAME};
+use crate::{IndexConfig, QueryParserError, SOURCE_FIELD_NAME};
 
 /// DefaultIndexConfigBuilder is here
 /// to create a valid IndexConfig.
@@ -154,7 +153,6 @@ impl DefaultIndexConfigBuilder {
     /// Build the schema from the field mappings and store_source parameter.
     fn build_schema(&self) -> anyhow::Result<Schema> {
         let mut builder = SchemaBuilder::new();
-        builder.add_text_field(TAGS_FIELD_NAME, STRING);
 
         let mut unique_field_names: HashSet<String> = HashSet::new();
         for field_mapping in self.field_mappings.iter() {
@@ -162,9 +160,6 @@ impl DefaultIndexConfigBuilder {
                 let field_name = field_path.field_name();
                 if field_name == SOURCE_FIELD_NAME {
                     bail!("`_source` is a reserved name, change your field name.");
-                }
-                if field_name == TAGS_FIELD_NAME {
-                    bail!("`_tags` is a reserved name, change your field name.");
                 }
                 if unique_field_names.contains(&field_name) {
                     bail!(
@@ -399,22 +394,12 @@ impl IndexConfig for DefaultIndexConfig {
         })?;
         let field_paths_and_values = self.field_mappings.parse(json_obj)?;
         self.check_fast_field_in_doc(&field_paths_and_values)?;
-        let tags_field_opt = self.schema.get_field(TAGS_FIELD_NAME);
         for (field_path, field_value) in field_paths_and_values {
             let field_name = field_path.field_name();
             let field = self
                 .schema
                 .get_field(&field_name)
                 .ok_or_else(|| DocParsingError::NoSuchFieldInSchema(field_name.clone()))?;
-            if self.tag_field_names.contains(&field_name) {
-                let tags_field = tags_field_opt.ok_or_else(|| {
-                    DocParsingError::NoSuchFieldInSchema(TAGS_FIELD_NAME.to_string())
-                })?;
-                document.add(FieldValue::new(
-                    tags_field,
-                    Value::Str(convert_tag_to_string(&field_name, &field_value)),
-                ));
-            }
             document.add(FieldValue::new(field, field_value))
         }
         if self.store_source {
@@ -466,7 +451,7 @@ mod tests {
     use super::DefaultIndexConfig;
     use crate::{
         DefaultIndexConfigBuilder, DocParsingError, IndexConfig, SortBy, SortOrder,
-        SOURCE_FIELD_NAME, TAGS_FIELD_NAME,
+        SOURCE_FIELD_NAME,
     };
 
     const JSON_DOC_VALUE: &str = r#"
@@ -548,16 +533,13 @@ mod tests {
         let schema = index_config.schema();
         // 7 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
-        // + 1 value for special `_tags`
-        assert_eq!(document.len(), 15);
+        assert_eq!(document.len(), 14);
         let expected_json_paths_and_values: HashMap<String, JsonValue> =
             serde_json::from_str(EXPECTED_JSON_PATHS_AND_VALUES).unwrap();
         document.field_values().iter().for_each(|field_value| {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
                 assert_eq!(field_value.value().text().unwrap(), JSON_DOC_VALUE);
-            } else if field_name == TAGS_FIELD_NAME {
-                assert_eq!(field_value.value().text().unwrap(), "owner:foo");
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
@@ -778,8 +760,8 @@ mod tests {
         }"#;
         let document = index_config.doc_from_json(JSON_DOC_VALUE.to_string())?;
 
-        // 2 properties, + 1 value for "_source" + 2 values for "_tags"
-        assert_eq!(document.len(), 5);
+        // 2 properties, + 1 value for "_source"
+        assert_eq!(document.len(), 3);
         let expected_json_paths_and_values: HashMap<String, JsonValue> = serde_json::from_str(
             r#"{
                 "city": ["tokio"],
@@ -791,10 +773,6 @@ mod tests {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
                 assert_eq!(field_value.value().text().unwrap(), JSON_DOC_VALUE);
-            } else if field_name == TAGS_FIELD_NAME {
-                assert!(
-                    vec!["city:tokio", "image:YWJj"].contains(&field_value.value().text().unwrap())
-                );
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values

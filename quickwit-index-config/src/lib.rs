@@ -40,9 +40,6 @@ pub use sort_by::{SortBy, SortOrder};
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";
 
-/// Field name reserved for storing the tags.
-pub const TAGS_FIELD_NAME: &str = "_tags";
-
 /// Maximum distinct values allowed for a tag field within a split.
 pub const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")) {
     6
