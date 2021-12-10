@@ -181,7 +181,7 @@ mod tests {
         CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, GarbageCollectIndexArgs,
         IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
     };
-    use quickwit_cli::service::{RunServiceArgs, ServiceCliCommand};
+    use quickwit_cli::service::{RunIndexerArgs, RunSearcherArgs, ServiceCliCommand};
     use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs};
 
     use super::*;
@@ -470,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_serve_args() -> anyhow::Result<()> {
+    fn test_parse_run_searcher_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
@@ -488,11 +488,39 @@ mod tests {
         );
         assert!(matches!(
             command,
-            CliCommand::Service(ServiceCliCommand::Run(RunServiceArgs {
-                service_name,
+            CliCommand::Service(ServiceCliCommand::RunSearcher(RunSearcherArgs {
                 server_config_uri,
-                index_id: None,
-            })) if service_name == "searcher" && server_config_uri == expected_server_config_uri
+            })) if server_config_uri == expected_server_config_uri
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_run_indexer_args() -> anyhow::Result<()> {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app.try_get_matches_from(vec![
+            "service",
+            "run",
+            "indexer",
+            "--index-id",
+            "wikipedia",
+            "--server-config-uri",
+            "conf.toml",
+        ])?;
+        let command = CliCommand::parse_cli_args(&matches)?;
+        let expected_server_config_uri = format!(
+            "file://{}{}conf.toml",
+            std::env::current_dir().unwrap().display(),
+            std::path::MAIN_SEPARATOR
+        );
+        println!("{} {:?}", expected_server_config_uri, command);
+        assert!(matches!(
+            command,
+            CliCommand::Service(ServiceCliCommand::RunIndexer(RunIndexerArgs {
+                server_config_uri,
+                index_id,
+            })) if index_id == "wikipedia" && server_config_uri == expected_server_config_uri
         ));
         Ok(())
     }

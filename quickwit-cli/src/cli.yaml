@@ -258,17 +258,25 @@ subcommands:
             - run:
                 display_order: 1
                 about: Starts a service. Currently, the only services available are `indexer` and `searcher`.
-                args:
-                    - service-name:
-                        about: Name of the service.
-                        value_name: SERVICE NAME
-                        required: true
-                    - server-config-uri:
-                        about: Location of the server config.
-                        long: server-config-uri
-                        value_name: SERVER CONFIG URI
-                        required: true
-                    - index-id:
-                        about: ID of the index to run the indexer for.
-                        long: index-id
-                        value_name: INDEX ID
+                subcommands:
+                    - searcher:
+                        about: Starts a search node, aka a `searcher`
+                        args:
+                            - server-config-uri:
+                                about: Location of the server config.
+                                long: server-config-uri
+                                value_name: SERVER CONFIG URI
+                                required: true
+                    - indexer:
+                        about: Start an indexing server, aka an `indexer`
+                        args:
+                            - server-config-uri:
+                                about: Location of the server config.
+                                long: server-config-uri
+                                value_name: SERVER CONFIG URI
+                                required: true
+                            - index-id:
+                                about: ID of the index to run the indexer for.
+                                long: index-id
+                                value_name: INDEX ID
+                                required: true
