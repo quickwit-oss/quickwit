@@ -60,9 +60,9 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
     };
 }
 
-/// Run connectivity checks for a given metastore_uri and index id.
-/// Optionnaly, it takes a `SourceConfig` that will be checked instead
-/// replacing the checks on the index source.
+/// Runs connectivity checks for a given `metastore_uri` and `index_id`.
+/// Optionaly, it takes a `SourceConfig` that will be checked instead
+/// of the index's sources.
 pub async fn run_index_checklist(
     metastore_uri: &str,
     index_id: &str,
