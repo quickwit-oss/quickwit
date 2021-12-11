@@ -22,12 +22,14 @@ use clap::ArgMatches;
 use quickwit_common::run_checklist;
 use quickwit_common::uri::normalize_uri;
 use quickwit_config::ServerConfig;
-use quickwit_indexing::{check_source_connectivity, index_data};
+use quickwit_indexing::index_data;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_serve::run_searcher;
 use quickwit_storage::quickwit_storage_uri_resolver;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
+
+use crate::run_index_checklist;
 
 #[derive(Debug, PartialEq)]
 pub struct RunIndexerArgs {
@@ -108,8 +110,8 @@ async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "run-indexer");
     let telemetry_event = TelemetryEvent::RunService("indexer".to_string());
     quickwit_telemetry::send_telemetry_event(telemetry_event).await;
-
     let server_config = ServerConfig::from_file(&args.server_config_uri).await?;
+    run_index_checklist(&server_config.metastore_uri, &args.index_id, None).await?;
     let indexer_config = server_config
         .indexer_config
         .context("Indexer config is empty.")?;
@@ -120,14 +122,6 @@ async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
-    let mut checks = vec![("storage", storage.check().await)];
-    for source_config in index_metadata.sources.iter() {
-        checks.push((
-            source_config.source_id.as_str(),
-            check_source_connectivity(source_config).await,
-        ));
-    }
-    run_checklist(checks);
     index_data(index_metadata, indexer_config, metastore, storage).await?;
     Ok(())
 }
