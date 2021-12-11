@@ -201,15 +201,20 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
                 }
             }
         }
-        #[cfg(feature = "kafka")]
-        "kafka" => kafka_source::check_connectivity(source_config.params.clone()),
+        "kafka" => {
+            #[cfg(not(feature = "kafka"))]
+            bail!("Quickwit binary was not compiled with the Kafka source feature.");
+
+            #[cfg(feature = "kafka")]
+            kafka_source::check_connectivity(source_config.params.clone())
+        }
         "vec" => Ok(()),
         unrecognized_source_type => {
-            tracing::warn!(
-                "No check implemented for source type `{}`",
+            bail!(
+                "Unknown source type `{}` or connectivity check not implemented for this source \
+                 type.",
                 unrecognized_source_type
             );
-            Ok(())
         }
     }
 }

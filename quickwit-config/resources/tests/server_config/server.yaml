@@ -1,5 +1,5 @@
 version: 0
-metastore_uri: postgres://username:password@host:port/db
+metastore_uri: file:///Users/fmassot/Documents/quickwit/repos/quickwit-2
 indexer:
   data_dir_path: /opt/quickwit/data
   rest_listen_address: 0.0.0.0
