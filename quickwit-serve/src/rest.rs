@@ -28,7 +28,7 @@ use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_common::metrics;
 use quickwit_proto::OutputFormat;
 use quickwit_search::{SearchResponseRest, SearchService, SearchServiceImpl};
-use serde::{Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer};
 use tracing::info;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
@@ -222,7 +222,7 @@ pub struct SearchStreamRequestQueryString {
     /// If set, restricts search to documents with a `timestamp < end_timestamp``.
     pub end_timestamp: Option<i64>,
     /// The fast field to extract.
-    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_not_empty_string")]
     pub fast_field: String,
     /// The requested output format.
     #[serde(default)]
@@ -358,6 +358,25 @@ where D: Deserializer<'de> {
             .map(|item| item.to_owned())
             .collect(),
     ))
+}
+
+// Deserialize a string field and return and error if it's empty.
+// We have 2 issues with this implementation:
+// - this is not generic and thus nos sustainable and we may need to
+//   use an external crate for validation in the future like
+//   this one https://github.com/Keats/validator.
+// - the error does not mention the field name and this is not user friendly. There
+//   is an external crate that can help https://github.com/dtolnay/path-to-error but
+//   I did not find a way to plug it to serde_qs.
+// Conclusion: the best way I found to reject a user query that contains an empty
+// string on an mandatory field is this serializer.
+fn deserialize_not_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where D: Deserializer<'de> {
+    let value = String::deserialize(deserializer)?;
+    if value.is_empty() {
+        return Err(de::Error::custom("Expected a non empty string field."));
+    }
+    Ok(value)
 }
 
 #[cfg(test)]
@@ -688,6 +707,23 @@ mod tests {
             parse_error.to_string(),
             "failed with reason: unknown variant `click_house_row_binary`, expected `csv` or \
              `clickHouseRowBinary`"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_stream_api_error_empty_fastfield() {
+        let rejection = warp::test::request()
+            .path(
+                "/api/v1/my-index/search/stream?query=obama&fastField=&\
+                 outputFormat=clickHouseRowBinary",
+            )
+            .filter(&super::search_stream_filter())
+            .await
+            .unwrap_err();
+        let parse_error = rejection.find::<serde_qs::Error>().unwrap();
+        assert_eq!(
+            parse_error.to_string(),
+            "failed with reason: Expected a non empty string field."
         );
     }
 }
