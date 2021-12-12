@@ -17,13 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use crate::QueryParserError;
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
 use tantivy::schema::{Field, Schema};
 use tantivy::tokenizer::TokenizerManager;
-use tantivy_query_grammar::{UserInputAst, UserInputLeaf, UserInputLiteral};
-
-use crate::QueryParserError;
+use tantivy_query_grammar::{UserInputAst, UserInputLeaf};
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
@@ -47,43 +46,6 @@ pub(crate) fn build_query(
     let query_parser = QueryParser::new(schema, search_fields, TokenizerManager::default());
     let query = query_parser.parse_query(&request.query)?;
     Ok(query)
-}
-
-/// Extracts all filters related to tag fields.
-/// Returns a list of `tag_field_name:tag_value` found in the query.
-pub fn extract_tags_from_query(
-    raw_query: &str,
-    tag_field_names: &[String],
-) -> Result<Vec<String>, QueryParserError> {
-    let user_input_ast = tantivy_query_grammar::parse_query(raw_query)
-        .map_err(|_| TantivyQueryParserError::SyntaxError)?;
-
-    Ok(collect_tag_filters(user_input_ast, tag_field_names))
-}
-
-fn collect_tag_filters(user_input_ast: UserInputAst, tag_field_names: &[String]) -> Vec<String> {
-    let mut fields = vec![];
-    match user_input_ast {
-        UserInputAst::Clause(sub_queries) => {
-            for (_, sub_ast) in sub_queries {
-                fields.extend(collect_tag_filters(sub_ast, tag_field_names));
-            }
-        }
-        UserInputAst::Boost(ast, _) => fields.extend(collect_tag_filters(*ast, tag_field_names)),
-        UserInputAst::Leaf(leaf) => match *leaf {
-            UserInputLeaf::Literal(UserInputLiteral {
-                field_name: Some(field_name),
-                phrase,
-            }) if tag_field_names.contains(&field_name) => {
-                fields.push(format!("{}:{}", field_name, phrase))
-            }
-            // Currently, we don't support range queries. Even if we did, it wouldn't be relevant
-            // for this tag based pruning. Unless we want to support prefix matching
-            // for tags. (TODO: discuss)
-            _ => (),
-        },
-    }
-    fields
 }
 
 fn has_range_clause(user_input_ast: UserInputAst) -> bool {
@@ -117,7 +79,7 @@ mod test {
     use quickwit_proto::SearchRequest;
     use tantivy::schema::{Schema, TEXT};
 
-    use super::{build_query, extract_tags_from_query};
+    use super::build_query;
 
     enum TestExpectation {
         Err(&'static str),
@@ -217,39 +179,6 @@ mod test {
             vec![],
             TestExpectation::Ok("TermQuery"),
         )?;
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_extract_tags_from_query() -> anyhow::Result<()> {
-        assert!(matches!(
-            extract_tags_from_query(":>", &["bart".to_string(), "lisa".to_string()]),
-            Err(..)
-        ));
-
-        assert_eq!(extract_tags_from_query("*", &[])?, Vec::<String>::new());
-
-        assert_eq!(
-            extract_tags_from_query("*", &["user".to_string(), "lang".to_string()])?,
-            Vec::<String>::new()
-        );
-
-        assert_eq!(
-            extract_tags_from_query(
-                "title:>foo lang:fr",
-                &["user".to_string(), "lang".to_string()]
-            )?,
-            vec!["lang:fr".to_string()]
-        );
-
-        assert_eq!(
-            extract_tags_from_query(
-                "title:foo user:bart lang:fr",
-                &["user".to_string(), "lang".to_string()]
-            )?,
-            vec!["user:bart".to_string(), "lang:fr".to_string()]
-        );
 
         Ok(())
     }

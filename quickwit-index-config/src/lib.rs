@@ -28,6 +28,7 @@ mod config;
 mod default_index_config;
 mod error;
 mod query_builder;
+mod tag_pruning;
 mod wikipedia_config;
 
 pub use config::{match_tag_field_name, IndexConfig, SortBy, SortOrder};
@@ -35,7 +36,7 @@ pub use default_index_config::{
     DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry,
 };
 pub use error::QueryParserError;
-pub use query_builder::extract_tags_from_query;
+pub use tag_pruning::extract_tags_from_query;
 pub use wikipedia_config::WikipediaIndexConfig;
 
 /// Field name reserved for storing the source document.
