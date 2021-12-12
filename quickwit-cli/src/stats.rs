@@ -91,7 +91,7 @@ pub async fn demux_stats_cli(args: DemuxStatsArgs) -> anyhow::Result<()> {
         .demux_field_name()
         .ok_or_else(|| anyhow::anyhow!("Index must have a demux field to get demux stats."))?;
     let splits = metastore
-        .list_splits(&args.index_id, SplitState::Published, None, &[])
+        .list_splits(&args.index_id, SplitState::Published, None, None)
         .await?
         .into_iter()
         .map(|metadata| metadata.split_metadata)

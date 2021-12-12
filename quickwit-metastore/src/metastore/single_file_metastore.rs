@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::Utc;
+use quickwit_index_config::TagFiltersAST;
 use quickwit_storage::{
     quickwit_storage_uri_resolver, Storage, StorageErrorKind, StorageResolverError,
     StorageUriResolver,
@@ -400,7 +401,7 @@ impl InnerSingleFileMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-        tags: &[String],
+        tags: Option<TagFiltersAST>,
     ) -> MetastoreResult<Vec<Split>> {
         let time_range_filter = |split_metadata: &SplitMetadata| match (
             time_range_opt.as_ref(),
@@ -418,7 +419,7 @@ impl InnerSingleFileMetastore {
                 .clone()
                 .into_iter()
                 .collect::<Vec<String>>();
-            match_tags_filter(split_tags.as_slice(), tags)
+            match_tags_filter(split_tags.as_slice(), tags.clone())
         };
 
         let metadata_set = self.get_index(index_id).await?;
@@ -591,7 +592,7 @@ impl Metastore for SingleFileMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-        tags: &[String],
+        tags: Option<TagFiltersAST>,
     ) -> MetastoreResult<Vec<Split>> {
         let mut inner_metastore = self.inner.lock().await;
         inner_metastore
@@ -953,7 +954,7 @@ mod tests {
         futures::future::try_join_all(handles).await.unwrap();
 
         let splits = metastore
-            .list_splits(index_id, SplitState::Published, None, &[])
+            .list_splits(index_id, SplitState::Published, None, None)
             .await
             .unwrap();
 

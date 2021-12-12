@@ -27,6 +27,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_index_config::IndexConfig;
+use quickwit_index_config::TagFiltersAST;
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};
@@ -142,7 +143,7 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
         split_state: SplitState,
         time_range: Option<Range<i64>>,
-        tags: &[String],
+        tags: Option<TagFiltersAST>,
     ) -> MetastoreResult<Vec<Split>>;
 
     /// Lists the splits without filtering.
@@ -173,14 +174,7 @@ pub trait Metastore: Send + Sync + 'static {
 
 // Returns true if filter_tags is empty (unspecified),
 // or if filter_tags is specified and split_tags contains at least one of the tags in filter_tags.
-pub fn match_tags_filter(split_tags: &[String], filter_tags: &[String]) -> bool {
-    if filter_tags.is_empty() {
-        return true;
-    }
-    for filter_tag in filter_tags {
-        if split_tags.contains(filter_tag) {
-            return true;
-        }
-    }
-    false
+pub fn match_tags_filter(split_tags: &[String], filter_tags: Option<TagFiltersAST>) -> bool {
+    // TODO CHANGE ME
+    todo!("implement me")
 }

@@ -34,6 +34,7 @@ use diesel::{
 };
 use tracing::{debug, error, info, warn};
 
+use quickwit_index_config::TagFiltersAST;
 use crate::metastore::CheckpointDelta;
 use crate::postgresql::model::SELECT_SPLITS_FOR_INDEX;
 use crate::postgresql::{model, schema};
@@ -307,7 +308,7 @@ impl PostgresqlMetastore {
         index_id: &str,
         state_opt: Option<SplitState>,
         time_range_opt: Option<Range<i64>>,
-        tags_opt: Option<&[String]>,
+        tags_opt: Option<TagFiltersAST>,
     ) -> MetastoreResult<Vec<Split>> {
         let mut select_statement = schema::splits::dsl::splits
             .filter(schema::splits::dsl::index_id.eq(index_id))
@@ -329,10 +330,7 @@ impl PostgresqlMetastore {
         }
 
         if let Some(tags) = tags_opt {
-            if !tags.is_empty() {
-                select_statement =
-                    select_statement.filter(schema::splits::dsl::tags.overlaps_with(tags));
-            }
+            select_statement = select_statement.filter(tags_filter_expression_helper(tags));
         }
 
         debug!(sql=%debug_query::<Pg, _>(&select_statement).to_string());
@@ -351,6 +349,7 @@ impl PostgresqlMetastore {
         }
         splits.into_iter().map(|split| split.try_into()).collect()
     }
+
 
     /// Query the database to find out if:
     /// - index exists?
@@ -652,10 +651,10 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-        tags: &[String],
+        tags: Option<TagFiltersAST>,
     ) -> MetastoreResult<Vec<Split>> {
         let conn = self.get_conn()?;
-        self.list_splits_helper(&conn, index_id, Some(state), time_range_opt, Some(tags))
+        self.list_splits_helper(&conn, index_id, Some(state), time_range_opt, tags)
     }
 
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
@@ -754,6 +753,11 @@ impl Metastore for PostgresqlMetastore {
     fn uri(&self) -> String {
         self.uri.clone()
     }
+}
+
+fn tags_filter_expression_helper(tags: TagFiltersAST) -> i64 {
+    // TODO implement me!!!
+    todo!()
 }
 
 /// A single file metastore factory
