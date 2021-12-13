@@ -1,4 +1,5 @@
-FROM ekidd/rust-musl-builder:latest
+FROM quickwit/cross-base:x86_64-unknown-linux-musl
+# See https://github.com/quickwit-inc/rust-musl-builder
 
 RUN echo "Upgrading CMake" && \
     sudo apt-get remove cmake -y && \
