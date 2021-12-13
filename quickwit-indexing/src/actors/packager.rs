@@ -300,7 +300,7 @@ mod tests {
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_metastore::checkpoint::CheckpointDelta;
-    use tantivy::schema::{Schema, FAST, STRING, TEXT};
+    use tantivy::schema::{Schema, FAST, TEXT};
     use tantivy::{doc, Index};
 
     use super::*;
@@ -313,8 +313,6 @@ mod tests {
         let timestamp_field = schema_builder.add_u64_field("timestamp", FAST);
         let tag_field_1 = schema_builder.add_text_field("tag_field_1", TEXT);
         let tag_field_2 = schema_builder.add_text_field("tag_field_2", TEXT);
-        let tags_field =
-            schema_builder.add_text_field(quickwit_index_config::TAGS_FIELD_NAME, STRING);
         let schema = schema_builder.build();
         let index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
         let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
@@ -331,8 +329,6 @@ mod tests {
                         timestamp_field => timestamp,
                         tag_field_1 => "value",
                         tag_field_2 => format!("value-{}", num),
-                        tags_field => "tag_field_1:value",
-                        tags_field => format!("tag_field_2:value-{}", num),
                     );
                     index_writer.add_document(doc)?;
                     num_docs += 1;

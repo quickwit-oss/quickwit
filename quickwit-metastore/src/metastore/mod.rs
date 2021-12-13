@@ -95,7 +95,8 @@ impl IndexMetadata {
                 },
                 {
                     "name": "owner",
-                    "type": "text"
+                    "type": "text",
+                    "tokenizer": "raw"
                 },
                 {
                     "name": "attributes",

@@ -22,10 +22,10 @@ use std::fmt::Debug;
 use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_proto::SearchRequest;
 use tantivy::query::Query;
-use tantivy::schema::{Field, Schema, Value};
+use tantivy::schema::{Field, Schema};
 use tantivy::Document;
 
-use crate::{DocParsingError, QueryParserError, SortBy, TAGS_FIELD_NAME};
+use crate::{DocParsingError, QueryParserError, SortBy};
 
 /// Separator used to format tags into `{field_name}:{value}`
 pub const TAG_FIELD_VALUE_SEPARATOR: &str = ":";
@@ -36,12 +36,6 @@ pub const TOO_MANY_TAG_VALUES: &str = "*";
 /// Character use to escape tag value when there is collision with the wilcard
 /// tag values.
 pub const TAGS_VALUE_ESCAPE: &str = "\\";
-
-/// Converts a field (name, value) into a tag string `name:value`.
-pub fn convert_tag_to_string(field_name: &str, field_value: &Value) -> String {
-    let field_value_str = tantivy_value_to_string(field_value);
-    build_tag_value(field_name, &field_value_str)
-}
 
 /// Returns true if tag_string is of form `{field_name}:any_value`.
 pub fn match_tag_field_name(field_name: &str, tag_string: &str) -> bool {
@@ -65,20 +59,6 @@ pub fn build_tag_value(field_name: &str, field_value: &str) -> String {
         );
     }
     format!("{}{}{}", field_name, TAG_FIELD_VALUE_SEPARATOR, field_value)
-}
-
-/// Converts a [`tantivy::Value`] to it's [`String`] value.
-fn tantivy_value_to_string(field_value: &Value) -> String {
-    match field_value {
-        Value::Str(text) => text.clone(),
-        Value::PreTokStr(data) => data.text.clone(),
-        Value::U64(num) => num.to_string(),
-        Value::I64(num) => num.to_string(),
-        Value::F64(num) => num.to_string(),
-        Value::Date(date) => date.to_rfc3339(),
-        Value::Facet(facet) => facet.to_string(),
-        Value::Bytes(data) => base64::encode(data),
-    }
 }
 
 /// The `IndexConfig` trait defines the way of defining how a (json) document,
@@ -131,13 +111,6 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     /// Returns the tag field names
     fn tag_field_names(&self) -> Vec<String> {
         vec![]
-    }
-
-    /// Returns the special tags field if any.
-    fn tags_field(&self, split_schema: &Schema) -> Field {
-        split_schema
-            .get_field(TAGS_FIELD_NAME)
-            .expect("Tags field must exist in the schema.")
     }
 
     /// Returns the demux field name.
