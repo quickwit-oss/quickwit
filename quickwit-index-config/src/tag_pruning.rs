@@ -37,13 +37,14 @@ pub fn extract_tags_from_query(
 }
 
 /// Intermediary AST that may contain leaf that are
-/// equivalent to the "True" predicate.
+/// equivalent to the "Uninformative" predicate.
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum UnsimplifiedTagFiltersAST {
     And(Vec<UnsimplifiedTagFiltersAST>),
     Or(Vec<UnsimplifiedTagFiltersAST>),
     Tag { tag: String },
-    True,
+    NotTag { tag: String },
+    Uninformative,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -51,6 +52,7 @@ pub enum TagFiltersAST {
     And(Vec<TagFiltersAST>),
     Or(Vec<TagFiltersAST>),
     Tag { tag: String },
+    NotTag { tag: String },
 }
 
 // Takes a tag AST and simplify it in such a way that the resulting tree:
@@ -87,7 +89,8 @@ fn simplify_ast(ast: UnsimplifiedTagFiltersAST) -> Option<TagFiltersAST> {
             }
         }
         UnsimplifiedTagFiltersAST::Tag { tag } => TagFiltersAST::Tag { tag }.into(),
-        UnsimplifiedTagFiltersAST::True => None,
+        UnsimplifiedTagFiltersAST::NotTag { tag } => TagFiltersAST::NotTag { tag }.into(),
+        UnsimplifiedTagFiltersAST::Uninformative => None,
     }
 }
 
@@ -95,14 +98,14 @@ fn collect_tag_filters_for_clause(
     clause: Vec<(Occur, UnsimplifiedTagFiltersAST)>,
 ) -> UnsimplifiedTagFiltersAST {
     if clause.len() == 0 {
-        return UnsimplifiedTagFiltersAST::True;
+        return UnsimplifiedTagFiltersAST::Uninformative;
     }
     if clause.iter().any(|(occur, _)| occur == &Occur::Must) {
         let removed_should_clause: Vec<UnsimplifiedTagFiltersAST> = clause
             .into_iter()
             .filter_map(|(occur, ast)| match occur {
                 Occur::Must => Some(ast),
-                Occur::MustNot => Some(UnsimplifiedTagFiltersAST::True),
+                Occur::MustNot => Some(negate_ast(ast)),
                 Occur::Should => None,
             })
             .collect();
@@ -113,7 +116,7 @@ fn collect_tag_filters_for_clause(
     let converted_not_clause = clause
         .into_iter()
         .map(|(occur, ast)| match occur {
-            Occur::MustNot => UnsimplifiedTagFiltersAST::True,
+            Occur::MustNot => negate_ast(ast),
             Occur::Should => ast,
             Occur::Must => {
                 unreachable!("This should never happen due to check above.")
@@ -123,13 +126,30 @@ fn collect_tag_filters_for_clause(
     UnsimplifiedTagFiltersAST::Or(converted_not_clause)
 }
 
-/// This function takes a user input AST and extracts a boolean formula
-/// using only tags fields, true, and false as literals such that the
+/// Negate the Unsimplified ast
+/// -  And becomes Or
+/// -  Or becomes And
+/// -  Tag becomes Not Tag
+///    Not Tag becomes Tag
+/// - Uninformative stays as is.
+fn negate_ast(clause: UnsimplifiedTagFiltersAST) -> UnsimplifiedTagFiltersAST {
+    match clause {
+        UnsimplifiedTagFiltersAST::And(v) => {
+            UnsimplifiedTagFiltersAST::Or(v.into_iter().map(|c| negate_ast(c)).collect())
+        }
+        UnsimplifiedTagFiltersAST::Or(v) => {
+            UnsimplifiedTagFiltersAST::And(v.into_iter().map(|c| negate_ast(c)).collect())
+        }
+        UnsimplifiedTagFiltersAST::Tag { tag } => UnsimplifiedTagFiltersAST::NotTag { tag },
+        UnsimplifiedTagFiltersAST::NotTag { tag } => UnsimplifiedTagFiltersAST::Tag { tag },
+        UnsimplifiedTagFiltersAST::Uninformative => UnsimplifiedTagFiltersAST::Uninformative,
+    }
+}
+
 /// query implies this boolean formula.
+
 ///
-/// MustNot are transformed into `True` to keep the code simple
-/// and correct.
-/// TermQuery on fields that are not tag fields are transformed into the predicate `True`.
+/// TermQuery on fields that are not tag fields are transformed into the predicate `Uninformative`.
 ///
 ///
 /// In other words, we are guaranteed that if we were to run the query
@@ -163,14 +183,14 @@ fn collect_tag_filters(
                         tag: format!("{}:{}", field_name, phrase),
                     }
                 } else {
-                    UnsimplifiedTagFiltersAST::True
+                    UnsimplifiedTagFiltersAST::Uninformative
                 }
             }
             UserInputLeaf::Literal(UserInputLiteral {
                 field_name: None, ..
             })
             | UserInputLeaf::All
-            | UserInputLeaf::Range { .. } => UnsimplifiedTagFiltersAST::True,
+            | UserInputLeaf::Range { .. } => UnsimplifiedTagFiltersAST::Uninformative,
         },
     }
 }
@@ -293,8 +313,15 @@ mod test {
     #[test]
     fn test_disjunction_of_tag_disjunction_with_not_clause() -> anyhow::Result<()> {
         assert_eq!(
-            extract_tags_from_query("(user:bart -lang:fr)", &hashset(&["user", "lang"]))?,
-            None
+            extract_tags_from_query("(user:bart -lang:fr)", &hashset(&["user", "lang"]))?.unwrap(),
+            TagFiltersAST::Or(vec![
+                TagFiltersAST::Tag {
+                    tag: "user:bart".to_string()
+                },
+                TagFiltersAST::NotTag {
+                    tag: "lang:fr".to_string()
+                }
+            ])
         );
         Ok(())
     }
@@ -304,9 +331,14 @@ mod test {
         assert_eq!(
             extract_tags_from_query("user:bart AND NOT lang:fr", &hashset(&["user", "lang"]))?
                 .unwrap(),
-            TagFiltersAST::Tag {
-                tag: "user:bart".to_string()
-            }
+            TagFiltersAST::And(vec![
+                TagFiltersAST::Tag {
+                    tag: "user:bart".to_string()
+                },
+                TagFiltersAST::NotTag {
+                    tag: "lang:fr".to_string()
+                }
+            ])
         );
         Ok(())
     }
