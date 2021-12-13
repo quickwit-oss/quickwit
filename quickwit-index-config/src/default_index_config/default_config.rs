@@ -37,6 +37,9 @@ use crate::query_builder::build_query;
 use crate::sort_by::{SortBy, SortOrder};
 use crate::{IndexConfig, QueryParserError, SOURCE_FIELD_NAME};
 
+/// Name of the raw tokenizer.
+const RAW_TOKENIZER_NAME: &str = "raw";
+
 /// DefaultIndexConfigBuilder is here
 /// to create a valid IndexConfig.
 #[derive(Default, Serialize, Deserialize, Clone)]
@@ -160,6 +163,26 @@ impl DefaultIndexConfigBuilder {
                 let field_name = field_path.field_name();
                 if field_name == SOURCE_FIELD_NAME {
                     bail!("`_source` is a reserved name, change your field name.");
+                }
+                if self.tag_fields.contains(&field_name) {
+                    match &field_type {
+                        FieldType::Str(options) => {
+                            let tokenizer_opt = options
+                                .get_indexing_options()
+                                .map(|text_options| text_options.tokenizer());
+
+                            if tokenizer_opt != Some(RAW_TOKENIZER_NAME) {
+                                bail!(
+                                    "Tags collection is only allowed on text fields with the \
+                                     `raw` tokenizer."
+                                );
+                            }
+                        }
+                        FieldType::Bytes(_) => {
+                            bail!("Tags collection is not allowed on `bytes` fields.")
+                        }
+                        _ => (),
+                    }
                 }
                 if unique_field_names.contains(&field_name) {
                     bail!(
@@ -705,7 +728,7 @@ mod tests {
             "type": "default",
             "default_search_fields": [],
             "timestamp_field": null,
-            "tag_fields": ["image"],
+            "tag_fields": [],
             "field_mappings": [
                 {
                     "name": "image",
@@ -736,12 +759,13 @@ mod tests {
             "type": "default",
             "default_search_fields": [],
             "timestamp_field": null,
-            "tag_fields": ["city", "image"],
+            "tag_fields": ["city"],
             "field_mappings": [
                 {
                     "name": "city",
                     "type": "text",
-                    "stored": true
+                    "stored": true,
+                    "tokenizer": "raw"
                 },
                 {
                     "name": "image",
@@ -786,6 +810,48 @@ mod tests {
                 assert!(is_value_in_expected_values);
             }
         });
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_index_config_with_wrong_tag_fields_types() -> anyhow::Result<()> {
+        let index_config_one = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "tag_fields": ["city"],
+            "field_mappings": [
+                {
+                    "name": "city",
+                    "type": "text"
+                }
+            ]
+        }"#;
+        assert_eq!(
+            serde_json::from_str::<DefaultIndexConfigBuilder>(index_config_one)?
+                .build()
+                .unwrap_err()
+                .to_string(),
+            "Tags collection is only allowed on text fields with the `raw` tokenizer.".to_string(),
+        );
+
+        let index_config_two = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "tag_fields": ["photo"],
+            "field_mappings": [
+                {
+                    "name": "photo",
+                    "type": "bytes"
+                }
+            ]
+        }"#;
+        assert_eq!(
+            serde_json::from_str::<DefaultIndexConfigBuilder>(index_config_two)?
+                .build()
+                .unwrap_err()
+                .to_string(),
+            "Tags collection is not allowed on `bytes` fields.".to_string(),
+        );
         Ok(())
     }
 

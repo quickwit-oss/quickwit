@@ -52,9 +52,11 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
         - name: device
           type: text
           stored: false
+          tokenizer: raw
         - name: city
           type: text
           stored: false
+          tokenizer: raw
 
       tag_fields: [city, device]
 

@@ -90,7 +90,8 @@ pub fn default_config_for_tests() -> DefaultIndexConfig {
                 },
                 {
                     "name": "owner",
-                    "type": "text"
+                    "type": "text",
+                    "tokenizer": "raw"
                 },
                 {
                     "name": "attributes",
