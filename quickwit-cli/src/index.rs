@@ -30,23 +30,25 @@ use colored::Colorize;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_common::uri::normalize_uri;
-use quickwit_common::{run_checklist, GREEN_COLOR};
+use quickwit_common::GREEN_COLOR;
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_index_config::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingPipelineParams};
 use quickwit_indexing::models::IndexingStatistics;
-use quickwit_indexing::source::{check_source_connectivity, FileSourceParams};
+use quickwit_indexing::source::FileSourceParams;
+use quickwit_indexing::{index_data, STD_IN_SOURCE_ID};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, MetastoreUriResolver, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use quickwit_telemetry::payload::TelemetryEvent;
+use serde_json::json;
 use tracing::{debug, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
-use crate::{parse_duration_with_unit, THROUGHPUT_WINDOW_SIZE};
+use crate::{parse_duration_with_unit, run_index_checklist, THROUGHPUT_WINDOW_SIZE};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
@@ -99,16 +101,19 @@ pub struct GarbageCollectIndexArgs {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DemuxArgs {
-    // TODO
+pub struct MergeOrDemuxArgs {
+    pub metastore_uri: String,
+    pub index_id: String,
+    pub data_dir_path: PathBuf,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum IndexCliCommand {
     Create(CreateIndexArgs),
-    Delete(DeleteIndexArgs),
-    Demux(DemuxArgs),
     Describe(DescribeIndexArgs),
+    Delete(DeleteIndexArgs),
+    Demux(MergeOrDemuxArgs),
+    Merge(MergeOrDemuxArgs),
     GarbageCollect(GarbageCollectIndexArgs),
     Ingest(IngestDocsArgs),
     Search(SearchIndexArgs),
@@ -118,6 +123,8 @@ impl IndexCliCommand {
     pub fn default_log_level(&self) -> Level {
         match self {
             Self::Ingest(_) => Level::INFO,
+            Self::Merge(_) => Level::INFO,
+            Self::Demux(_) => Level::INFO,
             _ => Level::ERROR,
         }
     }
@@ -129,11 +136,12 @@ impl IndexCliCommand {
         match subcommand {
             "create" => Self::parse_create_args(submatches),
             "delete" => Self::parse_delete_args(submatches),
+            "search" => Self::parse_search_args(submatches),
+            "merge" => Self::parse_merge_args(submatches),
             "demux" => Self::parse_demux_args(submatches),
             "describe" => Self::parse_describe_args(submatches),
             "gc" => Self::parse_garbage_collect_args(submatches),
             "ingest" => Self::parse_ingest_args(submatches),
-            "search" => Self::parse_search_args(submatches),
             _ => bail!("Index subcommand `{}` is not implemented.", subcommand),
         }
     }
@@ -141,12 +149,12 @@ impl IndexCliCommand {
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
             .value_of("index-id")
-            .expect("`index-id` should be a required arg.")
+            .expect("`index-id` is a required arg.")
             .to_string();
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(normalize_uri)
-            .expect("`metastore-uri` should be a required arg.")?;
+            .expect("`metastore-uri` is a required arg.")?;
         Ok(Self::Describe(DescribeIndexArgs {
             metastore_uri,
             index_id,
@@ -157,11 +165,11 @@ impl IndexCliCommand {
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(normalize_uri)
-            .expect("`metastore-uri` should be a required arg.")?;
+            .expect("`metastore-uri` is a required arg.")?;
         let index_config_uri = matches
             .value_of("index-config-uri")
             .map(normalize_uri)
-            .expect("`index-config-uri` should be a required arg.")?;
+            .expect("`index-config-uri` is a required arg.")?;
         let overwrite = matches.is_present("overwrite");
 
         Ok(Self::Create(CreateIndexArgs {
@@ -175,16 +183,16 @@ impl IndexCliCommand {
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(normalize_uri)
-            .expect("`metastore-uri` should be a required arg.")?;
+            .expect("`metastore-uri` is a required arg.")?;
         let index_id = matches
             .value_of("index-id")
-            .expect("`index-id` should be a required arg.")
+            .expect("`index-id` is a required arg.")
             .to_string();
         let input_path_opt = matches.value_of("input-path").map(PathBuf::from);
         let data_dir_path: PathBuf = matches
             .value_of("data-dir-path")
             .map(PathBuf::from)
-            .expect("`data-dir-path` should be a required arg.");
+            .expect("`data-dir-path` is a required arg.");
         let overwrite = matches.is_present("overwrite");
 
         Ok(Self::Ingest(IngestDocsArgs {
@@ -200,14 +208,14 @@ impl IndexCliCommand {
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(normalize_uri)
-            .expect("`metastore-uri` should be a required arg.")?;
+            .expect("`metastore-uri` is a required arg.")?;
         let index_id = matches
             .value_of("index-id")
-            .expect("`index-id` should be a required arg.")
+            .expect("`index-id` is a required arg.")
             .to_string();
         let query = matches
             .value_of("query")
-            .context("query ` should be a required arg.")?
+            .context("`query` is a required arg.")?
             .to_string();
         let max_hits = matches.value_of_t::<usize>("max-hits")?;
         let start_offset = matches.value_of_t::<usize>("start-offset")?;
@@ -241,19 +249,54 @@ impl IndexCliCommand {
         }))
     }
 
-    fn parse_demux_args(_matches: &ArgMatches) -> anyhow::Result<Self> {
-        // TODO
-        Ok(Self::Demux(DemuxArgs {}))
+    fn parse_merge_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .context("'metastore-uri' is a required arg.")
+            .map(normalize_uri)??;
+        let index_id = matches
+            .value_of("index-id")
+            .context("'index-id' is a required arg.")?
+            .to_string();
+        let data_dir_path: PathBuf = matches
+            .value_of("data-dir-path")
+            .map(PathBuf::from)
+            .expect("`data-dir-path` is a required arg.");
+        Ok(Self::Merge(MergeOrDemuxArgs {
+            metastore_uri,
+            index_id,
+            data_dir_path,
+        }))
+    }
+
+    fn parse_demux_args(matches: &ArgMatches) -> anyhow::Result<Self> {
+        let metastore_uri = matches
+            .value_of("metastore-uri")
+            .context("'metastore-uri' is a required arg.")
+            .map(normalize_uri)??;
+        let index_id = matches
+            .value_of("index-id")
+            .context("'index-id' is a required arg.")?
+            .to_string();
+        let data_dir_path: PathBuf = matches
+            .value_of("data-dir-path")
+            .map(PathBuf::from)
+            .expect("`data-dir-path` is a required arg.");
+        Ok(Self::Demux(MergeOrDemuxArgs {
+            metastore_uri,
+            index_id,
+            data_dir_path,
+        }))
     }
 
     fn parse_garbage_collect_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(normalize_uri)
-            .expect("`metastore-uri` should be a required arg.")?;
+            .expect("`metastore-uri` is a required arg.")?;
         let index_id = matches
             .value_of("index-id")
-            .expect("`index-id` should be a required arg.")
+            .expect("`index-id` is a required arg.")
             .to_string();
         let grace_period = matches
             .value_of("grace-period")
@@ -273,10 +316,10 @@ impl IndexCliCommand {
         let metastore_uri = matches
             .value_of("metastore-uri")
             .map(normalize_uri)
-            .expect("`metastore-uri` should be a required arg.")?;
+            .expect("`metastore-uri` is a required arg.")?;
         let index_id = matches
             .value_of("index-id")
-            .expect("`index-id` should be a required arg.")
+            .expect("`index-id` is a required arg.")
             .to_string();
         let dry_run = matches.is_present("dry-run");
 
@@ -293,7 +336,8 @@ impl IndexCliCommand {
             Self::Describe(args) => describe_index_cli(args).await,
             Self::Ingest(args) => ingest_docs_cli(args).await,
             Self::Search(args) => search_index_cli(args).await,
-            Self::Demux(args) => demux_index_cli(args).await,
+            Self::Merge(args) => merge_or_demux_cli(args, true, false).await,
+            Self::Demux(args) => merge_or_demux_cli(args, false, true).await,
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::Delete(args) => delete_index_cli(args).await,
         }
@@ -527,7 +571,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         delete_index(&args.metastore_uri, &index_config.index_id, false).await?;
     }
     let index_metadata = IndexMetadata {
-        index_id: index_config.index_id,
+        index_id: index_config.index_id.clone(),
         index_uri: index_config.index_uri,
         checkpoint: Checkpoint::default(),
         doc_mapping: index_config.doc_mapping,
@@ -537,6 +581,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         create_timestamp: Utc::now().timestamp(),
     };
     create_index(&args.metastore_uri, index_metadata).await?;
+    println!("Index `{}` successfully created.", index_config.index_id);
     Ok(())
 }
 
@@ -544,22 +589,12 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "ingest-docs");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
 
-    let metastore_uri_resolver = MetastoreUriResolver::default();
-    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
-    let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
-
-    if args.overwrite {
-        reset_index(&index_metadata, metastore.clone(), storage.clone()).await?;
-    }
-
     // Override index source config(s) with ad-hoc source config.
     let source_id = args
         .input_path_opt
         .as_ref()
         .map(|_| "file-source")
-        .unwrap_or("stdin-source")
+        .unwrap_or(STD_IN_SOURCE_ID)
         .to_string();
     let source_type = "file".to_string();
     let params = serde_json::to_value(FileSourceParams {
@@ -570,22 +605,38 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         source_type,
         params,
     };
+    run_index_checklist(&args.metastore_uri, &args.index_id, Some(&source_config)).await?;
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+    let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
+    let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
 
-    run_checklist(vec![
-        (
-            "source",
-            Box::pin(check_source_connectivity(&source_config)),
-        ),
-        ("metastore", metastore.check_connectivity()),
-        ("index", metastore.check_index_available(&args.index_id)),
-    ])
-    .await;
-
-    index_metadata.sources = vec![source_config];
+    // Override index source config(s) with ad-hoc source config.
+    let source_id = args
+        .input_path_opt
+        .as_ref()
+        .map(|_| "file-source")
+        .unwrap_or(STD_IN_SOURCE_ID)
+        .to_string();
+    let source_type = "file".to_string();
+    let params = serde_json::to_value(FileSourceParams {
+        filepath: args.input_path_opt.clone(),
+    })?;
+    let source_config = SourceConfig {
+        source_id,
+        source_type,
+        params,
+    };
+    index_metadata.sources = vec![source_config.clone()];
     let indexer_config = IndexerConfig {
         data_dir_path: args.data_dir_path,
         ..Default::default()
     };
+
+    if args.overwrite {
+        reset_index(&index_metadata, metastore.clone(), storage.clone()).await?;
+    }
     let pipeline_params =
         IndexingPipelineParams::try_new(index_metadata, indexer_config, metastore, storage).await?;
     let pipeline = IndexingPipeline::new(pipeline_params);
@@ -643,8 +694,32 @@ pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn demux_index_cli(_args: DemuxArgs) -> anyhow::Result<()> {
-    unimplemented!()
+pub async fn merge_or_demux_cli(
+    args: MergeOrDemuxArgs,
+    merge_enabled: bool,
+    demux_enabled: bool,
+) -> anyhow::Result<()> {
+    debug!(args = ?args, merge_enabled=merge_enabled, demux_enabled=demux_enabled, "run-merge-operations");
+    let source_config = SourceConfig {
+        source_id: "void-source".to_string(),
+        source_type: "void".to_string(),
+        params: json!(null),
+    };
+    run_index_checklist(&args.metastore_uri, &args.index_id, Some(&source_config)).await?;
+    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+    let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
+    let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
+    index_metadata.sources = vec![source_config];
+    let indexer_config = IndexerConfig {
+        data_dir_path: args.data_dir_path,
+        ..Default::default()
+    };
+    index_metadata.indexing_settings.demux_enabled = demux_enabled;
+    index_metadata.indexing_settings.merge_enabled = merge_enabled;
+    index_data(index_metadata, indexer_config, metastore, storage).await?;
+    Ok(())
 }
 
 pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {

@@ -116,7 +116,28 @@ subcommands:
                         long: tags
                         value_name: TAG
                         multiple_values: true
+            - merge:
+                display_order: 4
+                about: Merges an index.
+                args:
+                    - index-id:
+                        about: Index ID.
+                        long: index-id
+                        value_name: INDEX ID
+                        required: true
+                    - metastore-uri:
+                        about: Location of the metastore.
+                        long: metastore-uri
+                        value_name: METASTORE URI
+                        required: true
+                        env: QUICKWIT_METASTORE_URI
+                    - data-dir-path:
+                        about: Creates indexing directories in this local directory.
+                        long: data-dir-path
+                        value_name: DATA DIR PATH
+                        required: true
             - demux:
+                display_order: 5
                 about: Demuxes an index.
                 args:
                     - index-id:
@@ -130,6 +151,11 @@ subcommands:
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
+                    - data-dir-path:
+                        about: Creates indexing directories in this local directory.
+                        long: data-dir-path
+                        value_name: DATA DIR PATH
+                        required: true
             - gc:
                 display_order: 6
                 about: Garbage collects stale staged splits and splits marked for deletion.
@@ -190,9 +216,9 @@ subcommands:
                         long: split-id
                         value_name: SPLIT ID
                         required: true
-                        index: 1
                     - metastore-uri:
                         about: Location of the metastore.
+                        long: metastore-uri
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
@@ -214,13 +240,15 @@ subcommands:
                         long: split-id
                         value_name: SPLIT ID
                         required: true
-                        index: 1
                     - metastore-uri:
                         about: Location of the metastore.
                         long: metastore-uri
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
+                    - verbose:
+                        about: Displays additional metadata about the hotcache.
+                        long: verbose
     - service:
         about: Launches services.
         display_order: 3
@@ -230,31 +258,25 @@ subcommands:
             - run:
                 display_order: 1
                 about: Starts a service. Currently, the only services available are `indexer` and `searcher`.
-                args:
-                    - service-name:
-                        about: Name of the service.
-                        value_name: SERVICE NAME
-                        required: true
-                    - server-config-uri:
-                        about: Location of the server config.
-                        long: server-config-uri
-                        value_name: SERVER CONFIG URI
-                        required: true
-                    - index-id:
-                        about: ID of the index to run the indexer for.
-                        long: index-id
-                        value_name: INDEX ID
-    - tutorial:
-        about: Get started quickly with one of our pre-configured datasets. No copy-paste needed.
-        display_order: 4
-        settings:
-            - ArgRequiredElseHelp
-        subcommands:
-            - index:
-                about: Indexes a dataset.
-                args:
-                    - name:
-                        about: Name of the dataset.
-                        long: name
-                        value_name: DATASET NAME
-                        required: true
+                subcommands:
+                    - searcher:
+                        about: Starts a search node, aka a `searcher`
+                        args:
+                            - server-config-uri:
+                                about: Location of the server config.
+                                long: server-config-uri
+                                value_name: SERVER CONFIG URI
+                                required: true
+                    - indexer:
+                        about: Start an indexing server, aka an `indexer`
+                        args:
+                            - server-config-uri:
+                                about: Location of the server config.
+                                long: server-config-uri
+                                value_name: SERVER CONFIG URI
+                                required: true
+                            - index-id:
+                                about: ID of the index to run the indexer for.
+                                long: index-id
+                                value_name: INDEX ID
+                                required: true
