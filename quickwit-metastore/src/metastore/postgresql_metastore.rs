@@ -32,9 +32,9 @@ use diesel::{
     debug_query, sql_query, BoolExpressionMethods, Connection, ExpressionMethods,
     PgArrayExpressionMethods, PgConnection, QueryDsl, RunQueryDsl,
 };
+use quickwit_index_config::TagFiltersAST;
 use tracing::{debug, error, info, warn};
 
-use quickwit_index_config::TagFiltersAST;
 use crate::metastore::CheckpointDelta;
 use crate::postgresql::model::SELECT_SPLITS_FOR_INDEX;
 use crate::postgresql::{model, schema};
@@ -349,7 +349,6 @@ impl PostgresqlMetastore {
         }
         splits.into_iter().map(|split| split.try_into()).collect()
     }
-
 
     /// Query the database to find out if:
     /// - index exists?

@@ -26,8 +26,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_index_config::IndexConfig;
-use quickwit_index_config::TagFiltersAST;
+use quickwit_index_config::{IndexConfig, TagFiltersAST};
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};

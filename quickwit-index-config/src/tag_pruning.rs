@@ -1,4 +1,4 @@
-/// Copyright (C) 2021 Quickwit, Inc.
+// Copyright (C) 2021 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -16,6 +16,9 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+use std::collections::HashSet;
+
 use tantivy::query::QueryParserError as TantivyQueryParserError;
 use tantivy_query_grammar::{Occur, UserInputAst, UserInputLeaf, UserInputLiteral};
 
@@ -25,136 +28,149 @@ use crate::QueryParserError;
 /// Returns a list of `tag_field_name:tag_value` found in the query.
 pub fn extract_tags_from_query(
     raw_query: &str,
-    tag_field_names: &[String],
+    tag_field_names: &HashSet<String>,
 ) -> Result<Option<TagFiltersAST>, QueryParserError> {
     let user_input_ast = tantivy_query_grammar::parse_query(raw_query)
         .map_err(|_| TantivyQueryParserError::SyntaxError)?;
-    let filters_ast = collect_tag_filters(&user_input_ast, tag_field_names);
-    let pruned_filters = filters_ast.and_then(prune_unusable_filters);
-    let simplified_filters = pruned_filters.and_then(simplify_ast);
-    Ok(simplified_filters)
+    let filters_ast = collect_tag_filters(user_input_ast, tag_field_names);
+    Ok(simplify_ast(filters_ast))
 }
 
+/// Intermediary AST that may contain leaf that are
+/// equivalent to the "True" predicate.
 #[derive(Debug, PartialEq, Eq, Clone)]
+enum UnsimplifiedTagFiltersAST {
+    And(Vec<UnsimplifiedTagFiltersAST>),
+    Or(Vec<UnsimplifiedTagFiltersAST>),
+    Tag { tag: String },
+    True,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum TagFiltersAST {
     And(Vec<TagFiltersAST>),
     Or(Vec<TagFiltersAST>),
     Tag { tag: String },
-    Not(Box<TagFiltersAST>),
-    NoTagFound,
 }
 
-fn wrap_with_occur(occur: &Occur, condition: TagFiltersAST) -> Option<TagFiltersAST> {
-    match occur {
-        Occur::Must => Some(TagFiltersAST::And(vec![condition])),
-        Occur::Should => Some(TagFiltersAST::Or(vec![condition])),
-        Occur::MustNot => Some(TagFiltersAST::Not(Box::new(condition))),
+// Takes a tag AST and simplify it in such a way that the resulting tree:
+// - represents a boolean expression that is equivalent to the original ast
+// - it can be equal to true, or to false, but if it is isn't True and False does not appear in the
+//   AST
+// - it does not contain any NOT clause.
+//
+// Returning None here, is to be interpreted as returning `True`.
+//
+// The latter two conditions are enforced by the type system.
+fn simplify_ast(ast: UnsimplifiedTagFiltersAST) -> Option<TagFiltersAST> {
+    match ast {
+        UnsimplifiedTagFiltersAST::And(conditions) => {
+            let mut pruned_conditions: Vec<TagFiltersAST> =
+                conditions.into_iter().filter_map(simplify_ast).collect();
+            match pruned_conditions.len() {
+                0 => None,
+                1 => pruned_conditions.pop().unwrap().into(),
+                _ => TagFiltersAST::And(pruned_conditions).into(),
+            }
+        }
+        UnsimplifiedTagFiltersAST::Or(conditions) => {
+            let mut pruned_conditions: Vec<TagFiltersAST> = Vec::new();
+            for condition in conditions {
+                // If we get None as part of the condition here, we return None
+                // directly. (Remember None == True0.
+                pruned_conditions.push(simplify_ast(condition)?);
+            }
+            match pruned_conditions.len() {
+                0 => None,
+                1 => pruned_conditions.pop().unwrap().into(),
+                _ => TagFiltersAST::Or(pruned_conditions).into(),
+            }
+        }
+        UnsimplifiedTagFiltersAST::Tag { tag } => TagFiltersAST::Tag { tag }.into(),
+        UnsimplifiedTagFiltersAST::True => None,
     }
 }
 
-fn simplify_ast(filter: TagFiltersAST) -> Option<TagFiltersAST> {
-    match filter {
-        TagFiltersAST::And(conditions) if conditions.len() == 1 => {
-            let cond = conditions.first().unwrap();
-            if cond == &TagFiltersAST::NoTagFound {
-                None
-            } else {
-                simplify_ast(conditions.first().unwrap().clone())
-            }
-        }
-        TagFiltersAST::And(conditions) if conditions.len() == 0 => None,
-        TagFiltersAST::And(conditions) if conditions.len() > 1 => Some(TagFiltersAST::And(
-            conditions
-                .into_iter()
-                .flat_map(|c| simplify_ast(c))
-                .collect(),
-        )),
-        TagFiltersAST::Or(conditions) if conditions.len() == 1 => {
-            simplify_ast(conditions.first().unwrap().clone())
-        }
-        TagFiltersAST::Or(conditions) if conditions.len() == 0 => None,
-        TagFiltersAST::Or(conditions) if conditions.len() > 1 => {
-            let pruned_conditions: Vec<TagFiltersAST> = conditions
-                .into_iter()
-                .flat_map(|c| simplify_ast(c))
-                .collect();
-            Some(TagFiltersAST::Or(pruned_conditions))
-        }
-        ast @ TagFiltersAST::Tag { tag: _ } => Some(ast),
-        TagFiltersAST::Not(ast) => simplify_ast(*ast).map(|c| TagFiltersAST::Not(Box::new(c))),
-        TagFiltersAST::NoTagFound => None,
-        _ => None,
+fn collect_tag_filters_for_clause(
+    clause: Vec<(Occur, UnsimplifiedTagFiltersAST)>,
+) -> UnsimplifiedTagFiltersAST {
+    if clause.len() == 0 {
+        return UnsimplifiedTagFiltersAST::True;
     }
-}
-fn prune_unusable_filters(filter: TagFiltersAST) -> Option<TagFiltersAST> {
-    match filter {
-        TagFiltersAST::And(conditions) if conditions.len() == 1 => {
-            let cond = conditions.first().unwrap();
-            if cond == &TagFiltersAST::NoTagFound {
-                None
-            } else {
-                prune_unusable_filters(conditions.first().unwrap().clone())
-            }
-        }
-        TagFiltersAST::And(conditions) if conditions.len() == 0 => None,
-        TagFiltersAST::And(conditions) if conditions.len() > 1 => {
-            prune_unusable_filters(TagFiltersAST::And(
-                conditions
-                    .into_iter()
-                    .flat_map(|c| prune_unusable_filters(c))
-                    .collect(),
-            ))
-        }
-        TagFiltersAST::Or(conditions) if conditions.len() == 1 => {
-            prune_unusable_filters(conditions.first().unwrap().clone())
-        }
-        TagFiltersAST::Or(conditions) if conditions.len() == 0 => None,
-        TagFiltersAST::Or(conditions) if conditions.len() > 1 => {
-            let pruned_conditions: Vec<TagFiltersAST> = conditions
-                .into_iter()
-                .flat_map(|c| prune_unusable_filters(c))
-                .collect();
-            let is_usefull = !pruned_conditions.contains(&TagFiltersAST::NoTagFound);
-            let condition = TagFiltersAST::Or(pruned_conditions);
-            if is_usefull {
-                Some(condition)
-            } else {
-                None
-            }
-        }
-        ast @ TagFiltersAST::Tag { tag: _ } => Some(ast),
-        TagFiltersAST::Not(ast) => {
-            prune_unusable_filters(*ast).map(|c| TagFiltersAST::Not(Box::new(c)))
-        }
-        TagFiltersAST::NoTagFound => Some(TagFiltersAST::NoTagFound),
-        _ => None,
+    if clause.iter().any(|(occur, _)| occur == &Occur::Must) {
+        let removed_should_clause: Vec<UnsimplifiedTagFiltersAST> = clause
+            .into_iter()
+            .filter_map(|(occur, ast)| match occur {
+                Occur::Must => Some(ast),
+                Occur::MustNot => Some(UnsimplifiedTagFiltersAST::True),
+                Occur::Should => None,
+            })
+            .collect();
+        // We will handle the case where removed_should_clause.len() == 1 in the simply
+        // phase.
+        return UnsimplifiedTagFiltersAST::And(removed_should_clause);
     }
+    let converted_not_clause = clause
+        .into_iter()
+        .map(|(occur, ast)| match occur {
+            Occur::MustNot => UnsimplifiedTagFiltersAST::True,
+            Occur::Should => ast,
+            Occur::Must => {
+                unreachable!("This should never happen due to check above.")
+            }
+        })
+        .collect();
+    UnsimplifiedTagFiltersAST::Or(converted_not_clause)
 }
 
+/// This function takes a user input AST and extracts a boolean formula
+/// using only tags fields, true, and false as literals such that the
+/// query implies this boolean formula.
+///
+/// MustNot are transformed into `True` to keep the code simple
+/// and correct.
+/// TermQuery on fields that are not tag fields are transformed into the predicate `True`.
+///
+///
+/// In other words, we are guaranteed that if we were to run the query
+/// described by this predicate only, the matched documents would all
+/// be in the original query too (The opposite is rarely true).
 fn collect_tag_filters(
-    user_input_ast: &UserInputAst,
-    tag_field_names: &[String],
-) -> Option<TagFiltersAST> {
+    user_input_ast: UserInputAst,
+    tag_field_names: &HashSet<String>,
+) -> UnsimplifiedTagFiltersAST {
     match user_input_ast {
         UserInputAst::Clause(sub_queries) => {
-            let conditions: Vec<TagFiltersAST> = sub_queries
-                .iter()
-                .flat_map(|(occ, cond)| {
-                    collect_tag_filters(cond, tag_field_names)
-                        .and_then(|c| wrap_with_occur(&occ.unwrap_or(Occur::Should), c))
+            let clause_with_resolved_occur: Vec<(Occur, UnsimplifiedTagFiltersAST)> = sub_queries
+                .into_iter()
+                .map(|(occur_opt, ast)| {
+                    (
+                        occur_opt.unwrap_or(Occur::Should),
+                        collect_tag_filters(ast, tag_field_names),
+                    )
                 })
                 .collect();
-            Some(TagFiltersAST::Or(conditions))
+            collect_tag_filters_for_clause(clause_with_resolved_occur)
         }
-        UserInputAst::Boost(ast, _) => collect_tag_filters(ast, tag_field_names),
-        UserInputAst::Leaf(leaf) => match &**leaf {
+        UserInputAst::Boost(ast, _) => collect_tag_filters(*ast, tag_field_names),
+        UserInputAst::Leaf(leaf) => match *leaf {
             UserInputLeaf::Literal(UserInputLiteral {
                 field_name: Some(field_name),
                 phrase,
-            }) if tag_field_names.contains(&field_name) => Some(TagFiltersAST::Tag {
-                tag: format!("{}:{}", field_name, phrase),
-            }),
-            _ => Some(TagFiltersAST::NoTagFound),
+            }) => {
+                if tag_field_names.contains(&field_name) {
+                    UnsimplifiedTagFiltersAST::Tag {
+                        tag: format!("{}:{}", field_name, phrase),
+                    }
+                } else {
+                    UnsimplifiedTagFiltersAST::True
+                }
+            }
+            UserInputLeaf::Literal(UserInputLiteral {
+                field_name: None, ..
+            })
+            | UserInputLeaf::All
+            | UserInputLeaf::Range { .. } => UnsimplifiedTagFiltersAST::True,
         },
     }
 }
@@ -162,61 +178,146 @@ fn collect_tag_filters(
 #[cfg(test)]
 mod test {
 
-    use crate::tag_pruning::TagFiltersAST;
+    use std::collections::HashSet;
 
-    use super::extract_tags_from_query;
+    use super::{extract_tags_from_query, TagFiltersAST};
+
+    fn hashset(tags: &[&str]) -> HashSet<String> {
+        tags.iter().map(|tag| tag.to_string()).collect()
+    }
 
     #[test]
-    fn test_extract_tags_from_query() -> anyhow::Result<()> {
+    fn test_extract_tags_from_query_invalid_query() -> anyhow::Result<()> {
         assert!(matches!(
-            extract_tags_from_query(":>", &["bart".to_string(), "lisa".to_string()]),
+            extract_tags_from_query(":>", &hashset(&["bart", "lisa"])),
             Err(..)
         ));
+        Ok(())
+    }
 
-        assert_eq!(extract_tags_from_query("*", &[])?, None);
-
+    #[test]
+    fn test_extract_tags_from_query_all() -> anyhow::Result<()> {
+        assert_eq!(extract_tags_from_query("*", &hashset(&[]))?, None);
         assert_eq!(
-            extract_tags_from_query("*", &["user".to_string(), "lang".to_string()])?,
+            extract_tags_from_query("*", &hashset(&["user", "lang"]))?,
             None
         );
+        Ok(())
+    }
 
+    #[test]
+    fn test_extract_tags_from_query_range_query() -> anyhow::Result<()> {
         assert_eq!(
-            extract_tags_from_query(
-                "title:>foo lang:fr",
-                &["user".to_string(), "lang".to_string()]
-            )?,
-            None,
-        );
-
-        assert_eq!(
-            extract_tags_from_query(
-                "title:foo user:bart lang:fr",
-                &["user".to_string(), "lang".to_string()]
-            )?,
+            extract_tags_from_query("title:>foo lang:fr", &hashset(&["user", "lang"]))?,
             None
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_extract_tags_from_query_mixed_disjunction() -> anyhow::Result<()> {
+        assert_eq!(
+            extract_tags_from_query("title:foo user:bart lang:fr", &hashset(&["user", "lang"]))?,
+            None
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_extract_tags_from_query_and_or() -> anyhow::Result<()> {
         assert_eq!(
             extract_tags_from_query(
                 "title:foo AND (user:bart OR lang:fr)",
-                &["user".to_string(), "lang".to_string()]
-            )?,
-            Some(TagFiltersAST::Or(vec![
+                &hashset(&["user", "lang"])
+            )?
+            .unwrap(),
+            TagFiltersAST::Or(vec![
                 TagFiltersAST::Tag {
                     tag: String::from("user:bart")
                 },
-                (TagFiltersAST::Tag {
+                TagFiltersAST::Tag {
                     tag: String::from("lang:fr")
-                })
-            ])),
+                }
+            ]),
         );
         assert_eq!(
             extract_tags_from_query(
                 "title:foo AND (user:bart OR lang:fr)",
-                &["title".to_string(), "lang".to_string()]
-            )?,
-            Some(TagFiltersAST::Tag {
+                &hashset(&["title", "lang"])
+            )?
+            .unwrap(),
+            TagFiltersAST::Tag {
                 tag: String::from("title:foo"),
-            }),
+            },
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_conjunction_of_tags() -> anyhow::Result<()> {
+        assert_eq!(
+            extract_tags_from_query("(user:bart AND lang:fr)", &hashset(&["user", "lang"]))?
+                .unwrap(),
+            TagFiltersAST::And(vec![
+                TagFiltersAST::Tag {
+                    tag: "user:bart".to_string()
+                },
+                TagFiltersAST::Tag {
+                    tag: "lang:fr".to_string()
+                }
+            ]),
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_conjunction_of_tag_and_non_tag() -> anyhow::Result<()> {
+        assert_eq!(
+            extract_tags_from_query("(user:bart AND lang:fr)", &hashset(&["user"]))?.unwrap(),
+            TagFiltersAST::Tag {
+                tag: "user:bart".to_string()
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_disjunction_of_tag_and_non_tag() -> anyhow::Result<()> {
+        assert_eq!(
+            extract_tags_from_query("(user:bart OR lang:fr)", &hashset(&["user"]))?,
+            None
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_disjunction_of_tag_disjunction_with_not_clause() -> anyhow::Result<()> {
+        assert_eq!(
+            extract_tags_from_query("(user:bart -lang:fr)", &hashset(&["user", "lang"]))?,
+            None
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_disjunction_of_tag_conjunction_with_not_clause() -> anyhow::Result<()> {
+        assert_eq!(
+            extract_tags_from_query("user:bart AND NOT lang:fr", &hashset(&["user", "lang"]))?
+                .unwrap(),
+            TagFiltersAST::Tag {
+                tag: "user:bart".to_string()
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_disjunction_of_tag_must_should() -> anyhow::Result<()> {
+        assert_eq!(
+            extract_tags_from_query("(+user:bart lang:fr)", &hashset(&["user", "lang"]))?.unwrap(),
+            TagFiltersAST::Tag {
+                tag: "user:bart".to_string()
+            }
         );
         Ok(())
     }

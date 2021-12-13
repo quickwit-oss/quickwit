@@ -17,12 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::QueryParserError;
 use quickwit_proto::SearchRequest;
 use tantivy::query::{Query, QueryParser, QueryParserError as TantivyQueryParserError};
 use tantivy::schema::{Field, Schema};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy_query_grammar::{UserInputAst, UserInputLeaf};
+
+use crate::QueryParserError;
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
