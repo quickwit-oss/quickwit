@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
+use std::fmt::Display;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::Context;
@@ -25,39 +26,81 @@ use anyhow::Context;
 /// Default file protocol `file://`
 const FILE_PROTOCOL: &str = "file";
 
-/// Normalizes a URI
-/// A `file://` protocol is assumed if not specified.
-/// File URIs are resolved (normalised) relative to the current working directory
-/// unless an absolute path is specified.
-/// Handles special characters like (~, ., ..)
-pub fn normalize_uri(uri: &str) -> anyhow::Result<String> {
-    let (protocol, mut path) = match uri.split_once("://") {
-        None => (FILE_PROTOCOL, uri.to_string()),
-        Some((protocol, path)) => (protocol, path.to_string()),
-    };
+const PROTOCOL_SEPARATOR: &str = "://";
 
-    let current_dir = env::current_dir().context("Could not fetch the current directory.")?;
+/// Encapsulates the URI type.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Uri {
+    uri: String,
+}
 
-    if protocol == FILE_PROTOCOL {
-        if path.starts_with('~') {
-            let home_dir_path = home::home_dir()
-                .context("Could not fetch the home directory.")?
+impl Uri {
+    /// Tries to to construct a Uri from the raw string.
+    /// A `file://` protocol is assumed if not specified.
+    /// File URIs are resolved (normalised) relative to the current working directory
+    /// unless an absolute path is specified.
+    /// Handles special characters like (~, ., ..)
+    pub fn try_new(uri: &str) -> anyhow::Result<Self> {
+        let (protocol, mut path) = match uri.split_once(PROTOCOL_SEPARATOR) {
+            None => (FILE_PROTOCOL, uri.to_string()),
+            Some((protocol, path)) => (protocol, path.to_string()),
+        };
+
+        if protocol == FILE_PROTOCOL {
+            let current_dir =
+                env::current_dir().context("Could not fetch the current directory.")?;
+
+            if path.starts_with('~') {
+                let home_dir_path = home::home_dir()
+                    .context("Could not fetch the home directory.")?
+                    .to_string_lossy()
+                    .to_string();
+
+                path.replace_range(0..1, &home_dir_path);
+            }
+
+            if !path.starts_with('/') {
+                path = current_dir.join(path).to_string_lossy().to_string();
+            }
+
+            path = normalize_path(Path::new(&path))
                 .to_string_lossy()
                 .to_string();
-
-            path.replace_range(0..1, &home_dir_path);
         }
 
-        if !path.starts_with('/') {
-            path = current_dir.join(path).to_string_lossy().to_string();
-        }
-
-        path = normalize_path(Path::new(&path))
-            .to_string_lossy()
-            .to_string();
+        Ok(Self {
+            uri: format!("{}{}{}", protocol, PROTOCOL_SEPARATOR, path),
+        })
     }
 
-    Ok(format!("{}://{}", protocol, path))
+    /// Returns the uri protocol.
+    pub fn protocol(&self) -> &str {
+        let (protocol, _) = self
+            .uri
+            .split_once(PROTOCOL_SEPARATOR)
+            .expect("expect Uri to have a protocol.");
+        protocol
+    }
+
+    /// Returns the uri path.
+    pub fn path(&self) -> &Path {
+        let (_, path) = self
+            .uri
+            .split_once(PROTOCOL_SEPARATOR)
+            .expect("expect Uri to have a protocol.");
+        Path::new(path)
+    }
+
+    /// Resturn the full uri.
+    pub fn to_str(&self) -> &str {
+        &self.uri
+    }
+}
+
+impl Display for Uri {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}", self.uri)
+    }
 }
 
 /// Normalizes a path by resolving the components like (., ..).
@@ -103,69 +146,69 @@ mod tests {
         let current_dir = env::current_dir().unwrap();
 
         assert_eq!(
-            normalize_uri("home/hommer/docs/dognuts")?,
+            Uri::try_new("home/hommer/docs/dognuts")?.to_string(),
             format!("file://{}/home/hommer/docs/dognuts", current_dir.display())
         );
 
         assert_eq!(
-            normalize_uri("home/hommer/docs/../dognuts")?,
+            Uri::try_new("home/hommer/docs/../dognuts")?.to_string(),
             format!("file://{}/home/hommer/dognuts", current_dir.display())
         );
 
         assert_eq!(
-            normalize_uri("home/hommer/docs/../../dognuts")?,
+            Uri::try_new("home/hommer/docs/../../dognuts")?.to_string(),
             format!("file://{}/home/dognuts", current_dir.display())
         );
 
         assert_eq!(
-            normalize_uri("/home/hommer/docs/dognuts")?,
+            Uri::try_new("/home/hommer/docs/dognuts")?.to_string(),
             "file:///home/hommer/docs/dognuts"
         );
 
         assert_eq!(
-            normalize_uri("~/")?,
+            Uri::try_new("~/")?.to_string(),
             format!("file://{}", home_dir.display())
         );
 
         assert_eq!(
-            normalize_uri("~")?,
+            Uri::try_new("~")?.to_string(),
             format!("file://{}", home_dir.display())
         );
         assert_eq!(
-            normalize_uri("~/")?,
+            Uri::try_new("~/")?.to_string(),
             format!("file://{}", home_dir.display())
         );
         assert_eq!(
-            normalize_uri("~/.")?,
+            Uri::try_new("~/.")?.to_string(),
             format!("file://{}", home_dir.display())
         );
         assert_eq!(
-            normalize_uri("~/..")?,
+            Uri::try_new("~/..")?.to_string(),
             format!("file://{}", home_dir.parent().unwrap().display())
         );
 
         assert_eq!(
-            normalize_uri("file://")?,
+            Uri::try_new("file://")?.to_string(),
             format!("file://{}", current_dir.display())
         );
 
         assert_eq!(
-            normalize_uri("file://.")?,
+            Uri::try_new("file://.")?.to_string(),
             format!("file://{}", current_dir.display())
         );
 
         assert_eq!(
-            normalize_uri("file://..")?,
+            Uri::try_new("file://..")?.to_string(),
             format!("file://{}", current_dir.parent().unwrap().display())
         );
 
         assert_eq!(
-            normalize_uri("s3://home/hommer/docs/dognuts")?,
+            Uri::try_new("s3://home/hommer/docs/dognuts")?.to_string(),
             "s3://home/hommer/docs/dognuts"
         );
 
         assert_eq!(
-            normalize_uri("s3://home/hommer/docs/../dognuts")?,
+            Uri::try_new("s3://home/hommer/docs/../dognuts")?.to_string(),
             "s3://home/hommer/docs/../dognuts"
         );
 

@@ -48,7 +48,7 @@ mod storage_resolver;
 use std::path::Path;
 
 use anyhow::Context;
-use quickwit_common::uri::normalize_uri;
+use quickwit_common::uri::Uri;
 pub use tantivy::directory::OwnedBytes;
 
 pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
@@ -74,20 +74,19 @@ pub use crate::cache::{wrap_storage_with_long_term_cache, Cache, MemorySizedCach
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 /// Loads an entire local or remote file into memory.
-pub async fn load_file(uri: &str) -> anyhow::Result<OwnedBytes> {
-    let normalized_uri = normalize_uri(uri)?;
-    // TODO: Converting to a `Path` for conveniency but we want to move to the URI type eventually.
-    // See https://github.com/quickwit-inc/quickwit/issues/834.
-    let path = Path::new(&normalized_uri);
-    let parent_dir = path
+pub async fn load_file(raw_uri: &str) -> anyhow::Result<OwnedBytes> {
+    let uri = Uri::try_new(raw_uri)?;
+    let path = Path::new(uri.to_str());
+    let parent_uri = path
         .parent()
-        .with_context(|| format!("`{}` is not a valid file URI.", normalized_uri))?
+        .with_context(|| format!("`{}` is not a valid file URI.", raw_uri))?
         .to_str()
-        .with_context(|| format!("Failed to convert URI `{}` to str.", normalized_uri))?;
-    let storage = quickwit_storage_uri_resolver().resolve(parent_dir)?;
+        .with_context(|| format!("Failed to convert URI `{}` to str.", raw_uri))?;
+
+    let storage = quickwit_storage_uri_resolver().resolve(parent_uri)?;
     let file_name = path
         .file_name()
-        .with_context(|| format!("`{}` is not a valid file URI.", normalized_uri))?;
+        .with_context(|| format!("`{}` is not a valid file URI.", raw_uri))?;
     let bytes = storage.get_all(Path::new(file_name)).await?;
     Ok(bytes)
 }

@@ -20,7 +20,7 @@
 use anyhow::{bail, Context};
 use clap::ArgMatches;
 use quickwit_common::run_checklist;
-use quickwit_common::uri::normalize_uri;
+use quickwit_common::uri::Uri;
 use quickwit_config::ServerConfig;
 use quickwit_indexing::index_data;
 use quickwit_metastore::MetastoreUriResolver;
@@ -76,8 +76,9 @@ impl ServiceCliCommand {
     fn parse_searcher_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let server_config_uri = matches
             .value_of("server-config-uri")
-            .map(normalize_uri)
-            .expect("`server-config-uri` is a required arg.")?;
+            .map(Uri::try_new)
+            .expect("`server-config-uri` is a required arg.")?
+            .to_string();
         Ok(ServiceCliCommand::RunSearcher(RunSearcherArgs {
             server_config_uri,
         }))
@@ -86,8 +87,9 @@ impl ServiceCliCommand {
     fn parse_indexer_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let server_config_uri = matches
             .value_of("server-config-uri")
-            .map(normalize_uri)
-            .expect("`server-config-uri` is a required arg.")?;
+            .map(Uri::try_new)
+            .expect("`server-config-uri` is a required arg.")?
+            .to_string();
         let index_id = matches
             .value_of("index-id")
             .map(String::from)

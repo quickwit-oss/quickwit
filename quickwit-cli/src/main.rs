@@ -173,7 +173,7 @@ fn about_text() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::time::Duration;
 
     use clap::{load_yaml, App, AppSettings};
@@ -183,6 +183,7 @@ mod tests {
     };
     use quickwit_cli::service::{RunIndexerArgs, RunSearcherArgs, ServiceCliCommand};
     use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs};
+    use quickwit_common::uri::Uri;
 
     use super::*;
     use crate::CliCommand;
@@ -546,7 +547,7 @@ mod tests {
                 index_id,
                 metastore_uri,
                 data_dir_path,
-            })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+            })) if &index_id == "wikipedia" && data_dir_path == Uri::try_new("datadir")?.path().to_path_buf() && &metastore_uri == "file:///indexes"
         ));
         Ok(())
     }
@@ -572,7 +573,7 @@ mod tests {
                 index_id,
                 metastore_uri,
                 data_dir_path,
-            })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+            })) if &index_id == "wikipedia" && data_dir_path == Uri::try_new("datadir")?.path().to_path_buf() && &metastore_uri == "file:///indexes"
         ));
         Ok(())
     }
@@ -651,7 +652,7 @@ mod tests {
                 split_id,
                 metastore_uri,
                 target_dir
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == PathBuf::from("datadir")
+            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == Uri::try_new("datadir")?.path().to_path_buf()
         ));
         Ok(())
     }
