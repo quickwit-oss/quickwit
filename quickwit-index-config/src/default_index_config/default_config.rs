@@ -81,7 +81,7 @@ impl DefaultIndexConfigBuilder {
             timestamp_field: None,
             sort_by: None,
             field_mappings: vec![],
-            tag_fields: vec![],
+            tag_fields: Default::default(),
             demux_field: None,
         }
     }
@@ -107,7 +107,7 @@ impl DefaultIndexConfigBuilder {
         let sort_by = resolve_sort_field(self.sort_by, &schema)?;
 
         // Resolve tag fields
-        let mut tag_field_names = Vec::new();
+        let mut tag_field_names: HashSet<String> = Default::default();
         for tag_field_name in self.tag_fields.iter() {
             if tag_field_names.contains(tag_field_name) {
                 bail!("Duplicated tag field: `{}`", tag_field_name)
@@ -115,7 +115,7 @@ impl DefaultIndexConfigBuilder {
             schema
                 .get_field(tag_field_name)
                 .with_context(|| format!("Unknown tag field: `{}`", tag_field_name))?;
-            tag_field_names.push(tag_field_name.clone());
+            tag_field_names.insert(tag_field_name.clone());
         }
         if let Some(ref demux_field_name) = self.demux_field {
             if !tag_field_names.contains(demux_field_name) {
@@ -123,7 +123,7 @@ impl DefaultIndexConfigBuilder {
                     "Demux field name `{}` is not in index config tags, add it automatically.",
                     demux_field_name
                 );
-                tag_field_names.push(demux_field_name.clone());
+                tag_field_names.insert(demux_field_name.clone());
             }
         }
 
@@ -311,7 +311,7 @@ impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
                 .field_mappings()
                 .unwrap_or_else(Vec::new),
             demux_field: value.demux_field_name(),
-            tag_fields: value.tag_field_names,
+            tag_fields: value.tag_field_names.into_iter().collect(),
             default_search_fields: value.default_search_field_names,
         }
     }
@@ -342,7 +342,7 @@ pub struct DefaultIndexConfig {
     #[serde(skip_serializing)]
     schema: Schema,
     /// List of field names used for tagging.
-    tag_field_names: Vec<String>,
+    tag_field_names: HashSet<String>,
     /// Demux field name.
     demux_field_name: Option<String>,
 }
@@ -447,7 +447,7 @@ impl IndexConfig for DefaultIndexConfig {
         self.sort_by.clone().unwrap_or(crate::SortBy::DocId)
     }
 
-    fn tag_field_names(&self) -> Vec<String> {
+    fn tag_field_names(&self) -> HashSet<String> {
         self.tag_field_names.clone()
     }
 }
