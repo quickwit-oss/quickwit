@@ -25,10 +25,8 @@ use std::{fmt, io, mem};
 
 use async_trait::async_trait;
 use tantivy::chrono::{DateTime, Utc};
-use tantivy::directory::error::{DeleteError, LockError, OpenReadError, OpenWriteError};
-use tantivy::directory::{
-    DirectoryLock, FileHandle, OwnedBytes, WatchCallback, WatchHandle, WritePtr,
-};
+use tantivy::directory::error::OpenReadError;
+use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{Directory, HasLen};
 
 use crate::StorageDirectory;
@@ -212,16 +210,8 @@ impl<D: Directory> Directory for DebugProxyDirectory<D> {
         }))
     }
 
-    fn delete(&self, path: &Path) -> Result<(), DeleteError> {
-        self.underlying.delete(path)
-    }
-
     fn exists(&self, path: &Path) -> Result<bool, OpenReadError> {
         self.underlying.exists(path)
-    }
-
-    fn open_write(&self, path: &Path) -> Result<WritePtr, OpenWriteError> {
-        self.underlying.open_write(path)
     }
 
     fn atomic_read(&self, path: &Path) -> Result<Vec<u8>, OpenReadError> {
@@ -232,17 +222,7 @@ impl<D: Directory> Directory for DebugProxyDirectory<D> {
         Ok(payload.to_vec())
     }
 
-    fn atomic_write(&self, _path: &Path, _data: &[u8]) -> io::Result<()> {
-        unimplemented!()
-    }
-
-    fn watch(&self, _watch_callback: WatchCallback) -> tantivy::Result<WatchHandle> {
-        Ok(WatchHandle::empty())
-    }
-
-    fn acquire_lock(&self, _lock: &tantivy::directory::Lock) -> Result<DirectoryLock, LockError> {
-        Ok(DirectoryLock::from(Box::new(|| {})))
-    }
+    crate::read_only_directory!();
 }
 
 impl DebugProxyDirectory<StorageDirectory> {
