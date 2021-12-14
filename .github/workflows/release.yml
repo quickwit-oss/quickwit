@@ -6,7 +6,7 @@ on:
       - 'v*'
     branches:
       - 'make-binaries-from-ci'
-      - 'fix-852'
+      # - 'fix-852'
 
 jobs:
   # native-build:
@@ -90,8 +90,9 @@ jobs:
       #   run: mv target/x86_64-unknown-linux-gnu/release/quickwit ${{ env.ASSET_FULL_NAME }}
       - name: Bundle archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
-        run: make archive ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}.tar.gz \
-          BINARY_FILE=target/x86_64-unknown-linux-gnu/release/quickwit
+        run: |
+          make archive ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}.tar.gz \
+            BINARY_FILE=target/x86_64-unknown-linux-gnu/release/quickwit
       - name: Upload artifact
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         uses: quickwit-inc/upload-to-github-release@v1
