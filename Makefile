@@ -58,5 +58,12 @@ build:
 		;; \
 	esac
 
+.PHONY: archive
+archive:
+	@echo "Archiving release binary & assets"
+	@mkdir -p ./target/assets/ && cp -Rf ./build/assets/* ./target/assets/
+	@mkdir -p ./target/assets/bin && cp "${BINARY_FILE}" ./target/assets/bin
+	@tar -czvf "${ARCHIVE_NAME}.tar.gz" target/assets/
+
 workspace-deps-tree:
 	cargo tree --all-features --workspace -f "{p}" --prefix depth | cut -f 1 -d ' ' | python3 scripts/dep-tree.py
