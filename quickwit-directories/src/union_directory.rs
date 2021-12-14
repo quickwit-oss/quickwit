@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
@@ -57,6 +57,19 @@ impl UnionDirectory {
     }
 }
 
+fn convert_open_to_delete_error(open_err: OpenReadError) -> DeleteError {
+    match open_err {
+        OpenReadError::FileDoesNotExist(path) => DeleteError::FileDoesNotExist(path),
+        OpenReadError::IoError { io_error, filepath } => {
+            DeleteError::IoError { io_error, filepath }
+        }
+        err @ OpenReadError::IncompatibleIndex(_) => DeleteError::IoError {
+            io_error: io::Error::new(io::ErrorKind::Unsupported, err),
+            filepath: PathBuf::from("/"),
+        },
+    }
+}
+
 impl Directory for UnionDirectory {
     fn get_file_handle(&self, path: &Path) -> Result<Box<dyn FileHandle>, OpenReadError> {
         let directory = self.find_directory_for_path(path)?;
@@ -81,31 +94,36 @@ impl Directory for UnionDirectory {
     }
 
     fn delete(&self, path: &Path) -> Result<(), DeleteError> {
-        let mut deleted_at_least_one_file = false;
+        let mut found_file = false;
         for directory in self.directories.iter() {
-            match directory.delete(path) {
-                Ok(()) => {
-                    deleted_at_least_one_file = true;
+            // We first check exist, in order to support read-only directories.
+            match directory.exists(path) {
+                Ok(true) => {
+                    directory.delete(path)?;
+                    found_file = true;
                 }
-                Err(DeleteError::FileDoesNotExist(_)) => {}
-                err => {
-                    return err;
+                Ok(false) => {}
+                Err(exist_err) => {
+                    return Err(convert_open_to_delete_error(exist_err));
                 }
             }
         }
-        if deleted_at_least_one_file {
-            Ok(())
-        } else {
-            Err(DeleteError::FileDoesNotExist(path.to_path_buf()))
+        if !found_file {
+            return Err(DeleteError::FileDoesNotExist(path.to_path_buf()));
         }
+        Ok(())
     }
 
     fn atomic_write(&self, path: &Path, data: &[u8]) -> io::Result<()> {
         self.directories[0].atomic_write(path, data)
     }
 
-    fn watch(&self, _: tantivy::directory::WatchCallback) -> tantivy::Result<WatchHandle> {
-        Ok(WatchHandle::empty())
+    fn watch(&self, callback: tantivy::directory::WatchCallback) -> tantivy::Result<WatchHandle> {
+        self.directories[0].watch(callback)
+    }
+
+    fn sync_directory(&self) -> io::Result<()> {
+        self.directories[0].sync_directory()
     }
 }
 

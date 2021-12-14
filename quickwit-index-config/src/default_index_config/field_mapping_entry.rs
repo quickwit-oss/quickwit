@@ -739,9 +739,6 @@ pub enum DocParsingError {
 impl From<TantivyDocParser> for DocParsingError {
     fn from(value: TantivyDocParser) -> Self {
         match value {
-            TantivyDocParser::NoSuchFieldInSchema(text) => {
-                DocParsingError::NoSuchFieldInSchema(text)
-            }
             TantivyDocParser::NotJson(text) => DocParsingError::NoSuchFieldInSchema(text),
             TantivyDocParser::ValueError(text, error) => {
                 DocParsingError::ValueError(text, format!("{:?}", error))

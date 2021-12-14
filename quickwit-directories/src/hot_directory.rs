@@ -25,10 +25,8 @@ use std::{fmt, io};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tantivy::directory::error::{LockError, OpenReadError};
-use tantivy::directory::{
-    DirectoryLock, FileHandle, FileSlice, OwnedBytes, WatchCallback, WatchHandle,
-};
+use tantivy::directory::error::OpenReadError;
+use tantivy::directory::{FileHandle, FileSlice, OwnedBytes};
 use tantivy::error::DataCorruption;
 use tantivy::{AsyncIoResult, Directory, HasLen, Index, IndexReader, ReloadPolicy};
 
@@ -432,19 +430,8 @@ impl Directory for HotDirectory {
         Ok(Box::new(file_slice_with_cache))
     }
 
-    fn delete(&self, path: &std::path::Path) -> Result<(), tantivy::directory::error::DeleteError> {
-        self.inner.underlying.delete(path)
-    }
-
     fn exists(&self, path: &std::path::Path) -> Result<bool, OpenReadError> {
         Ok(self.inner.cache.get_file_length(path).is_some())
-    }
-
-    fn open_write(
-        &self,
-        path: &std::path::Path,
-    ) -> Result<tantivy::directory::WritePtr, tantivy::directory::error::OpenWriteError> {
-        self.inner.underlying.open_write(path)
     }
 
     fn atomic_read(&self, path: &std::path::Path) -> Result<Vec<u8>, OpenReadError> {
@@ -455,17 +442,7 @@ impl Directory for HotDirectory {
         self.inner.underlying.atomic_read(path)
     }
 
-    fn atomic_write(&self, _path: &std::path::Path, _data: &[u8]) -> std::io::Result<()> {
-        unimplemented!()
-    }
-
-    fn watch(&self, _watch_callback: WatchCallback) -> tantivy::Result<WatchHandle> {
-        Ok(WatchHandle::empty())
-    }
-
-    fn acquire_lock(&self, _lock: &tantivy::directory::Lock) -> Result<DirectoryLock, LockError> {
-        Ok(DirectoryLock::from(Box::new(|| {})))
-    }
+    crate::read_only_directory!();
 }
 
 fn list_index_files(index: &Index) -> tantivy::Result<HashSet<PathBuf>> {

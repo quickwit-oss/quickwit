@@ -24,8 +24,8 @@ use std::{fmt, io};
 
 use async_trait::async_trait;
 use quickwit_storage::SliceCache;
-use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
-use tantivy::directory::{FileHandle, OwnedBytes, WatchHandle, WritePtr};
+use tantivy::directory::error::OpenReadError;
+use tantivy::directory::{FileHandle, OwnedBytes};
 use tantivy::{AsyncIoResult, Directory, HasLen};
 
 /// The caching directory is a simple cache that wraps another directory.
@@ -144,14 +144,6 @@ impl Directory for CachingDirectory {
         Ok(Box::new(caching_file_handle))
     }
 
-    fn delete(&self, _path: &Path) -> std::result::Result<(), DeleteError> {
-        unimplemented!("read only");
-    }
-
-    fn open_write(&self, _path: &Path) -> std::result::Result<WritePtr, OpenWriteError> {
-        unimplemented!("read only");
-    }
-
     fn atomic_read(&self, path: &Path) -> std::result::Result<Vec<u8>, OpenReadError> {
         let file_handle = self.get_file_handle(path)?;
         let len = file_handle.len();
@@ -161,16 +153,7 @@ impl Directory for CachingDirectory {
         Ok(owned_bytes.as_slice().to_vec())
     }
 
-    fn atomic_write(&self, _path: &Path, _data: &[u8]) -> io::Result<()> {
-        unimplemented!("read only");
-    }
-
-    fn watch(
-        &self,
-        _watch_callback: tantivy::directory::WatchCallback,
-    ) -> tantivy::Result<WatchHandle> {
-        Ok(WatchHandle::empty())
-    }
+    crate::read_only_directory!();
 }
 
 #[cfg(test)]
