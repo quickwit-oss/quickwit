@@ -142,23 +142,13 @@ install_from_archive() {
     rm "$_file" 
     printf "\n"
 
-    # tar -xzf quickwit-x86_64-unknown-linux-gnu.tar.gz
-    # mv asset/* ${INSTALL_DIR}/
-    #chmod 744 "${INSTALL_DIR}/bin/${PACKAGE_NAME}"
-
-    # mv "$_archive_content_file" "${PACKAGE_NAME}"
-    # chmod 744 "${PACKAGE_NAME}"
-
     printf "%s Installing binary ..." "$_prompt"
-    mkdir -p "${INSTALL_DIR}/bin"
-    mv "$_archive_content_file" "${INSTALL_DIR}/bin/${PACKAGE_NAME}"
+    mkdir -p "${INSTALL_DIR}"
+    mv ./target/assets/* ${INSTALL_DIR}/
+    rm -rf ./target
     chmod 744 "${INSTALL_DIR}/bin/${PACKAGE_NAME}"
     printf "\n"
     
-    # create config & logs
-
-    # create tutorials files
-
     # add binary to path
     if [ "$ADD_TO_PATH" = "Yes" ]; then 
       local _path="export PATH=\"$INSTALL_DIR/bin:\$PATH\""
