@@ -23,20 +23,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use diesel::dsl::sql;
 use diesel::pg::Pg;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::DatabaseErrorKind;
 use diesel::result::Error::DatabaseError;
-use diesel::sql_types::{Array, Text};
+use diesel::sql_types::{Array, Bool, Text};
 use diesel::{
-    debug_query, sql_query, BoolExpressionMethods, Connection, ExpressionMethods,
-    PgArrayExpressionMethods, PgConnection, QueryDsl, RunQueryDsl,
+    debug_query, sql_query, BoolExpressionMethods, BoxableExpression, Connection,
+    ExpressionMethods, IntoSql, PgConnection, QueryDsl, RunQueryDsl,
 };
 use quickwit_index_config::TagFiltersAST;
 use tracing::{debug, error, info, warn};
 
 use crate::metastore::CheckpointDelta;
 use crate::postgresql::model::SELECT_SPLITS_FOR_INDEX;
+use crate::postgresql::schema::splits;
 use crate::postgresql::{model, schema};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
@@ -754,9 +756,53 @@ impl Metastore for PostgresqlMetastore {
     }
 }
 
-fn tags_filter_expression_helper(tags: TagFiltersAST) -> i64 {
-    // TODO implement me!!!
-    todo!()
+fn true_expr() -> Box<dyn BoxableExpression<splits::table, Pg, SqlType = Bool>> {
+    Box::new(true.into_sql::<Bool>()) // as FilterExpression<QS>;
+}
+
+/// Takes a tag filters AST and returns a sql expression that can be used as
+/// a filter.
+///
+/// Tag string literals are properly bound to avoid SQL injection.
+fn tags_filter_expression_helper(
+    tags: TagFiltersAST,
+) -> Box<dyn BoxableExpression<splits::table, Pg, SqlType = Bool>> {
+    match tags {
+        TagFiltersAST::And(child_asts) => {
+            let mut child_exprs_it = child_asts.into_iter().map(tags_filter_expression_helper);
+            let mut and_expr = if let Some(first_child_expr) = child_exprs_it.next() {
+                first_child_expr
+            } else {
+                // child_asts is empty.
+                return true_expr();
+            };
+            for child_expr in child_exprs_it {
+                and_expr = Box::new(and_expr.and(child_expr));
+            }
+            and_expr
+        }
+        TagFiltersAST::Or(child_asts) => {
+            let mut child_exprs_it = child_asts.into_iter().map(tags_filter_expression_helper);
+            let mut or_expr = if let Some(first_child_expr) = child_exprs_it.next() {
+                first_child_expr
+            } else {
+                // child_asts is empty.
+                return true_expr();
+            };
+            for child_expr in child_exprs_it {
+                or_expr = Box::new(or_expr.or(child_expr));
+            }
+            or_expr
+        }
+        TagFiltersAST::Tag { tag } => {
+            Box::new(sql::<Bool>("").bind::<Text, _>(tag).sql("= ANY(tags)"))
+        }
+        TagFiltersAST::NotTag { tag } => Box::new(
+            sql::<Bool>("NOT (")
+                .bind::<Text, _>(tag)
+                .sql("= ANY(tags))"),
+        ),
+    }
 }
 
 /// A single file metastore factory
@@ -813,3 +859,101 @@ impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
 
 #[cfg(feature = "postgres")]
 metastore_test_suite_for_postgresql!(crate::PostgresqlMetastore);
+
+#[cfg(test)]
+mod tests {
+    use diesel::debug_query;
+    use diesel::pg::Pg;
+    use quickwit_index_config::TagFiltersAST;
+
+    use super::tags_filter_expression_helper;
+
+    fn test_tags_filter_expression_helper(tags_ast: TagFiltersAST, expected: &str) {
+        let tags_expr = tags_filter_expression_helper(tags_ast);
+        let sql = debug_query::<Pg, _>(&tags_expr).to_string();
+        assert_eq!(&sql, expected);
+    }
+
+    #[test]
+    fn test_tags_filter_expression_single_tag() {
+        let tags_ast = TagFiltersAST::Tag {
+            tag: "my_field:titi".to_string(),
+        };
+        test_tags_filter_expression_helper(tags_ast, "$1= ANY(tags) -- binds: [\"my_field:titi\"]");
+    }
+
+    #[test]
+    fn test_tags_filter_expression_not_tag() {
+        let tags_ast = TagFiltersAST::NotTag {
+            tag: "my_field:titi".to_string(),
+        };
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "NOT ($1= ANY(tags)) -- binds: [\"my_field:titi\"]",
+        );
+    }
+
+    #[test]
+    fn test_tags_filter_expression_ands() {
+        let tags_ast = TagFiltersAST::And(vec![
+            TagFiltersAST::Tag {
+                tag: "tag:val1".to_string(),
+            },
+            TagFiltersAST::Tag {
+                tag: "tag:val2".to_string(),
+            },
+            TagFiltersAST::Tag {
+                tag: "tag:val3".to_string(),
+            },
+        ]);
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "$1= ANY(tags) AND $2= ANY(tags) AND $3= ANY(tags) -- binds: [\"tag:val1\", \
+             \"tag:val2\", \"tag:val3\"]",
+        );
+    }
+
+    #[test]
+    fn test_tags_filter_expression_and_or() {
+        let tags_ast = TagFiltersAST::Or(vec![
+            TagFiltersAST::And(vec![
+                TagFiltersAST::Tag {
+                    tag: "tag:val1".to_string(),
+                },
+                TagFiltersAST::Tag {
+                    tag: "tag:val2".to_string(),
+                },
+            ]),
+            TagFiltersAST::Tag {
+                tag: "tag:val3".to_string(),
+            },
+        ]);
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "($1= ANY(tags) AND $2= ANY(tags) OR $3= ANY(tags)) -- binds: [\"tag:val1\", \
+             \"tag:val2\", \"tag:val3\"]",
+        );
+    }
+
+    #[test]
+    fn test_tags_filter_expression_and_or_correct_parenthesis() {
+        let tags_ast = TagFiltersAST::And(vec![
+            TagFiltersAST::Or(vec![
+                TagFiltersAST::Tag {
+                    tag: "tag:val1".to_string(),
+                },
+                TagFiltersAST::Tag {
+                    tag: "tag:val2".to_string(),
+                },
+            ]),
+            TagFiltersAST::Tag {
+                tag: "tag:val3".to_string(),
+            },
+        ]);
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "($1= ANY(tags) OR $2= ANY(tags)) AND $3= ANY(tags) -- binds: [\"tag:val1\", \
+             \"tag:val2\", \"tag:val3\"]",
+        );
+    }
+}
