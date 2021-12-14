@@ -193,7 +193,9 @@ impl IndexCliCommand {
             .expect("`index-id` is a required arg.")
             .to_string();
         let input_path_opt = if let Some(input_path) = matches.value_of("input-path") {
-            Some(Uri::try_new(input_path)?.path().to_path_buf())
+            Uri::try_new(input_path)?
+                .path()
+                .map(|path| path.to_path_buf())
         } else {
             None
         };
@@ -203,6 +205,7 @@ impl IndexCliCommand {
             .map(Uri::try_new)
             .expect("`data-dir-path` is a required arg.")?
             .path()
+            .expect("`data-dir-path` should point to a local path.")
             .to_path_buf();
         let overwrite = matches.is_present("overwrite");
 
@@ -276,6 +279,7 @@ impl IndexCliCommand {
             .map(Uri::try_new)
             .expect("`data-dir-path` is a required arg.")?
             .path()
+            .expect("`data-dir-path` should point to a local path.")
             .to_path_buf();
         Ok(Self::Merge(MergeOrDemuxArgs {
             metastore_uri,
@@ -299,6 +303,7 @@ impl IndexCliCommand {
             .map(Uri::try_new)
             .expect("`data-dir-path` is a required arg.")?
             .path()
+            .expect("`data-dir-path` should point to a local path.")
             .to_path_buf();
         Ok(Self::Demux(MergeOrDemuxArgs {
             metastore_uri,

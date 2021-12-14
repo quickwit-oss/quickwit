@@ -32,6 +32,7 @@ const PROTOCOL_SEPARATOR: &str = "://";
 #[derive(Debug, PartialEq, Eq)]
 pub struct Uri {
     uri: String,
+    protocol_idx: usize,
 }
 
 impl Uri {
@@ -56,7 +57,15 @@ impl Uri {
                     .to_string_lossy()
                     .to_string();
 
-                path.replace_range(0..1, &home_dir_path);
+                let user_name_dir = format!("~{}", whoami::username());
+                let user_name_dir_prefix = format!("~{}/", whoami::username());
+                if path == user_name_dir || path == "~" {
+                    path = home_dir_path;
+                } else if path.starts_with(&user_name_dir_prefix) {
+                    path.replace_range(0..user_name_dir.len(), &home_dir_path);
+                } else if path.starts_with("~/") {
+                    path.replace_range(0..1, &home_dir_path);
+                }
             }
 
             if !path.starts_with('/') {
@@ -70,36 +79,35 @@ impl Uri {
 
         Ok(Self {
             uri: format!("{}{}{}", protocol, PROTOCOL_SEPARATOR, path),
+            protocol_idx: protocol.len(),
         })
     }
 
     /// Returns the uri protocol.
     pub fn protocol(&self) -> &str {
-        let (protocol, _) = self
-            .uri
-            .split_once(PROTOCOL_SEPARATOR)
-            .expect("expect Uri to have a protocol.");
-        protocol
+        &self.uri[..self.protocol_idx]
     }
 
     /// Returns the uri path.
-    pub fn path(&self) -> &Path {
-        let (_, path) = self
-            .uri
-            .split_once(PROTOCOL_SEPARATOR)
-            .expect("expect Uri to have a protocol.");
-        Path::new(path)
-    }
-
-    /// Resturn the full uri.
-    pub fn to_str(&self) -> &str {
-        &self.uri
+    /// If protocol is `file://`, returns [`Some(Path)`] otherwise returns [`None`].
+    pub fn path(&self) -> Option<&Path> {
+        if self.protocol() == "file" {
+            self.uri.strip_prefix("file://").map(Path::new)
+        } else {
+            None
+        }
     }
 }
 
 impl Display for Uri {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "{}", self.uri)
+    }
+}
+
+impl AsRef<str> for Uri {
+    fn as_ref(&self) -> &str {
+        &self.uri
     }
 }
 
@@ -142,8 +150,14 @@ mod tests {
 
     #[test]
     fn test_normalize_uri() -> anyhow::Result<()> {
+        let user_name = whoami::username();
         let home_dir = home::home_dir().unwrap();
         let current_dir = env::current_dir().unwrap();
+
+        let uri = Uri::try_new("file:///home/foo/bar")?;
+        assert_eq!(uri.protocol(), "file");
+        assert_eq!(uri.path(), Some(Path::new("/home/foo/bar")));
+        assert_eq!(uri.as_ref(), "file:///home/foo/bar");
 
         assert_eq!(
             Uri::try_new("home/hommer/docs/dognuts")?.to_string(),
@@ -171,6 +185,16 @@ mod tests {
         );
 
         assert_eq!(
+            Uri::try_new(&format!("~{}", user_name))?.to_string(),
+            format!("file://{}", home_dir.display())
+        );
+
+        assert_eq!(
+            Uri::try_new(&format!("~{}/foo/bar", user_name))?.to_string(),
+            format!("file://{}/foo/bar", home_dir.display())
+        );
+
+        assert_eq!(
             Uri::try_new("~")?.to_string(),
             format!("file://{}", home_dir.display())
         );
@@ -178,6 +202,17 @@ mod tests {
             Uri::try_new("~/")?.to_string(),
             format!("file://{}", home_dir.display())
         );
+
+        assert_eq!(
+            Uri::try_new("~anything/bar")?.to_string(),
+            format!("file://{}/~anything/bar", current_dir.display())
+        );
+
+        assert_eq!(
+            Uri::try_new(&format!("~{}foo/bar", user_name))?.to_string(),
+            format!("file://{}/~{}foo/bar", current_dir.display(), user_name)
+        );
+
         assert_eq!(
             Uri::try_new("~/.")?.to_string(),
             format!("file://{}", home_dir.display())

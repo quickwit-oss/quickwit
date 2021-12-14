@@ -21,6 +21,7 @@ tokio = { version = "1", features = ["fs", "macros", "rt"] }
 warp = '0.3'
 tracing = "0.1"
 home = "0.5.3"
+whoami = "0.2.4"
 futures = "0.3"
 
 [dev-dependencies]

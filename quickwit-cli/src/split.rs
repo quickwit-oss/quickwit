@@ -108,6 +108,7 @@ impl SplitCliCommand {
             .map(Uri::try_new)
             .expect("`target-dir` is a required arg.")?
             .path()
+            .expect("`target-dir` should point to a local path.")
             .to_path_buf();
 
         Ok(Self::Extract(ExtractSplitArgs {

@@ -547,7 +547,7 @@ mod tests {
                 index_id,
                 metastore_uri,
                 data_dir_path,
-            })) if &index_id == "wikipedia" && data_dir_path == Uri::try_new("datadir")?.path().to_path_buf() && &metastore_uri == "file:///indexes"
+            })) if &index_id == "wikipedia" && data_dir_path == Uri::try_new("datadir")?.path().unwrap().to_path_buf() && &metastore_uri == "file:///indexes"
         ));
         Ok(())
     }
@@ -573,7 +573,7 @@ mod tests {
                 index_id,
                 metastore_uri,
                 data_dir_path,
-            })) if &index_id == "wikipedia" && data_dir_path == Uri::try_new("datadir")?.path().to_path_buf() && &metastore_uri == "file:///indexes"
+            })) if &index_id == "wikipedia" && data_dir_path == Uri::try_new("datadir")?.path().unwrap().to_path_buf() && &metastore_uri == "file:///indexes"
         ));
         Ok(())
     }
@@ -652,7 +652,7 @@ mod tests {
                 split_id,
                 metastore_uri,
                 target_dir
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == Uri::try_new("datadir")?.path().to_path_buf()
+            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == Uri::try_new("datadir")?.path().unwrap().to_path_buf()
         ));
         Ok(())
     }
