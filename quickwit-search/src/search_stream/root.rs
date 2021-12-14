@@ -49,11 +49,10 @@ pub async fn root_search_stream(
     let index_metadata = metastore
         .index_metadata(&search_stream_request.index_id)
         .await?;
-    let tags_from_query = extract_tags_from_query(
+    let tags = extract_tags_from_query(
         &search_stream_request.query,
         &index_metadata.index_config.tag_field_names(),
     )?;
-    let tags = [&search_stream_request.tags[..], &tags_from_query[..]].concat();
     let split_metadata_list = list_relevant_splits(
         metastore,
         &search_stream_request.index_id,
@@ -65,7 +64,6 @@ pub async fn root_search_stream(
 
     // Create a hash map of SplitMetadata with split id as a key.
     let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
-        .clone()
         .into_iter()
         .map(|metadata| (metadata.split_id().to_string(), metadata))
         .collect();
@@ -158,10 +156,9 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str,
-             _split_state: SplitState,
-             _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split("split1")]) },
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+                Ok(vec![mock_split("split1")])
+            },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -220,10 +217,9 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str,
-             _split_state: SplitState,
-             _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split("split1")]) },
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+                Ok(vec![mock_split("split1")])
+            },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -278,10 +274,9 @@ mod tests {
                 })
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str,
-             _split_state: SplitState,
-             _time_range: Option<Range<i64>>,
-             _tags: &[String]| { Ok(vec![mock_split("split1"), mock_split("split2")]) },
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+                Ok(vec![mock_split("split1"), mock_split("split2")])
+            },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();

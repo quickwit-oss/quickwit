@@ -45,7 +45,7 @@ use std::net::SocketAddr;
 use std::ops::Range;
 
 use anyhow::Context;
-use quickwit_index_config::extract_tags_from_query;
+use quickwit_index_config::{extract_tags_from_query, TagFiltersAST};
 use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
@@ -143,12 +143,13 @@ async fn list_relevant_splits(
     index_id: &str,
     start_timestamp_opt: Option<i64>,
     end_timestamp_opt: Option<i64>,
-    tags: Vec<String>,
+    tags: Option<TagFiltersAST>,
 ) -> MetastoreResult<Vec<SplitMetadata>> {
     let time_range_opt = extract_time_range(start_timestamp_opt, end_timestamp_opt);
     // let tags = [&search_request.tags[..], &tags_from_query[..]].concat();
+    // TODO fix tags in list_splits call below
     let split_metas = metastore
-        .list_splits(index_id, SplitState::Published, time_range_opt, &tags)
+        .list_splits(index_id, SplitState::Published, time_range_opt, None)
         .await?;
     Ok(split_metas
         .into_iter()
@@ -166,11 +167,10 @@ pub async fn single_node_search(
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
     let index_storage = storage_resolver.resolve(&index_metadata.index_uri)?;
-    let tags_from_query = extract_tags_from_query(
+    let tags = extract_tags_from_query(
         &search_request.query,
         &index_metadata.index_config.tag_field_names(),
     )?;
-    let tags = [&search_request.tags[..], &tags_from_query[..]].concat();
     let metas = list_relevant_splits(
         metastore,
         &search_request.index_id,
@@ -445,13 +445,15 @@ mod tests {
             index_id,
             None,
             None,
-            vec!["owner:francois".to_string()],
+            Some(TagFiltersAST::Tag {
+                tag: "owner:francois".to_string(),
+            }),
         )
         .await?;
         assert_eq!(selected_splits.len(), 0);
 
         let selected_splits =
-            list_relevant_splits(&*test_sandbox.metastore(), index_id, None, None, vec![]).await?;
+            list_relevant_splits(&*test_sandbox.metastore(), index_id, None, None, None).await?;
         assert_eq!(selected_splits.len(), 2);
 
         let selected_splits = list_relevant_splits(
@@ -459,11 +461,14 @@ mod tests {
             index_id,
             None,
             None,
-            vec![
-                "owner:paul".to_string(),
-                "owner:francois".to_string(),
-                "owner:adrien".to_string(),
-            ],
+            Some(TagFiltersAST::And(
+                ["owner:paul", "owner:francois", "owner:adrien"]
+                    .into_iter()
+                    .map(|tag| TagFiltersAST::Tag {
+                        tag: tag.to_string(),
+                    })
+                    .collect(),
+            )),
         )
         .await?;
         assert_eq!(selected_splits.len(), 2);

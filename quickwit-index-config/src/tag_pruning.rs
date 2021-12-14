@@ -127,10 +127,9 @@ fn collect_tag_filters_for_clause(
 }
 
 /// Negate the Unsimplified ast
-/// -  And becomes Or
-/// -  Or becomes And
-/// -  Tag becomes Not Tag
-///    Not Tag becomes Tag
+/// - And becomes Or
+/// - Or becomes And
+/// - Tag becomes Not Tag Not Tag becomes Tag
 /// - Uninformative stays as is.
 fn negate_ast(clause: UnsimplifiedTagFiltersAST) -> UnsimplifiedTagFiltersAST {
     match clause {
@@ -148,7 +147,6 @@ fn negate_ast(clause: UnsimplifiedTagFiltersAST) -> UnsimplifiedTagFiltersAST {
 
 /// query implies this boolean formula.
 
-///
 /// TermQuery on fields that are not tag fields are transformed into the predicate `Uninformative`.
 ///
 ///

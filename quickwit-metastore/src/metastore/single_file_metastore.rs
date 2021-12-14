@@ -854,14 +854,14 @@ mod tests {
 
         // empty
         let split = metastore
-            .list_splits(index_id, SplitState::Published, None, &[])
+            .list_splits(index_id, SplitState::Published, None, None)
             .await
             .unwrap();
         assert!(split.is_empty());
 
         // not empty
         let split = metastore
-            .list_splits(index_id, SplitState::Staged, None, &[])
+            .list_splits(index_id, SplitState::Staged, None, None)
             .await
             .unwrap();
         assert!(!split.is_empty());
