@@ -442,6 +442,9 @@ impl IndexingPipeline {
         ctx: &ActorContext<IndexingPipelineMessage>,
         retry_count: usize,
     ) -> Result<(), ActorExitStatus> {
+        if self.handlers.is_some() {
+            return Ok(());
+        }
         if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
             if let Some(duration_before_retry) = Self::wait_duration_before_retry(retry_count) {
                 error!(err=?spawn_error, "Error while spawn_pipeline, waiting 1000ms");
