@@ -130,6 +130,9 @@ impl IndexingPipeline {
                     &*uploader_counters,
                     &*publisher_counters,
                 );
+        } else {
+            ctx.send_self_message(IndexingPipelineMessage::Spawn { retry_count: 0 })
+                .await?;
         }
         ctx.schedule_self_msg(Duration::from_secs(1), IndexingPipelineMessage::Observe)
             .await;
@@ -421,13 +424,15 @@ impl IndexingPipeline {
         Ok(())
     }
 
-    /// retry_count, wait_time_sec
-    /// 1   1
-    /// 2   4
-    /// 3   8
-    /// 4   16
+    // retry_count, wait_time
+    // 0   2s
+    // 1   4s
+    // 2   8s
+    // 3   16s
+    // ...
+    // >=8   5mn
     fn wait_duration_before_retry(retry_count: usize) -> Option<Duration> {
-        let mut wait_time_sec = (retry_count + 1).pow(2);
+        let mut wait_time_sec = 2_usize.pow(retry_count as u32 + 1);
         wait_time_sec = wait_time_sec.min(60 * 5);
         Some(Duration::from_secs(wait_time_sec as u64))
     }
@@ -503,8 +508,8 @@ impl AsyncActor for IndexingPipeline {
         &mut self,
         ctx: &ActorContext<Self::Message>,
     ) -> Result<(), ActorExitStatus> {
-        self.process_observe(ctx).await?;
         self.process_spawn(ctx, 0).await?;
+        self.process_observe(ctx).await?;
         self.process_supervise(ctx).await?;
         Ok(())
     }
@@ -580,6 +585,34 @@ mod tests {
 
     use super::{IndexingPipeline, *};
     use crate::models::IndexingDirectory;
+
+    #[test]
+    fn test_wait_duration() {
+        assert_eq!(
+            IndexingPipeline::wait_duration_before_retry(0).unwrap(),
+            Duration::from_secs(2)
+        );
+        assert_eq!(
+            IndexingPipeline::wait_duration_before_retry(1).unwrap(),
+            Duration::from_secs(4)
+        );
+        assert_eq!(
+            IndexingPipeline::wait_duration_before_retry(2).unwrap(),
+            Duration::from_secs(8)
+        );
+        assert_eq!(
+            IndexingPipeline::wait_duration_before_retry(3).unwrap(),
+            Duration::from_secs(16)
+        );
+        assert_eq!(
+            IndexingPipeline::wait_duration_before_retry(8).unwrap(),
+            Duration::from_secs(60 * 5)
+        );
+        assert_eq!(
+            IndexingPipeline::wait_duration_before_retry(9).unwrap(),
+            Duration::from_secs(60 * 5)
+        );
+    }
 
     async fn test_indexing_pipeline_num_fails_before_success(
         mut num_fails: usize,
