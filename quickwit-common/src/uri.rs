@@ -21,7 +21,7 @@ use std::env;
 use std::fmt::Display;
 use std::path::{Component, Path, PathBuf};
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 
 /// Default file protocol `file://`
 const FILE_PROTOCOL: &str = "file";
@@ -52,20 +52,16 @@ impl Uri {
                 env::current_dir().context("Could not fetch the current directory.")?;
 
             if path.starts_with('~') {
+                if path != "~" && !path.starts_with("~/") {
+                    bail!("This path syntax `{}` is not supported.", uri);
+                }
+
                 let home_dir_path = home::home_dir()
                     .context("Could not fetch the home directory.")?
                     .to_string_lossy()
                     .to_string();
 
-                let user_name_dir = format!("~{}", whoami::username());
-                let user_name_dir_prefix = format!("~{}/", whoami::username());
-                if path == user_name_dir || path == "~" {
-                    path = home_dir_path;
-                } else if path.starts_with(&user_name_dir_prefix) {
-                    path.replace_range(0..user_name_dir.len(), &home_dir_path);
-                } else if path.starts_with("~/") {
-                    path.replace_range(0..1, &home_dir_path);
-                }
+                path.replace_range(0..1, &home_dir_path);
             }
 
             if !path.starts_with('/') {
@@ -88,9 +84,9 @@ impl Uri {
         &self.uri[..self.protocol_idx]
     }
 
-    /// Returns the uri path.
-    /// If protocol is `file://`, returns [`Some(Path)`] otherwise returns [`None`].
-    pub fn path(&self) -> Option<&Path> {
+    /// Returns the file path from the uri.
+    /// Useful only for `file://` protocol Uri.
+    pub fn filepath(&self) -> Option<&Path> {
         if self.protocol() == "file" {
             self.uri.strip_prefix("file://").map(Path::new)
         } else {
@@ -149,49 +145,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_normalize_uri() -> anyhow::Result<()> {
-        let user_name = whoami::username();
+    fn test_uri() -> anyhow::Result<()> {
         let home_dir = home::home_dir().unwrap();
         let current_dir = env::current_dir().unwrap();
 
         let uri = Uri::try_new("file:///home/foo/bar")?;
         assert_eq!(uri.protocol(), "file");
-        assert_eq!(uri.path(), Some(Path::new("/home/foo/bar")));
+        assert_eq!(uri.filepath(), Some(Path::new("/home/foo/bar")));
         assert_eq!(uri.as_ref(), "file:///home/foo/bar");
 
         assert_eq!(
-            Uri::try_new("home/hommer/docs/dognuts")?.to_string(),
-            format!("file://{}/home/hommer/docs/dognuts", current_dir.display())
+            Uri::try_new("home/homer/docs/dognuts")?.to_string(),
+            format!("file://{}/home/homer/docs/dognuts", current_dir.display())
         );
 
         assert_eq!(
-            Uri::try_new("home/hommer/docs/../dognuts")?.to_string(),
-            format!("file://{}/home/hommer/dognuts", current_dir.display())
+            Uri::try_new("home/homer/docs/../dognuts")?.to_string(),
+            format!("file://{}/home/homer/dognuts", current_dir.display())
         );
 
         assert_eq!(
-            Uri::try_new("home/hommer/docs/../../dognuts")?.to_string(),
+            Uri::try_new("home/homer/docs/../../dognuts")?.to_string(),
             format!("file://{}/home/dognuts", current_dir.display())
         );
 
         assert_eq!(
-            Uri::try_new("/home/hommer/docs/dognuts")?.to_string(),
-            "file:///home/hommer/docs/dognuts"
-        );
-
-        assert_eq!(
-            Uri::try_new("~/")?.to_string(),
-            format!("file://{}", home_dir.display())
-        );
-
-        assert_eq!(
-            Uri::try_new(&format!("~{}", user_name))?.to_string(),
-            format!("file://{}", home_dir.display())
-        );
-
-        assert_eq!(
-            Uri::try_new(&format!("~{}/foo/bar", user_name))?.to_string(),
-            format!("file://{}/foo/bar", home_dir.display())
+            Uri::try_new("/home/homer/docs/dognuts")?.to_string(),
+            "file:///home/homer/docs/dognuts"
         );
 
         assert_eq!(
@@ -204,13 +184,8 @@ mod tests {
         );
 
         assert_eq!(
-            Uri::try_new("~anything/bar")?.to_string(),
-            format!("file://{}/~anything/bar", current_dir.display())
-        );
-
-        assert_eq!(
-            Uri::try_new(&format!("~{}foo/bar", user_name))?.to_string(),
-            format!("file://{}/~{}foo/bar", current_dir.display(), user_name)
+            Uri::try_new("~anything/bar").unwrap_err().to_string(),
+            "This path syntax `~anything/bar` is not supported."
         );
 
         assert_eq!(
@@ -238,13 +213,13 @@ mod tests {
         );
 
         assert_eq!(
-            Uri::try_new("s3://home/hommer/docs/dognuts")?.to_string(),
-            "s3://home/hommer/docs/dognuts"
+            Uri::try_new("s3://home/homer/docs/dognuts")?.to_string(),
+            "s3://home/homer/docs/dognuts"
         );
 
         assert_eq!(
-            Uri::try_new("s3://home/hommer/docs/../dognuts")?.to_string(),
-            "s3://home/hommer/docs/../dognuts"
+            Uri::try_new("s3://home/homer/docs/../dognuts")?.to_string(),
+            "s3://home/homer/docs/../dognuts"
         );
 
         Ok(())
