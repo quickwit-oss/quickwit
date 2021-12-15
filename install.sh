@@ -57,9 +57,11 @@ confirm_install_options() {
     INSTALL_DIR="$HOME/quickwit-${_version}"
     ADD_TO_PATH="Yes"
 
-    echo "Installation directory: ${INSTALL_DIR}"
-    echo "Add quickwit to PATH: ${ADD_TO_PATH}"
-    read -rp "Do you want to install with these default options (yes/no)? " response </dev/tty
+    printf "%s Quickwit will be installed with the following settings: \n" "$_prompt"
+    printf "* InstallDir: ${INSTALL_DIR} \n"
+    printf "* AddToPathEnv: ${ADD_TO_PATH} \n"
+    printf "\n"
+    read -rp "Do you want to install with these default settings (yes/no)? " response </dev/tty
     if echo "$response" | grep -qE "^([Yy][Ee][Ss]|[Yy])$"; 
     then
         return 1
@@ -79,6 +81,11 @@ confirm_install_options() {
         ADD_TO_PATH="No"
     fi
 
+    printf "\n"
+    printf "%s Installation settings: \n" "$_prompt"
+    printf "* InstallDir: ${INSTALL_DIR} \n"
+    printf "* AddToPathEnv: ${ADD_TO_PATH} \n"
+    printf "\n\n"
 }
 
 install_from_archive() {
@@ -160,10 +167,13 @@ install_from_archive() {
     fi
 
     printf "\n"
-    printf "%s Install succeeded!\n" "$_prompt"
+    printf "%s Installation succeeded!\n" "$_prompt"
     printf "%s To start using Quickwit:\n" "$_prompt"
     printf "\n"
-    printf "%s ./quickwit --version \n" "$_indent"
+    printf "%s quickwit --version \n" "$_indent"
+    if [ "$ADD_TO_PATH" = "Yes" ]; then 
+        printf "%s You may need to restart the terminal or run 'source <profile>'.\n" "$_prompt"
+    fi
     printf "\n"
     printf "%s More information at https://quickwit.io/docs/\n" "$_prompt"
 
