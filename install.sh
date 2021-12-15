@@ -134,17 +134,17 @@ install_from_archive() {
     local _url="${PACKAGE_ROOT}/${_version}/${_file}"
 
     printf "%s Downloading Quickwit via %s" "$_prompt" "$_url"
-    downloader "$_url" "$_file"
+    ensure downloader "$_url" "$_file"
     printf "\n"
 
     printf "%s Unpacking archive ..." "$_prompt"
-    tar -xzf "$_file"
-    rm "$_file" 
+    ensure tar -xzf "$_file"
+    ensure rm "$_file" 
     printf "\n"
 
     printf "%s Installing binary ..." "$_prompt"
-    mkdir -p "${INSTALL_DIR}"
-    mv ./target/assets/* ${INSTALL_DIR}/
+    ensure mkdir -p "${INSTALL_DIR}"
+    ensure mv ./target/assets/* ${INSTALL_DIR}/
     rm -rf ./target
     chmod 744 "${INSTALL_DIR}/bin/${PACKAGE_NAME}"
     printf "\n"
