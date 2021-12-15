@@ -48,58 +48,53 @@ It also sets the [default search field](../reference/index-config.md) and a time
 This timestamp field will be used by Quickwit for sorting documents (descending order) and for [splits pruning](../overview/architecture.md) at query time to boost search speed. Check out the [index config docs](../reference/index-config.md) for details.
 
 
-```json title="hdfslogs_index_config.json"
-{
-    "store_source": false, // The document source (=json) will not be stored.
-    "default_search_fields": ["body", "severity_text"],
-    "timestamp_field": "timestamp",
-    "field_mappings": [
-        {
-            "name": "timestamp",
-            "type": "i64",
-            "fast": true // Fast field must be present when this is the timestamp field.
-        },
-        {
-            "name": "severity_text",
-            "type": "text",
-            "tokenizer": "raw" // No tokeninization.
-        },
-        {
-            "name": "body",
-            "type": "text",
-            "tokenizer": "default",
-            "record": "position" // Record position will enable phrase query on body field.
-        },
-        {
-            "name": "resource",
-            "type": "object",
-            "field_mappings": [
-                {
-                    "name": "service",
-                    "type": "text",
-                    "tokenizer": "raw"
-                }
-            ]
-        },
-        {
-            "name": "attributes",
-            "type": "object",
-            "field_mappings": [
-                {
-                    "name": "class",
-                    "type": "text",
-                    "tokenizer": "raw"
-                }
-            ]
-        }
-    ]
-}
+```yaml title="hdfslogs_index_config.yaml"
+version: 0
+index_id: hdfs_logs
+index_uri: s3://path-to-your-bucket/hdfs_logs # Adjust to your own s3 bucket
+
+doc_mapping:
+  field_mappings:
+  - name: timestamp
+    type: i64
+    fast: true # Fast field must be present when this is the timestamp field.
+  - name: severity_text
+    type: text
+    tokenizer: raw # No tokeninization.
+  - name: body
+    type: text
+    tokenizer: default
+    record: position # Record position will enable phrase query on body field.
+  - name: resource
+    type: object
+    field_mappings:
+    - name: service 
+      type: text
+      tokenizer: raw # Text field referenced as tag must have the `raw` tokenier.
+  - name: attributes
+    type: object
+    field_mappings:
+    - name: class
+      type: text
+      tokenizer: raw
+  tag_fields: []
+
+indexing_settings:
+  store_source: false # The document source (=json) will not be stored.
+  timestamp_field: timestamp
+  resources:
+    heap_size: 50MB
+    
+search_settings:
+  default_search_fields:
+  - body
+  - severity_text
 ```
 
-Now we can create the index with the new command (assuming you create it in your current directory):
+Now we can create the index with the `create` subcommand (assuming you create it in your current directory):
 
 ```bash
-quickwit new --index-uri file://$(pwd)/hdfs_logs --index-config-path ./hdfslogs_index_config.json
+quickwit index create --metastore-uri file://$(pwd)/indexes --index-config-uri ./hdfslogs_index_config.json
 ```
 
 You're now ready to fill the index.
@@ -109,29 +104,38 @@ The dataset is a compressed [ndjson file](https://quickwit-datasets-public.s3.am
 This can take up to 10 min on a modern machine, the perfect time for a coffee break.
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.gz | gunzip | quickwit index --index-uri file://$(pwd)/hdfs_logs
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.gz | gunzip | quickwit index ingest --index-id hdfs_logs --metastore-uri file://$(pwd)/indexes
 ```
 
-You can check it's working by using `search` command and look for `ERROR` in `serverity_text` field:
+You can check it's working by using `search` subcommand and look for `ERROR` in `serverity_text` field:
 ```bash
-quickwit search --index-uri file:///$(pwd)/hdfs_logs --query "severity_text:ERROR"
+quickwit index search --index-id hdfs_logs --metastore-uri file://$(pwd)/indexes  --query "severity_text:ERROR"
 ```
 
 
 :::note
 
-The `index` command generates [splits](../overview/architecture.md) of 5 millions documents. Each split is a small piece of index represented by a directory in which index files are saved. For this dataset, you will end with 9 splits, the last
-one will be very small.
+The `ingest` subcommand generates [splits](../overview/architecture.md) of 5 millions documents. Each split is a small piece of index represented by a file in which index files and metadata files are saved. For this dataset, you will end with 9 splits, the last one being be very small.
 
 :::
 
 
 ## Start your server
 
-The command `serve` starts an http server which provides a [REST API](../reference/search-api.md).
+The command `service run searcher` starts an http server which provides a [REST API](../reference/search-api.md).
+
+We first need to create a server configuration file. 
 
 ```bash
-quickwit serve --index-uri file:///$(pwd)/hdfs_logs
+echo "version: 0
+metastore_uri: file://$(pwd)/indexes
+searcher:
+  data_dir_path: file://$(pwd)/datadir
+  host_key_path: file://$(pwd)/datadir" > server_config.yaml
+```
+
+```bash
+./quickwit service run searcher --server-config-uri ./server_config.yaml
 ```
 
 Let's execute the same query on field `severity_text` but with `cURL`:
@@ -184,7 +188,7 @@ It should return 6 hits faster as Quickwit will query fewer splits.
 Let's do some cleanup by deleting the index:
 
 ```bash
-quickwit delete --index-uri file:///$(pwd)/hdfs_logs
+quickwit index delete --index-id hdfs_logs --metastore-uri file:///$(pwd)/indexes
 ```
 
 
