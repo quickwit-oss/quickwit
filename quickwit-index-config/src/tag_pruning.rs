@@ -42,8 +42,8 @@ pub fn extract_tags_from_query(
 enum UnsimplifiedTagFiltersAST {
     And(Vec<UnsimplifiedTagFiltersAST>),
     Or(Vec<UnsimplifiedTagFiltersAST>),
-    Tag { tag: String },
-    NotTag { tag: String },
+    Tag { field: String, value: String },
+    NotTag { field: String, value: String },
     Uninformative,
 }
 
@@ -51,8 +51,8 @@ enum UnsimplifiedTagFiltersAST {
 pub enum TagFiltersAST {
     And(Vec<TagFiltersAST>),
     Or(Vec<TagFiltersAST>),
-    Tag { tag: String },
-    NotTag { tag: String },
+    Tag { field: String, value: String },
+    NotTag { field: String, value: String },
 }
 
 // Takes a tag AST and simplify it in such a way that the resulting tree:
@@ -88,8 +88,12 @@ fn simplify_ast(ast: UnsimplifiedTagFiltersAST) -> Option<TagFiltersAST> {
                 _ => TagFiltersAST::Or(pruned_conditions).into(),
             }
         }
-        UnsimplifiedTagFiltersAST::Tag { tag } => TagFiltersAST::Tag { tag }.into(),
-        UnsimplifiedTagFiltersAST::NotTag { tag } => TagFiltersAST::NotTag { tag }.into(),
+        UnsimplifiedTagFiltersAST::Tag { field, value } => {
+            TagFiltersAST::Tag { field, value }.into()
+        }
+        UnsimplifiedTagFiltersAST::NotTag { field, value } => {
+            TagFiltersAST::NotTag { field, value }.into()
+        }
         UnsimplifiedTagFiltersAST::Uninformative => None,
     }
 }
@@ -139,8 +143,12 @@ fn negate_ast(clause: UnsimplifiedTagFiltersAST) -> UnsimplifiedTagFiltersAST {
         UnsimplifiedTagFiltersAST::Or(v) => {
             UnsimplifiedTagFiltersAST::And(v.into_iter().map(|c| negate_ast(c)).collect())
         }
-        UnsimplifiedTagFiltersAST::Tag { tag } => UnsimplifiedTagFiltersAST::NotTag { tag },
-        UnsimplifiedTagFiltersAST::NotTag { tag } => UnsimplifiedTagFiltersAST::Tag { tag },
+        UnsimplifiedTagFiltersAST::Tag { field, value } => {
+            UnsimplifiedTagFiltersAST::NotTag { field, value }
+        }
+        UnsimplifiedTagFiltersAST::NotTag { field, value } => {
+            UnsimplifiedTagFiltersAST::Tag { field, value }
+        }
         UnsimplifiedTagFiltersAST::Uninformative => UnsimplifiedTagFiltersAST::Uninformative,
     }
 }
@@ -178,7 +186,8 @@ fn collect_tag_filters(
             }) => {
                 if tag_field_names.contains(&field_name) {
                     UnsimplifiedTagFiltersAST::Tag {
-                        tag: format!("{}:{}", field_name, phrase),
+                        field: field_name,
+                        value: phrase,
                     }
                 } else {
                     UnsimplifiedTagFiltersAST::Uninformative
@@ -251,10 +260,12 @@ mod test {
             .unwrap(),
             TagFiltersAST::Or(vec![
                 TagFiltersAST::Tag {
-                    tag: String::from("user:bart")
+                    field: String::from("user"),
+                    value: String::from("bart"),
                 },
                 TagFiltersAST::Tag {
-                    tag: String::from("lang:fr")
+                    field: String::from("lang"),
+                    value: String::from("fr"),
                 }
             ]),
         );
@@ -265,7 +276,8 @@ mod test {
             )?
             .unwrap(),
             TagFiltersAST::Tag {
-                tag: String::from("title:foo"),
+                field: String::from("title"),
+                value: String::from("foo"),
             },
         );
         Ok(())
@@ -278,10 +290,12 @@ mod test {
                 .unwrap(),
             TagFiltersAST::And(vec![
                 TagFiltersAST::Tag {
-                    tag: "user:bart".to_string()
+                    field: "user".to_string(),
+                    value: "bart".to_string(),
                 },
                 TagFiltersAST::Tag {
-                    tag: "lang:fr".to_string()
+                    field: "lang".to_string(),
+                    value: "fr".to_string(),
                 }
             ]),
         );
@@ -293,7 +307,8 @@ mod test {
         assert_eq!(
             extract_tags_from_query("(user:bart AND lang:fr)", &hashset(&["user"]))?.unwrap(),
             TagFiltersAST::Tag {
-                tag: "user:bart".to_string()
+                field: "user".to_string(),
+                value: "bart".to_string(),
             }
         );
         Ok(())
@@ -314,10 +329,12 @@ mod test {
             extract_tags_from_query("(user:bart -lang:fr)", &hashset(&["user", "lang"]))?.unwrap(),
             TagFiltersAST::Or(vec![
                 TagFiltersAST::Tag {
-                    tag: "user:bart".to_string()
+                    field: "user".to_string(),
+                    value: "bart".to_string(),
                 },
                 TagFiltersAST::NotTag {
-                    tag: "lang:fr".to_string()
+                    field: "lang".to_string(),
+                    value: "fr".to_string(),
                 }
             ])
         );
@@ -331,10 +348,12 @@ mod test {
                 .unwrap(),
             TagFiltersAST::And(vec![
                 TagFiltersAST::Tag {
-                    tag: "user:bart".to_string()
+                    field: "user".to_string(),
+                    value: "bart".to_string(),
                 },
                 TagFiltersAST::NotTag {
-                    tag: "lang:fr".to_string()
+                    field: "lang".to_string(),
+                    value: "fr".to_string(),
                 }
             ])
         );
@@ -346,7 +365,8 @@ mod test {
         assert_eq!(
             extract_tags_from_query("(+user:bart lang:fr)", &hashset(&["user", "lang"]))?.unwrap(),
             TagFiltersAST::Tag {
-                tag: "user:bart".to_string()
+                field: "user".to_string(),
+                value: "bart".to_string(),
             }
         );
         Ok(())

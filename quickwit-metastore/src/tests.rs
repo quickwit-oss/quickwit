@@ -1595,10 +1595,12 @@ pub mod test_suite {
             let range = None;
             let tag_filter_ast = TagFiltersAST::And(vec![
                 TagFiltersAST::Tag {
-                    tag: "bar".to_string(),
+                    field: "bar".to_string(),
+                    value: "".to_string(),
                 },
                 TagFiltersAST::Tag {
-                    tag: "baz".to_string(),
+                    field: "baz".to_string(),
+                    value: "baz".to_string(),
                 },
             ]);
             let splits = metastore

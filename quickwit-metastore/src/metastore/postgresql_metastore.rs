@@ -794,13 +794,21 @@ fn tags_filter_expression_helper(
             }
             or_expr
         }
-        TagFiltersAST::Tag { tag } => {
-            Box::new(sql::<Bool>("").bind::<Text, _>(tag).sql("= ANY(tags)"))
+        TagFiltersAST::Tag { field, value } => {
+            Box::new(sql::<Bool>("").bind::<Text, _>(format!("{}:{}", field, value)).sql("= ANY(tags)").or(
+                    sql::<Bool>("NOT (")
+                    .bind::<Text, _>(format!("{}!", field))
+                    .sql("= ANY(tags)) ")
+                ))
         }
-        TagFiltersAST::NotTag { tag } => Box::new(
+        TagFiltersAST::NotTag { field, value } => Box::new(
             sql::<Bool>("NOT (")
-                .bind::<Text, _>(tag)
-                .sql("= ANY(tags))"),
+                .bind::<Text, _>(format!("{}:{}", field, value))
+                .sql("= ANY(tags)) ").or(
+                    sql::<Bool>("NOT (")
+                    .bind::<Text, _>(format!("{}!", field))
+                    .sql("= ANY(tags)) ")
+                    ),
         ),
     }
 }
@@ -877,19 +885,22 @@ mod tests {
     #[test]
     fn test_tags_filter_expression_single_tag() {
         let tags_ast = TagFiltersAST::Tag {
-            tag: "my_field:titi".to_string(),
+            field: "my_field".to_string(),
+            value: "titi".to_string(),
         };
-        test_tags_filter_expression_helper(tags_ast, "$1= ANY(tags) -- binds: [\"my_field:titi\"]");
+        test_tags_filter_expression_helper(tags_ast, 
+                                           "($1= ANY(tags) OR NOT ($2= ANY(tags)) ) -- binds: [\"my_field:titi\", \"my_field!\"]");
     }
 
     #[test]
     fn test_tags_filter_expression_not_tag() {
         let tags_ast = TagFiltersAST::NotTag {
-            tag: "my_field:titi".to_string(),
+            field: "my_field".to_string(),
+            value: "titi".to_string(),
         };
         test_tags_filter_expression_helper(
             tags_ast,
-            "NOT ($1= ANY(tags)) -- binds: [\"my_field:titi\"]",
+            "(NOT ($1= ANY(tags))  OR NOT ($2= ANY(tags)) ) -- binds: [\"my_field:titi\", \"my_field!\"]"
         );
     }
 
@@ -897,19 +908,24 @@ mod tests {
     fn test_tags_filter_expression_ands() {
         let tags_ast = TagFiltersAST::And(vec![
             TagFiltersAST::Tag {
-                tag: "tag:val1".to_string(),
+                field: "tag".to_string(),
+                value: "val1".to_string(),
             },
             TagFiltersAST::Tag {
-                tag: "tag:val2".to_string(),
+                field: "tag".to_string(),
+                value: "val2".to_string(),
             },
             TagFiltersAST::Tag {
-                tag: "tag:val3".to_string(),
+                field: "tag".to_string(),
+                value: "val3".to_string(),
             },
         ]);
         test_tags_filter_expression_helper(
             tags_ast,
-            "$1= ANY(tags) AND $2= ANY(tags) AND $3= ANY(tags) -- binds: [\"tag:val1\", \
-             \"tag:val2\", \"tag:val3\"]",
+            "($1= ANY(tags) OR NOT ($2= ANY(tags)) ) AND ($3= ANY(tags) OR NOT \
+            ($4= ANY(tags)) ) AND ($5= ANY(tags) OR NOT ($6= ANY(tags)) ) \
+            -- binds: [\"tag:val1\", \"tag!\", \"tag:val2\", \"tag!\", \
+            \"tag:val3\", \"tag!\"]",
         );
     }
 
@@ -918,20 +934,25 @@ mod tests {
         let tags_ast = TagFiltersAST::Or(vec![
             TagFiltersAST::And(vec![
                 TagFiltersAST::Tag {
-                    tag: "tag:val1".to_string(),
+                    field: "tag".to_string(),
+                    value: "val1".to_string(),
                 },
                 TagFiltersAST::Tag {
-                    tag: "tag:val2".to_string(),
+                    field: "tag".to_string(),
+                    value: "val2".to_string(),
                 },
             ]),
             TagFiltersAST::Tag {
-                tag: "tag:val3".to_string(),
+                field: "tag".to_string(),
+                value: "val3".to_string(),
             },
         ]);
         test_tags_filter_expression_helper(
             tags_ast,
-            "($1= ANY(tags) AND $2= ANY(tags) OR $3= ANY(tags)) -- binds: [\"tag:val1\", \
-             \"tag:val2\", \"tag:val3\"]",
+            "(($1= ANY(tags) OR NOT ($2= ANY(tags)) ) AND ($3= ANY(tags) OR NOT \
+            ($4= ANY(tags)) ) OR ($5= ANY(tags) OR NOT ($6= ANY(tags)) )) \
+            -- binds: [\"tag:val1\", \"tag!\", \"tag:val2\", \"tag!\", \
+            \"tag:val3\", \"tag!\"]",
         );
     }
 
@@ -940,20 +961,25 @@ mod tests {
         let tags_ast = TagFiltersAST::And(vec![
             TagFiltersAST::Or(vec![
                 TagFiltersAST::Tag {
-                    tag: "tag:val1".to_string(),
+                    field: "tag".to_string(),
+                    value: "val1".to_string(),
                 },
                 TagFiltersAST::Tag {
-                    tag: "tag:val2".to_string(),
+                    field: "tag".to_string(),
+                    value: "val2".to_string(),
                 },
             ]),
             TagFiltersAST::Tag {
-                tag: "tag:val3".to_string(),
+                field: "tag".to_string(),
+                value: "val3".to_string(),
             },
         ]);
         test_tags_filter_expression_helper(
             tags_ast,
-            "($1= ANY(tags) OR $2= ANY(tags)) AND $3= ANY(tags) -- binds: [\"tag:val1\", \
-             \"tag:val2\", \"tag:val3\"]",
+            "(($1= ANY(tags) OR NOT ($2= ANY(tags)) ) OR ($3= ANY(tags) OR NOT \
+            ($4= ANY(tags)) )) AND ($5= ANY(tags) OR NOT ($6= ANY(tags)) ) \
+            -- binds: [\"tag:val1\", \"tag!\", \"tag:val2\", \"tag!\", \
+            \"tag:val3\", \"tag!\"]",
         );
     }
 }
