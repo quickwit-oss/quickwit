@@ -231,8 +231,8 @@ fn resolve_timestamp_field(
             }
             _ => {
                 bail!(
-                    "Timestamp field must be either of type i64, please change your field type \
-                     `{}` to i64.",
+                    "Timestamp field must be of type i64, please change your field type `{}` to \
+                     i64.",
                     timestamp_field_name
                 )
             }
