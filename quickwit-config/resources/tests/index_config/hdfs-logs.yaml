@@ -32,7 +32,7 @@ indexing_settings:
   sort_field: timestamp
   sort_order: asc
   commit_timeout_secs: 61
-  split_max_num_docs: 10000001
+  split_num_docs_target: 10000001
   merge_policy:
     demux_factor: 7
     merge_factor: 9

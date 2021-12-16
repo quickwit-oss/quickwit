@@ -93,7 +93,7 @@ fn sample_index_metadata_for_regression() -> IndexMetadata {
         sort_field: Some("timestamp".to_string()),
         sort_order: Some(SortOrder::Asc),
         commit_timeout_secs: 301,
-        split_max_num_docs: 10_000_001,
+        split_num_docs_target: 10_000_001,
         merge_enabled: true,
         merge_policy,
         resources: indexing_resources,

@@ -124,9 +124,10 @@ pub struct IndexingSettings {
     pub sort_order: Option<SortOrder>,
     #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
-    /// The maximum number of documents allowed in a split.
-    #[serde(default = "IndexingSettings::default_split_max_num_docs")]
-    pub split_max_num_docs: usize,
+    /// A split containing a number of docs greather than or equal to this value is considered
+    /// mature.
+    #[serde(default = "IndexingSettings::default_split_num_docs_target")]
+    pub split_num_docs_target: usize,
     #[serde(default = "IndexingSettings::default_merge_enabled")]
     pub merge_enabled: bool,
     #[serde(default)]
@@ -144,7 +145,7 @@ impl IndexingSettings {
         60
     }
 
-    fn default_split_max_num_docs() -> usize {
+    fn default_split_num_docs_target() -> usize {
         10_000_000
     }
 
@@ -178,7 +179,7 @@ impl Default for IndexingSettings {
             sort_field: None,
             sort_order: None,
             commit_timeout_secs: Self::default_commit_timeout_secs(),
-            split_max_num_docs: Self::default_split_max_num_docs(),
+            split_num_docs_target: Self::default_split_num_docs_target(),
             merge_enabled: Self::default_merge_enabled(),
             merge_policy: MergePolicy::default(),
             resources: IndexingResources::default(),
@@ -253,19 +254,14 @@ impl IndexConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
 
     fn get_resource_path(resource_filename: &str) -> String {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resources")
-            .join("tests")
-            .join("index_config")
-            .join(resource_filename)
-            .to_str()
-            .expect("Invalid resource file name.")
-            .to_string()
+        format!(
+            "{}/resources/tests/index_config/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            resource_filename
+        )
     }
 
     macro_rules! test_parser {
@@ -314,7 +310,7 @@ mod tests {
                 assert_eq!(index_config.indexing_settings.commit_timeout_secs, 61);
 
                 assert_eq!(
-                    index_config.indexing_settings.split_max_num_docs,
+                    index_config.indexing_settings.split_num_docs_target,
                     10_000_001
                 );
                 assert_eq!(
