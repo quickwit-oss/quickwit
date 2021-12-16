@@ -81,7 +81,6 @@ const DEFAULT_SERVER_CONFIG: &str = r#"
  
     searcher:
       data_dir_path: #data_dir_path
-      host_key_path: #data_dir_path/host_key
       rest_listen_port: #searcher.rest_listen_port
       grpc_listen_port: #searcher.grpc_listen_port
       discovery_listen_port: #searcher.discovery_listen_port

@@ -106,8 +106,6 @@ impl Default for IndexerConfig {
 pub struct SearcherConfig {
     #[serde(default = "default_data_dir_path")]
     pub data_dir_path: PathBuf,
-    #[serde(default = "SearcherConfig::default_host_key_path")]
-    pub host_key_path: PathBuf,
     #[serde(default = "default_listen_address")]
     pub rest_listen_address: String,
     #[serde(default = "SearcherConfig::default_rest_listen_port")]
@@ -121,10 +119,6 @@ pub struct SearcherConfig {
 }
 
 impl SearcherConfig {
-    fn default_host_key_path() -> PathBuf {
-        PathBuf::from("/var/lib/quickwit/host_key")
-    }
-
     fn default_rest_listen_port() -> u16 {
         7280
     }
@@ -135,6 +129,10 @@ impl SearcherConfig {
 
     fn default_split_footer_cache_capacity() -> Byte {
         Byte::from_bytes(500_000_000) // 500M
+    }
+
+    pub fn host_id_path(&self) -> PathBuf {
+        self.data_dir_path.join("host_id")
     }
 
     pub fn rest_socket_addr(&self) -> anyhow::Result<SocketAddr> {
@@ -201,7 +199,6 @@ impl Default for SearcherConfig {
     fn default() -> Self {
         Self {
             data_dir_path: default_data_dir_path(),
-            host_key_path: Self::default_host_key_path(),
             rest_listen_address: default_listen_address(),
             rest_listen_port: Self::default_rest_listen_port(),
             peer_seeds: Vec::new(),
@@ -332,7 +329,6 @@ mod tests {
                     server_config.searcher_config.unwrap(),
                     SearcherConfig {
                         data_dir_path: PathBuf::from("/opt/quickwit/data"),
-                        host_key_path: PathBuf::from("/opt/quickwit/host_key"),
                         rest_listen_address: "0.0.0.0".to_string(),
                         rest_listen_port: 11111,
                         peer_seeds: vec![
@@ -399,7 +395,6 @@ mod tests {
 
             searcher:
               data_dir_path: /opt/quickwit/data
-              host_key_path: /opt/quickwit/host_key
         "#;
             let server_config = serde_yaml::from_str::<ServerConfig>(server_config_yaml).unwrap();
             assert_eq!(server_config.version, 0);
@@ -418,7 +413,6 @@ mod tests {
                 server_config.searcher_config.unwrap(),
                 SearcherConfig {
                     data_dir_path: PathBuf::from("/opt/quickwit/data"),
-                    host_key_path: PathBuf::from("/opt/quickwit/host_key"),
                     ..Default::default()
                 }
             );
@@ -441,6 +435,18 @@ mod tests {
             };
             assert!(indexer_config.validate().is_ok());
         }
+    }
+
+    #[test]
+    fn test_searcher_config_host_id_path() {
+        let searcher_config = SearcherConfig {
+            data_dir_path: "/path/to/data/dir".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            searcher_config.host_id_path(),
+            Path::new("/path/to/data/dir/host_id")
+        );
     }
 
     #[test]

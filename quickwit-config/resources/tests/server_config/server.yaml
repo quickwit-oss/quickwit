@@ -8,7 +8,6 @@ indexer:
   split_store_max_num_splits: 10000
 searcher:
   data_dir_path: /opt/quickwit/data
-  host_key_path: /opt/quickwit/host_key
   rest_listen_address: 0.0.0.0
   rest_listen_port: 11111
   peer_seeds:
