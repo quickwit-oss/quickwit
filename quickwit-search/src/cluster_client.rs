@@ -227,6 +227,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            ..Default::default()
         };
         LeafSearchRequest {
             search_request: Some(search_request),
