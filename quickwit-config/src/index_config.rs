@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::time::Duration;
@@ -32,7 +33,7 @@ use serde::{Deserialize, Serialize};
 pub struct DocMapping {
     pub field_mappings: Vec<FieldMappingEntry>,
     #[serde(default)]
-    pub tag_fields: Vec<String>,
+    pub tag_fields: BTreeSet<String>,
     #[serde(default = "DocMapping::default_store_source")]
     pub store_source: bool,
 }
@@ -286,7 +287,11 @@ mod tests {
                 assert_eq!(index_config.doc_mapping.field_mappings[4].name, "resource");
 
                 assert_eq!(
-                    index_config.doc_mapping.tag_fields,
+                    index_config
+                        .doc_mapping
+                        .tag_fields
+                        .into_iter()
+                        .collect::<Vec<String>>(),
                     vec!["tenant_id".to_string()]
                 );
                 assert_eq!(index_config.doc_mapping.store_source, true);
