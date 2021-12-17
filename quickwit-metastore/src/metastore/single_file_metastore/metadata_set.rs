@@ -96,6 +96,7 @@ impl MetadataSet {
         self.splits
             .insert(metadata.split_id().to_string(), metadata);
 
+        self.index.update_timestamp = Utc::now().timestamp();
         Ok(())
     }
 
@@ -147,6 +148,10 @@ impl MetadataSet {
                 split_ids: split_not_found_ids,
             });
         }
+
+        if is_modified {
+            self.index.update_timestamp = Utc::now().timestamp();
+        }
         Ok(is_modified)
     }
 
@@ -197,6 +202,7 @@ impl MetadataSet {
             });
         }
 
+        self.index.update_timestamp = Utc::now().timestamp();
         Ok(())
     }
 
@@ -287,6 +293,7 @@ impl MetadataSet {
             });
         }
 
+        self.index.update_timestamp = Utc::now().timestamp();
         Ok(())
     }
 }

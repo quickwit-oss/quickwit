@@ -444,15 +444,14 @@ impl Metastore for PostgresqlMetastore {
                 cause: anyhow::anyhow!(err),
             }
         })?;
-        let model_index = model::Index {
-            index_id: index_metadata.index_id.clone(),
-            index_metadata_json,
-        };
         let conn = self.get_conn()?;
         conn.transaction::<_, MetastoreError, _>(|| {
             // Create index.
             let create_index_statement =
-                diesel::insert_into(schema::indexes::dsl::indexes).values(&model_index);
+                diesel::insert_into(schema::indexes::dsl::indexes).values((
+                    schema::indexes::dsl::index_id.eq(index_metadata.index_id.clone()),
+                    schema::indexes::dsl::index_metadata_json.eq(index_metadata_json),
+                ));
             debug!(sql=%debug_query::<Pg, _>(&create_index_statement).to_string());
             create_index_statement
                 .execute(&*conn)
@@ -474,7 +473,7 @@ impl Metastore for PostgresqlMetastore {
                         MetastoreError::DbError(err)
                     }
                 })?;
-            debug!(index_id=?model_index.index_id, "The index has been created");
+            debug!(index_id=?index_metadata.index_id, "The index has been created");
             Ok(())
         })?;
         Ok(())
