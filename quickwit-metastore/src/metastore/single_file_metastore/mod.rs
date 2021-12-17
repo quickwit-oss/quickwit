@@ -152,8 +152,9 @@ impl SingleFileMetastore {
         // Here we retake the lock, still no io ongoing.
         let mut per_index_metastores_wlock = self.per_index_metastores.write().await;
 
-        // At this point, some other client might have added another instance of the Metadataet in the map.
-        // We want to avoid two copies to exist in the application, so we keep only one.
+        // At this point, some other client might have added another instance of the Metadataet in
+        // the map. We want to avoid two copies to exist in the application, so we keep only
+        // one.
         if let Some(metadata_set) = per_index_metastores_wlock.get(index_id) {
             return Ok(metadata_set.clone());
         }
