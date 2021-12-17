@@ -59,4 +59,4 @@ build:
 	esac
 
 workspace-deps-tree:
-	cargo tree --all-features --workspace -f "{p}" --prefix depth | cut -f 1 -d ' ' | python3 dep-tree.py
+	cargo tree --all-features --workspace -f "{p}" --prefix depth | cut -f 1 -d ' ' | python3 scripts/dep-tree.py
