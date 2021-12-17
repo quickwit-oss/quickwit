@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::convert::TryFrom;
 
 use anyhow::{bail, Context};
@@ -92,7 +92,7 @@ impl DefaultIndexConfigBuilder {
             timestamp_field: None,
             sort_by: None,
             field_mappings: vec![],
-            tag_fields: vec![],
+            tag_fields: Default::default(),
             demux_field: None,
         }
     }
@@ -118,7 +118,7 @@ impl DefaultIndexConfigBuilder {
         let sort_by = resolve_sort_field(self.sort_by, &schema)?;
 
         // Resolve tag fields
-        let mut tag_field_names = Vec::new();
+        let mut tag_field_names: BTreeSet<String> = Default::default();
         for tag_field_name in self.tag_fields.iter() {
             if tag_field_names.contains(tag_field_name) {
                 bail!("Duplicated tag field: `{}`", tag_field_name)
@@ -126,7 +126,7 @@ impl DefaultIndexConfigBuilder {
             schema
                 .get_field(tag_field_name)
                 .with_context(|| format!("Unknown tag field: `{}`", tag_field_name))?;
-            tag_field_names.push(tag_field_name.clone());
+            tag_field_names.insert(tag_field_name.clone());
         }
         if let Some(ref demux_field_name) = self.demux_field {
             if !tag_field_names.contains(demux_field_name) {
@@ -134,7 +134,7 @@ impl DefaultIndexConfigBuilder {
                     "Demux field name `{}` is not in index config tags, add it automatically.",
                     demux_field_name
                 );
-                tag_field_names.push(demux_field_name.clone());
+                tag_field_names.insert(demux_field_name.clone());
             }
         }
 
@@ -231,8 +231,8 @@ fn resolve_timestamp_field(
             }
             _ => {
                 bail!(
-                    "Timestamp field must be either of type i64, please change your field type \
-                     `{}` to i64.",
+                    "Timestamp field must be of type i64, please change your field type `{}` to \
+                     i64.",
                     timestamp_field_name
                 )
             }
@@ -334,7 +334,7 @@ impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
                 .unwrap_or_else(Vec::new),
             demux_field: value.demux_field_name(),
             sort_by: sort_by_config,
-            tag_fields: value.tag_field_names,
+            tag_fields: value.tag_field_names.into_iter().collect(),
             default_search_fields: value.default_search_field_names,
         }
     }
@@ -365,7 +365,7 @@ pub struct DefaultIndexConfig {
     #[serde(skip_serializing)]
     schema: Schema,
     /// List of field names used for tagging.
-    pub tag_field_names: Vec<String>,
+    pub tag_field_names: BTreeSet<String>,
     /// Demux field name.
     pub demux_field_name: Option<String>,
 }
@@ -460,7 +460,7 @@ impl IndexConfig for DefaultIndexConfig {
         self.sort_by.clone()
     }
 
-    fn tag_field_names(&self) -> Vec<String> {
+    fn tag_field_names(&self) -> BTreeSet<String> {
         self.tag_field_names.clone()
     }
 }

@@ -55,7 +55,7 @@ impl ServiceCliCommand {
             .ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
         match subcommand {
             "run" => Self::parse_run_args(submatches),
-            _ => bail!("Service subcommand '{}' is not implemented", subcommand),
+            _ => bail!("Service subcommand `{}` is not implemented.", subcommand),
         }
     }
 

@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
+
 use byte_unit::Byte;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, MergePolicy, SearchSettings, SourceConfig,
@@ -74,7 +76,10 @@ fn sample_index_metadata_for_regression() -> IndexMetadata {
             log_level_mapping,
             message_mapping,
         ],
-        tag_fields: vec!["tenant_id".to_string(), "log_level".to_string()],
+        tag_fields: ["tenant_id", "log_level"]
+            .into_iter()
+            .map(|tag_field| tag_field.to_string())
+            .collect::<BTreeSet<String>>(),
         store_source: true,
     };
     let merge_policy = MergePolicy {
@@ -93,7 +98,7 @@ fn sample_index_metadata_for_regression() -> IndexMetadata {
         sort_field: Some("timestamp".to_string()),
         sort_order: Some(SortOrder::Asc),
         commit_timeout_secs: 301,
-        split_max_num_docs: 10_000_001,
+        split_num_docs_target: 10_000_001,
         merge_enabled: true,
         merge_policy,
         resources: indexing_resources,

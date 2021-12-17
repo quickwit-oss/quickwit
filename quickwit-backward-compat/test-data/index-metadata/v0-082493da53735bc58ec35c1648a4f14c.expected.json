@@ -38,8 +38,8 @@
     ],
     "store_source": true,
     "tag_fields": [
-      "tenant_id",
-      "log_level"
+      "log_level",
+      "tenant_id"
     ]
   },
   "index_id": "my-index",
@@ -60,7 +60,7 @@
     },
     "sort_field": "timestamp",
     "sort_order": "asc",
-    "split_max_num_docs": 10000001,
+    "split_num_docs_target": 10000001,
     "timestamp_field": "timestamp"
   },
   "search_settings": {

@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::time::Duration;
@@ -32,7 +33,7 @@ use serde::{Deserialize, Serialize};
 pub struct DocMapping {
     pub field_mappings: Vec<FieldMappingEntry>,
     #[serde(default)]
-    pub tag_fields: Vec<String>,
+    pub tag_fields: BTreeSet<String>,
     #[serde(default = "DocMapping::default_store_source")]
     pub store_source: bool,
 }
@@ -124,9 +125,10 @@ pub struct IndexingSettings {
     pub sort_order: Option<SortOrder>,
     #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
-    /// The maximum number of documents allowed in a split.
-    #[serde(default = "IndexingSettings::default_split_max_num_docs")]
-    pub split_max_num_docs: usize,
+    /// A split containing a number of docs greather than or equal to this value is considered
+    /// mature.
+    #[serde(default = "IndexingSettings::default_split_num_docs_target")]
+    pub split_num_docs_target: usize,
     #[serde(default = "IndexingSettings::default_merge_enabled")]
     pub merge_enabled: bool,
     #[serde(default)]
@@ -144,7 +146,7 @@ impl IndexingSettings {
         60
     }
 
-    fn default_split_max_num_docs() -> usize {
+    fn default_split_num_docs_target() -> usize {
         10_000_000
     }
 
@@ -178,7 +180,7 @@ impl Default for IndexingSettings {
             sort_field: None,
             sort_order: None,
             commit_timeout_secs: Self::default_commit_timeout_secs(),
-            split_max_num_docs: Self::default_split_max_num_docs(),
+            split_num_docs_target: Self::default_split_num_docs_target(),
             merge_enabled: Self::default_merge_enabled(),
             merge_policy: MergePolicy::default(),
             resources: IndexingResources::default(),
@@ -253,19 +255,14 @@ impl IndexConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
 
     fn get_resource_path(resource_filename: &str) -> String {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resources")
-            .join("tests")
-            .join("index_config")
-            .join(resource_filename)
-            .to_str()
-            .expect("Invalid resource file name.")
-            .to_string()
+        format!(
+            "{}/resources/tests/index_config/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            resource_filename
+        )
     }
 
     macro_rules! test_parser {
@@ -290,7 +287,11 @@ mod tests {
                 assert_eq!(index_config.doc_mapping.field_mappings[4].name, "resource");
 
                 assert_eq!(
-                    index_config.doc_mapping.tag_fields,
+                    index_config
+                        .doc_mapping
+                        .tag_fields
+                        .into_iter()
+                        .collect::<Vec<String>>(),
                     vec!["tenant_id".to_string()]
                 );
                 assert_eq!(index_config.doc_mapping.store_source, true);
@@ -314,7 +315,7 @@ mod tests {
                 assert_eq!(index_config.indexing_settings.commit_timeout_secs, 61);
 
                 assert_eq!(
-                    index_config.indexing_settings.split_max_num_docs,
+                    index_config.indexing_settings.split_num_docs_target,
                     10_000_001
                 );
                 assert_eq!(

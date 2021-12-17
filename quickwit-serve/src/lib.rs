@@ -33,7 +33,7 @@ use quickwit_cluster::cluster::{read_or_create_host_key, Cluster};
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_config::SearcherConfig;
 use quickwit_metastore::Metastore;
-use quickwit_search::{http_addr_to_swim_addr, ClusterClient, SearchClientPool, SearchServiceImpl};
+use quickwit_search::{ClusterClient, SearchClientPool, SearchServiceImpl};
 use quickwit_storage::{
     LocalFileStorageFactory, RegionProvider, S3CompatibleObjectStorageFactory, StorageUriResolver,
 };
@@ -96,13 +96,7 @@ pub async fn run_searcher(
         host_key,
         searcher_config.discovery_socket_addr()?,
     )?);
-    let rest_socket_addr = searcher_config.rest_socket_addr()?;
-    for peer_socket_addr in searcher_config
-        .peer_socket_addrs()?
-        .into_iter()
-        .filter(|peer_socket_addr| *peer_socket_addr != rest_socket_addr)
-        .map(http_addr_to_swim_addr)
-    {
+    for peer_socket_addr in searcher_config.peer_socket_addrs()? {
         // If the peer address is specified,
         // it joins the cluster in which that node participates.
         debug!(peer_addr = %peer_socket_addr, "Add peer node.");
@@ -125,6 +119,7 @@ pub async fn run_searcher(
     let grpc_cluster_service = GrpcClusterAdapter::from(cluster_service.clone());
     let grpc_server = start_grpc_service(grpc_addr, grpc_search_service, grpc_cluster_service);
 
+    let rest_socket_addr = searcher_config.rest_socket_addr()?;
     let rest_server = start_rest_service(rest_socket_addr, search_service, cluster_service);
     display_help_message(rest_socket_addr)?;
     tokio::try_join!(rest_server, grpc_server)?;

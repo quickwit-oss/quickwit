@@ -19,7 +19,7 @@ timestamp_field = "timestamp"
 sort_field = "timestamp"
 sort_order = "asc"
 commit_timeout_secs = 61
-split_max_num_docs = 10_000_001
+split_num_docs_target = 10_000_001
 
 [indexing_settings.merge_policy]
 demux_factor = 7

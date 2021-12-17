@@ -18,58 +18,18 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
-use std::fmt::Debug;
 
-use anyhow::{bail, Context};
-use clap::{load_yaml, App, AppSettings, ArgMatches};
+use anyhow::Context;
+use clap::{load_yaml, App, AppSettings};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
-use quickwit_cli::index::IndexCliCommand;
-use quickwit_cli::service::ServiceCliCommand;
-use quickwit_cli::split::SplitCliCommand;
-use quickwit_cli::*;
+use quickwit_cli::cli::CliCommand;
+use quickwit_cli::QUICKWIT_JAEGER_ENABLED_ENV_KEY;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{info, Level};
 use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
-
-#[derive(Debug, PartialEq)]
-enum CliCommand {
-    Index(IndexCliCommand),
-    Split(SplitCliCommand),
-    Service(ServiceCliCommand),
-}
-
-impl CliCommand {
-    fn default_log_level(&self) -> Level {
-        match self {
-            CliCommand::Index(subcommand) => subcommand.default_log_level(),
-            CliCommand::Split(_) => Level::ERROR,
-            CliCommand::Service(_) => Level::INFO,
-        }
-    }
-
-    fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let subcommand_opt = matches.subcommand();
-        let (subcommand, submatches) =
-            subcommand_opt.ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
-        match subcommand {
-            "index" => IndexCliCommand::parse_cli_args(submatches).map(CliCommand::Index),
-            "split" => SplitCliCommand::parse_cli_args(submatches).map(CliCommand::Split),
-            "service" => ServiceCliCommand::parse_cli_args(submatches).map(CliCommand::Service),
-            _ => bail!("Subcommand `{}` is not implemented.", subcommand),
-        }
-    }
-
-    pub async fn execute(self) -> anyhow::Result<()> {
-        match self {
-            CliCommand::Index(sub_command) => sub_command.execute().await,
-            CliCommand::Split(sub_command) => sub_command.execute().await,
-            CliCommand::Service(sub_command) => sub_command.execute().await,
-        }
-    }
-}
 
 /// Describes the way events should be formatted in the logs.
 fn event_format(
@@ -177,16 +137,16 @@ mod tests {
     use std::time::Duration;
 
     use clap::{load_yaml, App, AppSettings};
+    use quickwit_cli::cli::CliCommand;
     use quickwit_cli::index::{
         CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, GarbageCollectIndexArgs,
-        IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
+        IndexCliCommand, IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
     };
     use quickwit_cli::service::{RunIndexerArgs, RunSearcherArgs, ServiceCliCommand};
-    use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs};
+    use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs, SplitCliCommand};
     use quickwit_common::uri::Uri;
 
     use super::*;
-    use crate::CliCommand;
 
     #[test]
     fn test_parse_create_args() -> anyhow::Result<()> {
@@ -197,11 +157,6 @@ mod tests {
             .try_get_matches_from(vec!["new", "--index-uri", "file:///indexes/wikipedia"])
             .unwrap_err();
 
-        let expected_index_config_uri = format!(
-            "file://{}{}conf.yaml",
-            std::env::current_dir().unwrap().display(),
-            std::path::MAIN_SEPARATOR
-        );
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
@@ -209,9 +164,13 @@ mod tests {
             "--index-config-uri",
             "conf.yaml",
             "--metastore-uri",
-            "file:///indexes",
+            "/indexes",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
+        let expected_index_config_uri = format!(
+            "file://{}/conf.yaml",
+            std::env::current_dir().unwrap().display()
+        );
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
             metastore_uri: "file:///indexes".to_string(),
             index_config_uri: expected_index_config_uri.clone(),
@@ -220,7 +179,8 @@ mod tests {
         assert_eq!(command, expected_cmd);
 
         const QUICKWIT_METASTORE_URI_ENV_KEY: &str = "QUICKWIT_METASTORE_URI";
-        env::set_var(QUICKWIT_METASTORE_URI_ENV_KEY, "file:///indexes");
+        env::set_var(QUICKWIT_METASTORE_URI_ENV_KEY, "/indexes");
+
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
@@ -483,9 +443,8 @@ mod tests {
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         let expected_server_config_uri = format!(
-            "file://{}{}conf.toml",
-            std::env::current_dir().unwrap().display(),
-            std::path::MAIN_SEPARATOR
+            "file://{}/conf.toml",
+            std::env::current_dir().unwrap().display()
         );
         assert!(matches!(
             command,

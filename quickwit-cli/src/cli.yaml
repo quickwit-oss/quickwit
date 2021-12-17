@@ -280,3 +280,42 @@ subcommands:
                                 long: index-id
                                 value_name: INDEX ID
                                 required: true
+    - source:
+        about: Manages sources.
+        display_order: 5
+        settings:
+            - ArgRequiredElseHelp
+        subcommands:
+            - describe:
+                about: Describes a source.
+                args:
+                    - index-id:
+                        about: ID of the target index.
+                        long: index-id
+                        value_name: INDEX ID
+                        required: true
+                    - source-id:
+                        about: ID of the target source.
+                        long: source-id
+                        value_name: SOURCE ID
+                        required: true
+                    - metastore-uri:
+                        about: Location of the metastore.
+                        long: metastore-uri
+                        value_name: METASTORE URI
+                        required: true
+                        env: QUICKWIT_METASTORE_URI
+            - list:
+                about: Lists the sources of an index.
+                args:
+                    - index-id:
+                        about: ID of the target index.
+                        long: index-id
+                        value_name: INDEX ID
+                        required: true
+                    - metastore-uri:
+                        about: Location of the metastore.
+                        long: metastore-uri
+                        value_name: METASTORE URI
+                        required: true
+                        env: QUICKWIT_METASTORE_URI
