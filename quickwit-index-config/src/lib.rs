@@ -30,7 +30,10 @@ mod error;
 mod query_builder;
 mod sort_by;
 
-pub use config::{build_tag_value, build_too_many_tag_value, match_tag_field_name, IndexConfig};
+/// Pruning tags manipulation.
+pub mod tag_pruning;
+
+pub use config::IndexConfig;
 pub use default_index_config::{
     DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry, SortByConfig,
 };
@@ -39,13 +42,6 @@ pub use sort_by::{SortBy, SortOrder};
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";
-
-/// Maximum distinct values allowed for a tag field within a split.
-pub const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")) {
-    6
-} else {
-    1000
-};
 
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]

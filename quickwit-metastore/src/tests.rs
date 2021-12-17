@@ -24,6 +24,7 @@ pub mod test_suite {
 
     use async_trait::async_trait;
     use chrono::Utc;
+    use quickwit_index_config::tag_pruning::{tag, TagFilterAst};
     use tokio::time::{sleep, Duration};
 
     use crate::checkpoint::CheckpointDelta;
@@ -1097,7 +1098,7 @@ pub mod test_suite {
         // List all splits on a non-existent index
         {
             let result = metastore
-                .list_splits("non-existent-index", SplitState::Staged, None, &[])
+                .list_splits("non-existent-index", SplitState::Staged, None, None)
                 .await
                 .unwrap_err();
             assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
@@ -1140,7 +1141,7 @@ pub mod test_suite {
                 end: 99i64,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, time_range_opt, &[])
+                .list_splits(index_id, SplitState::Staged, time_range_opt, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1158,7 +1159,7 @@ pub mod test_suite {
                 end: i64::MAX,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, time_range_opt, &[])
+                .list_splits(index_id, SplitState::Staged, time_range_opt, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1176,7 +1177,7 @@ pub mod test_suite {
                 end: 200,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, time_range_opt, &[])
+                .list_splits(index_id, SplitState::Staged, time_range_opt, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1191,7 +1192,7 @@ pub mod test_suite {
 
             let range = Some(Range { start: 0, end: 100 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1206,7 +1207,7 @@ pub mod test_suite {
 
             let range = Some(Range { start: 0, end: 101 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1221,7 +1222,7 @@ pub mod test_suite {
 
             let range = Some(Range { start: 0, end: 199 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1236,7 +1237,7 @@ pub mod test_suite {
 
             let range = Some(Range { start: 0, end: 200 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1251,7 +1252,7 @@ pub mod test_suite {
 
             let range = Some(Range { start: 0, end: 201 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1266,7 +1267,7 @@ pub mod test_suite {
 
             let range = Some(Range { start: 0, end: 299 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1281,7 +1282,7 @@ pub mod test_suite {
 
             let range = Some(Range { start: 0, end: 300 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1296,7 +1297,7 @@ pub mod test_suite {
 
             let range = Some(Range { start: 0, end: 301 });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1314,7 +1315,7 @@ pub mod test_suite {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1332,7 +1333,7 @@ pub mod test_suite {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1350,7 +1351,7 @@ pub mod test_suite {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1368,7 +1369,7 @@ pub mod test_suite {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1386,7 +1387,7 @@ pub mod test_suite {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1404,7 +1405,7 @@ pub mod test_suite {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1422,7 +1423,7 @@ pub mod test_suite {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1440,7 +1441,7 @@ pub mod test_suite {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1458,7 +1459,7 @@ pub mod test_suite {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1476,7 +1477,7 @@ pub mod test_suite {
                 end: 400,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1494,7 +1495,7 @@ pub mod test_suite {
                 end: 1100,
             });
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1525,7 +1526,7 @@ pub mod test_suite {
 
             let range = None;
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &[])
+                .list_splits(index_id, SplitState::Staged, range, None)
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits
@@ -1540,9 +1541,9 @@ pub mod test_suite {
             assert_eq!(split_ids.contains("list-splits-six"), true);
 
             let range = None;
-            let tags = vec![vec!["bar".to_string(), "baz".to_string()]];
+            let tag_filter_ast = TagFilterAst::And(vec![tag("bar:"), tag("baz:baz")]);
             let splits = metastore
-                .list_splits(index_id, SplitState::Staged, range, &tags)
+                .list_splits(index_id, SplitState::Staged, range, Some(tag_filter_ast))
                 .await
                 .unwrap();
             let split_ids: HashSet<String> = splits

@@ -111,11 +111,6 @@ subcommands:
                         about: Filters out documents after that timestamp (time-series indexes only).
                         long: end-timestamp
                         value_name: TIMESTAMP
-                    - tags:
-                        about: Restricts search to splits matching the specified tags.
-                        long: tags
-                        value_name: TAG
-                        multiple_values: true
             - merge:
                 display_order: 4
                 about: Merges an index.
@@ -204,7 +199,7 @@ subcommands:
         about: Operations (add, delete, describe...) on splits.
         subcommands:
             - extract:
-                about: Downloads and extracts a split to a directory. 
+                about: Downloads and extracts a split to a directory.
                 args:
                     - index-id:
                         about: ID of the target index.

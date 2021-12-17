@@ -33,7 +33,7 @@ use quickwit_common::uri::normalize_uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
-use quickwit_index_config::match_tag_field_name;
+use quickwit_index_config::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingPipelineParams};
 use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::source::FileSourceParams;
@@ -82,7 +82,6 @@ pub struct SearchIndexArgs {
     pub search_fields: Option<Vec<String>>,
     pub start_timestamp: Option<i64>,
     pub end_timestamp: Option<i64>,
-    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -232,10 +231,6 @@ impl IndexCliCommand {
         } else {
             None
         };
-        let tags = matches
-            .values_of("tags")
-            .map(|values| values.map(|value| value.to_string()).collect());
-
         Ok(Self::Search(SearchIndexArgs {
             index_id,
             query,
@@ -244,7 +239,6 @@ impl IndexCliCommand {
             search_fields,
             start_timestamp,
             end_timestamp,
-            tags,
             metastore_uri,
         }))
     }
@@ -350,7 +344,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let splits = metastore
-        .list_splits(&args.index_id, SplitState::Published, None, &[])
+        .list_splits(&args.index_id, SplitState::Published, None, None)
         .await?;
 
     let splits_num_docs = splits
@@ -679,7 +673,6 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         end_timestamp: args.end_timestamp,
         max_hits: args.max_hits as u64,
         start_offset: args.start_offset as u64,
-        tags: args.tags.unwrap_or_default(),
     };
     let search_response: SearchResponse =
         single_node_search(&search_request, &*metastore, storage_uri_resolver.clone()).await?;

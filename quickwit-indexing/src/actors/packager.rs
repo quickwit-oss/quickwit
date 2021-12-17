@@ -20,16 +20,24 @@
 use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{bail, Context};
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity, SyncActor};
 use quickwit_directories::write_hotcache;
-use quickwit_index_config::{build_tag_value, build_too_many_tag_value, MAX_VALUES_PER_TAG_FIELD};
+use quickwit_index_config::tag_pruning::append_to_tag_set;
 use tantivy::schema::FieldType;
-use tantivy::{ReloadPolicy, SegmentId, SegmentMeta};
-use tracing::{debug, info, info_span, Span};
+use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentId, SegmentMeta};
+use tracing::{debug, info, info_span, warn, Span};
+
+/// Maximum distinct values allowed for a tag field within a split.
+const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")) {
+    6
+} else {
+    1000
+};
 
 use super::NamedField;
 use crate::models::{
@@ -192,6 +200,51 @@ fn build_hotcache<W: io::Write>(split_path: &Path, out: &mut W) -> anyhow::Resul
     Ok(())
 }
 
+/// Attempts to exhaustively extract the list of terms in a
+/// field term dictionary.
+///
+/// returns None if:
+/// - the number of terms exceed MAX_VALUES_PER_TAG_FIELD
+/// - some of the terms are not value utf8.
+/// - an error occurs.
+///
+/// Returns None may hurt split pruning and affects performance,
+/// but it does not affect Quickwit's result validity.
+fn try_extract_terms(
+    named_field: &NamedField,
+    inv_indexes: &[Arc<InvertedIndexReader>],
+    max_terms: usize,
+) -> anyhow::Result<Vec<String>> {
+    let num_terms = inv_indexes
+        .iter()
+        .map(|inv_index| inv_index.terms().num_terms())
+        .sum::<usize>();
+    if num_terms > max_terms {
+        bail!("Too many terms");
+    }
+    let mut terms = Vec::with_capacity(num_terms);
+    for inv_index in inv_indexes {
+        let mut terms_streamer = inv_index.terms().stream()?;
+        while let Some((term_data, _)) = terms_streamer.next() {
+            let term = match named_field.field_type {
+                FieldType::U64(_) => u64_from_term_data(term_data)?.to_string(),
+                FieldType::I64(_) => {
+                    tantivy::u64_to_i64(u64_from_term_data(term_data)?).to_string()
+                }
+                FieldType::F64(_) => {
+                    tantivy::u64_to_f64(u64_from_term_data(term_data)?).to_string()
+                }
+                FieldType::Bytes(_) => {
+                    bail!("Tags collection is not allowed on `bytes` fields.")
+                }
+                _ => std::str::from_utf8(term_data)?.to_string(),
+            };
+            terms.push(term);
+        }
+    }
+    Ok(terms)
+}
+
 fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
@@ -213,6 +266,7 @@ fn create_packaged_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let mut tags = BTreeSet::default();
+
     for named_field in tag_fields {
         let inverted_indexes = index_reader
             .searcher()
@@ -221,36 +275,16 @@ fn create_packaged_split(
             .map(|segment| segment.inverted_index(named_field.field))
             .collect::<Result<Vec<_>, _>>()?;
 
-        if inverted_indexes
-            .iter()
-            .map(|inv_index| inv_index.terms().num_terms())
-            .sum::<usize>()
-            >= MAX_VALUES_PER_TAG_FIELD
-        {
-            tags.insert(build_too_many_tag_value(&named_field.name));
-            continue;
-        }
-
-        for inv_index in inverted_indexes {
-            let mut terms_streamer = inv_index.terms().stream()?;
-            while let Some((term_data, _)) = terms_streamer.next() {
-                let tag_string_value = match named_field.field_type {
-                    FieldType::U64(_) => u64_from_term_data(term_data)?.to_string(),
-                    FieldType::I64(_) => {
-                        tantivy::u64_to_i64(u64_from_term_data(term_data)?).to_string()
-                    }
-                    FieldType::F64(_) => {
-                        tantivy::u64_to_f64(u64_from_term_data(term_data)?).to_string()
-                    }
-                    FieldType::Bytes(_) => {
-                        bail!("Tags collection is not allowed on `bytes` fields.")
-                    }
-                    _ => String::from_utf8_lossy(term_data).to_string(),
-                };
-                tags.insert(build_tag_value(&named_field.name, &tag_string_value));
+        match try_extract_terms(&named_field, &inverted_indexes, MAX_VALUES_PER_TAG_FIELD) {
+            Ok(terms) => {
+                append_to_tag_set(&named_field.name, &terms, &mut tags);
+            }
+            Err(tag_extraction_error) => {
+                warn!(err=?tag_extraction_error,  field_name=%named_field.name, "tag-extraction-error");
             }
         }
     }
+
     ctx.record_progress();
 
     debug!(split_id = split.split_id.as_str(), "build-hotcache");
@@ -436,12 +470,19 @@ mod tests {
         assert_eq!(packaged_splits.len(), 1);
 
         let split = &packaged_splits[0].splits[0];
-        assert_eq!(split.tags.len(), 5);
-        assert!(split.tags.contains("tag_str:value"));
-        assert!(split.tags.contains("tag_many:*"));
-        assert!(split.tags.contains("tag_u64:42"));
-        assert!(split.tags.contains("tag_i64:-42"));
-        assert!(split.tags.contains("tag_f64:-42.02"));
+        assert_eq!(
+            &split.tags.iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
+            &[
+                "tag_f64!",
+                "tag_f64:-42.02",
+                "tag_i64!",
+                "tag_i64:-42",
+                "tag_str!",
+                "tag_str:value",
+                "tag_u64!",
+                "tag_u64:42"
+            ]
+        );
         Ok(())
     }
 

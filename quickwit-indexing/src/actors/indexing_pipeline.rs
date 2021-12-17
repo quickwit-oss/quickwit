@@ -236,7 +236,7 @@ impl IndexingPipeline {
         let published_splits = self
             .params
             .metastore
-            .list_splits(&self.params.index_id, SplitState::Published, None, &[])
+            .list_splits(&self.params.index_id, SplitState::Published, None, None)
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
