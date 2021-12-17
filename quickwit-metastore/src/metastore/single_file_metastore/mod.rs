@@ -42,7 +42,6 @@ use crate::{
 /// Single file metastore implementation.
 pub struct SingleFileMetastore {
     storage: Arc<dyn Storage>,
-    // try a rwlock
     per_index_metastores: RwLock<HashMap<String, Arc<Mutex<MetadataSet>>>>,
 }
 
@@ -87,7 +86,6 @@ impl SingleFileMetastore {
                 Ok(())
             }
             err @ Err(_) => {
-                // metadata_set_mutex.discard();
                 // For some of the error type here, we cannot know for sure
                 // whether the content was written or not.
                 //
@@ -130,7 +128,7 @@ impl SingleFileMetastore {
     ///
     /// If this is the first call during this instance for this
     /// `index_id`, a fetch to the storage will be initiated
-    /// and might triggered an error.
+    /// and might trigger an error.
     ///
     /// For a given index_id, only copies of the same index_view are returned.
     async fn metadata_set(&self, index_id: &str) -> MetastoreResult<Arc<Mutex<MetadataSet>>> {

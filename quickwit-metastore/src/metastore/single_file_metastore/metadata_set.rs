@@ -80,7 +80,7 @@ impl MetadataSet {
         if self.splits.contains_key(split_metadata.split_id()) {
             return Err(MetastoreError::InternalError {
                 message: format!(
-                    "Try to stage split that already exists ({})",
+                    "Failed to stage split  `{}`: split already exists.",
                     split_metadata.split_id()
                 ),
                 cause: anyhow::anyhow!(""),
