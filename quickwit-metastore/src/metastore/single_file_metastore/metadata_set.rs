@@ -255,9 +255,7 @@ impl MetadataSet {
                 self.splits.remove(split_id);
                 DeleteSplitOutcome::Success
             }
-            SplitState::Published | SplitState::New => {
-                DeleteSplitOutcome::ForbiddenBecausePublished
-            }
+            SplitState::Published => DeleteSplitOutcome::ForbiddenBecausePublished,
         }
     }
 

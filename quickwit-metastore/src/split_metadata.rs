@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use crate::VersionedSplitMetadataDeserializeHelper;
 
 /// Carries split metadata.
-#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Split {
     /// The state of the split.
     pub split_state: SplitState,
@@ -41,26 +41,6 @@ pub struct Split {
 }
 
 impl Split {
-    /// Creates a new empty split with ID `split_id`.
-    pub fn new(split_id: String) -> Self {
-        let split_metadata = SplitMetadata {
-            split_id,
-            num_docs: 0,
-            original_size_in_bytes: 0,
-            time_range: None,
-            create_timestamp: utc_now_timestamp(),
-            tags: Default::default(),
-            demux_num_ops: 0,
-            footer_offsets: Default::default(),
-        };
-
-        Split {
-            split_metadata,
-            split_state: SplitState::New,
-            update_timestamp: Utc::now().timestamp(),
-        }
-    }
-
     /// Returns the split_id.
     pub fn split_id(&self) -> &str {
         &self.split_metadata.split_id
@@ -135,11 +115,8 @@ impl SplitMetadata {
 }
 
 /// A split state.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SplitState {
-    /// The split is newly created.
-    New,
-
     /// The split is almost ready. Some of its files may have been uploaded in the storage.
     Staged,
 
@@ -150,21 +127,15 @@ pub enum SplitState {
     ScheduledForDeletion,
 }
 
-impl Default for SplitState {
-    fn default() -> Self {
-        Self::New
-    }
-}
-
 impl FromStr for SplitState {
     type Err = &'static str;
 
     fn from_str(input: &str) -> Result<SplitState, Self::Err> {
         match input {
-            "New" => Ok(SplitState::New),
             "Staged" => Ok(SplitState::Staged),
             "Published" => Ok(SplitState::Published),
             "ScheduledForDeletion" => Ok(SplitState::ScheduledForDeletion),
+            "New" => Ok(SplitState::Staged), // Deprecated
             _ => Err("Unknown split state"),
         }
     }

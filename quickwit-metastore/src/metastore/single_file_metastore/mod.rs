@@ -71,9 +71,9 @@ impl SingleFileMetastore {
         index_id: &str,
         mutation: impl FnOnce(&mut MetadataSet) -> crate::MetastoreResult<bool>,
     ) -> MetastoreResult<()> {
-        let mut metadata_set_lock = self.metadata_set_locked(index_id).await?;
+        let mut locked_metadata_set = self.get_locked_metadata_set(index_id).await?;
 
-        let mut metadata_set = metadata_set_lock.clone();
+        let mut metadata_set = locked_metadata_set.clone();
         let has_changed = mutation(&mut metadata_set)?;
         if !has_changed {
             return Ok(());
@@ -82,7 +82,7 @@ impl SingleFileMetastore {
         let put_result = put_metadata_set(&*self.storage, &metadata_set).await;
         match put_result {
             Ok(()) => {
-                *metadata_set_lock = metadata_set;
+                *locked_metadata_set = metadata_set;
                 Ok(())
             }
             err @ Err(_) => {
@@ -94,7 +94,7 @@ impl SingleFileMetastore {
 
                 // At this point, we hold both locks.
                 per_index_metastores_wlock.remove(index_id);
-                metadata_set_lock.discarded = true;
+                locked_metadata_set.discarded = true;
 
                 err
             }
@@ -103,15 +103,15 @@ impl SingleFileMetastore {
 
     async fn read<T, F>(&self, index_id: &str, view: F) -> MetastoreResult<T>
     where F: FnOnce(&MetadataSet) -> MetastoreResult<T> {
-        let metadata_set_lock = self.metadata_set_locked(index_id).await?;
-        view(&*metadata_set_lock)
+        let locked_metadata_set = self.get_locked_metadata_set(index_id).await?;
+        view(&*locked_metadata_set)
     }
 
     /// Returns a valid metadataset that is locked.
     ///
     /// This function guarantees that the metadataset has not been
     /// marked as discarded.
-    async fn metadata_set_locked(
+    async fn get_locked_metadata_set(
         &self,
         index_id: &str,
     ) -> MetastoreResult<OwnedMutexGuard<MetadataSet>> {
