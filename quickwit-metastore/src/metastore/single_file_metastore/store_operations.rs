@@ -83,7 +83,10 @@ pub(crate) async fn index_exists(storage: &dyn Storage, index_id: &str) -> Metas
 }
 
 /// Serializes the metadata set and stores the data on the storage.
-pub(crate) async fn put_metadata_set_to_path(
+///
+/// Do not call this method. Instead, call `put_metadata_set`.
+/// The point of having two methods here is just to make it usable in a unit test.
+pub(crate) async fn put_metadata_set_given_index_id(
     storage: &dyn Storage,
     metadata_set: &MetadataSet,
     index_id: &str,
@@ -109,7 +112,7 @@ pub(crate) async fn put_metadata_set(
     storage: &dyn Storage,
     metadata_set: &MetadataSet,
 ) -> MetastoreResult<()> {
-    put_metadata_set_to_path(storage, metadata_set, metadata_set.index_id()).await
+    put_metadata_set_given_index_id(storage, metadata_set, metadata_set.index_id()).await
 }
 
 /// Serializes the metadata set and stores the data on the storage.

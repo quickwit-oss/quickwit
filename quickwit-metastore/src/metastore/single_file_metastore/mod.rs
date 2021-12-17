@@ -151,6 +151,9 @@ impl SingleFileMetastore {
 
         // Here we retake the lock, still no io ongoing.
         let mut per_index_metastores_wlock = self.per_index_metastores.write().await;
+
+        // At this point, some other client might have added another instance of the Metadataet in the map.
+        // We want to avoid two copies to exist in the application, so we keep only one.
         if let Some(metadata_set) = per_index_metastores_wlock.get(index_id) {
             return Ok(metadata_set.clone());
         }
@@ -286,6 +289,10 @@ impl Metastore for SingleFileMetastore {
         })
         .await
     }
+
+    /// -------------------------------------------------------------------------------
+    /// Read-only accessors
+
     async fn list_splits(
         &self,
         index_id: &str,
@@ -298,9 +305,6 @@ impl Metastore for SingleFileMetastore {
         })
         .await
     }
-
-    /// -------------------------------------------------------------------------------
-    /// Read-only accessors
 
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
         self.read(index_id, |metadata_set| metadata_set.list_all_splits())
@@ -348,7 +352,7 @@ mod tests {
     use tokio::time::Duration;
 
     use crate::checkpoint::CheckpointDelta;
-    use crate::metastore::single_file_metastore::store_operations::put_metadata_set_to_path;
+    use crate::metastore::single_file_metastore::store_operations::put_metadata_set_given_index_id;
     use crate::metastore::single_file_metastore::MetadataSet;
     use crate::{
         IndexMetadata, Metastore, MetastoreError, SingleFileMetastore, SplitMetadata, SplitState,
@@ -503,7 +507,7 @@ mod tests {
         // Put inconsistent index into storage.
         let metadata_set = MetadataSet::from(index_metadata);
 
-        put_metadata_set_to_path(&*storage, &metadata_set, index_id).await?;
+        put_metadata_set_given_index_id(&*storage, &metadata_set, index_id).await?;
 
         // Getting index with inconsistent index ID should raise an error.
         let metastore_error = metastore.get_index(index_id).await.unwrap_err();
