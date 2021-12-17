@@ -32,14 +32,13 @@ Let's download and install Quickwit.
 curl -L https://install.quickwit.io | sh
 ```
 
-
 ## Create your index
 
 Let's create an index configured to receive these logs.
 
 ```bash
 # First, download the hdfs logs config from Quickwit repository.
-curl -o hdfslogs_index_config.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/hdfslogs_index_config.json
+curl -o hdfslogs_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/hdfslogs_index_config.yaml
 ```
 
 The index config defines 5 fields: `timestamp`, `severity_text`, `body`, and two object fields
@@ -51,7 +50,7 @@ This timestamp field will be used by Quickwit for sorting documents (descending 
 ```yaml title="hdfslogs_index_config.yaml"
 version: 0
 index_id: hdfs_logs
-index_uri: s3://path-to-your-bucket/hdfs_logs # Adjust to your own s3 bucket
+index_uri: file://$(pwd)/indexes/hdfs_logs # Adjust to your own s3 bucket
 
 doc_mapping:
   field_mappings:

@@ -45,7 +45,7 @@ Let's create an index configured to receive these logs.
 
 ```bash
 # First, download the hdfs logs config from Quickwit repository.
-curl -o hdfslogs_index_config.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/hdfslogs_index_config.json
+curl -o hdfslogs_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/hdfslogs_index_config.yaml
 ```
 
 The index config defines 5 fields: `timestamp`, `severity_text`, `body`, and two object fields
