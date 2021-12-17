@@ -174,7 +174,7 @@ impl IndexMetadata {
         };
         builder.timestamp_field = self.indexing_settings.timestamp_field.clone();
         builder.field_mappings = self.doc_mapping.field_mappings.clone();
-        builder.tag_fields = self.doc_mapping.tag_fields.clone();
+        builder.tag_fields = self.doc_mapping.tag_fields.iter().cloned().collect();
         builder.store_source = self.doc_mapping.store_source;
         Ok(Arc::new(builder.build()?))
     }
