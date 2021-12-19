@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
 use std::fmt::Debug;
 
 use dyn_clone::{clone_trait_object, DynClone};
@@ -109,8 +110,8 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     }
 
     /// Returns the tag field names
-    fn tag_field_names(&self) -> Vec<String> {
-        vec![]
+    fn tag_field_names(&self) -> BTreeSet<String> {
+        Default::default()
     }
 
     /// Returns the demux field name.

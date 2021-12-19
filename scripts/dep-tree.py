@@ -3,16 +3,16 @@ from collections import defaultdict
 import graphviz
 
 FILTER = {
-	# "quickwit-backward-compat",
-	# "quickwit-actors",
-	# "quickwit-cli",
+	"quickwit-backward-compat",
+	"quickwit-actors",
+	"quickwit-cli",
 	"quickwit-index-config",
 	"quickwit-search",
 	"quickwit-common",
 	"quickwit-indexing",
 	"quickwit-metastore",
-	# "quickwit-swim",
-	# "quickwit-proto",
+	"quickwit-swim",
+	"quickwit-proto",
 	"quickwit-directories",
 	"quickwit-common",
 	"quickwit-serve",
@@ -57,16 +57,5 @@ for (from_node, to_nodes) in deps_graph.items():
         if to_node not in FILTER:
             continue
         dot.edge(from_node, to_node)
+
 dot.render()
-# val_map = {'A': 1.0,
-#            'D': 0.5714285714285714,
-#            'H': 0.0}
-
-# values = [val_map.get(node, 0.25) for node in G.nodes()]
-
-# pos = nx.spring_layout(G)
-# nx.draw_networkx_labels(G, pos)
-
-# nx.draw(G, cmap = plt.get_cmap('jet'))
-# plt.savefig('deps.png', dpi=300)
-# plt.show()

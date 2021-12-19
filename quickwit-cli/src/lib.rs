@@ -28,8 +28,10 @@ use quickwit_metastore::MetastoreUriResolver;
 use quickwit_storage::quickwit_storage_uri_resolver;
 use regex::Regex;
 
+pub mod cli;
 pub mod index;
 pub mod service;
+pub mod source;
 pub mod split;
 pub mod stats;
 

@@ -300,6 +300,7 @@ impl IndexingPipeline {
                     .map(|field| NamedField {
                         name: field_name.clone(),
                         field,
+                        field_type: index_schema.get_field_entry(field).field_type().clone(),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
