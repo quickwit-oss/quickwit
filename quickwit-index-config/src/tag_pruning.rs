@@ -254,7 +254,7 @@ fn collect_tag_filters_for_clause(
                 Occur::Should => None,
             })
             .collect();
-        // We will handle the case where removed_should_clause.len() == 1 in the simply
+        // We will handle the case where removed_should_clause.len() == 1 in the simplify
         // phase.
         return UnsimplifiedTagFilterAst::And(removed_should_clause);
     }
@@ -337,7 +337,7 @@ fn collect_tag_filters(user_input_ast: UserInputAst) -> UnsimplifiedTagFilterAst
     }
 }
 
-/// Helper to build a TagFilterAst checking for the presence of a tag
+/// Helper to build a TagFilterAst checking for the presence of a tag.
 pub fn tag(tag: impl ToString) -> TagFilterAst {
     TagFilterAst::Tag {
         is_present: true,
@@ -345,7 +345,7 @@ pub fn tag(tag: impl ToString) -> TagFilterAst {
     }
 }
 
-/// Helper to build a TagFilterAst checking for the absence of a tag
+/// Helper to build a TagFilterAst checking for the absence of a tag.
 pub fn no_tag(tag: impl ToString) -> TagFilterAst {
     TagFilterAst::Tag {
         is_present: false,
