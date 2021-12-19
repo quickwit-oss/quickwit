@@ -71,9 +71,9 @@ enum UnsimplifiedTagFilterAst {
 
 /// Represents a tag filter used for split pruning.
 #[derive(Debug, PartialEq, Clone)]
-enum TermFiltersAST {
-    And(Vec<TermFiltersAST>),
-    Or(Vec<TermFiltersAST>),
+enum TermFilterAst {
+    And(Vec<TermFilterAst>),
+    Or(Vec<TermFilterAst>),
     Term {
         is_present: bool,
         field: String,
@@ -162,44 +162,40 @@ impl TagFilterAst {
     }
 }
 
-// Takes a tag AST and simplify it in such a way that the resulting tree:
-// - represents a boolean expression that is equivalent to the original ast
-// - it can be equal to true, or to false, but if it is isn't True and False does not appear in the
-//   AST
-// - it does not contain any NOT clause.
+// Takes a tag AST and simplify it.
+//
+// The resulting AST does not contain any uninformative leaves.
 //
 // Returning None here, is to be interpreted as returning `True`.
-//
-// The latter two conditions are enforced by the type system.
-fn simplify_ast(ast: UnsimplifiedTagFilterAst) -> Option<TermFiltersAST> {
+fn simplify_ast(ast: UnsimplifiedTagFilterAst) -> Option<TermFilterAst> {
     match ast {
         UnsimplifiedTagFilterAst::And(conditions) => {
-            let mut pruned_conditions: Vec<TermFiltersAST> =
+            let mut pruned_conditions: Vec<TermFilterAst> =
                 conditions.into_iter().filter_map(simplify_ast).collect();
             match pruned_conditions.len() {
                 0 => None,
                 1 => pruned_conditions.pop().unwrap().into(),
-                _ => TermFiltersAST::And(pruned_conditions).into(),
+                _ => TermFilterAst::And(pruned_conditions).into(),
             }
         }
         UnsimplifiedTagFilterAst::Or(conditions) => {
-            let mut pruned_conditions: Vec<TermFiltersAST> = Vec::new();
+            let mut pruned_conditions: Vec<TermFilterAst> = Vec::new();
             for condition in conditions {
                 // If we get None as part of the condition here, we return None
-                // directly. (Remember None == True0.
+                // directly. (Remember None means True).
                 pruned_conditions.push(simplify_ast(condition)?);
             }
             match pruned_conditions.len() {
                 0 => None,
                 1 => pruned_conditions.pop().unwrap().into(),
-                _ => TermFiltersAST::Or(pruned_conditions).into(),
+                _ => TermFilterAst::Or(pruned_conditions).into(),
             }
         }
         UnsimplifiedTagFilterAst::Tag {
             is_present,
             field,
             value,
-        } => TermFiltersAST::Term {
+        } => TermFilterAst::Term {
             is_present,
             field,
             value,
@@ -217,15 +213,15 @@ fn term_tag(field: &str, value: &str) -> String {
     format!("{}:{}", field, value)
 }
 
-fn expand_to_tag_ast(terms_filter_ast: TermFiltersAST) -> TagFilterAst {
+fn expand_to_tag_ast(terms_filter_ast: TermFilterAst) -> TagFilterAst {
     match terms_filter_ast {
-        TermFiltersAST::And(children) => {
+        TermFilterAst::And(children) => {
             TagFilterAst::And(children.into_iter().map(expand_to_tag_ast).collect())
         }
-        TermFiltersAST::Or(children) => {
+        TermFilterAst::Or(children) => {
             TagFilterAst::Or(children.into_iter().map(expand_to_tag_ast).collect())
         }
-        TermFiltersAST::Term {
+        TermFilterAst::Term {
             is_present,
             field,
             value,
