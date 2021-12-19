@@ -275,7 +275,7 @@ fn create_packaged_split(
             .map(|segment| segment.inverted_index(named_field.field))
             .collect::<Result<Vec<_>, _>>()?;
 
-        match try_extract_terms(&named_field, &inverted_indexes, MAX_VALUES_PER_TAG_FIELD) {
+        match try_extract_terms(named_field, &inverted_indexes, MAX_VALUES_PER_TAG_FIELD) {
             Ok(terms) => {
                 append_to_tag_set(&named_field.name, &terms, &mut tags);
             }

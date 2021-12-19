@@ -203,6 +203,8 @@ pub async fn single_node_search(
 #[cfg(test)]
 mod tests {
 
+    use std::collections::BTreeSet;
+
     use assert_json_diff::assert_json_include;
     use quickwit_indexing::TestSandbox;
     use serde_json::json;
@@ -283,6 +285,9 @@ mod tests {
                 type: text
               - name: url
                 type: text
+              - name: owner
+                type: text
+                tokenizer: 'raw'
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
         for _ in 0..10u32 {
@@ -321,19 +326,19 @@ mod tests {
     #[tokio::test]
     async fn test_single_node_filtering() -> anyhow::Result<()> {
         let index_id = "single-node-filtering";
-        let doc_mapping_json = r#"{
-            "field_mappings": [
-                {
-                    "name": "body",
-                    "type": "text"
-                },
-                {
-                    "name": "ts",
-                    "type": "i64",
-                    "fast": true
-                }
-            ]
-        }"#;
+        let doc_mapping_yaml = r#"
+            tag_fields:
+              - owner
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: i64
+                fast: true
+              - name: owner
+                type: text
+                tokenizer: raw
+        "#;
         let indexing_settings_json = r#"{
             "timestamp_field": "ts",
             "sort_field": "ts",
@@ -341,7 +346,7 @@ mod tests {
         }"#;
         let test_sandbox = TestSandbox::create(
             index_id,
-            doc_mapping_json,
+            doc_mapping_yaml,
             indexing_settings_json,
             &["body"],
         )
@@ -398,7 +403,7 @@ mod tests {
         // filter on tag, should not return any hit since no split is tagged
         let search_request = SearchRequest {
             index_id: index_id.to_string(),
-            query: "info".to_string(),
+            query: "tag:foo AND info".to_string(),
             search_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
@@ -420,9 +425,12 @@ mod tests {
     #[tokio::test]
     async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         let doc_mapping_yaml = r#"
+            tag_fields:
+              - owner
             field_mappings:
               - name: owner
                 type: text
+                tokenizer: raw
         "#;
         let index_id = "single-node-pruning-by-tags";
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[]).await?;
@@ -444,7 +452,7 @@ mod tests {
             &*test_sandbox.metastore(),
         )
         .await?;
-        assert_eq!(selected_splits.len(), 0);
+        assert!(selected_splits.is_empty());
 
         let selected_splits = list_relevant_splits(
             &SearchRequest {
@@ -460,7 +468,7 @@ mod tests {
         let selected_splits = list_relevant_splits(
             &SearchRequest {
                 index_id: index_id.to_string(),
-                query: "owner:francois AND owner:paul AND owner:adrien".to_string(),
+                query: "owner:francois OR owner:paul OR owner:adrien".to_string(),
                 ..Default::default()
             },
             &*test_sandbox.metastore(),
@@ -468,14 +476,16 @@ mod tests {
         .await?;
         assert_eq!(selected_splits.len(), 2);
 
-        let mut split_tags = selected_splits
+        let split_tags: BTreeSet<String> = selected_splits
             .iter()
             .flat_map(|split| split.tags.clone())
-            .collect::<Vec<_>>();
-        split_tags.sort();
+            .collect();
         assert_eq!(
-            split_tags,
-            vec!["owner:adrien".to_string(), "owner:paul".to_string()]
+            split_tags
+                .iter()
+                .map(|tag| tag.as_str())
+                .collect::<Vec<&str>>(),
+            vec!["owner!", "owner:adrien", "owner:paul"]
         );
 
         Ok(())
