@@ -135,12 +135,12 @@ impl Index {
                 }
             };
 
-            if metadata.split_state == SplitState::ScheduledForDeletion {
-                // If the split is already scheduled for deletion, This is fine, we just skip it.
+            if metadata.split_state == SplitState::MarkedForDeletion {
+                // If the split is already marked for deletion, This is fine, we just skip it.
                 continue;
             }
 
-            metadata.split_state = SplitState::ScheduledForDeletion;
+            metadata.split_state = SplitState::MarkedForDeletion;
             metadata.update_timestamp = now_timestamp;
             is_modified = true;
         }
@@ -257,7 +257,7 @@ impl Index {
             }
         };
         match metadata.split_state {
-            SplitState::ScheduledForDeletion | SplitState::Staged => {
+            SplitState::MarkedForDeletion | SplitState::Staged => {
                 // Only `ScheduledForDeletion` and `Staged` can be deleted
                 self.splits.remove(split_id);
                 DeleteSplitOutcome::Success
