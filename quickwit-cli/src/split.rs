@@ -65,7 +65,7 @@ pub struct ExtractSplitArgs {
 
 #[derive(Debug, PartialEq)]
 pub enum SplitCliCommand {
-    ListSplit(ListSplitArgs),
+    List(ListSplitArgs),
     Describe(DescribeSplitArgs),
     Extract(ExtractSplitArgs),
 }
@@ -126,7 +126,7 @@ impl SplitCliCommand {
             values.into_iter().map(str::to_string).collect::<Vec<_>>()
         });
 
-        Ok(Self::ListSplit(ListSplitArgs {
+        Ok(Self::List(ListSplitArgs {
             metastore_uri,
             index_id,
             states,
@@ -187,7 +187,7 @@ impl SplitCliCommand {
 
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
-            Self::ListSplit(args) => list_split_cli(args).await,
+            Self::List(args) => list_split_cli(args).await,
             Self::Describe(args) => describe_split_cli(args).await,
             Self::Extract(args) => extract_split_cli(args).await,
         }
@@ -219,12 +219,28 @@ pub async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     };
     let filter_tag_set = args.tags.iter().cloned().collect::<BTreeSet<_>>();
 
+
+    println!("EVan {:?}", filter_tag_set);
+
     let mut splits = vec![];
     // apply tags & time range filter.
     for split in metastore.list_all_splits(&args.index_id).await? {
-        if !filter_tag_set.is_empty() && split.split_metadata.tags.is_disjoint(&filter_tag_set) {
+        let is_any_tag_not_in_split = filter_tag_set.iter().any(|tag| {
+            let has_many_tags_for_field = tag
+                .split_once(":")
+                .map(|(field_name, _)| {
+                    split
+                        .split_metadata
+                        .tags
+                        .contains(&format!("{}:*", field_name))
+                })
+                .unwrap_or(false);
+            !(split.split_metadata.tags.contains(tag) || has_many_tags_for_field)
+        });
+        if is_any_tag_not_in_split {
             continue;
         }
+
         if let (Some(filter_time_range), Some(split_time_range)) =
             (&time_range_opt, &split.split_metadata.time_range)
         {

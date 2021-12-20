@@ -19,8 +19,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::env;
-use std::fs::File;
-use std::io::{stdout, Stdout, Write};
+use std::io::{stdout, Stdout};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -49,7 +48,7 @@ use serde_json::json;
 use tracing::{debug, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
-use crate::{parse_duration_with_unit, run_index_checklist, THROUGHPUT_WINDOW_SIZE};
+use crate::{parse_duration_with_unit, run_index_checklist, Printer, THROUGHPUT_WINDOW_SIZE};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {

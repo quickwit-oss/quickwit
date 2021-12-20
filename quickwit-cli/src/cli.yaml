@@ -227,7 +227,7 @@ subcommands:
                         long: to
                         value_name: END TIMESTAMP
                     - tags:
-                        about: Comma-separated list of tags to filter on.
+                        about: Comma-separated list of tags, only splits that contain all of the tags will be returned.
                         long: tags
                         value_name: TAGS
                         multiple_occurrences: true

@@ -144,11 +144,11 @@ mod tests {
         IndexCliCommand, IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
     };
     use quickwit_cli::service::{RunIndexerArgs, RunSearcherArgs, ServiceCliCommand};
-    use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs, SplitCliCommand};
-    use quickwit_cli::split::ListSplitArgs;
-    use quickwit_common::net::socket_addr_from_str;
+    use quickwit_cli::split::{
+        DescribeSplitArgs, ExtractSplitArgs, ListSplitArgs, SplitCliCommand,
+    };
     use quickwit_metastore::SplitState;
-    use tempfile::NamedTempFile;
+
     use super::*;
 
     #[test]
@@ -582,7 +582,7 @@ mod tests {
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
-            CliCommand::Split(SplitCliCommand::ListSplit(ListSplitArgs {
+            CliCommand::Split(SplitCliCommand::List(ListSplitArgs {
                 index_id, metastore_uri, states, from, to, tags
             })) if &index_id == "wikipedia"
             && &metastore_uri == "file:///indexes"
