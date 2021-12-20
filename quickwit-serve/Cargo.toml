@@ -19,6 +19,7 @@ tracing = '0.1'
 quickwit-proto = {path="../quickwit-proto"}
 serde_json = "1"
 quickwit-config = {path="../quickwit-config"}
+quickwit-index-config = {path="../quickwit-index-config"}
 quickwit-storage = {path="../quickwit-storage"}
 quickwit-common = {path="../quickwit-common"}
 quickwit-metastore = {path="../quickwit-metastore"}
