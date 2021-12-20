@@ -236,7 +236,7 @@ impl IndexingPipeline {
         let published_splits = self
             .params
             .metastore
-            .list_splits(&self.params.index_id, SplitState::Published, None, &[])
+            .list_splits(&self.params.index_id, SplitState::Published, None, None)
             .await?
             .into_iter()
             .map(|split| split.split_metadata)
@@ -300,6 +300,7 @@ impl IndexingPipeline {
                     .map(|field| NamedField {
                         name: field_name.clone(),
                         field,
+                        field_type: index_schema.get_field_entry(field).field_type().clone(),
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;

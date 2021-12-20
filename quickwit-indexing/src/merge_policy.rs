@@ -22,7 +22,7 @@ use std::fmt;
 use std::ops::Range;
 
 use itertools::Itertools;
-use quickwit_index_config::match_tag_field_name;
+use quickwit_index_config::tag_pruning::match_tag_field_name;
 use quickwit_metastore::SplitMetadata;
 use tracing::debug;
 

@@ -110,7 +110,6 @@ mod test {
             end_timestamp: None,
             max_hits: 20,
             start_offset: 0,
-            tags: vec![],
         };
 
         let default_field_names = vec!["title".to_string(), "desc".to_string()];

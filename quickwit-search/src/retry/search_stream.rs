@@ -84,7 +84,6 @@ mod tests {
                 end_timestamp: None,
                 max_hits: 10,
                 start_offset: 0,
-                tags: vec![],
             }),
             index_config: "index_config".to_string(),
             index_uri: "uri".to_string(),
