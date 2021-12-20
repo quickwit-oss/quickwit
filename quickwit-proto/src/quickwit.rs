@@ -267,13 +267,13 @@ pub enum SortOrder {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum OutputFormat {
-    //// Comma Separated Values format (https://datatracker.ietf.org/doc/html/rfc4180).
+    //// Comma Separated Values format (<https://datatracker.ietf.org/doc/html/rfc4180>).
     //// The delimiter is `,`.
     ///
     ///< This will be the default value
     Csv = 0,
     //// Format data by row in ClickHouse binary format.
-    //// https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
+    //// <https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary>
     ClickHouseRowBinary = 1,
 }
 #[doc = r" Generated client implementations."]
@@ -298,7 +298,7 @@ pub mod search_service_client {
     impl<T> SearchServiceClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + Sync + 'static,
+        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
@@ -451,7 +451,6 @@ pub mod search_service_server {
         #[doc = "Server streaming response type for the LeafSearchStream method."]
         type LeafSearchStreamStream: futures_core::Stream<Item = Result<super::LeafSearchStreamResponse, tonic::Status>>
             + Send
-            + Sync
             + 'static;
         #[doc = " Perform a leaf stream on a given set of splits."]
         async fn leaf_search_stream(
@@ -486,7 +485,7 @@ pub mod search_service_server {
     impl<T, B> tonic::codegen::Service<http::Request<B>> for SearchServiceServer<T>
     where
         T: SearchService,
-        B: Body + Send + Sync + 'static,
+        B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;
