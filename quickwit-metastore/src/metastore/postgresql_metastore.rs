@@ -241,7 +241,7 @@ impl PostgresqlMetastore {
                     .and(schema::splits::dsl::split_id.eq_any(split_ids)),
             ),
         )
-        .set((schema::splits::dsl::split_state.eq(SplitState::ScheduledForDeletion.to_string()),))
+        .set((schema::splits::dsl::split_state.eq(SplitState::MarkedForDeletion.to_string()),))
         .returning(schema::splits::dsl::split_id)
         .get_results(conn)?;
 
@@ -693,7 +693,7 @@ impl Metastore for PostgresqlMetastore {
         conn.transaction::<_, MetastoreError, _>(|| {
             let deletable_states = [
                 SplitState::Staged.to_string(),
-                SplitState::ScheduledForDeletion.to_string(),
+                SplitState::MarkedForDeletion.to_string(),
             ];
 
             let deleted_split_ids: Vec<String> = diesel::delete(
