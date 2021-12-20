@@ -23,12 +23,14 @@ mod store_operations;
 
 use std::collections::HashMap;
 use std::ops::Range;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_index_config::tag_pruning::TagFilterAst;
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
+use tracing::error;
 
 pub use self::single_file_metastore_factory::SingleFileMetastoreFactory;
 use crate::checkpoint::CheckpointDelta;
@@ -40,10 +42,45 @@ use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState,
 };
 
+const DEFAULT_METASTORE_REFRESH_PERIOD: Duration = Duration::from_secs(30u64);
+
 /// Single file metastore implementation.
 pub struct SingleFileMetastore {
     storage: Arc<dyn Storage>,
     per_index_metastores: RwLock<HashMap<String, Arc<Mutex<MetadataSet>>>>,
+    polling_period: Duration,
+}
+
+async fn poll_metastore_once(
+    storage: &dyn Storage,
+    index_id: &str,
+    metadata_mutex: &Mutex<MetadataSet>,
+) {
+    let metadata_set_fetch_res = fetch_metadata_set(&*storage, &index_id).await;
+    match metadata_set_fetch_res {
+        Ok(metadata_set) => {
+            *metadata_mutex.lock().await = metadata_set;
+        }
+        Err(fetch_error) => {
+            error!(error=?fetch_error, "fetch-metadata-error");
+        }
+    }
+}
+
+fn spawn_metastore_polling_task(
+    storage: Arc<dyn Storage>,
+    index_id: String,
+    metastore_weak: Weak<Mutex<MetadataSet>>,
+    polling_period: Duration,
+) {
+    tokio::task::spawn(async move {
+        let mut interval = tokio::time::interval(polling_period);
+        interval.tick().await; //< this is to prevent fetch right after the first population of the data.
+        while let Some(metadata_mutex) = metastore_weak.upgrade() {
+            interval.tick().await;
+            poll_metastore_once(&*storage, &index_id, &*metadata_mutex).await;
+        }
+    });
 }
 
 impl SingleFileMetastore {
@@ -52,6 +89,10 @@ impl SingleFileMetastore {
     pub fn for_test() -> Self {
         use quickwit_storage::RamStorage;
         SingleFileMetastore::new(Arc::new(RamStorage::default()))
+    }
+
+    pub fn set_polling_period(&mut self, polling_period: Duration) {
+        self.polling_period = polling_period;
     }
 
     #[cfg(test)]
@@ -64,6 +105,7 @@ impl SingleFileMetastore {
         Self {
             storage,
             per_index_metastores: Default::default(),
+            polling_period: DEFAULT_METASTORE_REFRESH_PERIOD,
         }
     }
 
@@ -162,6 +204,14 @@ impl SingleFileMetastore {
 
         let metadata_set = metadata_set_result?;
         let metadata_set_mutex = Arc::new(Mutex::new(metadata_set));
+
+        spawn_metastore_polling_task(
+            self.storage.clone(),
+            index_id.to_string(),
+            Arc::downgrade(&metadata_set_mutex),
+            self.polling_period,
+        );
+
         per_index_metastores_wlock.insert(index_id.to_string(), metadata_set_mutex.clone());
         Ok(metadata_set_mutex)
     }
@@ -519,6 +569,63 @@ mod tests {
         ));
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_single_file_metastore_wrt_directly_visible() -> crate::MetastoreResult<()> {
+        let metastore = SingleFileMetastore::for_test();
+
+        let index_id = "my-index";
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        metastore.create_index(index_metadata).await?;
+
+        assert!(metastore.list_all_splits(index_id).await?.is_empty());
+        let split_metadata = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: "split1".to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(0..=99),
+            ..Default::default()
+        };
+        assert!(metastore.list_all_splits("my-index").await?.is_empty());
+        metastore.stage_split(index_id, split_metadata).await?;
+        assert_eq!(metastore.list_all_splits(index_id).await?.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_single_file_metastore_polling() -> crate::MetastoreResult<()> {
+        let storage = Arc::new(RamStorage::default());
+
+        let metastore_wrt = SingleFileMetastore::new(storage.clone());
+        let mut metastore_read = SingleFileMetastore::new(storage);
+        let refresh_period = Duration::from_millis(20);
+        metastore_read.set_polling_period(refresh_period);
+
+        let index_id = "my-index";
+        let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
+        metastore_wrt.create_index(index_metadata).await?;
+
+        assert!(metastore_wrt.list_all_splits(index_id).await?.is_empty());
+        let split_metadata = SplitMetadata {
+            footer_offsets: 1000..2000,
+            split_id: "split1".to_string(),
+            num_docs: 1,
+            original_size_in_bytes: 2,
+            time_range: Some(0..=99),
+            ..Default::default()
+        };
+        assert!(metastore_read.list_all_splits("my-index").await?.is_empty());
+        metastore_wrt.stage_split(index_id, split_metadata).await?;
+        assert!(metastore_read.list_all_splits("my-index").await?.is_empty());
+        for _ in 0..10 {
+            tokio::time::sleep(refresh_period).await;
+            if !metastore_read.list_all_splits("my-index").await?.is_empty() {
+                return Ok(());
+            }
+        }
+        panic!("The metastore should have been updated.");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
