@@ -26,7 +26,7 @@ use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 use tantivy::Document;
 
-use crate::{DocParsingError, QueryParserError, SortBy};
+use crate::{DocParsingError, QueryParserError};
 
 /// The `IndexConfig` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
@@ -56,11 +56,6 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
         split_schema: Schema,
         request: &SearchRequest,
     ) -> Result<Box<dyn Query>, QueryParserError>;
-
-    /// Returns the default sort
-    fn sort_by(&self) -> SortBy {
-        SortBy::DocId
-    }
 
     /// Returns the timestamp field.
     /// Considering schema evolution, splits within an index can have different schema

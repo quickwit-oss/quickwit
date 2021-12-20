@@ -56,8 +56,6 @@
       "heap_size": 2000000000,
       "num_threads": 1
     },
-    "sort_field": "timestamp",
-    "sort_order": "asc",
     "split_num_docs_target": 10000000,
     "timestamp_field": "timestamp"
   },

@@ -19,9 +19,11 @@
 
 mod index_config;
 mod server_config;
+mod sort_by;
 
 pub use index_config::{
     DocMapping, IndexConfig, IndexingResources, IndexingSettings, MergePolicy, SearchSettings,
     SourceConfig,
 };
 pub use server_config::{IndexerConfig, SearcherConfig, ServerConfig};
+pub use sort_by::{SortBy, SortByField, SortOrder};

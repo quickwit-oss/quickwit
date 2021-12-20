@@ -25,9 +25,11 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use json_comments::StripComments;
-use quickwit_index_config::{FieldMappingEntry, SortBy, SortOrder};
+use quickwit_index_config::FieldMappingEntry;
 use quickwit_storage::load_file;
 use serde::{Deserialize, Serialize};
+
+use crate::{SortBy, SortOrder};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DocMapping {

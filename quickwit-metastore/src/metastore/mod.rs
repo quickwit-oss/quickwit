@@ -28,12 +28,12 @@ use anyhow::bail;
 use async_trait::async_trait;
 use chrono::Utc;
 use quickwit_config::{
-    DocMapping, IndexingResources, IndexingSettings, SearchSettings, SourceConfig,
+    DocMapping, IndexingResources, IndexingSettings, SearchSettings, SortOrder, SourceConfig,
 };
 use quickwit_index_config::tag_pruning::TagFilterAst;
 use quickwit_index_config::{
     DefaultIndexConfig as DefaultDocMapper, DefaultIndexConfigBuilder as DocMapperBuilder,
-    IndexConfig as DocMapper, SortBy, SortByConfig, SortOrder,
+    IndexConfig as DocMapper,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -174,10 +174,6 @@ impl IndexMetadata {
         let mut builder = DocMapperBuilder::new();
         builder.default_search_fields = self.search_settings.default_search_fields.clone();
         builder.demux_field = self.indexing_settings.demux_field.clone();
-        builder.sort_by = match self.indexing_settings.sort_by() {
-            SortBy::DocId => None,
-            SortBy::FastField { field_name, order } => Some(SortByConfig { field_name, order }),
-        };
         builder.timestamp_field = self.indexing_settings.timestamp_field.clone();
         builder.field_mappings = self.doc_mapping.field_mappings.clone();
         builder.tag_fields = self.doc_mapping.tag_fields.iter().cloned().collect();
@@ -281,15 +277,11 @@ impl From<UnversionedIndexMetadata> for IndexMetadata {
             tag_fields: unversioned.index_config.tag_field_names,
             store_source: unversioned.index_config.store_source,
         };
-        let (sort_field, sort_order) = match unversioned.index_config.sort_by {
-            SortBy::DocId => (None, None),
-            SortBy::FastField { field_name, order } => (Some(field_name), Some(order)),
-        };
         let indexing_settings = IndexingSettings {
             demux_field: unversioned.index_config.demux_field_name,
             timestamp_field: unversioned.index_config.timestamp_field_name,
-            sort_field,
-            sort_order,
+            sort_field: None,
+            sort_order: None,
             ..Default::default()
         };
         let search_settings = SearchSettings {

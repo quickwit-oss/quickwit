@@ -28,17 +28,15 @@ mod config;
 mod default_index_config;
 mod error;
 mod query_builder;
-mod sort_by;
 
 /// Pruning tags manipulation.
 pub mod tag_pruning;
 
 pub use config::IndexConfig;
 pub use default_index_config::{
-    DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry, SortByConfig,
+    DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry,
 };
 pub use error::QueryParserError;
-pub use sort_by::{SortBy, SortByField, SortOrder};
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";
@@ -53,10 +51,6 @@ pub fn default_config_for_tests() -> DefaultIndexConfig {
                 "body", "attributes.server", "attributes.server.status"
             ],
             "timestamp_field": "timestamp",
-            "sort_by": {
-                "field_name": "timestamp",
-                "order": "desc"
-            },
             "tag_fields": ["owner"],
             "field_mappings": [
                 {
@@ -126,10 +120,6 @@ pub fn default_config_with_demux_for_tests() -> DefaultIndexConfig {
                 "body", "tenant_id"
             ],
             "timestamp_field": "timestamp",
-            "sort_by": {
-                "field_name": "timestamp",
-                "order": "desc"
-            },
             "field_mappings": [
                 {
                     "name": "timestamp",

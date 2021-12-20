@@ -25,8 +25,8 @@ use fail::fail_point;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SendError, SyncActor,
 };
-use quickwit_config::IndexingSettings;
-use quickwit_index_config::{DocParsingError, IndexConfig as DocMapper, SortBy};
+use quickwit_config::{IndexingSettings, SortBy};
+use quickwit_index_config::{DocParsingError, IndexConfig as DocMapper};
 use tantivy::schema::{Field, Value};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tracing::{info, warn};
@@ -404,7 +404,7 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_actors::{create_test_mailbox, Universe};
-    use quickwit_index_config::SortOrder;
+    use quickwit_config::SortOrder;
     use quickwit_metastore::checkpoint::CheckpointDelta;
 
     use super::*;
@@ -494,14 +494,6 @@ mod tests {
         let output_messages = inbox.drain_available_message_for_test();
         assert_eq!(output_messages.len(), 1);
         assert_eq!(output_messages[0].splits[0].num_docs, 3);
-        let sort_by_field = output_messages[0].splits[0]
-            .index
-            .settings()
-            .sort_by_field
-            .as_ref();
-        assert!(sort_by_field.is_some());
-        assert_eq!(sort_by_field.unwrap().field, "timestamp");
-        assert!(sort_by_field.unwrap().order.is_desc());
         Ok(())
     }
 

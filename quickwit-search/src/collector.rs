@@ -21,7 +21,8 @@ use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
 
 use itertools::Itertools;
-use quickwit_index_config::{IndexConfig, SortBy, SortOrder};
+use quickwit_config::{SortBy, SortOrder};
+use quickwit_index_config::IndexConfig;
 use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest};
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader};
@@ -352,9 +353,6 @@ fn extract_fast_field_names(index_config: &dyn IndexConfig) -> HashSet<String> {
     let mut fast_fields = HashSet::new();
     if let Some(timestamp_field) = index_config.timestamp_field_name() {
         fast_fields.insert(timestamp_field);
-    }
-    if let SortBy::FastField { field_name, .. } = index_config.sort_by() {
-        fast_fields.insert(field_name);
     }
     fast_fields
 }

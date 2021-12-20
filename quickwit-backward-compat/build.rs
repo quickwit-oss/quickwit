@@ -21,9 +21,9 @@ use std::collections::BTreeSet;
 
 use byte_unit::Byte;
 use quickwit_config::{
-    DocMapping, IndexingResources, IndexingSettings, MergePolicy, SearchSettings, SourceConfig,
+    DocMapping, IndexingResources, IndexingSettings, MergePolicy, SearchSettings, SortOrder,
+    SourceConfig,
 };
-use quickwit_index_config::SortOrder;
 use quickwit_metastore::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
 use quickwit_metastore::{IndexMetadata, SplitMetadata};
 
