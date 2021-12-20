@@ -90,13 +90,32 @@ pub(crate) fn spawn_async_actor<A: AsyncActor>(
     let ctx_clone = ctx.clone();
     let span = actor.span(&ctx_clone);
     let (exit_status_tx, exit_status_rx) = watch::channel(None);
+    let actor_instance_id = ctx.actor_instance_id().to_string();
     let loop_async_actor_future = async move {
         let exit_status = async_actor_loop(actor, inbox, ctx, state_tx).await;
         let _ = exit_status_tx.send(Some(exit_status));
     }
     .instrument(span);
-    let join_handle: JoinHandle<()> = tokio::spawn(loop_async_actor_future);
+
+    let join_handle: JoinHandle<()> = spawn_named(loop_async_actor_future, &actor_instance_id);
+
     ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)
+}
+
+#[track_caller]
+fn spawn_named<T>(
+    task: impl std::future::Future<Output = T> + Send + 'static,
+    _name: &str,
+) -> tokio::task::JoinHandle<T>
+where
+    T: Send + 'static,
+{
+    #[cfg(tokio_unstable)]
+    {
+        return tokio::task::Builder::new().name(_name).spawn(task);
+    }
+    #[cfg(not(tokio_unstable))]
+    tokio::spawn(task)
 }
 
 async fn process_msg<A: Actor + AsyncActor>(

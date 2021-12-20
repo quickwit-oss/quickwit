@@ -51,6 +51,7 @@ colored = "2.0.0"
 futures = "0.3"
 regex = "1.5.4"
 time = "0.3.5"
+console-subscriber = { version = "0.1.0", optional = true }
 
 [dev-dependencies]
 assert_cmd = "2"
@@ -60,6 +61,7 @@ serial_test = "0.5.1"
 
 [features]
 ci-test = []
+tokio-console = ["console-subscriber"]
 openssl-support = ["openssl-probe"]
 release-feature-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka", "openssl-support"]
 release-feature-vendored-set = ["quickwit-metastore/postgres", "quickwit-indexing/vendored-kafka", "openssl-support"]
