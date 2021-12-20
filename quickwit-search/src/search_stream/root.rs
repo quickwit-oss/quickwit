@@ -45,9 +45,10 @@ pub async fn root_search_stream(
 ) -> crate::Result<impl futures::Stream<Item = crate::Result<Bytes>>> {
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
+
     let search_request = SearchRequest::from(search_stream_request.clone());
-    let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+    let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
     let doc_mapper = index_metadata.build_doc_mapper().map_err(|err| {
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
     })?;
@@ -57,7 +58,6 @@ pub async fn root_search_stream(
 
     // Create a hash map of SplitMetadata with split id as a key.
     let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
-        .clone()
         .into_iter()
         .map(|metadata| (metadata.split_id().to_string(), metadata))
         .collect();
@@ -130,7 +130,6 @@ mod tests {
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             partition_by_field: None,
-            tags: vec![],
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -142,10 +141,9 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str,
-             _split_state: SplitState,
-             _time_range: Option<Range<i64>>,
-             _tags: &[Vec<String>]| { Ok(vec![mock_split("split1")]) },
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+                Ok(vec![mock_split("split1")])
+            },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -190,7 +188,6 @@ mod tests {
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             partition_by_field: Some("timestamp".to_string()),
-            tags: vec![],
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -202,10 +199,9 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str,
-             _split_state: SplitState,
-             _time_range: Option<Range<i64>>,
-             _tags: &[Vec<String>]| { Ok(vec![mock_split("split1")]) },
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+                Ok(vec![mock_split("split1")])
+            },
         );
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -246,7 +242,6 @@ mod tests {
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             partition_by_field: None,
-            tags: vec![],
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -258,10 +253,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str,
-             _split_state: SplitState,
-             _time_range: Option<Range<i64>>,
-             _tags: &[Vec<String>]| {
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
                 Ok(vec![mock_split("split1"), mock_split("split2")])
             },
         );

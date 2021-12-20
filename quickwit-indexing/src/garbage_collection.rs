@@ -85,7 +85,7 @@ pub async fn run_garbage_collect(
     let grace_period_timestamp = Utc::now().timestamp() - staged_grace_period.as_secs() as i64;
 
     let deletable_staged_splits: Vec<SplitMetadata> = metastore
-        .list_splits(index_id, SplitState::Staged, None, &[])
+        .list_splits(index_id, SplitState::Staged, None, None)
         .await?
         .into_iter()
         // TODO: Update metastore API and push this filter down.
@@ -98,7 +98,7 @@ pub async fn run_garbage_collect(
 
     if dry_run {
         let mut scheduled_for_delete_splits = metastore
-            .list_splits(index_id, SplitState::ScheduledForDeletion, None, &[])
+            .list_splits(index_id, SplitState::ScheduledForDeletion, None, None)
             .await?
             .into_iter()
             .map(|meta| meta.split_metadata)
@@ -124,7 +124,7 @@ pub async fn run_garbage_collect(
     // We wait another 2 minutes until the split is actually deleted.
     let grace_period_deletion = Utc::now().timestamp() - deletion_grace_period.as_secs() as i64;
     let splits_to_delete = metastore
-        .list_splits(index_id, SplitState::ScheduledForDeletion, None, &[])
+        .list_splits(index_id, SplitState::ScheduledForDeletion, None, None)
         .await?
         .into_iter()
         // TODO: Update metastore API and push this filter down.

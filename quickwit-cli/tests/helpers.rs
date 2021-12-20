@@ -78,7 +78,7 @@ const DEFAULT_SERVER_CONFIG: &str = r#"
       rest_listen_port: #indexer.rest_listen_port
       grpc_listen_port: #indexer.grpc_listen_port
       discovery_listen_port: #indexer.discovery_listen_port
- 
+
     searcher:
       data_dir_path: #data_dir_path
       host_key_path: #data_dir_path/host_key
@@ -111,6 +111,17 @@ pub fn make_command(arguments: &str) -> Command {
     )
     .env(AWS_DEFAULT_REGION_ENV, "us-east-1")
     .args(arguments.split_whitespace());
+    cmd
+}
+
+pub fn make_command_with_list_of_args(arguments: &[&str]) -> Command {
+    let mut cmd = Command::cargo_bin(PACKAGE_BIN_NAME).unwrap();
+    cmd.env(
+        quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
+        "disable-for-tests",
+    )
+    .env(AWS_DEFAULT_REGION_ENV, "us-east-1")
+    .args(arguments.iter());
     cmd
 }
 

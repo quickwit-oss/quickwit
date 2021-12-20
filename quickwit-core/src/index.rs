@@ -79,10 +79,10 @@ pub async fn delete_index(
 
     // Schedule staged and published splits for deletion.
     let staged_splits = metastore
-        .list_splits(index_id, SplitState::Staged, None, &[])
+        .list_splits(index_id, SplitState::Staged, None, None)
         .await?;
     let published_splits = metastore
-        .list_splits(index_id, SplitState::Published, None, &[])
+        .list_splits(index_id, SplitState::Published, None, None)
         .await?;
     let split_ids = staged_splits
         .iter()
@@ -95,7 +95,7 @@ pub async fn delete_index(
 
     // Select split to delete
     let splits_to_delete = metastore
-        .list_splits(index_id, SplitState::ScheduledForDeletion, None, &[])
+        .list_splits(index_id, SplitState::ScheduledForDeletion, None, None)
         .await?
         .into_iter()
         .map(|metadata| metadata.split_metadata)
