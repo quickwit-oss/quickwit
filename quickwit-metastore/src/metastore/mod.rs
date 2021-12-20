@@ -143,6 +143,7 @@ impl IndexMetadata {
                 "attributes.server.status".to_string(),
             ],
         };
+        let now_timestamp = Utc::now().timestamp();
         Self {
             index_id: index_id.to_string(),
             index_uri: index_uri.to_string(),
@@ -151,8 +152,8 @@ impl IndexMetadata {
             indexing_settings,
             search_settings,
             sources: Vec::new(),
-            create_timestamp: Utc::now().timestamp(),
-            update_timestamp: Utc::now().timestamp(),
+            create_timestamp: now_timestamp,
+            update_timestamp: now_timestamp,
         }
     }
 
@@ -294,6 +295,7 @@ impl From<UnversionedIndexMetadata> for IndexMetadata {
         let search_settings = SearchSettings {
             default_search_fields: unversioned.index_config.default_search_field_names,
         };
+        let now_timestamp = Utc::now().timestamp();
         Self {
             index_id: unversioned.index_id,
             index_uri: unversioned.index_uri,
@@ -302,8 +304,8 @@ impl From<UnversionedIndexMetadata> for IndexMetadata {
             indexing_settings,
             search_settings,
             sources: Vec::new(),
-            create_timestamp: Utc::now().timestamp(),
-            update_timestamp: Utc::now().timestamp(),
+            create_timestamp: now_timestamp,
+            update_timestamp: now_timestamp,
         }
     }
 }
