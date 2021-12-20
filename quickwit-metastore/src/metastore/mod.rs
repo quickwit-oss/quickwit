@@ -38,6 +38,7 @@ use quickwit_index_config::{
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};
+use crate::split_metadata::utc_now_timestamp;
 use crate::{MetastoreResult, Split, SplitMetadata, SplitState};
 
 /// An index metadata carries all meta data about an index.
@@ -62,6 +63,8 @@ pub struct IndexMetadata {
     pub sources: Vec<SourceConfig>,
     /// Time at which the index was created.
     pub create_timestamp: i64,
+    /// Time at which the index was last updated.
+    pub update_timestamp: i64,
 }
 
 impl IndexMetadata {
@@ -140,6 +143,7 @@ impl IndexMetadata {
                 "attributes.server.status".to_string(),
             ],
         };
+        let now_timestamp = Utc::now().timestamp();
         Self {
             index_id: index_id.to_string(),
             index_uri: index_uri.to_string(),
@@ -148,7 +152,8 @@ impl IndexMetadata {
             indexing_settings,
             search_settings,
             sources: Vec::new(),
-            create_timestamp: Utc::now().timestamp(),
+            create_timestamp: now_timestamp,
+            update_timestamp: now_timestamp,
         }
     }
 
@@ -227,7 +232,10 @@ pub(crate) struct IndexMetadataV0 {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<SourceConfig>,
+    #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
+    #[serde(default = "utc_now_timestamp")]
+    pub update_timestamp: i64,
 }
 
 impl From<IndexMetadata> for IndexMetadataV0 {
@@ -241,6 +249,7 @@ impl From<IndexMetadata> for IndexMetadataV0 {
             search_settings: index_metadata.search_settings,
             sources: index_metadata.sources,
             create_timestamp: index_metadata.create_timestamp,
+            update_timestamp: index_metadata.update_timestamp,
         }
     }
 }
@@ -256,6 +265,7 @@ impl From<IndexMetadataV0> for IndexMetadata {
             search_settings: v0.search_settings,
             sources: v0.sources,
             create_timestamp: v0.create_timestamp,
+            update_timestamp: v0.update_timestamp,
         }
     }
 }
@@ -285,6 +295,7 @@ impl From<UnversionedIndexMetadata> for IndexMetadata {
         let search_settings = SearchSettings {
             default_search_fields: unversioned.index_config.default_search_field_names,
         };
+        let now_timestamp = Utc::now().timestamp();
         Self {
             index_id: unversioned.index_id,
             index_uri: unversioned.index_uri,
@@ -293,7 +304,8 @@ impl From<UnversionedIndexMetadata> for IndexMetadata {
             indexing_settings,
             search_settings,
             sources: Vec::new(),
-            create_timestamp: Utc::now().timestamp(),
+            create_timestamp: now_timestamp,
+            update_timestamp: now_timestamp,
         }
     }
 }
