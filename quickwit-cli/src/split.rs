@@ -219,9 +219,6 @@ pub async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     };
     let filter_tag_set = args.tags.iter().cloned().collect::<BTreeSet<_>>();
 
-
-    println!("EVan {:?}", filter_tag_set);
-
     let mut splits = vec![];
     // apply tags & time range filter.
     for split in metastore.list_all_splits(&args.index_id).await? {
