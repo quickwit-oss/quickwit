@@ -21,12 +21,12 @@ use std::sync::Arc;
 
 use anyhow::bail;
 use quickwit_actors::Universe;
-use quickwit_metastore::Metastore;
-use quickwit_storage::StorageUriResolver;
+use quickwit_config::IndexerConfig;
+use quickwit_metastore::{IndexMetadata, Metastore};
+use quickwit_storage::Storage;
 
-use crate::actors::{IndexerParams, IndexingPipelineParams, IndexingPipelineSupervisor};
+use crate::actors::{IndexingPipeline, IndexingPipelineParams};
 use crate::models::IndexingStatistics;
-use crate::source::SourceConfig;
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
     SplitFolder,
@@ -45,30 +45,22 @@ pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
 
 pub use self::garbage_collection::{delete_splits_with_files, run_garbage_collect, FileEntry};
 pub use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
+pub use self::source::{check_source_connectivity, STD_IN_SOURCE_ID};
 
 pub async fn index_data(
-    index_id: String,
+    index_metadata: IndexMetadata,
+    indexer_config: IndexerConfig,
     metastore: Arc<dyn Metastore>,
-    indexer_params: IndexerParams,
-    source_config: SourceConfig,
-    storage_uri_resolver: StorageUriResolver,
+    storage: Arc<dyn Storage>,
 ) -> anyhow::Result<IndexingStatistics> {
     let universe = Universe::new();
-    let indexing_pipeline_params = IndexingPipelineParams {
-        index_id,
-        source_config,
-        indexer_params,
-        metastore,
-        storage_uri_resolver,
-        merge_enabled: true,
-        demux_enabled: false,
-    };
-    let indexing_supervisor = IndexingPipelineSupervisor::new(indexing_pipeline_params);
-    let (_pipeline_mailbox, pipeline_handler) =
-        universe.spawn_actor(indexing_supervisor).spawn_async();
-    let (pipeline_termination, statistics) = pipeline_handler.join().await;
-    if !pipeline_termination.is_success() {
-        bail!(pipeline_termination);
+    let pipeline_params =
+        IndexingPipelineParams::try_new(index_metadata, indexer_config, metastore, storage).await?;
+    let pipeline = IndexingPipeline::new(pipeline_params);
+    let (_pipeline_mailbox, pipeline_handle) = universe.spawn_actor(pipeline).spawn_async();
+    let (exit_status, statistics) = pipeline_handle.join().await;
+    if !exit_status.is_success() {
+        bail!(exit_status);
     }
     Ok(statistics)
 }

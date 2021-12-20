@@ -26,45 +26,66 @@ use std::{fs, io};
 use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
 use predicates::str;
+use quickwit_common::net::find_available_port;
 use quickwit_metastore::SingleFileMetastore;
 use quickwit_storage::{LocalFileStorage, RegionProvider, S3CompatibleObjectStorage, Storage};
 use tempfile::{tempdir, TempDir};
 
 const PACKAGE_BIN_NAME: &str = "quickwit";
 
-const DEFAULT_INDEX_CONFIG: &str = r#"{
-    // store the whole document as _source.
-    "store_source": true,
-    "default_search_fields": ["event"], // Used when no field is specified in your query. 
-    "timestamp_field": "ts",
-    "tag_fields": ["device", "city"],
-    "field_mappings": [
-        {
-            "name": "event",
-            "type": "text"
-        },
-        {
-            "name": "level",
-            "type": "text",
-            "stored": false  /* Field not stored.*/
-        },
-        {
-            "name": "ts",
-            "type": "i64",
-            "fast": /* timestamp field should be fast*/ true
-        },
-        {
-            "name": "device",
-            "type": "text",
-            "stored": false
-        },
-        {
-            "name": "city",
-            "type": "text",
-            "stored": false
-        }
-    ]
-}"#;
+const DEFAULT_INDEX_CONFIG: &str = r#"
+    version: 0
+
+    index_id: #index_id
+    index_uri: #index_uri
+
+    doc_mapping:
+      field_mappings:
+        - name: ts
+          type: i64
+          fast: true
+        - name: level
+          type: text
+          stored: false
+        - name: event
+          type: text
+        - name: device
+          type: text
+          stored: false
+          tokenizer: raw
+        - name: city
+          type: text
+          stored: false
+          tokenizer: raw
+
+      tag_fields: [city, device]
+
+    indexing_settings:
+      timestamp_field: ts
+      resources:
+        heap_size: 50MB
+
+    search_settings:
+      default_search_fields: [event]
+"#;
+
+const DEFAULT_SERVER_CONFIG: &str = r#"
+    version: 0
+    metastore_uri: #metastore_uri
+
+    indexer:
+      data_dir_path: #data_dir_path
+      rest_listen_port: #indexer.rest_listen_port
+      grpc_listen_port: #indexer.grpc_listen_port
+      discovery_listen_port: #indexer.discovery_listen_port
+
+    searcher:
+      data_dir_path: #data_dir_path
+      host_key_path: #data_dir_path/host_key
+      rest_listen_port: #searcher.rest_listen_port
+      grpc_listen_port: #searcher.grpc_listen_port
+      discovery_listen_port: #searcher.discovery_listen_port
+"#;
 
 const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 2, "device": "rpi", "city": "tokio"}
 {"event": "bar", "level": "error", "ts": 3, "device": "rpi", "city": "paris"}
@@ -90,6 +111,17 @@ pub fn make_command(arguments: &str) -> Command {
     )
     .env(AWS_DEFAULT_REGION_ENV, "us-east-1")
     .args(arguments.split_whitespace());
+    cmd
+}
+
+pub fn make_command_with_list_of_args(arguments: &[&str]) -> Command {
+    let mut cmd = Command::cargo_bin(PACKAGE_BIN_NAME).unwrap();
+    cmd.env(
+        quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
+        "disable-for-tests",
+    )
+    .env(AWS_DEFAULT_REGION_ENV, "us-east-1")
+    .args(arguments.iter());
     cmd
 }
 
@@ -119,14 +151,13 @@ pub struct TestEnv {
     pub resource_files: HashMap<&'static str, PathBuf>,
     /// The metastore uri.
     pub metastore_uri: String,
+    /// The index ID.
+    pub index_id: String,
+    pub searcher_rest_listen_port: u16,
     pub storage: Arc<dyn Storage>,
 }
 
 impl TestEnv {
-    pub fn index_uri(&self, index_id: &str) -> String {
-        format!("{}/{}", self.metastore_uri, index_id)
-    }
-
     // For cache reason, it's safer to always create an instance and then make your assertions.
     pub fn metastore(&self) -> SingleFileMetastore {
         SingleFileMetastore::new(self.storage.clone())
@@ -139,7 +170,7 @@ pub enum TestStorageType {
 }
 
 /// Creates all necessary artifacts in a test environement.
-pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
+pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
     let tempdir = tempdir()?;
     let data_dir_path = tempdir.path().join("data");
     let indexes_dir_path = tempdir.path().join("indexes");
@@ -157,7 +188,7 @@ pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv>
             (metastore_uri, storage)
         }
         TestStorageType::S3 => {
-            let metastore_uri = "s3+localstack://quickwit-integration-tests/indices";
+            let metastore_uri = "s3+localstack://quickwit-integration-tests/indexes";
             let storage: Arc<dyn Storage> = Arc::new(S3CompatibleObjectStorage::from_uri(
                 RegionProvider::Localstack.get_region(),
                 metastore_uri,
@@ -166,15 +197,45 @@ pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv>
         }
     };
 
-    let config_path = resources_dir_path.join("config.json");
-    fs::write(&config_path, DEFAULT_INDEX_CONFIG)?;
+    let index_uri = format!("{}/{}", metastore_uri, index_id);
+    let index_config_path = resources_dir_path.join("index_config.yaml");
+    fs::write(
+        &index_config_path,
+        // A poor's man templating engine...
+        DEFAULT_INDEX_CONFIG
+            .replace("#index_id", &index_id)
+            .replace("#index_uri", &index_uri),
+    )?;
+    let server_config_path = resources_dir_path.join("server_config.yaml");
+    let init_listen_port = find_available_port()?;
+    let listen_ports = (0..6)
+        .map(|i| init_listen_port + i)
+        .map(|port| port.to_string())
+        .collect::<Vec<String>>();
+    fs::write(
+        &server_config_path,
+        // A poor's man templating engine reloaded...
+        DEFAULT_SERVER_CONFIG
+            .replace("#metastore_uri", &metastore_uri)
+            .replace(
+                "#data_dir_path",
+                &data_dir_path.to_str().unwrap().to_string(),
+            )
+            .replace("#indexer.rest_listen_port", &listen_ports[0])
+            .replace("#indexer.grpc_listen_port", &listen_ports[1])
+            .replace("#indexer.discovery_listen_port", &listen_ports[2])
+            .replace("#searcher.rest_listen_port", &listen_ports[3])
+            .replace("#searcher.grpc_listen_port", &listen_ports[4])
+            .replace("#searcher.discovery_listen_port", &listen_ports[5]),
+    )?;
     let log_docs_path = resources_dir_path.join("logs.json");
     fs::write(&log_docs_path, LOGS_JSON_DOCS)?;
     let wikipedia_docs_path = resources_dir_path.join("wikis.json");
     fs::write(&wikipedia_docs_path, WIKI_JSON_DOCS)?;
 
     let mut resource_files = HashMap::new();
-    resource_files.insert("config", config_path);
+    resource_files.insert("index_config", index_config_path);
+    resource_files.insert("server_config", server_config_path);
     resource_files.insert("logs", log_docs_path);
     resource_files.insert("wiki", wikipedia_docs_path);
 
@@ -184,6 +245,8 @@ pub fn create_test_env(storage_type: TestStorageType) -> anyhow::Result<TestEnv>
         indexes_dir_path,
         resource_files,
         metastore_uri,
+        index_id,
+        searcher_rest_listen_port: init_listen_port + 3,
         storage,
     })
 }

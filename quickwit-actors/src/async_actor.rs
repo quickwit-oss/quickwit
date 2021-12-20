@@ -85,19 +85,13 @@ pub(crate) fn spawn_async_actor<A: AsyncActor>(
     ctx: ActorContext<A::Message>,
     inbox: Inbox<A::Message>,
 ) -> ActorHandle<A> {
+    debug!(actor_id = %ctx.actor_instance_id(), "spawn-async");
     let (state_tx, state_rx) = watch::channel(actor.observable_state());
     let ctx_clone = ctx.clone();
     let span = actor.span(&ctx_clone);
     let (exit_status_tx, exit_status_rx) = watch::channel(None);
     let loop_async_actor_future = async move {
-        debug!("spawn-async");
-        let actor_instance_id = ctx.actor_instance_id().to_string();
         let exit_status = async_actor_loop(actor, inbox, ctx, state_tx).await;
-        info!(
-            actor_name = actor_instance_id.as_str(),
-            exit_status = %exit_status,
-            "actor-exit"
-        );
         let _ = exit_status_tx.send(Some(exit_status));
     }
     .instrument(span);
@@ -192,9 +186,7 @@ async fn async_actor_loop<A: AsyncActor>(
         error!(error=?finalize_error, "Finalizing failed, set exit status to panicked.");
         exit_status = ActorExitStatus::Panicked;
     }
-
-    info!(exit_status=%exit_status, "exit");
+    info!(actor_id = %ctx.actor_instance_id(), exit_status = %exit_status, "actor-exit");
     ctx.exit(&exit_status);
-
     exit_status
 }

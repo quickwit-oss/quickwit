@@ -20,16 +20,26 @@
 use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity, SyncActor};
 use quickwit_directories::write_hotcache;
-use tantivy::schema::Field;
-use tantivy::{ReloadPolicy, SegmentId, SegmentMeta};
-use tracing::*;
+use quickwit_index_config::tag_pruning::append_to_tag_set;
+use tantivy::schema::FieldType;
+use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentId, SegmentMeta};
+use tracing::{debug, info, info_span, warn, Span};
 
+/// Maximum distinct values allowed for a tag field within a split.
+const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")) {
+    6
+} else {
+    1000
+};
+
+use super::NamedField;
 use crate::models::{
     IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch, ScratchDirectory,
 };
@@ -48,20 +58,20 @@ use crate::models::{
 pub struct Packager {
     actor_name: &'static str,
     uploader_mailbox: Mailbox<PackagedSplitBatch>,
-    /// The special field for extracting tags.
-    tags_field: Field,
+    /// List of tag fields ([`Vec<NamedField>`]) defined in the index config.
+    tag_fields: Vec<NamedField>,
 }
 
 impl Packager {
     pub fn new(
         actor_name: &'static str,
-        tags_field: Field,
+        tag_fields: Vec<NamedField>,
         uploader_mailbox: Mailbox<PackagedSplitBatch>,
     ) -> Packager {
         Packager {
             actor_name,
             uploader_mailbox,
-            tags_field,
+            tag_fields,
         }
     }
 
@@ -73,7 +83,7 @@ impl Packager {
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
         let packaged_split =
-            create_packaged_split(&segment_metas[..], split, self.tags_field, ctx)?;
+            create_packaged_split(&segment_metas[..], split, &self.tag_fields, ctx)?;
         Ok(packaged_split)
     }
 }
@@ -190,10 +200,55 @@ fn build_hotcache<W: io::Write>(split_path: &Path, out: &mut W) -> anyhow::Resul
     Ok(())
 }
 
+/// Attempts to exhaustively extract the list of terms in a
+/// field term dictionary.
+///
+/// returns None if:
+/// - the number of terms exceed MAX_VALUES_PER_TAG_FIELD
+/// - some of the terms are not value utf8.
+/// - an error occurs.
+///
+/// Returns None may hurt split pruning and affects performance,
+/// but it does not affect Quickwit's result validity.
+fn try_extract_terms(
+    named_field: &NamedField,
+    inv_indexes: &[Arc<InvertedIndexReader>],
+    max_terms: usize,
+) -> anyhow::Result<Vec<String>> {
+    let num_terms = inv_indexes
+        .iter()
+        .map(|inv_index| inv_index.terms().num_terms())
+        .sum::<usize>();
+    if num_terms > max_terms {
+        bail!("Too many terms");
+    }
+    let mut terms = Vec::with_capacity(num_terms);
+    for inv_index in inv_indexes {
+        let mut terms_streamer = inv_index.terms().stream()?;
+        while let Some((term_data, _)) = terms_streamer.next() {
+            let term = match named_field.field_type {
+                FieldType::U64(_) => u64_from_term_data(term_data)?.to_string(),
+                FieldType::I64(_) => {
+                    tantivy::u64_to_i64(u64_from_term_data(term_data)?).to_string()
+                }
+                FieldType::F64(_) => {
+                    tantivy::u64_to_f64(u64_from_term_data(term_data)?).to_string()
+                }
+                FieldType::Bytes(_) => {
+                    bail!("Tags collection is not allowed on `bytes` fields.")
+                }
+                _ => std::str::from_utf8(term_data)?.to_string(),
+            };
+            terms.push(term);
+        }
+    }
+    Ok(terms)
+}
+
 fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
-    tags_field: Field,
+    tag_fields: &[NamedField],
     ctx: &ActorContext<IndexedSplitBatch>,
 ) -> anyhow::Result<PackagedSplit> {
     info!(split_id = split.split_id.as_str(), "create-packaged-split");
@@ -205,19 +260,31 @@ fn create_packaged_split(
         .sum();
 
     // Extracts tag values from `_tags` special fields.
-    let mut tags = BTreeSet::default();
     let index_reader = split
         .index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
-    for reader in index_reader.searcher().segment_readers() {
-        let inv_index = reader.inverted_index(tags_field)?;
-        let mut terms_streamer = inv_index.terms().stream()?;
-        while let Some((term_data, _)) = terms_streamer.next() {
-            tags.insert(String::from_utf8_lossy(term_data).to_string());
+    let mut tags = BTreeSet::default();
+
+    for named_field in tag_fields {
+        let inverted_indexes = index_reader
+            .searcher()
+            .segment_readers()
+            .iter()
+            .map(|segment| segment.inverted_index(named_field.field))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        match try_extract_terms(named_field, &inverted_indexes, MAX_VALUES_PER_TAG_FIELD) {
+            Ok(terms) => {
+                append_to_tag_set(&named_field.name, &terms, &mut tags);
+            }
+            Err(tag_extraction_error) => {
+                warn!(err=?tag_extraction_error,  field_name=%named_field.name, "tag-extraction-error");
+            }
         }
     }
+
     ctx.record_progress();
 
     debug!(split_id = split.split_id.as_str(), "build-hotcache");
@@ -273,6 +340,14 @@ impl SyncActor for Packager {
     }
 }
 
+/// Reads u64 from stored term data.
+fn u64_from_term_data(data: &[u8]) -> anyhow::Result<u64> {
+    let u64_bytes: [u8; 8] = data[0..8]
+        .try_into()
+        .context("Could not interpret term bytes as u64")?;
+    Ok(u64::from_be_bytes(u64_bytes))
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::RangeInclusive;
@@ -280,7 +355,7 @@ mod tests {
 
     use quickwit_actors::{create_test_mailbox, ObservationType, Universe};
     use quickwit_metastore::checkpoint::CheckpointDelta;
-    use tantivy::schema::{Schema, FAST, STRING, TEXT};
+    use tantivy::schema::{IntOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, Index};
 
     use super::*;
@@ -291,8 +366,11 @@ mod tests {
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field("text", TEXT);
         let timestamp_field = schema_builder.add_u64_field("timestamp", FAST);
-        let _tags_field =
-            schema_builder.add_text_field(quickwit_index_config::TAGS_FIELD_NAME, STRING);
+        let tag_str = schema_builder.add_text_field("tag_str", STRING);
+        let tag_many = schema_builder.add_text_field("tag_many", STRING);
+        let tag_u64 = schema_builder.add_u64_field("tag_u64", IntOptions::default().set_indexed());
+        let tag_i64 = schema_builder.add_i64_field("tag_i64", IntOptions::default().set_indexed());
+        let tag_f64 = schema_builder.add_f64_field("tag_f64", IntOptions::default().set_indexed());
         let schema = schema_builder.build();
         let index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
         let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
@@ -303,21 +381,28 @@ mod tests {
                 index_writer.commit()?;
             }
             for &timestamp in segment_timestamps.iter() {
-                let doc = doc!(
-                    text_field => format!("timestamp is {}", timestamp),
-                    timestamp_field => timestamp
-                );
-                index_writer.add_document(doc)?;
-                num_docs += 1;
-                timerange_opt = Some(
-                    timerange_opt
-                        .map(|timestamp_range| {
-                            let start = timestamp.min(*timestamp_range.start());
-                            let end = timestamp.max(*timestamp_range.end());
-                            RangeInclusive::new(start, end)
-                        })
-                        .unwrap_or_else(|| RangeInclusive::new(timestamp, timestamp)),
-                )
+                for num in 1..10 {
+                    let doc = doc!(
+                        text_field => format!("timestamp is {}", timestamp),
+                        timestamp_field => timestamp,
+                        tag_str => "value",
+                        tag_many => format!("many-{}", num),
+                        tag_u64 => 42u64,
+                        tag_i64 => -42i64,
+                        tag_f64 => -42.02f64,
+                    );
+                    index_writer.add_document(doc)?;
+                    num_docs += 1;
+                    timerange_opt = Some(
+                        timerange_opt
+                            .map(|timestamp_range| {
+                                let start = timestamp.min(*timestamp_range.start());
+                                let end = timestamp.max(*timestamp_range.end());
+                                RangeInclusive::new(start, end)
+                            })
+                            .unwrap_or_else(|| RangeInclusive::new(timestamp, timestamp)),
+                    )
+                }
             }
         }
         // We don't commit, that's the job of the packager.
@@ -342,19 +427,32 @@ mod tests {
         Ok(indexed_split)
     }
 
+    fn get_tag_fields(schema: Schema, field_names: &[&str]) -> Vec<NamedField> {
+        field_names
+            .iter()
+            .map(|field_name| {
+                let field = schema.get_field(field_name).unwrap();
+                let field_type = schema.get_field_entry(field).field_type().clone();
+                NamedField {
+                    name: field_name.to_string(),
+                    field,
+                    field_type,
+                }
+            })
+            .collect()
+    }
+
     #[tokio::test]
     async fn test_packager_no_merge_required() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-
         let indexed_split = make_indexed_split_for_test(&[&[1628203589, 1628203640]])?;
-        let tags_field = indexed_split
-            .index
-            .schema()
-            .get_field(quickwit_index_config::TAGS_FIELD_NAME)
-            .unwrap();
-        let packager = Packager::new("TestPackager", tags_field, mailbox);
+        let tag_fields = get_tag_fields(
+            indexed_split.index.schema(),
+            &["tag_str", "tag_many", "tag_u64", "tag_i64", "tag_f64"],
+        );
+        let packager = Packager::new("TestPackager", tag_fields, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
@@ -370,6 +468,21 @@ mod tests {
         );
         let packaged_splits = inbox.drain_available_message_for_test();
         assert_eq!(packaged_splits.len(), 1);
+
+        let split = &packaged_splits[0].splits[0];
+        assert_eq!(
+            &split.tags.iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
+            &[
+                "tag_f64!",
+                "tag_f64:-42.02",
+                "tag_i64!",
+                "tag_i64:-42",
+                "tag_str!",
+                "tag_str:value",
+                "tag_u64!",
+                "tag_u64:42"
+            ]
+        );
         Ok(())
     }
 
@@ -379,12 +492,8 @@ mod tests {
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
         let indexed_split = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
-        let tags_field = indexed_split
-            .index
-            .schema()
-            .get_field(quickwit_index_config::TAGS_FIELD_NAME)
-            .unwrap();
-        let packager = Packager::new("TestPackager", tags_field, mailbox);
+        let tag_fields = get_tag_fields(indexed_split.index.schema(), &[]);
+        let packager = Packager::new("TestPackager", tag_fields, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(
@@ -410,12 +519,8 @@ mod tests {
         let (mailbox, inbox) = create_test_mailbox();
         let indexed_split_1 = make_indexed_split_for_test(&[&[1628203589], &[1628203640]])?;
         let indexed_split_2 = make_indexed_split_for_test(&[&[1628204589], &[1629203640]])?;
-        let tags_field = indexed_split_1
-            .index
-            .schema()
-            .get_field(quickwit_index_config::TAGS_FIELD_NAME)
-            .unwrap();
-        let packager = Packager::new("TestPackager", tags_field, mailbox);
+        let tag_fields = get_tag_fields(indexed_split_1.index.schema(), &[]);
+        let packager = Packager::new("TestPackager", tag_fields, mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_actor(packager).spawn_sync();
         universe
             .send_message(

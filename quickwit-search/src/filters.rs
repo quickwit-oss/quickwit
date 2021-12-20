@@ -26,9 +26,7 @@ use tantivy::{DocId, SegmentReader, TantivyError};
 /// A filter that only retains docs within a time range.
 #[derive(Clone)]
 pub struct TimestampFilter {
-    /// The field holding the document timestamp value.
-    field: Field,
-    /// The time range respresented as (lower_bound, upper_bound).
+    /// The time range represented as (lower_bound, upper_bound).
     time_range: (Bound<i64>, Bound<i64>),
     /// The timestamp fast field reader.
     timestamp_field_reader: DynamicFastFieldReader<i64>,
@@ -75,7 +73,6 @@ impl TimestampFilter {
             .unwrap_or(Bound::Unbounded);
 
         Ok(Some(TimestampFilter {
-            field,
             time_range: (lower_bound, upper_bound),
             timestamp_field_reader,
         }))

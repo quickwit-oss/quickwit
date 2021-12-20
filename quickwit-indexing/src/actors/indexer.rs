@@ -21,18 +21,18 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use anyhow::Context;
-use byte_unit::Byte;
 use fail::fail_point;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SendError, SyncActor,
 };
-use quickwit_index_config::{DocParsingError, IndexConfig, SortBy};
+use quickwit_config::IndexingSettings;
+use quickwit_index_config::{DocParsingError, IndexConfig as DocMapper, SortBy};
 use tantivy::schema::{Field, Value};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tracing::{info, warn};
 
 use crate::models::{
-    CommitPolicy, IndexedSplit, IndexedSplitBatch, IndexerMessage, IndexingDirectory, RawDocBatch,
+    IndexedSplit, IndexedSplitBatch, IndexerMessage, IndexingDirectory, RawDocBatch,
 };
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
@@ -77,9 +77,11 @@ impl IndexerCounters {
 
 struct IndexerState {
     index_id: String,
-    index_config: Arc<dyn IndexConfig>,
-    indexer_params: IndexerParams,
+    doc_mapper: Arc<dyn DocMapper>,
+    indexing_directory: IndexingDirectory,
+    indexing_settings: IndexingSettings,
     timestamp_field_opt: Option<Field>,
+    sort_by_field_opt: Option<IndexSortByField>,
 }
 
 enum PrepareDocumentOutcome {
@@ -96,25 +98,21 @@ impl IndexerState {
         &self,
         ctx: &ActorContext<IndexerMessage>,
     ) -> anyhow::Result<IndexedSplit> {
-        let schema = self.index_config.schema();
-        let mut index_settings = IndexSettings::default();
-        let sort_by_field = match self.index_config.sort_by() {
-            SortBy::DocId => None,
-            SortBy::SortByFastField { field_name, order } => Some(IndexSortByField {
-                field: field_name,
-                order: order.into(),
-            }),
+        let schema = self.doc_mapper.schema();
+        let index_settings = IndexSettings {
+            sort_by_field: self.sort_by_field_opt.clone(),
+            ..Default::default()
         };
-        index_settings.sort_by_field = sort_by_field;
         let index_builder = IndexBuilder::new().settings(index_settings).schema(schema);
         let indexed_split = IndexedSplit::new_in_dir(
             self.index_id.clone(),
-            &self.indexer_params,
+            self.indexing_directory.scratch_directory.clone(),
+            self.indexing_settings.resources.clone(),
             index_builder,
             ctx.progress().clone(),
             ctx.kill_switch().clone(),
         )?;
-        info!(split_id=%indexed_split.split_id, "new-split");
+        info!(split_id = %indexed_split.split_id, "new-split");
         Ok(indexed_split)
     }
 
@@ -129,12 +127,12 @@ impl IndexerState {
     ) -> anyhow::Result<&'a mut IndexedSplit> {
         if current_split_opt.is_none() {
             let new_indexed_split = self.create_indexed_split(ctx)?;
-            let commit_timeout = IndexerMessage::CommitTimeout {
+            let commit_timeout_message = IndexerMessage::CommitTimeout {
                 split_id: new_indexed_split.split_id.clone(),
             };
             ctx.schedule_self_msg_blocking(
-                self.indexer_params.commit_policy.timeout,
-                commit_timeout,
+                self.indexing_settings.commit_timeout(),
+                commit_timeout_message,
             );
             *current_split_opt = Some(new_indexed_split);
         }
@@ -146,7 +144,7 @@ impl IndexerState {
 
     fn prepare_document(&self, doc_json: String) -> PrepareDocumentOutcome {
         // Parse the document
-        let doc_parsing_result = self.index_config.doc_from_json(doc_json);
+        let doc_parsing_result = self.doc_mapper.doc_from_json(doc_json);
         let document = match doc_parsing_result {
             Ok(doc) => doc,
             Err(doc_parsing_error) => {
@@ -265,24 +263,6 @@ fn record_timestamp(timestamp: i64, time_range: &mut Option<RangeInclusive<i64>>
     *time_range = Some(new_timestamp_range);
 }
 
-#[derive(Clone)]
-pub struct IndexerParams {
-    pub indexing_directory: IndexingDirectory,
-    pub heap_size: Byte,
-    pub commit_policy: CommitPolicy,
-}
-
-impl IndexerParams {
-    pub async fn for_test() -> anyhow::Result<Self> {
-        let indexing_directory = IndexingDirectory::for_test().await?;
-        Ok(IndexerParams {
-            indexing_directory,
-            heap_size: Byte::from_str("30MB").unwrap(),
-            commit_policy: Default::default(),
-        })
-    }
-}
-
 impl SyncActor for Indexer {
     fn process_message(
         &mut self,
@@ -326,27 +306,35 @@ enum CommitTrigger {
 }
 
 impl Indexer {
-    // TODO take all of the parameter and dispatch them in index config, or in a different
-    // IndexerParams object.
-    pub fn try_new(
+    pub fn new(
         index_id: String,
-        index_config: Arc<dyn IndexConfig>,
-        indexer_params: IndexerParams,
+        doc_mapper: Arc<dyn DocMapper>,
+        indexing_directory: IndexingDirectory,
+        indexing_settings: IndexingSettings,
         packager_mailbox: Mailbox<IndexedSplitBatch>,
-    ) -> anyhow::Result<Indexer> {
-        let schema = index_config.schema();
-        let timestamp_field_opt = index_config.timestamp_field(&schema);
-        Ok(Indexer {
+    ) -> Self {
+        let schema = doc_mapper.schema();
+        let timestamp_field_opt = doc_mapper.timestamp_field(&schema);
+        let sort_by_field_opt = match indexing_settings.sort_by() {
+            SortBy::DocId => None,
+            SortBy::FastField { field_name, order } => Some(IndexSortByField {
+                field: field_name,
+                order: order.into(),
+            }),
+        };
+        Self {
             indexer_state: IndexerState {
                 index_id,
-                index_config,
-                indexer_params,
+                doc_mapper,
+                indexing_directory,
+                indexing_settings,
                 timestamp_field_opt,
+                sort_by_field_opt,
             },
             packager_mailbox,
             current_split_opt: None,
             counters: IndexerCounters::default(),
-        })
+        }
     }
 
     fn process_batch(
@@ -362,11 +350,7 @@ impl Indexer {
             ctx,
         )?;
         if self.counters.num_docs_in_split
-            >= self
-                .indexer_state
-                .indexer_params
-                .commit_policy
-                .num_docs_threshold
+            >= self.indexer_state.indexing_settings.split_num_docs_target as u64
         {
             self.send_to_packager(CommitTrigger::NumDocsLimit, ctx)?;
         }
@@ -419,14 +403,13 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use byte_unit::Byte;
     use quickwit_actors::{create_test_mailbox, Universe};
+    use quickwit_index_config::SortOrder;
     use quickwit_metastore::checkpoint::CheckpointDelta;
 
-    use super::Indexer;
+    use super::*;
     use crate::actors::indexer::{record_timestamp, IndexerCounters};
-    use crate::actors::IndexerParams;
-    use crate::models::{CommitPolicy, IndexingDirectory, RawDocBatch};
+    use crate::models::{IndexingDirectory, RawDocBatch};
 
     #[test]
     fn test_record_timestamp() {
@@ -442,23 +425,22 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_simple() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
-        let indexer_params = IndexerParams {
-            commit_policy: CommitPolicy {
-                timeout: Duration::from_secs(60),
-                num_docs_threshold: 3,
-            },
-            heap_size: Byte::from_str("30MB").unwrap(),
-            indexing_directory: IndexingDirectory::for_test().await?,
-        };
+        let doc_mapper = Arc::new(quickwit_index_config::default_config_for_tests());
+        let indexing_directory = IndexingDirectory::for_test().await?;
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.split_num_docs_target = 3;
+        indexing_settings.sort_field = Some("timestamp".to_string());
+        indexing_settings.sort_order = Some(SortOrder::Desc);
+        indexing_settings.timestamp_field = Some("timestamp".to_string());
         let (mailbox, inbox) = create_test_mailbox();
-        let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
-        let indexer = Indexer::try_new(
+        let indexer = Indexer::new(
             "test-index".to_string(),
-            index_config,
-            indexer_params,
+            doc_mapper,
+            indexing_directory,
+            indexing_settings,
             mailbox,
-        )?;
+        );
+        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn_sync();
         universe
             .send_message(
@@ -526,23 +508,18 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_timeout() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
-        let indexer_params = IndexerParams {
-            commit_policy: CommitPolicy {
-                timeout: Duration::from_secs(60),
-                num_docs_threshold: 10_000_000,
-            },
-            heap_size: Byte::from_str("30MB").unwrap(),
-            indexing_directory: IndexingDirectory::for_test().await?,
-        };
+        let doc_mapper = Arc::new(quickwit_index_config::default_config_for_tests());
+        let indexing_directory = IndexingDirectory::for_test().await?;
+        let indexing_settings = IndexingSettings::for_test();
         let (mailbox, inbox) = create_test_mailbox();
-        let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
-        let indexer = Indexer::try_new(
+        let indexer = Indexer::new(
             "test-index".to_string(),
-            index_config,
-            indexer_params,
+            doc_mapper,
+            indexing_directory,
+            indexing_settings,
             mailbox,
-        )?;
+        );
+        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn_sync();
         universe
             .send_message(
@@ -588,16 +565,18 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_eof() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let universe = Universe::new();
+        let doc_mapper = Arc::new(quickwit_index_config::default_config_for_tests());
+        let indexing_directory = IndexingDirectory::for_test().await?;
+        let indexing_settings = IndexingSettings::for_test();
         let (mailbox, inbox) = create_test_mailbox();
-        let index_config = Arc::new(quickwit_index_config::default_config_for_tests());
-        let indexer_params = IndexerParams::for_test().await?;
-        let indexer = Indexer::try_new(
+        let indexer = Indexer::new(
             "test-index".to_string(),
-            index_config,
-            indexer_params,
+            doc_mapper,
+            indexing_directory,
+            indexing_settings,
             mailbox,
-        )?;
+        );
+        let universe = Universe::new();
         let (indexer_mailbox, indexer_handle) = universe.spawn_actor(indexer).spawn_sync();
         universe
             .send_message(

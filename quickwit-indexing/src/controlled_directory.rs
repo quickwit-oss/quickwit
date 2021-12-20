@@ -206,6 +206,11 @@ impl Directory for ControlledDirectory {
         self.check_if_alive()?;
         self.inner.underlying.watch(watch_callback)
     }
+
+    fn sync_directory(&self) -> io::Result<()> {
+        self.check_if_alive()?;
+        self.inner.underlying.sync_directory()
+    }
 }
 
 impl TerminatingWrite for ControlledWrite {

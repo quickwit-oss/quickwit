@@ -18,33 +18,66 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::ffi::OsStr;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
+use json_comments::StripComments;
+use quickwit_common::net::socket_addr_from_str;
+use quickwit_storage::load_file;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+fn default_data_dir_path() -> PathBuf {
+    PathBuf::from("/var/lib/quickwit/data")
+}
+
+fn default_listen_address() -> String {
+    "127.0.0.1".to_string()
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct IndexerConfig {
+    #[serde(default = "default_data_dir_path")]
     pub data_dir_path: PathBuf,
+    #[serde(default = "default_listen_address")]
+    pub rest_listen_address: String,
+    #[serde(default = "IndexerConfig::default_rest_listen_port")]
     pub rest_listen_port: u16,
-    pub grpc_listen_port: u16,
-    #[serde(default = "default_split_store_max_num_bytes")]
+    #[serde(default = "IndexerConfig::default_split_store_max_num_bytes")]
     pub split_store_max_num_bytes: Byte,
-    #[serde(default = "default_split_store_max_num_files")]
-    pub split_store_max_num_files: usize,
-}
-
-fn default_split_store_max_num_bytes() -> Byte {
-    Byte::from_bytes(100_000_000_000) // 100G
-}
-
-fn default_split_store_max_num_files() -> usize {
-    1_000
+    #[serde(default = "IndexerConfig::default_split_store_max_num_splits")]
+    pub split_store_max_num_splits: usize,
 }
 
 impl IndexerConfig {
+    fn default_rest_listen_port() -> u16 {
+        7180
+    }
+
+    fn default_split_store_max_num_bytes() -> Byte {
+        Byte::from_bytes(100_000_000_000) // 100G
+    }
+
+    fn default_split_store_max_num_splits() -> usize {
+        1_000
+    }
+
+    pub fn for_test() -> anyhow::Result<(Self, tempfile::TempDir)> {
+        use quickwit_common::net::find_available_port;
+
+        let temp_dir = tempfile::tempdir()?;
+        let indexer_config = IndexerConfig {
+            data_dir_path: temp_dir.path().to_path_buf(),
+            rest_listen_port: find_available_port()?,
+            split_store_max_num_bytes: Byte::from_bytes(50_000_000),
+            split_store_max_num_splits: 100,
+            ..Default::default()
+        };
+        Ok((indexer_config, temp_dir))
+    }
+
     pub fn validate(&self) -> anyhow::Result<()> {
         if !self.data_dir_path.exists() {
             bail!(
@@ -56,27 +89,97 @@ impl IndexerConfig {
     }
 }
 
+impl Default for IndexerConfig {
+    fn default() -> Self {
+        Self {
+            data_dir_path: default_data_dir_path(),
+            rest_listen_address: default_listen_address(),
+            rest_listen_port: Self::default_rest_listen_port(),
+            split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
+            split_store_max_num_splits: Self::default_split_store_max_num_splits(),
+        }
+    }
+}
+
 // TODO: caching
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SearcherConfig {
+    #[serde(default = "default_data_dir_path")]
     pub data_dir_path: PathBuf,
+    #[serde(default = "SearcherConfig::default_host_key_path")]
+    pub host_key_path: PathBuf,
+    #[serde(default = "default_listen_address")]
+    pub rest_listen_address: String,
+    #[serde(default = "SearcherConfig::default_rest_listen_port")]
     pub rest_listen_port: u16,
-    pub grpc_listen_port: u16,
-    pub discovery_listen_port: u16,
     #[serde(default)]
     pub peer_seeds: Vec<String>,
-    #[serde(default = "default_fast_field_cache_capacity")]
+    #[serde(default = "SearcherConfig::default_fast_field_cache_capacity")]
     pub fast_field_cache_capacity: Byte,
-    #[serde(default = "default_split_footer_cache_capacity")]
+    #[serde(default = "SearcherConfig::default_split_footer_cache_capacity")]
     pub split_footer_cache_capacity: Byte,
 }
 
-fn default_fast_field_cache_capacity() -> Byte {
-    Byte::from_bytes(1_000_000_000) // 1G
-}
+impl SearcherConfig {
+    fn default_host_key_path() -> PathBuf {
+        PathBuf::from("/var/lib/quickwit/host_key")
+    }
 
-fn default_split_footer_cache_capacity() -> Byte {
-    Byte::from_bytes(500_000_000) // 500M
+    fn default_rest_listen_port() -> u16 {
+        7280
+    }
+
+    fn default_fast_field_cache_capacity() -> Byte {
+        Byte::from_bytes(1_000_000_000) // 1G
+    }
+
+    fn default_split_footer_cache_capacity() -> Byte {
+        Byte::from_bytes(500_000_000) // 500M
+    }
+
+    pub fn rest_socket_addr(&self) -> anyhow::Result<SocketAddr> {
+        socket_addr_from_str(format!(
+            "{}:{}",
+            self.rest_listen_address, self.rest_listen_port
+        ))
+    }
+
+    pub fn grpc_socket_addr(&self) -> anyhow::Result<SocketAddr> {
+        socket_addr_from_str(format!(
+            "{}:{}",
+            self.rest_listen_address,
+            self.rest_listen_port + 1
+        ))
+    }
+
+    pub fn discovery_socket_addr(&self) -> anyhow::Result<SocketAddr> {
+        socket_addr_from_str(format!(
+            "{}:{}",
+            self.rest_listen_address,
+            self.rest_listen_port + 2
+        ))
+    }
+
+    pub fn peer_socket_addrs(&self) -> anyhow::Result<Vec<SocketAddr>> {
+        let peer_socket_addrs: Vec<SocketAddr> = self
+            .peer_seeds
+            .iter()
+            .flat_map(|peer_seed| {
+                socket_addr_from_str(format!("{}:{}", peer_seed, self.rest_listen_port + 2))
+                    .map_err(
+                        |_| warn!(address = %peer_seed, "Failed to resolve peer seed address."),
+                    )
+            })
+            .collect();
+
+        if !self.peer_seeds.is_empty() && peer_socket_addrs.is_empty() {
+            bail!(
+                "Failed to resolve any of the peer seed addresses: `{}`",
+                self.peer_seeds.join(", ")
+            )
+        }
+        Ok(peer_socket_addrs)
+    }
 }
 
 impl SearcherConfig {
@@ -94,6 +197,20 @@ impl SearcherConfig {
     }
 }
 
+impl Default for SearcherConfig {
+    fn default() -> Self {
+        Self {
+            data_dir_path: default_data_dir_path(),
+            host_key_path: Self::default_host_key_path(),
+            rest_listen_address: default_listen_address(),
+            rest_listen_port: Self::default_rest_listen_port(),
+            peer_seeds: Vec::new(),
+            fast_field_cache_capacity: Self::default_fast_field_cache_capacity(),
+            split_footer_cache_capacity: Self::default_split_footer_cache_capacity(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct S3Config {
     pub region: Option<String>,
@@ -108,6 +225,7 @@ pub struct StorageConfig {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct ServerConfig {
+    pub version: usize,
     pub metastore_uri: String,
     #[serde(rename = "indexer")]
     pub indexer_config: Option<IndexerConfig>,
@@ -118,9 +236,8 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
-    // TODO: asyncify?
-    pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let parser_fn = match path.as_ref().extension().and_then(OsStr::to_str) {
+    pub async fn from_file(path: &str) -> anyhow::Result<Self> {
+        let parser_fn = match Path::new(path).extension().and_then(OsStr::to_str) {
             Some("json") => Self::from_json,
             Some("toml") => Self::from_toml,
             Some("yaml") | Some("yml") => Self::from_yaml,
@@ -135,22 +252,21 @@ impl ServerConfig {
                  formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml)."
             ),
         };
-        let file_content = std::fs::read_to_string(path)?;
-        parser_fn(file_content.as_bytes())
+        let file_content = load_file(path).await?;
+        parser_fn(file_content.as_slice())
     }
 
     pub fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
-        serde_json::from_slice::<ServerConfig>(bytes)
+        serde_json::from_reader(StripComments::new(bytes))
             .context("Failed to parse JSON server config file.")
     }
 
     pub fn from_toml(bytes: &[u8]) -> anyhow::Result<Self> {
-        toml::from_slice::<ServerConfig>(bytes).context("Failed to parse TOML server config file.")
+        toml::from_slice(bytes).context("Failed to parse TOML server config file.")
     }
 
     pub fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
-        serde_yaml::from_slice::<ServerConfig>(bytes)
-            .context("Failed to parse YAML server config file.")
+        serde_yaml::from_slice(bytes).context("Failed to parse YAML server config file.")
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
@@ -171,11 +287,12 @@ mod tests {
 
     use super::*;
 
-    fn get_resource_path(relative_resource_path: &str) -> PathBuf {
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("resources/tests/server_config/");
-        path.push(relative_resource_path);
-        path
+    fn get_resource_path(resource_filename: &str) -> String {
+        format!(
+            "{}/resources/tests/server_config/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            resource_filename
+        )
     }
 
     fn set_data_dir_path(server_config: &mut ServerConfig, path: PathBuf) {
@@ -189,11 +306,12 @@ mod tests {
 
     macro_rules! test_parser {
         ($test_function_name:ident, $file_extension:expr) => {
-            #[test]
-            fn $test_function_name() -> anyhow::Result<()> {
+            #[tokio::test]
+            async fn $test_function_name() -> anyhow::Result<()> {
                 let server_config_filepath =
                     get_resource_path(&format!("server.{}", stringify!($file_extension)));
-                let server_config = ServerConfig::from_file(server_config_filepath)?;
+                let server_config = ServerConfig::from_file(&server_config_filepath).await?;
+                assert_eq!(server_config.version, 0);
                 assert_eq!(
                     server_config.metastore_uri,
                     "postgres://username:password@host:port/db"
@@ -202,26 +320,26 @@ mod tests {
                 assert_eq!(
                     server_config.indexer_config.unwrap(),
                     IndexerConfig {
-                        data_dir_path: "/opt/quickwit/data".into(),
-                        rest_listen_port: 7180,
-                        grpc_listen_port: 7181,
+                        data_dir_path: PathBuf::from("/opt/quickwit/data"),
+                        rest_listen_address: "0.0.0.0".to_string(),
+                        rest_listen_port: 1111,
                         split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
-                        split_store_max_num_files: 1_000,
+                        split_store_max_num_splits: 10_000,
                     }
                 );
 
                 assert_eq!(
                     server_config.searcher_config.unwrap(),
                     SearcherConfig {
-                        data_dir_path: "/opt/quickwit/data".into(),
-                        rest_listen_port: 7380,
-                        grpc_listen_port: 7381,
-                        discovery_listen_port: 7382,
+                        data_dir_path: PathBuf::from("/opt/quickwit/data"),
+                        host_key_path: PathBuf::from("/opt/quickwit/host_key"),
+                        rest_listen_address: "0.0.0.0".to_string(),
+                        rest_listen_port: 11111,
                         peer_seeds: vec![
                             "quickwit-searcher-0.local".to_string(),
                             "quickwit-searcher-1.local".to_string()
                         ],
-                        fast_field_cache_capacity: Byte::from_str("5G").unwrap(),
+                        fast_field_cache_capacity: Byte::from_str("10G").unwrap(),
                         split_footer_cache_capacity: Byte::from_str("1G").unwrap(),
                     }
                 );
@@ -238,43 +356,73 @@ mod tests {
         };
     }
 
-    test_parser!(test_from_json, json);
-    test_parser!(test_from_toml, toml);
-    test_parser!(test_from_yaml, yaml);
+    test_parser!(test_server_config_from_json, json);
+    test_parser!(test_server_config_from_toml, toml);
+    test_parser!(test_server_config_from_yaml, yaml);
 
     #[test]
     fn test_indexer_config_default_values() {
-        let indexer_config_yaml = r#"
-            data_dir_path: /opt/quickwit/data
-            rest_listen_port: 7180
-            grpc_listen_port: 7181
-            "#;
-        let indexer_config = serde_yaml::from_str::<IndexerConfig>(indexer_config_yaml).unwrap();
-        assert_eq!(
-            indexer_config.split_store_max_num_bytes,
-            Byte::from_str("100G").unwrap()
-        );
-        assert_eq!(indexer_config.split_store_max_num_files, 1_000);
+        let indexer_config = serde_yaml::from_str::<IndexerConfig>("{}").unwrap();
+        assert_eq!(indexer_config, IndexerConfig::default());
     }
 
     #[test]
     fn test_searcher_config_default_values() {
-        let searcher_config_yaml = r#"
-            data_dir_path: /opt/quickwit/data
-            rest_listen_port: 7380
-            grpc_listen_port: 7381
-            discovery_listen_port: 7382
-            "#;
-        let searcher_config = serde_yaml::from_str::<SearcherConfig>(searcher_config_yaml).unwrap();
-        assert!(searcher_config.peer_seeds.is_empty());
-        assert_eq!(
-            searcher_config.fast_field_cache_capacity,
-            Byte::from_str("1G").unwrap()
-        );
-        assert_eq!(
-            searcher_config.split_footer_cache_capacity,
-            Byte::from_str("500M").unwrap()
-        );
+        let searcher_config = serde_yaml::from_str::<SearcherConfig>("{}").unwrap();
+        assert_eq!(searcher_config, SearcherConfig::default());
+    }
+
+    #[test]
+    fn test_server_config_default_values() {
+        {
+            let server_config_yaml = r#"
+            version: 0
+            metastore_uri: postgres://username:password@host:port/db
+        "#;
+            let server_config = serde_yaml::from_str::<ServerConfig>(server_config_yaml).unwrap();
+            assert_eq!(server_config.version, 0);
+            assert_eq!(
+                server_config.metastore_uri,
+                "postgres://username:password@host:port/db"
+            );
+            assert!(server_config.indexer_config.is_none());
+            assert!(server_config.searcher_config.is_none());
+            assert!(server_config.storage_config.is_none());
+        }
+        {
+            let server_config_yaml = r#"
+            version: 0
+            metastore_uri: postgres://username:password@host:port/db
+ 
+            indexer:
+              data_dir_path: /opt/quickwit/data
+
+            searcher:
+              data_dir_path: /opt/quickwit/data
+              host_key_path: /opt/quickwit/host_key
+        "#;
+            let server_config = serde_yaml::from_str::<ServerConfig>(server_config_yaml).unwrap();
+            assert_eq!(server_config.version, 0);
+            assert_eq!(
+                server_config.metastore_uri,
+                "postgres://username:password@host:port/db"
+            );
+            assert_eq!(
+                server_config.indexer_config.unwrap(),
+                IndexerConfig {
+                    data_dir_path: PathBuf::from("/opt/quickwit/data"),
+                    ..Default::default()
+                }
+            );
+            assert_eq!(
+                server_config.searcher_config.unwrap(),
+                SearcherConfig {
+                    data_dir_path: PathBuf::from("/opt/quickwit/data"),
+                    host_key_path: PathBuf::from("/opt/quickwit/host_key"),
+                    ..Default::default()
+                }
+            );
+        }
     }
 
     #[test]
@@ -282,20 +430,14 @@ mod tests {
         {
             let indexer_config = IndexerConfig {
                 data_dir_path: "/data/dir/does/not/exist".into(),
-                rest_listen_port: 7180,
-                grpc_listen_port: 7181,
-                split_store_max_num_bytes: Byte::from_bytes(1),
-                split_store_max_num_files: 1,
+                ..Default::default()
             };
             assert!(indexer_config.validate().is_err());
         }
         {
             let indexer_config = IndexerConfig {
                 data_dir_path: env::current_dir().unwrap(),
-                rest_listen_port: 7180,
-                grpc_listen_port: 7181,
-                split_store_max_num_bytes: Byte::from_bytes(1),
-                split_store_max_num_files: 1,
+                ..Default::default()
             };
             assert!(indexer_config.validate().is_ok());
         }
@@ -306,33 +448,57 @@ mod tests {
         {
             let searcher_config = SearcherConfig {
                 data_dir_path: "/data/dir/does/not/exist".into(),
-                rest_listen_port: 7380,
-                grpc_listen_port: 7381,
-                discovery_listen_port: 7382,
-                peer_seeds: vec!["quickwit-searcher-0.local".to_string()],
-                fast_field_cache_capacity: Byte::from_bytes(1),
-                split_footer_cache_capacity: Byte::from_bytes(1),
+                ..Default::default()
             };
             assert!(searcher_config.validate().is_err());
         }
         {
             let searcher_config = SearcherConfig {
                 data_dir_path: env::current_dir().unwrap(),
-                rest_listen_port: 7380,
-                grpc_listen_port: 7381,
-                discovery_listen_port: 7382,
-                peer_seeds: vec!["quickwit-searcher-0.local".to_string()],
-                fast_field_cache_capacity: Byte::from_bytes(1),
-                split_footer_cache_capacity: Byte::from_bytes(1),
+                ..Default::default()
             };
             assert!(searcher_config.validate().is_ok());
         }
     }
 
-    #[test]
-    fn test_server_config_validate() {
-        let mut server_config = ServerConfig::from_file(get_resource_path("server.toml")).unwrap();
+    #[tokio::test]
+    async fn test_server_config_validate() {
+        let server_config_filepath = get_resource_path("server.toml");
+        let mut server_config = ServerConfig::from_file(&server_config_filepath)
+            .await
+            .unwrap();
         set_data_dir_path(&mut server_config, env::current_dir().unwrap());
         assert!(server_config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_peer_socket_addrs() {
+        {
+            let searcher_config = SearcherConfig {
+                rest_listen_port: 1789,
+                peer_seeds: Vec::new(),
+                ..Default::default()
+            };
+            assert!(searcher_config.peer_socket_addrs().unwrap().is_empty());
+        }
+        {
+            let searcher_config = SearcherConfig {
+                rest_listen_port: 1789,
+                peer_seeds: vec!["unresolvable-host".to_string()],
+                ..Default::default()
+            };
+            assert!(searcher_config.peer_socket_addrs().is_err());
+        }
+        {
+            let searcher_config = SearcherConfig {
+                rest_listen_port: 1789,
+                peer_seeds: vec!["unresolvable-host".to_string(), "127.0.0.1".to_string()],
+                ..Default::default()
+            };
+            assert_eq!(
+                searcher_config.peer_socket_addrs().unwrap(),
+                vec!["127.0.0.1:1791".parse().unwrap()]
+            );
+        }
     }
 }

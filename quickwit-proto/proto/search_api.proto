@@ -73,8 +73,8 @@ message SearchRequest {
   // The results with rank [start_offset..start_offset + max_hits) are returned.
   uint64 start_offset = 7;
 
-  // Split tag filter
-  repeated string tags = 8;
+  // deprecated tag field
+  reserved 8;
 }
 
 message SearchResponse {
@@ -111,7 +111,7 @@ message LeafSearchRequest {
   // This ids are resolved from the index_uri defined in the search_request.
   repeated SplitIdAndFooterOffsets split_metadata = 4;
 
-  // `IndexConfig` as json serialized trait. 
+  // `IndexConfig` as json serialized trait.
   string index_config = 5;
 
   // Index URI. The index URI defines the location of the storage that contains the
@@ -234,8 +234,7 @@ message SearchStreamRequest {
   // The output format
   OutputFormat output_format = 7;
 
-  // Split tag filter
-  repeated string tags = 8;
+  reserved 8; // deprecated field: tags
 
   // The field by which we want to partition
   optional string partition_by_field = 9;
@@ -250,7 +249,7 @@ message LeafSearchStreamRequest {
   // This ids are resolved from the index_uri defined in the stream request.
   repeated SplitIdAndFooterOffsets split_metadata = 2;
 
-  // `IndexConfig` as json serialized trait. 
+  // `IndexConfig` as json serialized trait.
   string index_config = 5;
 
   // Index URI. The index URI defines the location of the storage that contains the

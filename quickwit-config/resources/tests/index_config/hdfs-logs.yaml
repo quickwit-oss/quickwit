@@ -1,11 +1,12 @@
+version: 0
 index_id: hdfs-logs
 index_uri: s3://quickwit-indexes/hdfs-logs
 
 doc_mapping:
   field_mappings:
-    - name: cluster_id
-      type: text
-      tokenizer: raw
+    - name: tenant_id
+      type: u64
+      fast: true
     - name: timestamp
       type: i64
       fast: true
@@ -14,7 +15,7 @@ doc_mapping:
       tokenizer: raw
     - name: body
       type: text
-      tokenizer: defaut
+      tokenizer: default
       record: position
     - name: resource
       type: object
@@ -22,25 +23,26 @@ doc_mapping:
         - name: service
           type: text
           tokenizer: raw
-  tag_fields: ["cluster_id"]
+  tag_fields: [tenant_id]
   store_source: true
 
 indexing_settings:
-  demux_field: cluster_id
+  demux_field: tenant_id
   timestamp_field: timestamp
-  commit_timeout_secs: 60
-  split_max_num_docs: 10000000
+  sort_field: timestamp
+  sort_order: asc
+  commit_timeout_secs: 61
+  split_num_docs_target: 10000001
   merge_policy:
-    demux_factor: 6
-    merge_factor: 10
-    max_merge_factor: 12
-    min_level_num_docs: 100000
+    demux_factor: 7
+    merge_factor: 9
+    max_merge_factor: 11
   resources:
-    num_threads: 1
-    heap_size: 1G
+    num_threads: 3
+    heap_size: 3G
 
 search_settings:
-  default_search_fields: ["severity_text", "body"]
+  default_search_fields: [severity_text, body]
 
 sources:
   - source_id: hdfs-logs-kafka-source

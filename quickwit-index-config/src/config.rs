@@ -17,82 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
 use std::fmt::Debug;
 
 use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_proto::SearchRequest;
-use serde::{Deserialize, Serialize};
 use tantivy::query::Query;
-use tantivy::schema::{Field, Schema, Value};
-use tantivy::{Document, Order};
+use tantivy::schema::{Field, Schema};
+use tantivy::Document;
 
-use crate::{DocParsingError, QueryParserError, TAGS_FIELD_NAME};
-
-/// Sorted order (either Ascending or Descending).
-/// To get a regular top-K results search, use `SortOrder::Desc`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SortOrder {
-    /// Descending. This is the default to get Top-K results.
-    Desc,
-    /// Ascending order.
-    Asc,
-}
-
-impl Default for SortOrder {
-    fn default() -> Self {
-        Self::Desc
-    }
-}
-
-impl From<SortOrder> for Order {
-    fn from(order: SortOrder) -> Self {
-        match order {
-            SortOrder::Asc => Order::Asc,
-            SortOrder::Desc => Order::Desc,
-        }
-    }
-}
-
-/// Defines the way documents should be sorted.
-/// In case of a tie, the documents are ordered according to descending `(split_id, segment_ord,
-/// doc_id)`.
-#[derive(Clone, Debug, PartialEq)]
-pub enum SortBy {
-    /// Sort by a specific field.
-    SortByFastField {
-        /// Field to sort by.
-        field_name: String,
-        /// Order to sort by. A usual top-K search implies a Descending order.
-        order: SortOrder,
-    },
-    /// Sort by DocId
-    DocId,
-}
-
-/// Convert a field (name, value) into a tag string `name:value`.
-pub fn convert_tag_to_string(field_name: &str, field_value: &Value) -> String {
-    format!("{}:{}", field_name, tantivy_value_to_string(field_value))
-}
-
-/// Returns true if tag_string is of form `{field_name}:any_value`.
-pub fn match_tag_field_name(field_name: &str, tag_string: &str) -> bool {
-    tag_string.starts_with(&format!("{}:", field_name))
-}
-
-/// Converts a [`tantivy::Value`] to it's [`String`] value.
-fn tantivy_value_to_string(field_value: &Value) -> String {
-    match field_value {
-        Value::Str(text) => text.clone(),
-        Value::PreTokStr(data) => data.text.clone(),
-        Value::U64(num) => num.to_string(),
-        Value::I64(num) => num.to_string(),
-        Value::F64(num) => num.to_string(),
-        Value::Date(date) => date.to_rfc3339(),
-        Value::Facet(facet) => facet.to_string(),
-        Value::Bytes(data) => base64::encode(data),
-    }
-}
+use crate::{DocParsingError, QueryParserError, SortBy};
 
 /// The `IndexConfig` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
@@ -142,15 +76,8 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     }
 
     /// Returns the tag field names
-    fn tag_field_names(&self) -> Vec<String> {
-        vec![]
-    }
-
-    /// Returns the special tags field if any.
-    fn tags_field(&self, split_schema: &Schema) -> Field {
-        split_schema
-            .get_field(TAGS_FIELD_NAME)
-            .expect("Tags field must exist in the schema.")
+    fn tag_field_names(&self) -> BTreeSet<String> {
+        Default::default()
     }
 
     /// Returns the demux field name.

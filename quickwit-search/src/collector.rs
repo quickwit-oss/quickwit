@@ -71,7 +71,7 @@ fn resolve_sort_by(
     segment_reader: &SegmentReader,
 ) -> tantivy::Result<SortingFieldComputer> {
     match sort_by {
-        SortBy::SortByFastField { field_name, order } => {
+        SortBy::FastField { field_name, order } => {
             if let Some(field) = segment_reader.schema().get_field(field_name) {
                 let fast_field_reader = segment_reader.fast_fields().u64_lenient(field)?;
                 Ok(SortingFieldComputer::SortByFastField {
@@ -353,7 +353,7 @@ fn extract_fast_field_names(index_config: &dyn IndexConfig) -> HashSet<String> {
     if let Some(timestamp_field) = index_config.timestamp_field_name() {
         fast_fields.insert(timestamp_field);
     }
-    if let SortBy::SortByFastField { field_name, .. } = index_config.sort_by() {
+    if let SortBy::FastField { field_name, .. } = index_config.sort_by() {
         fast_fields.insert(field_name);
     }
     fast_fields

@@ -24,8 +24,8 @@ use std::sync::Arc;
 use std::{fmt, io};
 
 use quickwit_storage::{BundleStorageFileOffsets, OwnedBytes, Storage, StorageResult};
-use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
-use tantivy::directory::{FileHandle, FileSlice, WatchCallback, WatchHandle, WritePtr};
+use tantivy::directory::error::OpenReadError;
+use tantivy::directory::{FileHandle, FileSlice};
 use tantivy::{Directory, HasLen};
 
 /// BundleDirectory is a read-only directory that makes it possible to
@@ -155,27 +155,7 @@ impl Directory for BundleDirectory {
         Ok(self.file_offsets.exists(path))
     }
 
-    fn open_write(&self, _path: &Path) -> Result<WritePtr, OpenWriteError> {
-        unimplemented!();
-    }
-
-    fn delete(&self, path: &Path) -> Result<(), DeleteError> {
-        if self.file_offsets.exists(path) {
-            unimplemented!("the bundle directory is read-only");
-        } else {
-            // We actually handle delete docs that are not there,
-            // in order to be used in the union directory.
-            Err(DeleteError::FileDoesNotExist(path.to_path_buf()))
-        }
-    }
-
-    fn atomic_write(&self, _path: &Path, _data: &[u8]) -> io::Result<()> {
-        unimplemented!();
-    }
-
-    fn watch(&self, _callback: WatchCallback) -> tantivy::Result<WatchHandle> {
-        Ok(WatchHandle::empty())
-    }
+    crate::read_only_directory!();
 }
 
 #[cfg(test)]

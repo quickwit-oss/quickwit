@@ -63,7 +63,7 @@ impl fmt::Debug for PackagedSplit {
 
 #[derive(Debug)]
 pub struct PackagedSplitBatch {
-    splits: Vec<PackagedSplit>,
+    pub splits: Vec<PackagedSplit>,
 }
 
 impl PackagedSplitBatch {

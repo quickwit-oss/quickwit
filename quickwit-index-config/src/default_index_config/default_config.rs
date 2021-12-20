@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::convert::TryFrom;
 
 use anyhow::{bail, Context};
@@ -26,37 +26,48 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
 use tantivy::schema::{
-    Cardinality, FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, Value, STORED, STRING,
+    Cardinality, FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, Value, STORED,
 };
 use tantivy::Document;
 use tracing::info;
 
 use super::field_mapping_entry::{DocParsingError, FieldPath};
 use super::{default_as_true, FieldMappingEntry, FieldMappingType};
-use crate::config::convert_tag_to_string;
 use crate::query_builder::build_query;
-use crate::{IndexConfig, QueryParserError, SortBy, SortOrder, SOURCE_FIELD_NAME, TAGS_FIELD_NAME};
+use crate::sort_by::{SortBy, SortOrder};
+use crate::{IndexConfig, QueryParserError, SOURCE_FIELD_NAME};
+
+/// Name of the raw tokenizer.
+const RAW_TOKENIZER_NAME: &str = "raw";
 
 /// DefaultIndexConfigBuilder is here
 /// to create a valid IndexConfig.
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct DefaultIndexConfigBuilder {
+    /// Stores the original source document when set to true.
     #[serde(default = "default_as_true")]
-    store_source: bool,
-    default_search_fields: Vec<String>,
+    pub store_source: bool,
+    /// Name of the fields that are searched by default, unless overridden.
+    pub default_search_fields: Vec<String>,
+    /// Name of the field storing the timestamp of the event for time series data.
     #[serde(skip_serializing_if = "Option::is_none")]
-    timestamp_field: Option<String>,
+    pub timestamp_field: Option<String>,
+    /// Specifies the name of the sort field and the sort order.
     #[serde(skip_serializing_if = "Option::is_none")]
-    sort_by: Option<SortByConfig>,
-    field_mappings: Vec<FieldMappingEntry>,
+    pub sort_by: Option<SortByConfig>,
+    /// Describes which fields are indexed and how.
+    pub field_mappings: Vec<FieldMappingEntry>,
+    /// Name of the fields that are tagged.
     #[serde(default)]
-    tag_fields: Vec<String>,
+    pub tag_fields: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    demux_field: Option<String>,
+    /// Name of the field to demux by.
+    pub demux_field: Option<String>,
 }
 
+/// Specifies the name of the sort field and the sort order for an index.
 #[derive(Default, Serialize, Deserialize, Clone)]
-struct SortByConfig {
+pub struct SortByConfig {
     /// Sort field name in the index schema.
     pub field_name: String,
     /// Sort order of the field.
@@ -65,7 +76,7 @@ struct SortByConfig {
 
 impl From<SortByConfig> for SortBy {
     fn from(sort_by_config: SortByConfig) -> Self {
-        SortBy::SortByFastField {
+        SortBy::FastField {
             field_name: sort_by_config.field_name,
             order: sort_by_config.order,
         }
@@ -81,7 +92,7 @@ impl DefaultIndexConfigBuilder {
             timestamp_field: None,
             sort_by: None,
             field_mappings: vec![],
-            tag_fields: vec![],
+            tag_fields: Default::default(),
             demux_field: None,
         }
     }
@@ -107,7 +118,7 @@ impl DefaultIndexConfigBuilder {
         let sort_by = resolve_sort_field(self.sort_by, &schema)?;
 
         // Resolve tag fields
-        let mut tag_field_names = Vec::new();
+        let mut tag_field_names: BTreeSet<String> = Default::default();
         for tag_field_name in self.tag_fields.iter() {
             if tag_field_names.contains(tag_field_name) {
                 bail!("Duplicated tag field: `{}`", tag_field_name)
@@ -115,7 +126,7 @@ impl DefaultIndexConfigBuilder {
             schema
                 .get_field(tag_field_name)
                 .with_context(|| format!("Unknown tag field: `{}`", tag_field_name))?;
-            tag_field_names.push(tag_field_name.clone());
+            tag_field_names.insert(tag_field_name.clone());
         }
         if let Some(ref demux_field_name) = self.demux_field {
             if !tag_field_names.contains(demux_field_name) {
@@ -123,7 +134,7 @@ impl DefaultIndexConfigBuilder {
                     "Demux field name `{}` is not in index config tags, add it automatically.",
                     demux_field_name
                 );
-                tag_field_names.push(demux_field_name.clone());
+                tag_field_names.insert(demux_field_name.clone());
             }
         }
 
@@ -145,7 +156,6 @@ impl DefaultIndexConfigBuilder {
     /// Build the schema from the field mappings and store_source parameter.
     fn build_schema(&self) -> anyhow::Result<Schema> {
         let mut builder = SchemaBuilder::new();
-        builder.add_text_field(TAGS_FIELD_NAME, STRING);
 
         let mut unique_field_names: HashSet<String> = HashSet::new();
         for field_mapping in self.field_mappings.iter() {
@@ -154,8 +164,25 @@ impl DefaultIndexConfigBuilder {
                 if field_name == SOURCE_FIELD_NAME {
                     bail!("`_source` is a reserved name, change your field name.");
                 }
-                if field_name == TAGS_FIELD_NAME {
-                    bail!("`_tags` is a reserved name, change your field name.");
+                if self.tag_fields.contains(&field_name) {
+                    match &field_type {
+                        FieldType::Str(options) => {
+                            let tokenizer_opt = options
+                                .get_indexing_options()
+                                .map(|text_options| text_options.tokenizer());
+
+                            if tokenizer_opt != Some(RAW_TOKENIZER_NAME) {
+                                bail!(
+                                    "Tags collection is only allowed on text fields with the \
+                                     `raw` tokenizer."
+                                );
+                            }
+                        }
+                        FieldType::Bytes(_) => {
+                            bail!("Tags collection is not allowed on `bytes` fields.")
+                        }
+                        _ => (),
+                    }
                 }
                 if unique_field_names.contains(&field_name) {
                     bail!(
@@ -204,8 +231,8 @@ fn resolve_timestamp_field(
             }
             _ => {
                 bail!(
-                    "Timestamp field must be either of type i64, please change your field type \
-                     `{}` to i64.",
+                    "Timestamp field must be of type i64, please change your field type `{}` to \
+                     i64.",
                     timestamp_field_name
                 )
             }
@@ -215,10 +242,10 @@ fn resolve_timestamp_field(
 }
 
 fn resolve_sort_field(
-    sort_config_opt: Option<SortByConfig>,
+    sort_by_config_opt: Option<SortByConfig>,
     schema: &Schema,
-) -> anyhow::Result<Option<SortBy>> {
-    if let Some(sort_by_config) = sort_config_opt {
+) -> anyhow::Result<SortBy> {
+    if let Some(sort_by_config) = sort_by_config_opt {
         let sort_by_field = schema
             .get_field(&sort_by_config.field_name)
             .with_context(|| format!("Unknown sort by field: `{}`", sort_by_config.field_name))?;
@@ -231,9 +258,9 @@ fn resolve_sort_field(
                 sort_by_config.field_name
             )
         }
-        return Ok(Some(SortBy::from(sort_by_config)));
+        return Ok(sort_by_config.into());
     }
-    Ok(None)
+    Ok(SortBy::DocId)
 }
 
 fn resolve_demux_field(
@@ -291,27 +318,23 @@ impl TryFrom<DefaultIndexConfigBuilder> for DefaultIndexConfig {
 
 impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
     fn from(value: DefaultIndexConfig) -> Self {
-        let sort_by_config = value
-            .sort_by
-            .as_ref()
-            .map(|sort_by| match sort_by {
-                SortBy::SortByFastField { field_name, order } => Some(SortByConfig {
-                    field_name: field_name.clone(),
-                    order: *order,
-                }),
-                SortBy::DocId => None,
-            })
-            .flatten();
+        let sort_by_config = match &value.sort_by {
+            SortBy::DocId => None,
+            SortBy::FastField { field_name, order } => Some(SortByConfig {
+                field_name: field_name.clone(),
+                order: *order,
+            }),
+        };
         Self {
             store_source: value.store_source,
             timestamp_field: value.timestamp_field_name(),
-            sort_by: sort_by_config,
             field_mappings: value
                 .field_mappings
                 .field_mappings()
                 .unwrap_or_else(Vec::new),
             demux_field: value.demux_field_name(),
-            tag_fields: value.tag_field_names,
+            sort_by: sort_by_config,
+            tag_fields: value.tag_field_names.into_iter().collect(),
             default_search_fields: value.default_search_field_names,
         }
     }
@@ -329,22 +352,22 @@ impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
 )]
 pub struct DefaultIndexConfig {
     /// Store the json source in a text field _source.
-    store_source: bool,
+    pub store_source: bool,
     /// Default list of field names used for search.
-    default_search_field_names: Vec<String>,
+    pub default_search_field_names: Vec<String>,
     /// Timestamp field name.
-    timestamp_field_name: Option<String>,
+    pub timestamp_field_name: Option<String>,
     /// Sort field name and order.
-    sort_by: Option<SortBy>,
+    pub sort_by: SortBy,
     /// List of field mappings which defines how a json field is mapped to index fields.
-    field_mappings: FieldMappingEntry,
+    pub field_mappings: FieldMappingEntry,
     /// Schema generated by the store source and field mappings parameters.
     #[serde(skip_serializing)]
     schema: Schema,
     /// List of field names used for tagging.
-    tag_field_names: Vec<String>,
+    pub tag_field_names: BTreeSet<String>,
     /// Demux field name.
-    demux_field_name: Option<String>,
+    pub demux_field_name: Option<String>,
 }
 
 impl DefaultIndexConfig {
@@ -394,22 +417,12 @@ impl IndexConfig for DefaultIndexConfig {
         })?;
         let field_paths_and_values = self.field_mappings.parse(json_obj)?;
         self.check_fast_field_in_doc(&field_paths_and_values)?;
-        let tags_field_opt = self.schema.get_field(TAGS_FIELD_NAME);
         for (field_path, field_value) in field_paths_and_values {
             let field_name = field_path.field_name();
             let field = self
                 .schema
                 .get_field(&field_name)
                 .ok_or_else(|| DocParsingError::NoSuchFieldInSchema(field_name.clone()))?;
-            if self.tag_field_names.contains(&field_name) {
-                let tags_field = tags_field_opt.ok_or_else(|| {
-                    DocParsingError::NoSuchFieldInSchema(TAGS_FIELD_NAME.to_string())
-                })?;
-                document.add(FieldValue::new(
-                    tags_field,
-                    Value::Str(convert_tag_to_string(&field_name, &field_value)),
-                ));
-            }
             document.add(FieldValue::new(field, field_value))
         }
         if self.store_source {
@@ -443,11 +456,11 @@ impl IndexConfig for DefaultIndexConfig {
         self.demux_field_name.clone()
     }
 
-    fn sort_by(&self) -> crate::SortBy {
-        self.sort_by.clone().unwrap_or(crate::SortBy::DocId)
+    fn sort_by(&self) -> SortBy {
+        self.sort_by.clone()
     }
 
-    fn tag_field_names(&self) -> Vec<String> {
+    fn tag_field_names(&self) -> BTreeSet<String> {
         self.tag_field_names.clone()
     }
 }
@@ -456,13 +469,12 @@ impl IndexConfig for DefaultIndexConfig {
 mod tests {
     use std::collections::HashMap;
 
-    use anyhow::bail;
     use serde_json::{self, Value as JsonValue};
 
     use super::DefaultIndexConfig;
     use crate::{
         DefaultIndexConfigBuilder, DocParsingError, IndexConfig, SortBy, SortOrder,
-        SOURCE_FIELD_NAME, TAGS_FIELD_NAME,
+        SOURCE_FIELD_NAME,
     };
 
     const JSON_DOC_VALUE: &str = r#"
@@ -533,10 +545,7 @@ mod tests {
             config.demux_field_name,
             config_after_serialization.demux_field_name
         );
-        assert_eq!(
-            config.sort_by.unwrap(),
-            config_after_serialization.sort_by.unwrap()
-        );
+        assert_eq!(config.sort_by, config_after_serialization.sort_by);
         Ok(())
     }
 
@@ -547,16 +556,13 @@ mod tests {
         let schema = index_config.schema();
         // 7 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
-        // + 1 value for special `_tags`
-        assert_eq!(document.len(), 15);
+        assert_eq!(document.len(), 14);
         let expected_json_paths_and_values: HashMap<String, JsonValue> =
             serde_json::from_str(EXPECTED_JSON_PATHS_AND_VALUES).unwrap();
         document.field_values().iter().for_each(|field_value| {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
                 assert_eq!(field_value.value().text().unwrap(), JSON_DOC_VALUE);
-            } else if field_name == TAGS_FIELD_NAME {
-                assert_eq!(field_value.value().text().unwrap(), "owner:foo");
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
@@ -722,7 +728,7 @@ mod tests {
             "type": "default",
             "default_search_fields": [],
             "timestamp_field": null,
-            "tag_fields": ["image"],
+            "tag_fields": [],
             "field_mappings": [
                 {
                     "name": "image",
@@ -753,12 +759,13 @@ mod tests {
             "type": "default",
             "default_search_fields": [],
             "timestamp_field": null,
-            "tag_fields": ["city", "image"],
+            "tag_fields": ["city"],
             "field_mappings": [
                 {
                     "name": "city",
                     "type": "text",
-                    "stored": true
+                    "stored": true,
+                    "tokenizer": "raw"
                 },
                 {
                     "name": "image",
@@ -777,8 +784,8 @@ mod tests {
         }"#;
         let document = index_config.doc_from_json(JSON_DOC_VALUE.to_string())?;
 
-        // 2 properties, + 1 value for "_source" + 2 values for "_tags"
-        assert_eq!(document.len(), 5);
+        // 2 properties, + 1 value for "_source"
+        assert_eq!(document.len(), 3);
         let expected_json_paths_and_values: HashMap<String, JsonValue> = serde_json::from_str(
             r#"{
                 "city": ["tokio"],
@@ -790,10 +797,6 @@ mod tests {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
                 assert_eq!(field_value.value().text().unwrap(), JSON_DOC_VALUE);
-            } else if field_name == TAGS_FIELD_NAME {
-                assert!(
-                    vec!["city:tokio", "image:YWJj"].contains(&field_value.value().text().unwrap())
-                );
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
@@ -807,6 +810,48 @@ mod tests {
                 assert!(is_value_in_expected_values);
             }
         });
+        Ok(())
+    }
+
+    #[test]
+    fn test_fail_to_build_index_config_with_wrong_tag_fields_types() -> anyhow::Result<()> {
+        let index_config_one = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "tag_fields": ["city"],
+            "field_mappings": [
+                {
+                    "name": "city",
+                    "type": "text"
+                }
+            ]
+        }"#;
+        assert_eq!(
+            serde_json::from_str::<DefaultIndexConfigBuilder>(index_config_one)?
+                .build()
+                .unwrap_err()
+                .to_string(),
+            "Tags collection is only allowed on text fields with the `raw` tokenizer.".to_string(),
+        );
+
+        let index_config_two = r#"{
+            "type": "default",
+            "default_search_fields": [],
+            "tag_fields": ["photo"],
+            "field_mappings": [
+                {
+                    "name": "photo",
+                    "type": "bytes"
+                }
+            ]
+        }"#;
+        assert_eq!(
+            serde_json::from_str::<DefaultIndexConfigBuilder>(index_config_two)?
+                .build()
+                .unwrap_err()
+                .to_string(),
+            "Tags collection is not allowed on `bytes` fields.".to_string(),
+        );
         Ok(())
     }
 
@@ -854,13 +899,10 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
-        match builder.sort_by() {
-            SortBy::SortByFastField { field_name, order } => {
-                assert_eq!(field_name, "timestamp");
-                assert_eq!(order, SortOrder::Asc);
-            }
-            _ => bail!("Sort by must be a SortByFastField."),
-        };
+        assert!(
+            matches!(builder.sort_by(), SortBy::FastField { field_name, order } if field_name == "timestamp" && order == SortOrder::Asc
+            )
+        );
         Ok(())
     }
 
@@ -880,10 +922,7 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
-        match builder.sort_by() {
-            SortBy::DocId => (),
-            _ => bail!("Sort by must be DocId."),
-        };
+        assert!(matches!(builder.sort_by(), SortBy::DocId));
         Ok(())
     }
 

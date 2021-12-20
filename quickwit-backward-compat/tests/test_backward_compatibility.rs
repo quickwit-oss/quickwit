@@ -42,6 +42,48 @@ fn test_index_metadata_deser(path: &Path) -> anyhow::Result<()> {
         index_metadata.checkpoint,
         expected_index_metadata.checkpoint
     );
+    assert_eq!(
+        index_metadata
+            .doc_mapping
+            .field_mappings
+            .iter()
+            .map(|field_mapping| &field_mapping.name)
+            .collect::<Vec<_>>(),
+        expected_index_metadata
+            .doc_mapping
+            .field_mappings
+            .iter()
+            .map(|field_mapping| &field_mapping.name)
+            .collect::<Vec<_>>(),
+    );
+    assert_eq!(
+        index_metadata.doc_mapping.tag_fields,
+        expected_index_metadata.doc_mapping.tag_fields,
+    );
+    assert_eq!(
+        index_metadata.doc_mapping.store_source,
+        expected_index_metadata.doc_mapping.store_source,
+    );
+    assert_eq!(
+        index_metadata.indexing_settings,
+        expected_index_metadata.indexing_settings
+    );
+    assert_eq!(
+        index_metadata.search_settings,
+        expected_index_metadata.search_settings
+    );
+    assert_eq!(
+        index_metadata
+            .sources
+            .iter()
+            .map(|source| &source.source_id)
+            .collect::<Vec<_>>(),
+        expected_index_metadata
+            .sources
+            .iter()
+            .map(|source| &source.source_id)
+            .collect::<Vec<_>>(),
+    );
     Ok(())
 }
 

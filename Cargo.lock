@@ -49,9 +49,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.46"
+version = "1.0.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3aa828229c44c0293dd7d4d2300bdfc4d2883ffdba934c069a6b968957a81f70"
+checksum = "8b26702f315f53b6071259e15dd9d64528213b44d61de1ec926eca7715d62203"
 
 [[package]]
 name = "arc-swap"
@@ -756,6 +756,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fail"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec3245a0ca564e7f3c797d20d833a6870f57a728ac967d5225b3ffdef4465011"
+dependencies = [
+ "lazy_static",
+ "log",
+ "rand 0.8.4",
+]
+
+[[package]]
 name = "fastdivide"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -764,7 +775,7 @@ checksum = "4a99a2d53cf90642500986ad22e5083b09e42d44c408f5f112e2a4a0925a643c"
 [[package]]
 name = "fastfield_codecs"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=cba1b9e#cba1b9e200d14d27f5253eabc42f899726bc0965"
+source = "git+https://github.com/quickwit-inc/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -1861,9 +1872,18 @@ dependencies = [
 [[package]]
 name = "ownedbytes"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=cba1b9e#cba1b9e200d14d27f5253eabc42f899726bc0965"
+source = "git+https://github.com/quickwit-inc/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
 dependencies = [
  "stable_deref_trait",
+]
+
+[[package]]
+name = "papergrid"
+version = "0.1.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fe93a33fc67c8a9d21f3fefa54c4a991e08d2eba5f2fd6f327ca520862eddfb"
+dependencies = [
+ "unicode-width",
 ]
 
 [[package]]
@@ -2216,11 +2236,14 @@ name = "quickwit-backward-compat"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "byte-unit",
  "md5",
  "once_cell",
+ "quickwit-config",
  "quickwit-index-config",
  "quickwit-metastore",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
@@ -2238,7 +2261,6 @@ dependencies = [
  "futures",
  "humansize",
  "itertools",
- "json_comments",
  "once_cell",
  "openssl-probe",
  "opentelemetry",
@@ -2246,6 +2268,7 @@ dependencies = [
  "predicates 2.0.3",
  "quickwit-actors",
  "quickwit-common",
+ "quickwit-config",
  "quickwit-core",
  "quickwit-directories",
  "quickwit-index-config",
@@ -2256,9 +2279,11 @@ dependencies = [
  "quickwit-serve",
  "quickwit-storage",
  "quickwit-telemetry",
+ "regex",
  "reqwest",
  "serde_json",
  "serial_test",
+ "tabled",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -2294,7 +2319,9 @@ name = "quickwit-common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "colored",
  "env_logger",
+ "futures",
  "home",
  "once_cell",
  "prometheus",
@@ -2312,10 +2339,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "byte-unit",
+ "json_comments",
+ "quickwit-common",
  "quickwit-index-config",
+ "quickwit-storage",
  "serde",
  "serde_json",
  "serde_yaml",
+ "tempfile",
+ "tokio",
  "toml",
  "tracing",
 ]
@@ -2404,7 +2436,7 @@ dependencies = [
  "backoff",
  "byte-unit",
  "bytes",
- "fail",
+ "fail 0.4.0",
  "flume",
  "futures",
  "itertools",
@@ -2415,6 +2447,7 @@ dependencies = [
  "proptest",
  "quickwit-actors",
  "quickwit-common",
+ "quickwit-config",
  "quickwit-directories",
  "quickwit-index-config",
  "quickwit-metastore",
@@ -2425,6 +2458,7 @@ dependencies = [
  "rusoto_kinesis",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tantivy",
  "tempfile",
  "thiserror",
@@ -2440,6 +2474,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "byte-unit",
  "chrono",
  "diesel",
  "diesel_migrations",
@@ -2447,6 +2482,7 @@ dependencies = [
  "futures",
  "mockall 0.9.1",
  "openssl",
+ "quickwit-config",
  "quickwit-index-config",
  "quickwit-storage",
  "rand 0.8.4",
@@ -2526,6 +2562,7 @@ dependencies = [
  "prometheus",
  "quickwit-cluster",
  "quickwit-common",
+ "quickwit-config",
  "quickwit-core",
  "quickwit-directories",
  "quickwit-index-config",
@@ -3550,9 +3587,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "tabled"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "465c45048a4b177eee43527a3741866dd66839f15c3223b5047dbc43d8a5076e"
+dependencies = [
+ "papergrid",
+ "tabled_derive",
+]
+
+[[package]]
+name = "tabled_derive"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b366a04a152b687a209b2459f29da3650b74bc859390308949305211e28af4b9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "tantivy"
 version = "0.17.0-dev"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=cba1b9e#cba1b9e200d14d27f5253eabc42f899726bc0965"
+source = "git+https://github.com/quickwit-inc/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
 dependencies = [
  "async-trait",
  "base64",
@@ -3563,7 +3621,7 @@ dependencies = [
  "crc32fast",
  "crossbeam",
  "downcast-rs",
- "fail",
+ "fail 0.5.0",
  "fastdivide",
  "fastfield_codecs",
  "fnv",
@@ -3602,12 +3660,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.1.1"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=cba1b9e#cba1b9e200d14d27f5253eabc42f899726bc0965"
+source = "git+https://github.com/quickwit-inc/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
 
 [[package]]
 name = "tantivy-common"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=cba1b9e#cba1b9e200d14d27f5253eabc42f899726bc0965"
+source = "git+https://github.com/quickwit-inc/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -3627,7 +3685,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.15.0"
-source = "git+https://github.com/quickwit-inc/tantivy?rev=cba1b9e#cba1b9e200d14d27f5253eabc42f899726bc0965"
+source = "git+https://github.com/quickwit-inc/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
 dependencies = [
  "combine",
  "once_cell",

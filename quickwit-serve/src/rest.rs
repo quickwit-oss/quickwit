@@ -28,7 +28,7 @@ use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_common::metrics;
 use quickwit_proto::OutputFormat;
 use quickwit_search::{SearchResponseRest, SearchService, SearchServiceImpl};
-use serde::{Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer};
 use tracing::info;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
@@ -148,10 +148,6 @@ pub struct SearchRequestQueryString {
     /// The output format.
     #[serde(default)]
     pub format: Format,
-    /// The tag filter.
-    #[serde(default)]
-    #[serde(deserialize_with = "from_simple_list")]
-    pub tags: Option<Vec<String>>,
 }
 
 async fn search_endpoint<TSearchService: SearchService>(
@@ -167,7 +163,6 @@ async fn search_endpoint<TSearchService: SearchService>(
         end_timestamp: search_request.end_timestamp,
         max_hits: search_request.max_hits,
         start_offset: search_request.start_offset,
-        tags: search_request.tags.unwrap_or_default(),
     };
     let search_response = search_service.root_search(search_request).await?;
     let search_response_rest =
@@ -222,17 +217,13 @@ pub struct SearchStreamRequestQueryString {
     /// If set, restricts search to documents with a `timestamp < end_timestamp``.
     pub end_timestamp: Option<i64>,
     /// The fast field to extract.
-    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_not_empty_string")]
     pub fast_field: String,
     /// The requested output format.
     #[serde(default)]
     pub output_format: OutputFormat,
     #[serde(default)]
     pub partition_by_field: Option<String>,
-    /// The tag filter.
-    #[serde(default)]
-    #[serde(deserialize_with = "from_simple_list")]
-    pub tags: Option<Vec<String>>,
 }
 
 async fn search_stream_endpoint<TSearchService: SearchService>(
@@ -248,7 +239,6 @@ async fn search_stream_endpoint<TSearchService: SearchService>(
         end_timestamp: search_request.end_timestamp,
         fast_field: search_request.fast_field,
         output_format: search_request.output_format as i32,
-        tags: search_request.tags.unwrap_or_default(),
         partition_by_field: search_request.partition_by_field,
     };
     let mut data = search_service.root_search_stream(request).await?;
@@ -360,6 +350,25 @@ where D: Deserializer<'de> {
     ))
 }
 
+// Deserialize a string field and return and error if it's empty.
+// We have 2 issues with this implementation:
+// - this is not generic and thus nos sustainable and we may need to
+//   use an external crate for validation in the future like
+//   this one https://github.com/Keats/validator.
+// - the error does not mention the field name and this is not user friendly. There
+//   is an external crate that can help https://github.com/dtolnay/path-to-error but
+//   I did not find a way to plug it to serde_qs.
+// Conclusion: the best way I found to reject a user query that contains an empty
+// string on an mandatory field is this serializer.
+fn deserialize_not_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where D: Deserializer<'de> {
+    let value = String::deserialize(deserializer)?;
+    if value.is_empty() {
+        return Err(de::Error::custom("Expected a non empty string field."));
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use assert_json_diff::assert_json_include;
@@ -412,7 +421,6 @@ mod tests {
                 max_hits: 10,
                 start_offset: 22,
                 format: Format::default(),
-                tags: None
             }
         );
     }
@@ -439,7 +447,6 @@ mod tests {
                 max_hits: 20,
                 start_offset: 0,
                 format: Format::default(),
-                tags: None
             }
         );
     }
@@ -463,7 +470,6 @@ mod tests {
                 start_offset: 0,
                 format: Format::Json,
                 search_fields: None,
-                tags: None
             }
         );
     }
@@ -480,7 +486,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `tags`."
+            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`."
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
@@ -642,7 +648,6 @@ mod tests {
                 fast_field: "external_id".to_string(),
                 output_format: OutputFormat::Csv,
                 partition_by_field: None,
-                tags: None
             }
         );
     }
@@ -652,7 +657,7 @@ mod tests {
         let (index, req) = warp::test::request()
             .path(
                 "/api/v1/my-index/search/stream?query=obama&fastField=external_id&\
-                 outputFormat=clickHouseRowBinary&tags=lang:english",
+                 outputFormat=clickHouseRowBinary",
             )
             .filter(&super::search_stream_filter())
             .await
@@ -668,7 +673,6 @@ mod tests {
                 fast_field: "external_id".to_string(),
                 output_format: OutputFormat::ClickHouseRowBinary,
                 partition_by_field: None,
-                tags: Some(vec!["lang:english".to_string()])
             }
         );
     }
@@ -688,6 +692,23 @@ mod tests {
             parse_error.to_string(),
             "failed with reason: unknown variant `click_house_row_binary`, expected `csv` or \
              `clickHouseRowBinary`"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_stream_api_error_empty_fastfield() {
+        let rejection = warp::test::request()
+            .path(
+                "/api/v1/my-index/search/stream?query=obama&fastField=&\
+                 outputFormat=clickHouseRowBinary",
+            )
+            .filter(&super::search_stream_filter())
+            .await
+            .unwrap_err();
+        let parse_error = rejection.find::<serde_qs::Error>().unwrap();
+        assert_eq!(
+            parse_error.to_string(),
+            "failed with reason: Expected a non empty string field."
         );
     }
 }

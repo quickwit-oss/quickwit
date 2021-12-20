@@ -17,72 +17,205 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
-use quickwit_index_config::FieldMappingEntry;
+use json_comments::StripComments;
+use quickwit_index_config::{FieldMappingEntry, SortBy, SortOrder};
+use quickwit_storage::load_file;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DocMapping {
     pub field_mappings: Vec<FieldMappingEntry>,
-    pub tag_fields: Vec<String>,
+    #[serde(default)]
+    pub tag_fields: BTreeSet<String>,
+    #[serde(default = "DocMapping::default_store_source")]
     pub store_source: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+impl DocMapping {
+    fn default_store_source() -> bool {
+        true
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct IndexingResources {
+    #[serde(default = "IndexingResources::default_num_threads")]
     pub num_threads: usize,
+    #[serde(default = "IndexingResources::default_heap_size")]
     pub heap_size: Byte,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct MergePolicy {
-    pub demux_factor: usize,
-    pub merge_factor: usize,
-    pub max_merge_factor: usize,
-    pub min_level_num_docs: usize,
+impl IndexingResources {
+    fn default_num_threads() -> usize {
+        1
+    }
+
+    fn default_heap_size() -> Byte {
+        Byte::from_bytes(2_000_000_000) // 2GB
+    }
+
+    pub fn for_test() -> Self {
+        Self {
+            num_threads: 1,
+            heap_size: Byte::from_bytes(20_000_000), // 20MB
+        }
+    }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+impl Default for IndexingResources {
+    fn default() -> Self {
+        Self {
+            num_threads: Self::default_num_threads(),
+            heap_size: Self::default_heap_size(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct MergePolicy {
+    #[serde(default = "MergePolicy::default_demux_factor")]
+    pub demux_factor: usize,
+    #[serde(default = "MergePolicy::default_merge_factor")]
+    pub merge_factor: usize,
+    #[serde(default = "MergePolicy::default_max_merge_factor")]
+    pub max_merge_factor: usize,
+}
+
+impl MergePolicy {
+    fn default_demux_factor() -> usize {
+        8
+    }
+
+    fn default_merge_factor() -> usize {
+        10
+    }
+
+    fn default_max_merge_factor() -> usize {
+        12
+    }
+}
+
+impl Default for MergePolicy {
+    fn default() -> Self {
+        Self {
+            demux_factor: Self::default_demux_factor(),
+            merge_factor: Self::default_merge_factor(),
+            max_merge_factor: Self::default_max_merge_factor(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct IndexingSettings {
-    pub demux_field: String,
-    pub timestamp_field: String,
+    #[serde(default)]
+    pub demux_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub demux_field: Option<String>,
+    pub timestamp_field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_order: Option<SortOrder>,
+    #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
-    /// The maximum number of documents allowed in a split.
-    pub split_max_num_docs: usize,
+    /// A split containing a number of docs greather than or equal to this value is considered
+    /// mature.
+    #[serde(default = "IndexingSettings::default_split_num_docs_target")]
+    pub split_num_docs_target: usize,
+    #[serde(default = "IndexingSettings::default_merge_enabled")]
+    pub merge_enabled: bool,
+    #[serde(default)]
     pub merge_policy: MergePolicy,
+    #[serde(default)]
     pub resources: IndexingResources,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+impl IndexingSettings {
+    pub fn commit_timeout(&self) -> Duration {
+        Duration::from_secs(self.commit_timeout_secs as u64)
+    }
+
+    fn default_commit_timeout_secs() -> usize {
+        60
+    }
+
+    fn default_split_num_docs_target() -> usize {
+        10_000_000
+    }
+
+    fn default_merge_enabled() -> bool {
+        false
+    }
+
+    pub fn sort_by(&self) -> SortBy {
+        if let Some(field_name) = self.sort_field.clone() {
+            let order = self.sort_order.unwrap_or_default();
+            return SortBy::FastField { field_name, order };
+        }
+        SortBy::DocId
+    }
+
+    // TODO(guilload) Hide this method if possible.
+    pub fn for_test() -> Self {
+        Self {
+            resources: IndexingResources::for_test(),
+            ..Default::default()
+        }
+    }
+}
+
+impl Default for IndexingSettings {
+    fn default() -> Self {
+        Self {
+            demux_enabled: false,
+            demux_field: None,
+            timestamp_field: None,
+            sort_field: None,
+            sort_order: None,
+            commit_timeout_secs: Self::default_commit_timeout_secs(),
+            split_num_docs_target: Self::default_split_num_docs_target(),
+            merge_enabled: Self::default_merge_enabled(),
+            merge_policy: MergePolicy::default(),
+            resources: IndexingResources::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct SearchSettings {
     pub default_search_fields: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SourceConfig {
     pub source_id: String,
     pub source_type: String,
-    pub params: toml::Value,
+    pub params: serde_json::Value,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexConfig {
+    pub version: usize,
     pub index_id: String,
     pub index_uri: String,
     pub doc_mapping: DocMapping,
+    #[serde(default)]
     pub indexing_settings: IndexingSettings,
     pub search_settings: SearchSettings,
+    #[serde(default)]
     pub sources: Vec<SourceConfig>,
 }
 
 impl IndexConfig {
-    // TODO: asyncify?
-    pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let parser_fn = match path.as_ref().extension().and_then(OsStr::to_str) {
+    pub async fn from_file(path: &str) -> anyhow::Result<Self> {
+        let parser_fn = match Path::new(path).extension().and_then(OsStr::to_str) {
             Some("json") => Self::from_json,
             Some("toml") => Self::from_toml,
             Some("yaml") | Some("yml") => Self::from_yaml,
@@ -97,22 +230,21 @@ impl IndexConfig {
                  formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml)."
             ),
         };
-        let file_content = std::fs::read_to_string(path)?;
-        parser_fn(file_content.as_bytes())
+        let file_content = load_file(path).await?;
+        parser_fn(file_content.as_slice())
     }
 
     pub fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
-        serde_json::from_slice::<IndexConfig>(bytes)
+        serde_json::from_reader(StripComments::new(bytes))
             .context("Failed to parse JSON index config file.")
     }
 
     pub fn from_toml(bytes: &[u8]) -> anyhow::Result<Self> {
-        toml::from_slice::<IndexConfig>(bytes).context("Failed to parse TOML index config file.")
+        toml::from_slice(bytes).context("Failed to parse TOML index config file.")
     }
 
     pub fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
-        serde_yaml::from_slice::<IndexConfig>(bytes)
-            .context("Failed to parse YAML index config file.")
+        serde_yaml::from_slice(bytes).context("Failed to parse YAML index config file.")
     }
 
     // TODO
@@ -123,32 +255,29 @@ impl IndexConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
 
-    fn get_resource_path(relative_resource_path: &str) -> PathBuf {
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("resources/tests/index_config/");
-        path.push(relative_resource_path);
-        path
+    fn get_resource_path(resource_filename: &str) -> String {
+        format!(
+            "{}/resources/tests/index_config/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            resource_filename
+        )
     }
 
     macro_rules! test_parser {
         ($test_function_name:ident, $file_extension:expr) => {
-            #[test]
-            fn $test_function_name() -> anyhow::Result<()> {
+            #[tokio::test]
+            async fn $test_function_name() -> anyhow::Result<()> {
                 let index_config_filepath =
                     get_resource_path(&format!("hdfs-logs.{}", stringify!($file_extension)));
-                let index_config = IndexConfig::from_file(index_config_filepath)?;
+                let index_config = IndexConfig::from_file(&index_config_filepath).await?;
+                assert_eq!(index_config.version, 0);
                 assert_eq!(index_config.index_id, "hdfs-logs");
                 assert_eq!(index_config.index_uri, "s3://quickwit-indexes/hdfs-logs");
 
                 assert_eq!(index_config.doc_mapping.field_mappings.len(), 5);
-                assert_eq!(
-                    index_config.doc_mapping.field_mappings[0].name,
-                    "cluster_id"
-                );
+                assert_eq!(index_config.doc_mapping.field_mappings[0].name, "tenant_id");
                 assert_eq!(index_config.doc_mapping.field_mappings[1].name, "timestamp");
                 assert_eq!(
                     index_config.doc_mapping.field_mappings[2].name,
@@ -158,33 +287,50 @@ mod tests {
                 assert_eq!(index_config.doc_mapping.field_mappings[4].name, "resource");
 
                 assert_eq!(
-                    index_config.doc_mapping.tag_fields,
-                    vec!["cluster_id".to_string()]
+                    index_config
+                        .doc_mapping
+                        .tag_fields
+                        .into_iter()
+                        .collect::<Vec<String>>(),
+                    vec!["tenant_id".to_string()]
                 );
                 assert_eq!(index_config.doc_mapping.store_source, true);
 
-                assert_eq!(index_config.indexing_settings.demux_field, "cluster_id");
-                assert_eq!(index_config.indexing_settings.timestamp_field, "timestamp");
-                assert_eq!(index_config.indexing_settings.commit_timeout_secs, 60);
+                assert_eq!(
+                    index_config.indexing_settings.demux_field.unwrap(),
+                    "tenant_id"
+                );
+                assert_eq!(
+                    index_config.indexing_settings.timestamp_field.unwrap(),
+                    "timestamp"
+                );
+                assert_eq!(
+                    index_config.indexing_settings.sort_field.unwrap(),
+                    "timestamp"
+                );
+                assert_eq!(
+                    index_config.indexing_settings.sort_order.unwrap(),
+                    SortOrder::Asc
+                );
+                assert_eq!(index_config.indexing_settings.commit_timeout_secs, 61);
 
                 assert_eq!(
-                    index_config.indexing_settings.split_max_num_docs,
-                    10_000_000
+                    index_config.indexing_settings.split_num_docs_target,
+                    10_000_001
                 );
                 assert_eq!(
                     index_config.indexing_settings.merge_policy,
                     MergePolicy {
-                        demux_factor: 6,
-                        merge_factor: 10,
-                        max_merge_factor: 12,
-                        min_level_num_docs: 100_000,
+                        demux_factor: 7,
+                        merge_factor: 9,
+                        max_merge_factor: 11,
                     }
                 );
                 assert_eq!(
                     index_config.indexing_settings.resources,
                     IndexingResources {
-                        num_threads: 1,
-                        heap_size: Byte::from_bytes(1_000_000_000)
+                        num_threads: 3,
+                        heap_size: Byte::from_bytes(3_000_000_000)
                     }
                 );
                 assert_eq!(
@@ -212,13 +358,73 @@ mod tests {
         };
     }
 
-    test_parser!(test_from_json, json);
-    test_parser!(test_from_toml, toml);
-    test_parser!(test_from_yaml, yaml);
+    test_parser!(test_index_config_from_json, json);
+    test_parser!(test_index_config_from_toml, toml);
+    test_parser!(test_index_config_from_yaml, yaml);
 
-    #[test]
-    fn test_default_values() {
-        // TODO
+    #[tokio::test]
+    async fn test_index_config_default_values() {
+        {
+            let index_config_filepath = get_resource_path("minimal-hdfs-logs.yaml");
+            let index_config = IndexConfig::from_file(&index_config_filepath)
+                .await
+                .unwrap();
+
+            assert_eq!(index_config.index_id, "hdfs-logs");
+            assert_eq!(index_config.index_uri, "s3://quickwit-indexes/hdfs-logs");
+
+            assert_eq!(index_config.doc_mapping.field_mappings.len(), 1);
+            assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
+            assert!(index_config.doc_mapping.store_source);
+
+            assert_eq!(index_config.indexing_settings, IndexingSettings::default());
+            assert_eq!(
+                index_config.search_settings,
+                SearchSettings {
+                    default_search_fields: vec!["body".to_string()],
+                }
+            );
+            assert!(index_config.sources.is_empty());
+        }
+        {
+            let index_config_filepath = get_resource_path("partial-hdfs-logs.yaml");
+            let index_config = IndexConfig::from_file(&index_config_filepath)
+                .await
+                .unwrap();
+
+            assert_eq!(index_config.version, 0);
+            assert_eq!(index_config.index_id, "hdfs-logs");
+            assert_eq!(index_config.index_uri, "s3://quickwit-indexes/hdfs-logs");
+
+            assert_eq!(index_config.doc_mapping.field_mappings.len(), 2);
+            assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
+            assert_eq!(index_config.doc_mapping.field_mappings[1].name, "timestamp");
+            assert!(index_config.doc_mapping.store_source);
+
+            assert_eq!(
+                index_config.indexing_settings,
+                IndexingSettings {
+                    sort_field: Some("timestamp".to_string()),
+                    commit_timeout_secs: 42,
+                    merge_policy: MergePolicy {
+                        demux_factor: 7,
+                        ..Default::default()
+                    },
+                    resources: IndexingResources {
+                        num_threads: 3,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            );
+            assert_eq!(
+                index_config.search_settings,
+                SearchSettings {
+                    default_search_fields: vec!["body".to_string()],
+                }
+            );
+            assert!(index_config.sources.is_empty());
+        }
     }
 
     #[test]

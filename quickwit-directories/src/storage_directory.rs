@@ -25,8 +25,8 @@ use std::{fmt, io};
 
 use async_trait::async_trait;
 use quickwit_storage::{OwnedBytes, Storage};
-use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
-use tantivy::directory::{FileHandle, WatchCallback, WatchHandle, WritePtr};
+use tantivy::directory::error::OpenReadError;
+use tantivy::directory::FileHandle;
 use tantivy::{AsyncIoResult, Directory, HasLen};
 use tracing::{error, instrument};
 
@@ -136,13 +136,6 @@ impl Directory for StorageDirectory {
         ))
     }
 
-    fn delete(&self, path: &std::path::Path) -> Result<(), DeleteError> {
-        Err(DeleteError::IoError {
-            io_error: unsupported_operation(path),
-            filepath: path.to_path_buf(),
-        })
-    }
-
     fn exists(&self, path: &std::path::Path) -> Result<bool, OpenReadError> {
         Err(OpenReadError::wrap_io_error(
             unsupported_operation(path),
@@ -150,18 +143,5 @@ impl Directory for StorageDirectory {
         ))
     }
 
-    fn open_write(&self, path: &std::path::Path) -> Result<WritePtr, OpenWriteError> {
-        Err(OpenWriteError::wrap_io_error(
-            unsupported_operation(path),
-            path.to_path_buf(),
-        ))
-    }
-
-    fn atomic_write(&self, path: &std::path::Path, _data: &[u8]) -> io::Result<()> {
-        Err(unsupported_operation(path))
-    }
-
-    fn watch(&self, _callback: WatchCallback) -> tantivy::Result<WatchHandle> {
-        Ok(WatchHandle::empty())
-    }
+    crate::read_only_directory!();
 }

@@ -1,22 +1,24 @@
+# Comments are supported.
 {
+    "version": 0,
     "metastore_uri": "postgres://username:password@host:port/db",
     "indexer": {
         "data_dir_path": "/opt/quickwit/data",
-        "rest_listen_port": 7180,
-        "grpc_listen_port": 7181,
+        "rest_listen_address": "0.0.0.0",
+        "rest_listen_port": 1111,
         "split_store_max_num_bytes": "1T",
-        "split_store_max_num_files": 1000
+        "split_store_max_num_splits": 10000
     },
     "searcher": {
         "data_dir_path": "/opt/quickwit/data",
-        "rest_listen_port": 7380,
-        "grpc_listen_port": 7381,
-        "discovery_listen_port": 7382,
+        "host_key_path": "/opt/quickwit/host_key",
+        "rest_listen_address": "0.0.0.0",
+        "rest_listen_port": 11111,
         "peer_seeds": [
             "quickwit-searcher-0.local",
             "quickwit-searcher-1.local"
         ],
-        "fast_field_cache_capacity": "5G",
+        "fast_field_cache_capacity": "10G",
         "split_footer_cache_capacity": "1G"
     },
     "storage": {
