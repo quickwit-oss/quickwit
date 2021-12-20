@@ -21,10 +21,10 @@ use std::collections::HashMap;
 use std::ops::{Range, RangeInclusive};
 
 use chrono::Utc;
+use quickwit_index_config::tag_pruning::TagFilterAst;
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::CheckpointDelta;
-use crate::metastore::match_tags_filter;
 use crate::{IndexMetadata, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 
 /// A MetadataSet carries an index metadata and its split metadata.
@@ -87,15 +87,17 @@ impl MetadataSet {
             });
         }
 
+        let now_timestamp = Utc::now().timestamp();
         let metadata = Split {
             split_state: SplitState::Staged,
-            update_timestamp: Utc::now().timestamp(),
+            update_timestamp: now_timestamp,
             split_metadata,
         };
 
         self.splits
             .insert(metadata.split_id().to_string(), metadata);
 
+        self.index.update_timestamp = now_timestamp;
         Ok(())
     }
 
@@ -122,6 +124,7 @@ impl MetadataSet {
     ) -> MetastoreResult<bool> {
         let mut is_modified = false;
         let mut split_not_found_ids = vec![];
+        let now_timestamp = Utc::now().timestamp();
         for &split_id in split_ids {
             // Check for the existence of split.
             let metadata = match self.splits.get_mut(split_id) {
@@ -138,7 +141,7 @@ impl MetadataSet {
             }
 
             metadata.split_state = SplitState::ScheduledForDeletion;
-            metadata.update_timestamp = Utc::now().timestamp();
+            metadata.update_timestamp = now_timestamp;
             is_modified = true;
         }
 
@@ -146,6 +149,10 @@ impl MetadataSet {
             return Err(MetastoreError::SplitsDoNotExist {
                 split_ids: split_not_found_ids,
             });
+        }
+
+        if is_modified {
+            self.index.update_timestamp = now_timestamp;
         }
         Ok(is_modified)
     }
@@ -159,6 +166,7 @@ impl MetadataSet {
         self.index.checkpoint.try_apply_delta(checkpoint_delta)?;
         let mut split_not_found_ids = vec![];
         let mut split_not_staged_ids = vec![];
+        let now_timestamp = Utc::now().timestamp();
         for &split_id in split_ids {
             // Check for the existence of split.
             let metadata = match self.splits.get_mut(split_id) {
@@ -177,7 +185,7 @@ impl MetadataSet {
                 SplitState::Staged => {
                     // The split state needs to be updated.
                     metadata.split_state = SplitState::Published;
-                    metadata.update_timestamp = Utc::now().timestamp();
+                    metadata.update_timestamp = now_timestamp;
                 }
                 _ => {
                     split_not_staged_ids.push(split_id.to_string());
@@ -197,6 +205,7 @@ impl MetadataSet {
             });
         }
 
+        self.index.update_timestamp = now_timestamp;
         Ok(())
     }
 
@@ -204,11 +213,11 @@ impl MetadataSet {
         &self,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-        tags: &[Vec<String>],
+        tags_filter: Option<TagFilterAst>,
     ) -> MetastoreResult<Vec<Split>> {
-        let time_range_filter = |split_metadata: &SplitMetadata| match (
+        let time_range_filter = |split: &&Split| match (
             time_range_opt.as_ref(),
-            split_metadata.time_range.as_ref(),
+            split.split_metadata.time_range.as_ref(),
         ) {
             (Some(filter_time_range), Some(split_time_range)) => {
                 !is_disjoint(filter_time_range, split_time_range)
@@ -216,21 +225,19 @@ impl MetadataSet {
             _ => true, // Return `true` if `time_range` is omitted or the split has no time range.
         };
 
-        let tag_filter = |split_metadata: &SplitMetadata| {
-            let split_tags = split_metadata
-                .tags
-                .clone()
-                .into_iter()
-                .collect::<Vec<String>>();
-            match_tags_filter(split_tags.as_slice(), tags)
+        let tag_filter = |split: &&Split| {
+            tags_filter
+                .as_ref()
+                .map(|tags_filter_ast| tags_filter_ast.evaluate(&split.split_metadata.tags))
+                .unwrap_or(true)
         };
 
         let splits = self
             .splits
             .values()
-            .filter(|&metadata| metadata.split_state == state)
-            .filter(|&metadata| time_range_filter(&metadata.split_metadata))
-            .filter(|&metadata| tag_filter(&metadata.split_metadata))
+            .filter(|&split| split.split_state == state)
+            .filter(time_range_filter)
+            .filter(tag_filter)
             .cloned()
             .collect();
 
@@ -287,6 +294,7 @@ impl MetadataSet {
             });
         }
 
+        self.index.update_timestamp = Utc::now().timestamp();
         Ok(())
     }
 }

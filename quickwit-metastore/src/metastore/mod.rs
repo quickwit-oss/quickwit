@@ -30,6 +30,7 @@ use chrono::Utc;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, SearchSettings, SourceConfig,
 };
+use quickwit_index_config::tag_pruning::TagFilterAst;
 use quickwit_index_config::{
     DefaultIndexConfig as DefaultDocMapper, DefaultIndexConfigBuilder as DocMapperBuilder,
     IndexConfig as DocMapper, SortBy, SortByConfig, SortOrder,
@@ -37,6 +38,7 @@ use quickwit_index_config::{
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::checkpoint::{Checkpoint, CheckpointDelta};
+use crate::split_metadata::utc_now_timestamp;
 use crate::{MetastoreResult, Split, SplitMetadata, SplitState};
 
 /// An index metadata carries all meta data about an index.
@@ -61,6 +63,8 @@ pub struct IndexMetadata {
     pub sources: Vec<SourceConfig>,
     /// Time at which the index was created.
     pub create_timestamp: i64,
+    /// Time at which the index was last updated.
+    pub update_timestamp: i64,
 }
 
 impl IndexMetadata {
@@ -139,6 +143,7 @@ impl IndexMetadata {
                 "attributes.server.status".to_string(),
             ],
         };
+        let now_timestamp = Utc::now().timestamp();
         Self {
             index_id: index_id.to_string(),
             index_uri: index_uri.to_string(),
@@ -147,7 +152,8 @@ impl IndexMetadata {
             indexing_settings,
             search_settings,
             sources: Vec::new(),
-            create_timestamp: Utc::now().timestamp(),
+            create_timestamp: now_timestamp,
+            update_timestamp: now_timestamp,
         }
     }
 
@@ -226,7 +232,10 @@ pub(crate) struct IndexMetadataV0 {
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<SourceConfig>,
+    #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
+    #[serde(default = "utc_now_timestamp")]
+    pub update_timestamp: i64,
 }
 
 impl From<IndexMetadata> for IndexMetadataV0 {
@@ -240,6 +249,7 @@ impl From<IndexMetadata> for IndexMetadataV0 {
             search_settings: index_metadata.search_settings,
             sources: index_metadata.sources,
             create_timestamp: index_metadata.create_timestamp,
+            update_timestamp: index_metadata.update_timestamp,
         }
     }
 }
@@ -255,6 +265,7 @@ impl From<IndexMetadataV0> for IndexMetadata {
             search_settings: v0.search_settings,
             sources: v0.sources,
             create_timestamp: v0.create_timestamp,
+            update_timestamp: v0.update_timestamp,
         }
     }
 }
@@ -284,6 +295,7 @@ impl From<UnversionedIndexMetadata> for IndexMetadata {
         let search_settings = SearchSettings {
             default_search_fields: unversioned.index_config.default_search_field_names,
         };
+        let now_timestamp = Utc::now().timestamp();
         Self {
             index_id: unversioned.index_id,
             index_uri: unversioned.index_uri,
@@ -292,7 +304,8 @@ impl From<UnversionedIndexMetadata> for IndexMetadata {
             indexing_settings,
             search_settings,
             sources: Vec::new(),
-            create_timestamp: Utc::now().timestamp(),
+            create_timestamp: now_timestamp,
+            update_timestamp: now_timestamp,
         }
     }
 }
@@ -412,7 +425,7 @@ pub trait Metastore: Send + Sync + 'static {
         index_id: &str,
         split_state: SplitState,
         time_range: Option<Range<i64>>,
-        tags: &[Vec<String>],
+        tags: Option<TagFilterAst>,
     ) -> MetastoreResult<Vec<Split>>;
 
     /// Lists the splits without filtering.
@@ -439,56 +452,4 @@ pub trait Metastore: Send + Sync + 'static {
 
     /// Returns the Metastore uri.
     fn uri(&self) -> String;
-}
-
-/// Finds out if a split matches a tag filter expression.
-///
-/// `filter_tags` is an array of array of tags representing a boolean expression
-/// of the form `[ [A OR B OR...] AND [C OR D OR ...] AND ...]`
-/// Returns true if filter_tags is empty, or if the split's tags match
-/// the filter_tags expression.
-pub fn match_tags_filter(split_tags: &[String], filter_tags: &[Vec<String>]) -> bool {
-    if filter_tags.is_empty() {
-        return true;
-    }
-
-    for or_tags in filter_tags {
-        let is_match = or_tags
-            .iter()
-            .map(|tag| split_tags.contains(tag))
-            .any(|contains| contains);
-        if !is_match {
-            return false;
-        }
-    }
-    true
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_match_tags_filter() {
-        assert!(match_tags_filter(&["foo".to_string()], &[]));
-        assert!(!match_tags_filter(&[], &[vec!["foo".to_string()]]));
-
-        assert!(match_tags_filter(
-            &["foo:bar".to_string()],
-            &[vec!["foo:bar".to_string()]]
-        ));
-        assert!(match_tags_filter(
-            &["foo:*".to_string()],
-            &[vec!["foo:bar".to_string(), "foo:*".to_string()]]
-        ));
-
-        assert!(!match_tags_filter(
-            &["foo".to_string()],
-            &[vec!["foo".to_string()], vec!["bar".to_string()]]
-        ));
-        assert!(match_tags_filter(
-            &["foo".to_string(), "bar".to_string()],
-            &[vec!["foo".to_string()], vec!["bar".to_string()]]
-        ));
-    }
 }

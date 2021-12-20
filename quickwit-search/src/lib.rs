@@ -45,7 +45,8 @@ use std::net::SocketAddr;
 use std::ops::Range;
 
 use anyhow::Context;
-use quickwit_metastore::{Metastore, MetastoreResult, SplitMetadata, SplitState};
+use quickwit_index_config::tag_pruning::extract_tags_from_query;
+use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
 use tantivy::DocAddress;
@@ -107,8 +108,11 @@ fn partial_hit_sorting_key(partial_hit: &PartialHit) -> (Reverse<u64>, GlobalDoc
     )
 }
 
-fn extract_time_range(search_request: &SearchRequest) -> Option<Range<i64>> {
-    match (search_request.start_timestamp, search_request.end_timestamp) {
+fn extract_time_range(
+    start_timestamp_opt: Option<i64>,
+    end_timestamp_opt: Option<i64>,
+) -> Option<Range<i64>> {
+    match (start_timestamp_opt, end_timestamp_opt) {
         (Some(start_timestamp), Some(end_timestamp)) => Some(Range {
             start: start_timestamp,
             end: end_timestamp,
@@ -137,20 +141,17 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
 async fn list_relevant_splits(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
-) -> MetastoreResult<Vec<SplitMetadata>> {
-    let time_range_opt = extract_time_range(search_request);
+) -> crate::Result<Vec<SplitMetadata>> {
+    let time_range_opt =
+        extract_time_range(search_request.start_timestamp, search_request.end_timestamp);
     // TODO: will be removed after #issues/823 is solved
-    let tags_filter = if search_request.tags.is_empty() {
-        vec![]
-    } else {
-        vec![search_request.tags.clone()]
-    };
+    let tags_filter = extract_tags_from_query(&search_request.query)?;
     let split_metas = metastore
         .list_splits(
             &search_request.index_id,
             SplitState::Published,
             time_range_opt,
-            &tags_filter,
+            tags_filter,
         )
         .await?;
     Ok(split_metas
@@ -201,6 +202,9 @@ pub async fn single_node_search(
 
 #[cfg(test)]
 mod tests {
+
+    use std::collections::BTreeSet;
+
     use assert_json_diff::assert_json_include;
     use quickwit_indexing::TestSandbox;
     use serde_json::json;
@@ -233,7 +237,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 2,
             start_offset: 0,
-            tags: vec![],
+            ..Default::default()
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -273,6 +277,8 @@ mod tests {
     async fn test_single_node_several_splits() -> anyhow::Result<()> {
         let index_id = "single-node-several-splits";
         let doc_mapping_yaml = r#"
+            tag_fields:
+              - "owner"
             field_mappings:
               - name: title
                 type: text
@@ -280,6 +286,9 @@ mod tests {
                 type: text
               - name: url
                 type: text
+              - name: owner
+                type: text
+                tokenizer: 'raw'
         "#;
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
         for _ in 0..10u32 {
@@ -296,7 +305,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 6,
             start_offset: 0,
-            tags: vec![],
+            ..Default::default()
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -319,19 +328,19 @@ mod tests {
     #[tokio::test]
     async fn test_single_node_filtering() -> anyhow::Result<()> {
         let index_id = "single-node-filtering";
-        let doc_mapping_json = r#"{
-            "field_mappings": [
-                {
-                    "name": "body",
-                    "type": "text"
-                },
-                {
-                    "name": "ts",
-                    "type": "i64",
-                    "fast": true
-                }
-            ]
-        }"#;
+        let doc_mapping_yaml = r#"
+            tag_fields:
+              - owner
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: i64
+                fast: true
+              - name: owner
+                type: text
+                tokenizer: raw
+        "#;
         let indexing_settings_json = r#"{
             "timestamp_field": "ts",
             "sort_field": "ts",
@@ -339,7 +348,7 @@ mod tests {
         }"#;
         let test_sandbox = TestSandbox::create(
             index_id,
-            doc_mapping_json,
+            doc_mapping_yaml,
             indexing_settings_json,
             &["body"],
         )
@@ -360,7 +369,7 @@ mod tests {
             end_timestamp: Some(20),
             max_hits: 15,
             start_offset: 0,
-            tags: vec![],
+            ..Default::default()
         };
         let single_node_response = single_node_search(
             &search_request,
@@ -382,7 +391,7 @@ mod tests {
             end_timestamp: Some(20),
             max_hits: 25,
             start_offset: 0,
-            tags: vec![],
+            ..Default::default()
         };
         let single_node_response = single_node_search(
             &search_request,
@@ -398,13 +407,13 @@ mod tests {
         // filter on tag, should not return any hit since no split is tagged
         let search_request = SearchRequest {
             index_id: index_id.to_string(),
-            query: "info".to_string(),
+            query: "tag:foo AND info".to_string(),
             search_fields: vec![],
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 25,
             start_offset: 0,
-            tags: vec!["foo".to_string()],
+            ..Default::default()
         };
         let single_node_response = single_node_search(
             &search_request,
@@ -414,6 +423,75 @@ mod tests {
         .await?;
         assert_eq!(single_node_response.num_hits, 0);
         assert_eq!(single_node_response.hits.len(), 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
+        let doc_mapping_yaml = r#"
+            tag_fields:
+              - owner
+            field_mappings:
+              - name: owner
+                type: text
+                tokenizer: raw
+        "#;
+        let index_id = "single-node-pruning-by-tags";
+        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &[]).await?;
+        let owners = ["paul", "adrien"];
+        for owner in owners {
+            let mut docs = vec![];
+            for i in 0..10 {
+                docs.push(json!({"body": format!("content num #{}", i + 1), "owner": owner}));
+            }
+            test_sandbox.add_documents(docs).await?;
+        }
+
+        let selected_splits = list_relevant_splits(
+            &SearchRequest {
+                index_id: index_id.to_string(),
+                query: "owner:francois".to_string(),
+                ..Default::default()
+            },
+            &*test_sandbox.metastore(),
+        )
+        .await?;
+        assert!(selected_splits.is_empty());
+
+        let selected_splits = list_relevant_splits(
+            &SearchRequest {
+                index_id: index_id.to_string(),
+                query: "".to_string(),
+                ..Default::default()
+            },
+            &*test_sandbox.metastore(),
+        )
+        .await?;
+        assert_eq!(selected_splits.len(), 2);
+
+        let selected_splits = list_relevant_splits(
+            &SearchRequest {
+                index_id: index_id.to_string(),
+                query: "owner:francois OR owner:paul OR owner:adrien".to_string(),
+                ..Default::default()
+            },
+            &*test_sandbox.metastore(),
+        )
+        .await?;
+        assert_eq!(selected_splits.len(), 2);
+
+        let split_tags: BTreeSet<String> = selected_splits
+            .iter()
+            .flat_map(|split| split.tags.clone())
+            .collect();
+        assert_eq!(
+            split_tags
+                .iter()
+                .map(|tag| tag.as_str())
+                .collect::<Vec<&str>>(),
+            vec!["owner!", "owner:adrien", "owner:paul"]
+        );
 
         Ok(())
     }

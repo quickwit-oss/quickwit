@@ -60,14 +60,23 @@ pub struct Index {
     pub index_id: String,
     // A JSON string containing all of the IndexMetadata.
     pub index_metadata_json: String,
+    /// Timestamp for tracking when the split was created.
+    pub create_timestamp: NaiveDateTime,
+    /// Timestamp for tracking when the split was last updated.
+    pub update_timestamp: NaiveDateTime,
 }
 
 impl Index {
     /// Make IndexMetadata from stored JSON string.
     pub fn make_index_metadata(&self) -> anyhow::Result<IndexMetadata> {
-        let index_metadata =
+        let mut index_metadata =
             serde_json::from_str::<IndexMetadata>(self.index_metadata_json.as_str())
                 .map_err(|err| anyhow::anyhow!(err))?;
+
+        // `create_timestamp` and `update_timestamp` are duplicated in `IndexMetadata` and needs to
+        // be overridden with the "true" value stored in a column.
+        index_metadata.create_timestamp = self.create_timestamp.timestamp();
+        index_metadata.update_timestamp = self.update_timestamp.timestamp();
 
         Ok(index_metadata)
     }

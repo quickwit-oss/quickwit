@@ -26,7 +26,8 @@ use hyper::header::HeaderValue;
 use hyper::HeaderMap;
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_common::metrics;
-use quickwit_proto::OutputFormat;
+use quickwit_index_config::{SortByField, SortOrder};
+use quickwit_proto::{OutputFormat, SortOrder as ProtoSortOrder};
 use quickwit_search::{SearchResponseRest, SearchService, SearchServiceImpl};
 use serde::{de, Deserialize, Deserializer};
 use tracing::info;
@@ -148,10 +149,22 @@ pub struct SearchRequestQueryString {
     /// The output format.
     #[serde(default)]
     pub format: Format,
-    /// The tag filter.
+    /// Specifies how documents are sorted.
+    #[serde(deserialize_with = "sort_by_field_mini_dsl")]
     #[serde(default)]
-    #[serde(deserialize_with = "from_simple_list")]
-    pub tags: Option<Vec<String>>,
+    sort_by_field: Option<SortByField>,
+}
+
+fn get_proto_search_by(search_request: &SearchRequestQueryString) -> (Option<i32>, Option<String>) {
+    if let Some(sort_by_field) = &search_request.sort_by_field {
+        let sort_order = match sort_by_field.order {
+            SortOrder::Asc => ProtoSortOrder::Asc as i32,
+            SortOrder::Desc => ProtoSortOrder::Desc as i32,
+        };
+        (Some(sort_order), Some(sort_by_field.field_name.to_string()))
+    } else {
+        (None, None)
+    }
 }
 
 async fn search_endpoint<TSearchService: SearchService>(
@@ -159,6 +172,7 @@ async fn search_endpoint<TSearchService: SearchService>(
     search_request: SearchRequestQueryString,
     search_service: &TSearchService,
 ) -> Result<SearchResponseRest, ApiError> {
+    let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
     let search_request = quickwit_proto::SearchRequest {
         index_id,
         query: search_request.query,
@@ -167,7 +181,8 @@ async fn search_endpoint<TSearchService: SearchService>(
         end_timestamp: search_request.end_timestamp,
         max_hits: search_request.max_hits,
         start_offset: search_request.start_offset,
-        tags: search_request.tags.unwrap_or_default(),
+        sort_order,
+        sort_by_field,
     };
     let search_response = search_service.root_search(search_request).await?;
     let search_response_rest =
@@ -229,10 +244,6 @@ pub struct SearchStreamRequestQueryString {
     pub output_format: OutputFormat,
     #[serde(default)]
     pub partition_by_field: Option<String>,
-    /// The tag filter.
-    #[serde(default)]
-    #[serde(deserialize_with = "from_simple_list")]
-    pub tags: Option<Vec<String>>,
 }
 
 async fn search_stream_endpoint<TSearchService: SearchService>(
@@ -248,7 +259,6 @@ async fn search_stream_endpoint<TSearchService: SearchService>(
         end_timestamp: search_request.end_timestamp,
         fast_field: search_request.fast_field,
         output_format: search_request.output_format as i32,
-        tags: search_request.tags.unwrap_or_default(),
         partition_by_field: search_request.partition_by_field,
     };
     let mut data = search_service.root_search_stream(request).await?;
@@ -348,6 +358,12 @@ async fn recover_fn(rejection: Rejection) -> Result<impl Reply, Rejection> {
     }
 }
 
+fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>
+where D: Deserializer<'de> {
+    let string = String::deserialize(deserializer)?;
+    Ok(Some(string.into()))
+}
+
 fn from_simple_list<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
 where D: Deserializer<'de> {
     let str_sequence = String::deserialize(deserializer)?;
@@ -431,7 +447,7 @@ mod tests {
                 max_hits: 10,
                 start_offset: 22,
                 format: Format::default(),
-                tags: None
+                sort_by_field: None
             }
         );
     }
@@ -458,7 +474,7 @@ mod tests {
                 max_hits: 20,
                 start_offset: 0,
                 format: Format::default(),
-                tags: None
+                sort_by_field: None
             }
         );
     }
@@ -482,7 +498,79 @@ mod tests {
                 start_offset: 0,
                 format: Format::Json,
                 search_fields: None,
-                tags: None
+                sort_by_field: None
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_route_sort_by() {
+        let rest_search_api_filter = search_filter();
+        let (_, req) = warp::test::request()
+            .path("/api/v1/quickwit-demo-index/search?query=*&format=json&sortByField=field")
+            .filter(&rest_search_api_filter)
+            .await
+            .unwrap();
+        assert_eq!(
+            &req,
+            &super::SearchRequestQueryString {
+                query: "*".to_string(),
+                start_timestamp: None,
+                end_timestamp: None,
+                max_hits: 20,
+                start_offset: 0,
+                format: Format::Json,
+                search_fields: None,
+                sort_by_field: Some(SortByField {
+                    field_name: "field".to_string(),
+                    order: SortOrder::Asc
+                })
+            }
+        );
+
+        let rest_search_api_filter = search_filter();
+        let (_, req) = warp::test::request()
+            .path("/api/v1/quickwit-demo-index/search?query=*&format=json&sortByField=+field")
+            .filter(&rest_search_api_filter)
+            .await
+            .unwrap();
+        assert_eq!(
+            &req,
+            &super::SearchRequestQueryString {
+                query: "*".to_string(),
+                start_timestamp: None,
+                end_timestamp: None,
+                max_hits: 20,
+                start_offset: 0,
+                format: Format::Json,
+                search_fields: None,
+                sort_by_field: Some(SortByField {
+                    field_name: "field".to_string(),
+                    order: SortOrder::Asc
+                })
+            }
+        );
+
+        let rest_search_api_filter = search_filter();
+        let (_, req) = warp::test::request()
+            .path("/api/v1/quickwit-demo-index/search?query=*&format=json&sortByField=-field")
+            .filter(&rest_search_api_filter)
+            .await
+            .unwrap();
+        assert_eq!(
+            &req,
+            &super::SearchRequestQueryString {
+                query: "*".to_string(),
+                start_timestamp: None,
+                end_timestamp: None,
+                max_hits: 20,
+                start_offset: 0,
+                format: Format::Json,
+                search_fields: None,
+                sort_by_field: Some(SortByField {
+                    field_name: "field".to_string(),
+                    order: SortOrder::Desc
+                })
             }
         );
     }
@@ -499,7 +587,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `tags`."
+            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `sortByField`."
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
@@ -661,7 +749,6 @@ mod tests {
                 fast_field: "external_id".to_string(),
                 output_format: OutputFormat::Csv,
                 partition_by_field: None,
-                tags: None
             }
         );
     }
@@ -671,7 +758,7 @@ mod tests {
         let (index, req) = warp::test::request()
             .path(
                 "/api/v1/my-index/search/stream?query=obama&fastField=external_id&\
-                 outputFormat=clickHouseRowBinary&tags=lang:english",
+                 outputFormat=clickHouseRowBinary",
             )
             .filter(&super::search_stream_filter())
             .await
@@ -687,7 +774,6 @@ mod tests {
                 fast_field: "external_id".to_string(),
                 output_format: OutputFormat::ClickHouseRowBinary,
                 partition_by_field: None,
-                tags: Some(vec!["lang:english".to_string()])
             }
         );
     }
