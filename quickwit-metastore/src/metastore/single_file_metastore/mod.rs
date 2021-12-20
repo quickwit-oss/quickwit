@@ -42,13 +42,11 @@ use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState,
 };
 
-const DEFAULT_METASTORE_REFRESH_PERIOD: Duration = Duration::from_secs(30u64);
-
 /// Single file metastore implementation.
 pub struct SingleFileMetastore {
     storage: Arc<dyn Storage>,
     per_index_metastores: RwLock<HashMap<String, Arc<Mutex<MetadataSet>>>>,
-    polling_period: Duration,
+    polling_interval_opt: Option<Duration>,
 }
 
 async fn poll_metastore_once(
@@ -56,7 +54,7 @@ async fn poll_metastore_once(
     index_id: &str,
     metadata_mutex: &Mutex<MetadataSet>,
 ) {
-    let metadata_set_fetch_res = fetch_metadata_set(&*storage, &index_id).await;
+    let metadata_set_fetch_res = fetch_metadata_set(&*storage, index_id).await;
     match metadata_set_fetch_res {
         Ok(metadata_set) => {
             *metadata_mutex.lock().await = metadata_set;
@@ -71,10 +69,10 @@ fn spawn_metastore_polling_task(
     storage: Arc<dyn Storage>,
     index_id: String,
     metastore_weak: Weak<Mutex<MetadataSet>>,
-    polling_period: Duration,
+    polling_interval: Duration,
 ) {
     tokio::task::spawn(async move {
-        let mut interval = tokio::time::interval(polling_period);
+        let mut interval = tokio::time::interval(polling_interval);
         interval.tick().await; //< this is to prevent fetch right after the first population of the data.
         while let Some(metadata_mutex) = metastore_weak.upgrade() {
             interval.tick().await;
@@ -91,8 +89,11 @@ impl SingleFileMetastore {
         SingleFileMetastore::new(Arc::new(RamStorage::default()))
     }
 
-    pub fn set_polling_period(&mut self, polling_period: Duration) {
-        self.polling_period = polling_period;
+    /// Sets the polling interval.
+    ///
+    /// Only newly accessed indexes will be affected by the change of this setting.
+    pub fn set_polling_interval(&mut self, polling_interval_opt: Option<Duration>) {
+        self.polling_interval_opt = polling_interval_opt;
     }
 
     #[cfg(test)]
@@ -105,7 +106,7 @@ impl SingleFileMetastore {
         Self {
             storage,
             per_index_metastores: Default::default(),
-            polling_period: DEFAULT_METASTORE_REFRESH_PERIOD,
+            polling_interval_opt: None,
         }
     }
 
@@ -205,12 +206,14 @@ impl SingleFileMetastore {
         let metadata_set = metadata_set_result?;
         let metadata_set_mutex = Arc::new(Mutex::new(metadata_set));
 
-        spawn_metastore_polling_task(
-            self.storage.clone(),
-            index_id.to_string(),
-            Arc::downgrade(&metadata_set_mutex),
-            self.polling_period,
-        );
+        if let Some(polling_interval) = self.polling_interval_opt {
+            spawn_metastore_polling_task(
+                self.storage.clone(),
+                index_id.to_string(),
+                Arc::downgrade(&metadata_set_mutex),
+                polling_interval,
+            );
+        }
 
         per_index_metastores_wlock.insert(index_id.to_string(), metadata_set_mutex.clone());
         Ok(metadata_set_mutex)
@@ -600,8 +603,8 @@ mod tests {
 
         let metastore_wrt = SingleFileMetastore::new(storage.clone());
         let mut metastore_read = SingleFileMetastore::new(storage);
-        let refresh_period = Duration::from_millis(20);
-        metastore_read.set_polling_period(refresh_period);
+        let polling_interval = Duration::from_millis(20);
+        metastore_read.set_polling_interval(Some(polling_interval));
 
         let index_id = "my-index";
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
@@ -620,7 +623,7 @@ mod tests {
         metastore_wrt.stage_split(index_id, split_metadata).await?;
         assert!(metastore_read.list_all_splits("my-index").await?.is_empty());
         for _ in 0..10 {
-            tokio::time::sleep(refresh_period).await;
+            tokio::time::sleep(polling_interval).await;
             if !metastore_read.list_all_splits("my-index").await?.is_empty() {
                 return Ok(());
             }
