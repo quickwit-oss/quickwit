@@ -38,7 +38,7 @@ pub use default_index_config::{
     DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry, SortByConfig,
 };
 pub use error::QueryParserError;
-pub use sort_by::{SortBy, SortOrder};
+pub use sort_by::{SortBy, SortByField, SortOrder};
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";

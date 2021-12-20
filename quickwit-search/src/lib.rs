@@ -237,6 +237,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 2,
             start_offset: 0,
+            ..Default::default()
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -304,6 +305,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 6,
             start_offset: 0,
+            ..Default::default()
         };
         let single_node_result = single_node_search(
             &search_request,
@@ -367,6 +369,7 @@ mod tests {
             end_timestamp: Some(20),
             max_hits: 15,
             start_offset: 0,
+            ..Default::default()
         };
         let single_node_response = single_node_search(
             &search_request,
@@ -388,6 +391,7 @@ mod tests {
             end_timestamp: Some(20),
             max_hits: 25,
             start_offset: 0,
+            ..Default::default()
         };
         let single_node_response = single_node_search(
             &search_request,
@@ -409,6 +413,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 25,
             start_offset: 0,
+            ..Default::default()
         };
         let single_node_response = single_node_search(
             &search_request,
