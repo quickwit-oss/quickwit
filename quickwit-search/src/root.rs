@@ -291,6 +291,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            ..Default::default()
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -348,6 +349,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            ..Default::default()
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -427,6 +429,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            ..Default::default()
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -532,6 +535,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            ..Default::default()
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -653,6 +657,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            ..Default::default()
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -723,6 +728,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            ..Default::default()
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -780,6 +786,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            ..Default::default()
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -862,6 +869,7 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
+            ..Default::default()
         };
         let mut metastore = MockMetastore::new();
         metastore

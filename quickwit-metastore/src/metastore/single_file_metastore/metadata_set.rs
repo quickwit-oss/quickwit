@@ -87,15 +87,17 @@ impl MetadataSet {
             });
         }
 
+        let now_timestamp = Utc::now().timestamp();
         let metadata = Split {
             split_state: SplitState::Staged,
-            update_timestamp: Utc::now().timestamp(),
+            update_timestamp: now_timestamp,
             split_metadata,
         };
 
         self.splits
             .insert(metadata.split_id().to_string(), metadata);
 
+        self.index.update_timestamp = now_timestamp;
         Ok(())
     }
 
@@ -122,6 +124,7 @@ impl MetadataSet {
     ) -> MetastoreResult<bool> {
         let mut is_modified = false;
         let mut split_not_found_ids = vec![];
+        let now_timestamp = Utc::now().timestamp();
         for &split_id in split_ids {
             // Check for the existence of split.
             let metadata = match self.splits.get_mut(split_id) {
@@ -138,7 +141,7 @@ impl MetadataSet {
             }
 
             metadata.split_state = SplitState::ScheduledForDeletion;
-            metadata.update_timestamp = Utc::now().timestamp();
+            metadata.update_timestamp = now_timestamp;
             is_modified = true;
         }
 
@@ -146,6 +149,10 @@ impl MetadataSet {
             return Err(MetastoreError::SplitsDoNotExist {
                 split_ids: split_not_found_ids,
             });
+        }
+
+        if is_modified {
+            self.index.update_timestamp = now_timestamp;
         }
         Ok(is_modified)
     }
@@ -159,6 +166,7 @@ impl MetadataSet {
         self.index.checkpoint.try_apply_delta(checkpoint_delta)?;
         let mut split_not_found_ids = vec![];
         let mut split_not_staged_ids = vec![];
+        let now_timestamp = Utc::now().timestamp();
         for &split_id in split_ids {
             // Check for the existence of split.
             let metadata = match self.splits.get_mut(split_id) {
@@ -177,7 +185,7 @@ impl MetadataSet {
                 SplitState::Staged => {
                     // The split state needs to be updated.
                     metadata.split_state = SplitState::Published;
-                    metadata.update_timestamp = Utc::now().timestamp();
+                    metadata.update_timestamp = now_timestamp;
                 }
                 _ => {
                     split_not_staged_ids.push(split_id.to_string());
@@ -197,6 +205,7 @@ impl MetadataSet {
             });
         }
 
+        self.index.update_timestamp = now_timestamp;
         Ok(())
     }
 
@@ -285,6 +294,7 @@ impl MetadataSet {
             });
         }
 
+        self.index.update_timestamp = Utc::now().timestamp();
         Ok(())
     }
 }

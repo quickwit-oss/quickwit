@@ -573,6 +573,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         search_settings: index_config.search_settings,
         sources: index_config.sources,
         create_timestamp: Utc::now().timestamp(),
+        update_timestamp: Utc::now().timestamp(),
     };
     create_index(&args.metastore_uri, index_metadata).await?;
     println!("Index `{}` successfully created.", index_config.index_id);
@@ -673,6 +674,8 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         end_timestamp: args.end_timestamp,
         max_hits: args.max_hits as u64,
         start_offset: args.start_offset as u64,
+        sort_order: None,
+        sort_by_field: None,
     };
     let search_response: SearchResponse =
         single_node_search(&search_request, &*metastore, storage_uri_resolver.clone()).await?;
