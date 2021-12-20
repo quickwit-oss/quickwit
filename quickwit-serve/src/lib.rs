@@ -175,7 +175,6 @@ mod tests {
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             partition_by_field: None,
-            tags: vec![],
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -187,10 +186,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str,
-             _split_state: SplitState,
-             _time_range: Option<Range<i64>>,
-             _tags: &[Vec<String>]| {
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
                 Ok(vec![mock_split("split_1"), mock_split("split_2")])
             },
         );

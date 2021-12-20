@@ -227,7 +227,6 @@ mod tests {
             end_timestamp: None,
             max_hits: 10,
             start_offset: 0,
-            tags: vec![],
         };
         LeafSearchRequest {
             search_request: Some(search_request),
@@ -258,7 +257,6 @@ mod tests {
             fast_field: "fast".to_string(),
             output_format: 0,
             partition_by_field: None,
-            tags: vec![],
         };
         LeafSearchStreamRequest {
             request: Some(search_request),

@@ -23,19 +23,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use diesel::dsl::sql;
 use diesel::pg::Pg;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::DatabaseErrorKind;
 use diesel::result::Error::DatabaseError;
-use diesel::sql_types::{Array, Text};
+use diesel::sql_types::{Array, Bool, Text};
 use diesel::{
-    debug_query, sql_query, BoolExpressionMethods, Connection, ExpressionMethods,
-    PgArrayExpressionMethods, PgConnection, QueryDsl, RunQueryDsl,
+    debug_query, sql_query, BoolExpressionMethods, BoxableExpression, Connection,
+    ExpressionMethods, IntoSql, PgConnection, QueryDsl, RunQueryDsl,
 };
+use quickwit_index_config::tag_pruning::TagFilterAst;
 use tracing::{debug, error, info, warn};
 
 use crate::metastore::CheckpointDelta;
 use crate::postgresql::model::SELECT_SPLITS_FOR_INDEX;
+use crate::postgresql::schema::splits;
 use crate::postgresql::{model, schema};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
@@ -307,7 +310,7 @@ impl PostgresqlMetastore {
         index_id: &str,
         state_opt: Option<SplitState>,
         time_range_opt: Option<Range<i64>>,
-        tags_opt: Option<&[Vec<String>]>,
+        tags_opt: Option<TagFilterAst>,
     ) -> MetastoreResult<Vec<Split>> {
         let mut select_statement = schema::splits::dsl::splits
             .filter(schema::splits::dsl::index_id.eq(index_id))
@@ -329,12 +332,7 @@ impl PostgresqlMetastore {
         }
 
         if let Some(tags) = tags_opt {
-            if !tags.is_empty() {
-                for inner_tags in tags {
-                    select_statement = select_statement
-                        .filter(schema::splits::dsl::tags.overlaps_with(inner_tags));
-                }
-            }
+            select_statement = select_statement.filter(tags_filter_expression_helper(tags));
         }
 
         debug!(sql=%debug_query::<Pg, _>(&select_statement).to_string());
@@ -654,10 +652,10 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-        tags: &[Vec<String>],
+        tags: Option<TagFilterAst>,
     ) -> MetastoreResult<Vec<Split>> {
         let conn = self.get_conn()?;
-        self.list_splits_helper(&conn, index_id, Some(state), time_range_opt, Some(tags))
+        self.list_splits_helper(&conn, index_id, Some(state), time_range_opt, tags)
     }
 
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
@@ -758,15 +756,57 @@ impl Metastore for PostgresqlMetastore {
     }
 }
 
-/// A single file metastore factory
-#[derive(Clone)]
-pub struct PostgresqlMetastoreFactory {}
+fn true_expr() -> Box<dyn BoxableExpression<splits::table, Pg, SqlType = Bool>> {
+    Box::new(true.into_sql::<Bool>()) // as FilterExpression<QS>;
+}
 
-impl Default for PostgresqlMetastoreFactory {
-    fn default() -> Self {
-        PostgresqlMetastoreFactory {}
+/// Takes a tag filters AST and returns a sql expression that can be used as
+/// a filter.
+///
+/// Tag string literals are properly bound to avoid SQL injection.
+fn tags_filter_expression_helper(
+    tags: TagFilterAst,
+) -> Box<dyn BoxableExpression<splits::table, Pg, SqlType = Bool>> {
+    match tags {
+        TagFilterAst::And(child_asts) => {
+            let mut child_exprs_it = child_asts.into_iter().map(tags_filter_expression_helper);
+            let mut and_expr = if let Some(first_child_expr) = child_exprs_it.next() {
+                first_child_expr
+            } else {
+                // child_asts is empty.
+                return true_expr();
+            };
+            for child_expr in child_exprs_it {
+                and_expr = Box::new(and_expr.and(child_expr));
+            }
+            and_expr
+        }
+        TagFilterAst::Or(child_asts) => {
+            let mut child_exprs_it = child_asts.into_iter().map(tags_filter_expression_helper);
+            let mut or_expr = if let Some(first_child_expr) = child_exprs_it.next() {
+                first_child_expr
+            } else {
+                // child_asts is empty.
+                return true_expr();
+            };
+            for child_expr in child_exprs_it {
+                or_expr = Box::new(or_expr.or(child_expr));
+            }
+            or_expr
+        }
+        TagFilterAst::Tag { is_present, tag } => Box::new(if is_present {
+            sql::<Bool>("").bind::<Text, _>(tag).sql("= ANY(tags)")
+        } else {
+            sql::<Bool>("NOT (")
+                .bind::<Text, _>(tag)
+                .sql("= ANY(tags))")
+        }),
     }
 }
+
+/// A single file metastore factory
+#[derive(Clone, Default)]
+pub struct PostgresqlMetastoreFactory {}
 
 #[async_trait]
 impl MetastoreFactory for PostgresqlMetastoreFactory {
@@ -812,3 +852,68 @@ impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
 
 #[cfg(feature = "postgres")]
 metastore_test_suite_for_postgresql!(crate::PostgresqlMetastore);
+
+#[cfg(test)]
+mod tests {
+    use diesel::debug_query;
+    use diesel::pg::Pg;
+    use quickwit_index_config::tag_pruning::{no_tag, tag, TagFilterAst};
+
+    use super::tags_filter_expression_helper;
+
+    fn test_tags_filter_expression_helper(tags_ast: TagFilterAst, expected: &str) {
+        let tags_expr = tags_filter_expression_helper(tags_ast);
+        let sql = debug_query::<Pg, _>(&tags_expr).to_string();
+        assert_eq!(&sql, expected);
+    }
+
+    #[test]
+    fn test_tags_filter_expression_single_tag() {
+        let tags_ast = tag("my_field:titi");
+        test_tags_filter_expression_helper(tags_ast, "$1= ANY(tags) -- binds: [\"my_field:titi\"]");
+    }
+
+    #[test]
+    fn test_tags_filter_expression_not_tag() {
+        test_tags_filter_expression_helper(
+            no_tag("my_field:titi"),
+            "NOT ($1= ANY(tags)) -- binds: [\"my_field:titi\"]",
+        );
+    }
+
+    #[test]
+    fn test_tags_filter_expression_ands() {
+        let tags_ast = TagFilterAst::And(vec![tag("tag:val1"), tag("tag:val2"), tag("tag:val3")]);
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "$1= ANY(tags) AND $2= ANY(tags) AND $3= ANY(tags) -- binds: [\"tag:val1\", \
+             \"tag:val2\", \"tag:val3\"]",
+        );
+    }
+
+    #[test]
+    fn test_tags_filter_expression_and_or() {
+        let tags_ast = TagFilterAst::Or(vec![
+            TagFilterAst::And(vec![tag("tag:val1"), tag("tag:val2")]),
+            tag("tag:val3"),
+        ]);
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "($1= ANY(tags) AND $2= ANY(tags) OR $3= ANY(tags)) -- binds: [\"tag:val1\", \
+             \"tag:val2\", \"tag:val3\"]",
+        );
+    }
+
+    #[test]
+    fn test_tags_filter_expression_and_or_correct_parenthesis() {
+        let tags_ast = TagFilterAst::And(vec![
+            TagFilterAst::Or(vec![tag("tag:val1"), tag("tag:val2")]),
+            tag("tag:val3"),
+        ]);
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "($1= ANY(tags) OR $2= ANY(tags)) AND $3= ANY(tags) -- binds: [\"tag:val1\", \
+             \"tag:val2\", \"tag:val3\"]",
+        );
+    }
+}

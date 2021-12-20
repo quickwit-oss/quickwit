@@ -26,6 +26,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_index_config::tag_pruning::TagFilterAst;
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
@@ -299,7 +300,7 @@ impl Metastore for SingleFileMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-        tags: &[Vec<String>],
+        tags: Option<TagFilterAst>,
     ) -> MetastoreResult<Vec<Split>> {
         self.read(index_id, |metadata_set| {
             metadata_set.list_splits(state, time_range_opt, tags)
@@ -483,14 +484,14 @@ mod tests {
 
         // empty
         let split = metastore
-            .list_splits(index_id, SplitState::Published, None, &[])
+            .list_splits(index_id, SplitState::Published, None, None)
             .await
             .unwrap();
         assert!(split.is_empty());
 
         // not empty
         let split = metastore
-            .list_splits(index_id, SplitState::Staged, None, &[])
+            .list_splits(index_id, SplitState::Staged, None, None)
             .await
             .unwrap();
         assert!(!split.is_empty());
@@ -568,7 +569,7 @@ mod tests {
         futures::future::try_join_all(handles).await.unwrap();
 
         let splits = metastore
-            .list_splits(index_id, SplitState::Published, None, &[])
+            .list_splits(index_id, SplitState::Published, None, None)
             .await
             .unwrap();
 
