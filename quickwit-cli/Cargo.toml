@@ -17,7 +17,7 @@ path = "src/main.rs"
 async-trait = "0.1"
 anyhow = "1"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
-clap = { version = "3.0.0-beta.5", features = ["yaml"] }
+clap = { version = "=3.0.0-beta.5", features = ["yaml"] }
 quickwit-actors = { version = "0.1.0", path = "../quickwit-actors" }
 quickwit-core = { version = "0.1.0", path = "../quickwit-core" }
 quickwit-directories = { version = "0.1.0", path = "../quickwit-directories" }
