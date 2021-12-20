@@ -45,6 +45,7 @@ use std::net::SocketAddr;
 use std::ops::Range;
 
 use anyhow::Context;
+use itertools::Itertools;
 use quickwit_index_config::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
@@ -196,7 +197,11 @@ pub async fn single_node_search(
         num_hits: leaf_search_response.num_hits,
         hits: fetch_docs_response.hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
-        errors: vec![],
+        errors: leaf_search_response
+            .failed_splits
+            .iter()
+            .map(|error| format!("{:?}", error))
+            .collect_vec(),
     })
 }
 
