@@ -27,6 +27,7 @@ use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::MetastoreUriResolver;
 use quickwit_storage::quickwit_storage_uri_resolver;
 use regex::Regex;
+use tabled::{Alignment, Header, Modify, Row, Style, Table, Tabled};
 
 pub mod cli;
 pub mod index;
@@ -153,8 +154,6 @@ impl<'a> Printer<'a> {
         self.stdout.flush()
     }
 }
-
-use tabled::{Alignment, Header, Modify, Row, Style, Table, Tabled};
 
 pub fn make_table<T: Tabled>(header: &str, rows: impl IntoIterator<Item = T>) -> Table {
     Table::new(rows)

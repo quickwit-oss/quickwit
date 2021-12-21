@@ -373,8 +373,11 @@ fn split_state_from_input_str(input: &str) -> anyhow::Result<SplitState> {
     match input.to_lowercase().as_str() {
         "staged" => Ok(SplitState::Staged),
         "published" => Ok(SplitState::Published),
-        "marked" => Ok(SplitState::ScheduledForDeletion),
-        _ => bail!("Unknown split state, possible values are `staged`, `published`, and `marked`"),
+        "marked" => Ok(SplitState::MarkedForDeletion),
+        _ => bail!(format!(
+            "Unknown split state `{}`. Possible values are `staged`, `published`, and `marked`.",
+            input
+        )),
     }
 }
 
@@ -536,12 +539,7 @@ mod tests {
     #[test]
     fn test_filter_splits() -> anyhow::Result<()> {
         let splits = vec![
-            make_split(
-                "one",
-                SplitState::ScheduledForDeletion,
-                Some(5..=10),
-                vec![],
-            ),
+            make_split("one", SplitState::MarkedForDeletion, Some(5..=10), vec![]),
             make_split(
                 "two",
                 SplitState::Published,
@@ -566,7 +564,7 @@ mod tests {
         // select by SplitState
         let filtered_splits = filter_splits(
             splits.clone(),
-            vec![SplitState::Published, SplitState::ScheduledForDeletion],
+            vec![SplitState::Published, SplitState::MarkedForDeletion],
             None,
             None,
             BTreeSet::default(),

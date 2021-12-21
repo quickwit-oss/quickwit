@@ -213,7 +213,8 @@ subcommands:
                         value_name: INDEX ID
                         required: true
                     - states:
-                        about: Comma-separated list of split states to filter on.
+                        about: |
+                            Comma-separated list of split states to filter on.
                             Possible values are `staged`, `published`, and `marked`.
                         long: states
                         value_name: SPLIT STATES
