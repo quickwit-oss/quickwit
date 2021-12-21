@@ -17,9 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+pub mod file_backed_metastore;
 #[cfg(feature = "postgres")]
 pub mod postgresql_metastore;
-pub mod single_file_metastore;
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -369,7 +369,7 @@ pub trait Metastore: Send + Sync + 'static {
     }
 
     /// Creates an index.
-    /// This API creates index metadata set in the metastore.
+    /// This API creates  in the metastore.
     /// An error will occur if an index that already exists in the storage is specified.
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()>;
 
@@ -379,7 +379,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata>;
 
     /// Deletes an index.
-    /// This API removes the specified index metadata set from the metastore,
+    /// This API removes the specified  from the metastore,
     /// but does not remove the index from the storage.
     /// An error will occur if an index that does not exist in the storage is specified.
     async fn delete_index(&self, index_id: &str) -> MetastoreResult<()>;

@@ -26,18 +26,18 @@ use quickwit_storage::{quickwit_storage_uri_resolver, StorageResolverError, Stor
 use regex::Regex;
 
 use crate::{
-    Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError, SingleFileMetastore,
+    FileBackedMetastore, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
 };
 
-/// A single file metastore factory
+/// A file-backed metastore factory
 #[derive(Clone)]
-pub struct SingleFileMetastoreFactory {
+pub struct FileBackedMetastoreFactory {
     storage_uri_resolver: StorageUriResolver,
 }
 
-impl Default for SingleFileMetastoreFactory {
+impl Default for FileBackedMetastoreFactory {
     fn default() -> Self {
-        SingleFileMetastoreFactory {
+        FileBackedMetastoreFactory {
             storage_uri_resolver: quickwit_storage_uri_resolver().clone(),
         }
     }
@@ -62,7 +62,7 @@ fn extract_polling_interval_from_uri(uri: &str) -> (String, Option<Duration>) {
 }
 
 #[async_trait]
-impl MetastoreFactory for SingleFileMetastoreFactory {
+impl MetastoreFactory for FileBackedMetastoreFactory {
     async fn resolve(&self, uri: &str) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
         let (uri_stripped, polling_interval_opt) = extract_polling_interval_from_uri(uri);
         let storage =
@@ -84,9 +84,9 @@ impl MetastoreFactory for SingleFileMetastoreFactory {
                         )
                     }
                 })?;
-        let mut single_file_metastore = SingleFileMetastore::new(storage);
-        single_file_metastore.set_polling_interval(polling_interval_opt);
-        Ok(Arc::new(single_file_metastore))
+        let mut file_backed_metastore = FileBackedMetastore::new(storage);
+        file_backed_metastore.set_polling_interval(polling_interval_opt);
+        Ok(Arc::new(file_backed_metastore))
     }
 }
 
@@ -94,7 +94,7 @@ impl MetastoreFactory for SingleFileMetastoreFactory {
 mod tests {
     use std::time::Duration;
 
-    use crate::metastore::single_file_metastore::single_file_metastore_factory::extract_polling_interval_from_uri;
+    use crate::metastore::file_backed_metastore::file_backed_metastore_factory::extract_polling_interval_from_uri;
 
     #[test]
     fn test_extract_polling_interval_from_uri() {
