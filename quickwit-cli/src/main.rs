@@ -27,20 +27,9 @@ use quickwit_cli::cli::CliCommand;
 use quickwit_cli::QUICKWIT_JAEGER_ENABLED_ENV_KEY;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{info, Level};
-use tracing_subscriber::fmt::format::Format;
+use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
-
-/// Describes the way events should be formatted in the logs.
-fn event_format(
-) -> Format<tracing_subscriber::fmt::format::Full, tracing_subscriber::fmt::time::ChronoUtc> {
-    tracing_subscriber::fmt::format()
-        .with_target(true)
-        .with_timer(tracing_subscriber::fmt::time::ChronoUtc::with_format(
-            // We do not rely on ChronoUtc::from_rfc3339, because it has a nanosecond precision.
-            "%Y-%m-%dT%H:%M:%S%.3f%:z".to_string(),
-        ))
-}
 
 fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     let env_filter = env::var("RUST_LOG")
@@ -49,6 +38,18 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
         .context("Failed to set up tracing env filter.")?;
     global::set_text_map_propagator(TraceContextPropagator::new());
     let registry = tracing_subscriber::registry().with(env_filter);
+    let event_format = tracing_subscriber::fmt::format()
+        .with_target(true)
+        .with_timer(
+            // We do not rely on the Rfc3339 implementation, because it has a nanosecond precision.
+            // See discussion here: https://github.com/time-rs/time/discussions/418
+            UtcTime::new(
+                time::format_description::parse(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
+                )
+                .expect("Time format invalid"),
+            ),
+        );
     if std::env::var_os(QUICKWIT_JAEGER_ENABLED_ENV_KEY).is_some() {
         // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
         let tracer = opentelemetry_jaeger::new_pipeline()
@@ -57,13 +58,13 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
             .install_simple()
             .context("Failed to initialize Jaeger exporter.")?;
         registry
-            .with(tracing_subscriber::fmt::layer().event_format(event_format()))
+            .with(tracing_subscriber::fmt::layer().event_format(event_format))
             .with(tracing_opentelemetry::layer().with_tracer(tracer))
             .try_init()
             .context("Failed to set up tracing.")?
     } else {
         registry
-            .with(tracing_subscriber::fmt::layer().event_format(event_format()))
+            .with(tracing_subscriber::fmt::layer().event_format(event_format))
             .try_init()
             .context("Failed to set up tracing.")?
     }

@@ -38,7 +38,7 @@ tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="48c47f0d3", def
 tempfile = "3.2"
 thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
-tracing = "0.1"
+tracing = "0.1.29"
 ulid = "0.5"
 tokio-stream = "0.1"
 arc-swap = "1.4"
