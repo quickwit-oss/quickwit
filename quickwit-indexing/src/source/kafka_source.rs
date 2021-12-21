@@ -469,7 +469,7 @@ async fn fetch_watermarks_for_partition_id(
                 .map_err(|err| {
                     debug!(topic = %topic, partition_id = ?partition_id, error = ?err, "Failed to fetch watermarks");
                     if let KafkaError::MetadataFetch(RDKafkaErrorCode::UnknownPartition) = err {
-                        backoff::Error::Transient(err)
+                        backoff::Error::Transient { err, retry_after: None }
                     } else {
                         backoff::Error::Permanent(err)
                     }
