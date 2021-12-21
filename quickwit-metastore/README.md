@@ -53,7 +53,7 @@ Once you have successfully generated the `quickwit-metastore/src/postgresql/sche
 
 ## Testing quickwit-metastore
 
-To test SingleFileMetastore only, use the following command.
+To test FileBackedMetastore only, use the following command.
 
 ```
 $ cargo test

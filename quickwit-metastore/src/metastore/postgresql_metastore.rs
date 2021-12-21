@@ -803,7 +803,7 @@ fn tags_filter_expression_helper(
     }
 }
 
-/// A single file metastore factory
+/// A file-backed metastore factory
 #[derive(Clone, Default)]
 pub struct PostgresqlMetastoreFactory {}
 

@@ -53,7 +53,7 @@ use quickwit_indexing::{
 };
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{
-    IndexMetadata, Metastore, SingleFileMetastore, SplitMetadata, SplitState,
+    FileBackedMetastore, IndexMetadata, Metastore, SplitMetadata, SplitState,
 };
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde_json::json;
@@ -164,7 +164,7 @@ async fn test_failpoint_uploader_after_panics_right_away() -> anyhow::Result<()>
 
 async fn aux_test_failpoints() -> anyhow::Result<()> {
     quickwit_common::setup_logging_for_tests();
-    let metastore = Arc::new(SingleFileMetastore::for_test());
+    let metastore = Arc::new(FileBackedMetastore::for_test());
     let index_config = default_config_for_tests();
     metastore
         .create_index(IndexMetadata {
