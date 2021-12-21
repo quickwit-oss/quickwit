@@ -15,7 +15,7 @@ This config can be expressed as a json file given to the `new` Quickwit command.
 {
     "store_source": true,
     "default_search_fields": ["body", "severity_text"],
-    "timestamp_field": "timestamp", // by default, Quickwit will sort documents on this field by a descending order.
+    "timestamp_field": "timestamp",
     "field_mappings": [
         {
             "name": "timestamp",
