@@ -18,6 +18,6 @@ async-trait = "0.1"
 anyhow = "1"
 flume = "0.10"
 futures = "0.3"
-tracing = "0.1"
+tracing = "0.1.29"
 thiserror = "1"
 quickwit-common = {path="../quickwit-common", version="0.1"}
