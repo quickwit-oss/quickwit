@@ -41,7 +41,7 @@ use quickwit_indexing::{index_data, STD_IN_SOURCE_ID};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, MetastoreUriResolver, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
-use quickwit_search::{single_node_search, SearchResponseRest};
+use quickwit_search::single_node_search;
 use quickwit_storage::quickwit_storage_uri_resolver;
 use quickwit_telemetry::payload::TelemetryEvent;
 use serde_json::json;
@@ -709,9 +709,8 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
 
 pub async fn search_index_cli(args: SearchIndexArgs) -> anyhow::Result<()> {
     let search_response: SearchResponse = search_index(args).await?;
-    let search_response_rest = SearchResponseRest::try_from(search_response)?;
-    let search_response_rest_json = serde_json::to_string_pretty(&search_response_rest)?;
-    println!("{}", search_response_rest_json);
+    let search_response_json = serde_json::to_string_pretty(&search_response)?;
+    println!("{}", search_response_json);
     Ok(())
 }
 

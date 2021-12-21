@@ -39,6 +39,11 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 2. Start the Jaeger services (UI, collector, agent, ...) running the command `make docker-compose-up DOCKER_SERVICES=jaeger`
 3. Open your browser and visit [localhost:16686](http://localhost:16686/)
 
+## Using tokio console
+1. Install tokio-console by running `cargo install tokio-console`.
+2. Install the quickwit binary in the quickwit-cli folder `RUSTFLAGS="--cfg tokio_unstable" cargo install --path . --features tokio-console`
+3. Launch a long running command such as index and activate tokio with the: `QUICKWIT_TOKIO_CONSOLE_ENABLED=1 quickwit index ...`
+4. Run `tokio-console`.
 
 ## Building binaries
 

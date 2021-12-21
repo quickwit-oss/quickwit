@@ -95,7 +95,7 @@ pub async fn delete_index(
 
     // Select split to delete
     let splits_to_delete = metastore
-        .list_splits(index_id, SplitState::ScheduledForDeletion, None, None)
+        .list_splits(index_id, SplitState::MarkedForDeletion, None, None)
         .await?
         .into_iter()
         .map(|metadata| metadata.split_metadata)

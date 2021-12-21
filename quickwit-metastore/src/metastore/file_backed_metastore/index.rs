@@ -27,23 +27,23 @@ use serde::{Deserialize, Serialize};
 use crate::checkpoint::CheckpointDelta;
 use crate::{IndexMetadata, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 
-/// A MetadataSet carries an index metadata and its split metadata.
+/// A `Index` object carries an index metadata and its split metadata.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct MetadataSet {
+pub(crate) struct Index {
     /// Metadata specific to the index.
     index: IndexMetadata,
     /// List of splits belonging to the index.
     splits: HashMap<String, Split>,
     /// Has been discarded. This field exists to make
     /// it possible to discard this entry if there is an error
-    /// while mutating the metadata set.
+    /// while mutating the Index.
     #[serde(skip)]
     pub discarded: bool,
 }
 
-impl From<IndexMetadata> for MetadataSet {
+impl From<IndexMetadata> for Index {
     fn from(index: IndexMetadata) -> Self {
-        MetadataSet {
+        Index {
             index,
             splits: Default::default(),
             discarded: false,
@@ -62,7 +62,7 @@ fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
     left.end <= *right.start() || *right.end() < left.start
 }
 
-impl MetadataSet {
+impl Index {
     pub fn index_id(&self) -> &str {
         &self.index.index_id
     }
@@ -135,12 +135,12 @@ impl MetadataSet {
                 }
             };
 
-            if metadata.split_state == SplitState::ScheduledForDeletion {
-                // If the split is already scheduled for deletion, This is fine, we just skip it.
+            if metadata.split_state == SplitState::MarkedForDeletion {
+                // If the split is already marked for deletion, This is fine, we just skip it.
                 continue;
             }
 
-            metadata.split_state = SplitState::ScheduledForDeletion;
+            metadata.split_state = SplitState::MarkedForDeletion;
             metadata.update_timestamp = now_timestamp;
             is_modified = true;
         }
@@ -257,7 +257,7 @@ impl MetadataSet {
             }
         };
         match metadata.split_state {
-            SplitState::ScheduledForDeletion | SplitState::Staged => {
+            SplitState::MarkedForDeletion | SplitState::Staged => {
                 // Only `ScheduledForDeletion` and `Staged` can be deleted
                 self.splits.remove(split_id);
                 DeleteSplitOutcome::Success

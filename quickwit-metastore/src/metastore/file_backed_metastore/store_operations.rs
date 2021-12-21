@@ -21,10 +21,10 @@ use std::path::{Path, PathBuf};
 
 use quickwit_storage::{Storage, StorageError, StorageErrorKind};
 
-use crate::metastore::single_file_metastore::metadata_set::MetadataSet;
+use crate::metastore::file_backed_metastore::index::Index;
 use crate::{MetastoreError, MetastoreResult};
 
-/// Metadata file managed by [`SingleFileMetastore`].
+/// Metadata file managed by [`FileBackedMetastore`].
 const META_FILENAME: &str = "quickwit.json";
 
 /// Path to the metadata file from the given index ID.
@@ -47,30 +47,27 @@ fn convert_error(index_id: &str, storage_err: StorageError) -> MetastoreError {
     }
 }
 
-pub(crate) async fn fetch_metadata_set(
-    storage: &dyn Storage,
-    index_id: &str,
-) -> MetastoreResult<MetadataSet> {
+pub(crate) async fn fetch_index(storage: &dyn Storage, index_id: &str) -> MetastoreResult<Index> {
     let metadata_path = meta_path(index_id);
     let content = storage
         .get_all(&metadata_path)
         .await
         .map_err(|storage_err| convert_error(index_id, storage_err))?;
 
-    let metadata_set: MetadataSet = serde_json::from_slice(&content[..])
+    let index: Index = serde_json::from_slice(&content[..])
         .map_err(|serde_err| MetastoreError::InvalidManifest { cause: serde_err })?;
 
-    if metadata_set.index_id() != index_id {
+    if index.index_id() != index_id {
         return Err(MetastoreError::InternalError {
             message: "Inconsistent manifest: index_id mismatch.".to_string(),
             cause: anyhow::anyhow!(
                 "Expected index_id `{}`, but found `{}`",
                 index_id,
-                metadata_set.index_id()
+                index.index_id()
             ),
         });
     }
-    Ok(metadata_set)
+    Ok(index)
 }
 
 pub(crate) async fn index_exists(storage: &dyn Storage, index_id: &str) -> MetastoreResult<bool> {
@@ -82,22 +79,21 @@ pub(crate) async fn index_exists(storage: &dyn Storage, index_id: &str) -> Metas
     Ok(exists)
 }
 
-/// Serializes the metadata set and stores the data on the storage.
+/// Serializes the `Index` object and stores the data on the storage.
 ///
-/// Do not call this method. Instead, call `put_metadata_set`.
+/// Do not call this method. Instead, call `put_index`.
 /// The point of having two methods here is just to make it usable in a unit test.
-pub(crate) async fn put_metadata_set_given_index_id(
+pub(crate) async fn put_index_given_index_id(
     storage: &dyn Storage,
-    metadata_set: &MetadataSet,
+    index: &Index,
     index_id: &str,
 ) -> MetastoreResult<()> {
-    // Serialize metadata set.
-    let content: Vec<u8> = serde_json::to_vec_pretty(&metadata_set).map_err(|serde_err| {
-        MetastoreError::InternalError {
+    // Serialize Index.
+    let content: Vec<u8> =
+        serde_json::to_vec_pretty(&index).map_err(|serde_err| MetastoreError::InternalError {
             message: "Failed to serialize Metadata set".to_string(),
             cause: anyhow::anyhow!(serde_err),
-        }
-    })?;
+        })?;
 
     let metadata_path = meta_path(index_id);
     // Put data back into storage.
@@ -107,19 +103,13 @@ pub(crate) async fn put_metadata_set_given_index_id(
         .map_err(|storage_err| convert_error(index_id, storage_err))?;
     Ok(())
 }
-/// Serializes the metadata set and stores the data on the storage.
-pub(crate) async fn put_metadata_set(
-    storage: &dyn Storage,
-    metadata_set: &MetadataSet,
-) -> MetastoreResult<()> {
-    put_metadata_set_given_index_id(storage, metadata_set, metadata_set.index_id()).await
+/// Serializes the `Index` object and stores the data on the storage.
+pub(crate) async fn put_index(storage: &dyn Storage, index: &Index) -> MetastoreResult<()> {
+    put_index_given_index_id(storage, index, index.index_id()).await
 }
 
-/// Serializes the metadata set and stores the data on the storage.
-pub(crate) async fn delete_metadata_set(
-    storage: &dyn Storage,
-    index_id: &str,
-) -> MetastoreResult<()> {
+/// Serializes the Index and stores the data on the storage.
+pub(crate) async fn delete_index(storage: &dyn Storage, index_id: &str) -> MetastoreResult<()> {
     let metadata_path = meta_path(index_id);
 
     let file_exists = storage

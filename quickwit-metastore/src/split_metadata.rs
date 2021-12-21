@@ -123,21 +123,23 @@ pub enum SplitState {
     /// The split is ready and published.
     Published,
 
-    /// The split is scheduled for deletion.
-    ScheduledForDeletion,
+    /// The split is marked for deletion.
+    MarkedForDeletion,
 }
 
 impl FromStr for SplitState {
-    type Err = &'static str;
+    type Err = String;
 
     fn from_str(input: &str) -> Result<SplitState, Self::Err> {
-        match input {
-            "Staged" => Ok(SplitState::Staged),
-            "Published" => Ok(SplitState::Published),
-            "ScheduledForDeletion" => Ok(SplitState::ScheduledForDeletion),
-            "New" => Ok(SplitState::Staged), // Deprecated
-            _ => Err("Unknown split state"),
-        }
+        let split_state = match input {
+            "Staged" => SplitState::Staged,
+            "Published" => SplitState::Published,
+            "MarkedForDeletion" => SplitState::MarkedForDeletion,
+            "ScheduledForDeletion" => SplitState::MarkedForDeletion, // Deprecated
+            "New" => SplitState::Staged,                             // Deprecated
+            _ => return Err(format!("Unknown split state `{}`.", input)),
+        };
+        Ok(split_state)
     }
 }
 

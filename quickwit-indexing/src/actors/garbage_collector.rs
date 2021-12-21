@@ -181,10 +181,10 @@ mod tests {
                 assert_eq!(index_id, "foo-index");
                 let splits = match split_state {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
-                    SplitState::ScheduledForDeletion => {
-                        make_splits(&["a", "b", "c"], SplitState::ScheduledForDeletion)
+                    SplitState::MarkedForDeletion => {
+                        make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
                     }
-                    _ => panic!("only Staged and ScheduledForDeletion expected."),
+                    _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
             },
@@ -237,10 +237,10 @@ mod tests {
                 assert_eq!(index_id, "foo-index");
                 let splits = match split_state {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
-                    SplitState::ScheduledForDeletion => {
-                        make_splits(&["a", "b"], SplitState::ScheduledForDeletion)
+                    SplitState::MarkedForDeletion => {
+                        make_splits(&["a", "b"], SplitState::MarkedForDeletion)
                     }
-                    _ => panic!("only Staged and ScheduledForDeletion expected."),
+                    _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
             },

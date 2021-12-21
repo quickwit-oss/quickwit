@@ -22,9 +22,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use crate::metastore::file_backed_metastore::FileBackedMetastoreFactory;
 #[cfg(feature = "postgres")]
 use crate::metastore::postgresql_metastore::PostgresqlMetastoreFactory;
-use crate::metastore::single_file_metastore::SingleFileMetastoreFactory;
 use crate::{Metastore, MetastoreResolverError};
 
 /// A metastore factory builds a [`Metastore`] object from an URI.
@@ -64,10 +64,10 @@ impl Default for MetastoreUriResolver {
     fn default() -> Self {
         #[allow(unused_mut)]
         let mut builder = MetastoreUriResolver::builder()
-            .register("ram", SingleFileMetastoreFactory::default())
-            .register("file", SingleFileMetastoreFactory::default())
-            .register("s3", SingleFileMetastoreFactory::default())
-            .register("s3+localstack", SingleFileMetastoreFactory::default());
+            .register("ram", FileBackedMetastoreFactory::default())
+            .register("file", FileBackedMetastoreFactory::default())
+            .register("s3", FileBackedMetastoreFactory::default())
+            .register("s3+localstack", FileBackedMetastoreFactory::default());
         #[cfg(feature = "postgres")]
         {
             builder = builder.register("postgres", PostgresqlMetastoreFactory::default());

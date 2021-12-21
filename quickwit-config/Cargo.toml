@@ -21,7 +21,7 @@ serde_json = "1.0"
 serde_yaml = "0.8"
 tempfile = "3"
 toml = "0.5"
-tracing = '0.1'
+tracing = "0.1.29"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
