@@ -41,8 +41,8 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 
 ## Using tokio console
 1. Install tokio-console by running `cargo install tokio-console`.
-2. Build the binary with tokio unstable flag `RUSTFLAGS="--cfg tokio_unstable" cargo build`
-3. Launch a long running command such as index and activate tokio with the: `QUICKWIT_TOKIO_CONSOLE_ENABLED=1 target/debug/quickwit index ...`
+2. Install the quickwit binary in the quickwit-cli folder `RUSTFLAGS="--cfg tokio_unstable" cargo install --path . --features tokio-console`
+3. Launch a long running command such as index and activate tokio with the: `QUICKWIT_TOKIO_CONSOLE_ENABLED=1 quickwit index ...`
 4. Run `tokio-console`.
 
 ## Building binaries
