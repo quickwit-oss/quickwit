@@ -52,7 +52,14 @@ impl Uri {
                 env::current_dir().context("Could not fetch the current directory.")?;
 
             if path.starts_with('~') {
-                if path != "~" && !path.starts_with("~/") {
+                // We only accept `~` (alias to the home directory) and `~/path/to/something`.
+                // If there is something following the `~` that is not `/`, we bail out.
+                if path
+                    .chars()
+                    .nth(1)
+                    .map(|second_character| second_character != '/')
+                    .unwrap_or(false)
+                {
                     bail!("This path syntax `{}` is not supported.", uri);
                 }
 
