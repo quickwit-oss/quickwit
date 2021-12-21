@@ -199,32 +199,33 @@ subcommands:
         about: Operations (list, add, delete, describe...) on splits.
         subcommands:
             - list:
-                about: List all splits of an index.
+                about: Lists the splits of an index.
                 args:
                     - metastore-uri:
-                        about: Location of the metastore
+                        about: Location of the metastore.
                         long: metastore-uri
                         value_name: METASTORE URI
                         required: true
                         env: QUICKWIT_METASTORE_URI
                     - index-id:
-                        about: Index ID
+                        about: ID of the target index.
                         long: index-id
                         value_name: INDEX ID
                         required: true
                     - states:
-                        about: Comma-separated list of SplitState to filter on.
+                        about: Comma-separated list of split states to filter on.
+                            Possible values are `staged`, `published`, and `marked`.
                         long: states
                         value_name: SPLIT STATES
                         multiple_occurrences: true
                         use_delimiter: true
-                    - from:
+                    - start-date:
                         about: Start date to filter on.
-                        long: from
+                        long: start-date
                         value_name: START TIMESTAMP
-                    - to:
+                    - end-date:
                         about: End date to filter on.
-                        long: to
+                        long: end-date
                         value_name: END TIMESTAMP
                     - tags:
                         about: Comma-separated list of tags, only splits that contain all of the tags will be returned.

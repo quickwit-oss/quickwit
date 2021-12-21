@@ -136,7 +136,6 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::Duration;
 
-    use chrono::NaiveDateTime;
     use clap::{load_yaml, App, AppSettings};
     use quickwit_cli::cli::CliCommand;
     use quickwit_cli::index::{
@@ -144,10 +143,6 @@ mod tests {
         IndexCliCommand, IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
     };
     use quickwit_cli::service::{RunIndexerArgs, RunSearcherArgs, ServiceCliCommand};
-    use quickwit_cli::split::{
-        DescribeSplitArgs, ExtractSplitArgs, ListSplitArgs, SplitCliCommand,
-    };
-    use quickwit_metastore::SplitState;
 
     use super::*;
 
@@ -555,114 +550,6 @@ mod tests {
                 index_id,
                 metastore_uri,
             })) if &index_id == "wikipedia" && &metastore_uri == "file:///indexes"
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_list_split_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.try_get_matches_from(vec![
-            "split",
-            "list",
-            "--metastore-uri",
-            "file:///indexes",
-            "--index-id",
-            "wikipedia",
-            "--states",
-            "published,staged",
-            "--from",
-            "2021-12-03",
-            "--to",
-            "2021-12-05T00:30:25",
-            "--tags",
-            "foo:bar,bar:baz",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Split(SplitCliCommand::List(ListSplitArgs {
-                index_id, metastore_uri, states, from, to, tags
-            })) if &index_id == "wikipedia"
-            && &metastore_uri == "file:///indexes"
-            && states == vec![SplitState::Published, SplitState::Staged]
-            && from == Some(NaiveDateTime::parse_from_str("2021-12-03T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap().timestamp())
-            && to == Some(NaiveDateTime::parse_from_str("2021-12-05T00:30:25", "%Y-%m-%dT%H:%M:%S").unwrap().timestamp())
-            && tags == vec!["foo:bar".to_string(), "bar:baz".to_string()]
-        ));
-
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.try_get_matches_from(vec![
-            "split",
-            "list",
-            "--metastore-uri",
-            "file:///indexes",
-            "--index-id",
-            "wikipedia",
-            "--states",
-            "published",
-            "--from",
-            "2021-12-03T", // <- expect time
-        ])?;
-        assert!(matches!(CliCommand::parse_cli_args(&matches), Err { .. }));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_split_describe_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.try_get_matches_from(vec![
-            "split",
-            "describe",
-            "--index-id",
-            "wikipedia",
-            "--split-id",
-            "ABC",
-            "--metastore-uri",
-            "file:///indexes",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Split(SplitCliCommand::Describe(DescribeSplitArgs {
-                index_id,
-                split_id,
-                metastore_uri,
-                verbose: false,
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes"
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_split_extract_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.try_get_matches_from(vec![
-            "split",
-            "extract",
-            "--index-id",
-            "wikipedia",
-            "--split-id",
-            "ABC",
-            "--target-dir",
-            "datadir",
-            "--metastore-uri",
-            "file:///indexes",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Split(SplitCliCommand::Extract(ExtractSplitArgs {
-                index_id,
-                split_id,
-                metastore_uri,
-                target_dir
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == PathBuf::from("datadir")
         ));
         Ok(())
     }

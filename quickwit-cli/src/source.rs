@@ -25,7 +25,9 @@ use quickwit_config::SourceConfig;
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, MetastoreUriResolver};
 use serde_json::Value;
-use tabled::{Alignment, Header, Modify, Row, Style, Table, Tabled};
+use tabled::{Table, Tabled};
+
+use crate::make_table;
 
 #[derive(Debug, PartialEq)]
 pub struct DescribeSourceArgs {
@@ -219,13 +221,6 @@ fn flatten_json(value: Value) -> Vec<(String, Value)> {
         acc.push((root, value))
     }
     acc
-}
-
-fn make_table<T: Tabled>(header: &str, rows: impl IntoIterator<Item = T>) -> Table {
-    Table::new(rows)
-        .with(Header(header))
-        .with(Modify::new(Row(2..)).with(Alignment::left()))
-        .with(Style::psql())
 }
 
 async fn resolve_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<IndexMetadata> {

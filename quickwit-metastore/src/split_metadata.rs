@@ -131,11 +131,11 @@ impl FromStr for SplitState {
     type Err = &'static str;
 
     fn from_str(input: &str) -> Result<SplitState, Self::Err> {
-        match input.to_lowercase().as_str() {
-            "staged" => Ok(SplitState::Staged),
-            "published" => Ok(SplitState::Published),
-            "scheduledfordeletion" => Ok(SplitState::ScheduledForDeletion),
-            "new" => Ok(SplitState::Staged), // Deprecated
+        match input {
+            "Staged" => Ok(SplitState::Staged),
+            "Published" => Ok(SplitState::Published),
+            "ScheduledForDeletion" => Ok(SplitState::ScheduledForDeletion),
+            "New" => Ok(SplitState::Staged), // Deprecated
             _ => Err("Unknown split state"),
         }
     }
