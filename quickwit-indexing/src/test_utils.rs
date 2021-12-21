@@ -125,7 +125,7 @@ impl TestSandbox {
 
     /// Returns the metastore of the TestSandbox.
     ///
-    /// The metastore is a single file metastore.
+    /// The metastore is a file-backed metastore.
     /// Its data can be found via the `storage` in
     /// the `ram://quickwit-test-indexes` directory.
     pub fn metastore(&self) -> Arc<dyn Metastore> {

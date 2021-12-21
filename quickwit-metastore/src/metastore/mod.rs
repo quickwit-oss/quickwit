@@ -17,9 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+pub mod file_backed_metastore;
 #[cfg(feature = "postgres")]
 pub mod postgresql_metastore;
-pub mod single_file_metastore;
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -342,14 +342,14 @@ impl<'de> Deserialize<'de> for IndexMetadata {
 ///   - Start uploading the split files.
 /// 3. `Published`
 ///   - Uploading the split files is complete and the split is searchable.
-/// 4. `ScheduledForDeletion`
+/// 4. `MarkedForDeletion`
 ///   - Mark the split for deletion.
 ///
 /// If a split has a file in the storage, it MUST be registered in the metastore,
 /// and its state can be as follows:
 /// - `Staged`: The split is almost ready. Some of its files may have been uploaded in the storage.
 /// - `Published`: The split is ready and published.
-/// - `ScheduledForDeletion`: The split is scheduled for deletion.
+/// - `MarkedForDeletion`: The split is marked for deletion.
 ///
 /// Before creating any file, we need to stage the split. If there is a failure, upon recovery, we
 /// schedule for deletion all the staged splits. A client may not necessarily remove files from
@@ -369,7 +369,7 @@ pub trait Metastore: Send + Sync + 'static {
     }
 
     /// Creates an index.
-    /// This API creates index metadata set in the metastore.
+    /// This API creates  in the metastore.
     /// An error will occur if an index that already exists in the storage is specified.
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()>;
 
@@ -379,7 +379,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata>;
 
     /// Deletes an index.
-    /// This API removes the specified index metadata set from the metastore,
+    /// This API removes the specified  from the metastore,
     /// but does not remove the index from the storage.
     /// An error will occur if an index that does not exist in the storage is specified.
     async fn delete_index(&self, index_id: &str) -> MetastoreResult<()>;
@@ -433,7 +433,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>>;
 
     /// Marks a list of splits for deletion.
-    /// This API will change the state to `ScheduledForDeletion` so that it is not referenced by the
+    /// This API will change the state to `MarkedForDeletion` so that it is not referenced by the
     /// client. It actually does not remove the split from storage.
     /// An error will occur if you specify an index or split that does not exist in the storage.
     async fn mark_splits_for_deletion<'a>(
@@ -443,7 +443,7 @@ pub trait Metastore: Send + Sync + 'static {
     ) -> MetastoreResult<()>;
 
     /// Deletes a list of splits.
-    /// This API only takes a split that is in `Staged` or `ScheduledForDeletion` state.
+    /// This API only takes splits that are in `Staged` or `MarkedForDeletion` state.
     /// This removes the split metadata from the metastore, but does not remove the split from
     /// storage. An error will occur if you specify an index or split that does not exist in the
     /// storage.

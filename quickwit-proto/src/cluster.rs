@@ -55,7 +55,7 @@ pub mod cluster_service_client {
     impl<T> ClusterServiceClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::BoxBody>,
-        T::ResponseBody: Body + Send + Sync + 'static,
+        T::ResponseBody: Body + Send + 'static,
         T::Error: Into<StdError>,
         <T::ResponseBody as Body>::Error: Into<StdError> + Send,
     {
@@ -172,7 +172,7 @@ pub mod cluster_service_server {
     impl<T, B> tonic::codegen::Service<http::Request<B>> for ClusterServiceServer<T>
     where
         T: ClusterService,
-        B: Body + Send + Sync + 'static,
+        B: Body + Send + 'static,
         B::Error: Into<StdError> + Send + 'static,
     {
         type Response = http::Response<tonic::body::BoxBody>;

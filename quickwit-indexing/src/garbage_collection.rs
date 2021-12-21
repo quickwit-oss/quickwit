@@ -97,15 +97,15 @@ pub async fn run_garbage_collect(
     }
 
     if dry_run {
-        let mut scheduled_for_delete_splits = metastore
-            .list_splits(index_id, SplitState::ScheduledForDeletion, None, None)
+        let mut splits_marked_for_deletion = metastore
+            .list_splits(index_id, SplitState::MarkedForDeletion, None, None)
             .await?
             .into_iter()
             .map(|meta| meta.split_metadata)
             .collect::<Vec<_>>();
-        scheduled_for_delete_splits.extend(deletable_staged_splits);
+        splits_marked_for_deletion.extend(deletable_staged_splits);
 
-        let candidate_entries: Vec<FileEntry> = scheduled_for_delete_splits
+        let candidate_entries: Vec<FileEntry> = splits_marked_for_deletion
             .iter()
             .map(FileEntry::from)
             .collect();
@@ -124,7 +124,7 @@ pub async fn run_garbage_collect(
     // We wait another 2 minutes until the split is actually deleted.
     let grace_period_deletion = Utc::now().timestamp() - deletion_grace_period.as_secs() as i64;
     let splits_to_delete = metastore
-        .list_splits(index_id, SplitState::ScheduledForDeletion, None, None)
+        .list_splits(index_id, SplitState::MarkedForDeletion, None, None)
         .await?
         .into_iter()
         // TODO: Update metastore API and push this filter down.

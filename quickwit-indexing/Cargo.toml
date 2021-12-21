@@ -12,9 +12,9 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
-backoff = { version = "0.3", features = ["tokio"] }
+backoff = { version = "0.4", features = ["tokio"] }
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
-fail = "0.4"
+fail = "0.5"
 flume = "0.10"
 futures = "0.3"
 itertools = "0.10"
@@ -26,7 +26,7 @@ quickwit-directories = {path = "../quickwit-directories"}
 quickwit-index-config = {path = "../quickwit-index-config", features=["testsuite"]}
 quickwit-metastore = {path = "../quickwit-metastore" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
-rdkafka = { version = "0.26", default-features = false, features = ["tokio", "libz", "ssl", "cmake-build"], optional = true }
+rdkafka = { version = "0.28", default-features = false, features = ["tokio", "libz", "ssl", "cmake-build"], optional = true }
 openssl = { version = "0.10.36", default-features = false, optional = true}
 libz-sys = {version = "1.1.3", optional = true}
 rusoto_core = { version = "0.47", default-features = false, features = ["rustls"], optional = true }
@@ -38,9 +38,9 @@ tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="48c47f0d3", def
 tempfile = "3.2"
 thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
-tracing = "0.1"
-ulid = "0.4"
-tokio-stream = "0.1.6"
+tracing = "0.1.29"
+ulid = "0.5"
+tokio-stream = "0.1"
 arc-swap = "1.4"
 
 [features]
@@ -52,7 +52,7 @@ kinesis-external-service = []
 
 [dev-dependencies]
 bytes = "1"
-mockall = "0.9"
+mockall = "0.11"
 proptest = "1"
 quickwit-common = {path="../quickwit-common", version="0.1"}
 quickwit-metastore = {path = "../quickwit-metastore", features=["testsuite"]}

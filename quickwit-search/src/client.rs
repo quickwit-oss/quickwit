@@ -241,7 +241,7 @@ pub async fn create_search_service_client(
         .path_and_query("/")
         .build()?;
     // Create a channel with connect_lazy to automatically reconnect to the node.
-    let channel = Endpoint::from(uri).connect_lazy()?;
+    let channel = Endpoint::from(uri).connect_lazy();
     let client = SearchServiceClient::from_grpc_client(
         quickwit_proto::search_service_client::SearchServiceClient::new(channel),
         grpc_addr,
