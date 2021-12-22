@@ -125,7 +125,7 @@ impl AsyncActor for Publisher {
     async fn process_message(
         &mut self,
         uploaded_split_future: Receiver<PublisherMessage>,
-        ctx: &ActorContext<Receiver<PublisherMessage>>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         fail_point!("publisher:before");
         let publisher_message = {
@@ -176,7 +176,7 @@ impl AsyncActor for Publisher {
     async fn finalize(
         &mut self,
         _exit_status: &quickwit_actors::ActorExitStatus,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         // The `garbage_collector` actor runs for ever.
         // Periodically scheduling new messages for itself.

@@ -69,9 +69,7 @@ impl<A: Actor> SpawnBuilder<A> {
         self
     }
 
-    fn create_actor_context_and_inbox(
-        mut self,
-    ) -> (A, ActorContext<A::Message>, Inbox<A::Message>) {
+    fn create_actor_context_and_inbox(mut self) -> (A, ActorContext<A>, Inbox<A::Message>) {
         let (mailbox, inbox) = self.mailboxes.take().unwrap_or_else(|| {
             let actor_name = self.actor.name();
             let queue_capacity = self.actor.queue_capacity();

@@ -94,10 +94,7 @@ enum PrepareDocumentOutcome {
 }
 
 impl IndexerState {
-    fn create_indexed_split(
-        &self,
-        ctx: &ActorContext<IndexerMessage>,
-    ) -> anyhow::Result<IndexedSplit> {
+    fn create_indexed_split(&self, ctx: &ActorContext<Indexer>) -> anyhow::Result<IndexedSplit> {
         let schema = self.doc_mapper.schema();
         let index_settings = IndexSettings {
             sort_by_field: self.sort_by_field_opt.clone(),
@@ -123,7 +120,7 @@ impl IndexerState {
     fn get_or_create_current_indexed_split<'a>(
         &self,
         current_split_opt: &'a mut Option<IndexedSplit>,
-        ctx: &ActorContext<IndexerMessage>,
+        ctx: &ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexedSplit> {
         if current_split_opt.is_none() {
             let new_indexed_split = self.create_indexed_split(ctx)?;
@@ -184,7 +181,7 @@ impl IndexerState {
         batch: RawDocBatch,
         current_split_opt: &mut Option<IndexedSplit>,
         counters: &mut IndexerCounters,
-        ctx: &ActorContext<IndexerMessage>,
+        ctx: &ActorContext<Indexer>,
     ) -> Result<(), ActorExitStatus> {
         let indexed_split = self.get_or_create_current_indexed_split(current_split_opt, ctx)?;
         indexed_split
@@ -267,7 +264,7 @@ impl SyncActor for Indexer {
     fn process_message(
         &mut self,
         indexer_message: IndexerMessage,
-        ctx: &ActorContext<IndexerMessage>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         match indexer_message {
             IndexerMessage::Batch(batch) => {
@@ -283,7 +280,7 @@ impl SyncActor for Indexer {
     fn finalize(
         &mut self,
         exit_status: &ActorExitStatus,
-        ctx: &ActorContext<IndexerMessage>,
+        ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         match exit_status {
             ActorExitStatus::DownstreamClosed
@@ -340,7 +337,7 @@ impl Indexer {
     fn process_batch(
         &mut self,
         batch: RawDocBatch,
-        ctx: &ActorContext<IndexerMessage>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("indexer:batch:before");
         self.indexer_state.process_batch(
@@ -361,7 +358,7 @@ impl Indexer {
     fn process_commit_timeout(
         &mut self,
         split_id: &str,
-        ctx: &ActorContext<IndexerMessage>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Some(split) = self.current_split_opt.as_ref() {
             // This is a timeout for a different split.
@@ -378,7 +375,7 @@ impl Indexer {
     fn send_to_packager(
         &mut self,
         commit_trigger: CommitTrigger,
-        ctx: &ActorContext<IndexerMessage>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), SendError> {
         let indexed_split = if let Some(indexed_split) = self.current_split_opt.take() {
             indexed_split

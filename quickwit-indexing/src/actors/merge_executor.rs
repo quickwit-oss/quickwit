@@ -142,7 +142,7 @@ impl SyncActor for MergeExecutor {
     fn process_message(
         &mut self,
         merge_scratch: MergeScratch,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         match merge_scratch.merge_operation {
             MergeOperation::Merge {
@@ -215,7 +215,7 @@ fn merge_split_directories(
     union_index_meta: IndexMeta,
     split_directories: Vec<Box<dyn Directory>>,
     output_path: &Path,
-    ctx: &ActorContext<MergeScratch>,
+    ctx: &ActorContext<MergeExecutor>,
 ) -> anyhow::Result<ControlledDirectory> {
     let shadowing_meta_json_directory = create_shadowing_meta_json_directory(union_index_meta)?;
     // This directory is here to receive the merged split, as well as the final meta.json file.
@@ -239,7 +239,7 @@ fn merge_split_directories(
 
 fn create_demux_output_directory(
     directory_path: &Path,
-    ctx: &ActorContext<MergeScratch>,
+    ctx: &ActorContext<MergeExecutor>,
 ) -> tantivy::Result<ControlledDirectory> {
     let mmap_directory = MmapDirectory::open(directory_path)?;
     Ok(ControlledDirectory::new(
@@ -274,7 +274,7 @@ impl MergeExecutor {
         splits: Vec<SplitMetadata>,
         tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: ScratchDirectory,
-        ctx: &ActorContext<MergeScratch>,
+        ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         let start = Instant::now();
         info!("merge-start");
@@ -340,7 +340,7 @@ impl MergeExecutor {
         splits: Vec<SplitMetadata>,
         merge_scratch_directory: ScratchDirectory,
         downloaded_splits_directory: ScratchDirectory,
-        ctx: &ActorContext<MergeScratch>,
+        ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         let start = Instant::now();
         info!("demux-start");
@@ -518,7 +518,7 @@ pub fn load_metas_and_segments(
 pub fn demux_field_readers(
     segments: &[Segment],
     demux_field_name: &str,
-    ctx: &ActorContext<MergeScratch>,
+    ctx: &ActorContext<MergeExecutor>,
 ) -> anyhow::Result<(Vec<usize>, Vec<DynamicFastFieldReader<u64>>)> {
     let mut segments_num_docs = Vec::new();
     let mut segments_demux_value_readers = Vec::new();

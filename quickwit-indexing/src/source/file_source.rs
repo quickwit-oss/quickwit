@@ -36,7 +36,7 @@ use crate::source::{Source, SourceContext, TypedSourceFactory};
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
 
-/// Source id used to define a stdin source.  
+/// Source id used to define a stdin source.
 pub const STD_IN_SOURCE_ID: &str = "stdin-source";
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]

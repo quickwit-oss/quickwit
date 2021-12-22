@@ -35,7 +35,7 @@ use crate::{Actor, ActorContext, ActorHandle, RecvError};
 /// If both the command and the message channel are exhausted, and a command and N messages arrives,
 /// one message is likely to be executed before the command is.
 pub trait SyncActor: Actor + Sized {
-    fn initialize(&mut self, _ctx: &ActorContext<Self::Message>) -> Result<(), ActorExitStatus> {
+    fn initialize(&mut self, _ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         Ok(())
     }
 
@@ -47,7 +47,7 @@ pub trait SyncActor: Actor + Sized {
     fn process_message(
         &mut self,
         message: Self::Message,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus>;
 
     /// Hook that can be set up to define what should happen upon actor exit.
@@ -61,7 +61,7 @@ pub trait SyncActor: Actor + Sized {
     fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -69,7 +69,7 @@ pub trait SyncActor: Actor + Sized {
 
 pub(crate) fn spawn_sync_actor<A: SyncActor>(
     actor: A,
-    ctx: ActorContext<A::Message>,
+    ctx: ActorContext<A>,
     inbox: Inbox<A::Message>,
 ) -> ActorHandle<A> {
     let (state_tx, state_rx) = watch::channel(actor.observable_state());
@@ -113,7 +113,7 @@ fn process_msg<A: Actor + SyncActor>(
     actor: &mut A,
     msg_id: u64,
     inbox: &mut Inbox<A::Message>,
-    ctx: &mut ActorContext<A::Message>,
+    ctx: &mut ActorContext<A>,
     state_tx: &Sender<A::ObservableState>,
 ) -> Option<ActorExitStatus> {
     if ctx.kill_switch().is_dead() {
@@ -159,7 +159,7 @@ fn process_msg<A: Actor + SyncActor>(
 fn sync_actor_loop<A: SyncActor>(
     actor: A,
     mut inbox: Inbox<A::Message>,
-    mut ctx: ActorContext<A::Message>,
+    mut ctx: ActorContext<A>,
     state_tx: Sender<A::ObservableState>,
 ) -> ActorExitStatus {
     let span = actor.span(&ctx);
