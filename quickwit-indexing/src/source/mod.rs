@@ -43,7 +43,7 @@ pub use void_source::{VoidSource, VoidSourceFactory, VoidSourceParams};
 
 use crate::models::IndexerMessage;
 
-pub type SourceContext = ActorContext<Loop>;
+pub type SourceContext = ActorContext<SourceActor>;
 
 /// A source is a trait that is mounted in a light wrapping Actor called `SourceActor`.
 ///
@@ -134,10 +134,7 @@ impl Actor for SourceActor {
 
 #[async_trait]
 impl AsyncActor for SourceActor {
-    async fn initialize(
-        &mut self,
-        ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), ActorExitStatus> {
+    async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         self.source.initialize(ctx).await?;
         self.process_message(Loop(PrivateToken), ctx).await?;
         Ok(())
@@ -146,7 +143,7 @@ impl AsyncActor for SourceActor {
     async fn process_message(
         &mut self,
         _message: Loop,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         self.source.emit_batches(&self.batch_sink, ctx).await?;
         ctx.send_self_message(Loop(PrivateToken)).await?;
@@ -156,7 +153,7 @@ impl AsyncActor for SourceActor {
     async fn finalize(
         &mut self,
         exit_status: &ActorExitStatus,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         self.source.finalize(exit_status, ctx).await?;
         Ok(())

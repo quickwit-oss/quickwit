@@ -44,7 +44,7 @@ use tokio::task::spawn_blocking;
 use tracing::{debug, info, warn};
 
 use crate::models::RawDocBatch;
-use crate::source::{IndexerMessage, Source, SourceContext, TypedSourceFactory};
+use crate::source::{IndexerMessage, Source, TypedSourceFactory};
 
 /// We try to emit chewable batches for the indexer.
 /// One batch = one message to the indexer actor.

@@ -178,7 +178,7 @@ impl AsyncActor for Uploader {
     async fn process_message(
         &mut self,
         batch: PackagedSplitBatch,
-        ctx: &ActorContext<PackagedSplitBatch>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("uploader:before");
         let (split_uploaded_tx, split_uploaded_rx) = tokio::sync::oneshot::channel();

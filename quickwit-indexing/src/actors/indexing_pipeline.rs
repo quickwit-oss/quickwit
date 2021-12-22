@@ -96,7 +96,7 @@ impl Actor for IndexingPipeline {
         "IndexingPipeline".to_string()
     }
 
-    fn span(&self, _ctx: &ActorContext<Self::Message>) -> Span {
+    fn span(&self, _ctx: &ActorContext<Self>) -> Span {
         info_span!("")
     }
 }
@@ -113,10 +113,7 @@ impl IndexingPipeline {
         }
     }
 
-    async fn process_observe(
-        &mut self,
-        ctx: &ActorContext<IndexingPipelineMessage>,
-    ) -> Result<(), ActorExitStatus> {
+    async fn process_observe(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         if let Some(handlers) = self.handlers.as_ref() {
             let (indexer_counters, uploader_counters, publisher_counters) = join!(
                 handlers.indexer.observe(),
@@ -201,10 +198,7 @@ impl IndexingPipeline {
 
     // TODO this should return an error saying whether we can retry or not.
     #[instrument(name="", level="info", skip_all, fields(index=%self.params.index_id, gen=self.generation))]
-    async fn spawn_pipeline(
-        &mut self,
-        ctx: &ActorContext<IndexingPipelineMessage>,
-    ) -> anyhow::Result<()> {
+    async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         self.generation += 1;
         self.previous_generations_statistics = self.statistics.clone();
         self.kill_switch = KillSwitch::default();
@@ -441,7 +435,7 @@ impl IndexingPipeline {
 
     async fn process_spawn(
         &mut self,
-        ctx: &ActorContext<IndexingPipelineMessage>,
+        ctx: &ActorContext<Self>,
         retry_count: usize,
     ) -> Result<(), ActorExitStatus> {
         if self.handlers.is_some() {
@@ -465,10 +459,7 @@ impl IndexingPipeline {
         Ok(())
     }
 
-    async fn process_supervise(
-        &mut self,
-        ctx: &ActorContext<IndexingPipelineMessage>,
-    ) -> Result<(), ActorExitStatus> {
+    async fn process_supervise(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         if self.handlers.is_some() {
             match self.healthcheck() {
                 Health::Healthy => {}
@@ -511,10 +502,7 @@ impl IndexingPipeline {
 
 #[async_trait]
 impl AsyncActor for IndexingPipeline {
-    async fn initialize(
-        &mut self,
-        ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), ActorExitStatus> {
+    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.process_spawn(ctx, 0).await?;
         self.process_observe(ctx).await?;
         self.process_supervise(ctx).await?;
@@ -525,7 +513,7 @@ impl AsyncActor for IndexingPipeline {
         &mut self,
         message: Self::Message,
 
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         match message {
             IndexingPipelineMessage::Observe => self.process_observe(ctx).await?,

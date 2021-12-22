@@ -35,7 +35,7 @@ use crate::{Actor, ActorContext, ActorExitStatus, Mailbox, Observation};
 
 /// An Actor Handle serves as an address to communicate with an actor.
 pub struct ActorHandle<A: Actor> {
-    actor_context: ActorContext<A::Message>,
+    actor_context: ActorContext<A>,
     last_state: watch::Receiver<A::ObservableState>,
     join_handle: JoinHandle<()>,
     pub actor_exit_status: watch::Receiver<Option<ActorExitStatus>>,
@@ -102,7 +102,7 @@ impl<A: Actor> ActorHandle<A> {
     pub(crate) fn new(
         last_state: watch::Receiver<A::ObservableState>,
         join_handle: JoinHandle<()>,
-        actor_context: ActorContext<A::Message>,
+        actor_context: ActorContext<A>,
         actor_exit_status: watch::Receiver<Option<ActorExitStatus>>,
     ) -> Self {
         ActorHandle {
@@ -308,7 +308,7 @@ mod tests {
         fn process_message(
             &mut self,
             _message: Self::Message,
-            _ctx: &ActorContext<Self::Message>,
+            _ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
             panic!("Oops");
@@ -320,7 +320,7 @@ mod tests {
         async fn process_message(
             &mut self,
             _message: Self::Message,
-            _ctx: &ActorContext<Self::Message>,
+            _ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
             panic!("Oops");
@@ -344,7 +344,7 @@ mod tests {
         fn process_message(
             &mut self,
             _message: Self::Message,
-            _ctx: &ActorContext<Self::Message>,
+            _ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
             Err(ActorExitStatus::DownstreamClosed)
@@ -356,7 +356,7 @@ mod tests {
         async fn process_message(
             &mut self,
             _message: Self::Message,
-            _ctx: &ActorContext<Self::Message>,
+            _ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
             Err(ActorExitStatus::DownstreamClosed)

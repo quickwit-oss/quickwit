@@ -92,7 +92,7 @@ impl Actor for GarbageCollector {
 impl AsyncActor for GarbageCollector {
     async fn initialize(
         &mut self,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         self.process_message((), ctx).await
     }
@@ -100,7 +100,7 @@ impl AsyncActor for GarbageCollector {
     async fn process_message(
         &mut self,
         _: (),
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         info!("garbage-collect-operation");
         self.counters.num_passes += 1;

@@ -56,7 +56,7 @@ impl SyncActor for MergePlanner {
     fn process_message(
         &mut self,
         message: MergePlannerMessage,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let mut has_new_young_split = false;
         for split in message.new_splits {
@@ -73,7 +73,7 @@ impl SyncActor for MergePlanner {
         Ok(())
     }
 
-    fn initialize(&mut self, ctx: &ActorContext<Self::Message>) -> Result<(), ActorExitStatus> {
+    fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.send_operations(ctx)
     }
 }
@@ -91,10 +91,7 @@ impl MergePlanner {
         }
     }
 
-    fn send_operations(
-        &mut self,
-        ctx: &ActorContext<MergePlannerMessage>,
-    ) -> Result<(), ActorExitStatus> {
+    fn send_operations(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         let merge_candidates = self.merge_policy.operations(&mut self.young_splits);
         for merge_operation in merge_candidates {
             info!(merge_operation=?merge_operation, "planning-merge");
