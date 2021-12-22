@@ -22,7 +22,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Context};
 use clap::ArgMatches;
 use humansize::{file_size_opts, FileSize};
-use quickwit_common::uri::normalize_uri;
+use quickwit_common::uri::Uri;
 use quickwit_directories::{
     get_hotcache_from_split, read_split_footer, BundleDirectory, HotDirectory,
 };
@@ -75,8 +75,10 @@ impl SplitCliCommand {
             .to_string();
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg.")
-            .map(normalize_uri)??;
+            .map(Uri::try_new)
+            .expect("`metastore-uri` is a required arg.")?
+            .to_string();
+
         let verbose = matches.is_present("verbose");
 
         Ok(Self::Describe(DescribeSplitArgs {
@@ -98,12 +100,16 @@ impl SplitCliCommand {
             .to_string();
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .context("'metastore-uri' is a required arg.")
-            .map(normalize_uri)??;
+            .map(Uri::try_new)
+            .expect("`metastore-uri` is a required arg.")?
+            .to_string();
         let target_dir = matches
             .value_of("target-dir")
-            .map(PathBuf::from)
-            .context("'target-dir' is a required arg.")?;
+            .map(Uri::try_new)
+            .expect("`target-dir` is a required arg.")?
+            .filepath()
+            .expect("`target-dir` should point to a local path.")
+            .to_path_buf();
 
         Ok(Self::Extract(ExtractSplitArgs {
             metastore_uri,
