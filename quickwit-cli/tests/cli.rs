@@ -30,7 +30,7 @@ use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
 use quickwit_cli::index::{create_index_cli, CreateIndexArgs};
 use quickwit_common::rand::append_random_suffix;
-use quickwit_metastore::{Metastore, MetastoreUriResolver};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
 use serde_json::{Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
@@ -366,7 +366,7 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
         test_env.data_dir_path.as_path(),
     );
 
-    let metastore = MetastoreUriResolver::default()
+    let metastore = quickwit_metastore_uri_resolver()
         .resolve(&test_env.metastore_uri)
         .await?;
     let splits = metastore.list_all_splits(&test_env.index_id).await?;
@@ -431,7 +431,7 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
         assert_eq!(split_filepath.exists(), false);
     }
 
-    let metastore = MetastoreUriResolver::default()
+    let metastore = quickwit_metastore_uri_resolver()
         .resolve(&test_env.metastore_uri)
         .await?;
     assert_eq!(

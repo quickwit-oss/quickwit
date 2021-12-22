@@ -2425,6 +2425,7 @@ dependencies = [
  "mockall",
  "once_cell",
  "openssl",
+ "quickwit-common",
  "quickwit-config",
  "quickwit-index-config",
  "quickwit-storage",
