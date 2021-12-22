@@ -27,6 +27,7 @@ use quickwit_metastore::Metastore;
 use tokio::sync::oneshot::Receiver;
 use tracing::info;
 
+use crate::actors::uploader::MAX_CONCURRENT_SPLIT_UPLOAD;
 use crate::models::{MergePlannerMessage, PublishOperation, PublisherMessage};
 
 #[derive(Debug, Clone, Default)]
@@ -45,6 +46,13 @@ impl PublisherType {
         match self {
             PublisherType::MainPublisher => "Publisher",
             PublisherType::MergePublisher => "MergePublisher",
+        }
+    }
+
+    pub fn queue_capacity(&self) -> QueueCapacity {
+        match self {
+            PublisherType::MainPublisher => QueueCapacity::Bounded(MAX_CONCURRENT_SPLIT_UPLOAD),
+            PublisherType::MergePublisher => QueueCapacity::Unbounded,
         }
     }
 }
@@ -128,7 +136,7 @@ impl Actor for Publisher {
     }
 
     fn queue_capacity(&self) -> quickwit_actors::QueueCapacity {
-        QueueCapacity::Unbounded
+        self.publisher_type.queue_capacity()
     }
 
     fn name(&self) -> String {
