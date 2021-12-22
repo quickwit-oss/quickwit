@@ -78,7 +78,7 @@ impl Packager {
     pub fn process_indexed_split(
         &self,
         mut split: IndexedSplit,
-        ctx: &ActorContext<IndexedSplitBatch>,
+        ctx: &ActorContext<Self>,
     ) -> anyhow::Result<PackagedSplit> {
         commit_split(&mut split, ctx)?;
         let segment_metas = merge_segments_if_required(&mut split, ctx)?;
@@ -131,10 +131,7 @@ fn is_merge_required(segment_metas: &[SegmentMeta]) -> bool {
 /// It consists in several sequentials phases mixing both
 /// CPU and IO, the longest once being the serialization of
 /// the inverted index. This phase is CPU bound.
-fn commit_split(
-    split: &mut IndexedSplit,
-    ctx: &ActorContext<IndexedSplitBatch>,
-) -> anyhow::Result<()> {
+fn commit_split(split: &mut IndexedSplit, ctx: &ActorContext<Packager>) -> anyhow::Result<()> {
     info!(split_id=%split.split_id, "commit-split");
     let _protect_guard = ctx.protect_zone();
     split
@@ -172,7 +169,7 @@ fn list_split_files(
 /// which potentially olds a lot of RAM.
 fn merge_segments_if_required(
     split: &mut IndexedSplit,
-    ctx: &ActorContext<IndexedSplitBatch>,
+    ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<Vec<SegmentMeta>> {
     debug!(
         split_id = split.split_id.as_str(),
@@ -249,7 +246,7 @@ fn create_packaged_split(
     segment_metas: &[SegmentMeta],
     split: IndexedSplit,
     tag_fields: &[NamedField],
-    ctx: &ActorContext<IndexedSplitBatch>,
+    ctx: &ActorContext<Packager>,
 ) -> anyhow::Result<PackagedSplit> {
     info!(split_id = split.split_id.as_str(), "create-packaged-split");
     let split_files = list_split_files(segment_metas, &split.split_scratch_directory);
@@ -314,7 +311,7 @@ impl SyncActor for Packager {
     fn process_message(
         &mut self,
         batch: IndexedSplitBatch,
-        ctx: &ActorContext<IndexedSplitBatch>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         info!(split_ids=?batch.splits.iter().map(|split| split.split_id.clone()).collect_vec(), "start-packaging-splits");
         for split in &batch.splits {

@@ -20,7 +20,7 @@
 use anyhow::{bail, Context};
 use clap::ArgMatches;
 use itertools::Itertools;
-use quickwit_common::uri::normalize_uri;
+use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, MetastoreUriResolver};
@@ -70,8 +70,9 @@ impl SourceCliCommand {
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<DescribeSourceArgs> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .map(normalize_uri)
-            .expect("`metastore-uri` is a required arg.")?;
+            .map(Uri::try_new)
+            .expect("`metastore-uri` is a required arg.")?
+            .to_string();
         let index_id = matches
             .value_of("index-id")
             .map(String::from)
@@ -90,8 +91,9 @@ impl SourceCliCommand {
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<ListSourcesArgs> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .map(normalize_uri)
-            .expect("`metastore-uri` is a required arg.")?;
+            .map(Uri::try_new)
+            .expect("`metastore-uri` is a required arg.")?
+            .to_string();
         let index_id = matches
             .value_of("index-id")
             .map(String::from)

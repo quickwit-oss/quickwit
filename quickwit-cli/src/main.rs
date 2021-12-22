@@ -142,7 +142,7 @@ fn about_text() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::time::Duration;
 
     use clap::{load_yaml, App, AppSettings};
@@ -152,6 +152,7 @@ mod tests {
         IndexCliCommand, IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
     };
     use quickwit_cli::service::{RunIndexerArgs, RunSearcherArgs, ServiceCliCommand};
+    use quickwit_common::uri::Uri;
 
     use super::*;
 
@@ -509,7 +510,7 @@ mod tests {
                 index_id,
                 metastore_uri,
                 data_dir_path,
-            })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+            })) if &index_id == "wikipedia" && data_dir_path == Uri::try_new("datadir")?.filepath().unwrap().to_path_buf() && &metastore_uri == "file:///indexes"
         ));
         Ok(())
     }
@@ -535,7 +536,7 @@ mod tests {
                 index_id,
                 metastore_uri,
                 data_dir_path,
-            })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+            })) if &index_id == "wikipedia" && data_dir_path == Uri::try_new("datadir")?.filepath().unwrap().to_path_buf() && &metastore_uri == "file:///indexes"
         ));
         Ok(())
     }

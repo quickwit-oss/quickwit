@@ -55,7 +55,7 @@ impl SyncActor for PingReceiverSyncActor {
     fn process_message(
         &mut self,
         _message: Self::Message,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.ping_count += 1;
         Ok(())
@@ -87,7 +87,7 @@ impl AsyncActor for PingReceiverAsyncActor {
     async fn process_message(
         &mut self,
         _message: Self::Message,
-        _progress: &ActorContext<Self::Message>,
+        _progress: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.ping_count += 1;
         Ok(())
@@ -132,7 +132,7 @@ impl AsyncActor for PingerAsyncSenderActor {
     async fn process_message(
         &mut self,
         message: SenderMessage,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         match message {
             SenderMessage::AddPeer(peer) => {
@@ -259,7 +259,7 @@ impl AsyncActor for BuggyActor {
     async fn process_message(
         &mut self,
         message: BuggyMessage,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         match message {
             BuggyMessage::Block => {
@@ -418,17 +418,14 @@ impl Actor for LoopingActor {
 
 #[async_trait]
 impl AsyncActor for LoopingActor {
-    async fn initialize(
-        &mut self,
-        ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), ActorExitStatus> {
+    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         <LoopingActor as AsyncActor>::process_message(self, Msg::Looping, ctx).await
     }
 
     async fn process_message(
         &mut self,
         message: Self::Message,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         match message {
             Msg::Looping => {
@@ -443,14 +440,14 @@ impl AsyncActor for LoopingActor {
 }
 
 impl SyncActor for LoopingActor {
-    fn initialize(&mut self, ctx: &ActorContext<Self::Message>) -> Result<(), ActorExitStatus> {
+    fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         <LoopingActor as SyncActor>::process_message(self, Msg::Looping, ctx)
     }
 
     fn process_message(
         &mut self,
         message: Self::Message,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         match message {
             Msg::Looping => {
@@ -520,7 +517,7 @@ impl SyncActor for SummingActor {
     fn process_message(
         &mut self,
         add: Self::Message,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.sum += add;
         Ok(())
@@ -547,7 +544,7 @@ impl AsyncActor for SpawningActor {
     async fn process_message(
         &mut self,
         message: Self::Message,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let (mailbox, _) = self
             .handle_opt
@@ -559,7 +556,7 @@ impl AsyncActor for SpawningActor {
     async fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         if let Some((_, child_handler)) = self.handle_opt.take() {
             self.res = child_handler.process_pending_and_observe().await.state;
@@ -600,7 +597,7 @@ impl SyncActor for BuggyFinalizeActor {
     fn process_message(
         &mut self,
         _message: Self::Message,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         Ok(())
     }
@@ -608,7 +605,7 @@ impl SyncActor for BuggyFinalizeActor {
     fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         anyhow::bail!("Finalize error")
     }
@@ -619,7 +616,7 @@ impl AsyncActor for BuggyFinalizeActor {
     async fn process_message(
         &mut self,
         _: BuggyMessage,
-        _: &ActorContext<Self::Message>,
+        _: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         Ok(())
     }
@@ -627,7 +624,7 @@ impl AsyncActor for BuggyFinalizeActor {
     async fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
-        _: &ActorContext<Self::Message>,
+        _: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         anyhow::bail!("Finalize error")
     }

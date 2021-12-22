@@ -81,7 +81,7 @@ impl AsyncActor for MergeSplitDownloader {
     async fn process_message(
         &mut self,
         merge_operation: MergeOperation,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         self.process_merge_operation(merge_operation, ctx).await?;
         Ok(())
@@ -92,7 +92,7 @@ impl MergeSplitDownloader {
     async fn process_merge_operation(
         &self,
         merge_operation: MergeOperation,
-        ctx: &ActorContext<MergeOperation>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         let merge_scratch_directory = self
             .scratch_directory
@@ -123,7 +123,7 @@ impl MergeSplitDownloader {
         &self,
         splits: &[SplitMetadata],
         download_directory: &Path,
-        ctx: &ActorContext<MergeOperation>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Vec<Box<dyn Directory>>, quickwit_actors::ActorExitStatus> {
         // we download all of the split files in the scratch directory.
         let mut tantivy_dirs = vec![];

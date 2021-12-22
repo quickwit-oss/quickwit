@@ -45,10 +45,7 @@ pub trait AsyncActor: Actor + Sized {
     /// Returning an ActorExitStatus will therefore have the same effect as if it
     /// was in `process_message` (e.g. the actor will stop, the finalize method will be called.
     /// the kill switch may be activated etc.)
-    async fn initialize(
-        &mut self,
-        _ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), ActorExitStatus> {
+    async fn initialize(&mut self, _ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         Ok(())
     }
 
@@ -60,7 +57,7 @@ pub trait AsyncActor: Actor + Sized {
     async fn process_message(
         &mut self,
         message: Self::Message,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus>;
 
     /// Hook  that can be set up to define what should happen upon actor exit.
@@ -74,7 +71,7 @@ pub trait AsyncActor: Actor + Sized {
     async fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -82,7 +79,7 @@ pub trait AsyncActor: Actor + Sized {
 
 pub(crate) fn spawn_async_actor<A: AsyncActor>(
     actor: A,
-    ctx: ActorContext<A::Message>,
+    ctx: ActorContext<A>,
     inbox: Inbox<A::Message>,
 ) -> ActorHandle<A> {
     debug!(actor_id = %ctx.actor_instance_id(), "spawn-async");
@@ -122,7 +119,7 @@ async fn process_msg<A: Actor + AsyncActor>(
     actor: &mut A,
     msg_id: u64,
     inbox: &mut Inbox<A::Message>,
-    ctx: &mut ActorContext<A::Message>,
+    ctx: &mut ActorContext<A>,
     state_tx: &Sender<A::ObservableState>,
 ) -> Option<ActorExitStatus> {
     if ctx.kill_switch().is_dead() {
@@ -169,7 +166,7 @@ async fn process_msg<A: Actor + AsyncActor>(
 async fn async_actor_loop<A: AsyncActor>(
     actor: A,
     mut inbox: Inbox<A::Message>,
-    mut ctx: ActorContext<A::Message>,
+    mut ctx: ActorContext<A>,
     state_tx: Sender<A::ObservableState>,
 ) -> ActorExitStatus {
     // We rely on this object internally to fetch a post-mortem state,

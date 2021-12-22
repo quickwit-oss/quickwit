@@ -28,6 +28,7 @@ use tantivy::chrono::Utc;
 use thiserror::Error;
 use tracing::error;
 
+use crate::actors::GarbageCollector;
 use crate::split_store::IndexingSplitStore;
 
 const MAX_CONCURRENT_STORAGE_REQUESTS: usize = if cfg!(test) { 2 } else { 10 };
@@ -79,7 +80,7 @@ pub async fn run_garbage_collect(
     staged_grace_period: Duration,
     deletion_grace_period: Duration,
     dry_run: bool,
-    ctx_opt: Option<&ActorContext<()>>,
+    ctx_opt: Option<&ActorContext<GarbageCollector>>,
 ) -> anyhow::Result<Vec<FileEntry>> {
     // Select staged splits with staging timestamp older than grace period timestamp.
     let grace_period_timestamp = Utc::now().timestamp() - staged_grace_period.as_secs() as i64;
@@ -157,7 +158,7 @@ pub async fn delete_splits_with_files(
     indexing_split_store: IndexingSplitStore,
     metastore: Arc<dyn Metastore>,
     splits: Vec<SplitMetadata>,
-    ctx_opt: Option<&ActorContext<()>>,
+    ctx_opt: Option<&ActorContext<GarbageCollector>>,
 ) -> anyhow::Result<Vec<FileEntry>, SplitDeletionError> {
     let mut deleted_file_entries = Vec::new();
     let mut deleted_split_ids = Vec::new();
