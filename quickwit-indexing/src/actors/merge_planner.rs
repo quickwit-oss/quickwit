@@ -48,7 +48,7 @@ impl Actor for MergePlanner {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(3)
+        QueueCapacity::Bounded(0)
     }
 }
 
