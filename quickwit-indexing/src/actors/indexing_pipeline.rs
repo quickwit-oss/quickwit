@@ -449,12 +449,13 @@ impl IndexingPipeline {
         if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
             if let Some(duration_before_retry) = Self::wait_duration_before_retry(retry_count) {
                 error!(err=?spawn_error, "Error while spawn_pipeline, waiting 1000ms");
-                ctx.schedule_self_msg_blocking(
+                ctx.schedule_self_msg(
                     duration_before_retry,
                     IndexingPipelineMessage::Spawn {
                         retry_count: retry_count + 1,
                     },
-                );
+                )
+                .await;
             } else {
                 return Err(ActorExitStatus::Failure(Arc::new(spawn_error)));
             }
@@ -478,10 +479,11 @@ impl IndexingPipeline {
                 }
             }
         }
-        ctx.schedule_self_msg_blocking(
+        ctx.schedule_self_msg(
             quickwit_actors::HEARTBEAT,
             IndexingPipelineMessage::Supervise,
-        );
+        )
+        .await;
         Ok(())
     }
 
