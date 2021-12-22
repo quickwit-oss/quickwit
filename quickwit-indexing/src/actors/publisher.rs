@@ -33,8 +33,24 @@ use crate::models::{MergePlannerMessage, PublishOperation, PublisherMessage};
 pub struct PublisherCounters {
     pub num_published_splits: u64,
 }
+
+#[derive(Clone, Copy, Debug)]
+pub enum PublisherType {
+    MainPublisher,
+    MergePublisher,
+}
+
+impl PublisherType {
+    pub fn actor_name(&self) -> &'static str {
+        match self {
+            PublisherType::MainPublisher => "Publisher",
+            PublisherType::MergePublisher => "MergePublisher",
+        }
+    }
+}
+
 pub struct Publisher {
-    actor_name: &'static str,
+    publisher_type: PublisherType,
     metastore: Arc<dyn Metastore>,
     merge_planner_mailbox: Mailbox<MergePlannerMessage>,
     garbage_collector_mailbox: Mailbox<()>,
@@ -43,13 +59,13 @@ pub struct Publisher {
 
 impl Publisher {
     pub fn new(
-        actor_name: &'static str,
+        publisher_type: PublisherType,
         metastore: Arc<dyn Metastore>,
         merge_planner_mailbox: Mailbox<MergePlannerMessage>,
         garbage_collector_mailbox: Mailbox<()>,
     ) -> Publisher {
         Publisher {
-            actor_name,
+            publisher_type,
             metastore,
             merge_planner_mailbox,
             garbage_collector_mailbox,
@@ -116,7 +132,7 @@ impl Actor for Publisher {
     }
 
     fn name(&self) -> String {
-        self.actor_name.to_string()
+        self.publisher_type.actor_name().to_string()
     }
 }
 
@@ -231,7 +247,7 @@ mod tests {
         let (merge_planner_mailbox, _merge_planner_inbox) = create_test_mailbox();
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
         let publisher = Publisher::new(
-            "publisher",
+            PublisherType::MainPublisher,
             Arc::new(mock_metastore),
             merge_planner_mailbox,
             garbage_collector_mailbox,
@@ -295,7 +311,7 @@ mod tests {
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
         let publisher = Publisher::new(
-            "publisher",
+            PublisherType::MainPublisher,
             Arc::new(mock_metastore),
             merge_planner_mailbox,
             garbage_collector_mailbox,
