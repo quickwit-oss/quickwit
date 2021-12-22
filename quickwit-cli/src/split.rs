@@ -86,8 +86,9 @@ impl SplitCliCommand {
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let metastore_uri = matches
             .value_of("metastore-uri")
-            .map(normalize_uri)
-            .expect("`metastore-uri` is a required arg.")?;
+            .map(Uri::try_new)
+            .expect("`metastore-uri` is a required arg.")?
+            .to_string();
         let index_id = matches
             .value_of("index-id")
             .map(String::from)
@@ -505,7 +506,7 @@ mod tests {
             "--split-id",
             "ABC",
             "--target-dir",
-            "datadir",
+            "/datadir",
             "--metastore-uri",
             "file:///indexes",
         ])?;
@@ -517,7 +518,7 @@ mod tests {
                 split_id,
                 metastore_uri,
                 target_dir
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == PathBuf::from("datadir")
+            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == PathBuf::from("/datadir")
         ));
         Ok(())
     }
