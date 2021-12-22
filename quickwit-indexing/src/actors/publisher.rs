@@ -27,14 +27,38 @@ use quickwit_metastore::Metastore;
 use tokio::sync::oneshot::Receiver;
 use tracing::info;
 
+use crate::actors::uploader::MAX_CONCURRENT_SPLIT_UPLOAD;
 use crate::models::{MergePlannerMessage, PublishOperation, PublisherMessage};
 
 #[derive(Debug, Clone, Default)]
 pub struct PublisherCounters {
     pub num_published_splits: u64,
 }
+
+#[derive(Clone, Copy, Debug)]
+pub enum PublisherType {
+    MainPublisher,
+    MergePublisher,
+}
+
+impl PublisherType {
+    pub fn actor_name(&self) -> &'static str {
+        match self {
+            PublisherType::MainPublisher => "Publisher",
+            PublisherType::MergePublisher => "MergePublisher",
+        }
+    }
+
+    pub fn queue_capacity(&self) -> QueueCapacity {
+        match self {
+            PublisherType::MainPublisher => QueueCapacity::Bounded(MAX_CONCURRENT_SPLIT_UPLOAD),
+            PublisherType::MergePublisher => QueueCapacity::Unbounded,
+        }
+    }
+}
+
 pub struct Publisher {
-    actor_name: &'static str,
+    publisher_type: PublisherType,
     metastore: Arc<dyn Metastore>,
     merge_planner_mailbox: Mailbox<MergePlannerMessage>,
     garbage_collector_mailbox: Mailbox<()>,
@@ -43,13 +67,13 @@ pub struct Publisher {
 
 impl Publisher {
     pub fn new(
-        actor_name: &'static str,
+        publisher_type: PublisherType,
         metastore: Arc<dyn Metastore>,
         merge_planner_mailbox: Mailbox<MergePlannerMessage>,
         garbage_collector_mailbox: Mailbox<()>,
     ) -> Publisher {
         Publisher {
-            actor_name,
+            publisher_type,
             metastore,
             merge_planner_mailbox,
             garbage_collector_mailbox,
@@ -112,11 +136,11 @@ impl Actor for Publisher {
     }
 
     fn queue_capacity(&self) -> quickwit_actors::QueueCapacity {
-        QueueCapacity::Unbounded
+        self.publisher_type.queue_capacity()
     }
 
     fn name(&self) -> String {
-        self.actor_name.to_string()
+        self.publisher_type.actor_name().to_string()
     }
 }
 
@@ -125,7 +149,7 @@ impl AsyncActor for Publisher {
     async fn process_message(
         &mut self,
         uploaded_split_future: Receiver<PublisherMessage>,
-        ctx: &ActorContext<Receiver<PublisherMessage>>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         fail_point!("publisher:before");
         let publisher_message = {
@@ -176,7 +200,7 @@ impl AsyncActor for Publisher {
     async fn finalize(
         &mut self,
         _exit_status: &quickwit_actors::ActorExitStatus,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         // The `garbage_collector` actor runs for ever.
         // Periodically scheduling new messages for itself.
@@ -231,7 +255,7 @@ mod tests {
         let (merge_planner_mailbox, _merge_planner_inbox) = create_test_mailbox();
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
         let publisher = Publisher::new(
-            "publisher",
+            PublisherType::MainPublisher,
             Arc::new(mock_metastore),
             merge_planner_mailbox,
             garbage_collector_mailbox,
@@ -295,7 +319,7 @@ mod tests {
         let (merge_planner_mailbox, merge_planner_inbox) = create_test_mailbox();
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
         let publisher = Publisher::new(
-            "publisher",
+            PublisherType::MainPublisher,
             Arc::new(mock_metastore),
             merge_planner_mailbox,
             garbage_collector_mailbox,

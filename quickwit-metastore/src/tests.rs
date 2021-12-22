@@ -1601,6 +1601,14 @@ pub mod test_suite {
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
+        assert!(
+            metastore
+                .index_metadata(index_id)
+                .await
+                .unwrap()
+                .update_timestamp
+                > current_timestamp
+        );
 
         current_timestamp = split_meta.update_timestamp;
 
@@ -1612,6 +1620,14 @@ pub mod test_suite {
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
+        assert!(
+            metastore
+                .index_metadata(index_id)
+                .await
+                .unwrap()
+                .update_timestamp
+                > current_timestamp
+        );
 
         current_timestamp = split_meta.update_timestamp;
 
@@ -1623,6 +1639,31 @@ pub mod test_suite {
             .unwrap();
         let split_meta = metastore.list_all_splits(index_id).await.unwrap()[0].clone();
         assert!(split_meta.update_timestamp > current_timestamp);
+        assert!(
+            metastore
+                .index_metadata(index_id)
+                .await
+                .unwrap()
+                .update_timestamp
+                > current_timestamp
+        );
+
+        current_timestamp = split_meta.update_timestamp;
+
+        // wait for 1s, delete split & check the index `update_timestamp`
+        sleep(Duration::from_secs(1)).await;
+        metastore
+            .delete_splits(index_id, &[split_id])
+            .await
+            .unwrap();
+        assert!(
+            metastore
+                .index_metadata(index_id)
+                .await
+                .unwrap()
+                .update_timestamp
+                > current_timestamp
+        );
 
         cleanup_index(&metastore, index_id).await;
     }

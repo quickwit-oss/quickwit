@@ -241,7 +241,7 @@ impl PostgresqlMetastore {
                     .and(schema::splits::dsl::split_id.eq_any(split_ids)),
             ),
         )
-        .set((schema::splits::dsl::split_state.eq(SplitState::ScheduledForDeletion.to_string()),))
+        .set((schema::splits::dsl::split_state.eq(SplitState::MarkedForDeletion.to_string()),))
         .returning(schema::splits::dsl::split_id)
         .get_results(conn)?;
 
@@ -442,15 +442,14 @@ impl Metastore for PostgresqlMetastore {
                 cause: anyhow::anyhow!(err),
             }
         })?;
-        let model_index = model::Index {
-            index_id: index_metadata.index_id.clone(),
-            index_metadata_json,
-        };
         let conn = self.get_conn()?;
         conn.transaction::<_, MetastoreError, _>(|| {
             // Create index.
             let create_index_statement =
-                diesel::insert_into(schema::indexes::dsl::indexes).values(&model_index);
+                diesel::insert_into(schema::indexes::dsl::indexes).values((
+                    schema::indexes::dsl::index_id.eq(index_metadata.index_id.clone()),
+                    schema::indexes::dsl::index_metadata_json.eq(index_metadata_json),
+                ));
             debug!(sql=%debug_query::<Pg, _>(&create_index_statement).to_string());
             create_index_statement
                 .execute(&*conn)
@@ -472,7 +471,7 @@ impl Metastore for PostgresqlMetastore {
                         MetastoreError::DbError(err)
                     }
                 })?;
-            debug!(index_id=?model_index.index_id, "The index has been created");
+            debug!(index_id=?index_metadata.index_id, "The index has been created");
             Ok(())
         })?;
         Ok(())
@@ -694,7 +693,7 @@ impl Metastore for PostgresqlMetastore {
         conn.transaction::<_, MetastoreError, _>(|| {
             let deletable_states = [
                 SplitState::Staged.to_string(),
-                SplitState::ScheduledForDeletion.to_string(),
+                SplitState::MarkedForDeletion.to_string(),
             ];
 
             let deleted_split_ids: Vec<String> = diesel::delete(
@@ -804,7 +803,7 @@ fn tags_filter_expression_helper(
     }
 }
 
-/// A single file metastore factory
+/// A file-backed metastore factory
 #[derive(Clone, Default)]
 pub struct PostgresqlMetastoreFactory {}
 

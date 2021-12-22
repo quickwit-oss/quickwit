@@ -92,7 +92,7 @@ impl Actor for GarbageCollector {
 impl AsyncActor for GarbageCollector {
     async fn initialize(
         &mut self,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         self.process_message((), ctx).await
     }
@@ -100,7 +100,7 @@ impl AsyncActor for GarbageCollector {
     async fn process_message(
         &mut self,
         _: (),
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         info!("garbage-collect-operation");
         self.counters.num_passes += 1;
@@ -181,10 +181,10 @@ mod tests {
                 assert_eq!(index_id, "foo-index");
                 let splits = match split_state {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
-                    SplitState::ScheduledForDeletion => {
-                        make_splits(&["a", "b", "c"], SplitState::ScheduledForDeletion)
+                    SplitState::MarkedForDeletion => {
+                        make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
                     }
-                    _ => panic!("only Staged and ScheduledForDeletion expected."),
+                    _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
             },
@@ -237,10 +237,10 @@ mod tests {
                 assert_eq!(index_id, "foo-index");
                 let splits = match split_state {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
-                    SplitState::ScheduledForDeletion => {
-                        make_splits(&["a", "b"], SplitState::ScheduledForDeletion)
+                    SplitState::MarkedForDeletion => {
+                        make_splits(&["a", "b"], SplitState::MarkedForDeletion)
                     }
-                    _ => panic!("only Staged and ScheduledForDeletion expected."),
+                    _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
             },

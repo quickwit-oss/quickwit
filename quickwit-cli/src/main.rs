@@ -27,28 +27,37 @@ use quickwit_cli::cli::CliCommand;
 use quickwit_cli::QUICKWIT_JAEGER_ENABLED_ENV_KEY;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{info, Level};
-use tracing_subscriber::fmt::format::Format;
+use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
-/// Describes the way events should be formatted in the logs.
-fn event_format(
-) -> Format<tracing_subscriber::fmt::format::Full, tracing_subscriber::fmt::time::ChronoUtc> {
-    tracing_subscriber::fmt::format()
-        .with_target(true)
-        .with_timer(tracing_subscriber::fmt::time::ChronoUtc::with_format(
-            // We do not rely on ChronoUtc::from_rfc3339, because it has a nanosecond precision.
-            "%Y-%m-%dT%H:%M:%S%.3f%:z".to_string(),
-        ))
-}
-
 fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
+    #[cfg(feature = "tokio-console")]
+    {
+        use quickwit_cli::QUICKWIT_TOKIO_CONSOLE_ENABLED_ENV_KEY;
+        if std::env::var_os(QUICKWIT_TOKIO_CONSOLE_ENABLED_ENV_KEY).is_some() {
+            console_subscriber::init();
+            return Ok(());
+        }
+    }
     let env_filter = env::var("RUST_LOG")
         .map(|_| EnvFilter::from_default_env())
         .or_else(|_| EnvFilter::try_new(format!("quickwit={}", level)))
         .context("Failed to set up tracing env filter.")?;
     global::set_text_map_propagator(TraceContextPropagator::new());
     let registry = tracing_subscriber::registry().with(env_filter);
+    let event_format = tracing_subscriber::fmt::format()
+        .with_target(true)
+        .with_timer(
+            // We do not rely on the Rfc3339 implementation, because it has a nanosecond precision.
+            // See discussion here: https://github.com/time-rs/time/discussions/418
+            UtcTime::new(
+                time::format_description::parse(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
+                )
+                .expect("Time format invalid"),
+            ),
+        );
     if std::env::var_os(QUICKWIT_JAEGER_ENABLED_ENV_KEY).is_some() {
         // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
         let tracer = opentelemetry_jaeger::new_pipeline()
@@ -57,13 +66,13 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
             .install_simple()
             .context("Failed to initialize Jaeger exporter.")?;
         registry
-            .with(tracing_subscriber::fmt::layer().event_format(event_format()))
+            .with(tracing_subscriber::fmt::layer().event_format(event_format))
             .with(tracing_opentelemetry::layer().with_tracer(tracer))
             .try_init()
             .context("Failed to set up tracing.")?
     } else {
         registry
-            .with(tracing_subscriber::fmt::layer().event_format(event_format()))
+            .with(tracing_subscriber::fmt::layer().event_format(event_format))
             .try_init()
             .context("Failed to set up tracing.")?
     }
@@ -133,7 +142,7 @@ fn about_text() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::time::Duration;
 
     use clap::{load_yaml, App, AppSettings};
@@ -144,6 +153,7 @@ mod tests {
     };
     use quickwit_cli::service::{RunIndexerArgs, RunSearcherArgs, ServiceCliCommand};
     use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs, SplitCliCommand};
+    use quickwit_common::uri::Uri;
 
     use super::*;
 
@@ -501,7 +511,7 @@ mod tests {
                 index_id,
                 metastore_uri,
                 data_dir_path,
-            })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+            })) if &index_id == "wikipedia" && data_dir_path == Uri::try_new("datadir")?.filepath().unwrap().to_path_buf() && &metastore_uri == "file:///indexes"
         ));
         Ok(())
     }
@@ -527,7 +537,7 @@ mod tests {
                 index_id,
                 metastore_uri,
                 data_dir_path,
-            })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+            })) if &index_id == "wikipedia" && data_dir_path == Uri::try_new("datadir")?.filepath().unwrap().to_path_buf() && &metastore_uri == "file:///indexes"
         ));
         Ok(())
     }
@@ -606,7 +616,7 @@ mod tests {
                 split_id,
                 metastore_uri,
                 target_dir
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == PathBuf::from("datadir")
+            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == Uri::try_new("datadir")?.filepath().unwrap().to_path_buf()
         ));
         Ok(())
     }

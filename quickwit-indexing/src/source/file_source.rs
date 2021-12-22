@@ -36,7 +36,7 @@ use crate::source::{Source, SourceContext, TypedSourceFactory};
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
 
-/// Source id used to define a stdin source.  
+/// Source id used to define a stdin source.
 pub const STD_IN_SOURCE_ID: &str = "stdin-source";
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
@@ -136,20 +136,9 @@ impl TypedSourceFactory for FileSourceFactory {
 
     // TODO handle checkpoint for files.
     async fn typed_create_source(
-        mut params: FileSourceParams,
+        params: FileSourceParams,
         checkpoint: quickwit_metastore::checkpoint::Checkpoint,
     ) -> anyhow::Result<FileSource> {
-        params.filepath = if let Some(filepath) = params.filepath {
-            let canonical_path = std::fs::canonicalize(&filepath).with_context(|| {
-                format!(
-                    "Failed to canonicalize source file path `{}`.",
-                    filepath.display()
-                )
-            })?;
-            Some(canonical_path)
-        } else {
-            None
-        };
         let mut offset = 0;
         let reader: Box<dyn AsyncRead + Send + Sync + Unpin> =
             if let Some(filepath) = &params.filepath {

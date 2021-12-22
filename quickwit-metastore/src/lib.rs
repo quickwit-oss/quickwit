@@ -22,7 +22,7 @@
 
 //! `quickwit-metastore` is the abstraction used in quickwit to interface itself to different
 //! metastore:
-//! - single file metastore
+//! - file-backed metastore
 //! etc.
 
 #[macro_use]
@@ -52,9 +52,9 @@ mod metastore_resolver;
 pub mod postgresql;
 
 pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
+pub use metastore::file_backed_metastore::FileBackedMetastore;
 #[cfg(feature = "postgres")]
 pub use metastore::postgresql_metastore::PostgresqlMetastore;
-pub use metastore::single_file_metastore::SingleFileMetastore;
 #[cfg(feature = "testsuite")]
 pub use metastore::MockMetastore;
 pub use metastore::{IndexMetadata, Metastore};

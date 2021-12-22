@@ -39,7 +39,7 @@ use tracing::{info, info_span, warn, Instrument, Span};
 use crate::models::{PackagedSplit, PackagedSplitBatch, PublishOperation, PublisherMessage};
 use crate::split_store::IndexingSplitStore;
 
-pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 6;
+pub const MAX_CONCURRENT_SPLIT_UPLOAD: usize = 4;
 
 pub struct Uploader {
     actor_name: &'static str,
@@ -85,7 +85,7 @@ impl Actor for Uploader {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        QueueCapacity::Bounded(1)
+        QueueCapacity::Bounded(0)
     }
 
     fn name(&self) -> String {
@@ -178,7 +178,7 @@ impl AsyncActor for Uploader {
     async fn process_message(
         &mut self,
         batch: PackagedSplitBatch,
-        ctx: &ActorContext<PackagedSplitBatch>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("uploader:before");
         let (split_uploaded_tx, split_uploaded_rx) = tokio::sync::oneshot::channel();

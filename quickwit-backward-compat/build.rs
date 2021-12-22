@@ -122,6 +122,7 @@ fn sample_index_metadata_for_regression() -> IndexMetadata {
         search_settings,
         sources,
         create_timestamp: 1789,
+        update_timestamp: 1789,
     }
 }
 

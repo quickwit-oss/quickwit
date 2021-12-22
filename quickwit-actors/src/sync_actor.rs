@@ -18,8 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use tokio::sync::watch::{self, Sender};
-use tokio::task::{spawn_blocking, JoinHandle};
-use tracing::{debug, error, info, Span};
+use tokio::task::JoinHandle;
+use tracing::{error, info, Span};
 
 use crate::actor::{process_command, ActorExitStatus};
 use crate::actor_with_state_tx::ActorWithStateTx;
@@ -35,7 +35,7 @@ use crate::{Actor, ActorContext, ActorHandle, RecvError};
 /// If both the command and the message channel are exhausted, and a command and N messages arrives,
 /// one message is likely to be executed before the command is.
 pub trait SyncActor: Actor + Sized {
-    fn initialize(&mut self, _ctx: &ActorContext<Self::Message>) -> Result<(), ActorExitStatus> {
+    fn initialize(&mut self, _ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         Ok(())
     }
 
@@ -47,7 +47,7 @@ pub trait SyncActor: Actor + Sized {
     fn process_message(
         &mut self,
         message: Self::Message,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus>;
 
     /// Hook that can be set up to define what should happen upon actor exit.
@@ -61,7 +61,7 @@ pub trait SyncActor: Actor + Sized {
     fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
-        _ctx: &ActorContext<Self::Message>,
+        _ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -69,23 +69,40 @@ pub trait SyncActor: Actor + Sized {
 
 pub(crate) fn spawn_sync_actor<A: SyncActor>(
     actor: A,
-    ctx: ActorContext<A::Message>,
+    ctx: ActorContext<A>,
     inbox: Inbox<A::Message>,
 ) -> ActorHandle<A> {
-    debug!(
-        actor_id = %ctx.actor_instance_id(),
-        "spawn-async"
-    );
     let (state_tx, state_rx) = watch::channel(actor.observable_state());
     let ctx_clone = ctx.clone();
     let (exit_status_tx, exit_status_rx) = watch::channel(None);
     let span_current = Span::current();
-    let join_handle: JoinHandle<()> = spawn_blocking(move || {
-        let _span_guard = span_current.enter();
-        let exit_status = sync_actor_loop(actor, inbox, ctx, state_tx);
-        let _ = exit_status_tx.send(Some(exit_status));
-    });
+    let actor_instance_id = ctx.actor_instance_id().to_string();
+    let join_handle: JoinHandle<()> = spawn_named_blocking(
+        move || {
+            let _span_guard = span_current.enter();
+            let exit_status = sync_actor_loop(actor, inbox, ctx, state_tx);
+            let _ = exit_status_tx.send(Some(exit_status));
+        },
+        &actor_instance_id,
+    );
     ActorHandle::new(state_rx, join_handle, ctx_clone, exit_status_rx)
+}
+
+#[track_caller]
+fn spawn_named_blocking<F, R>(f: F, _name: &str) -> tokio::task::JoinHandle<R>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    #[cfg(tokio_unstable)]
+    {
+        return tokio::task::Builder::new().name(_name).spawn_blocking(f);
+    }
+    #[cfg(not(tokio_unstable))]
+    {
+        use tokio::task::spawn_blocking;
+        spawn_blocking(f)
+    }
 }
 
 /// Process a given message.
@@ -96,7 +113,7 @@ fn process_msg<A: Actor + SyncActor>(
     actor: &mut A,
     msg_id: u64,
     inbox: &mut Inbox<A::Message>,
-    ctx: &mut ActorContext<A::Message>,
+    ctx: &mut ActorContext<A>,
     state_tx: &Sender<A::ObservableState>,
 ) -> Option<ActorExitStatus> {
     if ctx.kill_switch().is_dead() {
@@ -142,7 +159,7 @@ fn process_msg<A: Actor + SyncActor>(
 fn sync_actor_loop<A: SyncActor>(
     actor: A,
     mut inbox: Inbox<A::Message>,
-    mut ctx: ActorContext<A::Message>,
+    mut ctx: ActorContext<A>,
     state_tx: Sender<A::ObservableState>,
 ) -> ActorExitStatus {
     let span = actor.span(&ctx);

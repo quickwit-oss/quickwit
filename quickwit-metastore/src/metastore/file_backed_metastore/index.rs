@@ -27,23 +27,23 @@ use serde::{Deserialize, Serialize};
 use crate::checkpoint::CheckpointDelta;
 use crate::{IndexMetadata, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 
-/// A MetadataSet carries an index metadata and its split metadata.
+/// A `Index` object carries an index metadata and its split metadata.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct MetadataSet {
+pub(crate) struct Index {
     /// Metadata specific to the index.
     index: IndexMetadata,
     /// List of splits belonging to the index.
     splits: HashMap<String, Split>,
     /// Has been discarded. This field exists to make
     /// it possible to discard this entry if there is an error
-    /// while mutating the metadata set.
+    /// while mutating the Index.
     #[serde(skip)]
     pub discarded: bool,
 }
 
-impl From<IndexMetadata> for MetadataSet {
+impl From<IndexMetadata> for Index {
     fn from(index: IndexMetadata) -> Self {
-        MetadataSet {
+        Index {
             index,
             splits: Default::default(),
             discarded: false,
@@ -62,7 +62,7 @@ fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
     left.end <= *right.start() || *right.end() < left.start
 }
 
-impl MetadataSet {
+impl Index {
     pub fn index_id(&self) -> &str {
         &self.index.index_id
     }
@@ -87,15 +87,17 @@ impl MetadataSet {
             });
         }
 
+        let now_timestamp = Utc::now().timestamp();
         let metadata = Split {
             split_state: SplitState::Staged,
-            update_timestamp: Utc::now().timestamp(),
+            update_timestamp: now_timestamp,
             split_metadata,
         };
 
         self.splits
             .insert(metadata.split_id().to_string(), metadata);
 
+        self.index.update_timestamp = now_timestamp;
         Ok(())
     }
 
@@ -122,6 +124,7 @@ impl MetadataSet {
     ) -> MetastoreResult<bool> {
         let mut is_modified = false;
         let mut split_not_found_ids = vec![];
+        let now_timestamp = Utc::now().timestamp();
         for &split_id in split_ids {
             // Check for the existence of split.
             let metadata = match self.splits.get_mut(split_id) {
@@ -132,13 +135,13 @@ impl MetadataSet {
                 }
             };
 
-            if metadata.split_state == SplitState::ScheduledForDeletion {
-                // If the split is already scheduled for deletion, This is fine, we just skip it.
+            if metadata.split_state == SplitState::MarkedForDeletion {
+                // If the split is already marked for deletion, This is fine, we just skip it.
                 continue;
             }
 
-            metadata.split_state = SplitState::ScheduledForDeletion;
-            metadata.update_timestamp = Utc::now().timestamp();
+            metadata.split_state = SplitState::MarkedForDeletion;
+            metadata.update_timestamp = now_timestamp;
             is_modified = true;
         }
 
@@ -146,6 +149,10 @@ impl MetadataSet {
             return Err(MetastoreError::SplitsDoNotExist {
                 split_ids: split_not_found_ids,
             });
+        }
+
+        if is_modified {
+            self.index.update_timestamp = now_timestamp;
         }
         Ok(is_modified)
     }
@@ -159,6 +166,7 @@ impl MetadataSet {
         self.index.checkpoint.try_apply_delta(checkpoint_delta)?;
         let mut split_not_found_ids = vec![];
         let mut split_not_staged_ids = vec![];
+        let now_timestamp = Utc::now().timestamp();
         for &split_id in split_ids {
             // Check for the existence of split.
             let metadata = match self.splits.get_mut(split_id) {
@@ -177,7 +185,7 @@ impl MetadataSet {
                 SplitState::Staged => {
                     // The split state needs to be updated.
                     metadata.split_state = SplitState::Published;
-                    metadata.update_timestamp = Utc::now().timestamp();
+                    metadata.update_timestamp = now_timestamp;
                 }
                 _ => {
                     split_not_staged_ids.push(split_id.to_string());
@@ -197,6 +205,7 @@ impl MetadataSet {
             });
         }
 
+        self.index.update_timestamp = now_timestamp;
         Ok(())
     }
 
@@ -248,7 +257,7 @@ impl MetadataSet {
             }
         };
         match metadata.split_state {
-            SplitState::ScheduledForDeletion | SplitState::Staged => {
+            SplitState::MarkedForDeletion | SplitState::Staged => {
                 // Only `ScheduledForDeletion` and `Staged` can be deleted
                 self.splits.remove(split_id);
                 DeleteSplitOutcome::Success
@@ -285,6 +294,7 @@ impl MetadataSet {
             });
         }
 
+        self.index.update_timestamp = Utc::now().timestamp();
         Ok(())
     }
 }
