@@ -19,7 +19,7 @@
 
 use std::sync::Arc;
 
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Mailbox, SyncActor};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SyncActor};
 use quickwit_metastore::SplitMetadata;
 use tracing::info;
 
@@ -45,6 +45,10 @@ impl Actor for MergePlanner {
 
     fn name(&self) -> String {
         "MergePlanner".to_string()
+    }
+
+    fn queue_capacity(&self) -> QueueCapacity {
+        QueueCapacity::Bounded(0)
     }
 }
 

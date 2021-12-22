@@ -37,6 +37,7 @@ use tokio::join;
 use tracing::{debug, error, info, info_span, instrument, Span};
 
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
+use crate::actors::publisher::PublisherType;
 use crate::actors::{
     GarbageCollector, Indexer, MergeExecutor, MergePlanner, NamedField, Packager, Publisher,
     Uploader,
@@ -258,7 +259,7 @@ impl IndexingPipeline {
 
         // Merge publisher
         let merge_publisher = Publisher::new(
-            "MergePublisher",
+            PublisherType::MergePublisher,
             self.params.metastore.clone(),
             merge_planner_mailbox.clone(),
             garbage_collector_mailbox.clone(),
@@ -343,7 +344,7 @@ impl IndexingPipeline {
 
         // Publisher
         let publisher = Publisher::new(
-            "Publisher",
+            PublisherType::MainPublisher,
             self.params.metastore.clone(),
             merge_planner_mailbox,
             garbage_collector_mailbox,
