@@ -17,11 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use anyhow::{bail, Context};
+use std::path::PathBuf;
+
+use anyhow::bail;
 use clap::ArgMatches;
 use quickwit_common::run_checklist;
 use quickwit_common::uri::Uri;
-use quickwit_config::ServerConfig;
+use quickwit_config::QuickwitConfig;
 use quickwit_indexing::index_data;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_serve::run_searcher;
@@ -33,13 +35,15 @@ use crate::run_index_checklist;
 
 #[derive(Debug, PartialEq)]
 pub struct RunIndexerArgs {
-    pub server_config_uri: String,
+    pub config_uri: Uri,
+    pub data_dir: Option<PathBuf>,
     pub index_id: String,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct RunSearcherArgs {
-    pub server_config_uri: String,
+    pub config_uri: Uri,
+    pub data_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -74,29 +78,31 @@ impl ServiceCliCommand {
     }
 
     fn parse_searcher_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let server_config_uri = matches
-            .value_of("server-config-uri")
+        let config_uri = matches
+            .value_of("config")
             .map(Uri::try_new)
-            .expect("`server-config-uri` is a required arg.")?
-            .to_string();
+            .expect("`config` is a required arg.")?;
+        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(ServiceCliCommand::RunSearcher(RunSearcherArgs {
-            server_config_uri,
+            config_uri,
+            data_dir,
         }))
     }
 
     fn parse_indexer_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let server_config_uri = matches
-            .value_of("server-config-uri")
+        let config_uri = matches
+            .value_of("config")
             .map(Uri::try_new)
-            .expect("`server-config-uri` is a required arg.")?
-            .to_string();
+            .expect("`config` is a required arg.")?;
+        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let index_id = matches
-            .value_of("index-id")
+            .value_of("index")
             .map(String::from)
-            .expect("`index-id` is a required arg.");
+            .expect("`index` is a required arg.");
         Ok(ServiceCliCommand::RunIndexer(RunIndexerArgs {
-            server_config_uri,
+            config_uri,
             index_id,
+            data_dir,
         }))
     }
 
@@ -112,19 +118,24 @@ async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "run-indexer");
     let telemetry_event = TelemetryEvent::RunService("indexer".to_string());
     quickwit_telemetry::send_telemetry_event(telemetry_event).await;
-    let server_config = ServerConfig::from_file(&args.server_config_uri).await?;
-    run_index_checklist(&server_config.metastore_uri, &args.index_id, None).await?;
-    let indexer_config = server_config
-        .indexer_config
-        .context("Indexer config is empty.")?;
+    let quickwit_config = QuickwitConfig::load(args.config_uri, args.data_dir).await?;
+    run_index_checklist(&quickwit_config.metastore_uri, &args.index_id, None).await?;
+    let indexer_config = quickwit_config.indexer_config;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&server_config.metastore_uri)
+        .resolve(&quickwit_config.metastore_uri)
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
-    index_data(index_metadata, indexer_config, metastore, storage).await?;
+    index_data(
+        quickwit_config.data_dir_path.as_path(),
+        index_metadata,
+        indexer_config,
+        metastore,
+        storage,
+    )
+    .await?;
     Ok(())
 }
 
@@ -133,15 +144,12 @@ async fn run_searcher_cli(args: RunSearcherArgs) -> anyhow::Result<()> {
     let telemetry_event = TelemetryEvent::RunService("searcher".to_string());
     quickwit_telemetry::send_telemetry_event(telemetry_event).await;
 
-    let server_config = ServerConfig::from_file(&args.server_config_uri).await?;
-    let searcher_config = server_config
-        .searcher_config
-        .context("Searcher config is empty.")?;
+    let quickwit_config = QuickwitConfig::load(args.config_uri, args.data_dir).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&server_config.metastore_uri)
+        .resolve(&quickwit_config.metastore_uri)
         .await?;
     run_checklist(vec![("metastore", metastore.check_connectivity().await)]);
-    run_searcher(searcher_config, metastore).await?;
+    run_searcher(quickwit_config, metastore).await?;
     Ok(())
 }

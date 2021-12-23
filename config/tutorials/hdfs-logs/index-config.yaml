@@ -1,3 +1,7 @@
+#
+# Index config file for hdfs-logs dataset.
+#
+
 version: 0
 
 doc_mapping:
@@ -25,31 +29,7 @@ doc_mapping:
   store_source: true
 
 indexing_settings:
-  demux_field: tenant_id
   timestamp_field: timestamp
-  sort_field: timestamp
-  sort_order: asc
-  commit_timeout_secs: 61
-  split_num_docs_target: 10000001
-  merge_policy:
-    demux_factor: 7
-    merge_factor: 9
-    max_merge_factor: 11
-  resources:
-    num_threads: 3
-    heap_size: 3G
 
 search_settings:
   default_search_fields: [severity_text, body]
-
-sources:
-  - source_id: hdfs-logs-kafka-source
-    source_type: kafka
-    params:
-      bootstrap.servers: host:9092
-      topic: cloudera-cluster-logs
-
-  - source_id: hdfs-logs-kinesis-source
-    source_type: kinesis
-    params:
-      stream_name: emr-cluster-logs

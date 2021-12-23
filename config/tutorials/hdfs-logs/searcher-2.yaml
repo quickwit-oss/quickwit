@@ -1,0 +1,6 @@
+version: 0
+node_id: searcher-2
+searcher:
+  rest_listen_address: 127.0.0.1
+  rest_listen_port: 7290
+

@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -541,13 +542,14 @@ pub struct IndexingPipelineParams {
 
 impl IndexingPipelineParams {
     pub async fn try_new(
+        data_dir_path: &Path,
         index_metadata: IndexMetadata,
         indexer_config: IndexerConfig,
         metastore: Arc<dyn Metastore>,
         storage: Arc<dyn Storage>,
     ) -> anyhow::Result<Self> {
         let doc_mapper = index_metadata.build_doc_mapper()?;
-        let indexing_directory_path = indexer_config.data_dir_path.join(&index_metadata.index_id);
+        let indexing_directory_path = data_dir_path.join(&index_metadata.index_id);
         let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
         let source_config = index_metadata.source()?;
         Ok(Self {

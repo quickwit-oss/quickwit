@@ -293,22 +293,16 @@ mod tests {
         let (mailbox, inbox) = create_test_mailbox();
         use tempfile::NamedTempFile;
         let mut temp_file = NamedTempFile::new()?;
-        let temp_path = temp_file.path().to_path_buf();
         for i in 0..100 {
             temp_file.write_all(format!("{}\n", i).as_bytes())?;
         }
         temp_file.flush()?;
+        let temp_file_path = temp_file.path().canonicalize()?;
         let params = FileSourceParams {
-            filepath: Some(temp_path.as_path().to_path_buf()),
+            filepath: Some(temp_file_path.clone()),
         };
         let mut checkpoint = Checkpoint::default();
-        let partition_id = PartitionId::from(
-            temp_file
-                .path()
-                .canonicalize()?
-                .to_string_lossy()
-                .to_string(),
-        );
+        let partition_id = PartitionId::from(temp_file_path.to_string_lossy().to_string());
         let checkpoint_delta = CheckpointDelta::from_partition_delta(
             partition_id,
             Position::from(0u64),

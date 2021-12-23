@@ -74,19 +74,18 @@ pub use crate::cache::{wrap_storage_with_long_term_cache, Cache, MemorySizedCach
 pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
 
 /// Loads an entire local or remote file into memory.
-pub async fn load_file(raw_uri: &str) -> anyhow::Result<OwnedBytes> {
-    let uri = Uri::try_new(raw_uri)?;
+pub async fn load_file(uri: &Uri) -> anyhow::Result<OwnedBytes> {
     let path = Path::new(uri.as_ref());
     let parent_uri = path
         .parent()
-        .with_context(|| format!("`{}` is not a valid file URI.", raw_uri))?
+        .with_context(|| format!("`{}` is not a valid file URI.", uri))?
         .to_str()
-        .with_context(|| format!("Failed to convert URI `{}` to str.", raw_uri))?;
+        .with_context(|| format!("Failed to convert URI `{}` to str.", uri))?;
 
     let storage = quickwit_storage_uri_resolver().resolve(parent_uri)?;
     let file_name = path
         .file_name()
-        .with_context(|| format!("`{}` is not a valid file URI.", raw_uri))?;
+        .with_context(|| format!("`{}` is not a valid file URI.", uri))?;
     let bytes = storage.get_all(Path::new(file_name)).await?;
     Ok(bytes)
 }
@@ -99,7 +98,10 @@ mod tests {
     async fn test_load_file() {
         let expected_bytes = tokio::fs::read_to_string("Cargo.toml").await.unwrap();
         assert_eq!(
-            load_file("Cargo.toml").await.unwrap().as_slice(),
+            load_file(&Uri::try_new("Cargo.toml").unwrap())
+                .await
+                .unwrap()
+                .as_slice(),
             expected_bytes.as_bytes()
         );
     }

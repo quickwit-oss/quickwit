@@ -25,6 +25,7 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use json_comments::StripComments;
+use quickwit_common::uri::Uri;
 use quickwit_index_config::{FieldMappingEntry, SortBy, SortOrder};
 use quickwit_storage::load_file;
 use serde::{Deserialize, Serialize};
@@ -188,8 +189,9 @@ impl Default for IndexingSettings {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct SearchSettings {
+    #[serde(default)]
     pub default_search_fields: Vec<String>,
 }
 
@@ -203,52 +205,59 @@ pub struct SourceConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexConfig {
     pub version: usize,
-    pub index_id: String,
-    pub index_uri: String,
     pub doc_mapping: DocMapping,
     #[serde(default)]
     pub indexing_settings: IndexingSettings,
+    #[serde(default)]
     pub search_settings: SearchSettings,
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
 }
 
 impl IndexConfig {
-    pub async fn from_file(path: &str) -> anyhow::Result<Self> {
-        let parser_fn = match Path::new(path).extension().and_then(OsStr::to_str) {
+    // Loads config from a given path and validates it.
+    pub async fn load(uri: &Uri) -> anyhow::Result<Self> {
+        let config = IndexConfig::from_uri(uri).await?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    async fn from_uri(uri: &Uri) -> anyhow::Result<Self> {
+        let parser_fn = match Path::new(uri.as_ref()).extension().and_then(OsStr::to_str) {
             Some("json") => Self::from_json,
             Some("toml") => Self::from_toml,
             Some("yaml") | Some("yml") => Self::from_yaml,
             Some(extension) => bail!(
-                "Failed to read index config file: file extension `.{}` is not supported. \
+                "Failed to read index config file `{}`: file extension `.{}` is not supported. \
                  Supported file formats and extensions are JSON (.json), TOML (.toml), and YAML \
                  (.yaml or .yml).",
+                uri,
                 extension
             ),
             None => bail!(
-                "Failed to read index config file: file extension is missing. Supported file \
-                 formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml)."
+                "Failed to read index config file `{}`: file extension is missing. Supported file \
+                 formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml).",
+                uri
             ),
         };
-        let file_content = load_file(path).await?;
+        let file_content = load_file(uri).await?;
         parser_fn(file_content.as_slice())
     }
 
-    pub fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
+    fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
         serde_json::from_reader(StripComments::new(bytes))
             .context("Failed to parse JSON index config file.")
     }
 
-    pub fn from_toml(bytes: &[u8]) -> anyhow::Result<Self> {
+    fn from_toml(bytes: &[u8]) -> anyhow::Result<Self> {
         toml::from_slice(bytes).context("Failed to parse TOML index config file.")
     }
 
-    pub fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
+    fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
         serde_yaml::from_slice(bytes).context("Failed to parse YAML index config file.")
     }
 
-    // TODO
-    pub fn validate(&self) -> anyhow::Result<()> {
+    fn validate(&self) -> anyhow::Result<()> {
         Ok(())
     }
 }
@@ -269,12 +278,12 @@ mod tests {
         ($test_function_name:ident, $file_extension:expr) => {
             #[tokio::test]
             async fn $test_function_name() -> anyhow::Result<()> {
-                let index_config_filepath =
-                    get_resource_path(&format!("hdfs-logs.{}", stringify!($file_extension)));
-                let index_config = IndexConfig::from_file(&index_config_filepath).await?;
+                let index_config_uri = Uri::try_new(&get_resource_path(&format!(
+                    "hdfs-logs.{}",
+                    stringify!($file_extension)
+                )))?;
+                let index_config = IndexConfig::from_uri(&index_config_uri).await?;
                 assert_eq!(index_config.version, 0);
-                assert_eq!(index_config.index_id, "hdfs-logs");
-                assert_eq!(index_config.index_uri, "s3://quickwit-indexes/hdfs-logs");
 
                 assert_eq!(index_config.doc_mapping.field_mappings.len(), 5);
                 assert_eq!(index_config.doc_mapping.field_mappings[0].name, "tenant_id");
@@ -365,18 +374,13 @@ mod tests {
     #[tokio::test]
     async fn test_index_config_default_values() {
         {
-            let index_config_filepath = get_resource_path("minimal-hdfs-logs.yaml");
-            let index_config = IndexConfig::from_file(&index_config_filepath)
-                .await
-                .unwrap();
-
-            assert_eq!(index_config.index_id, "hdfs-logs");
-            assert_eq!(index_config.index_uri, "s3://quickwit-indexes/hdfs-logs");
+            let index_config_uri =
+                Uri::try_new(&get_resource_path("minimal-hdfs-logs.yaml")).unwrap();
+            let index_config = IndexConfig::from_uri(&index_config_uri).await.unwrap();
 
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 1);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
             assert!(index_config.doc_mapping.store_source);
-
             assert_eq!(index_config.indexing_settings, IndexingSettings::default());
             assert_eq!(
                 index_config.search_settings,
@@ -387,20 +391,15 @@ mod tests {
             assert!(index_config.sources.is_empty());
         }
         {
-            let index_config_filepath = get_resource_path("partial-hdfs-logs.yaml");
-            let index_config = IndexConfig::from_file(&index_config_filepath)
-                .await
-                .unwrap();
+            let index_config_uri =
+                Uri::try_new(&get_resource_path("partial-hdfs-logs.yaml")).unwrap();
+            let index_config = IndexConfig::from_uri(&index_config_uri).await.unwrap();
 
             assert_eq!(index_config.version, 0);
-            assert_eq!(index_config.index_id, "hdfs-logs");
-            assert_eq!(index_config.index_uri, "s3://quickwit-indexes/hdfs-logs");
-
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 2);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
             assert_eq!(index_config.doc_mapping.field_mappings[1].name, "timestamp");
             assert!(index_config.doc_mapping.store_source);
-
             assert_eq!(
                 index_config.indexing_settings,
                 IndexingSettings {

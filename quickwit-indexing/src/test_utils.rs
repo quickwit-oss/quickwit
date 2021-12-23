@@ -114,6 +114,7 @@ impl TestSandbox {
         index_meta.sources = vec![source_config];
         self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let statistics = index_data(
+            self._temp_dir.path(),
             index_meta,
             self.indexer_config.clone(),
             self.metastore.clone(),

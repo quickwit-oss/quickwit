@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::bail;
@@ -48,14 +49,21 @@ pub use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePol
 pub use self::source::{check_source_connectivity, STD_IN_SOURCE_ID};
 
 pub async fn index_data(
+    data_dir_path: &Path,
     index_metadata: IndexMetadata,
     indexer_config: IndexerConfig,
     metastore: Arc<dyn Metastore>,
     storage: Arc<dyn Storage>,
 ) -> anyhow::Result<IndexingStatistics> {
     let universe = Universe::new();
-    let pipeline_params =
-        IndexingPipelineParams::try_new(index_metadata, indexer_config, metastore, storage).await?;
+    let pipeline_params = IndexingPipelineParams::try_new(
+        data_dir_path,
+        index_metadata,
+        indexer_config,
+        metastore,
+        storage,
+    )
+    .await?;
     let pipeline = IndexingPipeline::new(pipeline_params);
     let (_pipeline_mailbox, pipeline_handle) = universe.spawn_actor(pipeline).spawn_async();
     let (exit_status, statistics) = pipeline_handle.join().await;

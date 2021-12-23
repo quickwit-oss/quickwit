@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 
 use flume;
 use tracing::debug;
-use uuid::Uuid;
 
 use super::state::ArtilleryEpidemic;
 use crate::cluster_config::ClusterConfig;
@@ -17,14 +16,13 @@ pub struct Cluster {
 
 impl Cluster {
     pub fn create_and_start(
-        host_key: Uuid,
+        host_id: String,
         config: ClusterConfig,
     ) -> Result<(Cluster, flume::Receiver<ArtilleryClusterEvent>)> {
         let (event_tx, event_rx) = flume::unbounded::<ArtilleryClusterEvent>();
         let (internal_tx, mut internal_rx) = flume::unbounded::<ArtilleryClusterRequest>();
 
-        let (poll, state) =
-            ArtilleryEpidemic::new(host_key, config, event_tx, internal_tx.clone())?;
+        let (poll, state) = ArtilleryEpidemic::new(host_id, config, event_tx, internal_tx.clone())?;
 
         debug!("Starting Artillery Cluster");
         tokio::task::spawn_blocking(move || {
@@ -40,7 +38,7 @@ impl Cluster {
         let _ = self.comm.send(ArtilleryClusterRequest::AddSeed(addr));
     }
 
-    pub fn send_payload<T: AsRef<str>>(&self, id: Uuid, msg: T) {
+    pub fn send_payload<T: AsRef<str>>(&self, id: String, msg: T) {
         self.comm
             .send(ArtilleryClusterRequest::Payload(
                 id,

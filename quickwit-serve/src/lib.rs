@@ -25,20 +25,17 @@ mod grpc_adapter;
 mod http_handler;
 mod rest;
 
-use std::io::Write;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
-use quickwit_cluster::cluster::{read_or_create_host_key, Cluster};
+use quickwit_cluster::cluster::Cluster;
 use quickwit_cluster::service::ClusterServiceImpl;
-use quickwit_config::SearcherConfig;
+use quickwit_config::QuickwitConfig;
 use quickwit_metastore::Metastore;
 use quickwit_search::{ClusterClient, SearchClientPool, SearchServiceImpl};
 use quickwit_storage::{
     LocalFileStorageFactory, RegionProvider, S3CompatibleObjectStorageFactory, StorageUriResolver,
 };
-use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-use tracing::debug;
+use tracing::{debug, info};
 
 pub use crate::args::ServeArgs;
 pub use crate::counters::COUNTERS;
@@ -47,28 +44,6 @@ use crate::grpc::start_grpc_service;
 use crate::grpc_adapter::cluster_adapter::GrpcClusterAdapter;
 use crate::grpc_adapter::search_adapter::GrpcSearchAdapter;
 use crate::rest::start_rest_service;
-
-fn display_help_message(rest_socket_addr: SocketAddr) -> anyhow::Result<()> {
-    // No-color if we are not in a terminal.
-    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
-    write!(&mut stdout, "Server started on ")?;
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
-    writeln!(&mut stdout, "http://{}/", &rest_socket_addr)?;
-    stdout.set_color(&ColorSpec::new())?;
-    writeln!(
-        &mut stdout,
-        "\nYou can query an index with the following command:"
-    )?;
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Blue)))?;
-    writeln!(
-        &mut stdout,
-        "curl 'http://{}/api/v1/my-index/search?query=my+query'",
-        rest_socket_addr
-    )?;
-    stdout.set_color(&ColorSpec::new())?;
-    // TODO add link to the documentation of the query language.
-    Ok(())
-}
 
 /// Builds a storage uri resolver that handles
 /// - s3:// uris. This storage comes with a cache that stores hotcache files.
@@ -88,12 +63,12 @@ fn storage_uri_resolver() -> StorageUriResolver {
 
 /// Starts a search node, aka a `searcher`.
 pub async fn run_searcher(
-    searcher_config: SearcherConfig,
+    quickwit_config: QuickwitConfig,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<()> {
-    let host_key = read_or_create_host_key(&searcher_config.host_key_path)?;
+    let searcher_config = quickwit_config.searcher_config;
     let cluster = Arc::new(Cluster::new(
-        host_key,
+        quickwit_config.node_id.clone(),
         searcher_config.gossip_socket_addr()?,
     )?);
     for peer_socket_addr in searcher_config.peer_socket_addrs()? {
@@ -121,7 +96,10 @@ pub async fn run_searcher(
 
     let rest_socket_addr = searcher_config.rest_socket_addr()?;
     let rest_server = start_rest_service(rest_socket_addr, search_service, cluster_service);
-    display_help_message(rest_socket_addr)?;
+    info!(
+        "Searcher ready to accept requests at http://{}/",
+        rest_socket_addr
+    );
     tokio::try_join!(rest_server, grpc_server)?;
     Ok(())
 }
@@ -130,6 +108,7 @@ pub async fn run_searcher(
 mod tests {
     use std::array::IntoIter;
     use std::collections::HashMap;
+    use std::net::SocketAddr;
     use std::ops::Range;
     use std::sync::Arc;
 

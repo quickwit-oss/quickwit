@@ -39,16 +39,16 @@ pub enum ClusterError {
         message: String,
     },
 
-    /// Read host key error.
-    #[error("Failed to read host key: `{message}`")]
-    ReadHostKeyError {
+    /// Read host ID error.
+    #[error("Failed to read host ID: `{message}`")]
+    ReadHostIdError {
         /// Underlying error message.
         message: String,
     },
 
-    /// Write host key error.
-    #[error("Failed to write host key: `{message}`")]
-    WriteHostKeyError {
+    /// Write host ID error.
+    #[error("Failed to write host ID: `{message}`")]
+    WriteHostIdError {
         /// Underlying error message.
         message: String,
     },
@@ -59,8 +59,8 @@ impl From<ClusterError> for tonic::Status {
         let code = match error {
             ClusterError::CreateClusterError { .. } => tonic::Code::Internal,
             ClusterError::UDPPortBindingError { .. } => tonic::Code::PermissionDenied,
-            ClusterError::ReadHostKeyError { .. } => tonic::Code::Internal,
-            ClusterError::WriteHostKeyError { .. } => tonic::Code::Internal,
+            ClusterError::ReadHostIdError { .. } => tonic::Code::Internal,
+            ClusterError::WriteHostIdError { .. } => tonic::Code::Internal,
         };
         let message = error.to_string();
         tonic::Status::new(code, message)

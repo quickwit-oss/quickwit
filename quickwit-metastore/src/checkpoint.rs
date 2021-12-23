@@ -275,7 +275,7 @@ impl Checkpoint {
     ///   |  (..a] (b..c] with b > a     | Compatible                  |
     ///   |  (..a] (b..c] with b < a     | Incompatible                |
     ///
-    /// If the delta is compatible, returns an error without modifying the original checkpoint.
+    /// If the delta is incompatible, returns an error without modifying the original checkpoint.
     pub fn try_apply_delta(
         &mut self,
         delta: CheckpointDelta,

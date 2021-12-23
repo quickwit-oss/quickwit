@@ -4,7 +4,6 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use rand::prelude::SliceRandom;
-use uuid::Uuid;
 
 use crate::member::{self, ArtilleryMember, ArtilleryMemberState, ArtilleryStateChange};
 
@@ -29,10 +28,10 @@ impl ArtilleryMemberList {
             .collect()
     }
 
-    pub fn to_map(&self) -> HashMap<Uuid, ArtilleryMember> {
+    pub fn to_map(&self) -> HashMap<String, ArtilleryMember> {
         self.members
             .iter()
-            .map(|m| (m.host_key(), (*m).clone()))
+            .map(|m| (m.node_id(), (*m).clone()))
             .collect()
     }
 
@@ -136,13 +135,13 @@ impl ArtilleryMemberList {
         let mut changed_nodes = Vec::new();
         let mut new_nodes = Vec::new();
 
-        let my_host_key = self.mut_myself().host_key();
+        let my_host_key = self.mut_myself().node_id();
 
         for state_change in state_changes {
             let new_member_data = state_change.member();
-            let old_member_data = current_members.entry(new_member_data.host_key());
+            let old_member_data = current_members.entry(new_member_data.node_id());
 
-            if new_member_data.host_key() == my_host_key {
+            if new_member_data.node_id() == my_host_key {
                 if new_member_data.state() != ArtilleryMemberState::Alive {
                     let myself = self.reincarnate_self();
                     changed_nodes.push(myself.clone());
@@ -217,11 +216,11 @@ impl ArtilleryMemberList {
 
     /// `get_member` will return artillery member if the given uuid is matches with any of the
     /// member in the cluster.
-    pub fn get_member(&self, id: &Uuid) -> Option<ArtilleryMember> {
+    pub fn get_member(&self, id: &str) -> Option<ArtilleryMember> {
         let member: Vec<_> = self
             .members
             .iter()
-            .filter(|&m| m.host_key() == *id)
+            .filter(|&m| m.node_id() == *id)
             .collect();
 
         if member.is_empty() {
