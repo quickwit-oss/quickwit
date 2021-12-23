@@ -23,7 +23,6 @@ use anyhow::bail;
 use clap::ArgMatches;
 use quickwit_common::run_checklist;
 use quickwit_common::uri::Uri;
-use quickwit_config::QuickwitConfig;
 use quickwit_indexing::index_data;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_serve::run_searcher;
@@ -31,7 +30,7 @@ use quickwit_storage::quickwit_storage_uri_resolver;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
 
-use crate::run_index_checklist;
+use crate::{load_quickwit_config, run_index_checklist};
 
 #[derive(Debug, PartialEq)]
 pub struct RunIndexerArgs {
@@ -118,7 +117,7 @@ async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "run-indexer");
     let telemetry_event = TelemetryEvent::RunService("indexer".to_string());
     quickwit_telemetry::send_telemetry_event(telemetry_event).await;
-    let quickwit_config = QuickwitConfig::load(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
     run_index_checklist(&quickwit_config.metastore_uri, &args.index_id, None).await?;
     let indexer_config = quickwit_config.indexer_config;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
@@ -144,7 +143,7 @@ async fn run_searcher_cli(args: RunSearcherArgs) -> anyhow::Result<()> {
     let telemetry_event = TelemetryEvent::RunService("searcher".to_string());
     quickwit_telemetry::send_telemetry_event(telemetry_event).await;
 
-    let quickwit_config = QuickwitConfig::load(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)

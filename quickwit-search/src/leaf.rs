@@ -25,7 +25,7 @@ use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use once_cell::sync::OnceCell;
-use quickwit_common::get_from_env;
+use quickwit_config::get_searcher_config_instance;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{
@@ -41,20 +41,16 @@ use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tokio::task::spawn_blocking;
 use tracing::*;
 
-const DEFAULT_SPLIT_FOOTER_CACHE_CAPACITY: usize = 500_000_000;
-const SPLIT_FOOTER_CACHE_CAPACITY_ENV_KEY: &str = "SPLIT_FOOTER_CACHE_CAPACITY";
-
 use crate::collector::{make_collector_for_split, make_merge_collector, GenericQuickwitCollector};
 use crate::SearchError;
 
 fn global_split_footer_cache() -> &'static MemorySizedCache<String> {
     static INSTANCE: OnceCell<MemorySizedCache<String>> = OnceCell::new();
     INSTANCE.get_or_init(|| {
-        let split_footer_cache_cap = get_from_env(
-            SPLIT_FOOTER_CACHE_CAPACITY_ENV_KEY,
-            DEFAULT_SPLIT_FOOTER_CACHE_CAPACITY,
-        );
-        MemorySizedCache::with_capacity_in_bytes(split_footer_cache_cap)
+        let config = get_searcher_config_instance();
+        MemorySizedCache::with_capacity_in_bytes(
+            config.split_footer_cache_capacity.get_bytes() as usize
+        )
     })
 }
 

@@ -23,13 +23,13 @@ use anyhow::{bail, Context};
 use clap::ArgMatches;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::{QuickwitConfig, SourceConfig};
+use quickwit_config::SourceConfig;
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
 use serde_json::Value;
 use tabled::{Table, Tabled};
 
-use crate::make_table;
+use crate::{load_quickwit_config, make_table};
 
 #[derive(Debug, PartialEq)]
 pub struct DescribeSourceArgs {
@@ -112,7 +112,7 @@ impl SourceCliCommand {
 }
 
 async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
-    let quickwit_config = QuickwitConfig::load(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let (source_table, params_table, checkpoint_table) = make_describe_source_tables(
         index_metadata.checkpoint,
@@ -157,7 +157,7 @@ fn make_describe_source_tables(
 }
 
 async fn list_sources_cli(args: ListSourcesArgs) -> anyhow::Result<()> {
-    let quickwit_config = QuickwitConfig::load(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let table = make_list_sources_table(index_metadata.sources);
     display_tables(&[table]);

@@ -22,14 +22,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_common::get_from_env;
+use quickwit_config::get_searcher_config_instance;
 
 use crate::{Cache, OwnedBytes, SliceCache};
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
-
-const DEFAULT_FAST_CACHE_CAPACITY: usize = 15_000_000_000; // 15 GB
-const FAST_CACHE_CAPACITY_ENV_KEY: &str = "FAST_CACHE_CAPACITY";
 
 pub(crate) struct QuickwitCache {
     router: Vec<(&'static str, Arc<dyn Cache>)>,
@@ -44,10 +41,11 @@ impl From<Vec<(&'static str, Arc<dyn Cache>)>> for QuickwitCache {
 impl Default for QuickwitCache {
     fn default() -> Self {
         let mut quickwit_cache = QuickwitCache::empty();
-        let fast_cache_cap = get_from_env(FAST_CACHE_CAPACITY_ENV_KEY, DEFAULT_FAST_CACHE_CAPACITY);
+        let config = get_searcher_config_instance();
+        let fast_cache_cap = config.fast_field_cache_capacity.get_bytes();
         quickwit_cache.add_route(
             ".fast",
-            Arc::new(SimpleCache::with_capacity_in_bytes(fast_cache_cap)),
+            Arc::new(SimpleCache::with_capacity_in_bytes(fast_cache_cap as usize)),
         );
         quickwit_cache
     }

@@ -11,6 +11,7 @@ documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 quickwit-common = { version = "0.1.0", path = "../quickwit-common" }
+quickwit-config = { version = "0.1.0", path = "../quickwit-config" }
 async-trait = '0.1'
 md5 = '0.7'
 anyhow = '1'
