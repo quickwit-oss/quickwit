@@ -5,9 +5,9 @@ title: Quickwit's hosts and ports
 When starting a quickwit search server, one important parameter that can be configured is
 the `rest_listen_port` (defaults to :7280).
 
-Internally, quickwit will in fact use 3 sockets. The port of these three sockets
+Internally, Quickwit will, in fact, use three sockets. The ports of these three sockets
 cannot be configured independently at the moment.
-The port used computed relatively to the `rest_listen_port` port, as follows.
+The ports used are computed relative to the `rest_listen_port` port, as follows.
 
 
 | Service                       | Port used                 | Protocol |  Default  |
@@ -20,7 +20,7 @@ It is not possible for the moment to configure these ports independently.
 
 
 In order to form a cluster, you will also need to define a `peer_seeds` parameter.
-The following address are valid peer seed addresses:
+The following addresses are valid peer seed addresses:
 
 | Type | Example without port | Example with port         |
 |--------------|--------------|---------------------------|
@@ -29,6 +29,6 @@ The following address are valid peer seed addresses:
 | hostname     | node3        | node3:7180                |
 
 If no port is specified in a peer node address, a Quickwit node will assume the peer is using the same
-port as themselves.
+port as itself.
 
 

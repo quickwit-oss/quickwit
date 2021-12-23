@@ -49,10 +49,10 @@ fn contains_port(addr: &str) -> bool {
     false
 }
 
-/// Attempts parse a `socket_addr`.
-/// If no port, is defined, just accept the address and use the given default port.
+/// Attempts to parse a `socket_addr`.
+/// If no port is defined, it just accepts the address and uses the given default port.
 ///
-/// This function support
+/// This function supports
 /// - IPv4
 /// - IPv4:port
 /// - IPv6
@@ -62,7 +62,7 @@ fn contains_port(addr: &str) -> bool {
 /// with or without a port.
 ///
 /// Note that this function returns a SocketAddr, so that if a hostname
-/// is given DNS resolution will happen once and for all.
+/// is given, DNS resolution will happen once and for all.
 pub fn parse_socket_addr_with_default_port(
     addr: &str,
     default_port: u16,
