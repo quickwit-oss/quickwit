@@ -35,13 +35,21 @@ impl ArtilleryMemberList {
             .collect()
     }
 
+    pub fn current_node_id(&self) -> String {
+        for member in self.members.iter() {
+            if member.is_current() {
+                return member.node_id();
+            }
+        }
+        panic!("Could not find current node as registered member");
+    }
+
     fn mut_myself(&mut self) -> &mut ArtilleryMember {
         for member in &mut self.members {
             if member.is_current() {
                 return member;
             }
         }
-
         panic!("Could not find this instance as registered member");
     }
 
@@ -135,13 +143,13 @@ impl ArtilleryMemberList {
         let mut changed_nodes = Vec::new();
         let mut new_nodes = Vec::new();
 
-        let my_host_key = self.mut_myself().node_id();
+        let my_node_id = self.mut_myself().node_id();
 
         for state_change in state_changes {
             let new_member_data = state_change.member();
             let old_member_data = current_members.entry(new_member_data.node_id());
 
-            if new_member_data.node_id() == my_host_key {
+            if new_member_data.node_id() == my_node_id {
                 if new_member_data.state() != ArtilleryMemberState::Alive {
                     let myself = self.reincarnate_self();
                     changed_nodes.push(myself.clone());
