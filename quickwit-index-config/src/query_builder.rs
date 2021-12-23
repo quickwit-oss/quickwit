@@ -44,7 +44,8 @@ pub(crate) fn build_query(
         resolve_fields(&schema, &request.search_fields)?
     };
 
-    let query_parser = QueryParser::new(schema, search_fields, TokenizerManager::default());
+    let mut query_parser = QueryParser::new(schema, search_fields, TokenizerManager::default());
+    query_parser.set_conjunction_by_default();
     let query = query_parser.parse_query(&request.query)?;
     Ok(query)
 }

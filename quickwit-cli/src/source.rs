@@ -23,7 +23,7 @@ use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::{IndexMetadata, MetastoreUriResolver};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
 use serde_json::Value;
 use tabled::{Table, Tabled};
 
@@ -226,7 +226,7 @@ fn flatten_json(value: Value) -> Vec<(String, Value)> {
 }
 
 async fn resolve_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<IndexMetadata> {
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
     let index_metadata = metastore.index_metadata(index_id).await?;
     Ok(index_metadata)

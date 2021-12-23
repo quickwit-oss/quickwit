@@ -63,14 +63,22 @@ pub fn read_or_create_host_key(host_key_path: &Path) -> ClusterResult<Uuid> {
         if let Some(dir) = host_key_path.parent() {
             if !dir.exists() {
                 fs::create_dir_all(dir).map_err(|err| ClusterError::WriteHostKeyError {
-                    message: err.to_string(),
+                    message: format!(
+                        "Directory `{}` does not exists. Failed to create it with err={:?}",
+                        dir.display(),
+                        err
+                    ),
                 })?;
             }
         }
         host_key = Uuid::new_v4();
         fs::write(host_key_path, host_key.as_bytes()).map_err(|err| {
             ClusterError::WriteHostKeyError {
-                message: err.to_string(),
+                message: format!(
+                    "IO Error upon writing into `{}`: {:?}.",
+                    host_key_path.display(),
+                    err
+                ),
             }
         })?;
         info!(host_key=?host_key, host_key_path=?host_key_path, "Create new host key.");

@@ -58,6 +58,8 @@ pub use metastore::postgresql_metastore::PostgresqlMetastore;
 #[cfg(feature = "testsuite")]
 pub use metastore::MockMetastore;
 pub use metastore::{IndexMetadata, Metastore};
-pub use metastore_resolver::{MetastoreFactory, MetastoreUriResolver};
+pub use metastore_resolver::{
+    quickwit_metastore_uri_resolver, MetastoreFactory, MetastoreUriResolver,
+};
 pub use split_metadata::{Split, SplitMetadata, SplitState};
 pub(crate) use split_metadata_version::VersionedSplitMetadataDeserializeHelper;

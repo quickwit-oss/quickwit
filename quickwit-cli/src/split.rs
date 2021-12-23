@@ -30,7 +30,7 @@ use quickwit_common::uri::Uri;
 use quickwit_directories::{
     get_hotcache_from_split, read_split_footer, BundleDirectory, HotDirectory,
 };
-use quickwit_metastore::{MetastoreUriResolver, Split, SplitState};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, Split, SplitState};
 use quickwit_storage::{quickwit_storage_uri_resolver, BundleStorage, Storage};
 use tabled::{Table, Tabled};
 use tracing::debug;
@@ -216,7 +216,7 @@ impl SplitCliCommand {
 async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "list-split");
 
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let splits = metastore.list_all_splits(&args.index_id).await?;
 
@@ -238,7 +238,7 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "describe-split");
 
     let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
@@ -265,7 +265,7 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "extract-split");
 
     let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
@@ -396,7 +396,7 @@ struct SplitRow {
     num_docs: usize,
     #[header("Size (MB)")]
     size_mega_bytes: u64,
-    #[header("Create At")]
+    #[header("Created At")]
     create_at: NaiveDateTime,
     #[header("Updated At")]
     updated_at: NaiveDateTime,

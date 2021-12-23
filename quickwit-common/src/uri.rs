@@ -29,7 +29,7 @@ const FILE_PROTOCOL: &str = "file";
 const PROTOCOL_SEPARATOR: &str = "://";
 
 /// Encapsulates the URI type.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Uri {
     uri: String,
     protocol_idx: usize,

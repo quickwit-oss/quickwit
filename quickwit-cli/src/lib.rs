@@ -24,7 +24,7 @@ use once_cell::sync::Lazy;
 use quickwit_common::run_checklist;
 use quickwit_config::SourceConfig;
 use quickwit_indexing::check_source_connectivity;
-use quickwit_metastore::MetastoreUriResolver;
+use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::quickwit_storage_uri_resolver;
 use regex::Regex;
 use tabled::{Alignment, Header, Modify, Row, Style, Table, Tabled};
@@ -35,10 +35,6 @@ pub mod service;
 pub mod source;
 pub mod split;
 pub mod stats;
-use std::io::{Stdout, Write};
-use std::{fmt, io};
-
-use colored::Colorize;
 
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
@@ -79,7 +75,7 @@ pub async fn run_index_checklist(
     source_to_check: Option<&SourceConfig>,
 ) -> anyhow::Result<()> {
     let mut checks: Vec<(&str, anyhow::Result<()>)> = Vec::new();
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
     checks.push(("metastore", metastore.check_connectivity().await));
 
@@ -135,26 +131,7 @@ mod tests {
     }
 }
 
-/// A struct to print data on the standard output.
-pub struct Printer<'a> {
-    pub stdout: &'a mut Stdout,
-}
-
-impl<'a> Printer<'a> {
-    pub fn print_header(&mut self, header: &str) -> io::Result<()> {
-        write!(&mut self.stdout, " {}", header.bright_blue())?;
-        Ok(())
-    }
-
-    pub fn print_value(&mut self, fmt_args: fmt::Arguments) -> io::Result<()> {
-        write!(&mut self.stdout, " {}", fmt_args)
-    }
-
-    pub fn flush(&mut self) -> io::Result<()> {
-        self.stdout.flush()
-    }
-}
-
+/// Construct a table for display.
 pub fn make_table<T: Tabled>(header: &str, rows: impl IntoIterator<Item = T>) -> Table {
     Table::new(rows)
         .with(Header(header))

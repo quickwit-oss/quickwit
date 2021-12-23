@@ -18,10 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashSet, VecDeque};
-use std::env;
-use std::io::{stdout, Stdout};
+use std::io::{stdout, Stdout, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
 use chrono::Utc;
@@ -39,7 +39,7 @@ use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::source::FileSourceParams;
 use quickwit_indexing::{index_data, STD_IN_SOURCE_ID};
 use quickwit_metastore::checkpoint::Checkpoint;
-use quickwit_metastore::{IndexMetadata, MetastoreUriResolver, Split, SplitState};
+use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::single_node_search;
 use quickwit_storage::quickwit_storage_uri_resolver;
@@ -48,7 +48,7 @@ use serde_json::json;
 use tracing::{debug, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
-use crate::{parse_duration_with_unit, run_index_checklist, Printer, THROUGHPUT_WINDOW_SIZE};
+use crate::{parse_duration_with_unit, run_index_checklist, THROUGHPUT_WINDOW_SIZE};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
@@ -365,7 +365,7 @@ impl IndexCliCommand {
 
 pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "describe");
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let splits = metastore
@@ -626,7 +626,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         params,
     };
     run_index_checklist(&args.metastore_uri, &args.index_id, Some(&source_config)).await?;
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
@@ -689,7 +689,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponse> {
     debug!(args = ?args, "search-index");
     let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let search_request = SearchRequest {
         index_id: args.index_id,
@@ -726,7 +726,7 @@ pub async fn merge_or_demux_cli(
         params: json!(null),
     };
     run_index_checklist(&args.metastore_uri, &args.index_id, Some(&source_config)).await?;
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
     let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
@@ -881,6 +881,26 @@ pub async fn start_statistics_reporting_loop(
         );
     }
     Ok(pipeline_statistics)
+}
+
+/// A struct to print data on the standard output.
+struct Printer<'a> {
+    pub stdout: &'a mut Stdout,
+}
+
+impl<'a> Printer<'a> {
+    pub fn print_header(&mut self, header: &str) -> io::Result<()> {
+        write!(&mut self.stdout, " {}", header.bright_blue())?;
+        Ok(())
+    }
+
+    pub fn print_value(&mut self, fmt_args: fmt::Arguments) -> io::Result<()> {
+        write!(&mut self.stdout, " {}", fmt_args)
+    }
+
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.stdout.flush()
+    }
 }
 
 fn display_statistics(

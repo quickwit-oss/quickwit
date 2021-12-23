@@ -24,7 +24,7 @@ use quickwit_indexing::{
     delete_splits_with_files, run_garbage_collect, FileEntry, IndexingSplitStore,
 };
 use quickwit_metastore::{
-    IndexMetadata, Metastore, MetastoreUriResolver, SplitMetadata, SplitState,
+    quickwit_metastore_uri_resolver, IndexMetadata, Metastore, SplitMetadata, SplitState,
 };
 use quickwit_storage::{quickwit_storage_uri_resolver, Storage};
 use tracing::error;
@@ -38,7 +38,7 @@ pub async fn create_index(
     metastore_uri: &str,
     index_metadata: IndexMetadata,
 ) -> anyhow::Result<()> {
-    let metastore = MetastoreUriResolver::default()
+    let metastore = quickwit_metastore_uri_resolver()
         .resolve(metastore_uri)
         .await?;
     metastore.create_index(index_metadata).await?;
@@ -57,7 +57,7 @@ pub async fn delete_index(
     index_id: &str,
     dry_run: bool,
 ) -> anyhow::Result<Vec<FileEntry>> {
-    let metastore = MetastoreUriResolver::default()
+    let metastore = quickwit_metastore_uri_resolver()
         .resolve(metastore_uri)
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver();
@@ -126,7 +126,7 @@ pub async fn garbage_collect_index(
     grace_period: Duration,
     dry_run: bool,
 ) -> anyhow::Result<Vec<FileEntry>> {
-    let metastore = MetastoreUriResolver::default()
+    let metastore = quickwit_metastore_uri_resolver()
         .resolve(metastore_uri)
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver();
