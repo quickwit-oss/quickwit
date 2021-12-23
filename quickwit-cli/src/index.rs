@@ -883,21 +883,22 @@ pub async fn start_statistics_reporting_loop(
     Ok(pipeline_statistics)
 }
 
+/// A struct to print data on the standard output.
 struct Printer<'a> {
     pub stdout: &'a mut Stdout,
 }
 
 impl<'a> Printer<'a> {
-    fn print_header(&mut self, header: &str) -> io::Result<()> {
+    pub fn print_header(&mut self, header: &str) -> io::Result<()> {
         write!(&mut self.stdout, " {}", header.bright_blue())?;
         Ok(())
     }
 
-    fn print_value(&mut self, fmt_args: fmt::Arguments) -> io::Result<()> {
+    pub fn print_value(&mut self, fmt_args: fmt::Arguments) -> io::Result<()> {
         write!(&mut self.stdout, " {}", fmt_args)
     }
 
-    fn flush(&mut self) -> io::Result<()> {
+    pub fn flush(&mut self) -> io::Result<()> {
         self.stdout.flush()
     }
 }
