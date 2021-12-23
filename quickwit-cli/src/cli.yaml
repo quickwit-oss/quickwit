@@ -221,11 +221,11 @@ subcommands:
                         multiple_occurrences: true
                         use_delimiter: true
                     - start-date:
-                        about: Start date to filter on.
+                        about: Filters out splits containing documents from this timestamp onwards (time-series indexes only).
                         long: start-date
                         value_name: START TIMESTAMP
                     - end-date:
-                        about: End date to filter on.
+                        about: Filters out splits containing documents before this timestamp (time-series indexes only).
                         long: end-date
                         value_name: END TIMESTAMP
                     - tags:
