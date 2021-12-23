@@ -27,6 +27,7 @@ use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::quickwit_storage_uri_resolver;
 use regex::Regex;
+use tabled::{Alignment, Header, Modify, Row, Style, Table, Tabled};
 
 pub mod cli;
 pub mod index;
@@ -128,4 +129,12 @@ mod tests {
         assert!(parse_duration_with_unit("1h30").is_err());
         Ok(())
     }
+}
+
+/// Construct a table for display.
+pub fn make_table<T: Tabled>(header: &str, rows: impl IntoIterator<Item = T>) -> Table {
+    Table::new(rows)
+        .with(Header(header))
+        .with(Modify::new(Row(2..)).with(Alignment::left()))
+        .with(Style::psql())
 }

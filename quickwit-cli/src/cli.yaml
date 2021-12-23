@@ -196,8 +196,44 @@ subcommands:
         settings:
             - ArgRequiredElseHelp
         display_order: 2
-        about: Operations (add, delete, describe...) on splits.
+        about: Operations (list, add, delete, describe...) on splits.
         subcommands:
+            - list:
+                about: Lists the splits of an index.
+                args:
+                    - metastore-uri:
+                        about: Location of the metastore.
+                        long: metastore-uri
+                        value_name: METASTORE URI
+                        required: true
+                        env: QUICKWIT_METASTORE_URI
+                    - index-id:
+                        about: ID of the target index.
+                        long: index-id
+                        value_name: INDEX ID
+                        required: true
+                    - states:
+                        about: |
+                            Comma-separated list of split states to filter on.
+                            Possible values are `staged`, `published`, and `marked`.
+                        long: states
+                        value_name: SPLIT STATES
+                        multiple_occurrences: true
+                        use_delimiter: true
+                    - start-date:
+                        about: Filters out splits containing documents from this timestamp onwards (time-series indexes only).
+                        long: start-date
+                        value_name: START TIMESTAMP
+                    - end-date:
+                        about: Filters out splits containing documents before this timestamp (time-series indexes only).
+                        long: end-date
+                        value_name: END TIMESTAMP
+                    - tags:
+                        about: Comma-separated list of tags, only splits that contain all of the tags will be returned.
+                        long: tags
+                        value_name: TAGS
+                        multiple_occurrences: true
+                        use_delimiter: true
             - extract:
                 about: Downloads and extracts a split to a directory.
                 args:

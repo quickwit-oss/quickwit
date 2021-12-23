@@ -132,7 +132,7 @@ async fn main() -> anyhow::Result<()> {
 /// Return the about text with telemetry info.
 fn about_text() -> String {
     let mut about_text = String::from(
-        "Index your dataset on object storage & making it searchable from the command line.\n  Find more information at https://quickwit.io/docs\n\n",
+        "Index your dataset on object storage & make it searchable from the command line.\n  Find more information at https://quickwit.io/docs\n\n",
     );
     if quickwit_telemetry::is_telemetry_enabled() {
         about_text += "Telemetry: enabled";
@@ -152,7 +152,6 @@ mod tests {
         IndexCliCommand, IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
     };
     use quickwit_cli::service::{RunIndexerArgs, RunSearcherArgs, ServiceCliCommand};
-    use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs, SplitCliCommand};
     use quickwit_common::uri::Uri;
 
     use super::*;
@@ -561,62 +560,6 @@ mod tests {
                 index_id,
                 metastore_uri,
             })) if &index_id == "wikipedia" && &metastore_uri == "file:///indexes"
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_split_describe_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.try_get_matches_from(vec![
-            "split",
-            "describe",
-            "--index-id",
-            "wikipedia",
-            "--split-id",
-            "ABC",
-            "--metastore-uri",
-            "file:///indexes",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Split(SplitCliCommand::Describe(DescribeSplitArgs {
-                index_id,
-                split_id,
-                metastore_uri,
-                verbose: false,
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes"
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_split_extract_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.try_get_matches_from(vec![
-            "split",
-            "extract",
-            "--index-id",
-            "wikipedia",
-            "--split-id",
-            "ABC",
-            "--target-dir",
-            "datadir",
-            "--metastore-uri",
-            "file:///indexes",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Split(SplitCliCommand::Extract(ExtractSplitArgs {
-                index_id,
-                split_id,
-                metastore_uri,
-                target_dir
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == Uri::try_new("datadir")?.filepath().unwrap().to_path_buf()
         ));
         Ok(())
     }
