@@ -65,22 +65,10 @@ pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 use crate::thread_pool::run_cpu_intensive;
 
-/// Compute the gRPC port from the HTTP port.
-/// Add 1 to the HTTP port to get the gRPC port.
-pub fn http_addr_to_grpc_addr(http_addr: SocketAddr) -> SocketAddr {
-    SocketAddr::new(http_addr.ip(), http_addr.port() + 1)
-}
-
-/// Compute the SWIM port from the HTTP port.
-/// Add 2 to the HTTP port to get the SWIM port.
-pub fn http_addr_to_swim_addr(http_addr: SocketAddr) -> SocketAddr {
-    SocketAddr::new(http_addr.ip(), http_addr.port() + 2)
-}
-
 /// Compute the gRPC port from the SWIM port.
-/// Subtract 1 to the SWIM port to get the gRPC port.
+/// Add 1 to the SWIM port to get the gRPC port.
 pub fn swim_addr_to_grpc_addr(swim_addr: SocketAddr) -> SocketAddr {
-    SocketAddr::new(swim_addr.ip(), swim_addr.port() - 1)
+    SocketAddr::new(swim_addr.ip(), swim_addr.port() + 1)
 }
 
 /// GlobalDocAddress serves as a hit address.
