@@ -27,7 +27,6 @@ use byte_unit::Byte;
 use json_comments::StripComments;
 use quickwit_common::uri::Uri;
 use quickwit_index_config::{FieldMappingEntry, SortBy, SortOrder};
-use quickwit_storage::load_file;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -216,13 +215,13 @@ pub struct IndexConfig {
 
 impl IndexConfig {
     // Loads config from a given path and validates it.
-    pub async fn load(uri: &Uri) -> anyhow::Result<Self> {
-        let config = IndexConfig::from_uri(uri).await?;
+    pub async fn load(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
+        let config = IndexConfig::from_uri(uri, file_content).await?;
         config.validate()?;
         Ok(config)
     }
 
-    async fn from_uri(uri: &Uri) -> anyhow::Result<Self> {
+    async fn from_uri(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
         let parser_fn = match Path::new(uri.as_ref()).extension().and_then(OsStr::to_str) {
             Some("json") => Self::from_json,
             Some("toml") => Self::from_toml,
@@ -240,8 +239,7 @@ impl IndexConfig {
                 uri
             ),
         };
-        let file_content = load_file(uri).await?;
-        parser_fn(file_content.as_slice())
+        parser_fn(file_content)
     }
 
     fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
@@ -278,11 +276,14 @@ mod tests {
         ($test_function_name:ident, $file_extension:expr) => {
             #[tokio::test]
             async fn $test_function_name() -> anyhow::Result<()> {
-                let index_config_uri = Uri::try_new(&get_resource_path(&format!(
-                    "hdfs-logs.{}",
-                    stringify!($file_extension)
-                )))?;
-                let index_config = IndexConfig::from_uri(&index_config_uri).await?;
+                let index_config_filepath =
+                    get_resource_path(&format!("hdfs-logs.{}", stringify!($file_extension)));
+                let file = std::fs::read_to_string(&index_config_filepath).unwrap();
+                let index_config = IndexConfig::load(
+                    &Uri::try_new(&index_config_filepath).unwrap(),
+                    file.as_bytes(),
+                )
+                .await?;
                 assert_eq!(index_config.version, 0);
 
                 assert_eq!(index_config.doc_mapping.field_mappings.len(), 5);
@@ -374,9 +375,14 @@ mod tests {
     #[tokio::test]
     async fn test_index_config_default_values() {
         {
+            let index_config_filepath = get_resource_path("minimal-hdfs-logs.yaml");
+            let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
+
             let index_config_uri =
                 Uri::try_new(&get_resource_path("minimal-hdfs-logs.yaml")).unwrap();
-            let index_config = IndexConfig::from_uri(&index_config_uri).await.unwrap();
+            let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
+                .await
+                .unwrap();
 
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 1);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
@@ -391,9 +397,14 @@ mod tests {
             assert!(index_config.sources.is_empty());
         }
         {
+            let index_config_filepath = get_resource_path("partial-hdfs-logs.yaml");
+            let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
+
             let index_config_uri =
                 Uri::try_new(&get_resource_path("partial-hdfs-logs.yaml")).unwrap();
-            let index_config = IndexConfig::from_uri(&index_config_uri).await.unwrap();
+            let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
+                .await
+                .unwrap();
 
             assert_eq!(index_config.version, 0);
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 2);

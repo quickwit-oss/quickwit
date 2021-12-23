@@ -20,7 +20,10 @@
 mod config;
 mod index_config;
 
-pub use config::{IndexerConfig, QuickwitConfig, SearcherConfig};
+pub use config::{
+    get_searcher_config_instance, IndexerConfig, QuickwitConfig, SearcherConfig,
+    SEARCHER_CONFIG_INSTANCE,
+};
 pub use index_config::{
     DocMapping, IndexConfig, IndexingResources, IndexingSettings, MergePolicy, SearchSettings,
     SourceConfig,

@@ -29,7 +29,7 @@ use std::sync::Arc;
 
 use quickwit_cluster::cluster::Cluster;
 use quickwit_cluster::service::ClusterServiceImpl;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::{QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_metastore::Metastore;
 use quickwit_search::{ClusterClient, SearchClientPool, SearchServiceImpl};
 use quickwit_storage::{
@@ -66,6 +66,9 @@ pub async fn run_searcher(
     quickwit_config: QuickwitConfig,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<()> {
+    SEARCHER_CONFIG_INSTANCE
+        .set(quickwit_config.searcher_config.clone())
+        .expect("could not set searcher config in global once cell");
     let searcher_config = quickwit_config.searcher_config;
     let cluster = Arc::new(Cluster::new(
         quickwit_config.node_id.clone(),

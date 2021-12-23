@@ -24,10 +24,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use json_comments::StripComments;
+use once_cell::sync::OnceCell;
 use quickwit_common::net::{get_socket_addr, parse_socket_addr_with_default_port};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
-use quickwit_storage::load_file;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -108,8 +108,13 @@ impl Default for IndexerConfig {
     }
 }
 
-// TODO: caching
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub static SEARCHER_CONFIG_INSTANCE: once_cell::sync::OnceCell<SearcherConfig> = OnceCell::new();
+
+pub fn get_searcher_config_instance() -> &'static SearcherConfig {
+    SEARCHER_CONFIG_INSTANCE.get_or_init(SearcherConfig::default)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearcherConfig {
     #[serde(default = "default_listen_address")]
     pub rest_listen_address: String,
@@ -193,19 +198,19 @@ impl Default for SearcherConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct S3Config {
     pub region: Option<String>,
     pub endpoint: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StorageConfig {
     #[serde(rename = "s3")]
     pub s3_config: S3Config,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitConfig {
     pub version: usize,
@@ -230,8 +235,12 @@ pub struct QuickwitConfig {
 impl QuickwitConfig {
     // Loads quickwit config from the given path or from the default config file
     // and validates.
-    pub async fn load(uri: Uri, data_dir: Option<PathBuf>) -> anyhow::Result<Self> {
-        let mut config = QuickwitConfig::from_uri(&uri).await?;
+    pub async fn load(
+        uri: Uri,
+        config_content: &[u8],
+        data_dir: Option<PathBuf>,
+    ) -> anyhow::Result<Self> {
+        let mut config = QuickwitConfig::from_uri(&uri, config_content).await?;
         if let Some(data_dir_input) = data_dir {
             info!(
                 "Set data dir given by CLI args or env var to: {:?}",
@@ -243,7 +252,7 @@ impl QuickwitConfig {
         Ok(config)
     }
 
-    async fn from_uri(uri: &Uri) -> anyhow::Result<Self> {
+    async fn from_uri(uri: &Uri, config_content: &[u8]) -> anyhow::Result<Self> {
         let parser_fn = match Path::new(uri.as_ref()).extension().and_then(OsStr::to_str) {
             Some("json") => Self::from_json,
             Some("toml") => Self::from_toml,
@@ -259,8 +268,7 @@ impl QuickwitConfig {
                  formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml)."
             ),
         };
-        let file_content = load_file(uri).await?;
-        parser_fn(file_content.as_slice())
+        parser_fn(config_content)
     }
 
     fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
@@ -311,11 +319,11 @@ mod tests {
         ($test_function_name:ident, $file_extension:expr) => {
             #[tokio::test]
             async fn $test_function_name() -> anyhow::Result<()> {
-                let config_uri = Uri::try_new(&get_resource_path(&format!(
-                    "quickwit.{}",
-                    stringify!($file_extension)
-                )))?;
-                let config = QuickwitConfig::from_uri(&config_uri).await?;
+                let config_filepath =
+                    get_resource_path(&format!("quickwit.{}", stringify!($file_extension)));
+                let config_uri = Uri::try_new(&config_filepath)?;
+                let file = std::fs::read_to_string(&config_filepath).unwrap();
+                let config = QuickwitConfig::from_uri(&config_uri, file.as_bytes()).await?;
                 assert_eq!(config.version, 0);
                 assert_eq!(
                     config.metastore_uri,
@@ -444,8 +452,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_quickwit_config_validate() {
-        let config_uri = Uri::try_new(&get_resource_path("quickwit.toml")).unwrap();
-        let mut quickwit_config = QuickwitConfig::from_uri(&config_uri).await.unwrap();
+        let config_filepath = get_resource_path("quickwit.toml");
+        let file_content = std::fs::read_to_string(&config_filepath).unwrap();
+
+        let config_uri = Uri::try_new(&config_filepath).unwrap();
+        let mut quickwit_config = QuickwitConfig::from_uri(&config_uri, file_content.as_bytes())
+            .await
+            .unwrap();
         set_data_dir_path(&mut quickwit_config, env::current_dir().unwrap());
         assert!(quickwit_config.validate().is_ok());
     }
@@ -484,9 +497,11 @@ mod tests {
     #[tokio::test]
     async fn test_load_config_with_validation_error() {
         let config_path = get_resource_path("quickwit.yaml");
-        let config = QuickwitConfig::load(Uri::try_new(&config_path).unwrap(), None)
-            .await
-            .unwrap_err();
+        let file = std::fs::read_to_string(&config_path).unwrap();
+        let config =
+            QuickwitConfig::load(Uri::try_new(&config_path).unwrap(), file.as_bytes(), None)
+                .await
+                .unwrap_err();
         assert!(config.to_string().contains("Data dir"));
     }
 }
