@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use json_comments::StripComments;
-use quickwit_common::net::socket_addr_from_str;
+use quickwit_common::net::{get_socket_addr, parse_socket_addr_with_default_port};
 use quickwit_storage::load_file;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -138,37 +138,28 @@ impl SearcherConfig {
     }
 
     pub fn rest_socket_addr(&self) -> anyhow::Result<SocketAddr> {
-        socket_addr_from_str(format!(
-            "{}:{}",
-            self.rest_listen_address, self.rest_listen_port
-        ))
+        get_socket_addr(&(self.rest_listen_address.as_str(), self.rest_listen_port))
     }
 
     pub fn grpc_socket_addr(&self) -> anyhow::Result<SocketAddr> {
-        socket_addr_from_str(format!(
-            "{}:{}",
-            self.rest_listen_address,
-            self.rest_listen_port + 1
-        ))
+        get_socket_addr(&(self.rest_listen_address.as_str(), self.rest_listen_port + 1))
     }
 
-    pub fn discovery_socket_addr(&self) -> anyhow::Result<SocketAddr> {
-        socket_addr_from_str(format!(
-            "{}:{}",
-            self.rest_listen_address,
-            self.rest_listen_port + 2
-        ))
+    pub fn gossip_socket_addr(&self) -> anyhow::Result<SocketAddr> {
+        // We use the same port number as the rest port but this is UDP
+        get_socket_addr(&(self.rest_listen_address.as_str(), self.rest_listen_port))
     }
 
     pub fn peer_socket_addrs(&self) -> anyhow::Result<Vec<SocketAddr>> {
+        // If no port is given, we assume a peer is using the same port as ourself.
+        let default_gossip_port = self.gossip_socket_addr()?.port();
         let peer_socket_addrs: Vec<SocketAddr> = self
             .peer_seeds
             .iter()
             .flat_map(|peer_seed| {
-                socket_addr_from_str(format!("{}:{}", peer_seed, self.rest_listen_port + 2))
-                    .map_err(
-                        |_| warn!(address = %peer_seed, "Failed to resolve peer seed address."),
-                    )
+                parse_socket_addr_with_default_port(peer_seed, default_gossip_port).map_err(
+                    |_| warn!(address = %peer_seed, "Failed to resolve peer seed address."),
+                )
             })
             .collect();
 
@@ -393,7 +384,7 @@ mod tests {
             let server_config_yaml = r#"
             version: 0
             metastore_uri: postgres://username:password@host:port/db
- 
+
             indexer:
               data_dir_path: /opt/quickwit/data
 
@@ -497,7 +488,7 @@ mod tests {
             };
             assert_eq!(
                 searcher_config.peer_socket_addrs().unwrap(),
-                vec!["127.0.0.1:1791".parse().unwrap()]
+                vec!["127.0.0.1:1789".parse().unwrap()]
             );
         }
     }

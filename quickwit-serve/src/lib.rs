@@ -94,7 +94,7 @@ pub async fn run_searcher(
     let host_key = read_or_create_host_key(&searcher_config.host_key_path)?;
     let cluster = Arc::new(Cluster::new(
         host_key,
-        searcher_config.discovery_socket_addr()?,
+        searcher_config.gossip_socket_addr()?,
     )?);
     for peer_socket_addr in searcher_config.peer_socket_addrs()? {
         // If the peer address is specified,

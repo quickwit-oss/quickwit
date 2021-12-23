@@ -27,10 +27,101 @@ pub fn find_available_port() -> anyhow::Result<u16> {
     Ok(port)
 }
 
-/// Converts this string to a resolved `SocketAddr`.
-pub fn socket_addr_from_str<S: AsRef<str>>(addr: S) -> anyhow::Result<SocketAddr> {
-    addr.as_ref()
-        .to_socket_addrs()?
+/// Converts an object into a resolved `SocketAddr`.
+pub fn get_socket_addr<T: ToSocketAddrs + std::fmt::Debug>(addr: &T) -> anyhow::Result<SocketAddr> {
+    addr.to_socket_addrs()?
         .next()
-        .ok_or_else(|| anyhow::anyhow!("Failed to resolve address `{}`.", addr.as_ref()))
+        .ok_or_else(|| anyhow::anyhow!("Failed to resolve address `{:?}`.", addr))
+}
+
+/// Returns true if the socket addr is a valid socket address containing a port.
+///
+/// If the socket adddress looks invalid to begin with, we may return false or true.
+fn contains_port(addr: &str) -> bool {
+    // [IPv6]:port
+    if let Some((_, colon_port)) = addr[1..].rsplit_once(']') {
+        return colon_port.starts_with(':');
+    }
+    if let Some((host, _port)) = addr[1..].rsplit_once(':') {
+        // if host contains a ":" then is thi is probably a IPv6 address.
+        return !host.contains(':');
+    }
+    false
+}
+
+/// Attempts to parse a `socket_addr`.
+/// If no port is defined, it just accepts the address and uses the given default port.
+///
+/// This function supports
+/// - IPv4
+/// - IPv4:port
+/// - IPv6
+/// - [IPv6]:port -- IpV6 contains colon. It is customary to require bracket for this reason.
+/// - hostname
+/// - hostname:port
+/// with or without a port.
+///
+/// Note that this function returns a SocketAddr, so that if a hostname
+/// is given, DNS resolution will happen once and for all.
+pub fn parse_socket_addr_with_default_port(
+    addr: &str,
+    default_port: u16,
+) -> anyhow::Result<SocketAddr> {
+    if contains_port(addr) {
+        get_socket_addr(&addr)
+    } else {
+        get_socket_addr(&(addr, default_port))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_parse_socket_addr_helper(addr: &str, expected_opt: Option<&str>) {
+        let socket_addr_res = parse_socket_addr_with_default_port(addr, 1337);
+        if let Some(expected) = expected_opt {
+            assert!(
+                socket_addr_res.is_ok(),
+                "Parsing `{}` was expected to succeed",
+                addr
+            );
+            let socket_addr = socket_addr_res.unwrap();
+            let expected_socket_addr: SocketAddr = expected.parse().unwrap();
+            assert_eq!(socket_addr, expected_socket_addr);
+        } else {
+            assert!(
+                socket_addr_res.is_err(),
+                "Parsing `{}` was expected to fail",
+                addr
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_socket_addr_with_ips() {
+        test_parse_socket_addr_helper("127.0.0.1", Some("127.0.0.1:1337"));
+        test_parse_socket_addr_helper("127.0.0.1:100", Some("127.0.0.1:100"));
+        test_parse_socket_addr_helper("127.0.0.:100", None);
+        test_parse_socket_addr_helper(
+            "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+            Some("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:1337"),
+        );
+        test_parse_socket_addr_helper("2001:0db8:85a3:0000:0000:8a2e:0370:7334:1000", None);
+        test_parse_socket_addr_helper(
+            "[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:1000",
+            Some("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:1000"),
+        );
+        test_parse_socket_addr_helper("[2001:0db8:1000", None);
+        test_parse_socket_addr_helper("2001:0db8:85a3:0000:0000:8a2e:0370:7334]:1000", None);
+    }
+
+    // This test require DNS.
+    #[test]
+    fn test_parse_socket_addr_with_resolution() {
+        let socket_addr = parse_socket_addr_with_default_port("google.com:1000", 1337).unwrap();
+        assert_eq!(socket_addr.port(), 1000);
+        let socket_addr = parse_socket_addr_with_default_port("google.com", 1337).unwrap();
+        assert_eq!(socket_addr.port(), 1337);
+    }
 }
