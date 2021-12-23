@@ -72,7 +72,7 @@ Now we can create the index with the command:
 
 ```bash
 
-./quickwit new --index-uri file:///your-path-to-your-index/wikipedia --index-config-path ./wikipedia_index_config.json --index-id wikipedia --metastore-uri file:///path-to-your-metastore
+./quickwit new --index-uri file:///your-path-to-your-index/wikipedia --index-config-path ./wikipedia_index_config.json --index wikipedia --metastore-uri file:///path-to-your-metastore
 ```
 
 The metastore is like a directory of indexes that has it's own storage and some meta information about the indexes.
@@ -80,7 +80,7 @@ The metastore is like a directory of indexes that has it's own storage and some 
 To simplify our command, we now assume that the index and metastore are to be created in the current directory and use the `pwd` command to specify the index uri:
 
 ```bash
-./quickwit new --index-uri file://$(pwd)/wikipedia --index-config-path ./wikipedia_index_config.json --index-id wikipedia --metastore-uri file://$(pwd)/metastore/
+./quickwit new --index-uri file://$(pwd)/wikipedia --index-config-path ./wikipedia_index_config.json --index wikipedia --metastore-uri file://$(pwd)/metastore/
 ```
 
 Check that an empty directory `$(pwd)/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../overview/architecture.md#index-metadata).
@@ -103,13 +103,13 @@ Let's download [a bunch of wikipedia articles (10 000)](https://quickwit-dataset
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 
 # Index our 10k documents.
-./quickwit index --index-id wikipedia --data-dir-path ./wikipedia --metastore-uri file://$(pwd)/metastore --input-path wiki-articles-10000.json
+./quickwit index --index wikipedia --data-dir-path ./wikipedia --metastore-uri file://$(pwd)/metastore --input-path wiki-articles-10000.json
 ```
 
 Wait one second or two and check if it worked by using `search` command:
 
 ```bash
-./quickwit search --index-id wikipedia --metastore-uri file://$(pwd)/metastore --query "barack AND obama"
+./quickwit search --index wikipedia --metastore-uri file://$(pwd)/metastore --query "barack AND obama"
 ```
 
 It should return 10 hits. Now you're ready to serve our search API.
@@ -151,7 +151,7 @@ Don't forget to encode correctly the query params to avoid bad request (status 4
 Let's do some cleanup by deleting the index:
 
 ```bash
-./quickwit delete --index-id wikipedia --metastore-uri file:///$(pwd)/metastore
+./quickwit delete --index wikipedia --metastore-uri file:///$(pwd)/metastore
 ```
 
 Congrats! You can level up with the following tutorials to discover all Quickwit features.
@@ -161,11 +161,11 @@ Congrats! You can level up with the following tutorials to discover all Quickwit
 
 ```bash
 curl -o wikipedia_index_config.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/wikipedia_index_config.json
-./quickwit new --index-uri file://$(pwd)/wikipedia --index-config-path ./wikipedia_index_config.json --index-id wikipedia --metastore-uri file://$(pwd)/metastore/
+./quickwit new --index-uri file://$(pwd)/wikipedia --index-config-path ./wikipedia_index_config.json --index wikipedia --metastore-uri file://$(pwd)/metastore/
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
-./quickwit index --index-id wikipedia --data-dir-path ./wikipedia --metastore-uri file://$(pwd)/metastore --input-path wiki-articles-10000.json
-./quickwit search --index-id wikipedia --metastore-uri file://$(pwd)/metastore --query "barack AND obama"
-./quickwit delete --index-id wikipedia --metastore-uri file:///$(pwd)/metastore
+./quickwit index --index wikipedia --data-dir-path ./wikipedia --metastore-uri file://$(pwd)/metastore --input-path wiki-articles-10000.json
+./quickwit search --index wikipedia --metastore-uri file://$(pwd)/metastore --query "barack AND obama"
+./quickwit delete --index wikipedia --metastore-uri file:///$(pwd)/metastore
 ```
 
 

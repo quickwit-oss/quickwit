@@ -1,17 +1,16 @@
 # Comments are supported.
 {
     "version": 0,
+    "node_id": "my-unique-node-id",
     "metastore_uri": "postgres://username:password@host:port/db",
+    "data_dir_path": "/opt/quickwit/data",
     "indexer": {
-        "data_dir_path": "/opt/quickwit/data",
         "rest_listen_address": "0.0.0.0",
         "rest_listen_port": 1111,
         "split_store_max_num_bytes": "1T",
         "split_store_max_num_splits": 10000
     },
     "searcher": {
-        "data_dir_path": "/opt/quickwit/data",
-        "host_key_path": "/opt/quickwit/host_key",
         "rest_listen_address": "0.0.0.0",
         "rest_listen_port": 11111,
         "peer_seeds": [

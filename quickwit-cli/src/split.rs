@@ -27,6 +27,7 @@ use clap::ArgMatches;
 use humansize::{file_size_opts, FileSize};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
+use quickwit_config::QuickwitConfig;
 use quickwit_directories::{
     get_hotcache_from_split, read_split_footer, BundleDirectory, HotDirectory,
 };
@@ -39,7 +40,8 @@ use crate::make_table;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ListSplitArgs {
-    pub metastore_uri: String,
+    pub config_uri: Uri,
+    pub data_dir: Option<PathBuf>,
     pub index_id: String,
     pub states: Vec<SplitState>,
     pub start_date: Option<i64>,
@@ -49,7 +51,8 @@ pub struct ListSplitArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeSplitArgs {
-    pub metastore_uri: String,
+    pub config_uri: Uri,
+    pub data_dir: Option<PathBuf>,
     pub index_id: String,
     pub split_id: String,
     pub verbose: bool,
@@ -57,7 +60,8 @@ pub struct DescribeSplitArgs {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ExtractSplitArgs {
-    pub metastore_uri: String,
+    pub config_uri: Uri,
+    pub data_dir: Option<PathBuf>,
     pub index_id: String,
     pub split_id: String,
     pub target_dir: PathBuf,
@@ -84,16 +88,15 @@ impl SplitCliCommand {
     }
 
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let metastore_uri = matches
-            .value_of("metastore-uri")
+        let config_uri = matches
+            .value_of("config")
             .map(Uri::try_new)
-            .expect("`metastore-uri` is a required arg.")?
-            .to_string();
+            .expect("`config` is a required arg.")?;
+        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let index_id = matches
-            .value_of("index-id")
+            .value_of("index")
             .map(String::from)
-            .expect("`index-id` is a required arg.");
-
+            .expect("`index` is a required arg.");
         let states = matches
             .values_of("states")
             .map_or(vec![], |values| {
@@ -102,7 +105,6 @@ impl SplitCliCommand {
             .into_iter()
             .collect::<Result<Vec<_>, _>>()
             .map_err(|err_str| anyhow::anyhow!(err_str))?;
-
         let start_date = if let Some(date_str) = matches.value_of("start-date") {
             let from_date_time = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
                 .map(|date| date.and_hms(0, 0, 0))
@@ -116,7 +118,6 @@ impl SplitCliCommand {
         } else {
             None
         };
-
         let end_date = if let Some(date_str) = matches.value_of("end-date") {
             let to_date_time = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
                 .map(|date| date.and_hms(0, 0, 0))
@@ -129,7 +130,6 @@ impl SplitCliCommand {
         } else {
             None
         };
-
         let tags = matches
             .values_of("tags")
             .map_or(BTreeSet::default(), |values| {
@@ -138,69 +138,66 @@ impl SplitCliCommand {
                     .map(str::to_string)
                     .collect::<BTreeSet<_>>()
             });
-
         Ok(Self::List(ListSplitArgs {
-            metastore_uri,
             index_id,
             states,
             start_date,
             end_date,
             tags,
+            config_uri,
+            data_dir,
         }))
     }
 
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
-            .value_of("index-id")
+            .value_of("index")
             .map(String::from)
             .expect("'index-id' is a required arg.");
         let split_id = matches
-            .value_of("split-id")
+            .value_of("split")
             .map(String::from)
             .expect("'split-id' is a required arg.");
-        let metastore_uri = matches
-            .value_of("metastore-uri")
+        let config_uri = matches
+            .value_of("config")
             .map(Uri::try_new)
-            .expect("`metastore-uri` is a required arg.")?
-            .to_string();
-
+            .expect("`config` is a required arg.")?;
+        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         let verbose = matches.is_present("verbose");
 
         Ok(Self::Describe(DescribeSplitArgs {
-            metastore_uri,
+            config_uri,
             index_id,
             split_id,
             verbose,
+            data_dir,
         }))
     }
 
     fn parse_extract_split_args(matches: &ArgMatches) -> anyhow::Result<Self> {
         let index_id = matches
-            .value_of("index-id")
+            .value_of("index")
             .map(String::from)
             .expect("'index-id' is a required arg.");
         let split_id = matches
-            .value_of("split-id")
+            .value_of("split")
             .map(String::from)
             .expect("'split-id' is a required arg.");
-        let metastore_uri = matches
-            .value_of("metastore-uri")
+        let config_uri = matches
+            .value_of("config")
             .map(Uri::try_new)
-            .expect("`metastore-uri` is a required arg.")?
-            .to_string();
+            .expect("`config` is a required arg.")?;
         let target_dir = matches
             .value_of("target-dir")
-            .map(Uri::try_new)
-            .expect("`target-dir` is a required arg.")?
-            .filepath()
-            .expect("`target-dir` should point to a local path.")
-            .to_path_buf();
-
+            .map(PathBuf::from)
+            .expect("`target-dir` is a required arg.");
+        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(Self::Extract(ExtractSplitArgs {
-            metastore_uri,
+            config_uri,
             index_id,
             split_id,
             target_dir,
+            data_dir,
         }))
     }
 
@@ -216,8 +213,11 @@ impl SplitCliCommand {
 async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "list-split");
 
+    let quickwit_config = QuickwitConfig::load(args.config_uri, None).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+    let metastore = metastore_uri_resolver
+        .resolve(&quickwit_config.metastore_uri)
+        .await?;
     let splits = metastore.list_all_splits(&args.index_id).await?;
 
     let filtered_splits = filter_splits(
@@ -237,9 +237,12 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
 async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "describe-split");
 
+    let quickwit_config = QuickwitConfig::load(args.config_uri, args.data_dir).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+    let metastore = metastore_uri_resolver
+        .resolve(&quickwit_config.metastore_uri)
+        .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
 
@@ -264,9 +267,12 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
 async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "extract-split");
 
+    let quickwit_config = QuickwitConfig::load(args.config_uri, args.data_dir).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver.resolve(&args.metastore_uri).await?;
+    let metastore = metastore_uri_resolver
+        .resolve(&quickwit_config.metastore_uri)
+        .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
@@ -422,9 +428,7 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "split",
             "list",
-            "--metastore-uri",
-            "file:///indexes",
-            "--index-id",
+            "--index",
             "wikipedia",
             "--states",
             "published,staged",
@@ -434,14 +438,15 @@ mod tests {
             "2021-12-05T00:30:25",
             "--tags",
             "foo:bar,bar:baz",
+            "--config",
+            "file:///config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
             CliCommand::Split(SplitCliCommand::List(ListSplitArgs {
-                index_id, metastore_uri, states, start_date, end_date, tags
+                index_id, states, start_date, end_date, tags, ..
             })) if &index_id == "wikipedia"
-            && &metastore_uri == "file:///indexes"
             && states == vec![SplitState::Published, SplitState::Staged]
             && start_date == Some(NaiveDateTime::parse_from_str("2021-12-03T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap().timestamp())
             && end_date == Some(NaiveDateTime::parse_from_str("2021-12-05T00:30:25", "%Y-%m-%dT%H:%M:%S").unwrap().timestamp())
@@ -453,14 +458,14 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "split",
             "list",
-            "--metastore-uri",
-            "file:///indexes",
-            "--index-id",
+            "--index",
             "wikipedia",
             "--states",
             "published",
             "--start-date",
             "2021-12-03T", // <- expect time
+            "--config",
+            "file:///config.yaml",
         ])?;
         assert!(matches!(CliCommand::parse_cli_args(&matches), Err { .. }));
 
@@ -474,12 +479,12 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "split",
             "describe",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--split-id",
+            "--split",
             "ABC",
-            "--metastore-uri",
-            "file:///indexes",
+            "--config",
+            "file:///config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
@@ -487,9 +492,9 @@ mod tests {
             CliCommand::Split(SplitCliCommand::Describe(DescribeSplitArgs {
                 index_id,
                 split_id,
-                metastore_uri,
                 verbose: false,
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes"
+                ..
+            })) if &index_id == "wikipedia" && &split_id == "ABC"
         ));
         Ok(())
     }
@@ -501,14 +506,14 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "split",
             "extract",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--split-id",
+            "--split",
             "ABC",
             "--target-dir",
             "/datadir",
-            "--metastore-uri",
-            "file:///indexes",
+            "--config",
+            "file:///config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
@@ -516,9 +521,9 @@ mod tests {
             CliCommand::Split(SplitCliCommand::Extract(ExtractSplitArgs {
                 index_id,
                 split_id,
-                metastore_uri,
-                target_dir
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == PathBuf::from("/datadir")
+                target_dir,
+                ..
+            })) if &index_id == "wikipedia" && &split_id == "ABC" && target_dir == PathBuf::from("/datadir")
         ));
         Ok(())
     }

@@ -17,11 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::path::PathBuf;
+
 use anyhow::{bail, Context};
 use clap::ArgMatches;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::SourceConfig;
+use quickwit_config::{QuickwitConfig, SourceConfig};
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
 use serde_json::Value;
@@ -31,14 +33,16 @@ use crate::make_table;
 
 #[derive(Debug, PartialEq)]
 pub struct DescribeSourceArgs {
-    pub metastore_uri: String,
+    pub config_uri: Uri,
+    pub data_dir: Option<PathBuf>,
     pub index_id: String,
     pub source_id: String,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ListSourcesArgs {
-    pub metastore_uri: String,
+    pub config_uri: Uri,
+    pub data_dir: Option<PathBuf>,
     pub index_id: String,
 }
 
@@ -68,45 +72,48 @@ impl SourceCliCommand {
     }
 
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<DescribeSourceArgs> {
-        let metastore_uri = matches
-            .value_of("metastore-uri")
+        let config_uri = matches
+            .value_of("config")
             .map(Uri::try_new)
-            .expect("`metastore-uri` is a required arg.")?
-            .to_string();
+            .expect("`config` is a required arg.")?;
         let index_id = matches
-            .value_of("index-id")
+            .value_of("index")
             .map(String::from)
-            .expect("`index-id` is a required arg.");
+            .expect("`index` is a required arg.");
         let source_id = matches
-            .value_of("source-id")
+            .value_of("source")
             .map(String::from)
             .expect("`source-id` is a required arg.");
+        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(DescribeSourceArgs {
-            metastore_uri,
+            config_uri,
             index_id,
             source_id,
+            data_dir,
         })
     }
 
     fn parse_list_args(matches: &ArgMatches) -> anyhow::Result<ListSourcesArgs> {
-        let metastore_uri = matches
-            .value_of("metastore-uri")
+        let config_uri = matches
+            .value_of("config")
             .map(Uri::try_new)
-            .expect("`metastore-uri` is a required arg.")?
-            .to_string();
+            .expect("`config` is a required arg.")?;
         let index_id = matches
-            .value_of("index-id")
+            .value_of("index")
             .map(String::from)
-            .expect("`index-id` is a required arg.");
+            .expect("`index` is a required arg.");
+        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(ListSourcesArgs {
-            metastore_uri,
+            config_uri,
             index_id,
+            data_dir,
         })
     }
 }
 
 async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
-    let index_metadata = resolve_index(&args.metastore_uri, &args.index_id).await?;
+    let quickwit_config = QuickwitConfig::load(args.config_uri, args.data_dir).await?;
+    let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let (source_table, params_table, checkpoint_table) = make_describe_source_tables(
         index_metadata.checkpoint,
         index_metadata.sources,
@@ -150,7 +157,8 @@ fn make_describe_source_tables(
 }
 
 async fn list_sources_cli(args: ListSourcesArgs) -> anyhow::Result<()> {
-    let index_metadata = resolve_index(&args.metastore_uri, &args.index_id).await?;
+    let quickwit_config = QuickwitConfig::load(args.config_uri, args.data_dir).await?;
+    let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let table = make_list_sources_table(index_metadata.sources);
     display_tables(&[table]);
     Ok(())
@@ -266,20 +274,21 @@ mod tests {
             .try_get_matches_from(vec![
                 "source",
                 "describe",
-                "--index-id",
+                "--index",
                 "hdfs-logs",
-                "--source-id",
+                "--source",
                 "hdfs-logs-source",
-                "--metastore-uri",
-                "/indexes",
+                "--config",
+                "/conf.yaml",
             ])
             .unwrap();
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command =
             CliCommand::Source(SourceCliCommand::DescribeSource(DescribeSourceArgs {
-                metastore_uri: "file:///indexes".to_string(),
+                config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
+                data_dir: None,
             }));
         assert_eq!(command, expected_command);
     }
@@ -344,16 +353,17 @@ mod tests {
             .try_get_matches_from(vec![
                 "source",
                 "list",
-                "--index-id",
+                "--index",
                 "hdfs-logs",
-                "--metastore-uri",
-                "/indexes",
+                "--config",
+                "/conf.yaml",
             ])
             .unwrap();
         let command = CliCommand::parse_cli_args(&matches).unwrap();
         let expected_command = CliCommand::Source(SourceCliCommand::ListSources(ListSourcesArgs {
-            metastore_uri: "file:///indexes".to_string(),
+            config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
             index_id: "hdfs-logs".to_string(),
+            data_dir: None,
         }));
         assert_eq!(command, expected_command);
     }

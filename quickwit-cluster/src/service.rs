@@ -32,7 +32,7 @@ use crate::error::ClusterError;
 impl From<Member> for PMember {
     fn from(member: Member) -> Self {
         PMember {
-            id: member.host_key.to_string(),
+            id: member.node_id.to_string(),
             listen_address: member.listen_addr.to_string(),
             is_self: member.is_self,
         }
@@ -101,12 +101,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_convert_proto_member() {
-        let host_key = Uuid::new_v4();
+        let host_id = Uuid::new_v4().to_string();
         let listen_addr = "localhost:12345".to_socket_addrs().unwrap().next().unwrap();
         let is_self = true;
 
         let member = Member {
-            host_key,
+            node_id: host_id.clone(),
             listen_addr,
             is_self,
         };
@@ -116,7 +116,7 @@ mod tests {
         println!("proto_member={:?}", proto_member);
 
         let expected = PMember {
-            id: host_key.to_string(),
+            id: host_id,
             listen_address: listen_addr.to_string(),
             is_self,
         };

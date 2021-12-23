@@ -25,12 +25,33 @@ use anyhow::{bail, Context};
 use byte_unit::Byte;
 use json_comments::StripComments;
 use quickwit_common::net::{get_socket_addr, parse_socket_addr_with_default_port};
+use quickwit_common::new_coolid;
+use quickwit_common::uri::Uri;
 use quickwit_storage::load_file;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::{info, warn};
+
+static DEFAULT_DATA_DIR_PATH: &str = "./qwdata";
 
 fn default_data_dir_path() -> PathBuf {
-    PathBuf::from("/var/lib/quickwit/data")
+    PathBuf::from(DEFAULT_DATA_DIR_PATH)
+}
+
+// Paradoxically the default metastore and the index root uri are the same.
+// Indeed, this is a convenient setting for testing with a file backed metastore
+// and indexes splits stored locally too.
+// For a given index `index-id`, it means that we have the metastore file
+// in  `./qwdata/indexes/{index-id}/metastore.json` and splits in
+// dir `./qwdata/indexes/{index-id}/splits`.
+fn default_metastore_and_index_root_uri() -> String {
+    Uri::try_new(&default_data_dir_path().join("indexes").to_string_lossy())
+        .expect("Default data dir `./qwdata` value is invalid.")
+        .as_ref()
+        .to_string()
+}
+
+fn default_node_id() -> String {
+    new_coolid("node")
 }
 
 fn default_listen_address() -> String {
@@ -39,8 +60,6 @@ fn default_listen_address() -> String {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct IndexerConfig {
-    #[serde(default = "default_data_dir_path")]
-    pub data_dir_path: PathBuf,
     #[serde(default = "default_listen_address")]
     pub rest_listen_address: String,
     #[serde(default = "IndexerConfig::default_rest_listen_port")]
@@ -69,7 +88,6 @@ impl IndexerConfig {
 
         let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig {
-            data_dir_path: temp_dir.path().to_path_buf(),
             rest_listen_port: find_available_port()?,
             split_store_max_num_bytes: Byte::from_bytes(50_000_000),
             split_store_max_num_splits: 100,
@@ -77,22 +95,11 @@ impl IndexerConfig {
         };
         Ok((indexer_config, temp_dir))
     }
-
-    pub fn validate(&self) -> anyhow::Result<()> {
-        if !self.data_dir_path.exists() {
-            bail!(
-                "Data dir `{}` does not exist.",
-                self.data_dir_path.display()
-            );
-        }
-        Ok(())
-    }
 }
 
 impl Default for IndexerConfig {
     fn default() -> Self {
         Self {
-            data_dir_path: default_data_dir_path(),
             rest_listen_address: default_listen_address(),
             rest_listen_port: Self::default_rest_listen_port(),
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
@@ -104,10 +111,6 @@ impl Default for IndexerConfig {
 // TODO: caching
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SearcherConfig {
-    #[serde(default = "default_data_dir_path")]
-    pub data_dir_path: PathBuf,
-    #[serde(default = "SearcherConfig::default_host_key_path")]
-    pub host_key_path: PathBuf,
     #[serde(default = "default_listen_address")]
     pub rest_listen_address: String,
     #[serde(default = "SearcherConfig::default_rest_listen_port")]
@@ -121,10 +124,6 @@ pub struct SearcherConfig {
 }
 
 impl SearcherConfig {
-    fn default_host_key_path() -> PathBuf {
-        PathBuf::from("/var/lib/quickwit/host_key")
-    }
-
     fn default_rest_listen_port() -> u16 {
         7280
     }
@@ -175,12 +174,6 @@ impl SearcherConfig {
 
 impl SearcherConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
-        if !self.data_dir_path.exists() {
-            bail!(
-                "Data dir `{}` does not exist.",
-                self.data_dir_path.display()
-            );
-        }
         if self.peer_seeds.is_empty() {
             warn!("Peer seed list is empty.")
         }
@@ -191,8 +184,6 @@ impl SearcherConfig {
 impl Default for SearcherConfig {
     fn default() -> Self {
         Self {
-            data_dir_path: default_data_dir_path(),
-            host_key_path: Self::default_host_key_path(),
             rest_listen_address: default_listen_address(),
             rest_listen_port: Self::default_rest_listen_port(),
             peer_seeds: Vec::new(),
@@ -215,20 +206,45 @@ pub struct StorageConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct ServerConfig {
+#[serde(deny_unknown_fields)]
+pub struct QuickwitConfig {
     pub version: usize,
+    #[serde(default = "default_node_id")]
+    pub node_id: String,
+    #[serde(default = "default_metastore_and_index_root_uri")]
     pub metastore_uri: String,
+    #[serde(default = "default_metastore_and_index_root_uri")]
+    pub default_index_root_uri: String,
+    #[serde(default = "default_data_dir_path")]
+    pub data_dir_path: PathBuf,
     #[serde(rename = "indexer")]
-    pub indexer_config: Option<IndexerConfig>,
+    #[serde(default)]
+    pub indexer_config: IndexerConfig,
     #[serde(rename = "searcher")]
-    pub searcher_config: Option<SearcherConfig>,
+    #[serde(default)]
+    pub searcher_config: SearcherConfig,
     #[serde(rename = "storage")]
     pub storage_config: Option<StorageConfig>,
 }
 
-impl ServerConfig {
-    pub async fn from_file(path: &str) -> anyhow::Result<Self> {
-        let parser_fn = match Path::new(path).extension().and_then(OsStr::to_str) {
+impl QuickwitConfig {
+    // Loads quickwit config from the given path or from the default config file
+    // and validates.
+    pub async fn load(uri: Uri, data_dir: Option<PathBuf>) -> anyhow::Result<Self> {
+        let mut config = QuickwitConfig::from_uri(&uri).await?;
+        if let Some(data_dir_input) = data_dir {
+            info!(
+                "Set data dir given by CLI args or env var to: {:?}",
+                data_dir_input
+            );
+            config.data_dir_path = data_dir_input;
+        }
+        config.validate()?;
+        Ok(config)
+    }
+
+    async fn from_uri(uri: &Uri) -> anyhow::Result<Self> {
+        let parser_fn = match Path::new(uri.as_ref()).extension().and_then(OsStr::to_str) {
             Some("json") => Self::from_json,
             Some("toml") => Self::from_toml,
             Some("yaml") | Some("yml") => Self::from_yaml,
@@ -243,30 +259,31 @@ impl ServerConfig {
                  formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml)."
             ),
         };
-        let file_content = load_file(path).await?;
+        let file_content = load_file(uri).await?;
         parser_fn(file_content.as_slice())
     }
 
-    pub fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
+    fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
         serde_json::from_reader(StripComments::new(bytes))
             .context("Failed to parse JSON server config file.")
     }
 
-    pub fn from_toml(bytes: &[u8]) -> anyhow::Result<Self> {
+    fn from_toml(bytes: &[u8]) -> anyhow::Result<Self> {
         toml::from_slice(bytes).context("Failed to parse TOML server config file.")
     }
 
-    pub fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
+    fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
         serde_yaml::from_slice(bytes).context("Failed to parse YAML server config file.")
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
-        if let Some(indexer_config) = &self.indexer_config {
-            indexer_config.validate()?;
+        if !self.data_dir_path.exists() {
+            bail!(
+                "Data dir `{}` does not exist.",
+                self.data_dir_path.display()
+            );
         }
-        if let Some(searcher_config) = &self.searcher_config {
-            searcher_config.validate()?;
-        }
+        self.searcher_config.validate()?;
         Ok(())
     }
 }
@@ -280,38 +297,34 @@ mod tests {
 
     fn get_resource_path(resource_filename: &str) -> String {
         format!(
-            "{}/resources/tests/server_config/{}",
+            "{}/resources/tests/config/{}",
             env!("CARGO_MANIFEST_DIR"),
             resource_filename
         )
     }
 
-    fn set_data_dir_path(server_config: &mut ServerConfig, path: PathBuf) {
-        if let Some(indexer_config) = &mut server_config.indexer_config {
-            indexer_config.data_dir_path = path.clone();
-        }
-        if let Some(searcher_config) = &mut server_config.searcher_config {
-            searcher_config.data_dir_path = path;
-        }
+    fn set_data_dir_path(config: &mut QuickwitConfig, path: PathBuf) {
+        config.data_dir_path = path;
     }
 
     macro_rules! test_parser {
         ($test_function_name:ident, $file_extension:expr) => {
             #[tokio::test]
             async fn $test_function_name() -> anyhow::Result<()> {
-                let server_config_filepath =
-                    get_resource_path(&format!("server.{}", stringify!($file_extension)));
-                let server_config = ServerConfig::from_file(&server_config_filepath).await?;
-                assert_eq!(server_config.version, 0);
+                let config_uri = Uri::try_new(&get_resource_path(&format!(
+                    "quickwit.{}",
+                    stringify!($file_extension)
+                )))?;
+                let config = QuickwitConfig::from_uri(&config_uri).await?;
+                assert_eq!(config.version, 0);
                 assert_eq!(
-                    server_config.metastore_uri,
+                    config.metastore_uri,
                     "postgres://username:password@host:port/db"
                 );
 
                 assert_eq!(
-                    server_config.indexer_config.unwrap(),
+                    config.indexer_config,
                     IndexerConfig {
-                        data_dir_path: PathBuf::from("/opt/quickwit/data"),
                         rest_listen_address: "0.0.0.0".to_string(),
                         rest_listen_port: 1111,
                         split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
@@ -320,10 +333,8 @@ mod tests {
                 );
 
                 assert_eq!(
-                    server_config.searcher_config.unwrap(),
+                    config.searcher_config,
                     SearcherConfig {
-                        data_dir_path: PathBuf::from("/opt/quickwit/data"),
-                        host_key_path: PathBuf::from("/opt/quickwit/host_key"),
                         rest_listen_address: "0.0.0.0".to_string(),
                         rest_listen_port: 11111,
                         peer_seeds: vec![
@@ -336,7 +347,7 @@ mod tests {
                 );
 
                 assert_eq!(
-                    server_config.storage_config.unwrap().s3_config,
+                    config.storage_config.unwrap().s3_config,
                     S3Config {
                         region: Some("us-east-1".to_string()),
                         endpoint: Some("https://s3.us-east-1.amazonaws.com".to_string()),
@@ -347,9 +358,9 @@ mod tests {
         };
     }
 
-    test_parser!(test_server_config_from_json, json);
-    test_parser!(test_server_config_from_toml, toml);
-    test_parser!(test_server_config_from_yaml, yaml);
+    test_parser!(test_config_from_json, json);
+    test_parser!(test_config_from_toml, toml);
+    test_parser!(test_config_from_yaml, yaml);
 
     #[test]
     fn test_indexer_config_default_values() {
@@ -364,73 +375,60 @@ mod tests {
     }
 
     #[test]
-    fn test_server_config_default_values() {
+    fn test_config_default_values() {
         {
-            let server_config_yaml = r#"
+            let config_yaml = r#"
             version: 0
+            node_id: 1
             metastore_uri: postgres://username:password@host:port/db
         "#;
-            let server_config = serde_yaml::from_str::<ServerConfig>(server_config_yaml).unwrap();
-            assert_eq!(server_config.version, 0);
+            let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
+            assert_eq!(config.version, 0);
+            assert_eq!(config.node_id, "1");
             assert_eq!(
-                server_config.metastore_uri,
+                config.metastore_uri,
                 "postgres://username:password@host:port/db"
             );
-            assert!(server_config.indexer_config.is_none());
-            assert!(server_config.searcher_config.is_none());
-            assert!(server_config.storage_config.is_none());
+            assert!(config.storage_config.is_none());
         }
         {
-            let server_config_yaml = r#"
+            let config_yaml = r#"
             version: 0
             metastore_uri: postgres://username:password@host:port/db
-
-            indexer:
-              data_dir_path: /opt/quickwit/data
-
-            searcher:
-              data_dir_path: /opt/quickwit/data
-              host_key_path: /opt/quickwit/host_key
+            data_dir_path: /opt/quickwit/data
         "#;
-            let server_config = serde_yaml::from_str::<ServerConfig>(server_config_yaml).unwrap();
-            assert_eq!(server_config.version, 0);
+            let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
+            assert_eq!(config.version, 0);
             assert_eq!(
-                server_config.metastore_uri,
+                config.metastore_uri,
                 "postgres://username:password@host:port/db"
             );
             assert_eq!(
-                server_config.indexer_config.unwrap(),
+                config.indexer_config,
                 IndexerConfig {
-                    data_dir_path: PathBuf::from("/opt/quickwit/data"),
                     ..Default::default()
                 }
             );
             assert_eq!(
-                server_config.searcher_config.unwrap(),
+                config.searcher_config,
                 SearcherConfig {
-                    data_dir_path: PathBuf::from("/opt/quickwit/data"),
-                    host_key_path: PathBuf::from("/opt/quickwit/host_key"),
                     ..Default::default()
                 }
             );
         }
-    }
-
-    #[test]
-    fn test_indexer_config_validate() {
         {
-            let indexer_config = IndexerConfig {
-                data_dir_path: "/data/dir/does/not/exist".into(),
-                ..Default::default()
-            };
-            assert!(indexer_config.validate().is_err());
-        }
-        {
-            let indexer_config = IndexerConfig {
-                data_dir_path: env::current_dir().unwrap(),
-                ..Default::default()
-            };
-            assert!(indexer_config.validate().is_ok());
+            let minimal_config_yaml = "version: 0";
+            let config = serde_yaml::from_str::<QuickwitConfig>(minimal_config_yaml).unwrap();
+            assert_eq!(config.version, 0);
+            assert!(config.node_id.starts_with("node-"));
+            assert_eq!(
+                config.metastore_uri,
+                format!(
+                    "file://{}/qwdata/indexes",
+                    env::current_dir().unwrap().display()
+                )
+            );
+            assert_eq!(config.data_dir_path.to_string_lossy(), "./qwdata");
         }
     }
 
@@ -438,14 +436,6 @@ mod tests {
     fn test_searcher_config_validate() {
         {
             let searcher_config = SearcherConfig {
-                data_dir_path: "/data/dir/does/not/exist".into(),
-                ..Default::default()
-            };
-            assert!(searcher_config.validate().is_err());
-        }
-        {
-            let searcher_config = SearcherConfig {
-                data_dir_path: env::current_dir().unwrap(),
                 ..Default::default()
             };
             assert!(searcher_config.validate().is_ok());
@@ -453,13 +443,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_server_config_validate() {
-        let server_config_filepath = get_resource_path("server.toml");
-        let mut server_config = ServerConfig::from_file(&server_config_filepath)
-            .await
-            .unwrap();
-        set_data_dir_path(&mut server_config, env::current_dir().unwrap());
-        assert!(server_config.validate().is_ok());
+    async fn test_quickwit_config_validate() {
+        let config_uri = Uri::try_new(&get_resource_path("quickwit.toml")).unwrap();
+        let mut quickwit_config = QuickwitConfig::from_uri(&config_uri).await.unwrap();
+        set_data_dir_path(&mut quickwit_config, env::current_dir().unwrap());
+        assert!(quickwit_config.validate().is_ok());
     }
 
     #[test]
@@ -491,5 +479,14 @@ mod tests {
                 vec!["127.0.0.1:1789".parse().unwrap()]
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_load_config_with_validation_error() {
+        let config_path = get_resource_path("quickwit.yaml");
+        let config = QuickwitConfig::load(Uri::try_new(&config_path).unwrap(), None)
+            .await
+            .unwrap_err();
+        assert!(config.to_string().contains("Data dir"));
     }
 }
