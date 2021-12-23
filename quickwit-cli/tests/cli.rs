@@ -369,6 +369,17 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&test_env.metastore_uri)
         .await?;
+
+    let refresh_metastore = |metastore| {
+        // In this test we rely on the file backed metastore and write on
+        // a different process. The file backed metastore caches results.
+        // Therefore we need to force reading the disk.
+        //
+        // We do that by dropping and recreating our metastore.
+        drop(metastore);
+        quickwit_metastore_uri_resolver().resolve(&test_env.metastore_uri)
+    };
+
     let splits = metastore.list_all_splits(&test_env.index_id).await?;
     assert_eq!(splits.len(), 1);
     make_command(
@@ -388,9 +399,11 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
     assert_eq!(index_path.exists(), true);
 
     let split_ids = [splits[0].split_id()];
+    let metastore = refresh_metastore(metastore).await?;
     metastore
         .mark_splits_for_deletion(&test_env.index_id, &split_ids)
         .await?;
+
     make_command(
         format!(
             "index gc --index-id {} --metastore-uri {} --dry-run --grace-period 10m",
@@ -431,9 +444,7 @@ async fn test_cmd_garbage_collect_no_grace() -> Result<()> {
         assert_eq!(split_filepath.exists(), false);
     }
 
-    let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&test_env.metastore_uri)
-        .await?;
+    let metastore = refresh_metastore(metastore).await?;
     assert_eq!(
         metastore.list_all_splits(&test_env.index_id).await?.len(),
         0

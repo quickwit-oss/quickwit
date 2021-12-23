@@ -77,12 +77,12 @@ fn extract_polling_interval_from_uri(uri: &str) -> (String, Option<Duration>) {
 impl FileBackedMetastoreFactory {
     async fn get_from_cache(&self, uri: &Uri) -> Option<Arc<dyn Metastore>> {
         let mut cache_lock = self.cache.lock().await;
-        let metastore_weak: &Weak<dyn Metastore> = cache_lock.get(&uri)?;
+        let metastore_weak: &Weak<dyn Metastore> = cache_lock.get(uri)?;
         if let Some(metastore_arc) = metastore_weak.upgrade() {
             Some(metastore_arc.clone())
         } else {
             // It does not hurt to do a bit of garbage collecting.
-            cache_lock.remove(&uri);
+            cache_lock.remove(uri);
             None
         }
     }
