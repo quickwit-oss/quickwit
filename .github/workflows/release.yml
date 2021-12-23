@@ -45,8 +45,8 @@ jobs:
       - name: Bundle archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         run: |
-          make archive ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}.tar.gz \
-            BINARY_FILE=target/release/${{ matrix.artifact_name }}
+          make archive BINARY_FILE=target/release/${{ matrix.artifact_name }} \
+            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       - name: Upload archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         uses: quickwit-inc/upload-to-github-release@v1
@@ -85,8 +85,8 @@ jobs:
       - name: Bundle archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         run: |
-          make archive ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}.tar.gz \
-            BINARY_FILE=target/x86_64-unknown-linux-gnu/release/quickwit
+          make archive BINARY_FILE=target/x86_64-unknown-linux-gnu/release/quickwit \
+            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }} 
       - name: Upload archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         uses: quickwit-inc/upload-to-github-release@v1
@@ -125,8 +125,8 @@ jobs:
       - name: Bundle archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         run: |
-          make archive ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}.tar.gz \
-            BINARY_FILE=target/x86_64-unknown-linux-musl/release/quickwit
+          make archive BINARY_FILE=target/x86_64-unknown-linux-musl/release/quickwit \
+            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       - name: Upload archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         uses: quickwit-inc/upload-to-github-release@v1
@@ -165,8 +165,8 @@ jobs:
       - name: Bundle archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         run: |
-          make archive ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}.tar.gz \
-            BINARY_FILE=target/aarch64-unknown-linux-gnu/release/quickwit
+          make archive BINARY_FILE=target/aarch64-unknown-linux-gnu/release/quickwit \
+            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       - name: Upload archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         uses: quickwit-inc/upload-to-github-release@v1
@@ -205,8 +205,8 @@ jobs:
       - name: Bundle archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         run: |
-          make archive ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}.tar.gz \
-            BINARY_FILE=target/aarch64-unknown-linux-musl/release/quickwit
+          make archive BINARY_FILE=target/aarch64-unknown-linux-musl/release/quickwit \
+            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       - name: Upload archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         uses: quickwit-inc/upload-to-github-release@v1

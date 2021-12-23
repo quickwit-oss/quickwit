@@ -705,7 +705,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     if statistics.num_published_splits > 0 {
         println!(
             "Now, you can query the index with the following command:\nquickwit index search \
-             --index {} --config ./config/quickwit.yalm --query \"my query\"",
+             --index {} --config ./config/quickwit.yaml --query \"my query\"",
             args.index_id
         );
     }

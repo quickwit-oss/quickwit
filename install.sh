@@ -52,42 +52,6 @@ main() {
     install_from_archive
 }
 
-confirm_install_options() {
-    local _version="$1"
-    INSTALL_DIR="$HOME/quickwit-${_version}"
-    ADD_TO_PATH="Yes"
-
-    printf "%s Quickwit will be installed with the following settings: \n" "$_prompt"
-    printf "* InstallDir: ${INSTALL_DIR} \n"
-    printf "* AddToPathEnv: ${ADD_TO_PATH} \n"
-    printf "\n"
-    read -rp "Do you want to install with these default settings (yes/no)? " response </dev/tty
-    if echo "$response" | grep -qE "^([Yy][Ee][Ss]|[Yy])$"; 
-    then
-        return 1
-    fi
-
-    read -rp "Enter the installation directory? " response </dev/tty
-    if [ ! -z "$response" -a "$response" != " " ];
-    then
-        INSTALL_DIR="$response"
-    fi
-
-    read -rp "Add quickwit to PATH (yes/no)? " response </dev/tty
-    if echo "$response" | grep -qE "^([Yy][Ee][Ss]|[Yy])$"; 
-    then 
-        ADD_TO_PATH="Yes"
-    else
-        ADD_TO_PATH="No"
-    fi
-
-    printf "\n"
-    printf "%s Installation settings: \n" "$_prompt"
-    printf "* InstallDir: ${INSTALL_DIR} \n"
-    printf "* AddToPathEnv: ${ADD_TO_PATH} \n"
-    printf "\n\n"
-}
-
 install_from_archive() {
     need_cmd cp
     need_cmd mv
@@ -119,10 +83,10 @@ install_from_archive() {
         aarch64-*linux*)
             _binary_arch="aarch64-unknown-linux-musl"
             ;;
-	    armv7-*linux*-gnu)
+	armv7-*linux*-gnu)
             _binary_arch="armv7-unknown-linux-gnueabihf"
             ;;
-	    armv7-*linux*-musl)
+	armv7-*linux*-musl)
             _binary_arch="armv7-unknown-linux-musleabihf"
             ;;
         *)
@@ -133,11 +97,8 @@ install_from_archive() {
     esac
 
     local _version="$(get_latest_version)"
-    confirm_install_options $_version
-
     local _archive_content_file="quickwit-${_version}-${_binary_arch}"
     local _file="${_archive_content_file}.tar.gz"
-    local _archive_content_file_="quickwit-${_version}-${_binary_arch}"
     local _url="${PACKAGE_ROOT}/${_version}/${_file}"
 
     printf "%s Downloading Quickwit via %s" "$_prompt" "$_url"
@@ -146,53 +107,21 @@ install_from_archive() {
 
     printf "%s Unpacking archive ..." "$_prompt"
     ensure tar -xzf "$_file"
-    ensure rm "$_file" 
+    chmod 744 "./quickwit-${_version}/quickwit"
+    ensure rm "$_file"
     printf "\n"
 
-    printf "%s Installing binary ..." "$_prompt"
-    ensure mkdir -p "${INSTALL_DIR}"
-    ensure mv ./target/assets/* ${INSTALL_DIR}/
-    rm -rf ./target
-    chmod 744 "${INSTALL_DIR}/bin/${PACKAGE_NAME}"
     printf "\n"
-    
-    # add binary to path
-    if [ "$ADD_TO_PATH" = "Yes" ]; then 
-      local _path="export PATH=\"$INSTALL_DIR/bin:\$PATH\""
-      printf "\n"
-      add_to_path "${HOME}/.zprofile" "${_path}"
-      printf "\n"
-      add_to_path "${HOME}/.profile" "${_path}"
-      printf "\n"
-    fi
-
-    printf "\n"
-    printf "%s Installation succeeded!\n" "$_prompt"
+    printf "%s Install succeeded!\n" "$_prompt"
     printf "%s To start using Quickwit:\n" "$_prompt"
     printf "\n"
-    printf "%s quickwit --version \n" "$_indent"
-    if [ "$ADD_TO_PATH" = "Yes" ]; then 
-        printf "%s You may need to restart the terminal or run 'source <profile>'.\n" "$_prompt"
-    fi
+    printf "%s ./quickwit-${_version}/quickwit --version \n" "$_indent"
     printf "\n"
     printf "%s More information at https://quickwit.io/docs/\n" "$_prompt"
 
     local _retval=$?
 
     return "$_retval"
-}
-
-add_to_path() {
-  local file="$1"
-  local new_path="$2"
-
-  printf "%s Adding Quickwit path to ${file}" "$_prompt"
-
-  if [ ! -f "$file" ]; then
-    echo "${new_path}" >> "${file}"
-  else
-    grep -qxF "${new_path}" "${file}" || echo "${new_path}" >> "${file}"
-  fi
 }
 
 # ------------------------------------------------------------------------------
