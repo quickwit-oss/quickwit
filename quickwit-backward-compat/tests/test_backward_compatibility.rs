@@ -20,7 +20,26 @@
 use std::fs;
 use std::path::Path;
 
-use quickwit_metastore::{IndexMetadata, SplitMetadata};
+use quickwit_metastore::{FileBackedIndex, IndexMetadata, SplitMetadata};
+
+fn read_file_backed_index(path: &Path) -> anyhow::Result<FileBackedIndex> {
+    let index_bytes = std::fs::read(path)?;
+    let index: FileBackedIndex = serde_json::from_slice(&index_bytes)?;
+    Ok(index)
+}
+
+fn test_file_backed_index_deser(path: &Path) -> anyhow::Result<()> {
+    println!(
+        "---\nTest deserialization of file backed index/{}",
+        path.display()
+    );
+    let index = read_file_backed_index(path)?;
+    let expected_path = path.to_string_lossy().replace(".json", ".expected.json");
+    let expected_index = read_file_backed_index(Path::new(&expected_path))?;
+    test_index_metadata_eq(index.metadata(), expected_index.metadata());
+    assert_eq!(index.splits(), expected_index.splits());
+    Ok(())
+}
 
 fn read_index_metadata(path: &Path) -> anyhow::Result<IndexMetadata> {
     let index_metadata_bytes = std::fs::read(path)?;
@@ -36,6 +55,11 @@ fn test_index_metadata_deser(path: &Path) -> anyhow::Result<()> {
     let index_metadata = read_index_metadata(path)?;
     let expected_path = path.to_string_lossy().replace(".json", ".expected.json");
     let expected_index_metadata = read_index_metadata(Path::new(&expected_path))?;
+    test_index_metadata_eq(&index_metadata, &expected_index_metadata);
+    Ok(())
+}
+
+fn test_index_metadata_eq(index_metadata: &IndexMetadata, expected_index_metadata: &IndexMetadata) {
     assert_eq!(index_metadata.index_id, expected_index_metadata.index_id);
     assert_eq!(index_metadata.index_uri, expected_index_metadata.index_uri);
     assert_eq!(
@@ -84,12 +108,10 @@ fn test_index_metadata_deser(path: &Path) -> anyhow::Result<()> {
             .map(|source| &source.source_id)
             .collect::<Vec<_>>(),
     );
-    Ok(())
 }
 
 fn read_split_metadata(path: &Path) -> anyhow::Result<SplitMetadata> {
     let split_metadata_bytes = std::fs::read(path)?;
-
     let split: SplitMetadata = serde_json::from_slice(&split_metadata_bytes)?;
     Ok(split)
 }
@@ -103,6 +125,19 @@ fn test_split_metadata_deser(path: &Path) -> anyhow::Result<()> {
     let expected_path = path.to_string_lossy().replace(".json", ".expected.json");
     let expected_split_metadata = read_split_metadata(Path::new(&expected_path))?;
     assert_eq!(split_metadata, expected_split_metadata);
+    Ok(())
+}
+
+#[test]
+fn test_file_backed_index_backward_compatibility() -> anyhow::Result<()> {
+    for entry in fs::read_dir("./test-data/file-backed-index")? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.to_string_lossy().ends_with(".expected.json") {
+            continue;
+        }
+        test_file_backed_index_deser(&path)?;
+    }
     Ok(())
 }
 
