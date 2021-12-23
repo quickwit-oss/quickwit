@@ -17,37 +17,91 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+//! [`FileBackedIndex`] module. It is public so that the crate `quickwit-backward-compat` can
+//! import [`FiledBackedIndex`] and run backward-compatibility tests. You should not have to import
+//! anything from here directly.
+
 use std::collections::HashMap;
 use std::ops::{Range, RangeInclusive};
 
 use chrono::Utc;
+use itertools::Itertools;
 use quickwit_index_config::tag_pruning::TagFilterAst;
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::CheckpointDelta;
 use crate::{IndexMetadata, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 
-/// A `Index` object carries an index metadata and its split metadata.
+/// A `FileBackedIndex` object carries an index metadata and its split metadata.
+// This struct is meant to be used only within the [`FileBackedMetastore`]. The public visibility is
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct Index {
+#[serde(into = "VersionedFileBackedIndex")]
+#[serde(from = "VersionedFileBackedIndex")]
+pub struct FileBackedIndex {
     /// Metadata specific to the index.
-    index: IndexMetadata,
+    metadata: IndexMetadata,
     /// List of splits belonging to the index.
     splits: HashMap<String, Split>,
     /// Has been discarded. This field exists to make
     /// it possible to discard this entry if there is an error
     /// while mutating the Index.
-    #[serde(skip)]
     pub discarded: bool,
 }
 
-impl From<IndexMetadata> for Index {
-    fn from(index: IndexMetadata) -> Self {
-        Index {
-            index,
+impl From<IndexMetadata> for FileBackedIndex {
+    fn from(index_metadata: IndexMetadata) -> Self {
+        Self {
+            metadata: index_metadata,
             splits: Default::default(),
             discarded: false,
         }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "version")]
+pub(crate) enum VersionedFileBackedIndex {
+    #[serde(rename = "0")]
+    V0(FileBackedIndexV0),
+}
+
+impl From<FileBackedIndex> for VersionedFileBackedIndex {
+    fn from(index: FileBackedIndex) -> Self {
+        VersionedFileBackedIndex::V0(index.into())
+    }
+}
+
+impl From<VersionedFileBackedIndex> for FileBackedIndex {
+    fn from(index: VersionedFileBackedIndex) -> Self {
+        match index {
+            VersionedFileBackedIndex::V0(index) => index.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct FileBackedIndexV0 {
+    #[serde(rename = "index")]
+    metadata: IndexMetadata,
+    splits: Vec<Split>,
+}
+
+impl From<FileBackedIndex> for FileBackedIndexV0 {
+    fn from(index: FileBackedIndex) -> Self {
+        Self {
+            metadata: index.metadata,
+            splits: index
+                .splits
+                .into_values()
+                .sorted_by_key(|split| split.update_timestamp)
+                .collect(),
+        }
+    }
+}
+
+impl From<FileBackedIndexV0> for FileBackedIndex {
+    fn from(index: FileBackedIndexV0) -> Self {
+        Self::new(index.metadata, index.splits)
     }
 }
 
@@ -62,13 +116,32 @@ fn is_disjoint(left: &Range<i64>, right: &RangeInclusive<i64>) -> bool {
     left.end <= *right.start() || *right.end() < left.start
 }
 
-impl Index {
-    pub fn index_id(&self) -> &str {
-        &self.index.index_id
+impl FileBackedIndex {
+    /// Constructor.
+    pub fn new(metadata: IndexMetadata, splits: Vec<Split>) -> Self {
+        Self {
+            metadata,
+            splits: splits
+                .into_iter()
+                .map(|split| (split.split_id().to_string(), split))
+                .collect(),
+            discarded: false,
+        }
     }
 
-    pub fn index_metadata(&self) -> &IndexMetadata {
-        &self.index
+    /// Index ID accessor.
+    pub fn index_id(&self) -> &str {
+        &self.metadata.index_id
+    }
+
+    /// Index metadata accessor.
+    pub fn metadata(&self) -> &IndexMetadata {
+        &self.metadata
+    }
+
+    /// Splits accessor.
+    pub fn splits(&self) -> &HashMap<String, Split> {
+        &self.splits
     }
 
     pub(crate) fn stage_split(
@@ -97,7 +170,7 @@ impl Index {
         self.splits
             .insert(metadata.split_id().to_string(), metadata);
 
-        self.index.update_timestamp = now_timestamp;
+        self.metadata.update_timestamp = now_timestamp;
         Ok(())
     }
 
@@ -152,7 +225,7 @@ impl Index {
         }
 
         if is_modified {
-            self.index.update_timestamp = now_timestamp;
+            self.metadata.update_timestamp = now_timestamp;
         }
         Ok(is_modified)
     }
@@ -163,7 +236,7 @@ impl Index {
         split_ids: &[&'a str],
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
-        self.index.checkpoint.try_apply_delta(checkpoint_delta)?;
+        self.metadata.checkpoint.try_apply_delta(checkpoint_delta)?;
         let mut split_not_found_ids = vec![];
         let mut split_not_staged_ids = vec![];
         let now_timestamp = Utc::now().timestamp();
@@ -205,7 +278,7 @@ impl Index {
             });
         }
 
-        self.index.update_timestamp = now_timestamp;
+        self.metadata.update_timestamp = now_timestamp;
         Ok(())
     }
 
@@ -294,7 +367,7 @@ impl Index {
             });
         }
 
-        self.index.update_timestamp = Utc::now().timestamp();
+        self.metadata.update_timestamp = Utc::now().timestamp();
         Ok(())
     }
 }

@@ -52,12 +52,12 @@ mod metastore_resolver;
 pub mod postgresql;
 
 pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
-pub use metastore::file_backed_metastore::FileBackedMetastore;
+pub use metastore::file_backed_metastore::{FileBackedIndex, FileBackedMetastore};
 #[cfg(feature = "postgres")]
 pub use metastore::postgresql_metastore::PostgresqlMetastore;
 #[cfg(feature = "testsuite")]
 pub use metastore::MockMetastore;
-pub use metastore::{IndexMetadata, Metastore};
+pub use metastore::{file_backed_metastore, IndexMetadata, Metastore};
 pub use metastore_resolver::{
     quickwit_metastore_uri_resolver, MetastoreFactory, MetastoreUriResolver,
 };

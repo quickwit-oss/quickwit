@@ -46,7 +46,7 @@ tempfile = "3"
 chrono = "0.4"
 humansize = "1.1.1"
 openssl-probe = { version = "0.1.4", optional = true }
-itertools = "0.10.1"
+itertools = "0.10"
 colored = "2.0.0"
 futures = "0.3"
 regex = "1.5.4"
