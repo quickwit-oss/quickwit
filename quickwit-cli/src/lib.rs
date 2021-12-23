@@ -17,15 +17,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::bail;
 use once_cell::sync::Lazy;
 use quickwit_common::run_checklist;
-use quickwit_config::SourceConfig;
+use quickwit_common::uri::Uri;
+use quickwit_config::{QuickwitConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::quickwit_metastore_uri_resolver;
-use quickwit_storage::quickwit_storage_uri_resolver;
+use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use regex::Regex;
 use tabled::{Alignment, Header, Modify, Row, Style, Table, Tabled};
 
@@ -64,6 +66,15 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
         "d" => Ok(Duration::from_secs(value * 60 * 60 * 24)),
         _ => bail!("Invalid duration format: `[0-9]+[smhd]`"),
     };
+}
+
+async fn load_quickwit_config(
+    uri: Uri,
+    data_dir: Option<PathBuf>,
+) -> anyhow::Result<QuickwitConfig> {
+    let config_content = load_file(&uri).await?;
+    let quickwit_config = QuickwitConfig::load(uri, config_content.as_slice(), data_dir).await?;
+    Ok(quickwit_config)
 }
 
 /// Runs connectivity checks for a given `metastore_uri` and `index_id`.
