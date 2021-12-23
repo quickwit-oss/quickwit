@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use once_cell::sync::OnceCell;
 
 use crate::metastore::file_backed_metastore::FileBackedMetastoreFactory;
 #[cfg(feature = "postgres")]
@@ -60,8 +61,12 @@ pub struct MetastoreUriResolver {
     per_protocol_resolver: Arc<HashMap<String, Arc<dyn MetastoreFactory>>>,
 }
 
-impl Default for MetastoreUriResolver {
-    fn default() -> Self {
+/// Quickwit supported storage resolvers.
+///
+/// The returned metastore uri resolver is a Singleton.
+pub fn quickwit_metastore_uri_resolver() -> &'static MetastoreUriResolver {
+    static METASTORE_URI_RESOLVER: OnceCell<MetastoreUriResolver> = OnceCell::new();
+    METASTORE_URI_RESOLVER.get_or_init(|| {
         #[allow(unused_mut)]
         let mut builder = MetastoreUriResolver::builder()
             .register("ram", FileBackedMetastoreFactory::default())
@@ -74,7 +79,7 @@ impl Default for MetastoreUriResolver {
         }
 
         builder.build()
-    }
+    })
 }
 
 impl MetastoreUriResolver {
@@ -104,12 +109,12 @@ impl MetastoreUriResolver {
 
 #[cfg(test)]
 mod tests {
-    use crate::MetastoreUriResolver;
+    use crate::quickwit_metastore_uri_resolver;
 
     #[tokio::test]
     async fn test_metastore_resolver_should_not_raise_errors_on_file_and_s3() -> anyhow::Result<()>
     {
-        let metastore_resolver = MetastoreUriResolver::default();
+        let metastore_resolver = quickwit_metastore_uri_resolver();
         metastore_resolver.resolve("file://").await?;
         metastore_resolver
             .resolve("s3://bucket/path/to/object")
@@ -120,7 +125,7 @@ mod tests {
     #[tokio::test]
     #[should_panic(expected = "ProtocolUnsupported(\"s4\")")]
     async fn test_metastore_resolver_should_raise_error_on_storage_error() {
-        let metastore_resolver = MetastoreUriResolver::default();
+        let metastore_resolver = quickwit_metastore_uri_resolver();
         metastore_resolver
             .resolve("s4://bucket/path/to/object")
             .await

@@ -23,7 +23,7 @@ use std::sync::Arc;
 use quickwit_config::{IndexerConfig, SourceConfig};
 use quickwit_index_config::IndexConfig as DocMapper;
 use quickwit_metastore::{
-    IndexMetadata, Metastore, MetastoreUriResolver, Split, SplitMetadata, SplitState,
+    quickwit_metastore_uri_resolver, IndexMetadata, Metastore, Split, SplitMetadata, SplitState,
 };
 use quickwit_storage::{Storage, StorageUriResolver};
 
@@ -71,7 +71,7 @@ impl TestSandbox {
             .collect();
         let doc_mapper = index_meta.build_doc_mapper()?;
         let (indexer_config, _temp_dir) = IndexerConfig::for_test()?;
-        let metastore_uri_resolver = MetastoreUriResolver::default();
+        let metastore_uri_resolver = quickwit_metastore_uri_resolver();
         let metastore = metastore_uri_resolver.resolve(METASTORE_URI).await?;
         metastore.create_index(index_meta.clone()).await?;
         let storage_uri_resolver = StorageUriResolver::for_test();

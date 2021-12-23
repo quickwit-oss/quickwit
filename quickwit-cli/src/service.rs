@@ -23,7 +23,7 @@ use quickwit_common::run_checklist;
 use quickwit_common::uri::Uri;
 use quickwit_config::ServerConfig;
 use quickwit_indexing::index_data;
-use quickwit_metastore::MetastoreUriResolver;
+use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_serve::run_searcher;
 use quickwit_storage::quickwit_storage_uri_resolver;
 use quickwit_telemetry::payload::TelemetryEvent;
@@ -117,7 +117,7 @@ async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
     let indexer_config = server_config
         .indexer_config
         .context("Indexer config is empty.")?;
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&server_config.metastore_uri)
         .await?;
@@ -137,7 +137,7 @@ async fn run_searcher_cli(args: RunSearcherArgs) -> anyhow::Result<()> {
     let searcher_config = server_config
         .searcher_config
         .context("Searcher config is empty.")?;
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&server_config.metastore_uri)
         .await?;

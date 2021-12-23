@@ -27,6 +27,7 @@ thiserror = "1.0"
 tokio = { version = "1.6", features = ["full"]}
 tracing = "0.1.29"
 
+quickwit-common = { version = "0.1.0", path = "../quickwit-common" }
 quickwit-config = { version = "0.1.0", path = "../quickwit-config" }
 quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }

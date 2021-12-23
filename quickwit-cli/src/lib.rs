@@ -24,7 +24,7 @@ use once_cell::sync::Lazy;
 use quickwit_common::run_checklist;
 use quickwit_config::SourceConfig;
 use quickwit_indexing::check_source_connectivity;
-use quickwit_metastore::MetastoreUriResolver;
+use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::quickwit_storage_uri_resolver;
 use regex::Regex;
 
@@ -74,7 +74,7 @@ pub async fn run_index_checklist(
     source_to_check: Option<&SourceConfig>,
 ) -> anyhow::Result<()> {
     let mut checks: Vec<(&str, anyhow::Result<()>)> = Vec::new();
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
     checks.push(("metastore", metastore.check_connectivity().await));
 
