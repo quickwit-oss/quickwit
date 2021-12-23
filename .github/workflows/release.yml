@@ -42,13 +42,12 @@ jobs:
           name: ${{ matrix.artifact_name }}-${{ matrix.asset_name }}
           path: target/release/${{ matrix.artifact_name }}
           retention-days: 3
-      - name: Rename artifact
+      - name: Bundle archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
-        run: mv target/release/${{ matrix.artifact_name }} ${{ env.ASSET_FULL_NAME }}
-      - name: Compress artifact
-        if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
-        run: tar -czvf ${{ env.ASSET_FULL_NAME }}.tar.gz ${{ env.ASSET_FULL_NAME }}
-      - name: Upload artifact
+        run: |
+          make archive BINARY_FILE=target/release/${{ matrix.artifact_name }} \
+            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
+      - name: Upload archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         uses: quickwit-inc/upload-to-github-release@v1
         env:
@@ -76,20 +75,19 @@ jobs:
           use-cross: true
           command: build
           args: --release --features release-feature-vendored-set --target x86_64-unknown-linux-gnu
-      - name: Save artifact for few days
+      - name: Save binary artifact for few days
         if: ${{ github.ref == 'refs/heads/make-binaries-from-ci' }}
         uses: actions/upload-artifact@v2
         with:
           name: quickwit-x86_64-unknown-linux-gnu
           path: target/x86_64-unknown-linux-gnu/release/quickwit
           retention-days: 3
-      - name: Rename artifact
+      - name: Bundle archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
-        run: mv target/x86_64-unknown-linux-gnu/release/quickwit ${{ env.ASSET_FULL_NAME }}
-      - name: Compress artifact
-        if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
-        run: tar -czvf ${{ env.ASSET_FULL_NAME }}.tar.gz ${{ env.ASSET_FULL_NAME }}
-      - name: Upload artifact
+        run: |
+          make archive BINARY_FILE=target/x86_64-unknown-linux-gnu/release/quickwit \
+            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }} 
+      - name: Upload archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         uses: quickwit-inc/upload-to-github-release@v1
         env:
@@ -117,20 +115,19 @@ jobs:
           use-cross: true
           command: build
           args: --release --features release-feature-set --target x86_64-unknown-linux-musl
-      - name: Save artifact for few days
+      - name: Save binary artifact for few days
         if: ${{ github.ref == 'refs/heads/make-binaries-from-ci' }}
         uses: actions/upload-artifact@v2
         with:
           name: quickwit-x86_64-unknown-linux-musl
           path: target/x86_64-unknown-linux-musl/release/quickwit
           retention-days: 3
-      - name: Rename artifact
+      - name: Bundle archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
-        run: mv target/x86_64-unknown-linux-musl/release/quickwit ${{ env.ASSET_FULL_NAME }}
-      - name: Compress artifact
-        if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
-        run: tar -czvf ${{ env.ASSET_FULL_NAME }}.tar.gz ${{ env.ASSET_FULL_NAME }}
-      - name: Upload artifact
+        run: |
+          make archive BINARY_FILE=target/x86_64-unknown-linux-musl/release/quickwit \
+            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
+      - name: Upload archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         uses: quickwit-inc/upload-to-github-release@v1
         env:
@@ -165,13 +162,12 @@ jobs:
           name: quickwit-aarch64-unknown-linux-gnu
           path: target/aarch64-unknown-linux-gnu/release/quickwit
           retention-days: 3
-      - name: Rename artifact
+      - name: Bundle archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
-        run: mv target/aarch64-unknown-linux-gnu/release/quickwit ${{ env.ASSET_FULL_NAME }}
-      - name: Compress artifact
-        if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
-        run: tar -czvf ${{ env.ASSET_FULL_NAME }}.tar.gz ${{ env.ASSET_FULL_NAME }}
-      - name: Upload artifact
+        run: |
+          make archive BINARY_FILE=target/aarch64-unknown-linux-gnu/release/quickwit \
+            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
+      - name: Upload archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         uses: quickwit-inc/upload-to-github-release@v1
         env:
@@ -206,13 +202,12 @@ jobs:
           name: quickwit-aarch64-unknown-linux-musl
           path: target/aarch64-unknown-linux-musl/release/quickwit
           retention-days: 3
-      - name: Rename artifact
+      - name: Bundle archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
-        run: mv target/aarch64-unknown-linux-musl/release/quickwit ${{ env.ASSET_FULL_NAME }}
-      - name: Compress artifact
-        if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
-        run: tar -czvf ${{ env.ASSET_FULL_NAME }}.tar.gz ${{ env.ASSET_FULL_NAME }}
-      - name: Upload artifact
+        run: |
+          make archive BINARY_FILE=target/aarch64-unknown-linux-musl/release/quickwit \
+            BINARY_VERSION=${{ env.ASSET_VERSION }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
+      - name: Upload archive
         if: ${{ github.ref != 'refs/heads/make-binaries-from-ci' }}
         uses: quickwit-inc/upload-to-github-release@v1
         env:
