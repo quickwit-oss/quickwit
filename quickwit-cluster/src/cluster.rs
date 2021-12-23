@@ -63,7 +63,11 @@ pub fn read_or_create_host_key(host_key_path: &Path) -> ClusterResult<Uuid> {
         if let Some(dir) = host_key_path.parent() {
             if !dir.exists() {
                 fs::create_dir_all(dir).map_err(|err| ClusterError::WriteHostKeyError {
-                    message: format!("Directory `{}` does not exists", dir.display()),
+                    message: format!(
+                        "Directory `{}` does not exists. Failed to create it with err={:?}",
+                        dir.display(),
+                        err
+                    ),
                 })?;
             }
         }
