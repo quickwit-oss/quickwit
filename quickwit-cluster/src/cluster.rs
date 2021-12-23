@@ -70,7 +70,11 @@ pub fn read_or_create_host_key(host_key_path: &Path) -> ClusterResult<Uuid> {
         host_key = Uuid::new_v4();
         fs::write(host_key_path, host_key.as_bytes()).map_err(|err| {
             ClusterError::WriteHostKeyError {
-                message: format!("IO Error upon writing into `{}`: {:?}.", host_key_path.display(), err),
+                message: format!(
+                    "IO Error upon writing into `{}`: {:?}.",
+                    host_key_path.display(),
+                    err
+                ),
             }
         })?;
         info!(host_key=?host_key, host_key_path=?host_key_path, "Create new host key.");
