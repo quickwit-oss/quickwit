@@ -152,11 +152,12 @@ impl SearcherConfig {
         ))
     }
 
-    pub fn discovery_socket_addr(&self) -> anyhow::Result<SocketAddr> {
+    /// We use the same port number as the rest port but this is UDP
+    pub fn gossip_socket_addr(&self) -> anyhow::Result<SocketAddr> {
         socket_addr_from_str(format!(
             "{}:{}",
             self.rest_listen_address,
-            self.rest_listen_port + 2
+            self.rest_listen_port
         ))
     }
 
@@ -393,7 +394,7 @@ mod tests {
             let server_config_yaml = r#"
             version: 0
             metastore_uri: postgres://username:password@host:port/db
- 
+
             indexer:
               data_dir_path: /opt/quickwit/data
 
