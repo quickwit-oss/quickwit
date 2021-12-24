@@ -214,7 +214,7 @@ pub struct IndexConfig {
 }
 
 impl IndexConfig {
-    // Loads config from a given path and validates it.
+    // Parses IndexConfig from given uri and config content.
     pub async fn load(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
         let config = IndexConfig::from_uri(uri, file_content).await?;
         config.validate()?;
