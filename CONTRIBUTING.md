@@ -28,7 +28,7 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 1. Install Docker (https://docs.docker.com/engine/install/) and Docker Compose (https://docs.docker.com/compose/install/)
 2. Install awslocal https://github.com/localstack/awscli-local
 3. Start the external services with `make docker-compose-up`
-5. Run `QUICKWIT_ENV=LOCAL cargo test --all-features`
+5. Run `QW_ENV=LOCAL cargo test --all-features`
 
 ## Running services such as Amazon Kinesis or S3, Kafka, or PostgreSQL locally.
 1. Ensure Docker and Docker Compose are correctly installed on your machine (see above)
@@ -42,7 +42,7 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 ## Using tokio console
 1. Install tokio-console by running `cargo install tokio-console`.
 2. Install the quickwit binary in the quickwit-cli folder `RUSTFLAGS="--cfg tokio_unstable" cargo install --path . --features tokio-console`
-3. Launch a long running command such as index and activate tokio with the: `QUICKWIT_TOKIO_CONSOLE_ENABLED=1 quickwit index ...`
+3. Launch a long running command such as index and activate tokio with the: `QW_TOKIO_CONSOLE_ENABLED=1 quickwit index ...`
 4. Run `tokio-console`.
 
 ## Building binaries

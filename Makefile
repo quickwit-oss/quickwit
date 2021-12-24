@@ -30,7 +30,7 @@ fmt:
 # `make test-all` starts the Docker services and runs all the tests.
 # `make -k test-all docker-compose-down`, tears down the Docker services after running all the tests.
 test-all: docker-compose-up
-	QUICKWIT_ENV=local AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features
+	QW_ENV=local AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features
 
 # This will build and push all custom cross images for cross-compilation.
 # You will need to login into Docker Hub with the `quickwit` account.
