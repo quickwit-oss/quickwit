@@ -25,11 +25,11 @@ use crate::metastore::file_backed_metastore::file_backed_index::FileBackedIndex;
 use crate::{MetastoreError, MetastoreResult};
 
 /// Metadata file managed by [`FileBackedMetastore`].
-const META_FILENAME: &str = "quickwit.json";
+const META_FILENAME: &str = "metastore.json";
 
 /// Path to the metadata file from the given index ID.
 pub(crate) fn meta_path(index_id: &str) -> PathBuf {
-    Path::new(index_id).join(Path::new(META_FILENAME))
+    Path::new(index_id).join(META_FILENAME)
 }
 
 fn convert_error(index_id: &str, storage_err: StorageError) -> MetastoreError {

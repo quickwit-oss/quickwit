@@ -394,7 +394,6 @@ metastore_test_suite!(crate::FileBackedMetastore);
 #[cfg(test)]
 mod tests {
     use std::ops::RangeInclusive;
-    use std::path::Path;
     use std::sync::Arc;
 
     use chrono::Utc;
@@ -403,7 +402,7 @@ mod tests {
     use rand::Rng;
     use tokio::time::Duration;
 
-    use super::store_operations::put_index_given_index_id;
+    use super::store_operations::{meta_path, put_index_given_index_id};
     use super::FileBackedIndex;
     use crate::checkpoint::CheckpointDelta;
     use crate::{
@@ -487,7 +486,7 @@ mod tests {
             .expect_put()
             .times(2)
             .returning(move |path, put_payload| {
-                assert_eq!(path, Path::new("my-index/quickwit.json"));
+                assert_eq!(path, meta_path("my-index"));
                 block_on(ram_storage_clone.put(path, put_payload))
             });
         mock_storage
