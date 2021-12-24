@@ -6,9 +6,9 @@ position: 5
 Quickwit Inc. collects anonymous data regarding general usage to help us drive our development. Privacy and transparency are at the heart of Quickwit values and we only collect the minimal useful data and don't use any third party tool for the collection.
 
 ## Disabling data collection
-Data collection are opt-out. To disable them, just set the environment variable `QUICKWIT_DISABLE_TELEMETRY` to whatever value.
+Data collection are opt-out. To disable them, just set the environment variable `QW_DISABLE_TELEMETRY` to whatever value.
 ```bash
-export QUICKWIT_DISABLE_TELEMETRY=1
+export QW_DISABLE_TELEMETRY=1
 ```
 
 Look at `quickwit help` command output to check whether telemetry is enabled or not:
