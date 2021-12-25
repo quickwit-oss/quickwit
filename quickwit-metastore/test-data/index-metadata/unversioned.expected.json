@@ -49,7 +49,7 @@
   "indexing_settings": {
     "commit_timeout_secs": 60,
     "demux_field": "tenant_id",
-    "merge_enabled": false,
+    "merge_enabled": true,
     "merge_policy": {
       "demux_factor": 8,
       "max_merge_factor": 12,

@@ -25,7 +25,7 @@ use std::sync::Arc;
 use futures::{FutureExt, StreamExt};
 use once_cell::sync::OnceCell;
 use quickwit_config::get_searcher_config_instance;
-use quickwit_index_config::IndexConfig;
+use quickwit_index_config::DocMapper;
 use quickwit_proto::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
     SplitIdAndFooterOffsets,
@@ -72,14 +72,13 @@ pub async fn leaf_search_stream(
     request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
-    index_config: Arc<dyn IndexConfig>,
+    doc_mapper: Arc<dyn DocMapper>,
 ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>> {
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
     let span = info_span!("leaf_search_stream",);
     tokio::spawn(
         async move {
-            let mut stream =
-                leaf_search_results_stream(request, storage, splits, index_config).await;
+            let mut stream = leaf_search_results_stream(request, storage, splits, doc_mapper).await;
             while let Some(item) = stream.next().await {
                 if let Err(error) = result_sender.send(item) {
                     error!(
@@ -99,14 +98,14 @@ async fn leaf_search_results_stream(
     request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
     splits: Vec<SplitIdAndFooterOffsets>,
-    index_config: Arc<dyn IndexConfig>,
+    doc_mapper: Arc<dyn DocMapper>,
 ) -> impl futures::Stream<Item = crate::Result<LeafSearchStreamResponse>> + Sync + Send + 'static {
     let max_num_concurrent_split_streams = get_max_num_concurrent_split_streams();
     futures::stream::iter(splits)
         .map(move |split| {
             leaf_search_stream_single_split(
                 split,
-                index_config.clone(),
+                doc_mapper.clone(),
                 request.clone(),
                 storage.clone(),
             )
@@ -116,10 +115,10 @@ async fn leaf_search_results_stream(
 }
 
 /// Apply a leaf search on a single split.
-#[instrument(fields(split_id = %split.split_id), skip(split, index_config, stream_request, storage))]
+#[instrument(fields(split_id = %split.split_id), skip(split, doc_mapper, stream_request, storage))]
 async fn leaf_search_stream_single_split(
     split: SplitIdAndFooterOffsets,
-    index_config: Arc<dyn IndexConfig>,
+    doc_mapper: Arc<dyn DocMapper>,
     stream_request: SearchStreamRequest,
     storage: Arc<dyn Storage>,
 ) -> crate::Result<LeafSearchStreamResponse> {
@@ -131,7 +130,7 @@ async fn leaf_search_stream_single_split(
     let request_fields = Arc::new(SearchStreamRequestFields::from_request(
         &stream_request,
         &split_schema,
-        index_config.as_ref(),
+        doc_mapper.as_ref(),
     )?);
 
     let output_format = OutputFormat::from_i32(stream_request.output_format).ok_or_else(|| {
@@ -149,7 +148,7 @@ async fn leaf_search_stream_single_split(
     }
 
     let search_request = Arc::new(SearchRequest::from(stream_request.clone()));
-    let query = index_config.query(split_schema.clone(), &search_request)?;
+    let query = doc_mapper.query(split_schema.clone(), &search_request)?;
     let reader = index
         .reader_builder()
         .num_searchers(1)
@@ -324,7 +323,7 @@ impl<'a> SearchStreamRequestFields {
     pub fn from_request(
         stream_request: &SearchStreamRequest,
         schema: &'a Schema,
-        index_config: &dyn IndexConfig,
+        doc_mapper: &dyn DocMapper,
     ) -> crate::Result<SearchStreamRequestFields> {
         // TODO make sure it's a fast field
         let fast_field = schema
@@ -343,7 +342,7 @@ impl<'a> SearchStreamRequestFields {
             )));
         }
 
-        let timestamp_field = index_config.timestamp_field(schema);
+        let timestamp_field = doc_mapper.timestamp_field(schema);
         let partition_by_fast_field = stream_request
             .partition_by_field
             .as_deref()

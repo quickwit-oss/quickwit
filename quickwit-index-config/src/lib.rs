@@ -24,8 +24,8 @@
 //! to convert a json like documents to a document indexable by tantivy
 //! engine, aka tantivy::Document.
 
-mod config;
-mod default_index_config;
+mod default_doc_mapper;
+mod doc_mapper;
 mod error;
 mod query_builder;
 mod sort_by;
@@ -33,10 +33,10 @@ mod sort_by;
 /// Pruning tags manipulation.
 pub mod tag_pruning;
 
-pub use config::IndexConfig;
-pub use default_index_config::{
-    DefaultIndexConfig, DefaultIndexConfigBuilder, DocParsingError, FieldMappingEntry, SortByConfig,
+pub use default_doc_mapper::{
+    DefaultDocMapper, DefaultDocMapperBuilder, DocParsingError, FieldMappingEntry, SortByConfig,
 };
+pub use doc_mapper::DocMapper;
 pub use error::QueryParserError;
 pub use sort_by::{SortBy, SortByField, SortOrder};
 
@@ -45,7 +45,7 @@ pub const SOURCE_FIELD_NAME: &str = "_source";
 
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]
-pub fn default_config_for_tests() -> DefaultIndexConfig {
+pub fn default_doc_mapper_for_tests() -> DefaultDocMapper {
     const JSON_CONFIG_VALUE: &str = r#"
         {
             "store_source": true,
@@ -113,12 +113,12 @@ pub fn default_config_for_tests() -> DefaultIndexConfig {
                 }
             ]
         }"#;
-    serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE).unwrap()
+    serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap()
 }
 
 /// Returns a default `DefaultIndexConfig` for unit tests.
 #[cfg(any(test, feature = "testsuite"))]
-pub fn default_config_with_demux_for_tests() -> DefaultIndexConfig {
+pub fn default_config_with_demux_for_tests() -> DefaultDocMapper {
     const JSON_CONFIG_VALUE: &str = r#"
         {
             "store_source": true,
@@ -148,5 +148,5 @@ pub fn default_config_with_demux_for_tests() -> DefaultIndexConfig {
                 }
             ]
         }"#;
-    serde_json::from_str::<DefaultIndexConfig>(JSON_CONFIG_VALUE).unwrap()
+    serde_json::from_str::<DefaultDocMapper>(JSON_CONFIG_VALUE).unwrap()
 }

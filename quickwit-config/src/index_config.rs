@@ -20,13 +20,16 @@
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsStr;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use json_comments::StripComments;
 use quickwit_common::uri::Uri;
-use quickwit_index_config::{FieldMappingEntry, SortBy, SortOrder};
+use quickwit_index_config::{
+    DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, SortBy, SortByConfig, SortOrder,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,14 +37,8 @@ pub struct DocMapping {
     pub field_mappings: Vec<FieldMappingEntry>,
     #[serde(default)]
     pub tag_fields: BTreeSet<String>,
-    #[serde(default = "DocMapping::default_store_source")]
+    #[serde(default)]
     pub store_source: bool,
-}
-
-impl DocMapping {
-    fn default_store_source() -> bool {
-        true
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -155,7 +152,7 @@ impl IndexingSettings {
     }
 
     fn default_merge_enabled() -> bool {
-        false
+        true
     }
 
     pub fn sort_by(&self) -> SortBy {
@@ -267,15 +264,55 @@ impl IndexConfig {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
-        if self.sources.len() < self.sources().len() {
+        if self.sources.len() > self.sources().len() {
             bail!("Index config contains duplicate sources.")
         }
+        // Validation is made by building the doc mapper.
+        // Note: this needs a deep refactoring to separate the doc mapping configuration,
+        // and doc mapper implementations.
+        let _ = build_doc_mapper(
+            &self.doc_mapping,
+            &self.search_settings,
+            &self.indexing_settings,
+        )?;
+
+        if self.indexing_settings.merge_policy.max_merge_factor
+            < self.indexing_settings.merge_policy.merge_factor
+        {
+            bail!(
+                "Index config merge policy `max_merge_factor` must be superior or equal to \
+                 `merge_factor`."
+            )
+        }
+
         Ok(())
     }
 }
 
+/// Builds and returns the doc mapper associated with index.
+pub fn build_doc_mapper(
+    doc_mapping: &DocMapping,
+    search_settings: &SearchSettings,
+    indexing_settings: &IndexingSettings,
+) -> anyhow::Result<Arc<dyn DocMapper>> {
+    let mut builder = DefaultDocMapperBuilder::new();
+    builder.default_search_fields = search_settings.default_search_fields.clone();
+    builder.demux_field = indexing_settings.demux_field.clone();
+    builder.sort_by = match indexing_settings.sort_by() {
+        SortBy::DocId => None,
+        SortBy::FastField { field_name, order } => Some(SortByConfig { field_name, order }),
+    };
+    builder.timestamp_field = indexing_settings.timestamp_field.clone();
+    builder.field_mappings = doc_mapping.field_mappings.clone();
+    builder.tag_fields = doc_mapping.tag_fields.iter().cloned().collect();
+    builder.store_source = doc_mapping.store_source;
+    Ok(Arc::new(builder.build()?))
+}
+
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     fn get_resource_path(resource_filename: &str) -> String {
@@ -400,7 +437,7 @@ mod tests {
 
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 1);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
-            assert!(index_config.doc_mapping.store_source);
+            assert!(!index_config.doc_mapping.store_source);
             assert_eq!(index_config.indexing_settings, IndexingSettings::default());
             assert_eq!(
                 index_config.search_settings,
@@ -424,7 +461,7 @@ mod tests {
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 2);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
             assert_eq!(index_config.doc_mapping.field_mappings[1].name, "timestamp");
-            assert!(index_config.doc_mapping.store_source);
+            assert!(!index_config.doc_mapping.store_source);
             assert_eq!(
                 index_config.indexing_settings,
                 IndexingSettings {
@@ -451,8 +488,63 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_validate() {
-        // TODO
+    #[tokio::test]
+    async fn test_validate() {
+        let index_config_filepath = get_resource_path("minimal-hdfs-logs.yaml");
+        let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
+        let index_config_uri = Uri::try_new(&index_config_filepath).unwrap();
+        let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
+            .await
+            .unwrap();
+        {
+            let mut invalid_index_config = index_config.clone();
+            // Set a max merge factor to an inconsistent value.
+            invalid_index_config
+                .indexing_settings
+                .merge_policy
+                .max_merge_factor = index_config.indexing_settings.merge_policy.merge_factor - 1;
+            assert!(invalid_index_config.validate().is_err());
+            assert!(invalid_index_config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains(
+                    "Index config merge policy `max_merge_factor` must be superior or equal to \
+                     `merge_factor`."
+                ));
+        }
+        {
+            // Add two sources with same id.
+            let mut invalid_index_config = index_config.clone();
+            invalid_index_config.sources = vec![
+                SourceConfig {
+                    source_id: "void_1".to_string(),
+                    source_type: "void".to_string(),
+                    params: json!(null),
+                },
+                SourceConfig {
+                    source_id: "void_1".to_string(),
+                    source_type: "void".to_string(),
+                    params: json!(null),
+                },
+            ];
+            assert!(invalid_index_config.validate().is_err());
+            assert!(invalid_index_config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("Index config contains duplicate sources."));
+        }
+        {
+            // Add a demux field not declared in the mapping.
+            let mut invalid_index_config = index_config;
+            invalid_index_config.indexing_settings.demux_field = Some("invalid-field".to_string());
+            assert!(invalid_index_config.validate().is_err());
+            assert!(invalid_index_config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown demux field"));
+        }
     }
 }

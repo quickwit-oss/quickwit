@@ -28,16 +28,16 @@ use tantivy::Document;
 
 use crate::{DocParsingError, QueryParserError, SortBy};
 
-/// The `IndexConfig` trait defines the way of defining how a (json) document,
+/// The `DocMapper` trait defines the way of defining how a (json) document,
 /// and the fields it contains, are stored and indexed.
 ///
-/// The `IndexConfig` trait is in charge of implementing :
+/// The `DocMapper` trait is in charge of implementing :
 ///
 /// - a way to build a tantivy::Document from a json payload
 /// - a way to build a tantivy::Query from a SearchRequest
 /// - a way to build a tantivy:Schema
 #[typetag::serde(tag = "type")]
-pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
+pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
     /// Returns the document built from an owned JSON string.
     fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError>;
 
@@ -86,13 +86,13 @@ pub trait IndexConfig: Send + Sync + Debug + DynClone + 'static {
     }
 }
 
-clone_trait_object!(IndexConfig);
+clone_trait_object!(DocMapper);
 
 #[cfg(test)]
 mod tests {
-    use crate::{DefaultIndexConfigBuilder, IndexConfig};
+    use crate::{DefaultDocMapperBuilder, DocMapper};
 
-    const JSON_DEFAULT_INDEX_CONFIG: &str = r#"
+    const JSON_DEFAULT_DOC_MAPPER: &str = r#"
         {
             "type": "default",
             "default_search_fields": [],
@@ -101,13 +101,13 @@ mod tests {
         }"#;
 
     #[test]
-    fn test_deserialize_index_config() -> anyhow::Result<()> {
-        let deserialized_default_config =
-            serde_json::from_str::<Box<dyn IndexConfig>>(JSON_DEFAULT_INDEX_CONFIG)?;
-        let expected_default_config = DefaultIndexConfigBuilder::new().build()?;
+    fn test_deserialize_doc_mapper() -> anyhow::Result<()> {
+        let deserialized_default_doc_mapper =
+            serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
+        let expected_default_doc_mapper = DefaultDocMapperBuilder::new().build()?;
         assert_eq!(
-            format!("{:?}", deserialized_default_config),
-            format!("{:?}", expected_default_config),
+            format!("{:?}", deserialized_default_doc_mapper),
+            format!("{:?}", expected_default_doc_mapper),
         );
         Ok(())
     }
@@ -115,8 +115,8 @@ mod tests {
     #[test]
     fn test_sedeserialize_index_config() -> anyhow::Result<()> {
         let deserialized_default_config =
-            serde_json::from_str::<Box<dyn IndexConfig>>(JSON_DEFAULT_INDEX_CONFIG)?;
-        let expected_default_config = DefaultIndexConfigBuilder::new().build()?;
+            serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
+        let expected_default_config = DefaultDocMapperBuilder::new().build()?;
         assert_eq!(
             format!("{:?}", deserialized_default_config),
             format!("{:?}", expected_default_config),
@@ -124,7 +124,7 @@ mod tests {
 
         let serialized_config = serde_json::to_string(&deserialized_default_config)?;
         let deserialized_default_config =
-            serde_json::from_str::<Box<dyn IndexConfig>>(&serialized_config)?;
+            serde_json::from_str::<Box<dyn DocMapper>>(&serialized_config)?;
         let serialized_config_2 = serde_json::to_string(&deserialized_default_config)?;
 
         assert_eq!(serialized_config, serialized_config_2);

@@ -26,7 +26,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Mailbox, QueueCapacity, SendError, SyncActor,
 };
 use quickwit_config::IndexingSettings;
-use quickwit_index_config::{DocParsingError, IndexConfig as DocMapper, SortBy};
+use quickwit_index_config::{DocMapper, DocParsingError, SortBy};
 use tantivy::schema::{Field, Value};
 use tantivy::{Document, IndexBuilder, IndexSettings, IndexSortByField};
 use tracing::{info, warn};
@@ -422,7 +422,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_simple() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let doc_mapper = Arc::new(quickwit_index_config::default_config_for_tests());
+        let doc_mapper = Arc::new(quickwit_index_config::default_doc_mapper_for_tests());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 3;
@@ -505,7 +505,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_timeout() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let doc_mapper = Arc::new(quickwit_index_config::default_config_for_tests());
+        let doc_mapper = Arc::new(quickwit_index_config::default_doc_mapper_for_tests());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let indexing_settings = IndexingSettings::for_test();
         let (mailbox, inbox) = create_test_mailbox();
@@ -562,7 +562,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_eof() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let doc_mapper = Arc::new(quickwit_index_config::default_config_for_tests());
+        let doc_mapper = Arc::new(quickwit_index_config::default_doc_mapper_for_tests());
         let indexing_directory = IndexingDirectory::for_test().await?;
         let indexing_settings = IndexingSettings::for_test();
         let (mailbox, inbox) = create_test_mailbox();

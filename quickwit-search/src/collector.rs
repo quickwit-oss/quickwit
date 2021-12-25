@@ -21,7 +21,7 @@ use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
 
 use itertools::Itertools;
-use quickwit_index_config::{IndexConfig, SortBy, SortOrder};
+use quickwit_index_config::{DocMapper, SortBy, SortOrder};
 use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest};
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader};
@@ -348,12 +348,12 @@ fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec
 }
 
 /// Extracts all fast field names.
-fn extract_fast_field_names(index_config: &dyn IndexConfig) -> HashSet<String> {
+fn extract_fast_field_names(doc_mapper: &dyn DocMapper) -> HashSet<String> {
     let mut fast_fields = HashSet::new();
-    if let Some(timestamp_field) = index_config.timestamp_field_name() {
+    if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
         fast_fields.insert(timestamp_field);
     }
-    if let SortBy::FastField { field_name, .. } = index_config.sort_by() {
+    if let SortBy::FastField { field_name, .. } = doc_mapper.sort_by() {
         fast_fields.insert(field_name);
     }
     fast_fields
@@ -362,7 +362,7 @@ fn extract_fast_field_names(index_config: &dyn IndexConfig) -> HashSet<String> {
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
 pub fn make_collector_for_split(
     split_id: String,
-    index_config: &dyn IndexConfig,
+    doc_mapper: &dyn DocMapper,
     search_request: &SearchRequest,
     split_schema: &Schema,
 ) -> QuickwitCollector {
@@ -371,8 +371,8 @@ pub fn make_collector_for_split(
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
         sort_by: search_request.into(),
-        fast_field_names: extract_fast_field_names(index_config),
-        timestamp_field_opt: index_config.timestamp_field(split_schema),
+        fast_field_names: extract_fast_field_names(doc_mapper),
+        timestamp_field_opt: doc_mapper.timestamp_field(split_schema),
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,
     }

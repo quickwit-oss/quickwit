@@ -28,8 +28,8 @@ use quickwit_actors::{
     create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health,
     KillSwitch, QueueCapacity, Supervisable,
 };
-use quickwit_config::{IndexingSettings, SourceConfig};
-use quickwit_index_config::IndexConfig as DocMapper;
+use quickwit_config::{build_doc_mapper, IndexingSettings, SourceConfig};
+use quickwit_index_config::DocMapper;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{IndexMetadata, Metastore, SplitState};
 use quickwit_storage::Storage;
@@ -553,7 +553,11 @@ impl IndexingPipelineParams {
         metastore: Arc<dyn Metastore>,
         storage: Arc<dyn Storage>,
     ) -> anyhow::Result<Self> {
-        let doc_mapper = index_metadata.build_doc_mapper()?;
+        let doc_mapper = build_doc_mapper(
+            &index_metadata.doc_mapping,
+            &index_metadata.search_settings,
+            &index_metadata.indexing_settings,
+        )?;
         let indexing_directory_path = indexing_dir_path
             .join(&index_metadata.index_id)
             .join(&source.source_id);
@@ -585,7 +589,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_config::IndexingSettings;
-    use quickwit_index_config::default_config_for_tests;
+    use quickwit_index_config::default_doc_mapper_for_tests;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use quickwit_metastore::{MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;
@@ -667,7 +671,7 @@ mod tests {
         let indexing_pipeline_params = IndexingPipelineParams {
             index_id: index_id.to_string(),
             checkpoint: SourceCheckpoint::default(),
-            doc_mapper: Arc::new(default_config_for_tests()),
+            doc_mapper: Arc::new(default_doc_mapper_for_tests()),
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
             split_store_max_num_bytes: 10_000_000,
@@ -741,7 +745,7 @@ mod tests {
         let pipeline_params = IndexingPipelineParams {
             index_id: "test-index".to_string(),
             checkpoint: SourceCheckpoint::default(),
-            doc_mapper: Arc::new(default_config_for_tests()),
+            doc_mapper: Arc::new(default_doc_mapper_for_tests()),
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
             split_store_max_num_bytes: 10_000_000,

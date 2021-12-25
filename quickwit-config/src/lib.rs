@@ -25,6 +25,6 @@ pub use config::{
     SEARCHER_CONFIG_INSTANCE,
 };
 pub use index_config::{
-    DocMapping, IndexConfig, IndexingResources, IndexingSettings, MergePolicy, SearchSettings,
-    SourceConfig,
+    build_doc_mapper, DocMapping, IndexConfig, IndexingResources, IndexingSettings, MergePolicy,
+    SearchSettings, SourceConfig,
 };

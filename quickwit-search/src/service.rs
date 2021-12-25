@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use quickwit_index_config::IndexConfig;
+use quickwit_index_config::DocMapper;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse,
@@ -104,15 +104,14 @@ impl SearchServiceImpl {
     }
 }
 
-fn deserialize_index_config(index_config_str: &str) -> crate::Result<Arc<dyn IndexConfig>> {
-    let index_config =
-        serde_json::from_str::<Arc<dyn IndexConfig>>(index_config_str).map_err(|err| {
-            SearchError::InternalError(format!(
-                "Failed to deserialize index config: `{}`",
-                err.to_string()
-            ))
-        })?;
-    Ok(index_config)
+fn deserialize_doc_mapper(doc_mapper_str: &str) -> crate::Result<Arc<dyn DocMapper>> {
+    let doc_mapper = serde_json::from_str::<Arc<dyn DocMapper>>(doc_mapper_str).map_err(|err| {
+        SearchError::InternalError(format!(
+            "Failed to deserialize doc mapper: `{}`",
+            err.to_string()
+        ))
+    })?;
+    Ok(doc_mapper)
 }
 
 #[async_trait]
@@ -141,7 +140,7 @@ impl SearchService for SearchServiceImpl {
             .storage_uri_resolver
             .resolve(&leaf_search_request.index_uri)?;
         let split_ids = leaf_search_request.split_metadata;
-        let index_config = deserialize_index_config(&leaf_search_request.index_config)?;
+        let index_config = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
 
         let leaf_search_response = leaf_search(
             &search_request,
@@ -197,7 +196,7 @@ impl SearchService for SearchServiceImpl {
         let storage = self
             .storage_uri_resolver
             .resolve(&leaf_stream_request.index_uri)?;
-        let index_config = deserialize_index_config(&leaf_stream_request.index_config)?;
+        let index_config = deserialize_doc_mapper(&leaf_stream_request.doc_mapper)?;
         let leaf_receiver = leaf_search_stream(
             stream_request,
             storage.clone(),

@@ -27,7 +27,7 @@ use itertools::{Either, Itertools};
 use once_cell::sync::OnceCell;
 use quickwit_config::get_searcher_config_instance;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_index_config::IndexConfig;
+use quickwit_index_config::DocMapper;
 use quickwit_proto::{
     LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError,
 };
@@ -193,23 +193,23 @@ async fn warm_up_terms(searcher: &Searcher, query: &dyn Query) -> anyhow::Result
 }
 
 /// Apply a leaf search on a single split.
-#[instrument(skip(search_request, storage, split, index_config))]
+#[instrument(skip(search_request, storage, split, doc_mapper))]
 async fn leaf_search_single_split(
     search_request: &SearchRequest,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
-    index_config: Arc<dyn IndexConfig>,
+    doc_mapper: Arc<dyn DocMapper>,
 ) -> crate::Result<LeafSearchResponse> {
     let split_id = split.split_id.to_string();
     let index = open_index(storage, &split).await?;
     let split_schema = index.schema();
     let quickwit_collector = make_collector_for_split(
         split_id.clone(),
-        index_config.as_ref(),
+        doc_mapper.as_ref(),
         search_request,
         &split_schema,
     );
-    let query = index_config.query(split_schema, search_request)?;
+    let query = doc_mapper.query(split_schema, search_request)?;
     let reader = index
         .reader_builder()
         .num_searchers(1)
@@ -238,19 +238,19 @@ pub async fn leaf_search(
     request: &SearchRequest,
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
-    index_config: Arc<dyn IndexConfig>,
+    doc_mapper: Arc<dyn DocMapper>,
 ) -> Result<LeafSearchResponse, SearchError> {
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
         .map(|split| {
-            let index_config_clone = index_config.clone();
+            let doc_mapper_clone = doc_mapper.clone();
             let index_storage_clone = index_storage.clone();
             async move {
                 leaf_search_single_split(
                     request,
                     index_storage_clone,
                     split.clone(),
-                    index_config_clone,
+                    doc_mapper_clone,
                 )
                 .await
                 .map_err(|err| (split.split_id.clone(), err))
