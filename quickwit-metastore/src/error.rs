@@ -66,6 +66,12 @@ pub enum MetastoreError {
     #[error("Publish checkpoint delta overlaps with the current checkpoint: {0:?}.")]
     IncompatibleCheckpointDelta(#[from] IncompatibleCheckpointDelta),
 
+    #[error("Source `{source_id}` of type `{source_type}` already exists.")]
+    SourceAlreadyExists {
+        source_id: String,
+        source_type: String,
+    },
+
     #[cfg(feature = "postgres")]
     #[error("Database error: {0:?}.")]
     DbError(diesel::result::Error),

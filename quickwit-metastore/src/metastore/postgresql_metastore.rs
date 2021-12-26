@@ -33,6 +33,7 @@ use diesel::{
     debug_query, sql_query, BoolExpressionMethods, BoxableExpression, Connection,
     ExpressionMethods, IntoSql, PgConnection, QueryDsl, RunQueryDsl,
 };
+use quickwit_config::SourceConfig;
 use quickwit_index_config::tag_pruning::TagFilterAst;
 use tracing::{debug, error, info, warn};
 
@@ -198,6 +199,46 @@ impl PostgresqlMetastore {
         Ok(index_exists)
     }
 
+    fn index_metadata_inner(
+        &self,
+        conn: &PooledConnection<ConnectionManager<PgConnection>>,
+        index_id: &str,
+    ) -> MetastoreResult<IndexMetadata> {
+        let statement = schema::indexes::dsl::indexes.find(index_id);
+        debug!(index_id = %index_id, query = %debug_query::<Pg, _>(&statement).to_string(), "Get index.");
+
+        let index = statement
+            .first::<model::Index>(conn)
+            .map_err(|err| match err {
+                diesel::result::Error::NotFound => MetastoreError::IndexDoesNotExist {
+                    index_id: index_id.to_string(),
+                },
+                _ => MetastoreError::DbError(err),
+            })?;
+        let index_metadata = index.index_metadata()?;
+        Ok(index_metadata)
+    }
+
+    fn update_index(
+        &self,
+        conn: &PooledConnection<ConnectionManager<PgConnection>>,
+        index_metadata: IndexMetadata,
+    ) -> MetastoreResult<()> {
+        let index_id = index_metadata.index_id.clone();
+        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
+            MetastoreError::InternalError {
+                message: "Failed to serialize index metadata.".to_string(),
+                cause: anyhow::anyhow!(err),
+            }
+        })?;
+        let statement = diesel::update(schema::indexes::dsl::indexes.find(&index_id))
+            .set(schema::indexes::dsl::index_metadata_json.eq(index_metadata_json));
+        debug!(index_id = %index_id, query = %debug_query::<Pg, _>(&statement).to_string(), "Update index.");
+        let num_updated_rows = statement.execute(&*conn).map_err(MetastoreError::DbError)?;
+        assert_eq!(num_updated_rows, 1);
+        Ok(())
+    }
+
     /// Publish splits.
     /// Returns the successful split IDs.
     fn publish_splits(
@@ -255,52 +296,11 @@ impl PostgresqlMetastore {
         index_id: &str,
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
-        // Get index metadata.
-        let select_index_statement =
-            schema::indexes::dsl::indexes.filter(schema::indexes::dsl::index_id.eq(index_id));
-        debug!(sql=%debug_query::<Pg, _>(&select_index_statement).to_string());
-        let model_index = select_index_statement
-            .first::<model::Index>(conn)
-            .map_err(|err| match err {
-                diesel::result::Error::NotFound => MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
-                },
-                _ => MetastoreError::InternalError {
-                    message: "Failed to select index".to_string(),
-                    cause: anyhow::anyhow!(err),
-                },
-            })?;
-
-        // Deserialize the checkpoint from the database model.
-        let mut index_metadata =
-            model_index
-                .make_index_metadata()
-                .map_err(|err| MetastoreError::InternalError {
-                    message: "Failed to deserialize index metadata".to_string(),
-                    cause: anyhow::anyhow!(err),
-                })?;
-
-        // Apply checkpoint_delta
+        let mut index_metadata = self.index_metadata_inner(conn, index_id)?;
         index_metadata
             .checkpoint
             .try_apply_delta(checkpoint_delta)?;
-
-        // Serialize the checkpoint to fit the database model.
-        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
-            MetastoreError::InternalError {
-                message: "Failed to serialize index metadata".to_string(),
-                cause: anyhow::anyhow!(err),
-            }
-        })?;
-
-        // Update the index checkpoint.
-        let update_index_statement = diesel::update(schema::indexes::dsl::indexes.find(index_id))
-            .set(schema::indexes::dsl::index_metadata_json.eq(index_metadata_json));
-        debug!(sql=%debug_query::<Pg, _>(&update_index_statement).to_string());
-        update_index_statement
-            .execute(&*conn)
-            .map_err(MetastoreError::DbError)?;
-
+        self.update_index(conn, index_metadata)?;
         Ok(())
     }
 
@@ -727,27 +727,19 @@ impl Metastore for PostgresqlMetastore {
 
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
         let conn = self.get_conn()?;
-        let select_index_statement =
-            schema::indexes::dsl::indexes.filter(schema::indexes::dsl::index_id.eq(index_id));
-        debug!(sql=%debug_query::<Pg, _>(&select_index_statement).to_string());
-        let model_index = select_index_statement
-            .first::<model::Index>(&conn)
-            .map_err(|err| match err {
-                diesel::result::Error::NotFound => MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
-                },
-                _ => MetastoreError::DbError(err),
-            })?;
-
-        let index_metadata =
-            model_index
-                .make_index_metadata()
-                .map_err(|err| MetastoreError::InternalError {
-                    message: "Failed to make index metadata".to_string(),
-                    cause: anyhow::anyhow!(err),
-                })?;
-
+        let index_metadata = self.index_metadata_inner(&conn, index_id)?;
         Ok(index_metadata)
+    }
+
+    async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
+        let conn = self.get_conn()?;
+        conn.transaction::<_, MetastoreError, _>(|| {
+            let mut index_metadata = self.index_metadata_inner(&conn, index_id)?;
+            index_metadata.add_source(source)?;
+            self.update_index(&conn, index_metadata)?;
+            Ok(())
+        })?;
+        Ok(())
     }
 
     fn uri(&self) -> String {
