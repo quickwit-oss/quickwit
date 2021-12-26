@@ -233,8 +233,7 @@ pub struct QuickwitConfig {
 }
 
 impl QuickwitConfig {
-    // Loads quickwit config from the given path or from the default config file
-    // and validates.
+    // Parses quickwit config from the given config content and validates.
     pub async fn load(
         uri: Uri,
         config_content: &[u8],

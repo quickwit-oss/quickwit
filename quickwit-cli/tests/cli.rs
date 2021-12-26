@@ -653,7 +653,7 @@ async fn test_all_local_index() -> Result<()> {
 
     let metadata_file_exists = test_env
         .storage
-        .exists(&Path::new(&test_env.index_id).join("quickwit.json"))
+        .exists(&Path::new(&test_env.index_id).join("metastore.json"))
         .await?;
     assert_eq!(metadata_file_exists, true);
 

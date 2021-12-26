@@ -25,7 +25,47 @@ use quickwit_config::{
 };
 use quickwit_index_config::SortOrder;
 use quickwit_metastore::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
-use quickwit_metastore::{IndexMetadata, SplitMetadata};
+use quickwit_metastore::file_backed_metastore::FileBackedIndex;
+use quickwit_metastore::{IndexMetadata, Split, SplitMetadata, SplitState};
+
+fn sample_file_backed_index_for_regression() -> FileBackedIndex {
+    let index_metadata = sample_index_metadata_for_regression();
+    let split_metadata = sample_split_metadata_for_regression();
+    let split = Split {
+        split_state: SplitState::Published,
+        split_metadata,
+        update_timestamp: 1789,
+    };
+    let splits = vec![split];
+    FileBackedIndex::new(index_metadata, splits)
+}
+
+fn save_file_backed_index_test_files() -> anyhow::Result<()> {
+    let index = sample_file_backed_index_for_regression();
+    let index_value = serde_json::to_value(&index)?;
+    let version: &str = index_value
+        .as_object()
+        .unwrap()
+        .get("version")
+        .expect("Key `version` is missing from index object.")
+        .as_str()
+        .expect("Value for key `version` should be a string.");
+    let mut index_json = serde_json::to_string_pretty(&index_value)?;
+    index_json.push('\n');
+
+    let md5_digest = md5::compute(&index_json);
+
+    for extension in [".json", ".expected.json"] {
+        std::fs::write(
+            format!(
+                "test-data/file-backed-index/v{}-{:x}{}",
+                version, md5_digest, extension
+            ),
+            index_json.as_bytes(),
+        )?;
+    }
+    Ok(())
+}
 
 /// Creates a new [`IndexMetadata`] object against which backward compatibility tests will be run.
 fn sample_index_metadata_for_regression() -> IndexMetadata {
@@ -193,6 +233,7 @@ fn save_split_metadata_test_files() -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
+    save_file_backed_index_test_files()?;
     save_index_metadata_test_files()?;
     save_split_metadata_test_files()?;
     Ok(())

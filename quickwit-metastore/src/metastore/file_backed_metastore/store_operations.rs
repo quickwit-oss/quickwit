@@ -21,15 +21,15 @@ use std::path::{Path, PathBuf};
 
 use quickwit_storage::{Storage, StorageError, StorageErrorKind};
 
-use crate::metastore::file_backed_metastore::index::Index;
+use crate::metastore::file_backed_metastore::file_backed_index::FileBackedIndex;
 use crate::{MetastoreError, MetastoreResult};
 
 /// Metadata file managed by [`FileBackedMetastore`].
-const META_FILENAME: &str = "quickwit.json";
+const META_FILENAME: &str = "metastore.json";
 
 /// Path to the metadata file from the given index ID.
 pub(crate) fn meta_path(index_id: &str) -> PathBuf {
-    Path::new(index_id).join(Path::new(META_FILENAME))
+    Path::new(index_id).join(META_FILENAME)
 }
 
 fn convert_error(index_id: &str, storage_err: StorageError) -> MetastoreError {
@@ -47,14 +47,17 @@ fn convert_error(index_id: &str, storage_err: StorageError) -> MetastoreError {
     }
 }
 
-pub(crate) async fn fetch_index(storage: &dyn Storage, index_id: &str) -> MetastoreResult<Index> {
+pub(crate) async fn fetch_index(
+    storage: &dyn Storage,
+    index_id: &str,
+) -> MetastoreResult<FileBackedIndex> {
     let metadata_path = meta_path(index_id);
     let content = storage
         .get_all(&metadata_path)
         .await
         .map_err(|storage_err| convert_error(index_id, storage_err))?;
 
-    let index: Index = serde_json::from_slice(&content[..])
+    let index: FileBackedIndex = serde_json::from_slice(&content[..])
         .map_err(|serde_err| MetastoreError::InvalidManifest { cause: serde_err })?;
 
     if index.index_id() != index_id {
@@ -85,7 +88,7 @@ pub(crate) async fn index_exists(storage: &dyn Storage, index_id: &str) -> Metas
 /// The point of having two methods here is just to make it usable in a unit test.
 pub(crate) async fn put_index_given_index_id(
     storage: &dyn Storage,
-    index: &Index,
+    index: &FileBackedIndex,
     index_id: &str,
 ) -> MetastoreResult<()> {
     // Serialize Index.
@@ -104,7 +107,10 @@ pub(crate) async fn put_index_given_index_id(
     Ok(())
 }
 /// Serializes the `Index` object and stores the data on the storage.
-pub(crate) async fn put_index(storage: &dyn Storage, index: &Index) -> MetastoreResult<()> {
+pub(crate) async fn put_index(
+    storage: &dyn Storage,
+    index: &FileBackedIndex,
+) -> MetastoreResult<()> {
     put_index_given_index_id(storage, index, index.index_id()).await
 }
 

@@ -24,7 +24,7 @@ use clap::{load_yaml, App, AppSettings};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use quickwit_cli::cli::CliCommand;
-use quickwit_cli::QUICKWIT_JAEGER_ENABLED_ENV_KEY;
+use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{info, Level};
 use tracing_subscriber::fmt::time::UtcTime;
@@ -34,8 +34,8 @@ use tracing_subscriber::EnvFilter;
 fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     #[cfg(feature = "tokio-console")]
     {
-        use quickwit_cli::QUICKWIT_TOKIO_CONSOLE_ENABLED_ENV_KEY;
-        if std::env::var_os(QUICKWIT_TOKIO_CONSOLE_ENABLED_ENV_KEY).is_some() {
+        use quickwit_cli::QW_TOKIO_CONSOLE_ENABLED_ENV_KEY;
+        if std::env::var_os(QW_TOKIO_CONSOLE_ENABLED_ENV_KEY).is_some() {
             console_subscriber::init();
             return Ok(());
         }
@@ -58,7 +58,7 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
                 .expect("Time format invalid"),
             ),
         );
-    if std::env::var_os(QUICKWIT_JAEGER_ENABLED_ENV_KEY).is_some() {
+    if std::env::var_os(QW_JAEGER_ENABLED_ENV_KEY).is_some() {
         // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
         let tracer = opentelemetry_jaeger::new_pipeline()
             .with_service_name("quickwit")
@@ -155,8 +155,6 @@ mod tests {
     use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs, SplitCliCommand};
     use quickwit_common::uri::Uri;
 
-    use super::*;
-
     #[test]
     fn test_parse_create_args() -> anyhow::Result<()> {
         let yaml = load_yaml!("cli.yaml");
@@ -195,9 +193,6 @@ mod tests {
         }));
         assert_eq!(command, expected_cmd);
 
-        const QUICKWIT_METASTORE_URI_ENV_KEY: &str = "QUICKWIT_METASTORE_URI";
-        env::set_var(QUICKWIT_METASTORE_URI_ENV_KEY, "/indexes");
-
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
@@ -220,7 +215,6 @@ mod tests {
             data_dir: None,
         }));
         assert_eq!(command, expected_cmd);
-        env::remove_var(QUICKWIT_METASTORE_URI_ENV_KEY);
 
         Ok(())
     }

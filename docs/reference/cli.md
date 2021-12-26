@@ -355,10 +355,10 @@ quickwit gc --index-uri s3://quickwit-indexes/catalog --grace-period 5m
 
 ## Environment Variables
 
-### QUICKWIT_ENV
+### QW_ENV
 
 Specifies the nature of the current working environment. Currently, this environment variable is used exclusively for testing purposes, and `LOCAL` is the only supported value.
 
-### QUICKWIT_DISABLE_TELEMETRY
+### QW_DISABLE_TELEMETRY
 
 Disables [telemetry](telemetry.md) when set to any non-empty value.

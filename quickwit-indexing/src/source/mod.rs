@@ -206,6 +206,7 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
             kafka_source::check_connectivity(source_config.params.clone())
         }
         "vec" => Ok(()),
+        "void" => Ok(()),
         unrecognized_source_type => {
             bail!(
                 "Unknown source type `{}` or connectivity check not implemented for this source \
@@ -213,5 +214,53 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
                 unrecognized_source_type
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_check_source_connectivity() -> anyhow::Result<()> {
+        {
+            let source_config = SourceConfig {
+                source_id: "void".to_string(),
+                source_type: "void".to_string(),
+                params: json!(null),
+            };
+            check_source_connectivity(&source_config).await?;
+        }
+        {
+            let source_config = SourceConfig {
+                source_id: "vec".to_string(),
+                source_type: "vec".to_string(),
+                params: json!(null),
+            };
+            check_source_connectivity(&source_config).await?;
+        }
+        {
+            let source_config = SourceConfig {
+                source_id: "file".to_string(),
+                source_type: "file".to_string(),
+                params: json!({
+                    "filepath": "non-existing-file.json"
+                }),
+            };
+            assert!(check_source_connectivity(&source_config).await.is_err());
+        }
+        {
+            let source_config = SourceConfig {
+                source_id: "file".to_string(),
+                source_type: "file".to_string(),
+                params: json!({
+                    "filepath": "data/test_corpus.json"
+                }),
+            };
+            assert!(check_source_connectivity(&source_config).await.is_ok());
+        }
+        Ok(())
     }
 }

@@ -54,4 +54,4 @@ pub async fn send_telemetry_event(event: TelemetryEvent) {
 }
 
 /// This environment variable can be set to disable sending telemetry events.
-pub const DISABLE_TELEMETRY_ENV_KEY: &str = "QUICKWIT_DISABLE_TELEMETRY";
+pub const DISABLE_TELEMETRY_ENV_KEY: &str = "QW_DISABLE_TELEMETRY";
