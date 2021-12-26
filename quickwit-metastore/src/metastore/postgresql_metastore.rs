@@ -742,6 +742,17 @@ impl Metastore for PostgresqlMetastore {
         Ok(())
     }
 
+    async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
+        let conn = self.get_conn()?;
+        conn.transaction::<_, MetastoreError, _>(|| {
+            let mut index_metadata = self.index_metadata_inner(&conn, index_id)?;
+            index_metadata.delete_source(source_id)?;
+            self.update_index(&conn, index_metadata)?;
+            Ok(())
+        })?;
+        Ok(())
+    }
+
     fn uri(&self) -> String {
         self.uri.clone()
     }

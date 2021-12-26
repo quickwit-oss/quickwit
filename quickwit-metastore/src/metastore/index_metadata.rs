@@ -176,6 +176,15 @@ impl IndexMetadata {
         Ok(true)
     }
 
+    pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
+        self.sources
+            .remove(source_id)
+            .ok_or_else(|| MetastoreError::SourceDoesNotExist {
+                source_id: source_id.to_string(),
+            })?;
+        Ok(true)
+    }
+
     /// Builds and returns the doc mapper associated with index.
     pub fn build_doc_mapper(&self) -> anyhow::Result<Arc<dyn DocMapper>> {
         let mut builder = DocMapperBuilder::new();

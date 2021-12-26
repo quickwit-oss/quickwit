@@ -351,6 +351,11 @@ impl Metastore for FileBackedMetastore {
             .await
     }
 
+    async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
+        self.mutate(index_id, |index| index.delete_source(source_id))
+            .await
+    }
+
     /// -------------------------------------------------------------------------------
     /// Read-only accessors
 

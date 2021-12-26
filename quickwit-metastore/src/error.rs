@@ -72,6 +72,9 @@ pub enum MetastoreError {
         source_type: String,
     },
 
+    #[error("Source `{source_id}` does not exist.")]
+    SourceDoesNotExist { source_id: String },
+
     #[cfg(feature = "postgres")]
     #[error("Database error: {0:?}.")]
     DbError(diesel::result::Error),

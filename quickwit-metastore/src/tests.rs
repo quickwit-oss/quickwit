@@ -118,6 +118,47 @@ pub mod test_suite {
         ));
     }
 
+    pub async fn test_metastore_delete_source<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id = "test-metastore-delete-source";
+        let index_uri = "ram://indexes/test-metastore-delete-source";
+        let source_id = "test-metastore-delete-source--void-source-id";
+
+        let source = SourceConfig {
+            source_id: source_id.to_string(),
+            source_type: "void".to_string(),
+            params: serde_json::json!({}),
+        };
+
+        let mut index_metadata = IndexMetadata::for_test(index_id, index_uri);
+        index_metadata.sources.insert(source_id.to_string(), source);
+
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+        metastore.delete_source(index_id, source_id).await.unwrap();
+
+        let sources = metastore.index_metadata(index_id).await.unwrap().sources;
+        assert!(sources.is_empty());
+
+        assert!(matches!(
+            metastore
+                .delete_source(index_id, source_id)
+                .await
+                .unwrap_err(),
+            MetastoreError::SourceDoesNotExist { .. }
+        ));
+        assert!(matches!(
+            metastore
+                .delete_source("index-id-does-not-exist", source_id)
+                .await
+                .unwrap_err(),
+            MetastoreError::IndexDoesNotExist { .. }
+        ));
+    }
+
     pub async fn test_metastore_create_index<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
@@ -1784,6 +1825,11 @@ macro_rules! metastore_test_suite {
             #[tokio::test]
             async fn test_metastore_add_source() {
                 crate::tests::test_suite::test_metastore_add_source::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_delete_source() {
+                crate::tests::test_suite::test_metastore_delete_source::<$metastore_type>().await;
             }
         }
     };
