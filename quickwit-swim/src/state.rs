@@ -329,6 +329,13 @@ impl ArtilleryEpidemic {
         use Request::*;
 
         if message.cluster_key == self.config.cluster_key {
+            // We want to abort if a new member has the same node_id of an existing member.  
+            // A new member is detected according to its socket address.
+            if !self.members.has_member(&src_addr) && self.members.get_member(&message.sender).is_some() {
+                error!("Cannot add a member with a node-id `{}` already present in the cluster.", message.sender);
+                return;
+            }
+
             self.apply_state_changes(message.state_changes, src_addr);
             remove_potential_seed(&mut self.seed_queue, src_addr);
 

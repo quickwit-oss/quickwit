@@ -43,13 +43,13 @@ pub struct ArtilleryStateChange {
 
 impl ArtilleryMember {
     pub fn new(
-        host_id: String,
+        node_id: String,
         remote_host: SocketAddr,
         incarnation_number: u64,
         known_state: ArtilleryMemberState,
     ) -> Self {
         ArtilleryMember {
-            node_id: host_id,
+            node_id,
             remote_host: Some(remote_host),
             incarnation_number,
             member_state: known_state,
