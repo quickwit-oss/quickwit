@@ -411,6 +411,7 @@ mod tests {
             num_hits: 55,
             hits: Vec::new(),
             elapsed_time_micros: 0u64,
+            errors: Vec::new(),
         };
         let search_response_json: serde_json::Value = serde_json::to_value(&search_response)?;
         let expected_search_response_json: serde_json::Value = json!({

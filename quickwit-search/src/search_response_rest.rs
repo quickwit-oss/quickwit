@@ -34,6 +34,8 @@ pub struct SearchResponseRest {
     pub hits: Vec<serde_json::Value>,
     /// Elapsed time.
     pub elapsed_time_micros: u64,
+    /// Search errors.
+    pub errors: Vec<String>,
 }
 
 impl TryFrom<quickwit_proto::SearchResponse> for SearchResponseRest {
@@ -56,6 +58,7 @@ impl TryFrom<quickwit_proto::SearchResponse> for SearchResponseRest {
             num_hits: search_response.num_hits,
             hits,
             elapsed_time_micros: search_response.elapsed_time_micros,
+            errors: search_response.errors,
         })
     }
 }
