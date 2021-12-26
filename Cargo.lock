@@ -2422,6 +2422,7 @@ dependencies = [
  "diesel_migrations",
  "dotenv",
  "futures",
+ "itertools",
  "mockall",
  "once_cell",
  "openssl",

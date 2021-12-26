@@ -37,6 +37,7 @@ pub struct Split {
     pub update_timestamp: i64,
 
     /// Immutable part of the split.
+    #[serde(flatten)]
     pub split_metadata: SplitMetadata,
 }
 
