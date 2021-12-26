@@ -24,6 +24,7 @@ pub mod test_suite {
 
     use async_trait::async_trait;
     use chrono::Utc;
+    use quickwit_config::SourceConfig;
     use quickwit_index_config::tag_pruning::{no_tag, tag, TagFilterAst};
     use tokio::time::{sleep, Duration};
 
@@ -69,6 +70,52 @@ pub mod test_suite {
         // Delete index.
         let result = metastore.delete_index(index_id).await.unwrap();
         assert!(matches!(result, ()));
+    }
+
+    pub async fn test_metastore_add_source<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id = "test-metastore-add-source";
+        let index_uri = "ram://indexes/test-metastore-add-source";
+        let index_metadata = IndexMetadata::for_test(index_id, index_uri);
+
+        metastore
+            .create_index(index_metadata.clone())
+            .await
+            .unwrap();
+
+        let source_id = "test-metastore-add-source--void-source-id";
+
+        let source = SourceConfig {
+            source_id: source_id.to_string(),
+            source_type: "void".to_string(),
+            params: serde_json::json!({}),
+        };
+        metastore
+            .add_source(index_id, source.clone())
+            .await
+            .unwrap();
+
+        let sources = metastore.index_metadata(index_id).await.unwrap().sources;
+        assert_eq!(sources.len(), 1);
+        assert!(sources.contains_key(source_id));
+        assert_eq!(sources.get(source_id).unwrap().source_id, source_id);
+        assert_eq!(sources.get(source_id).unwrap().source_type, "void");
+
+        assert!(matches!(
+            metastore
+                .add_source(index_id, source.clone())
+                .await
+                .unwrap_err(),
+            MetastoreError::SourceAlreadyExists { .. }
+        ));
+        assert!(matches!(
+            metastore
+                .add_source("index-id-does-not-exist", source)
+                .await
+                .unwrap_err(),
+            MetastoreError::IndexDoesNotExist { .. }
+        ));
     }
 
     pub async fn test_metastore_create_index<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -1732,6 +1779,11 @@ macro_rules! metastore_test_suite {
                 crate::tests::test_suite::test_metastore_split_update_timestamp::<$metastore_type>(
                 )
                 .await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_add_source() {
+                crate::tests::test_suite::test_metastore_add_source::<$metastore_type>().await;
             }
         }
     };

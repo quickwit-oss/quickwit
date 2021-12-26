@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -34,6 +35,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::checkpoint::Checkpoint;
 use crate::split_metadata::utc_now_timestamp;
+use crate::{MetastoreError, MetastoreResult};
 
 /// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize)]
@@ -160,6 +162,18 @@ impl IndexMetadata {
         self.sources.values().next().cloned().ok_or_else(|| {
             anyhow::anyhow!("No source is configured for the `{}` index.", self.index_id)
         })
+    }
+
+    pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<bool> {
+        let entry = self.sources.entry(source.source_id.clone());
+        if let Entry::Occupied(_) = entry {
+            return Err(MetastoreError::SourceAlreadyExists {
+                source_id: source.source_id,
+                source_type: source.source_type,
+            });
+        }
+        entry.or_insert(source);
+        Ok(true)
     }
 
     /// Builds and returns the doc mapper associated with index.

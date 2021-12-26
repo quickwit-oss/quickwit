@@ -31,6 +31,7 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use quickwit_config::SourceConfig;
 use quickwit_index_config::tag_pruning::TagFilterAst;
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
@@ -343,6 +344,11 @@ impl Metastore for FileBackedMetastore {
             Ok(true)
         })
         .await
+    }
+
+    async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
+        self.mutate(index_id, |index| index.add_source(source))
+            .await
     }
 
     /// -------------------------------------------------------------------------------

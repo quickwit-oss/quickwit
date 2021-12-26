@@ -26,6 +26,7 @@ use std::ops::{Range, RangeInclusive};
 
 use chrono::Utc;
 use itertools::Itertools;
+use quickwit_config::SourceConfig;
 use quickwit_index_config::tag_pruning::TagFilterAst;
 use serde::{Deserialize, Serialize};
 
@@ -369,5 +370,9 @@ impl FileBackedIndex {
 
         self.metadata.update_timestamp = Utc::now().timestamp();
         Ok(())
+    }
+
+    pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<bool> {
+        self.metadata.add_source(source)
     }
 }
