@@ -17,7 +17,7 @@ byte-unit = { version = "4", default-features = false, features = ["serde"] }
 fail = "0.5"
 flume = "0.10"
 futures = "0.3"
-itertools = "0.10"
+itertools = "0.10.3"
 once_cell = "1"
 quickwit-actors = {path = "../quickwit-actors" }
 quickwit-common = {path = "../quickwit-common" }
