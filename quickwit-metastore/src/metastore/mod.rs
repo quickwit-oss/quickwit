@@ -157,6 +157,10 @@ pub trait Metastore: Send + Sync + 'static {
     /// same ID is already defined for the index.
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()>;
 
+    /// Deletes a source. Fails with [`MetastoreError::SourceDoesNotExist`] if the specified source
+    /// does not exist.
+    async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()>;
+
     /// Returns the Metastore uri.
     fn uri(&self) -> String;
 }
