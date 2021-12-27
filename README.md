@@ -17,7 +17,7 @@
 </h4>
 <br/>
 
-### Quicwkit 0.2 release is out! Check out our [blog post](https://quickwit.io/blog/quickwit-0.2-release/) to discover the new features.
+### Quickwit 0.2 is out! Check out our [blog post](https://quickwit.io/blog/quickwit-0.2-release/) to discover the new features.
 
 <br/>
 
