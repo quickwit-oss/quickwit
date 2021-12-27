@@ -1,25 +1,22 @@
+FROM alpine:3.14 AS builder
+
+# Install tools
+RUN apk add --no-cache curl
+RUN curl -L https://install.quickwit.io | sh
+RUN mv  ./quickwit-*/* ./
+
 FROM alpine:3.14
 LABEL org.opencontainers.image.title="Quickwit"
 LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
 LABEL org.opencontainers.image.vendor="Quickwit, Inc."
 LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
-# Default environment variables
-ENV QW_CONFIG=/config/quickwit.yaml
-ENV QW_DATA_DIR=/qwdata
+WORKDIR /quickwit
+RUN mkdir config qwdata
+COPY --from=builder /quickwit /usr/local/bin/
+COPY --from=builder /config/quickwit.yaml /quickwit/config/quickwit.yaml
 
-# Install tools
-RUN apk add --no-cache curl
+ENV QW_CONFIG=/quickwit/config/quickwit.yaml
+ENV QW_DATA_DIR=/quickwit/qwdata
 
-# Install Quickwit
-WORKDIR /
-RUN curl -L https://install.quickwit.io | sh
-RUN mv  quickwit-*/quickwit /usr/local/bin
-RUN mkdir /config && mv quickwit-*/config/quickwit.yaml /config
-RUN rm -rf quickwit-*/ && mkdir /qwdata
-
-WORKDIR ${QW_DATA_DIR}
-
-EXPOSE 8080 
-
-ENTRYPOINT [ "quickwit" ]
+ENTRYPOINT ["/usr/local/bin/quickwit"]
