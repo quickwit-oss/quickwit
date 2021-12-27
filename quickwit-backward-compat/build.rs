@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use byte_unit::Byte;
 use quickwit_config::{
@@ -151,7 +151,8 @@ fn sample_index_metadata_for_regression() -> IndexMetadata {
         source_type: "kafka".to_string(),
         params: serde_json::json!({}),
     };
-    let sources = vec![kafka_source];
+    let mut sources = HashMap::new();
+    sources.insert(kafka_source.source_id.clone(), kafka_source);
 
     IndexMetadata {
         index_id: "my-index".to_string(),

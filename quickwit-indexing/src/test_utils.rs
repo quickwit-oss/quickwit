@@ -101,7 +101,7 @@ impl TestSandbox {
             .into_iter()
             .map(|doc_json| doc_json.to_string())
             .collect();
-        let source_config = SourceConfig {
+        let source = SourceConfig {
             source_id: self.index_meta.index_id.clone(),
             source_type: "vec".to_string(),
             params: serde_json::to_value(VecSourceParams {
@@ -111,7 +111,9 @@ impl TestSandbox {
             })?,
         };
         let mut index_meta = self.index_meta.clone();
-        index_meta.sources = vec![source_config];
+        index_meta.sources.clear();
+        index_meta.sources.insert(source.source_id.clone(), source);
+
         self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let statistics = index_data(
             self._temp_dir.path(),

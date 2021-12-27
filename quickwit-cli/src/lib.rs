@@ -101,7 +101,7 @@ pub async fn run_index_checklist(
             check_source_connectivity(source_config).await,
         ));
     } else {
-        for source_config in index_metadata.sources.iter() {
+        for source_config in index_metadata.sources.values() {
             checks.push((
                 source_config.source_id.as_str(),
                 check_source_connectivity(source_config).await,

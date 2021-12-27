@@ -116,18 +116,21 @@ async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let (source_table, params_table, checkpoint_table) = make_describe_source_tables(
         index_metadata.checkpoint,
-        index_metadata.sources,
+        index_metadata.sources.into_values(),
         &args.source_id,
     )?;
     display_tables(&[source_table, params_table, checkpoint_table]);
     Ok(())
 }
 
-fn make_describe_source_tables(
+fn make_describe_source_tables<I>(
     checkpoint: Checkpoint,
-    sources: Vec<SourceConfig>,
+    sources: I,
     source_id: &str,
-) -> anyhow::Result<(Table, Table, Table)> {
+) -> anyhow::Result<(Table, Table, Table)>
+where
+    I: IntoIterator<Item = SourceConfig>,
+{
     let source = sources
         .into_iter()
         .find(|source| source.source_id == source_id)
@@ -159,12 +162,13 @@ fn make_describe_source_tables(
 async fn list_sources_cli(args: ListSourcesArgs) -> anyhow::Result<()> {
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
-    let table = make_list_sources_table(index_metadata.sources);
+    let table = make_list_sources_table(index_metadata.sources.into_values());
     display_tables(&[table]);
     Ok(())
 }
 
-fn make_list_sources_table(sources: Vec<SourceConfig>) -> Table {
+fn make_list_sources_table<I>(sources: I) -> Table
+where I: IntoIterator<Item = SourceConfig> {
     let rows = sources
         .into_iter()
         .map(|source| SourceRow {
@@ -295,12 +299,10 @@ mod tests {
 
     #[test]
     fn test_make_describe_source_tables() {
-        assert!(make_describe_source_tables(
-            Checkpoint::default(),
-            Vec::new(),
-            "source-does-not-exist"
-        )
-        .is_err());
+        assert!(
+            make_describe_source_tables(Checkpoint::default(), [], "source-does-not-exist")
+                .is_err()
+        );
 
         let checkpoint: Checkpoint = vec![("shard-000", ""), ("shard-001", "42")]
             .into_iter()
@@ -370,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_make_list_sources_table() {
-        let sources = vec![
+        let sources = [
             SourceConfig {
                 source_id: "foo-source".to_string(),
                 source_type: "file".to_string(),
@@ -382,7 +384,7 @@ mod tests {
                 params: json!({}),
             },
         ];
-        let expected_sources = vec![
+        let expected_sources = [
             SourceRow {
                 source_id: "bar-source".to_string(),
                 source_type: "file".to_string(),

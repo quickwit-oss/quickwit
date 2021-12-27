@@ -17,10 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::bail;
 use chrono::Utc;
+use itertools::Itertools;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, SearchSettings, SourceConfig,
 };
@@ -51,8 +53,8 @@ pub struct IndexMetadata {
     pub indexing_settings: IndexingSettings,
     /// Configures various search settings such as default search fields.
     pub search_settings: SearchSettings,
-    /// Data sources.
-    pub sources: Vec<SourceConfig>,
+    /// Data sources keyed by their `source_id`.
+    pub sources: HashMap<String, SourceConfig>,
     /// Time at which the index was created.
     pub create_timestamp: i64,
     /// Time at which the index was last updated.
@@ -143,7 +145,7 @@ impl IndexMetadata {
             doc_mapping,
             indexing_settings,
             search_settings,
-            sources: Vec::new(),
+            sources: Default::default(),
             create_timestamp: now_timestamp,
             update_timestamp: now_timestamp,
         }
@@ -152,13 +154,12 @@ impl IndexMetadata {
     /// Returns the data source configured for the index.
     // TODO: Remove when support for multi-sources index is added.
     pub fn source(&self) -> anyhow::Result<SourceConfig> {
-        if self.sources.is_empty() {
-            bail!("No source is configured for the `{}` index.", self.index_id)
-        };
         if self.sources.len() > 1 {
             bail!("Multi-sources indexes are not supported (yet).")
         }
-        Ok(self.sources[0].clone())
+        self.sources.values().next().cloned().ok_or_else(|| {
+            anyhow::anyhow!("No source is configured for the `{}` index.", self.index_id)
+        })
     }
 
     /// Builds and returns the doc mapper associated with index.
@@ -232,6 +233,11 @@ pub(crate) struct IndexMetadataV0 {
 
 impl From<IndexMetadata> for IndexMetadataV0 {
     fn from(index_metadata: IndexMetadata) -> Self {
+        let sources = index_metadata
+            .sources
+            .into_values()
+            .sorted_by(|left, right| left.source_id.cmp(&right.source_id))
+            .collect();
         Self {
             index_id: index_metadata.index_id,
             index_uri: index_metadata.index_uri,
@@ -239,7 +245,7 @@ impl From<IndexMetadata> for IndexMetadataV0 {
             doc_mapping: index_metadata.doc_mapping,
             indexing_settings: index_metadata.indexing_settings,
             search_settings: index_metadata.search_settings,
-            sources: index_metadata.sources,
+            sources,
             create_timestamp: index_metadata.create_timestamp,
             update_timestamp: index_metadata.update_timestamp,
         }
@@ -248,6 +254,11 @@ impl From<IndexMetadata> for IndexMetadataV0 {
 
 impl From<IndexMetadataV0> for IndexMetadata {
     fn from(v0: IndexMetadataV0) -> Self {
+        let sources = v0
+            .sources
+            .into_iter()
+            .map(|source| (source.source_id.clone(), source))
+            .collect();
         Self {
             index_id: v0.index_id,
             index_uri: v0.index_uri,
@@ -255,7 +266,7 @@ impl From<IndexMetadataV0> for IndexMetadata {
             doc_mapping: v0.doc_mapping,
             indexing_settings: v0.indexing_settings,
             search_settings: v0.search_settings,
-            sources: v0.sources,
+            sources,
             create_timestamp: v0.create_timestamp,
             update_timestamp: v0.update_timestamp,
         }
@@ -295,7 +306,7 @@ impl From<UnversionedIndexMetadata> for IndexMetadata {
             doc_mapping,
             indexing_settings,
             search_settings,
-            sources: Vec::new(),
+            sources: Default::default(),
             create_timestamp: now_timestamp,
             update_timestamp: now_timestamp,
         }
