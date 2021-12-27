@@ -22,7 +22,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::bail;
-use chrono::Utc;
 use itertools::Itertools;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, SearchSettings, SourceConfig,
@@ -139,7 +138,7 @@ impl IndexMetadata {
                 "attributes.server.status".to_string(),
             ],
         };
-        let now_timestamp = Utc::now().timestamp();
+        let now_timestamp = utc_now_timestamp();
         Self {
             index_id: index_id.to_string(),
             index_uri: index_uri.to_string(),
@@ -321,7 +320,7 @@ impl From<UnversionedIndexMetadata> for IndexMetadata {
         let search_settings = SearchSettings {
             default_search_fields: unversioned.index_config.default_search_field_names,
         };
-        let now_timestamp = Utc::now().timestamp();
+        let now_timestamp = utc_now_timestamp();
         Self {
             index_id: unversioned.index_id,
             index_uri: unversioned.index_uri,

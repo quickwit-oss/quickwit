@@ -37,7 +37,7 @@ use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 use tracing::error;
 
-pub use self::file_backed_index::FileBackedIndex;
+use self::file_backed_index::FileBackedIndex;
 pub use self::file_backed_metastore_factory::FileBackedMetastoreFactory;
 use self::store_operations::{delete_index, fetch_index, index_exists, put_index};
 use crate::checkpoint::CheckpointDelta;
@@ -414,11 +414,9 @@ mod tests {
     use tokio::time::Duration;
 
     use super::store_operations::{meta_path, put_index_given_index_id};
-    use super::FileBackedIndex;
+    use super::{FileBackedIndex, FileBackedMetastore};
     use crate::checkpoint::CheckpointDelta;
-    use crate::{
-        FileBackedMetastore, IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState,
-    };
+    use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 
     #[tokio::test]
     async fn test_file_backed_metastore_index_exists() {

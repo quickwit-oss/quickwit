@@ -52,7 +52,7 @@ mod metastore_resolver;
 pub mod postgresql;
 
 pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
-pub use metastore::file_backed_metastore::{FileBackedIndex, FileBackedMetastore};
+pub use metastore::file_backed_metastore::FileBackedMetastore;
 #[cfg(feature = "postgres")]
 pub use metastore::postgresql_metastore::PostgresqlMetastore;
 #[cfg(feature = "testsuite")]
@@ -63,3 +63,6 @@ pub use metastore_resolver::{
 };
 pub use split_metadata::{Split, SplitMetadata, SplitState};
 pub(crate) use split_metadata_version::VersionedSplitMetadataDeserializeHelper;
+
+#[cfg(test)]
+mod backward_compatibility_tests;

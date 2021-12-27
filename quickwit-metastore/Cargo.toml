@@ -49,6 +49,7 @@ quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config", 
 tempfile = '3'
 futures = '0.3'
 rand = "0.8"
+md5 = "0.7"
 
 [features]
 testsuite = ["mockall", "tempfile"]

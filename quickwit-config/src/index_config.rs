@@ -112,9 +112,13 @@ impl Default for MergePolicy {
     }
 }
 
+fn is_false(val: &bool) -> bool {
+    !*val
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct IndexingSettings {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub demux_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub demux_field: Option<String>,
