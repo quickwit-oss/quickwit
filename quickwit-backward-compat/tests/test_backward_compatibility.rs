@@ -96,18 +96,7 @@ fn test_index_metadata_eq(index_metadata: &IndexMetadata, expected_index_metadat
         index_metadata.search_settings,
         expected_index_metadata.search_settings
     );
-    assert_eq!(
-        index_metadata
-            .sources
-            .iter()
-            .map(|source| &source.source_id)
-            .collect::<Vec<_>>(),
-        expected_index_metadata
-            .sources
-            .iter()
-            .map(|source| &source.source_id)
-            .collect::<Vec<_>>(),
-    );
+    assert_eq!(index_metadata.sources, expected_index_metadata.sources);
 }
 
 fn read_split_metadata(path: &Path) -> anyhow::Result<SplitMetadata> {

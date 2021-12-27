@@ -607,10 +607,10 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         index_id: args.index_id.clone(),
         index_uri,
         checkpoint: Checkpoint::default(),
+        sources: index_config.sources(),
         doc_mapping: index_config.doc_mapping,
         indexing_settings: index_config.indexing_settings,
         search_settings: index_config.search_settings,
-        sources: index_config.sources,
         create_timestamp: Utc::now().timestamp(),
         update_timestamp: Utc::now().timestamp(),
     };
@@ -672,7 +672,9 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         source_type,
         params,
     };
-    index_metadata.sources = vec![source_config.clone()];
+    index_metadata
+        .sources
+        .insert(source_config.source_id.clone(), source_config);
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
@@ -773,7 +775,9 @@ pub async fn merge_or_demux_cli(
     let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
-    index_metadata.sources = vec![source_config];
+    index_metadata
+        .sources
+        .insert(source_config.source_id.clone(), source_config);
     let indexer_config = IndexerConfig {
         ..Default::default()
     };

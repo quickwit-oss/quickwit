@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsStr;
 use std::path::Path;
 use std::time::Duration;
@@ -194,7 +194,7 @@ pub struct SearchSettings {
     pub default_search_fields: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SourceConfig {
     pub source_id: String,
     pub source_type: String,
@@ -255,7 +255,17 @@ impl IndexConfig {
         serde_yaml::from_slice(bytes).context("Failed to parse YAML index config file.")
     }
 
+    pub fn sources(&self) -> HashMap<String, SourceConfig> {
+        self.sources
+            .iter()
+            .map(|source| (source.source_id.clone(), source.clone()))
+            .collect()
+    }
+
     fn validate(&self) -> anyhow::Result<()> {
+        if self.sources.len() < self.sources().len() {
+            bail!("Index config contains duplicate sources.")
+        }
         Ok(())
     }
 }
