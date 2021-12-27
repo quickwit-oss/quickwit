@@ -2273,7 +2273,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "tempfile",
  "tokio",
  "toml",
  "tracing",

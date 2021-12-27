@@ -90,6 +90,7 @@ impl StorageUriResolver {
     }
 
     /// Creates `StorageUriResolver` for testing.
+    #[doc(hidden)]
     pub fn for_test() -> Self {
         StorageUriResolver::builder()
             .register(RamStorageFactory::default())

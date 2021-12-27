@@ -17,16 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::bail;
-use quickwit_actors::Universe;
-use quickwit_config::IndexerConfig;
-use quickwit_metastore::{IndexMetadata, Metastore};
-use quickwit_storage::Storage;
+use quickwit_config::{IndexerConfig, SourceConfig};
+use quickwit_metastore::Metastore;
+use quickwit_storage::StorageUriResolver;
 
-use crate::actors::{IndexingPipeline, IndexingPipelineParams};
+use crate::actors::{IndexingPipeline, IndexingPipelineParams, IndexingServer};
 use crate::models::IndexingStatistics;
 pub use crate::split_store::{
     get_tantivy_directory_from_split_bundle, IndexingSplitStore, IndexingSplitStoreParams,
@@ -46,26 +45,19 @@ pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
 
 pub use self::garbage_collection::{delete_splits_with_files, run_garbage_collect, FileEntry};
 pub use self::merge_policy::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
-pub use self::source::{check_source_connectivity, STD_IN_SOURCE_ID};
+pub use self::source::{check_source_connectivity, STDIN_SOURCE_ID};
 
 pub async fn index_data(
-    data_dir_path: &Path,
-    index_metadata: IndexMetadata,
+    index_id: String,
+    data_dir_path: PathBuf,
     indexer_config: IndexerConfig,
+    source: SourceConfig,
     metastore: Arc<dyn Metastore>,
-    storage: Arc<dyn Storage>,
+    storage_resolver: StorageUriResolver,
 ) -> anyhow::Result<IndexingStatistics> {
-    let universe = Universe::new();
-    let pipeline_params = IndexingPipelineParams::try_new(
-        data_dir_path,
-        index_metadata,
-        indexer_config,
-        metastore,
-        storage,
-    )
-    .await?;
-    let pipeline = IndexingPipeline::new(pipeline_params);
-    let (_pipeline_mailbox, pipeline_handle) = universe.spawn_actor(pipeline).spawn_async();
+    let client = IndexingServer::spawn(data_dir_path, indexer_config, metastore, storage_resolver);
+    let pipeline_id = client.spawn_pipeline(index_id, source).await?;
+    let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
     let (exit_status, statistics) = pipeline_handle.join().await;
     if !exit_status.is_success() {
         bail!(exit_status);

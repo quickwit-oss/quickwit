@@ -31,7 +31,7 @@ use std::path::Path;
 
 use anyhow::bail;
 use async_trait::async_trait;
-pub use file_source::{FileSource, FileSourceFactory, FileSourceParams, STD_IN_SOURCE_ID};
+pub use file_source::{FileSource, FileSourceFactory, FileSourceParams, STDIN_SOURCE_ID};
 #[cfg(feature = "kafka")]
 pub use kafka_source::{KafkaSource, KafkaSourceFactory, KafkaSourceParams};
 use once_cell::sync::OnceCell;
@@ -176,7 +176,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
 pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::Result<()> {
     match source_config.source_type.as_ref() {
         "file" => {
-            if source_config.source_id == STD_IN_SOURCE_ID {
+            if source_config.source_id == STDIN_SOURCE_ID {
                 return Ok(());
             }
             match source_config.params.get("filepath") {

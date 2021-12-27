@@ -88,9 +88,9 @@ impl Universe {
     pub async fn send_message<M>(
         &self,
         mailbox: &Mailbox<M>,
-        msg: M,
+        message: M,
     ) -> Result<(), crate::SendError> {
-        mailbox.send_message(msg).await
+        mailbox.send_message(message).await
     }
 
     /// Inform an actor to process pending message and then stop processing new messages

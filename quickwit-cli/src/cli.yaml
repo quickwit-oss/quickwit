@@ -340,7 +340,7 @@ subcommands:
                 about: Starts a service. Currently, the only services available are `indexer` and `searcher`.
                 subcommands:
                     - searcher:
-                        about: Starts a search node, aka a `searcher`
+                        about: Starts a search process, aka a `searcher`.
                         args:
                             - config:
                                 about: Quickwit config file.
@@ -354,7 +354,7 @@ subcommands:
                                 value_name: DATA DIR
                                 env: QW_DATA_DIR
                     - indexer:
-                        about: Start an indexing server, aka an `indexer`
+                        about: Starts an indexing process, aka an `indexer`.
                         args:
                             - config:
                                 about: Quickwit config file.
@@ -367,11 +367,12 @@ subcommands:
                                 long: data-dir
                                 value_name: DATA DIR
                                 env: QW_DATA_DIR
-                            - index:
-                                about: ID of the index to run the indexer for.
-                                long: index
-                                value_name: INDEX
+                            - indexes:
+                                about: IDs of the indexes to run the indexer for.
+                                long: indexes
+                                value_name: INDEX ID
                                 required: true
+                                multiple_values: true
     - source:
         about: Manages sources.
         display_order: 5
