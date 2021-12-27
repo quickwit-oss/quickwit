@@ -30,6 +30,13 @@ use tabled::{Table, Tabled};
 use crate::{load_quickwit_config, make_table};
 
 #[derive(Debug, PartialEq)]
+pub struct DeleteSourceArgs {
+    pub config_uri: Uri,
+    pub index_id: String,
+    pub source_id: String,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct DescribeSourceArgs {
     pub config_uri: Uri,
     pub index_id: String,
@@ -44,6 +51,7 @@ pub struct ListSourcesArgs {
 
 #[derive(Debug, PartialEq)]
 pub enum SourceCliCommand {
+    DeleteSource(DeleteSourceArgs),
     DescribeSource(DescribeSourceArgs),
     ListSources(ListSourcesArgs),
 }
@@ -51,6 +59,7 @@ pub enum SourceCliCommand {
 impl SourceCliCommand {
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
+            Self::DeleteSource(args) => delete_source_cli(args).await,
             Self::DescribeSource(args) => describe_source_cli(args).await,
             Self::ListSources(args) => list_sources_cli(args).await,
         }
@@ -61,10 +70,31 @@ impl SourceCliCommand {
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse source subcommand arguments."))?;
         match subcommand {
+            "delete" => Self::parse_delete_args(submatches).map(Self::DeleteSource),
             "describe" => Self::parse_describe_args(submatches).map(Self::DescribeSource),
             "list" => Self::parse_list_args(submatches).map(Self::ListSources),
             _ => bail!("Source subcommand `{}` is not implemented.", subcommand),
         }
+    }
+
+    fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<DeleteSourceArgs> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        let index_id = matches
+            .value_of("index")
+            .map(String::from)
+            .expect("`index` is a required arg.");
+        let source_id = matches
+            .value_of("source")
+            .map(String::from)
+            .expect("`source` is a required arg.");
+        Ok(DeleteSourceArgs {
+            config_uri,
+            index_id,
+            source_id,
+        })
     }
 
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<DescribeSourceArgs> {
@@ -101,6 +131,17 @@ impl SourceCliCommand {
             index_id,
         })
     }
+}
+
+async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
+    let config = load_quickwit_config(args.config_uri, None).await?;
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&config.metastore_uri)
+        .await?;
+    metastore
+        .delete_source(&args.index_id, &args.source_id)
+        .await?;
+    Ok(())
 }
 
 async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
