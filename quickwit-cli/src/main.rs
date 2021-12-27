@@ -20,7 +20,7 @@
 use std::env;
 
 use anyhow::Context;
-use clap::{load_yaml, App, AppSettings};
+use clap::{load_yaml, App, AppSettings, ArgSettings};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use quickwit_cli::cli::CliCommand;
@@ -79,6 +79,72 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
+fn generate_markdown_from_clap(app: &App) {
+    let commands = app.get_subcommands();
+    for command in commands {
+        let command_name = command.get_name(); // index, split, source, service
+        println!("# {}", command_name);
+        if let Some(about) = command.get_about() {
+            if !about.trim().is_empty() {
+                println!("\n*Description*");
+                println!("{}\n", about);
+            }
+        }
+
+        for subcommand in command
+            .get_subcommands()
+            .filter(|command| command.get_name() != "demux")
+        {
+            println!("### {} {}\n", command_name, subcommand);
+            if let Some(about) = subcommand.get_long_about() {
+                if !about.trim().is_empty() {
+                    println!("{}", about);
+                }
+            }
+            println!(
+                "`quickwit {} {} [args]`",
+                command_name,
+                subcommand.get_name()
+            );
+
+            println!("\n*Synopsis*\n");
+
+            println!("```bash");
+            println!("quickwit {} {}", command_name, subcommand.get_name());
+            for arg in subcommand
+                .get_arguments()
+                .filter(|arg| !(arg.get_name() == "help" || arg.get_name() == "version"))
+            {
+                let is_required = arg.is_set(ArgSettings::Required);
+                let is_bool = !arg.is_set(ArgSettings::TakesValue);
+
+                let mut commando = format!("--{}", arg.get_name());
+                if !is_bool {
+                    commando = format!("{} <{}>", commando, arg.get_name());
+                }
+                if !is_required {
+                    commando = format!("[{}]", commando);
+                }
+                println!("    {}", commando);
+            }
+            println!("```");
+
+            println!("\n*Options*\n");
+            for arg in subcommand
+                .get_arguments()
+                .filter(|arg| !(arg.get_name() == "help" || arg.get_name() == "version"))
+            {
+                println!(
+                    "`--{}` {}",
+                    arg.get_name(),
+                    arg.get_about().unwrap_or_default()
+                );
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "openssl-support")]
@@ -93,12 +159,15 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let yaml = load_yaml!("cli.yaml");
-    let matches = App::from(yaml)
+    let app = App::from(yaml)
         .version(version_text.as_str())
         .about(about_text.as_str())
         .license("AGPLv3.0")
-        .setting(AppSettings::DisableHelpSubcommand)
-        .get_matches();
+        .setting(AppSettings::DisableHelpSubcommand);
+
+    // generate_markdown_from_clap(&app);
+
+    let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
         Ok(command) => command,

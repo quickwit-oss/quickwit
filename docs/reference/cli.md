@@ -20,19 +20,22 @@ Before using Quickwit with an object storage, check out our [advice](../administ
 
 ### Help
 
-`quickwit` or `quickwit help` displays the list of available commands.
+`quickwit` or `quickwit --help` displays the list of available commands.
 
-`quickwit help <command name>` displays the documentation for the command and a usage example.
+`quickwit <command name>` displays the documentation for the command and a usage example.
 
 #### Note on telemetry
 Quickwit collects some [anonymous usage data](telemetry.md), you can disable it. When it's enabled you will see this
 output:
 ```
-quickwit help
-Quickwit 0.1.0
-Quickwit, Inc. <hello@quickwit.io>
-Indexing your large dataset on object storage & making it searchable from the command line.
-Telemetry enabled
+quickwit 
+Quickwit 0.1.0 (commit-hash: 98de4ce)
+
+Index your dataset on object storage & making it searchable from the command line.
+  Find more information at https://quickwit.io/docs
+
+Telemetry: enabled
+
 [...]
 ```
 
@@ -44,314 +47,315 @@ The line `Telemetry enabled` disappears when you disable it.
 `quickwit --version` displays the version. It is useful for reporting bugs.
 
 
+### Syntax
 
-### New
+The cli is structured into highlevel commands with subcommands.
+`quickwit [command] [subcommand] [args]`.
+
+* `command`:index, split, service, source. 
+
+
+
+# index
 
 *Description*
+Index operation commands such as `create`, `index`, or `search`...
 
-Creates an index at `index-uri` configured by a json file located at `index-config-path`. The command fails if an index already exists at `index-uri` unless `overwrite` is passed. When `overwrite` is enabled, the command deletes all the files stored at `index-uri` before creating a new index. The index config defines how a document and fields it contains, are stored and indexed, see the [index config documentation](index-config.md).
+### index create
+
+`quickwit index create [args]`
 
 *Synopsis*
 
 ```bash
-quickwit new
-    --index-uri <uri>
-    --index-config-path <path>
+quickwit index create
+    --index <index>
+    --index-config <index-config>
+    [--index-uri <index-uri>]
+    --config <config>
+    [--data-dir <data-dir>]
     [--overwrite]
 ```
 
 *Options*
 
-`--index-uri` (string) Defines the index location.<br />
-`--index-config-path` (string) Defines the index config path.<br />
-`--overwrite` (boolean) Overwrites existing index.
+`--index` ID of the target index.
+`--index-config` Location of the index config file.
+`--index-uri` Index data (or splits) storage URI.
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+`--overwrite` Overwrites pre-existing index.
+### index ingest
 
-*Examples*
-
-*Creating a new index on local file system*
-
-```bash
-quickwit new --index-uri file:///quickwit-indexes/catalog --index-config-path ~/quickwit-conf/index_config.json
-```
-
-Creating a new index on Amazon S3*
-
-```bash
-quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json
-```
-
-*Replacing an existing index*
-
-```bash
-quickwit new --index-uri s3://quickwit-indexes/catalog --index_config-path ~/quickwit-conf/index_config.json --overwrite
-```
-
-:::note
-
-When creating an index on a local file system, absolute path is enforce. This implies that index-uri like `file:///quickwit-indexes/catalog` pertenains you have the required permissions on `/quickwit-indexes/catalog`.
-
-:::
-
-### Index
-
-*Description*
-
-Indexes a dataset consisting of newline-delimited JSON objects located at `input-path` or read from *stdin*. The data is appended to the target index specified by `index-uri` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin. Currently, only local datasets are supported. By default, tantivy's indexer will work with a heap of 1 GiB of memory, but this can be set with the `heap-size` options. This does not directly reflect the overall memory usage of `quickwit index`, but doubling this value should give a fair approximation.
-
+`quickwit index ingest [args]`
 
 *Synopsis*
 
 ```bash
-quickwit index
-    --index-uri <uri>
-    [--input-path <path>]
+quickwit index ingest
+    --index <index>
+    --config <config>
+    [--data-dir <data-dir>]
+    [--input-path <input-path>]
     [--overwrite]
-    [--heap-size <num bytes>]
-    [--temp-dir]
 ```
 
 *Options*
 
-`--index-uri` (string) Location of the target index.<br />
-`--input-path` (string) Location of the source dataset.<br />
-`--overwrite` (boolean) Overwrites existing data.<br />
-`--heap-size` (integer) Amount of allocated memory for the process.<br />
-`--temp-dir` (string) Path of temporary directory for building the index (defaults to `/tmp`)
+`--index` ID of the target index.
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+`--input-path` Location of the input file.
+`--overwrite` Overwrites pre-existing index.
+### index describe
 
-*Examples*
-
-*Indexing a local dataset*
-
-```bash
-quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json
-```
-
-*Indexing a dataset from stdin*
-
-```bash
-cat nginx.json | quickwit index --index-uri s3://quickwit-indexes/nginx
-quickwit index --index-uri s3://quickwit-indexes/nginx < nginx.json
-```
-
-*Reindexing a dataset*
-
-```bash
-quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json --overwrite
-```
-
-*Customizing the resources allocated to the program*
-
-```bash
-quickwit index --index-uri s3://quickwit-indexes/nginx --input-path nginx.json --heap-size 4GiB
-```
-
-### Search
-
-*Description*
-
-Searches the index stored at `index-uri` and returns the documents matching the query specified with `query`. The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options. Given the query doesn't explicitly contains fields, it's possible to restrict the search on specified fields using the `search-fields` option. Search can also be limited to a time range using the `start-timestamp` and `end-timestamp` options. These timestamp options can particularly be useful in boosting query performance when using a time series dataset and only need to query a particular window.
+`quickwit index describe [args]`
 
 *Synopsis*
 
 ```bash
-quickwit search
-    --index-uri <uri>
+quickwit index describe
+    --index <index>
+    --config <config>
+    [--data-dir <data-dir>]
+```
+
+*Options*
+
+`--index` ID of the target index.
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+### index search
+
+`quickwit index search [args]`
+
+*Synopsis*
+
+```bash
+quickwit index search
+    --index <index>
+    --config <config>
+    [--data-dir <data-dir>]
     --query <query>
-    [--max-hits <n>]
-    [--start-offset <offset>]
-    [--search-fields <comma-separated list of fields>]
-    [--start-timestamp <i64>]
-    [--end-timestamp <i64>]
+    [--max-hits <max-hits>]
+    [--start-offset <start-offset>]
+    [--search-fields <search-fields>]
+    [--start-timestamp <start-timestamp>]
+    [--end-timestamp <end-timestamp>]
 ```
 
 *Options*
 
-`--index-uri` (string) Location of the target index.<br />
-`--query` (string) Query expressed in Tantivy syntax.<br />
-`--max-hits` (integer) Maximum number of hits returned (defaults to `20`).<br />
-`--start-offset` (integer) Skips the first `start-offset` hits (defaults to `0`).<br />
-`--search-fields` (string) Search only on this comma-separated list of field names.<br />
-`--start-timestamp` (string) Inclusive lower bound.<br />
-`--end-timestamp` (string) Exclusive upper bound.<br />
+`--index` id of the target index.
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+`--query` Query expressed in Tantivy syntax.
+`--max-hits` Maximum number of hits returned.
+`--start-offset` Offset in the global result set of the first hit returned.
+`--search-fields` Searches only in those fields.
+`--start-timestamp` Filters out documents before that timestamp (time-series indexes only).
+`--end-timestamp` Filters out documents after that timestamp (time-series indexes only).
+### index merge
 
-*Examples*
-
-*Searching a local index*
-
-```bash
-quickwit search --index-uri file:///path-to-my-indexes/wikipedia --query "Barack Obama"
-```
-
-*Searching a remote index*
-
-```bash
-quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama"
-```
-
-*Limiting the result set to 50 hits*
-
-```bash
-quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --max-hits 50
-```
-
-*Skipping the first 20 hits*
-
-```bash
-quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --start-offset 20
-```
-
-*Looking for matches in the title and url fields only*
-
-```bash
-quickwit search --index-uri s3://quickwit-indexes/wikipedia --query "Barack Obama" --search-fields title,url
-```
-
-### Serve
-
-*Description*
-
-Starts a web server listening on `host`:`port` that exposes the [Quickwit REST API](search-api.md). The `index-uri` option, which accepts a comma-separated list of index URIs, specifies the indexes targeted by the API. The node can optionally join a cluster using the `peer-seed` parameter. This list of comma-separated node addresses is used to discover the remaining peer nodes in the cluster through the use of a gossip protocol (SWIM).
-
-:::note
-
-Quickwit services run on three TCP ports ranging from `port` to `port` + 2, and one UDP port (`port` + 1):
-- the web server listens on the first TCP port (default: 8080);
-- the cluster management service uses the second TCP port (default: 8081) and the UDP port with the same number;
-- gRPC services run on the third TCP port (default: 8082).
-
-If any of those ports is already in use when the services start, the command will fail.
-:::
-
+`quickwit index merge [args]`
 
 *Synopsis*
 
 ```bash
-quickwit serve
-    --index-uri <list of URIs>
-    --host <hostname>
-    --port <port>
-    --peer-seed <list of addresses>
+quickwit index merge
+    --index <index>
+    --config <config>
+    [--data-dir <data-dir>]
 ```
 
 *Options*
 
-`--index-uri` (string) Comma-separated list of target index locations.<br />
-`--host` (string) Hostname the web server should bind to.<br />
-`--port` (string) Port the web server should bind to.<br />
-`--peer-seed` (string) Comma-separated list of node addresses (e.g. 10.0.0.1:8080) used as seeds for cluster peer discovery.<br />
+`--index` INDEX.
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+### index gc
 
-
-*Examples*
-
-*Serving a local index*
-
-```bash
-quickwit serve --index-uri file:///my-indexes/wikipedia
-```
-
-*Serving a remote index*
-
-```bash
-quickwit serve --index-uri s3://my-bucket/nginx-logs
-```
-
-*Serving multiple indexes*
-
-```bash
-quickwit serve --index-uri file:///my-indexes/wikipedia,s3://my-bucket/nginx-logs
-```
-
-*Creating a multi-node cluster*
-
-```bash
-# On host 10.0.0.1
-quickwit serve --index-uri s3:///my-bucket/nginx-logs --peer-seed 10.0.0.2:8080
-
-# On host 10.0.0.2
-quickwit serve --index-uri s3:///my-bucket/nginx-logs --peer-seed 10.0.0.1:8080
-
-# On host 10.0.0.3
-quickwit serve --index-uri s3:///my-bucket/nginx-logs --peer-seed 10.0.0.1:8080,10.0.0.2.8080
-
-# On host 10.0.0.4
-quickwit serve --index-uri s3:///my-bucket/nginx-logs --peer-seed 10.0.0.1:8080,10.0.0.2.8080
-```
-
-### Delete
-
-*Description*
-
-Deletes the index at `index-uri`.
+`quickwit index gc [args]`
 
 *Synopsis*
 
 ```bash
-quickwit delete
-    --index-uri <uri>
+quickwit index gc
+    --index <index>
+    --config <config>
+    [--data-dir <data-dir>]
+    [--grace-period <grace-period>]
     [--dry-run]
 ```
 
 *Options*
 
-`--index-uri` (string) Location of the target index.<br />
-`--dry-run` (boolean) Executes the command in dry run mode and displays the list of files subject to be deleted.<br />
+`--index` ID of the target index.
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+`--grace-period` Threshold period after which stale staged splits are garbage collected.
+`--dry-run` Executes the command in dry run mode and only displays the list of splits candidate for garbage collection.
+### index delete
 
-*Examples*
-
-*Deleting an index*
-```bash
-quickwit delete --index-uri s3://quickwit-indexes/catalog
-```
-
-*Executing in dry run mode*
-```bash
-quickwit delete --index-uri s3://quickwit-indexes/catalog --dry-run
-```
-
-### Garbage collect (gc)
-
-*Description*
-
-Garbage collects all dangling files within the index at `index-uri`.
+`quickwit index delete [args]`
 
 *Synopsis*
 
 ```bash
-quickwit gc
-    --index-uri <uri>
-    [--grace-period <duration>]
+quickwit index delete
+    --index <index>
+    --config <config>
+    [--data-dir <data-dir>]
     [--dry-run]
 ```
 
-:::note
+*Options*
 
-Intermediate files are created while executing Quickwit commands. These intermediate files are always cleaned at the end of each successfully executed command. However, failed or interrupted commands can leave behind intermediate files that need to be removed.
-Also note that using very short grace-period (like seconds) can cause removal of intermediate files being operated on especially when using Quickwit concurently on the same index. In practice you can settle with the default value (1 hour) and only specify a value if you really know what you are doing.
+`--index` ID of the target index.
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+`--dry-run` Executes the command in dry run mode and only displays the list of splits candidate for deletion.
+# split
 
-:::
+*Description*
+Operations (list, add, delete, describe...) on splits.
+
+### split list
+
+`quickwit split list [args]`
+
+*Synopsis*
+
+```bash
+quickwit split list
+    --index <index>
+    [--states <states>]
+    [--start-date <start-date>]
+    [--end-date <end-date>]
+    [--tags <tags>]
+    --config <config>
+    [--data-dir <data-dir>]
+```
 
 *Options*
 
-`--index-uri` (string) Location of the target index.<br />
-`--grace-period` (string) Threshold period after which intermediate files can be garbage collected. This is an integer followed by one of the letters `s`(second), `m`(minutes), `h`(hours) and `d`(days) as unit, (defaults to `1h`).<br />
-`--dry-run` (boolean) Executes the command in dry run mode and displays the list of files subject to be removed.<br />
+`--index` ID of the target index.
+`--states` Comma-separated list of split states to filter on.
+Possible values are `staged`, `published`, and `marked`.
 
-*Examples*
+`--start-date` Filters out splits containing documents from this timestamp onwards (time-series indexes only).
+`--end-date` Filters out splits containing documents before this timestamp (time-series indexes only).
+`--tags` Comma-separated list of tags, only splits that contain all of the tags will be returned.
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+### split extract
 
-*Garbage collecting an index*
+`quickwit split extract [args]`
+
+*Synopsis*
+
 ```bash
-quickwit gc --index-uri s3://quickwit-indexes/catalog
+quickwit split extract
+    --index <index>
+    --split <split>
+    --config <config>
+    [--data-dir <data-dir>]
+    --target-dir <target-dir>
 ```
 
-*Executing in dry run mode*
+*Options*
+
+`--index` ID of the target index.
+`--split` ID of the target split.
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+`--target-dir` Directory to extract the split to.
+### split describe
+
+`quickwit split describe [args]`
+
+*Synopsis*
+
 ```bash
-quickwit gc --index-uri s3://quickwit-indexes/catalog --dry-run
+quickwit split describe
+    --index <index>
+    --split <split>
+    --config <config>
+    [--data-dir <data-dir>]
+    [--verbose]
 ```
 
-*Executing with five minutes of grace period*
+*Options*
+
+`--index` ID of the target index.
+`--split` ID of the target split.
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+`--verbose` Displays additional metadata about the hotcache.
+# service
+
+*Description*
+Launches services.
+
+### service run
+
+`quickwit service run [args]`
+
+*Synopsis*
+
 ```bash
-quickwit gc --index-uri s3://quickwit-indexes/catalog --grace-period 5m
+quickwit service run
 ```
+
+*Options*
+
+# source
+
+*Description*
+Manages sources.
+
+### source describe
+
+`quickwit source describe [args]`
+
+*Synopsis*
+
+```bash
+quickwit source describe
+    --index <index>
+    --source <source>
+    --config <config>
+    [--data-dir <data-dir>]
+```
+
+*Options*
+
+`--index` ID of the target index.
+`--source` ID of the target source.
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+### source list
+
+`quickwit source list [args]`
+
+*Synopsis*
+
+```bash
+quickwit source list
+    --index <index>
+    --config <config>
+    [--data-dir <data-dir>]
+```
+
+*Options*
+
+`--index` ID of the target index.
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+
+
+
+
 
 ## Environment Variables
 
