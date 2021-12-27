@@ -309,6 +309,32 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_delete_source_args() {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app
+            .try_get_matches_from(vec![
+                "source",
+                "delete",
+                "--index",
+                "hdfs-logs",
+                "--source",
+                "hdfs-logs-source",
+                "--config",
+                "/conf.yaml",
+            ])
+            .unwrap();
+        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let expected_command =
+            CliCommand::Source(SourceCliCommand::DeleteSource(DeleteSourceArgs {
+                config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                index_id: "hdfs-logs".to_string(),
+                source_id: "hdfs-logs-source".to_string(),
+            }));
+        assert_eq!(command, expected_command);
+    }
+
+    #[test]
     fn test_parse_describe_source_args() {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
