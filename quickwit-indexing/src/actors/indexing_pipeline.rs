@@ -17,19 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
-use byte_unit::Byte;
 use itertools::Itertools;
 use quickwit_actors::{
     create_mailbox, Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health,
     KillSwitch, QueueCapacity, Supervisable,
 };
-use quickwit_config::{IndexerConfig, IndexingSettings, SourceConfig};
+use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_index_config::IndexConfig as DocMapper;
 use quickwit_metastore::checkpoint::Checkpoint;
 use quickwit_metastore::{IndexMetadata, Metastore, SplitState};
@@ -73,7 +72,6 @@ pub enum IndexingPipelineMessage {
     Spawn { retry_count: usize },
 }
 
-/// TODO have a clear strategy on when we should retry, and when we should not.
 pub struct IndexingPipeline {
     params: IndexingPipelineParams,
     generation: usize,
@@ -224,7 +222,7 @@ impl IndexingPipeline {
             self.params.storage.clone(),
             self.params.indexing_directory.cache_directory.as_path(),
             IndexingSplitStoreParams {
-                max_num_bytes: self.params.split_store_max_num_bytes.get_bytes() as usize,
+                max_num_bytes: self.params.split_store_max_num_bytes,
                 max_num_splits: self.params.split_store_max_num_splits,
             },
             merge_policy.clone(),
@@ -389,10 +387,7 @@ impl IndexingPipeline {
 
         // Source
         let source = quickwit_supported_sources()
-            .load_source(
-                self.params.source_config.clone(),
-                self.params.checkpoint.clone(),
-            )
+            .load_source(self.params.source.clone(), self.params.checkpoint.clone())
             .await?;
         let actor_source = SourceActor {
             source,
@@ -533,8 +528,8 @@ pub struct IndexingPipelineParams {
     pub doc_mapper: Arc<dyn DocMapper>,
     pub indexing_directory: IndexingDirectory,
     pub indexing_settings: IndexingSettings,
-    pub source_config: SourceConfig,
-    pub split_store_max_num_bytes: Byte,
+    pub source: SourceConfig,
+    pub split_store_max_num_bytes: usize,
     pub split_store_max_num_splits: usize,
     pub metastore: Arc<dyn Metastore>,
     pub storage: Arc<dyn Storage>,
@@ -542,25 +537,28 @@ pub struct IndexingPipelineParams {
 
 impl IndexingPipelineParams {
     pub async fn try_new(
-        data_dir_path: &Path,
         index_metadata: IndexMetadata,
-        indexer_config: IndexerConfig,
+        source: SourceConfig,
+        indexing_dir_path: PathBuf,
+        split_store_max_num_bytes: usize,
+        split_store_max_num_splits: usize,
         metastore: Arc<dyn Metastore>,
         storage: Arc<dyn Storage>,
     ) -> anyhow::Result<Self> {
         let doc_mapper = index_metadata.build_doc_mapper()?;
-        let indexing_directory_path = data_dir_path.join(&index_metadata.index_id);
+        let indexing_directory_path = indexing_dir_path
+            .join(&index_metadata.index_id)
+            .join(&source.source_id);
         let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
-        let source_config = index_metadata.source()?;
         Ok(Self {
             index_id: index_metadata.index_id,
             checkpoint: index_metadata.checkpoint,
             doc_mapper,
             indexing_directory,
             indexing_settings: index_metadata.indexing_settings,
-            source_config,
-            split_store_max_num_bytes: indexer_config.split_store_max_num_bytes,
-            split_store_max_num_splits: indexer_config.split_store_max_num_splits,
+            source,
+            split_store_max_num_bytes,
+            split_store_max_num_splits,
             metastore,
             storage,
         })
@@ -662,9 +660,9 @@ mod tests {
             doc_mapper: Arc::new(default_config_for_tests()),
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
-            split_store_max_num_bytes: Byte::from_bytes(50_000_000),
+            split_store_max_num_bytes: 10_000_000,
             split_store_max_num_splits: 100,
-            source_config,
+            source: source_config,
             metastore: Arc::new(metastore),
             storage: Arc::new(RamStorage::default()),
         };
@@ -720,7 +718,7 @@ mod tests {
             .times(1)
             .returning(|_, _, _| Ok(()));
         let universe = Universe::new();
-        let source_config = SourceConfig {
+        let source = SourceConfig {
             source_id: "test-source".to_string(),
             source_type: "file".to_string(),
             params: json!({ "filepath": PathBuf::from("data/test_corpus.json") }),
@@ -731,9 +729,9 @@ mod tests {
             doc_mapper: Arc::new(default_config_for_tests()),
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
-            split_store_max_num_bytes: Byte::from_bytes(50_000_000),
+            split_store_max_num_bytes: 10_000_000,
             split_store_max_num_splits: 100,
-            source_config,
+            source,
             metastore: Arc::new(metastore),
             storage: Arc::new(RamStorage::default()),
         };

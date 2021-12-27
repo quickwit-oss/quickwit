@@ -21,7 +21,6 @@
 
 mod helpers;
 
-use std::io::Read;
 use std::path::Path;
 use std::str::from_utf8;
 
@@ -670,17 +669,6 @@ async fn test_all_local_index() -> Result<()> {
     .unwrap();
     // TODO: wait until port server accepts incoming connections and remove sleep.
     sleep(Duration::from_secs(2)).await;
-    let mut process_stdout_output = String::new();
-    let _ = server_process
-        .stdout
-        .as_mut()
-        .expect("Failed to capture process stdout.")
-        .take(800)
-        .read_to_string(&mut process_stdout_output)
-        .expect("Failed to read 800 bytes from process stdout.");
-    println!("{}", process_stdout_output);
-    assert!(process_stdout_output.contains("Searcher ready to accept"));
-
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
         test_env.searcher_rest_listen_port, test_env.index_id
@@ -780,16 +768,6 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     .unwrap();
     // TODO: ditto.
     sleep(Duration::from_secs(2)).await;
-    let mut process_stdout_output = String::new();
-    let _ = server_process
-        .stdout
-        .as_mut()
-        .expect("Failed to capture process stdout.")
-        .take(800)
-        .read_to_string(&mut process_stdout_output)
-        .expect("Failed to read 800 bytes from process stdout.");
-    assert!(process_stdout_output.contains("Searcher ready to accept"));
-
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
         test_env.searcher_rest_listen_port, test_env.index_id,
@@ -876,14 +854,6 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     .unwrap();
     // TODO: ditto.
     sleep(Duration::from_secs(2)).await;
-    let mut process_stdout_output = String::new();
-    let _ = server_process
-        .stdout
-        .as_mut()
-        .expect("Failed to capture process stdout.")
-        .take(800)
-        .read_to_string(&mut process_stdout_output)
-        .expect("Failed to read 800 bytes from process stdout.");
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
         test_env.searcher_rest_listen_port, test_env.index_id,
@@ -891,11 +861,11 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     .await?
     .text()
     .await?;
-    server_process.kill().unwrap();
-    assert!(process_stdout_output.contains("Searcher ready to accept"));
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
     assert_eq!(result["numHits"], Value::Number(Number::from(2i64)));
+
+    server_process.kill().unwrap();
 
     make_command(
         format!(

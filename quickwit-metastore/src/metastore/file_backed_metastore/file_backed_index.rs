@@ -373,10 +373,10 @@ impl FileBackedIndex {
     }
 
     pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<bool> {
-        self.metadata.add_source(source)
+        self.metadata.add_source(source).map(|_| true)
     }
 
     pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
-        self.metadata.delete_source(source_id)
+        self.metadata.delete_source(source_id).map(|_| true)
     }
 }

@@ -37,7 +37,7 @@ use crate::source::{Source, SourceContext, TypedSourceFactory};
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
 
 /// Source id used to define a stdin source.
-pub const STD_IN_SOURCE_ID: &str = "stdin-source";
+pub const STDIN_SOURCE_ID: &str = "stdin-source";
 
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FileSourceCounters {
