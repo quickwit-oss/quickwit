@@ -379,6 +379,25 @@ subcommands:
         settings:
             - ArgRequiredElseHelp
         subcommands:
+            - delete:
+                about: Deletes a source.
+                args:
+                    - index:
+                        about: ID of the target index.
+                        long: index
+                        value_name: INDEX
+                        required: true
+                    - source:
+                        about: ID of the target source.
+                        long: source
+                        value_name: SOURCE
+                        required: true
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
+                        required: true
             - describe:
                 about: Describes a source.
                 args:
