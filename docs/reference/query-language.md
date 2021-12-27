@@ -1,7 +1,9 @@
 ---
 title: Query language
-position: 4
+position: 6
 ---
+
+WIP on Notion.
 
 
 The query language is used by the `search` CLI command and by the `query` parameter in the REST API search request. 

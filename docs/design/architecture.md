@@ -1,7 +1,9 @@
 ---
 title: Architecture
-sidebar_position: 2
+sidebar_position: 1
 ---
+
+WIP on Notion. 
 
 Quickwit is built on three pillars:
 - the index: a set of data structures tailored to be queried, even on high latency storage;

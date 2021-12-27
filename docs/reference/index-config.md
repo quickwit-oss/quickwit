@@ -1,53 +1,75 @@
 ---
 title: Index configuration
-position: 2
+position: 3
 ---
 
+WIP on Notion.
+
+This page describes how to configure an index.
+
 The index config lets you define four things:
-- the doc mapping, that is how a document, and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, date, i64, f64)
-- the timestamp field `timestamp_field` used for [sharding documents in splits](../overview/architecture.md#splits). This is very useful when querying as Quickwit will be able to prune splits based on time range and make search way faster. The timestamp field must be an `i64`. When you define a timestamp field, note that documents will be ordered by default in descending order related to this field
-- the default search fields `default_search_fields`: if no field name is specified in your query, these fields will be used for search
-- whether or not the original JSON document is stored or not in the index by setting `store_source` to true or false.
+- The document model version, only version `0` is available.
+- The doc mapping, that is how a document and the fields it contains are stored and indexed for a given index.
+- The indexing settings that defines the merge policy, timestamp field used for sharding, and more.
+- The search settings that defines the default search fields `default_search_fields`, a list of field that will be used by default for search.
+- The (data) sources that defines a list of source of types among Kafka or simple files.  
 
-This config can be expressed as a json file given to the `new` Quickwit command. Here is a example of a json config for a logging dataset:
+Configuration is set at index creation or can be modified later by using CLI commands or by directly changing settings in the metastore except for the doc mapping (or schema), which is today immutable.
 
-```json title="hdfslogs_index_config.json"
-{
-    "store_source": true,
-    "default_search_fields": ["body", "severity_text"],
-    "timestamp_field": "timestamp",
-    "field_mappings": [
-        {
-            "name": "timestamp",
-            "type": "i64", // i64 is mandatory for a timestamp field.
-            "fast": true // fast field must be true for a timestamp field.
-        },
-        {
-            "name": "severity_text",
-            "type": "text"
-        },
-        {
-            "name": "body",
-            "type": "text"
-        },
-        {
-            "name": "resource",
-            "type": "object",
-            "field_mappings": [
-                {
-                    "name": "service",
-                    "type": "text"
-                }
-            ]
-        }
-    ]
-}
+## Config file format
+
+The index configuration format is YAML. When a key is absent from the configuration file, the default value is used.
+Here is a complete example suited for the hdfs logs dataset:
+
+```YAML title="index-config.yaml"
+version: 0
+
+doc_mapping:
+  field_mappings:
+    - name: tenant_id
+      type: u64
+      fast: true
+    - name: timestamp
+      type: i64
+      fast: true
+    - name: severity_text
+      type: text
+      tokenizer: raw
+    - name: body
+      type: text
+      tokenizer: default
+      record: position
+    - name: resource
+      type: object
+      field_mappings:
+        - name: service
+          type: text
+          tokenizer: raw
+  tag_fields: [tenant_id]
+  store_source: true
+
+indexing_settings:
+  timestamp_field: timestamp
+
+search_settings:
+  default_search_fields: [severity_text, body]
+
 ```
 
+## Doc mapping
+The doc mapping defines how a document, and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, date, i64, u64, f64).
 
-## Field types
-Each field has a type which indicates the kind of data it contains such as integer on 64 bits or text.
-Quickwit supports the following raw types `text`, `i64`, `u64`, `f64`, `date` and `bytes` and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to have a look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| field_mappings | Collection of field mapping, each having its own data type (text, binary, date, i64, f64). | [] |
+| tag_fields | Tag fields. | [] |
+| store_source | Whether or not the original JSON document is stored or not in the index. | false |
+
+
+### Field types
+Each field has a type that indicates the kind of data it contains, such as integer on 64 bits or text.
+Quickwit supports the following raw types `text`, `i64`, `u64`, `f64`, `date`, and `bytes` and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
 
 
 ### Raw types
@@ -57,13 +79,11 @@ This field is a text field that will be analyzed and split into tokens before in
 This kind of field is tailored for full text search.
 
 Example of a mapping for a text field:
-```json
-{
-    "name": "body",
-    "type": "text",
-    "tokenizer": "default",
-    "record": "position"
-}
+```YAML
+name: body
+type: text
+tokenizer: default
+record: position
 ```
 
 **Parameters for text field**
@@ -166,7 +186,7 @@ Quickwit supports array for all raw types but not for `object` type.
 To declare an array type of `i64` in the `index config`, you just have to set the type to `array<i64>`.
 
 #### `object`
-Quickwit supports nested object as long as it does not contains arrays of object.
+Quickwit supports nested object as long as it does not contain arrays of object.
 
 ```json
 {
@@ -181,15 +201,44 @@ Quickwit supports nested object as long as it does not contains arrays of object
 }
 ```
 
-## Field name validation rules
+### Field name validation rules
 Currently Quickwit only accepts field name that matches the following rules:
 - do not start with character `-`
 - matches regex `[_a-zA-Z][_\.\-a-zA-Z0-9]*$`
 
 
-## Behaviour with fields are not defined in the config
+### Behaviour with fields are not defined in the config
 Fields in your json document that are not defined in the `index config` will be ignored.
 
 
-## Behaviour with null values or missing fields
+### Behaviour with null values or missing fields
 Fields with `Null` or missing field in your json document will be silently ignored when indexing.
+
+
+
+## Indexing settings
+
+This section describes indexing settings.
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| timestamp_field    | timestamp field `timestamp_field` used for [sharding documents in splits](../overview/architecture.md#splits). | None |
+| commit_timeout_secs | Maximum number of seconds before committing a split since its creation. | 60 |
+| split_num_docs_target | Maximum number of documents in a split. Please note that this is not a hard limit. | false |
+| merge_enabled | Merging splits is enabled. | true |
+| merge_policy.merge_factor | Number of splits to merge. | 10 |
+| merge_policy.max_merge_factor | Maximum number of splits to merge. | 12 |
+| resources.num_threads | Number of threads per source. | 1 |
+| resources.heap_size | Heap size per source | 2_000_000_000 (2GB) |
+
+
+## Search settings
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| search_default_fields | Default list of fields that will be used for search. | None |
+
+
+## Sources
+
+One index can define a list of sources, go to [sources] page to learn how to configure them.

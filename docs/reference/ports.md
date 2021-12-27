@@ -1,6 +1,7 @@
---
+---
 title: Quickwit's hosts and ports
---
+position: 7
+---
 
 When starting a quickwit search server, one important parameter that can be configured is
 the `rest_listen_port` (defaults to :7280).
