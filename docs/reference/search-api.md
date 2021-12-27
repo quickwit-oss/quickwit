@@ -53,16 +53,15 @@ Search for documents matching a query in the given index `<index name>`.
 
 #### Get parameters
 
-| Variable | Type | Description | Default value |
-|----------|------|-------------|---------------|
-| **query** | `String` | Query text. See the [query language doc](query-language.md) (mandatory) | |
-| **searchFields** | `[String]` | If set, specify the set of fields the search will be performed on | |
-| **startTimestamp** | `i64` | If set, restrict search to documents with a `timestamp >= start_timestamp` | |
-| **endTimestamp** | `i64` | If set, restrict search to documents with a `timestamp < end_timestamp`` | |
-| **startOffset** | `Integer` | Number of documents to skip | `0` |
-| **maxHits** | `Integer` | Maximum number of hits to return (by default 20) | `20` |
-| **format** | `String` | Response output format. `json` or `pretyjson`  | `pretyjson` |
-| **tags** | `[String]` | If set, the search is restricted to only splits having one of the tags | |
+| Variable                  | Type                 | Description                                                                                       | Default value                                                                                   |
+| ------------------------- | -------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **query**                  | `String`           | Query text. See the [query language doc](query-language.md) (mandatory)                                          |                                                                                                |
+| **startTimestamp**         | `i64`    		 	    | If set, restrict search to documents with a `timestamp >= start_timestamp`                                                            |                                                                                |
+| **endTimestamp**           | `i64`       		    | If set, restrict search to documents with a `timestamp < end_timestamp``                                                            |                                                                                     |
+| **startOffset**            | `Integer`     	    | Number of documents to skip                                                                | `0`                                                                                             |
+| **maxHits**                | `Integer`          | Maximum number of hits to return (by default 20)                                                            | `20`                                                                                            |
+| **searchFields**           | `String`      		  | Fields to search on. Comma-separated list, e.g. "field1,field2" |                                                                                             |
+| **format**                 | `Enum`           	| The output format. Allowed values are "json" or "prettyjson" 						 | `prettyjson`                                                                                            |
 
 
 ### Response
@@ -71,9 +70,7 @@ Search for documents matching a query in the given index `<index name>`.
 | -------------------- | ------------------------------ | :--------: |
 | **hits**             | Results of the query           | `[hit]` |
 | **numHits**         | Total number of matches        |  `number`  |
-| **numMicrosecs**    | Processing time of the query   |  `number`  |
-
-
+| **elapsedTimeMicros**    | Processing time of the query   |  `number`  |
 
 ### Search stream in an index
 
@@ -111,9 +108,9 @@ The endpoint will return 10 million values if 10 million documents match the que
 | **startTimestamp** | `i64` | If set, restrict search to documents with a `timestamp >= start_timestamp` | |
 | **endTimestamp** | `i64` | If set, restrict search to documents with a `timestamp < end_timestamp`` | |
 | **outputFormat** | `String` | Response output format. `csv` or `clickHouseRowBinary`  | `csv` |
-| **tags** | `[String]` | If set, the search is restricted to only splits having one of the tags | |
 
 
 ### Response
 
 The response is a list of all the field values from documents matching the query. The field must be marked as "fast" in the index config for this to work. The formatting is based on the specified output format. 
+
