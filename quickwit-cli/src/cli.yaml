@@ -398,11 +398,6 @@ subcommands:
                         value_name: CONFIG
                         env: QW_CONFIG
                         required: true
-                    - data-dir:
-                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-                        long: data-dir
-                        value_name: DATA DIR
-                        env: QW_DATA_DIR
             - list:
                 about: Lists the sources of an index.
                 args:
@@ -417,8 +412,3 @@ subcommands:
                         value_name: CONFIG
                         env: QW_CONFIG
                         required: true
-                    - data-dir:
-                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-                        long: data-dir
-                        value_name: DATA DIR
-                        env: QW_DATA_DIR

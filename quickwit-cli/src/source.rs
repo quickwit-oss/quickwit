@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
-
 use anyhow::{bail, Context};
 use clap::ArgMatches;
 use itertools::Itertools;
@@ -34,7 +32,6 @@ use crate::{load_quickwit_config, make_table};
 #[derive(Debug, PartialEq)]
 pub struct DescribeSourceArgs {
     pub config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
     pub index_id: String,
     pub source_id: String,
 }
@@ -42,7 +39,6 @@ pub struct DescribeSourceArgs {
 #[derive(Debug, PartialEq)]
 pub struct ListSourcesArgs {
     pub config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
     pub index_id: String,
 }
 
@@ -83,13 +79,11 @@ impl SourceCliCommand {
         let source_id = matches
             .value_of("source")
             .map(String::from)
-            .expect("`source-id` is a required arg.");
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
+            .expect("`source` is a required arg.");
         Ok(DescribeSourceArgs {
             config_uri,
             index_id,
             source_id,
-            data_dir,
         })
     }
 
@@ -102,17 +96,15 @@ impl SourceCliCommand {
             .value_of("index")
             .map(String::from)
             .expect("`index` is a required arg.");
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(ListSourcesArgs {
             config_uri,
             index_id,
-            data_dir,
         })
     }
 }
 
 async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(args.config_uri, None).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let source_checkpoint = index_metadata
         .checkpoint
@@ -165,7 +157,7 @@ where
 }
 
 async fn list_sources_cli(args: ListSourcesArgs) -> anyhow::Result<()> {
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(args.config_uri, None).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let table = make_list_sources_table(index_metadata.sources.into_values());
     display_tables(&[table]);
@@ -297,7 +289,6 @@ mod tests {
                 config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
-                data_dir: None,
             }));
         assert_eq!(command, expected_command);
     }
@@ -372,7 +363,6 @@ mod tests {
         let expected_command = CliCommand::Source(SourceCliCommand::ListSources(ListSourcesArgs {
             config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
             index_id: "hdfs-logs".to_string(),
-            data_dir: None,
         }));
         assert_eq!(command, expected_command);
     }
