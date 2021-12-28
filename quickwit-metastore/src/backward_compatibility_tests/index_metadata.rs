@@ -25,7 +25,7 @@ use quickwit_config::{
 };
 use quickwit_index_config::SortOrder;
 
-use crate::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
+use crate::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use crate::IndexMetadata;
 
 pub(crate) fn test_index_metadata_eq(
@@ -81,7 +81,7 @@ pub(crate) fn test_index_metadata_eq(
 
 /// Creates a new [`IndexMetadata`] object against which backward compatibility tests will be run.
 pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
-    let mut checkpoint = Checkpoint::default();
+    let mut checkpoint = SourceCheckpoint::default();
     let delta = CheckpointDelta::from_partition_delta(
         PartitionId::from(0),
         Position::Beginning,

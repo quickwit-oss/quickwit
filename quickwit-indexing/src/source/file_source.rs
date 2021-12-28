@@ -137,7 +137,7 @@ impl TypedSourceFactory for FileSourceFactory {
     // TODO handle checkpoint for files.
     async fn typed_create_source(
         params: FileSourceParams,
-        checkpoint: quickwit_metastore::checkpoint::Checkpoint,
+        checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
     ) -> anyhow::Result<FileSource> {
         let mut offset = 0;
         let reader: Box<dyn AsyncRead + Send + Sync + Unpin> =
@@ -175,7 +175,7 @@ mod tests {
     use std::io::Write;
 
     use quickwit_actors::{create_test_mailbox, Command, CommandOrMessage, Universe};
-    use quickwit_metastore::checkpoint::Checkpoint;
+    use quickwit_metastore::checkpoint::SourceCheckpoint;
 
     use super::*;
     use crate::source::SourceActor;
@@ -189,7 +189,7 @@ mod tests {
             filepath: Some(PathBuf::from("data/test_corpus.json")),
         };
         let file_source =
-            FileSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
+            FileSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
             batch_sink: mailbox,
@@ -231,7 +231,8 @@ mod tests {
         let params = FileSourceParams {
             filepath: Some(temp_path.as_path().to_path_buf()),
         };
-        let source = FileSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
+        let source =
+            FileSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
         let file_source_actor = SourceActor {
             source: Box::new(source),
             batch_sink: mailbox,
@@ -301,7 +302,7 @@ mod tests {
         let params = FileSourceParams {
             filepath: Some(temp_file_path.clone()),
         };
-        let mut checkpoint = Checkpoint::default();
+        let mut checkpoint = SourceCheckpoint::default();
         let partition_id = PartitionId::from(temp_file_path.to_string_lossy().to_string());
         let checkpoint_delta = CheckpointDelta::from_partition_delta(
             partition_id,

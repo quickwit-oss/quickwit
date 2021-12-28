@@ -51,7 +51,7 @@ use quickwit_indexing::source::SourceConfig;
 use quickwit_indexing::{
     get_tantivy_directory_from_split_bundle, index_data, new_split_id, TestSandbox,
 };
-use quickwit_metastore::checkpoint::Checkpoint;
+use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{
     FileBackedMetastore, IndexMetadata, Metastore, SplitMetadata, SplitState,
 };
@@ -171,7 +171,7 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
             index_id: "test-index".to_string(),
             index_uri: "ram://test-index/".to_string(),
             index_config: Arc::new(index_config),
-            checkpoint: Checkpoint::default(),
+            checkpoint: SourceCheckpoint::default(),
         })
         .await?;
     let params = IndexerParams {

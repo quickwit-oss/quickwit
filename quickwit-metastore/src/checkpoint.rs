@@ -137,16 +137,21 @@ impl<'a> From<&'a str> for Position {
     }
 }
 
-/// A checkpoint is a map of the last processed position for every partition.
+#[derive(Default, Clone, PartialEq)]
+pub struct IndexCheckpoint {
+    per_source: BTreeMap<String, SourceCheckpoint>,
+}
+
+/// A source checkpoint is a map of the last processed position for every partition.
 ///
 /// If a partition is missing, it implicitely means that none of its message
 /// has been processed.
 #[derive(Default, Clone, PartialEq)]
-pub struct Checkpoint {
+pub struct SourceCheckpoint {
     per_partition: BTreeMap<PartitionId, Position>,
 }
 
-impl Checkpoint {
+impl SourceCheckpoint {
     /// Returns the number of partitions covered by the checkpoint.
     pub fn num_partitions(&self) -> usize {
         self.per_partition.len()
@@ -168,16 +173,16 @@ impl Checkpoint {
 ///     })
 ///     .collect();
 /// ```
-impl FromIterator<(PartitionId, Position)> for Checkpoint {
-    fn from_iter<I>(iter: I) -> Checkpoint
+impl FromIterator<(PartitionId, Position)> for SourceCheckpoint {
+    fn from_iter<I>(iter: I) -> SourceCheckpoint
     where I: IntoIterator<Item = (PartitionId, Position)> {
-        Checkpoint {
+        SourceCheckpoint {
             per_partition: iter.into_iter().collect(),
         }
     }
 }
 
-impl Serialize for Checkpoint {
+impl Serialize for SourceCheckpoint {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: serde::Serializer {
         let mut map = serializer.serialize_map(Some(self.per_partition.len()))?;
@@ -188,7 +193,7 @@ impl Serialize for Checkpoint {
     }
 }
 
-impl<'de> Deserialize<'de> for Checkpoint {
+impl<'de> Deserialize<'de> for SourceCheckpoint {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: serde::Deserializer<'de> {
         let string_to_string_map: BTreeMap<String, String> = BTreeMap::deserialize(deserializer)?;
@@ -198,7 +203,7 @@ impl<'de> Deserialize<'de> for Checkpoint {
                 (PartitionId::from(partition_id), Position::from(position))
             })
             .collect();
-        Ok(Checkpoint { per_partition })
+        Ok(SourceCheckpoint { per_partition })
     }
 }
 
@@ -219,7 +224,7 @@ pub struct IncompatibleCheckpointDelta {
     pub delta_position_from: Position,
 }
 
-impl Checkpoint {
+impl SourceCheckpoint {
     /// Returns the position reached for a given partition.
     pub fn position_for_partition(&self, partition_id: &PartitionId) -> Option<&Position> {
         self.per_partition.get(partition_id)
@@ -289,7 +294,7 @@ impl Checkpoint {
     }
 }
 
-impl fmt::Debug for Checkpoint {
+impl fmt::Debug for SourceCheckpoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Ckpt(")?;
         for (i, (partition_id, position)) in self.per_partition.iter().enumerate() {
@@ -451,7 +456,7 @@ mod tests {
 
     #[test]
     fn test_checkpoint_simple() -> anyhow::Result<()> {
-        let mut checkpoint = Checkpoint::default();
+        let mut checkpoint = SourceCheckpoint::default();
         assert_eq!(format!("{:?}", checkpoint), "Ckpt()");
         let delta1 = {
             let mut delta = CheckpointDelta::from_partition_delta(
@@ -476,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_partially_incompatible_does_not_update() -> anyhow::Result<()> {
-        let mut checkpoint = Checkpoint::default();
+        let mut checkpoint = SourceCheckpoint::default();
         let delta1 = {
             let mut delta = CheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
@@ -515,7 +520,7 @@ mod tests {
 
     #[test]
     fn test_adding_new_partition() -> anyhow::Result<()> {
-        let mut checkpoint = Checkpoint::default();
+        let mut checkpoint = SourceCheckpoint::default();
         let delta1 = {
             let mut delta = CheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),

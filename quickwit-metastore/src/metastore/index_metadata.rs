@@ -31,7 +31,7 @@ use quickwit_index_config::{
 };
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::checkpoint::Checkpoint;
+use crate::checkpoint::SourceCheckpoint;
 use crate::split_metadata::utc_now_timestamp;
 use crate::{MetastoreError, MetastoreResult};
 
@@ -45,7 +45,7 @@ pub struct IndexMetadata {
     pub index_uri: String,
     /// Checkpoint relative to a source or a set of sources. It expresses up to which point
     /// documents have been indexed.
-    pub checkpoint: Checkpoint,
+    pub checkpoint: SourceCheckpoint,
     /// Describes how ingested JSON documents are indexed.
     pub doc_mapping: DocMapping,
     /// Configures various indexing settings such as commit timeout, max split size, indexing
@@ -142,7 +142,7 @@ impl IndexMetadata {
         Self {
             index_id: index_id.to_string(),
             index_uri: index_uri.to_string(),
-            checkpoint: Checkpoint::default(),
+            checkpoint: SourceCheckpoint::default(),
             doc_mapping,
             indexing_settings,
             search_settings,
@@ -195,7 +195,7 @@ pub(crate) struct UnversionedIndexMetadata {
     pub index_id: String,
     pub index_uri: String,
     pub index_config: DefaultDocMapper,
-    pub checkpoint: Checkpoint,
+    pub checkpoint: SourceCheckpoint,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -227,8 +227,8 @@ pub(crate) struct IndexMetadataV0 {
     pub index_id: String,
     pub index_uri: String,
     #[serde(default)]
-    #[serde(skip_serializing_if = "Checkpoint::is_empty")]
-    pub checkpoint: Checkpoint,
+    #[serde(skip_serializing_if = "SourceCheckpoint::is_empty")]
+    pub checkpoint: SourceCheckpoint,
     pub doc_mapping: DocMapping,
     #[serde(default)]
     pub indexing_settings: IndexingSettings,

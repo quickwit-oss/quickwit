@@ -30,7 +30,7 @@ use quickwit_actors::{
 };
 use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_index_config::IndexConfig as DocMapper;
-use quickwit_metastore::checkpoint::Checkpoint;
+use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{IndexMetadata, Metastore, SplitState};
 use quickwit_storage::Storage;
 use tokio::join;
@@ -524,7 +524,7 @@ impl AsyncActor for IndexingPipeline {
 
 pub struct IndexingPipelineParams {
     pub index_id: String,
-    pub checkpoint: Checkpoint,
+    pub checkpoint: SourceCheckpoint,
     pub doc_mapper: Arc<dyn DocMapper>,
     pub indexing_directory: IndexingDirectory,
     pub indexing_settings: IndexingSettings,
@@ -573,7 +573,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_config::IndexingSettings;
     use quickwit_index_config::default_config_for_tests;
-    use quickwit_metastore::checkpoint::Checkpoint;
+    use quickwit_metastore::checkpoint::SourceCheckpoint;
     use quickwit_metastore::{MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;
     use serde_json::json;
@@ -656,7 +656,7 @@ mod tests {
         };
         let indexing_pipeline_params = IndexingPipelineParams {
             index_id: "test-index".to_string(),
-            checkpoint: Checkpoint::default(),
+            checkpoint: SourceCheckpoint::default(),
             doc_mapper: Arc::new(default_config_for_tests()),
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),
@@ -725,7 +725,7 @@ mod tests {
         };
         let pipeline_params = IndexingPipelineParams {
             index_id: "test-index".to_string(),
-            checkpoint: Checkpoint::default(),
+            checkpoint: SourceCheckpoint::default(),
             doc_mapper: Arc::new(default_config_for_tests()),
             indexing_directory: IndexingDirectory::for_test().await?,
             indexing_settings: IndexingSettings::for_test(),

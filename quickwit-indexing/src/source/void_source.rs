@@ -59,7 +59,7 @@ impl TypedSourceFactory for VoidSourceFactory {
 
     async fn typed_create_source(
         _: VoidSourceParams,
-        _: quickwit_metastore::checkpoint::Checkpoint,
+        _: quickwit_metastore::checkpoint::SourceCheckpoint,
     ) -> anyhow::Result<VoidSource> {
         Ok(VoidSource)
     }
@@ -68,7 +68,7 @@ impl TypedSourceFactory for VoidSourceFactory {
 #[cfg(test)]
 mod tests {
     use quickwit_actors::{create_test_mailbox, Health, Supervisable, Universe};
-    use quickwit_metastore::checkpoint::Checkpoint;
+    use quickwit_metastore::checkpoint::SourceCheckpoint;
     use serde_json::json;
 
     use super::*;
@@ -83,7 +83,7 @@ mod tests {
         };
         let source_loader = quickwit_supported_sources();
         let _ = source_loader
-            .load_source(source_config.clone(), Checkpoint::default())
+            .load_source(source_config.clone(), SourceCheckpoint::default())
             .await?;
         Ok(())
     }
@@ -93,9 +93,11 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, _) = create_test_mailbox();
-        let void_source =
-            VoidSourceFactory::typed_create_source(VoidSourceParams {}, Checkpoint::default())
-                .await?;
+        let void_source = VoidSourceFactory::typed_create_source(
+            VoidSourceParams {},
+            SourceCheckpoint::default(),
+        )
+        .await?;
         let void_source_actor = SourceActor {
             source: Box::new(void_source),
             batch_sink: mailbox,
