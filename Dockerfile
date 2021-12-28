@@ -42,4 +42,12 @@ RUN apt-get -y update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /quickwit/bin/quickwit /usr/local/bin/quickwit
-ENTRYPOINT ["quickwit"]
+
+WORKDIR /quickwit
+RUN mkdir config qwdata
+COPY ./config/quickwit.yaml /quickwit/config/quickwit.yaml
+
+ENV QW_CONFIG=/quickwit/config/quickwit.yaml
+ENV QW_DATA_DIR=/quickwit/qwdata
+
+ENTRYPOINT ["/usr/local/bin/quickwit"]
