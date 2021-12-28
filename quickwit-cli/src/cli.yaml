@@ -379,6 +379,35 @@ subcommands:
         settings:
             - ArgRequiredElseHelp
         subcommands:
+            - add:
+                about: Adds a new source.
+                args:
+                    - index:
+                        about: ID of the target index.
+                        long: index
+                        value_name: INDEX
+                        required: true
+                    - id:
+                        about: ID of the source.
+                        long: id
+                        value_name: SOURCE ID
+                        required: true
+                    - type:
+                        about: "Type of the source. Available types are: `file` and `kafka`."
+                        long: type
+                        value_name: SOURCE TYPE
+                        required: true
+                    - params:
+                        about: Parameters for the source formatted as a JSON object. The object can be passed inline or via a file.
+                        long: params
+                        value_name: PARAMS
+                        required: true
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
+                        required: true
             - delete:
                 about: Deletes a source.
                 args:

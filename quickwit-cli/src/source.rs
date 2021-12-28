@@ -24,10 +24,21 @@ use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
+use quickwit_storage::load_file;
 use serde_json::Value;
 use tabled::{Table, Tabled};
 
 use crate::{load_quickwit_config, make_table};
+
+#[derive(Debug, PartialEq)]
+pub struct AddSourceArgs {
+    pub config_uri: Uri,
+    pub index_id: String,
+    pub source_id: String,
+    pub source_type: String,
+    /// Can be an inline JSON object or a path to a file holding a JSON object.
+    pub params: String,
+}
 
 #[derive(Debug, PartialEq)]
 pub struct DeleteSourceArgs {
@@ -51,6 +62,7 @@ pub struct ListSourcesArgs {
 
 #[derive(Debug, PartialEq)]
 pub enum SourceCliCommand {
+    AddSource(AddSourceArgs),
     DeleteSource(DeleteSourceArgs),
     DescribeSource(DescribeSourceArgs),
     ListSources(ListSourcesArgs),
@@ -59,6 +71,7 @@ pub enum SourceCliCommand {
 impl SourceCliCommand {
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
+            Self::AddSource(args) => add_source_cli(args).await,
             Self::DeleteSource(args) => delete_source_cli(args).await,
             Self::DescribeSource(args) => describe_source_cli(args).await,
             Self::ListSources(args) => list_sources_cli(args).await,
@@ -70,11 +83,42 @@ impl SourceCliCommand {
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse source subcommand arguments."))?;
         match subcommand {
+            "add" => Self::parse_add_args(submatches).map(Self::AddSource),
             "delete" => Self::parse_delete_args(submatches).map(Self::DeleteSource),
             "describe" => Self::parse_describe_args(submatches).map(Self::DescribeSource),
             "list" => Self::parse_list_args(submatches).map(Self::ListSources),
             _ => bail!("Source subcommand `{}` is not implemented.", subcommand),
         }
+    }
+
+    fn parse_add_args(matches: &ArgMatches) -> anyhow::Result<AddSourceArgs> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        let index_id = matches
+            .value_of("index")
+            .map(String::from)
+            .expect("`index` is a required arg.");
+        let source_id = matches
+            .value_of("id")
+            .map(String::from)
+            .expect("`id` is a required arg.");
+        let source_type = matches
+            .value_of("type")
+            .map(String::from)
+            .expect("`type` is a required arg.");
+        let params = matches
+            .value_of("params")
+            .map(String::from)
+            .expect("`params` is a required arg.");
+        Ok(AddSourceArgs {
+            config_uri,
+            index_id,
+            source_id,
+            source_type,
+            params,
+        })
     }
 
     fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<DeleteSourceArgs> {
@@ -131,6 +175,21 @@ impl SourceCliCommand {
             index_id,
         })
     }
+}
+
+async fn add_source_cli(args: AddSourceArgs) -> anyhow::Result<()> {
+    let config = load_quickwit_config(args.config_uri, None).await?;
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&config.metastore_uri)
+        .await?;
+    let params = sniff_params(&args.params).await?;
+    let source = SourceConfig {
+        source_id: args.source_id,
+        source_type: args.source_type,
+        params,
+    };
+    metastore.add_source(&args.index_id, source).await?;
+    Ok(())
 }
 
 async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
@@ -273,6 +332,20 @@ fn flatten_json(value: Value) -> Vec<(String, Value)> {
         acc.push((root, value))
     }
     acc
+}
+
+/// Tries to read a JSON object from a string, assuming the string is an inline JSON object or a
+/// path to a file holding a JSON object.
+async fn sniff_params(params: &str) -> anyhow::Result<Value> {
+    if let Ok(object @ Value::Object(_)) = serde_json::from_str(params) {
+        return Ok(object);
+    }
+    let params_uri = Uri::try_new(params)?;
+    let params_bytes = load_file(&params_uri).await?;
+    if let Ok(object @ Value::Object(_)) = serde_json::from_slice(params_bytes.as_slice()) {
+        return Ok(object);
+    }
+    bail!("Failed to parse JSON object from `{}`.", params)
 }
 
 async fn resolve_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<IndexMetadata> {
