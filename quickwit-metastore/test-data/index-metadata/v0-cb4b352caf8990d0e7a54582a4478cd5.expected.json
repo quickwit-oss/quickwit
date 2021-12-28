@@ -38,8 +38,8 @@
     ],
     "store_source": true,
     "tag_fields": [
-      "tenant_id",
-      "log_level"
+      "log_level",
+      "tenant_id"
     ]
   },
   "index_id": "my-index",
@@ -75,5 +75,6 @@
       "source_type": "kafka"
     }
   ],
+  "update_timestamp": 1640577000,
   "version": "0"
 }

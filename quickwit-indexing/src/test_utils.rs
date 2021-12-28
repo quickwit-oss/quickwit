@@ -27,7 +27,7 @@ use quickwit_metastore::{
 };
 use quickwit_storage::{Storage, StorageUriResolver};
 
-use crate::index_data;
+use crate::actors::{IndexingServer, IndexingServerClient};
 use crate::models::IndexingStatistics;
 use crate::source::VecSourceParams;
 
@@ -37,11 +37,11 @@ use crate::source::VecSourceParams;
 /// The test index content is entirely in RAM and isolated,
 /// but the construction of the index involves temporary file directory.
 pub struct TestSandbox {
-    index_meta: IndexMetadata,
+    index_id: String,
+    client: IndexingServerClient,
     doc_mapper: Arc<dyn DocMapper>,
-    indexer_config: IndexerConfig,
     metastore: Arc<dyn Metastore>,
-    storage_uri_resolver: StorageUriResolver,
+    storage_resolver: StorageUriResolver,
     storage: Arc<dyn Storage>,
     add_docs_id: AtomicUsize,
     _temp_dir: tempfile::TempDir,
@@ -70,21 +70,28 @@ impl TestSandbox {
             .map(|search_field| search_field.to_string())
             .collect();
         let doc_mapper = index_meta.build_doc_mapper()?;
-        let (indexer_config, _temp_dir) = IndexerConfig::for_test()?;
+        let temp_dir = tempfile::tempdir()?;
+        let indexer_config = IndexerConfig::for_test()?;
         let metastore_uri_resolver = quickwit_metastore_uri_resolver();
         let metastore = metastore_uri_resolver.resolve(METASTORE_URI).await?;
         metastore.create_index(index_meta.clone()).await?;
-        let storage_uri_resolver = StorageUriResolver::for_test();
-        let storage = storage_uri_resolver.resolve(&index_uri)?;
-        Ok(TestSandbox {
-            index_meta,
-            doc_mapper,
+        let storage_resolver = StorageUriResolver::for_test();
+        let storage = storage_resolver.resolve(&index_uri)?;
+        let client = IndexingServer::spawn(
+            temp_dir.path().to_path_buf(),
             indexer_config,
+            metastore.clone(),
+            storage_resolver.clone(),
+        );
+        Ok(TestSandbox {
+            index_id: index_id.to_string(),
+            client,
+            doc_mapper,
             metastore,
-            storage_uri_resolver,
+            storage_resolver,
             storage,
             add_docs_id: AtomicUsize::default(),
-            _temp_dir,
+            _temp_dir: temp_dir,
         })
     }
 
@@ -101,29 +108,23 @@ impl TestSandbox {
             .into_iter()
             .map(|doc_json| doc_json.to_string())
             .collect();
+        let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let source = SourceConfig {
-            source_id: self.index_meta.index_id.clone(),
+            source_id: self.index_id.clone(),
             source_type: "vec".to_string(),
             params: serde_json::to_value(VecSourceParams {
                 items: docs,
                 batch_num_docs: 10,
-                partition: format!("add-docs-{}", self.add_docs_id.load(Ordering::SeqCst)),
+                partition: format!("add-docs-{}", add_docs_id),
             })?,
         };
-        let mut index_meta = self.index_meta.clone();
-        index_meta.sources.clear();
-        index_meta.sources.insert(source.source_id.clone(), source);
-
-        self.add_docs_id.fetch_add(1, Ordering::SeqCst);
-        let statistics = index_data(
-            self._temp_dir.path(),
-            index_meta,
-            self.indexer_config.clone(),
-            self.metastore.clone(),
-            self.storage.clone(),
-        )
-        .await?;
-        Ok(statistics)
+        let pipeline_id = self
+            .client
+            .spawn_pipeline(self.index_id.clone(), source)
+            .await?;
+        let pipeline_handle = self.client.detach_pipeline(&pipeline_id).await?;
+        let (_pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
+        Ok(pipeline_statistics)
     }
 
     /// Returns the metastore of the TestSandbox.
@@ -142,7 +143,7 @@ impl TestSandbox {
 
     /// Returns the storage URI resolver of the TestSandbox.
     pub fn storage_uri_resolver(&self) -> StorageUriResolver {
-        self.storage_uri_resolver.clone()
+        self.storage_resolver.clone()
     }
 
     /// Returns the doc mapper of the TestSandbox.

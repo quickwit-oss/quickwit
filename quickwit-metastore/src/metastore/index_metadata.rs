@@ -21,8 +21,6 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::bail;
-use chrono::Utc;
 use itertools::Itertools;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, SearchSettings, SourceConfig,
@@ -65,6 +63,7 @@ pub struct IndexMetadata {
 
 impl IndexMetadata {
     /// Returns an [`IndexMetadata`] object with multiple hard coded values for tests.
+    #[doc(hidden)]
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
         let doc_mapping_json = r#"{
             "field_mappings": [
@@ -139,7 +138,7 @@ impl IndexMetadata {
                 "attributes.server.status".to_string(),
             ],
         };
-        let now_timestamp = Utc::now().timestamp();
+        let now_timestamp = utc_now_timestamp();
         Self {
             index_id: index_id.to_string(),
             index_uri: index_uri.to_string(),
@@ -153,18 +152,7 @@ impl IndexMetadata {
         }
     }
 
-    /// Returns the data source configured for the index.
-    // TODO: Remove when support for multi-sources index is added.
-    pub fn source(&self) -> anyhow::Result<SourceConfig> {
-        if self.sources.len() > 1 {
-            bail!("Multi-sources indexes are not supported (yet).")
-        }
-        self.sources.values().next().cloned().ok_or_else(|| {
-            anyhow::anyhow!("No source is configured for the `{}` index.", self.index_id)
-        })
-    }
-
-    pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<bool> {
+    pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<()> {
         let entry = self.sources.entry(source.source_id.clone());
         if let Entry::Occupied(_) = entry {
             return Err(MetastoreError::SourceAlreadyExists {
@@ -173,16 +161,16 @@ impl IndexMetadata {
             });
         }
         entry.or_insert(source);
-        Ok(true)
+        Ok(())
     }
 
-    pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
+    pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<()> {
         self.sources
             .remove(source_id)
             .ok_or_else(|| MetastoreError::SourceDoesNotExist {
                 source_id: source_id.to_string(),
             })?;
-        Ok(true)
+        Ok(())
     }
 
     /// Builds and returns the doc mapper associated with index.
@@ -321,7 +309,7 @@ impl From<UnversionedIndexMetadata> for IndexMetadata {
         let search_settings = SearchSettings {
             default_search_fields: unversioned.index_config.default_search_field_names,
         };
-        let now_timestamp = Utc::now().timestamp();
+        let now_timestamp = utc_now_timestamp();
         Self {
             index_id: unversioned.index_id,
             index_uri: unversioned.index_uri,

@@ -30,6 +30,7 @@ use quickwit_metastore::quickwit_metastore_uri_resolver;
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use regex::Regex;
 use tabled::{Alignment, Header, Modify, Row, Style, Table, Tabled};
+use tracing::info;
 
 pub mod cli;
 pub mod index;
@@ -73,8 +74,9 @@ async fn load_quickwit_config(
     data_dir: Option<PathBuf>,
 ) -> anyhow::Result<QuickwitConfig> {
     let config_content = load_file(&uri).await?;
-    let quickwit_config = QuickwitConfig::load(uri, config_content.as_slice(), data_dir).await?;
-    Ok(quickwit_config)
+    let config = QuickwitConfig::load(&uri, config_content.as_slice(), data_dir).await?;
+    info!(config_uri = %uri, config = ?config, "Loaded Quickwit config.");
+    Ok(config)
 }
 
 /// Runs connectivity checks for a given `metastore_uri` and `index_id`.

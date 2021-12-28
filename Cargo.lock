@@ -2172,21 +2172,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickwit-backward-compat"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "byte-unit",
- "md5",
- "once_cell",
- "quickwit-config",
- "quickwit-index-config",
- "quickwit-metastore",
- "serde_json",
- "toml",
-]
-
-[[package]]
 name = "quickwit-cli"
 version = "0.1.0"
 dependencies = [
@@ -2288,7 +2273,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "tempfile",
  "tokio",
  "toml",
  "tracing",
@@ -2423,6 +2407,7 @@ dependencies = [
  "dotenv",
  "futures",
  "itertools",
+ "md5",
  "mockall",
  "once_cell",
  "openssl",

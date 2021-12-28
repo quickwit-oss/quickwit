@@ -26,7 +26,7 @@ use tracing::info;
 use crate::models::{IndexerMessage, RawDocBatch};
 use crate::source::{Source, SourceContext, TypedSourceFactory};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct VecSourceParams {
     pub items: Vec<String>,
     pub batch_num_docs: usize,
@@ -104,7 +104,7 @@ impl Source for VecSource {
     }
 
     fn name(&self) -> String {
-        "vec-source".to_string()
+        "VecSource".to_string()
     }
 
     fn observable_state(&self) -> serde_json::Value {
@@ -141,7 +141,7 @@ mod tests {
             source: Box::new(vec_source),
             batch_sink: mailbox,
         };
-        assert_eq!(vec_source_actor.name(), "vec-source");
+        assert_eq!(vec_source_actor.name(), "VecSource");
         let (_vec_source_mailbox, vec_source_handle) =
             universe.spawn_actor(vec_source_actor).spawn_async();
         let (actor_termination, last_observation) = vec_source_handle.join().await;

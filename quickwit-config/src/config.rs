@@ -83,17 +83,17 @@ impl IndexerConfig {
         1_000
     }
 
-    pub fn for_test() -> anyhow::Result<(Self, tempfile::TempDir)> {
+    #[doc(hidden)]
+    pub fn for_test() -> anyhow::Result<Self> {
         use quickwit_common::net::find_available_port;
 
-        let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig {
             rest_listen_port: find_available_port()?,
-            split_store_max_num_bytes: Byte::from_bytes(50_000_000),
-            split_store_max_num_splits: 100,
+            split_store_max_num_bytes: Byte::from_bytes(1_000_000),
+            split_store_max_num_splits: 3,
             ..Default::default()
         };
-        Ok((indexer_config, temp_dir))
+        Ok(indexer_config)
     }
 }
 
@@ -235,17 +235,17 @@ pub struct QuickwitConfig {
 impl QuickwitConfig {
     // Parses quickwit config from the given config content and validates.
     pub async fn load(
-        uri: Uri,
+        uri: &Uri,
         config_content: &[u8],
-        data_dir: Option<PathBuf>,
+        data_dir_path_opt: Option<PathBuf>,
     ) -> anyhow::Result<Self> {
-        let mut config = QuickwitConfig::from_uri(&uri, config_content).await?;
-        if let Some(data_dir_input) = data_dir {
+        let mut config = QuickwitConfig::from_uri(uri, config_content).await?;
+        if let Some(data_dir_path) = data_dir_path_opt {
             info!(
-                "Set data dir given by CLI args or env var to: {:?}",
-                data_dir_input
+                data_dir_path = %data_dir_path.display(),
+                "Setting data dir path from CLI args or environment variable",
             );
-            config.data_dir_path = data_dir_input;
+            config.data_dir_path = data_dir_path;
         }
         config.validate()?;
         Ok(config)
@@ -257,14 +257,16 @@ impl QuickwitConfig {
             Some("toml") => Self::from_toml,
             Some("yaml") | Some("yml") => Self::from_yaml,
             Some(extension) => bail!(
-                "Failed to read server config file: file extension `.{}` is not supported. \
+                "Failed to read quickwit config file `{}`: file extension `.{}` is not supported. \
                  Supported file formats and extensions are JSON (.json), TOML (.toml), and YAML \
                  (.yaml or .yml).",
+                uri,
                 extension
             ),
             None => bail!(
-                "Failed to read server config file: file extension is missing. Supported file \
-                 formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml)."
+                "Failed to read config file `{}`: file extension is missing. Supported file \
+                 formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml).",
+                uri
             ),
         };
         parser_fn(config_content)
@@ -496,11 +498,11 @@ mod tests {
     #[tokio::test]
     async fn test_load_config_with_validation_error() {
         let config_path = get_resource_path("quickwit.yaml");
+        let config_uri = Uri::try_new(&config_path).unwrap();
         let file = std::fs::read_to_string(&config_path).unwrap();
-        let config =
-            QuickwitConfig::load(Uri::try_new(&config_path).unwrap(), file.as_bytes(), None)
-                .await
-                .unwrap_err();
+        let config = QuickwitConfig::load(&config_uri, file.as_bytes(), None)
+            .await
+            .unwrap_err();
         assert!(config.to_string().contains("Data dir"));
     }
 }
