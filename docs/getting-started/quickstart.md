@@ -63,7 +63,7 @@ doc_mapping:
       record: position
       stored: true
     - name: url
-      type: textd.
+      type: text
       tokenizer: raw
       stored: true # Field is stored. 
 
@@ -73,7 +73,7 @@ search_settings:
 ```
 
 Let's make use of the default configuration file provided in quickwit installation throughout this guide.
-by setting the `QW_CONFIG` environement variable.
+by setting the `QW_CONFIG` environment variable.
 
 ```bash
 export QW_CONFIG=./config/quickwit.yaml
@@ -82,7 +82,7 @@ export QW_CONFIG=./config/quickwit.yaml
 Now we can create the index with the command:
 
 ```bash
-./quickwit index create --index=wikipedia --index-config=./wikipedia_index_config.yaml
+./quickwit index create --index wikipedia --index-config=./wikipedia_index_config.yaml
 ```
 
 Check that a directory `$(pwd)/qwdata/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../overview/architecture.md#index-metadata).
@@ -99,13 +99,13 @@ Let's download [a bunch of wikipedia articles (10 000)](https://quickwit-dataset
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 
 # Index our 10k documents.
-./quickwit index ingest --index=wikipedia --input-path=./wiki-articles-10000.json
+./quickwit index ingest --index wikipedia --input-path=./wiki-articles-10000.json
 ```
 
 Wait one second or two and check if it worked by using `search` command:
 
 ```bash
-./quickwit index search --index=wikipedia --query "barack AND obama"
+./quickwit index search --index wikipedia --query "barack AND obama"
 ```
 
 It should return 10 hits. Now you're ready to serve our search API.
@@ -144,7 +144,7 @@ Don't forget to encode correctly the query params to avoid bad request (status 4
 Let's do some cleanup by deleting the index:
 
 ```bash
-./quickwit index delete --index=wikipedia
+./quickwit index delete --index wikipedia
 ```
 
 Congrats! You can level up with the following tutorials to discover all Quickwit features.
@@ -157,11 +157,11 @@ Run the following command from within Quickwit's installation directory.
 ```bash
 curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/wikipedia/index-config.yaml
 export QW_CONFIG=./config/quickwit.yaml
-./quickwit index create --index=wikipedia --index-config=./wikipedia_index_config.yaml
+./quickwit index create --index wikipedia --index-config ./wikipedia_index_config.yaml
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
-./quickwit index ingest --index=wikipedia --input-path=./wiki-articles-10000.json
-./quickwit index search --index=wikipedia --query "barack AND obama"
-./quickwit index delete --index=wikipedia
+./quickwit index ingest --index wikipedia --input-path ./wiki-articles-10000.json
+./quickwit index search --index wikipedia --query "barack AND obama"
+./quickwit index delete --index wikipedia
 ```
 
 

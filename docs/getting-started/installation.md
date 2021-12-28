@@ -30,7 +30,7 @@ curl -L https://install.quickwit.io | sh
 
 All this script does is download the correct binary archive for your machine and extract it in the current working directory. This means you can download any desired archive from [github](https://github.com/quickwit-inc/quickwit/releases) that match your OS architecture and manually extract it anywhere.
 
-Once installed or extracted, All Quickwit's installation files can be found in a directory named `quickwit-{version}` where version is the corresponding version of Quickwit. This directory has the following layout:
+Once installed or extracted, all Quickwit's installation files can be found in a directory named `quickwit-{version}` where `version` is the corresponding version of Quickwit. This directory has the following layout:
 
 ```bash
 quickwit-{version}
@@ -55,7 +55,7 @@ and gets you right in the shell of the running container ready to execute Quickw
 Note that we are also mounting the working directory as volume. This is useful when you already have your dataset ready on your machine and want to work with Quickwit docker image.
 
 ```bash
-docker run -it -v "$(pwd)":"/quickwit/my-data" --entrypoint ash quickwit/quickwit
+docker run -it -v "$(pwd)":"/quickwit/files" --entrypoint ash quickwit/quickwit
 quickwit --version
 ```
 
@@ -70,27 +70,27 @@ curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-i
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 ```
 
-To expose the rest API outside of the docker container, we need to customize the default configuration provided by Quickwit. Download it, uncomment and update the searcher config section by setting the `rest_listen_address` to `0.0.0.0`. 
+To expose the rest API outside of the docker container, we need to download a configuration file with the correct settings. 
 
 ```bash 
-curl -o quickwit.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/quickwit.yaml
+curl -o quickwit.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/quickwit_docker.yaml
 ```
 
 ```bash
 # create, index and search using the container 
-docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index create --index=wiki --index-config=./qwdata/wikipedia_index_config.yaml
+docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index create --index wikipedia --index-config ./qwdata/wikipedia_index_config.yaml
 
-docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index ingest --index=wiki --input-path=./qwdata/wiki-articles-10000.json
+docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index ingest --index wikipedia --input-path ./qwdata/wiki-articles-10000.json
 
-docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index search --index=wiki --query "barack obama"
+docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index search --index wikipedia --query "barack obama"
 
-docker run -v "$(pwd)":"/quickwit/qwdata" -e QW_CONFIG=./qwdata/quickwit.yaml --expose=7280 -p=7280:7280 quickwit/quickwit service run searcher
+docker run -v "$(pwd)":"/quickwit/qwdata" -e QW_CONFIG=./qwdata/quickwit.yaml --expose 7280 -p 7280:7280 quickwit/quickwit service run searcher
 ```
 
 Now you can make HTTP requests to the searcher service API.
 
 ```bash
-curl http://127.0.0.1:7280/api/v1/wiki/search?query=obama
+curl http://127.0.0.1:7280/api/v1/wikipedia/search?query=obama
 ```
 
 Alternatively, you can run a container shell session with your `data` folder mounted and execute the commands from within that session.
