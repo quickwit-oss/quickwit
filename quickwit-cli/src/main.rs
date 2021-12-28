@@ -81,6 +81,11 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
 
 #[allow(dead_code)]
 fn generate_markdown_from_clap(app: &App) {
+    use toml::Value;
+
+    let ext_toml = include_str!("cli_doc_ext.toml");
+    let doc_extensions: Value = ext_toml.parse::<Value>().unwrap();
+
     let commands = app.get_subcommands();
     for command in commands {
         let command_name = command.get_name(); // index, split, source, service
@@ -96,7 +101,26 @@ fn generate_markdown_from_clap(app: &App) {
             .get_subcommands()
             .filter(|command| command.get_name() != "demux")
         {
+            let subcommand_name = subcommand.get_name(); // index, split, source, service
             println!("### {} {}\n", command_name, subcommand);
+
+            let subcommand_ext: Option<&Value> = doc_extensions
+                .get(command_name)
+                .map(|val| val.get(subcommand_name))
+                .flatten();
+            let long_about_opt: Option<&str> = subcommand_ext
+                .map(|el| el.get("long_about").map(|el| el.as_str()).flatten())
+                .flatten();
+
+            let examples_opt: Option<&Vec<Value>> = subcommand_ext
+                .map(|el| el.get("examples").map(|el| el.as_array()).flatten())
+                .flatten();
+
+            if let Some(about) = long_about_opt {
+                if !about.trim().is_empty() {
+                    println!("{}", about);
+                }
+            }
             if let Some(about) = subcommand.get_long_about() {
                 if !about.trim().is_empty() {
                     println!("{}", about);
@@ -141,8 +165,20 @@ fn generate_markdown_from_clap(app: &App) {
                     arg.get_about().unwrap_or_default()
                 );
             }
+
+            if let Some(examples) = examples_opt {
+                println!("\n*Examples*\n");
+                for example in examples {
+                    println!("*{}*", example.get("name").unwrap().as_str().unwrap());
+                    println!(
+                        "```bash\n{}\n```\n",
+                        example.get("command").unwrap().as_str().unwrap()
+                    );
+                }
+            }
         }
     }
+    std::process::exit(0);
 }
 
 #[tokio::main]
@@ -165,7 +201,7 @@ async fn main() -> anyhow::Result<()> {
         .license("AGPLv3.0")
         .setting(AppSettings::DisableHelpSubcommand);
 
-    // generate_markdown_from_clap(&app);
+    generate_markdown_from_clap(&app);
 
     let matches = app.get_matches();
 

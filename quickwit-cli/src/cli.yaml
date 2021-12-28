@@ -32,11 +32,6 @@ subcommands:
                         value_name: CONFIG
                         env: QW_CONFIG
                         required: true
-                    - data-dir:
-                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-                        long: data-dir
-                        value_name: DATA DIR
-                        env: QW_DATA_DIR
                     - overwrite:
                         about: Overwrites pre-existing index.
                         long: overwrite
@@ -82,11 +77,6 @@ subcommands:
                         value_name: CONFIG
                         env: QW_CONFIG
                         required: true
-                    - data-dir:
-                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-                        long: data-dir
-                        value_name: DATA DIR
-                        env: QW_DATA_DIR
             - search:
                 display_order: 4
                 about: Searches an index.
