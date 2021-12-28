@@ -302,11 +302,12 @@ impl Metastore for FileBackedMetastore {
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
+        source_id: &str,
         split_ids: &[&'a str],
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
         self.mutate(index_id, |index| {
-            index.publish_splits(split_ids, checkpoint_delta)?;
+            index.publish_splits(source_id, split_ids, checkpoint_delta)?;
             Ok(true)
         })
         .await
@@ -509,6 +510,7 @@ mod tests {
         let metastore = FileBackedMetastore::new(Arc::new(mock_storage));
 
         let index_id = "my-index";
+        let source_id = "my-source";
         let split_id = "split-one";
         let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
@@ -533,7 +535,7 @@ mod tests {
 
         // publish split fails
         let err = metastore
-            .publish_splits(index_id, &[split_id], CheckpointDelta::default())
+            .publish_splits(index_id, source_id, &[split_id], CheckpointDelta::default())
             .await;
         assert!(err.is_err());
 
@@ -637,6 +639,7 @@ mod tests {
     async fn test_file_backed_metastore_race_condition() {
         let metastore = Arc::new(FileBackedMetastore::for_test());
         let index_id = "my-index";
+        let source_id = "my-source";
 
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
@@ -671,7 +674,12 @@ mod tests {
                 // publish split
                 let split_id = format!("split-{}", i);
                 metastore
-                    .publish_splits(index_id, &[&split_id], CheckpointDelta::default())
+                    .publish_splits(
+                        index_id,
+                        source_id,
+                        &[&split_id],
+                        CheckpointDelta::default(),
+                    )
                     .await
                     .unwrap();
             });

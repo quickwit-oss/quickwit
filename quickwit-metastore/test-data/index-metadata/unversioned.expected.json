@@ -1,6 +1,8 @@
 {
   "checkpoint": {
-    "0000000000": "0000000042"
+    "default-source": {
+      "0000000000": "0000000042"
+    }
   },
   "create_timestamp": 1640577000,
   "doc_mapping": {
@@ -68,5 +70,5 @@
     ]
   },
   "update_timestamp": 1640577000,
-  "version": "0"
+  "version": "1"
 }

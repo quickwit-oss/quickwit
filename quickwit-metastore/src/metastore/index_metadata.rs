@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use itertools::Itertools;
@@ -31,7 +31,7 @@ use quickwit_index_config::{
 };
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::checkpoint::SourceCheckpoint;
+use crate::checkpoint::{IndexCheckpoint, SourceCheckpoint};
 use crate::split_metadata::utc_now_timestamp;
 use crate::{MetastoreError, MetastoreResult};
 
@@ -45,7 +45,7 @@ pub struct IndexMetadata {
     pub index_uri: String,
     /// Checkpoint relative to a source or a set of sources. It expresses up to which point
     /// documents have been indexed.
-    pub checkpoint: SourceCheckpoint,
+    pub checkpoint: IndexCheckpoint,
     /// Describes how ingested JSON documents are indexed.
     pub doc_mapping: DocMapping,
     /// Configures various indexing settings such as commit timeout, max split size, indexing
@@ -142,7 +142,7 @@ impl IndexMetadata {
         Self {
             index_id: index_id.to_string(),
             index_uri: index_uri.to_string(),
-            checkpoint: SourceCheckpoint::default(),
+            checkpoint: Default::default(),
             doc_mapping,
             indexing_settings,
             search_settings,
@@ -154,13 +154,15 @@ impl IndexMetadata {
 
     pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<()> {
         let entry = self.sources.entry(source.source_id.clone());
+        let source_id = source.source_id.clone();
         if let Entry::Occupied(_) = entry {
             return Err(MetastoreError::SourceAlreadyExists {
-                source_id: source.source_id,
+                source_id: source_id.clone(),
                 source_type: source.source_type,
             });
         }
         entry.or_insert(source);
+        self.checkpoint.add_source(&source_id);
         Ok(())
     }
 
@@ -170,6 +172,7 @@ impl IndexMetadata {
             .ok_or_else(|| MetastoreError::SourceDoesNotExist {
                 source_id: source_id.to_string(),
             })?;
+        self.checkpoint.remove_source(source_id);
         Ok(())
     }
 
@@ -203,13 +206,15 @@ pub(crate) struct UnversionedIndexMetadata {
 pub(crate) enum VersionedIndexMetadata {
     #[serde(rename = "0")]
     V0(IndexMetadataV0),
+    #[serde(rename = "1")]
+    V1(IndexMetadataV1),
     #[serde(rename = "unversioned")]
     Unversioned(UnversionedIndexMetadata),
 }
 
 impl From<IndexMetadata> for VersionedIndexMetadata {
     fn from(index_metadata: IndexMetadata) -> Self {
-        VersionedIndexMetadata::V0(index_metadata.into())
+        VersionedIndexMetadata::V1(index_metadata.into())
     }
 }
 
@@ -218,6 +223,67 @@ impl From<VersionedIndexMetadata> for IndexMetadata {
         match index_metadata {
             VersionedIndexMetadata::Unversioned(unversioned) => unversioned.into(),
             VersionedIndexMetadata::V0(v0) => v0.into(),
+            VersionedIndexMetadata::V1(v1) => v1.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct IndexMetadataV1 {
+    pub index_id: String,
+    pub index_uri: String,
+    pub checkpoint: IndexCheckpoint,
+    pub doc_mapping: DocMapping,
+    #[serde(default)]
+    pub indexing_settings: IndexingSettings,
+    pub search_settings: SearchSettings,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<SourceConfig>,
+    #[serde(default = "utc_now_timestamp")]
+    pub create_timestamp: i64,
+    #[serde(default = "utc_now_timestamp")]
+    pub update_timestamp: i64,
+}
+
+impl From<IndexMetadata> for IndexMetadataV1 {
+    fn from(index_metadata: IndexMetadata) -> Self {
+        let sources = index_metadata
+            .sources
+            .into_values()
+            .sorted_by(|left, right| left.source_id.cmp(&right.source_id))
+            .collect();
+        Self {
+            index_id: index_metadata.index_id,
+            index_uri: index_metadata.index_uri,
+            checkpoint: index_metadata.checkpoint,
+            doc_mapping: index_metadata.doc_mapping,
+            indexing_settings: index_metadata.indexing_settings,
+            search_settings: index_metadata.search_settings,
+            sources,
+            create_timestamp: index_metadata.create_timestamp,
+            update_timestamp: index_metadata.update_timestamp,
+        }
+    }
+}
+
+impl From<IndexMetadataV1> for IndexMetadata {
+    fn from(v1: IndexMetadataV1) -> Self {
+        let sources = v1
+            .sources
+            .into_iter()
+            .map(|source| (source.source_id.clone(), source))
+            .collect();
+        Self {
+            index_id: v1.index_id,
+            index_uri: v1.index_uri,
+            checkpoint: v1.checkpoint,
+            doc_mapping: v1.doc_mapping,
+            indexing_settings: v1.indexing_settings,
+            search_settings: v1.search_settings,
+            sources,
+            create_timestamp: v1.create_timestamp,
+            update_timestamp: v1.update_timestamp,
         }
     }
 }
@@ -242,38 +308,30 @@ pub(crate) struct IndexMetadataV0 {
     pub update_timestamp: i64,
 }
 
-impl From<IndexMetadata> for IndexMetadataV0 {
-    fn from(index_metadata: IndexMetadata) -> Self {
-        let sources = index_metadata
-            .sources
-            .into_values()
-            .sorted_by(|left, right| left.source_id.cmp(&right.source_id))
-            .collect();
-        Self {
-            index_id: index_metadata.index_id,
-            index_uri: index_metadata.index_uri,
-            checkpoint: index_metadata.checkpoint,
-            doc_mapping: index_metadata.doc_mapping,
-            indexing_settings: index_metadata.indexing_settings,
-            search_settings: index_metadata.search_settings,
-            sources,
-            create_timestamp: index_metadata.create_timestamp,
-            update_timestamp: index_metadata.update_timestamp,
-        }
-    }
-}
-
 impl From<IndexMetadataV0> for IndexMetadata {
     fn from(v0: IndexMetadataV0) -> Self {
-        let sources = v0
-            .sources
-            .into_iter()
-            .map(|source| (source.source_id.clone(), source))
-            .collect();
+        assert!(
+            v0.sources.len() <= 1,
+            "Failed to convert the Index metadata. Multiple sources was not really supported. \
+             Contact Quickwit for help."
+        );
+        let mut source_checkpoints: BTreeMap<String, SourceCheckpoint> = Default::default();
+        let mut sources: HashMap<String, SourceConfig> = Default::default();
+        if let Some(single_source) = v0.sources.into_iter().next() {
+            source_checkpoints.insert(single_source.source_id.clone(), v0.checkpoint);
+            sources.insert(single_source.source_id.clone(), single_source);
+        } else {
+            // That's weird. We have a checkpoint but no sources.
+            // Well just record the checkpoint for extra safety with the source_id `default-source`.
+            if !v0.checkpoint.is_empty() {
+                source_checkpoints.insert("default-source".to_string(), v0.checkpoint);
+            }
+        }
+        let checkpoint = IndexCheckpoint::from(source_checkpoints);
         Self {
             index_id: v0.index_id,
             index_uri: v0.index_uri,
-            checkpoint: v0.checkpoint,
+            checkpoint,
             doc_mapping: v0.doc_mapping,
             indexing_settings: v0.indexing_settings,
             search_settings: v0.search_settings,
@@ -284,7 +342,7 @@ impl From<IndexMetadataV0> for IndexMetadata {
     }
 }
 
-impl From<UnversionedIndexMetadata> for IndexMetadata {
+impl From<UnversionedIndexMetadata> for IndexMetadataV0 {
     fn from(unversioned: UnversionedIndexMetadata) -> Self {
         let doc_mapping = DocMapping {
             field_mappings: unversioned
@@ -321,6 +379,12 @@ impl From<UnversionedIndexMetadata> for IndexMetadata {
             create_timestamp: now_timestamp,
             update_timestamp: now_timestamp,
         }
+    }
+}
+
+impl From<UnversionedIndexMetadata> for IndexMetadata {
+    fn from(unversioned: UnversionedIndexMetadata) -> Self {
+        IndexMetadataV0::from(unversioned).into()
     }
 }
 

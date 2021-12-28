@@ -137,9 +137,68 @@ impl<'a> From<&'a str> for Position {
     }
 }
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IndexCheckpoint {
+    #[serde(flatten)]
     per_source: BTreeMap<String, SourceCheckpoint>,
+}
+
+impl fmt::Debug for IndexCheckpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let json = serde_json::to_string_pretty(&self).map_err(|_| fmt::Error)?;
+        write!(f, "{}", json)?;
+        Ok(())
+    }
+}
+
+impl From<BTreeMap<String, SourceCheckpoint>> for IndexCheckpoint {
+    fn from(per_source: BTreeMap<String, SourceCheckpoint>) -> Self {
+        IndexCheckpoint { per_source }
+    }
+}
+
+impl IndexCheckpoint {
+    /// Updates a given source checkpoint.
+    ///
+    /// If the checkpoint delta is not compatible with the
+    /// current checkpoint, an error is returned, and the
+    /// checkpoint remains unchanged.
+    ///
+    /// See [`SourceCheckpoint::try_apply_delta`] for more details.
+    pub fn try_apply_delta(
+        &mut self,
+        source_id: &str,
+        delta: CheckpointDelta,
+    ) -> Result<(), IncompatibleCheckpointDelta> {
+        self.per_source
+            .entry(source_id.to_string())
+            .or_default()
+            .try_apply_delta(delta)?;
+        Ok(())
+    }
+
+    /// Returns the checkpoint associated to a given source.
+    ///
+    /// All registered source have an associated checkpoint (that is possibly empty).
+    ///
+    /// Some non-registered source may also have checkpoint (due to backward compatibility
+    /// and the ingest command).
+    pub fn source_checkpoint(&self, source_id: &str) -> Option<&SourceCheckpoint> {
+        self.per_source.get(source_id)
+    }
+
+    /// Adds a new source. If the source was already here, this
+    /// method returns successfully and does not override the existing checkpoint.
+    pub fn add_source(&mut self, source_id: &str) {
+        self.try_apply_delta(source_id, CheckpointDelta::default())
+            .expect("Applying an empty checkpoint delta should never fail");
+    }
+
+    /// Removes an source.
+    /// Returns successfully regardless of whether the source was present or not.
+    pub fn remove_source(&mut self, source_id: &str) {
+        self.per_source.remove(source_id);
+    }
 }
 
 /// A source checkpoint is a map of the last processed position for every partition.
@@ -165,8 +224,8 @@ impl SourceCheckpoint {
 
 /// Creates a checkpoint from an iterator of `(PartitionId, Position)` tuples.
 /// ```
-/// use quickwit_metastore::checkpoint::{Checkpoint, PartitionId, Position};
-/// let checkpoint: Checkpoint = vec![(0, 0), (1, 2)]
+/// use quickwit_metastore::checkpoint::{SourceCheckpoint, PartitionId, Position};
+/// let checkpoint: SourceCheckpoint = vec![(0, 0), (1, 2)]
 ///     .into_iter()
 ///     .map(|(partition_id, offset)| {
 ///         (PartitionId::from(partition_id), Position::from(offset))
@@ -623,5 +682,28 @@ mod tests {
     fn test_position_u64() {
         let pos = Position::from(4u64);
         assert_eq!(pos.as_str(), "00000000000000000004");
+    }
+
+    #[test]
+    fn test_index_checkpoint() {
+        let mut index_checkpoint = IndexCheckpoint::default();
+        assert!(index_checkpoint
+            .source_checkpoint("missing_source")
+            .is_none());
+        index_checkpoint.add_source("existing_source_with_empty_checkpoint");
+        assert!(index_checkpoint
+            .source_checkpoint("existing_source_with_empty_checkpoint")
+            .is_some());
+        index_checkpoint.remove_source("missing_source"); //< we just check this does not fail
+        assert!(index_checkpoint
+            .source_checkpoint("missing_source")
+            .is_none());
+        assert!(index_checkpoint
+            .source_checkpoint("existing_source_with_empty_checkpoint")
+            .is_some());
+        index_checkpoint.remove_source("existing_source_with_empty_checkpoint"); //< we just check this does not fail
+        assert!(index_checkpoint
+            .source_checkpoint("existing_source_with_empty_checkpoint")
+            .is_none());
     }
 }

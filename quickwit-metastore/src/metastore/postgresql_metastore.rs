@@ -241,7 +241,7 @@ impl PostgresqlMetastore {
 
     /// Publish splits.
     /// Returns the successful split IDs.
-    fn publish_splits(
+    fn mark_splits_as_published_helper(
         &self,
         conn: &PooledConnection<ConnectionManager<PgConnection>>,
         index_id: &str,
@@ -294,12 +294,13 @@ impl PostgresqlMetastore {
         &self,
         conn: &PooledConnection<ConnectionManager<PgConnection>>,
         index_id: &str,
+        source_id: &str,
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
         let mut index_metadata = self.index_metadata_inner(conn, index_id)?;
         index_metadata
             .checkpoint
-            .try_apply_delta(checkpoint_delta)?;
+            .try_apply_delta(source_id, checkpoint_delta)?;
         self.update_index(conn, index_metadata)?;
         Ok(())
     }
@@ -569,15 +570,17 @@ impl Metastore for PostgresqlMetastore {
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
+        source_id: &str,
         split_ids: &[&'a str],
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
         let conn = self.get_conn()?;
         conn.transaction::<_, MetastoreError, _>(|| {
             // Update the index checkpoint.
-            self.apply_checkpoint_delta(&conn, index_id, checkpoint_delta)?;
+            self.apply_checkpoint_delta(&conn, index_id, source_id, checkpoint_delta)?;
 
-            let published_split_ids = self.publish_splits(&conn, index_id, split_ids)?;
+            let published_split_ids =
+                self.mark_splits_as_published_helper(&conn, index_id, split_ids)?;
 
             // returning `Ok` means `commit` the transaction.
             if published_split_ids.len() == split_ids.len() {
@@ -609,7 +612,8 @@ impl Metastore for PostgresqlMetastore {
         let conn = self.get_conn()?;
         conn.transaction::<_, MetastoreError, _>(|| {
             // Publish splits.
-            let published_split_ids = self.publish_splits(&conn, index_id, new_split_ids)?;
+            let published_split_ids =
+                self.mark_splits_as_published_helper(&conn, index_id, new_split_ids)?;
 
             // Mark splits for deletion
             let marked_split_ids =

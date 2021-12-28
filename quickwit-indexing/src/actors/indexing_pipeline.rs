@@ -259,6 +259,7 @@ impl IndexingPipeline {
         // Merge publisher
         let merge_publisher = Publisher::new(
             PublisherType::MergePublisher,
+            self.params.source.source_id.clone(),
             self.params.metastore.clone(),
             merge_planner_mailbox.clone(),
             garbage_collector_mailbox.clone(),
@@ -344,6 +345,7 @@ impl IndexingPipeline {
         // Publisher
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
+            self.params.source.source_id.clone(),
             self.params.metastore.clone(),
             merge_planner_mailbox,
             garbage_collector_mailbox,
@@ -550,9 +552,14 @@ impl IndexingPipelineParams {
             .join(&index_metadata.index_id)
             .join(&source.source_id);
         let indexing_directory = IndexingDirectory::create_in_dir(indexing_directory_path).await?;
+        let source_checkpoint = index_metadata
+            .checkpoint
+            .source_checkpoint(&source.source_id)
+            .cloned()
+            .unwrap_or_default(); // TODO Have a stricter check.
         Ok(Self {
             index_id: index_metadata.index_id,
-            checkpoint: index_metadata.checkpoint,
+            checkpoint: source_checkpoint,
             doc_mapper,
             indexing_directory,
             indexing_settings: index_metadata.indexing_settings,
@@ -641,13 +648,16 @@ mod tests {
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
-            .withf(move |index_id, splits, checkpoint_delta| -> bool {
-                index_id == "test-index"
-                    && splits.len() == 1
-                    && format!("{:?}", checkpoint_delta)
-                        .ends_with(":(00000000000000000000..00000000000000000070])")
-            })
-            .returning(|_, _, _| Ok(()));
+            .withf(
+                move |index_id, source_id, splits, checkpoint_delta| -> bool {
+                    index_id == "test-index"
+                        && source_id == "test-source"
+                        && splits.len() == 1
+                        && format!("{:?}", checkpoint_delta)
+                            .ends_with(":(00000000000000000000..00000000000000000070])")
+                },
+            )
+            .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
@@ -709,14 +719,17 @@ mod tests {
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
-            .withf(move |index_id, splits, checkpoint_delta| -> bool {
-                index_id == "test-index"
-                    && splits.len() == 1
-                    && format!("{:?}", checkpoint_delta)
-                        .ends_with(":(00000000000000000000..00000000000000000070])")
-            })
+            .withf(
+                move |index_id, source_id, splits, checkpoint_delta| -> bool {
+                    index_id == "test-index"
+                        && source_id == "test-source"
+                        && splits.len() == 1
+                        && format!("{:?}", checkpoint_delta)
+                            .ends_with(":(00000000000000000000..00000000000000000070])")
+                },
+            )
             .times(1)
-            .returning(|_, _, _| Ok(()));
+            .returning(|_, _, _, _| Ok(()));
         let universe = Universe::new();
         let source = SourceConfig {
             source_id: "test-source".to_string(),

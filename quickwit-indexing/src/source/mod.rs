@@ -31,7 +31,7 @@ use std::path::Path;
 
 use anyhow::bail;
 use async_trait::async_trait;
-pub use file_source::{FileSource, FileSourceFactory, FileSourceParams, STDIN_SOURCE_ID};
+pub use file_source::{FileSource, FileSourceFactory, FileSourceParams};
 #[cfg(feature = "kafka")]
 pub use kafka_source::{KafkaSource, KafkaSourceFactory, KafkaSourceParams};
 use once_cell::sync::OnceCell;
@@ -42,6 +42,9 @@ pub use vec_source::{VecSource, VecSourceFactory, VecSourceParams};
 pub use void_source::{VoidSource, VoidSourceFactory, VoidSourceParams};
 
 use crate::models::IndexerMessage;
+
+/// Reserved source id used for the CLI ingest command.
+pub const INGEST_SOURCE_ID: &str = ".ingest-source";
 
 pub type SourceContext = ActorContext<SourceActor>;
 
@@ -176,9 +179,6 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
 pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::Result<()> {
     match source_config.source_type.as_ref() {
         "file" => {
-            if source_config.source_id == STDIN_SOURCE_ID {
-                return Ok(());
-            }
             match source_config.params.get("filepath") {
                 Some(serde_json::Value::String(path)) => {
                     if Path::new(&path).exists() {
@@ -187,14 +187,18 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
                         bail!("File `{}` does not exist.", path)
                     }
                 }
+                None | Some(serde_json::Value::Null) => {
+                    if source_config.source_id == INGEST_SOURCE_ID {
+                        // We are indexing stdin using the ingest source.
+                        return Ok(());
+                    }
+                    bail!("Failed to parse source config params: property `filepath` is missing.")
+                }
                 Some(_) => {
                     bail!(
                         "Failed to parse source config params: property `filepath` is not a \
                          string."
                     )
-                }
-                None => {
-                    bail!("Failed to parse source config params: property `filepath` is missing.")
                 }
             }
         }
