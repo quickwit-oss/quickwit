@@ -68,15 +68,7 @@ mkdir data && cd data
 # download wikipedia dataset files
 curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/wikipedia/index-config.yaml
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
-```
 
-To expose the rest API outside of the docker container, we need to download a configuration file with the correct settings. 
-
-```bash 
-curl -o quickwit.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/quickwit_docker.yaml
-```
-
-```bash
 # create, index and search using the container 
 docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index create --index wikipedia --index-config ./qwdata/wikipedia_index_config.yaml
 
@@ -84,7 +76,7 @@ docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index ingest --index
 
 docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index search --index wikipedia --query "barack obama"
 
-docker run -v "$(pwd)":"/quickwit/qwdata" -e QW_CONFIG=./qwdata/quickwit.yaml --expose 7280 -p 7280:7280 quickwit/quickwit service run searcher
+docker run -v "$(pwd)":"/quickwit/qwdata" --expose 7280 -p 7280:7280 quickwit/quickwit service run searcher
 ```
 
 Now you can make HTTP requests to the searcher service API.
