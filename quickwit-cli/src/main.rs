@@ -120,8 +120,7 @@ fn generate_markdown_from_clap(app: &App) {
                 if !about.trim().is_empty() {
                     println!("{}", about);
                 }
-            }
-            if let Some(about) = subcommand.get_long_about() {
+            } else if let Some(about) = subcommand.get_about() {
                 if !about.trim().is_empty() {
                     println!("{}", about);
                 }
