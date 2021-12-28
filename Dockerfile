@@ -4,8 +4,10 @@ ARG CARGO_FEATURES=release-feature-set
 ARG CARGO_PROFILE=release
 
 # Labels
-LABEL maintainer="hello@quickwit.io"
+LABEL org.opencontainers.image.title="Quickwit"
+LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
 LABEL org.opencontainers.image.vendor="Quickwit, Inc."
+LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
@@ -30,6 +32,12 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && mkdir -p /quickwit/bin \
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
+# Change the default configuration file in order to make the searcher
+# and indexer services accessible from outside of docker.
+COPY ./config/quickwit.yaml ./config/quickwit.yaml
+RUN sed -i 's/#indexer/indexer/g' ./config/quickwit.yaml \
+    && sed -i 's/#searcher/searcher/g' ./config/quickwit.yaml  \
+    && sed -i 's/#  rest_listen_address: 127.0.0.1/ rest_listen_address: 0.0.0.0/g' ./config/quickwit.yaml
 
 FROM debian:bullseye-slim AS quickwit
 
@@ -39,5 +47,12 @@ RUN apt-get -y update \
                           libssl1.1 \
     && rm -rf /var/lib/apt/lists/*
 
+WORKDIR /quickwit
+RUN mkdir config qwdata
 COPY --from=builder /quickwit/bin/quickwit /usr/local/bin/quickwit
-ENTRYPOINT ["quickwit"]
+COPY --from=builder /quickwit/config/quickwit.yaml /quickwit/config/quickwit.yaml
+
+ENV QW_CONFIG=/quickwit/config/quickwit.yaml
+ENV QW_DATA_DIR=/quickwit/qwdata
+
+ENTRYPOINT ["/usr/local/bin/quickwit"]
