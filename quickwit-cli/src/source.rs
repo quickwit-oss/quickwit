@@ -357,8 +357,11 @@ async fn resolve_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<In
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use clap::{load_yaml, App, AppSettings};
     use quickwit_metastore::checkpoint::{PartitionId, Position};
+    use quickwit_storage::{quickwit_storage_uri_resolver, PutPayload};
     use serde_json::json;
 
     use super::*;
@@ -379,6 +382,65 @@ mod tests {
                 ("baz".to_string(), Value::Bool(false)),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn test_sniff_params() {
+        sniff_params("").await.unwrap_err();
+        sniff_params("foo").await.unwrap_err();
+        sniff_params("null").await.unwrap_err();
+        sniff_params("0").await.unwrap_err();
+        sniff_params("[]").await.unwrap_err();
+
+        assert!(matches!(
+            sniff_params(r#"{"foo": 0}"#).await.unwrap(),
+            Value::Object(map) if map.contains_key("foo")
+        ));
+
+        let storage = quickwit_storage_uri_resolver()
+            .resolve("ram:///tmp")
+            .unwrap();
+        let payload: Box<dyn PutPayload> = Box::new(r#"{"bar": 1}"#.to_string().into_bytes());
+        storage
+            .put(Path::new("params.json"), payload)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            sniff_params("ram:///tmp/params.json").await.unwrap(),
+            Value::Object(map) if map.contains_key("bar")
+        ));
+    }
+
+    #[test]
+    fn test_parse_add_source_args() {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app
+            .try_get_matches_from(vec![
+                "source",
+                "add",
+                "--index",
+                "hdfs-logs",
+                "--id",
+                "hdfs-logs-source",
+                "--type",
+                "kafka",
+                "--params",
+                "{}",
+                "--config",
+                "/conf.yaml",
+            ])
+            .unwrap();
+        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let expected_command = CliCommand::Source(SourceCliCommand::AddSource(AddSourceArgs {
+            config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+            index_id: "hdfs-logs".to_string(),
+            source_id: "hdfs-logs-source".to_string(),
+            source_type: "kafka".to_string(),
+            params: "{}".to_string(),
+        }));
+        assert_eq!(command, expected_command);
     }
 
     #[test]
