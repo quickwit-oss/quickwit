@@ -398,7 +398,7 @@ subcommands:
                         value_name: SOURCE TYPE
                         required: true
                     - params:
-                        about: Parameters for the source formatted as a JSON object. The object can be passed inline or via a file.
+                        about: Parameters for the source formatted as a JSON object passed inline or via a file. Parameters are source-specific. Please, refer to the source's documentation for more details.
                         long: params
                         value_name: PARAMS
                         required: true
