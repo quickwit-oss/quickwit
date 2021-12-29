@@ -95,7 +95,7 @@ gunzip gh-archive-2021-12-text-only.json.gz | quickwit index ingest --index gh-a
 
 You can check it's working by using the `search` command and looking for `tantivy` word:
 ```bash
-quickwit index search --index gh-archive --query "tantivy"
+./quickwit index search --index gh-archive --query "tantivy"
 ```
 
 
