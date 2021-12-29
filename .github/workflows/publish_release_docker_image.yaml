@@ -13,7 +13,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Extract version
-      - uses: ./.github/actions/artifact-name
+        uses: ./.github/actions/artifact-name
         with: 
           suffix: ''
 
