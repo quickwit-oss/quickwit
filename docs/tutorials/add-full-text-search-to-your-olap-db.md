@@ -12,7 +12,7 @@ We will take the [Github archive dataset](https://www.gharchive.org/), which gat
 
 ```bash
 curl -L https://install.quickwit.io | sh
-cd quickwit-0.2
+cd quickwit-v*/
 # Quickwit detects the config from CLI args or the QW_CONFIG env variable.
 # Let's set QW_CONFIG to the default config.
 export QW_CONFIG=./config/quickwit.yaml
@@ -113,7 +113,7 @@ query and with a `CSV` output format.
 curl -v "http://0.0.0.0:8080/api/v1/gh-archive/search/stream?query=tantivy&outputFormat=Csv&fastField=id"
 ```
 
-We will use the `Clikchouse` binary output format in the following sections to speed up queries.
+We will use the `Clickhouse` binary output format in the following sections to speed up queries.
 
 
 ## Clickhouse
@@ -167,7 +167,7 @@ gunzip gh-archive-2021-12.json.gz | clickhouse-client -d gh-archive --query="INS
 
 Let's check it's working:
 ```SQL
-// Top repositories by stars
+# Top repositories by stars
 SELECT repo_name, count() AS stars 
 FROM github_events 
 WHERE event_type = 'WatchEvent' 
@@ -185,7 +185,7 @@ ORDER BY stars DESC LIMIT 5
 
 ### Use Quickwit search inside Clickhouse
 
-Clikhouse has an exciting feature called [URL Table Engine](https://clickhouse.com/docs/en/engines/table-engines/special/url/) that queries data from a remote HTTP/HTTPS server.
+Clickhouse has an exciting feature called [URL Table Engine](https://clickhouse.com/docs/en/engines/table-engines/special/url/) that queries data from a remote HTTP/HTTPS server.
 This is precisely what we need: by creating a table pointing to Quickwit search stream endpoint, we will fetch ids that match a query from Clickhouse. 
 
 ```SQL
@@ -240,7 +240,7 @@ We can see the spike on the 2021-12-10.
 
 ## Wrapping up
 
-We have just scratched the surface of full-text search from Clikchouse with this small subset of Github archive. You can play with the complete dataset that you can download from our public S3 bucket. We have made available monthly gzipped ndjson files from 2015 until 2021. Here are `2015-01` links:
+We have just scratched the surface of full-text search from Clickhouse with this small subset of Github archive. You can play with the complete dataset that you can download from our public S3 bucket. We have made available monthly gzipped ndjson files from 2015 until 2021. Here are `2015-01` links:
 - full JSON dataset https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2015-01.json.gz
 - text-only JSON dataset https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2015-01-text-only.json.gz
 
