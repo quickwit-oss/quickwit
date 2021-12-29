@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
-
 use anyhow::{bail, Context};
 use clap::ArgMatches;
 use itertools::Itertools;
@@ -32,9 +30,15 @@ use tabled::{Table, Tabled};
 use crate::{load_quickwit_config, make_table};
 
 #[derive(Debug, PartialEq)]
+pub struct DeleteSourceArgs {
+    pub config_uri: Uri,
+    pub index_id: String,
+    pub source_id: String,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct DescribeSourceArgs {
     pub config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
     pub index_id: String,
     pub source_id: String,
 }
@@ -42,12 +46,12 @@ pub struct DescribeSourceArgs {
 #[derive(Debug, PartialEq)]
 pub struct ListSourcesArgs {
     pub config_uri: Uri,
-    pub data_dir: Option<PathBuf>,
     pub index_id: String,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum SourceCliCommand {
+    DeleteSource(DeleteSourceArgs),
     DescribeSource(DescribeSourceArgs),
     ListSources(ListSourcesArgs),
 }
@@ -55,6 +59,7 @@ pub enum SourceCliCommand {
 impl SourceCliCommand {
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
+            Self::DeleteSource(args) => delete_source_cli(args).await,
             Self::DescribeSource(args) => describe_source_cli(args).await,
             Self::ListSources(args) => list_sources_cli(args).await,
         }
@@ -65,10 +70,31 @@ impl SourceCliCommand {
             .subcommand()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse source subcommand arguments."))?;
         match subcommand {
+            "delete" => Self::parse_delete_args(submatches).map(Self::DeleteSource),
             "describe" => Self::parse_describe_args(submatches).map(Self::DescribeSource),
             "list" => Self::parse_list_args(submatches).map(Self::ListSources),
             _ => bail!("Source subcommand `{}` is not implemented.", subcommand),
         }
+    }
+
+    fn parse_delete_args(matches: &ArgMatches) -> anyhow::Result<DeleteSourceArgs> {
+        let config_uri = matches
+            .value_of("config")
+            .map(Uri::try_new)
+            .expect("`config` is a required arg.")?;
+        let index_id = matches
+            .value_of("index")
+            .map(String::from)
+            .expect("`index` is a required arg.");
+        let source_id = matches
+            .value_of("source")
+            .map(String::from)
+            .expect("`source` is a required arg.");
+        Ok(DeleteSourceArgs {
+            config_uri,
+            index_id,
+            source_id,
+        })
     }
 
     fn parse_describe_args(matches: &ArgMatches) -> anyhow::Result<DescribeSourceArgs> {
@@ -83,13 +109,11 @@ impl SourceCliCommand {
         let source_id = matches
             .value_of("source")
             .map(String::from)
-            .expect("`source-id` is a required arg.");
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
+            .expect("`source` is a required arg.");
         Ok(DescribeSourceArgs {
             config_uri,
             index_id,
             source_id,
-            data_dir,
         })
     }
 
@@ -102,17 +126,26 @@ impl SourceCliCommand {
             .value_of("index")
             .map(String::from)
             .expect("`index` is a required arg.");
-        let data_dir = matches.value_of("data-dir").map(PathBuf::from);
         Ok(ListSourcesArgs {
             config_uri,
             index_id,
-            data_dir,
         })
     }
 }
 
+async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
+    let config = load_quickwit_config(args.config_uri, None).await?;
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&config.metastore_uri)
+        .await?;
+    metastore
+        .delete_source(&args.index_id, &args.source_id)
+        .await?;
+    Ok(())
+}
+
 async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(args.config_uri, None).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let source_checkpoint = index_metadata
         .checkpoint
@@ -165,7 +198,7 @@ where
 }
 
 async fn list_sources_cli(args: ListSourcesArgs) -> anyhow::Result<()> {
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(args.config_uri, None).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
     let table = make_list_sources_table(index_metadata.sources.into_values());
     display_tables(&[table]);
@@ -276,6 +309,32 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_delete_source_args() {
+        let yaml = load_yaml!("cli.yaml");
+        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let matches = app
+            .try_get_matches_from(vec![
+                "source",
+                "delete",
+                "--index",
+                "hdfs-logs",
+                "--source",
+                "hdfs-logs-source",
+                "--config",
+                "/conf.yaml",
+            ])
+            .unwrap();
+        let command = CliCommand::parse_cli_args(&matches).unwrap();
+        let expected_command =
+            CliCommand::Source(SourceCliCommand::DeleteSource(DeleteSourceArgs {
+                config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
+                index_id: "hdfs-logs".to_string(),
+                source_id: "hdfs-logs-source".to_string(),
+            }));
+        assert_eq!(command, expected_command);
+    }
+
+    #[test]
     fn test_parse_describe_source_args() {
         let yaml = load_yaml!("cli.yaml");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
@@ -297,7 +356,6 @@ mod tests {
                 config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
                 index_id: "hdfs-logs".to_string(),
                 source_id: "hdfs-logs-source".to_string(),
-                data_dir: None,
             }));
         assert_eq!(command, expected_command);
     }
@@ -372,7 +430,6 @@ mod tests {
         let expected_command = CliCommand::Source(SourceCliCommand::ListSources(ListSourcesArgs {
             config_uri: Uri::try_new("file:///conf.yaml").unwrap(),
             index_id: "hdfs-logs".to_string(),
-            data_dir: None,
         }));
         assert_eq!(command, expected_command);
     }

@@ -379,6 +379,25 @@ subcommands:
         settings:
             - ArgRequiredElseHelp
         subcommands:
+            - delete:
+                about: Deletes a source.
+                args:
+                    - index:
+                        about: ID of the target index.
+                        long: index
+                        value_name: INDEX
+                        required: true
+                    - source:
+                        about: ID of the target source.
+                        long: source
+                        value_name: SOURCE
+                        required: true
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
+                        required: true
             - describe:
                 about: Describes a source.
                 args:
@@ -398,11 +417,6 @@ subcommands:
                         value_name: CONFIG
                         env: QW_CONFIG
                         required: true
-                    - data-dir:
-                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-                        long: data-dir
-                        value_name: DATA DIR
-                        env: QW_DATA_DIR
             - list:
                 about: Lists the sources of an index.
                 args:
@@ -417,8 +431,3 @@ subcommands:
                         value_name: CONFIG
                         env: QW_CONFIG
                         required: true
-                    - data-dir:
-                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-                        long: data-dir
-                        value_name: DATA DIR
-                        env: QW_DATA_DIR
