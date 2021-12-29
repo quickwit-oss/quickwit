@@ -6,7 +6,7 @@ sidebar_position: 2
 
 This guide will help you add full-text search to a well-known OLAP database, Clickhouse, using the Quickwit search streaming feature. Indeed Quickwit exposes a REST endpoint that streams ids or whatever attributes matching a search query **extremely fast** (up to 50 million in 1 second), and Clickhouse can easily use them with joins queries. 
 
-We will take the [Github archive dataset](https://www.gharchive.org/), which gathers more than 3 billion Github events: `WathEvent`, `PullRequestEvent`, `IssuesEvent`... You can dive into this [great analysis] (https://ghe.clickhouse.tech/) made by Clickhouse to have a good understanding of the dataset. We also took strong inspiration from this work, and we are very grateful for them to have shared this.
+We will take the [Github archive dataset](https://www.gharchive.org/), which gathers more than 3 billion Github events: `WathEvent`, `PullRequestEvent`, `IssuesEvent`... You can dive into this [great analysis](https://ghe.clickhouse.tech/) made by Clickhouse to have a good understanding of the dataset. We also took strong inspiration from this work, and we are very grateful to them for sharing this.
 
 ## Install
 
