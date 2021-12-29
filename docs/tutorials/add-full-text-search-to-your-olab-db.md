@@ -162,7 +162,7 @@ text. So it's better to insert it into Clickhouse, but if you don't have the tim
 
 ```bash
 curl https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2021-12.json.gz
-gunzip . | clickhouse-client -d gh-archive --query="INSERT INTO github_events FORMAT JSONEachRow"
+gunzip gh-archive-2021-12.json.gz | clickhouse-client -d gh-archive --query="INSERT INTO github_events FORMAT JSONEachRow"
 ```
 
 Let's check it's working:
