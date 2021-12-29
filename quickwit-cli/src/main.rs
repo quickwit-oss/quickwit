@@ -80,6 +80,118 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
 }
 
 #[allow(dead_code)]
+fn markdown_for_subcommand(
+    subcommand: &App,
+    command_group: Vec<String>,
+    doc_extensions: &toml::Value,
+) {
+    use toml::Value;
+
+    let subcommand_name = subcommand.get_name();
+
+    let command_name = format!("{} {}", command_group.join(" "), subcommand_name);
+    println!("### {}\n", command_name);
+
+    let subcommand_ext: Option<&Value> = {
+        let mut val_opt: Option<&Value> = doc_extensions.get(command_group[0].to_owned());
+        for command in command_group
+            .iter()
+            .skip(1)
+            .chain(&[subcommand_name.to_owned()])
+        {
+            if let Some(val) = val_opt {
+                val_opt = val.get(command);
+            }
+        }
+        val_opt
+    };
+    let long_about_opt: Option<&str> = subcommand_ext
+        .map(|el| el.get("long_about").map(|el| el.as_str()).flatten())
+        .flatten();
+
+    let note: Option<&str> = subcommand_ext
+        .map(|el| el.get("note").map(|el| el.as_str()).flatten())
+        .flatten();
+
+    let examples_opt: Option<&Vec<Value>> = subcommand_ext
+        .map(|el| el.get("examples").map(|el| el.as_array()).flatten())
+        .flatten();
+
+    if let Some(about) = long_about_opt {
+        if !about.trim().is_empty() {
+            println!("{}", about);
+        }
+    } else if let Some(about) = subcommand.get_about() {
+        if !about.trim().is_empty() {
+            println!("{}", about);
+        }
+    }
+
+    if let Some(note) = note {
+        println!(":::note");
+        println!("{}", note);
+        println!(":::");
+    }
+
+    println!(
+        "`quickwit {} {} [args]`",
+        command_group.join(" "),
+        subcommand.get_name()
+    );
+
+    let arguments = subcommand
+        .get_arguments()
+        .filter(|arg| !(arg.get_name() == "help" || arg.get_name() == "version"))
+        .collect::<Vec<_>>();
+    if !arguments.is_empty() {
+        println!("\n*Synopsis*\n");
+
+        println!("```bash");
+        println!("quickwit {}", command_name);
+        for arg in &arguments {
+            let is_required = arg.is_set(ArgSettings::Required);
+            let is_bool = !arg.is_set(ArgSettings::TakesValue);
+
+            let mut commando = format!("--{}", arg.get_name());
+            if !is_bool {
+                commando = format!("{} <{}>", commando, arg.get_name());
+            }
+            if !is_required {
+                commando = format!("[{}]", commando);
+            }
+            println!("    {}", commando);
+        }
+        println!("```");
+
+        println!("\n*Options*\n");
+        for arg in arguments {
+            let default = if let Some(val) = arg.get_default_values().get(0) {
+                format!(" (Default: {})", val.to_str().unwrap())
+            } else {
+                "".to_string()
+            };
+            println!(
+                "`--{}` {}{}",
+                arg.get_name(),
+                arg.get_about().unwrap_or_default(),
+                default
+            );
+        }
+    }
+
+    if let Some(examples) = examples_opt {
+        println!("\n*Examples*\n");
+        for example in examples {
+            println!("*{}*", example.get("name").unwrap().as_str().unwrap());
+            println!(
+                "```bash\n{}\n```\n",
+                example.get("command").unwrap().as_str().unwrap()
+            );
+        }
+    }
+}
+
+#[allow(dead_code)]
 fn generate_markdown_from_clap(app: &App) {
     use toml::Value;
 
@@ -92,7 +204,7 @@ fn generate_markdown_from_clap(app: &App) {
         println!("# {}", command_name);
         if let Some(about) = command.get_about() {
             if !about.trim().is_empty() {
-                println!("\n*Description*");
+                // println!("\n*Description*");
                 println!("{}\n", about);
             }
         }
@@ -101,79 +213,15 @@ fn generate_markdown_from_clap(app: &App) {
             .get_subcommands()
             .filter(|command| command.get_name() != "demux")
         {
-            let subcommand_name = subcommand.get_name(); // index, split, source, service
-            println!("### {} {}\n", command_name, subcommand);
+            let commands = vec![command.get_name().to_string()];
+            markdown_for_subcommand(subcommand, commands, &doc_extensions);
 
-            let subcommand_ext: Option<&Value> = doc_extensions
-                .get(command_name)
-                .map(|val| val.get(subcommand_name))
-                .flatten();
-            let long_about_opt: Option<&str> = subcommand_ext
-                .map(|el| el.get("long_about").map(|el| el.as_str()).flatten())
-                .flatten();
-
-            let examples_opt: Option<&Vec<Value>> = subcommand_ext
-                .map(|el| el.get("examples").map(|el| el.as_array()).flatten())
-                .flatten();
-
-            if let Some(about) = long_about_opt {
-                if !about.trim().is_empty() {
-                    println!("{}", about);
-                }
-            } else if let Some(about) = subcommand.get_about() {
-                if !about.trim().is_empty() {
-                    println!("{}", about);
-                }
-            }
-            println!(
-                "`quickwit {} {} [args]`",
-                command_name,
-                subcommand.get_name()
-            );
-
-            println!("\n*Synopsis*\n");
-
-            println!("```bash");
-            println!("quickwit {} {}", command_name, subcommand.get_name());
-            for arg in subcommand
-                .get_arguments()
-                .filter(|arg| !(arg.get_name() == "help" || arg.get_name() == "version"))
-            {
-                let is_required = arg.is_set(ArgSettings::Required);
-                let is_bool = !arg.is_set(ArgSettings::TakesValue);
-
-                let mut commando = format!("--{}", arg.get_name());
-                if !is_bool {
-                    commando = format!("{} <{}>", commando, arg.get_name());
-                }
-                if !is_required {
-                    commando = format!("[{}]", commando);
-                }
-                println!("    {}", commando);
-            }
-            println!("```");
-
-            println!("\n*Options*\n");
-            for arg in subcommand
-                .get_arguments()
-                .filter(|arg| !(arg.get_name() == "help" || arg.get_name() == "version"))
-            {
-                println!(
-                    "`--{}` {}",
-                    arg.get_name(),
-                    arg.get_about().unwrap_or_default()
-                );
-            }
-
-            if let Some(examples) = examples_opt {
-                println!("\n*Examples*\n");
-                for example in examples {
-                    println!("*{}*", example.get("name").unwrap().as_str().unwrap());
-                    println!(
-                        "```bash\n{}\n```\n",
-                        example.get("command").unwrap().as_str().unwrap()
-                    );
-                }
+            for subsubcommand in subcommand.get_subcommands() {
+                let commands = vec![
+                    command.get_name().to_string(),
+                    subcommand.get_name().to_string(),
+                ];
+                markdown_for_subcommand(subsubcommand, commands, &doc_extensions);
             }
         }
     }
