@@ -65,15 +65,13 @@ doc_mapping:
     - name: url
       type: text
       tokenizer: raw
-      stored: true # Field is stored. 
 
 search_settings:
   # If you do not specify fields in your query, those fields will be used.
   default_search_fields: [title, body]
 ```
 
-Let's make use of the default configuration file provided in quickwit installation throughout this guide.
-by setting the `QW_CONFIG` environment variable.
+Let's make use of the default configuration file provided in quickwit installation throughout this guide by setting the `QW_CONFIG` environment variable.
 
 ```bash
 export QW_CONFIG=./config/quickwit.yaml
@@ -82,10 +80,10 @@ export QW_CONFIG=./config/quickwit.yaml
 Now we can create the index with the command:
 
 ```bash
-./quickwit index create --index wikipedia --index-config=./wikipedia_index_config.yaml
+./quickwit index create --index wikipedia --index-config ./wikipedia_index_config.yaml
 ```
 
-Check that a directory `$(pwd)/qwdata/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../overview/architecture.md#index-metadata).
+Check that a directory `./qwdata/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../overview/architecture.md#index-metadata).
 You're now ready to fill the index.
 
 
@@ -99,7 +97,7 @@ Let's download [a bunch of wikipedia articles (10 000)](https://quickwit-dataset
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 
 # Index our 10k documents.
-./quickwit index ingest --index wikipedia --input-path=./wiki-articles-10000.json
+./quickwit index ingest --index wikipedia --input-path ./wiki-articles-10000.json
 ```
 
 Wait one second or two and check if it worked by using `search` command:
