@@ -19,7 +19,7 @@
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_metastore::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
+use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -47,7 +47,7 @@ impl TypedSourceFactory for VecSourceFactory {
     type Params = VecSourceParams;
     async fn typed_create_source(
         params: VecSourceParams,
-        checkpoint: Checkpoint,
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
         let partition = PartitionId::from(params.partition.as_str());
         let next_item_idx = match checkpoint.position_for_partition(&partition) {
@@ -136,7 +136,7 @@ mod tests {
             partition: "partition".to_string(),
         };
         let vec_source =
-            VecSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
+            VecSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
             batch_sink: mailbox,
@@ -170,7 +170,7 @@ mod tests {
             batch_num_docs: 3,
             partition: "".to_string(),
         };
-        let mut checkpoint = Checkpoint::default();
+        let mut checkpoint = SourceCheckpoint::default();
         checkpoint.try_apply_delta(CheckpointDelta::from(0u64..2u64))?;
 
         let vec_source = VecSourceFactory::typed_create_source(params, checkpoint).await?;

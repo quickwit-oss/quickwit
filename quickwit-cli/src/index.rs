@@ -36,9 +36,7 @@ use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_ind
 use quickwit_index_config::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingServer};
 use quickwit_indexing::models::IndexingStatistics;
-use quickwit_indexing::source::FileSourceParams;
-use quickwit_indexing::STDIN_SOURCE_ID;
-use quickwit_metastore::checkpoint::Checkpoint;
+use quickwit_indexing::source::{FileSourceParams, INGEST_SOURCE_ID};
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
@@ -603,7 +601,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let index_metadata = IndexMetadata {
         index_id: args.index_id.clone(),
         index_uri,
-        checkpoint: Checkpoint::default(),
+        checkpoint: Default::default(),
         sources: index_config.sources(),
         doc_mapping: index_config.doc_mapping,
         indexing_settings: index_config.indexing_settings,
@@ -623,19 +621,15 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
 
     let config = load_quickwit_config(args.config_uri, args.data_dir).await?;
 
-    let source_id = args
-        .input_path_opt
-        .as_ref()
-        .map(|_| "file-source")
-        .unwrap_or(STDIN_SOURCE_ID)
-        .to_string();
-    let source_type = "file".to_string();
-    let params = serde_json::to_value(FileSourceParams {
-        filepath: args.input_path_opt.clone(),
-    })?;
+    let file_source_params = if let Some(filepath) = args.input_path_opt.as_ref() {
+        FileSourceParams::for_file(filepath.clone())
+    } else {
+        FileSourceParams::stdin()
+    };
+    let params = serde_json::to_value(file_source_params)?;
     let source = SourceConfig {
-        source_id,
-        source_type,
+        source_id: INGEST_SOURCE_ID.to_string(),
+        source_type: "file".to_string(),
         params,
     };
     run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source)).await?;

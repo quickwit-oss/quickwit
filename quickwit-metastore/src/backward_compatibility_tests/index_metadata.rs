@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use byte_unit::Byte;
 use quickwit_config::{
@@ -25,7 +25,9 @@ use quickwit_config::{
 };
 use quickwit_index_config::SortOrder;
 
-use crate::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
+use crate::checkpoint::{
+    CheckpointDelta, IndexCheckpoint, PartitionId, Position, SourceCheckpoint,
+};
 use crate::IndexMetadata;
 
 pub(crate) fn test_index_metadata_eq(
@@ -81,13 +83,16 @@ pub(crate) fn test_index_metadata_eq(
 
 /// Creates a new [`IndexMetadata`] object against which backward compatibility tests will be run.
 pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
-    let mut checkpoint = Checkpoint::default();
+    let mut source_checkpoint = SourceCheckpoint::default();
     let delta = CheckpointDelta::from_partition_delta(
         PartitionId::from(0),
         Position::Beginning,
         Position::from(42),
     );
-    checkpoint.try_apply_delta(delta).unwrap();
+    source_checkpoint.try_apply_delta(delta).unwrap();
+    let mut per_source_checkpoint: BTreeMap<String, SourceCheckpoint> = BTreeMap::default();
+    per_source_checkpoint.insert("kafka-source".to_string(), source_checkpoint);
+    let checkpoint = IndexCheckpoint::from(per_source_checkpoint);
     let tenant_id_mapping = serde_json::from_str(
         r#"{
                 "name": "tenant_id",

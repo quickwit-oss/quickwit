@@ -24,7 +24,7 @@ use clap::ArgMatches;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
-use quickwit_metastore::checkpoint::Checkpoint;
+use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
 use serde_json::Value;
 use tabled::{Table, Tabled};
@@ -114,8 +114,13 @@ impl SourceCliCommand {
 async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri, &args.index_id).await?;
+    let source_checkpoint = index_metadata
+        .checkpoint
+        .source_checkpoint(&args.source_id)
+        .cloned()
+        .unwrap_or_default();
     let (source_table, params_table, checkpoint_table) = make_describe_source_tables(
-        index_metadata.checkpoint,
+        source_checkpoint,
         index_metadata.sources.into_values(),
         &args.source_id,
     )?;
@@ -124,7 +129,7 @@ async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
 }
 
 fn make_describe_source_tables<I>(
-    checkpoint: Checkpoint,
+    checkpoint: SourceCheckpoint,
     sources: I,
     source_id: &str,
 ) -> anyhow::Result<(Table, Table, Table)>
@@ -299,12 +304,14 @@ mod tests {
 
     #[test]
     fn test_make_describe_source_tables() {
-        assert!(
-            make_describe_source_tables(Checkpoint::default(), [], "source-does-not-exist")
-                .is_err()
-        );
+        assert!(make_describe_source_tables(
+            SourceCheckpoint::default(),
+            [],
+            "source-does-not-exist"
+        )
+        .is_err());
 
-        let checkpoint: Checkpoint = vec![("shard-000", ""), ("shard-001", "42")]
+        let checkpoint: SourceCheckpoint = vec![("shard-000", ""), ("shard-001", "42")]
             .into_iter()
             .map(|(partition_id, offset)| (PartitionId::from(partition_id), Position::from(offset)))
             .collect();
