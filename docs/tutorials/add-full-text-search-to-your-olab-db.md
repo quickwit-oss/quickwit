@@ -90,7 +90,7 @@ Let's index it.
 
 ```bash
 curl https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2021-12-text-only.json.gz
-gunzip gh-archive-2021-12-text-only.json.gz | quickwit index ingest --index gh-archive
+gunzip gh-archive-2021-12-text-only.json.gz | ./quickwit index ingest --index gh-archive
 ```
 
 You can check it's working by using the `search` command and looking for `tantivy` word:
