@@ -44,7 +44,7 @@ pub use void_source::{VoidSource, VoidSourceFactory, VoidSourceParams};
 use crate::models::IndexerMessage;
 
 /// Reserved source id used for the CLI ingest command.
-pub const INGEST_SOURCE_ID: &str = ".ingest-source";
+pub const INGEST_SOURCE_ID: &str = ".cli-ingest-source";
 
 pub type SourceContext = ActorContext<SourceActor>;
 

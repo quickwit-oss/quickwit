@@ -85,7 +85,7 @@ impl Source for FileSource {
             if let Some(filepath) = self
                 .params
                 .canonical_filepath()
-                .context("Failed to canonicalize file")?
+                .context("Failed to canonicalize file path.")?
             {
                 let filepath_str = filepath
                     .to_str()
