@@ -31,12 +31,13 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use quickwit_config::SourceConfig;
 use quickwit_index_config::tag_pruning::TagFilterAst;
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 use tracing::error;
 
-pub use self::file_backed_index::FileBackedIndex;
+use self::file_backed_index::FileBackedIndex;
 pub use self::file_backed_metastore_factory::FileBackedMetastoreFactory;
 use self::store_operations::{delete_index, fetch_index, index_exists, put_index};
 use crate::checkpoint::CheckpointDelta;
@@ -301,11 +302,12 @@ impl Metastore for FileBackedMetastore {
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
+        source_id: &str,
         split_ids: &[&'a str],
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
         self.mutate(index_id, |index| {
-            index.publish_splits(split_ids, checkpoint_delta)?;
+            index.publish_splits(source_id, split_ids, checkpoint_delta)?;
             Ok(true)
         })
         .await
@@ -343,6 +345,16 @@ impl Metastore for FileBackedMetastore {
             Ok(true)
         })
         .await
+    }
+
+    async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
+        self.mutate(index_id, |index| index.add_source(source))
+            .await
+    }
+
+    async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
+        self.mutate(index_id, |index| index.delete_source(source_id))
+            .await
     }
 
     /// -------------------------------------------------------------------------------
@@ -403,11 +415,9 @@ mod tests {
     use tokio::time::Duration;
 
     use super::store_operations::{meta_path, put_index_given_index_id};
-    use super::FileBackedIndex;
+    use super::{FileBackedIndex, FileBackedMetastore};
     use crate::checkpoint::CheckpointDelta;
-    use crate::{
-        FileBackedMetastore, IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState,
-    };
+    use crate::{IndexMetadata, Metastore, MetastoreError, SplitMetadata, SplitState};
 
     #[tokio::test]
     async fn test_file_backed_metastore_index_exists() {
@@ -500,6 +510,7 @@ mod tests {
         let metastore = FileBackedMetastore::new(Arc::new(mock_storage));
 
         let index_id = "my-index";
+        let source_id = "my-source";
         let split_id = "split-one";
         let split_metadata = SplitMetadata {
             footer_offsets: 1000..2000,
@@ -524,7 +535,7 @@ mod tests {
 
         // publish split fails
         let err = metastore
-            .publish_splits(index_id, &[split_id], CheckpointDelta::default())
+            .publish_splits(index_id, source_id, &[split_id], CheckpointDelta::default())
             .await;
         assert!(err.is_err());
 
@@ -628,6 +639,7 @@ mod tests {
     async fn test_file_backed_metastore_race_condition() {
         let metastore = Arc::new(FileBackedMetastore::for_test());
         let index_id = "my-index";
+        let source_id = "my-source";
 
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/my-index");
 
@@ -662,7 +674,12 @@ mod tests {
                 // publish split
                 let split_id = format!("split-{}", i);
                 metastore
-                    .publish_splits(index_id, &[&split_id], CheckpointDelta::default())
+                    .publish_splits(
+                        index_id,
+                        source_id,
+                        &[&split_id],
+                        CheckpointDelta::default(),
+                    )
                     .await
                     .unwrap();
             });

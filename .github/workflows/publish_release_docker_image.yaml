@@ -9,23 +9,42 @@ jobs:
     name: Build & push dockerhub image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: ./.github/actions/artifact-name
+      - name: Check out the repo
+        uses: actions/checkout@v2
+
+      - name: Extract version
+        uses: ./.github/actions/artifact-name
         with: 
           suffix: ''
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
+      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
+      
       - name: Login to DockerHub
         uses: docker/login-action@v1
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+      
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v3
+        with:
+          images: quickwit/quickwit
+          labels: |
+            org.opencontainers.image.title=Quickwit
+            maintainer=Quickwit, Inc. <hello@quickwit.io>
+            org.opencontainers.image.vendor=Quickwit, Inc.
+            org.opencontainers.image.licenses=AGPL-3.0
+      
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
           context: ./docker/
           platforms: linux/amd64,linux/arm64
           push: true
+          labels: ${{ steps.meta.outputs.labels }}
           tags: quickwit/quickwit:latest, quickwit/quickwit:${{ env.ASSET_VERSION }}

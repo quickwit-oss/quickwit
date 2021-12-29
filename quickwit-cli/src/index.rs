@@ -28,23 +28,20 @@ use chrono::Utc;
 use clap::ArgMatches;
 use colored::Colorize;
 use itertools::Itertools;
-use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
+use quickwit_actors::{ActorHandle, ObservationType};
 use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_index_config::tag_pruning::match_tag_field_name;
-use quickwit_indexing::actors::{IndexingPipeline, IndexingPipelineParams};
+use quickwit_indexing::actors::{IndexingPipeline, IndexingServer};
 use quickwit_indexing::models::IndexingStatistics;
-use quickwit_indexing::source::FileSourceParams;
-use quickwit_indexing::{index_data, STD_IN_SOURCE_ID};
-use quickwit_metastore::checkpoint::Checkpoint;
+use quickwit_indexing::source::{FileSourceParams, INGEST_SOURCE_ID};
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata, Split, SplitState};
 use quickwit_proto::{SearchRequest, SearchResponse};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use quickwit_telemetry::payload::TelemetryEvent;
-use serde_json::json;
 use tracing::{debug, info, Level};
 
 use crate::stats::{mean, percentile, std_deviation};
@@ -364,7 +361,6 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "describe");
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
-    info!(quickwit_config = ?quickwit_config);
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri)
         .await?;
@@ -587,7 +583,6 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
 
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
-    info!(quickwit_config = ?quickwit_config);
     let index_uri = if let Some(index_uri) = args.index_uri {
         index_uri.as_ref().to_string()
     } else {
@@ -606,11 +601,11 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     let index_metadata = IndexMetadata {
         index_id: args.index_id.clone(),
         index_uri,
-        checkpoint: Checkpoint::default(),
+        checkpoint: Default::default(),
+        sources: index_config.sources(),
         doc_mapping: index_config.doc_mapping,
         indexing_settings: index_config.indexing_settings,
         search_settings: index_config.search_settings,
-        sources: index_config.sources,
         create_timestamp: Utc::now().timestamp(),
         update_timestamp: Utc::now().timestamp(),
     };
@@ -624,73 +619,42 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "ingest-docs");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
 
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
-    info!(quickwit_config = ?quickwit_config);
-    // Override index source config(s) with ad-hoc source config.
-    let source_id = args
-        .input_path_opt
-        .as_ref()
-        .map(|_| "file-source")
-        .unwrap_or(STD_IN_SOURCE_ID)
-        .to_string();
-    let source_type = "file".to_string();
-    let params = serde_json::to_value(FileSourceParams {
-        filepath: args.input_path_opt.clone(),
-    })?;
-    let source_config = SourceConfig {
-        source_id,
-        source_type,
+    let config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+
+    let file_source_params = if let Some(filepath) = args.input_path_opt.as_ref() {
+        FileSourceParams::for_file(filepath.clone())
+    } else {
+        FileSourceParams::stdin()
+    };
+    let params = serde_json::to_value(file_source_params)?;
+    let source = SourceConfig {
+        source_id: INGEST_SOURCE_ID.to_string(),
+        source_type: "file".to_string(),
         params,
     };
-    run_index_checklist(
-        &quickwit_config.metastore_uri,
-        &args.index_id,
-        Some(&source_config),
-    )
-    .await?;
+    run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri)
+        .resolve(&config.metastore_uri)
         .await?;
-    let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
-
-    // Override index source config(s) with ad-hoc source config.
-    let source_id = args
-        .input_path_opt
-        .as_ref()
-        .map(|_| "file-source")
-        .unwrap_or(STD_IN_SOURCE_ID)
-        .to_string();
-    let source_type = "file".to_string();
-    let params = serde_json::to_value(FileSourceParams {
-        filepath: args.input_path_opt.clone(),
-    })?;
-    let source_config = SourceConfig {
-        source_id,
-        source_type,
-        params,
-    };
-    index_metadata.sources = vec![source_config.clone()];
-    let indexer_config = IndexerConfig {
-        ..Default::default()
-    };
+    let index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let storage_resolver = quickwit_storage_uri_resolver().clone();
+    let storage = storage_resolver.resolve(&index_metadata.index_uri)?;
 
     if args.overwrite {
         reset_index(&index_metadata, metastore.clone(), storage.clone()).await?;
     }
-    let pipeline_params = IndexingPipelineParams::try_new(
-        quickwit_config.data_dir_path.as_path(),
-        index_metadata,
+    let indexer_config = IndexerConfig {
+        ..Default::default()
+    };
+    let client = IndexingServer::spawn(
+        config.data_dir_path,
         indexer_config,
         metastore,
-        storage,
-    )
-    .await?;
-    let pipeline = IndexingPipeline::new(pipeline_params);
-    let universe = Universe::new();
-    let (_pipeline_mailbox, pipeline_handle) = universe.spawn_actor(pipeline).spawn_async();
+        storage_resolver,
+    );
+    let pipeline_id = client.spawn_pipeline(args.index_id.clone(), source).await?;
+    let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
 
     let is_stdin_atty = atty::is(atty::Stream::Stdin);
     if args.input_path_opt.is_none() && is_stdin_atty {
@@ -704,7 +668,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         );
     }
     let statistics =
-        start_statistics_reporting_loop(pipeline_handle, args.input_path_opt.clone()).await?;
+        start_statistics_reporting_loop(pipeline_handle, args.input_path_opt.is_none()).await?;
     if statistics.num_published_splits > 0 {
         println!(
             "Now, you can query the index with the following command:\nquickwit index search \
@@ -718,7 +682,6 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponse> {
     debug!(args = ?args, "search-index");
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
-    info!(quickwit_config = ?quickwit_config);
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
@@ -753,40 +716,31 @@ pub async fn merge_or_demux_cli(
     merge_enabled: bool,
     demux_enabled: bool,
 ) -> anyhow::Result<()> {
-    debug!(args = ?args, merge_enabled=merge_enabled, demux_enabled=demux_enabled, "run-merge-operations");
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
-    let source_config = SourceConfig {
-        source_id: "void-source".to_string(),
-        source_type: "void".to_string(),
-        params: json!(null),
-    };
-    run_index_checklist(
-        &quickwit_config.metastore_uri,
-        &args.index_id,
-        Some(&source_config),
-    )
-    .await?;
-    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri)
-        .await?;
-    let mut index_metadata = metastore.index_metadata(&args.index_id).await?;
-    let storage_uri_resolver = quickwit_storage_uri_resolver();
-    let storage = storage_uri_resolver.resolve(&index_metadata.index_uri)?;
-    index_metadata.sources = vec![source_config];
+    debug!(args = ?args, merge_enabled = merge_enabled, demux_enabled = demux_enabled, "run-merge-operations");
+    let config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
-    index_metadata.indexing_settings.demux_enabled = demux_enabled;
-    index_metadata.indexing_settings.merge_enabled = merge_enabled;
-    index_data(
-        quickwit_config.data_dir_path.as_path(),
-        index_metadata,
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
+    let metastore = metastore_uri_resolver
+        .resolve(&config.metastore_uri)
+        .await?;
+    let storage_resolver = quickwit_storage_uri_resolver().clone();
+    let client = IndexingServer::spawn(
+        config.data_dir_path,
         indexer_config,
         metastore,
-        storage,
-    )
-    .await?;
+        storage_resolver,
+    );
+    let pipeline_id = client
+        .spawn_merge_pipeline(args.index_id.clone(), merge_enabled, demux_enabled)
+        .await?;
+    let pipeline_handle = client.detach_pipeline(&pipeline_id).await?;
+    let (pipeline_exit_status, _pipeline_statistics) = pipeline_handle.join().await;
+    if !pipeline_exit_status.is_success() {
+        bail!(pipeline_exit_status);
+    }
     Ok(())
 }
 
@@ -795,7 +749,6 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
 
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
-    info!(quickwit_config = ?quickwit_config);
     let affected_files =
         delete_index(&quickwit_config.metastore_uri, &args.index_id, args.dry_run).await?;
     if args.dry_run {
@@ -821,7 +774,6 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
 
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
-    info!(quickwit_config = ?quickwit_config);
     let deleted_files = garbage_collect_index(
         &quickwit_config.metastore_uri,
         &args.index_id,
@@ -858,7 +810,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
 /// every once in awhile.
 pub async fn start_statistics_reporting_loop(
     pipeline_handle: ActorHandle<IndexingPipeline>,
-    input_path_opt: Option<PathBuf>,
+    is_stdin: bool,
 ) -> anyhow::Result<IndexingStatistics> {
     let mut stdout_handle = stdout();
     let start_time = Instant::now();
@@ -887,29 +839,17 @@ pub async fn start_statistics_reporting_loop(
             break;
         }
     }
-
     let (pipeline_exit_status, pipeline_statistics) = pipeline_handle.join().await;
-
-    match pipeline_exit_status {
-        ActorExitStatus::Success => {}
-        ActorExitStatus::Quit
-        | ActorExitStatus::DownstreamClosed
-        | ActorExitStatus::Killed
-        | ActorExitStatus::Panicked => {
-            bail!(pipeline_exit_status)
-        }
-        ActorExitStatus::Failure(err) => {
-            bail!(err);
-        }
+    if !pipeline_exit_status.is_success() {
+        bail!(pipeline_exit_status);
     }
-
     // If we have received zero docs at this point,
     // there is no point in displaying report.
     if pipeline_statistics.num_docs == 0 {
         return Ok(pipeline_statistics);
     }
 
-    if input_path_opt.is_none() {
+    if is_stdin {
         display_statistics(
             &mut stdout_handle,
             &mut throughput_calculator,

@@ -340,7 +340,7 @@ subcommands:
                 about: Starts a service. Currently, the only services available are `indexer` and `searcher`.
                 subcommands:
                     - searcher:
-                        about: Starts a search node, aka a `searcher`
+                        about: Starts a search process, aka a `searcher`.
                         args:
                             - config:
                                 about: Quickwit config file.
@@ -354,7 +354,7 @@ subcommands:
                                 value_name: DATA DIR
                                 env: QW_DATA_DIR
                     - indexer:
-                        about: Start an indexing server, aka an `indexer`
+                        about: Starts an indexing process, aka an `indexer`.
                         args:
                             - config:
                                 about: Quickwit config file.
@@ -367,17 +367,37 @@ subcommands:
                                 long: data-dir
                                 value_name: DATA DIR
                                 env: QW_DATA_DIR
-                            - index:
-                                about: ID of the index to run the indexer for.
-                                long: index
-                                value_name: INDEX
+                            - indexes:
+                                about: IDs of the indexes to run the indexer for.
+                                long: indexes
+                                value_name: INDEX ID
                                 required: true
+                                multiple_values: true
     - source:
         about: Manages sources.
         display_order: 5
         settings:
             - ArgRequiredElseHelp
         subcommands:
+            - delete:
+                about: Deletes a source.
+                args:
+                    - index:
+                        about: ID of the target index.
+                        long: index
+                        value_name: INDEX
+                        required: true
+                    - source:
+                        about: ID of the target source.
+                        long: source
+                        value_name: SOURCE
+                        required: true
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
+                        required: true
             - describe:
                 about: Describes a source.
                 args:
@@ -397,11 +417,6 @@ subcommands:
                         value_name: CONFIG
                         env: QW_CONFIG
                         required: true
-                    - data-dir:
-                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-                        long: data-dir
-                        value_name: DATA DIR
-                        env: QW_DATA_DIR
             - list:
                 about: Lists the sources of an index.
                 args:
@@ -416,8 +431,3 @@ subcommands:
                         value_name: CONFIG
                         env: QW_CONFIG
                         required: true
-                    - data-dir:
-                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-                        long: data-dir
-                        value_name: DATA DIR
-                        env: QW_DATA_DIR

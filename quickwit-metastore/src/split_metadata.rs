@@ -150,7 +150,14 @@ impl fmt::Display for SplitState {
     }
 }
 
-/// Helper function to provide a default UTC timestamp.
+/// Helper function to provide a UTC now timestamp to use
+/// as a default in deserialization.
+///
+/// During unit test, the value is constant.
 pub fn utc_now_timestamp() -> i64 {
-    Utc::now().timestamp()
+    if cfg!(any(test, feature = "testsuite")) {
+        1640577000
+    } else {
+        Utc::now().timestamp()
+    }
 }

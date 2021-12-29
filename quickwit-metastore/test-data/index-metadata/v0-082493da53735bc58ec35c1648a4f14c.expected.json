@@ -1,6 +1,8 @@
 {
   "checkpoint": {
-    "0000000000": "0000000042"
+    "kafka-source": {
+      "0000000000": "0000000042"
+    }
   },
   "create_timestamp": 1789,
   "doc_mapping": {
@@ -38,8 +40,8 @@
     ],
     "store_source": true,
     "tag_fields": [
-      "tenant_id",
-      "log_level"
+      "log_level",
+      "tenant_id"
     ]
   },
   "index_id": "my-index",
@@ -75,5 +77,6 @@
       "source_type": "kafka"
     }
   ],
-  "version": "0"
+  "update_timestamp": 1640577000,
+  "version": "1"
 }

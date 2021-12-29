@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsStr;
 use std::path::Path;
 use std::time::Duration;
@@ -112,9 +112,13 @@ impl Default for MergePolicy {
     }
 }
 
+fn is_false(val: &bool) -> bool {
+    !*val
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct IndexingSettings {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub demux_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub demux_field: Option<String>,
@@ -194,7 +198,7 @@ pub struct SearchSettings {
     pub default_search_fields: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SourceConfig {
     pub source_id: String,
     pub source_type: String,
@@ -255,7 +259,17 @@ impl IndexConfig {
         serde_yaml::from_slice(bytes).context("Failed to parse YAML index config file.")
     }
 
+    pub fn sources(&self) -> HashMap<String, SourceConfig> {
+        self.sources
+            .iter()
+            .map(|source| (source.source_id.clone(), source.clone()))
+            .collect()
+    }
+
     fn validate(&self) -> anyhow::Result<()> {
+        if self.sources.len() < self.sources().len() {
+            bail!("Index config contains duplicate sources.")
+        }
         Ok(())
     }
 }

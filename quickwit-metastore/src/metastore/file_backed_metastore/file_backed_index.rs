@@ -26,6 +26,7 @@ use std::ops::{Range, RangeInclusive};
 
 use chrono::Utc;
 use itertools::Itertools;
+use quickwit_config::SourceConfig;
 use quickwit_index_config::tag_pruning::TagFilterAst;
 use serde::{Deserialize, Serialize};
 
@@ -182,7 +183,7 @@ impl FileBackedIndex {
         // Try to publish the new splits.
         // We do not want to update the delta, which is why we use an empty
         // checkpoint delta.
-        self.publish_splits(new_split_ids, CheckpointDelta::default())?;
+        self.mark_splits_as_published_helper(new_split_ids)?;
 
         // Mark splits for deletion.
         self.mark_splits_for_deletion(replaced_split_ids)?;
@@ -230,13 +231,12 @@ impl FileBackedIndex {
         Ok(is_modified)
     }
 
-    /// Helper to publish a list of splits.
-    pub(crate) fn publish_splits<'a>(
+    /// Helper to mark a list of splits as published.
+    /// This function however does not update the checkpoint.
+    fn mark_splits_as_published_helper<'a>(
         &mut self,
         split_ids: &[&'a str],
-        checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
-        self.metadata.checkpoint.try_apply_delta(checkpoint_delta)?;
         let mut split_not_found_ids = vec![];
         let mut split_not_staged_ids = vec![];
         let now_timestamp = Utc::now().timestamp();
@@ -279,6 +279,19 @@ impl FileBackedIndex {
         }
 
         self.metadata.update_timestamp = now_timestamp;
+        Ok(())
+    }
+
+    pub(crate) fn publish_splits<'a>(
+        &mut self,
+        source_id: &str,
+        split_ids: &[&'a str],
+        checkpoint_delta: CheckpointDelta,
+    ) -> MetastoreResult<()> {
+        self.metadata
+            .checkpoint
+            .try_apply_delta(source_id, checkpoint_delta)?;
+        self.mark_splits_as_published_helper(split_ids)?;
         Ok(())
     }
 
@@ -369,5 +382,15 @@ impl FileBackedIndex {
 
         self.metadata.update_timestamp = Utc::now().timestamp();
         Ok(())
+    }
+
+    pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<bool> {
+        self.metadata.add_source(source)?;
+        Ok(true)
+    }
+
+    pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
+        self.metadata.delete_source(source_id)?;
+        Ok(true)
     }
 }

@@ -67,17 +67,19 @@ pub struct Index {
 }
 
 impl Index {
-    /// Make IndexMetadata from stored JSON string.
-    pub fn make_index_metadata(&self) -> anyhow::Result<IndexMetadata> {
-        let mut index_metadata =
-            serde_json::from_str::<IndexMetadata>(self.index_metadata_json.as_str())
-                .map_err(|err| anyhow::anyhow!(err))?;
-
-        // `create_timestamp` and `update_timestamp` are duplicated in `IndexMetadata` and needs to
-        // be overridden with the "true" value stored in a column.
+    /// Deserializes index metadata from JSON string stored in column and sets appropriate
+    /// timestamps.
+    pub fn index_metadata(&self) -> MetastoreResult<IndexMetadata> {
+        let mut index_metadata = serde_json::from_str::<IndexMetadata>(&self.index_metadata_json)
+            .map_err(|err| MetastoreError::InternalError {
+            message: "Failed to deserialize index metadata.".to_string(),
+            cause: anyhow::anyhow!(err),
+        })?;
+        // `create_timestamp` and `update_timestamp` are stored in dedicated columns but are also
+        // duplicated in [`IndexMetadata`]. We must override the duplicates with the authentic
+        // values upon deserialization.
         index_metadata.create_timestamp = self.create_timestamp.timestamp();
         index_metadata.update_timestamp = self.update_timestamp.timestamp();
-
         Ok(index_metadata)
     }
 }

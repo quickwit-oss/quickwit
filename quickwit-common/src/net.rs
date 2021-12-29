@@ -102,7 +102,7 @@ mod tests {
     fn test_parse_socket_addr_with_ips() {
         test_parse_socket_addr_helper("127.0.0.1", Some("127.0.0.1:1337"));
         test_parse_socket_addr_helper("127.0.0.1:100", Some("127.0.0.1:100"));
-        test_parse_socket_addr_helper("127.0.0.:100", None);
+        test_parse_socket_addr_helper("127.0..1:100", None);
         test_parse_socket_addr_helper(
             "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
             Some("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:1337"),

@@ -36,9 +36,6 @@ use crate::source::{Source, SourceContext, TypedSourceFactory};
 /// Cut a new batch as soon as we have read BATCH_NUM_BYTES_THRESHOLD.
 const BATCH_NUM_BYTES_THRESHOLD: u64 = 500_000u64;
 
-/// Source id used to define a stdin source.
-pub const STD_IN_SOURCE_ID: &str = "stdin-source";
-
 #[derive(Default, Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FileSourceCounters {
     pub previous_offset: u64,
@@ -84,18 +81,25 @@ impl Source for FileSource {
             self.counters.num_lines_processed += 1;
         }
         if !docs.is_empty() {
-            let checkpoint_delta = self
+            let mut checkpoint_delta = CheckpointDelta::default();
+            if let Some(filepath) = self
                 .params
-                .filepath
-                .as_ref()
-                .map(|filepath| {
-                    CheckpointDelta::from_partition_delta(
-                        PartitionId::from(filepath.to_string_lossy().to_string()),
+                .canonical_filepath()
+                .context("Failed to canonicalize file path.")?
+            {
+                let filepath_str = filepath
+                    .to_str()
+                    .context("Path is invalid utf-8")?
+                    .to_string();
+                let partition_id = PartitionId::from(filepath_str);
+                checkpoint_delta
+                    .record_partition_delta(
+                        partition_id,
                         Position::from(self.counters.previous_offset),
                         Position::from(self.counters.current_offset),
                     )
-                })
-                .unwrap_or_else(CheckpointDelta::default);
+                    .unwrap();
+            }
             let raw_doc_batch = RawDocBatch {
                 docs,
                 checkpoint_delta,
@@ -123,7 +127,29 @@ impl Source for FileSource {
 // TODO handle log directories.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FileSourceParams {
-    pub filepath: Option<PathBuf>, //< If None read from stdin.
+    filepath: Option<PathBuf>, //< If None read from stdin.
+}
+
+impl FileSourceParams {
+    pub fn for_file(filepath: impl Into<PathBuf>) -> Self {
+        FileSourceParams {
+            filepath: Some(filepath.into()),
+        }
+    }
+
+    pub fn stdin() -> Self {
+        FileSourceParams { filepath: None }
+    }
+
+    fn canonical_filepath(&self) -> io::Result<Option<PathBuf>> {
+        match &self.filepath {
+            Some(filepath) => {
+                let canonical_filepath = std::fs::canonicalize(filepath)?;
+                Ok(Some(canonical_filepath))
+            }
+            None => Ok(None),
+        }
+    }
 }
 
 pub struct FileSourceFactory;
@@ -137,7 +163,7 @@ impl TypedSourceFactory for FileSourceFactory {
     // TODO handle checkpoint for files.
     async fn typed_create_source(
         params: FileSourceParams,
-        checkpoint: quickwit_metastore::checkpoint::Checkpoint,
+        checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
     ) -> anyhow::Result<FileSource> {
         let mut offset = 0;
         let reader: Box<dyn AsyncRead + Send + Sync + Unpin> =
@@ -175,7 +201,7 @@ mod tests {
     use std::io::Write;
 
     use quickwit_actors::{create_test_mailbox, Command, CommandOrMessage, Universe};
-    use quickwit_metastore::checkpoint::Checkpoint;
+    use quickwit_metastore::checkpoint::SourceCheckpoint;
 
     use super::*;
     use crate::source::SourceActor;
@@ -185,11 +211,9 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-        let params = FileSourceParams {
-            filepath: Some(PathBuf::from("data/test_corpus.json")),
-        };
+        let params = FileSourceParams::for_file("data/test_corpus.json");
         let file_source =
-            FileSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
+            FileSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
             batch_sink: mailbox,
@@ -228,10 +252,9 @@ mod tests {
             temp_file.write_all("\n".as_bytes())?;
         }
         temp_file.flush()?;
-        let params = FileSourceParams {
-            filepath: Some(temp_path.as_path().to_path_buf()),
-        };
-        let source = FileSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
+        let params = FileSourceParams::for_file(temp_path.as_path());
+        let source =
+            FileSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
         let file_source_actor = SourceActor {
             source: Box::new(source),
             batch_sink: mailbox,
@@ -298,10 +321,8 @@ mod tests {
         }
         temp_file.flush()?;
         let temp_file_path = temp_file.path().canonicalize()?;
-        let params = FileSourceParams {
-            filepath: Some(temp_file_path.clone()),
-        };
-        let mut checkpoint = Checkpoint::default();
+        let params = FileSourceParams::for_file(temp_file_path.clone());
+        let mut checkpoint = SourceCheckpoint::default();
         let partition_id = PartitionId::from(temp_file_path.to_string_lossy().to_string());
         let checkpoint_delta = CheckpointDelta::from_partition_delta(
             partition_id,

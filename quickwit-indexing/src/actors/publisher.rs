@@ -59,6 +59,7 @@ impl PublisherType {
 
 pub struct Publisher {
     publisher_type: PublisherType,
+    source_id: String,
     metastore: Arc<dyn Metastore>,
     merge_planner_mailbox: Mailbox<MergePlannerMessage>,
     garbage_collector_mailbox: Mailbox<()>,
@@ -68,12 +69,14 @@ pub struct Publisher {
 impl Publisher {
     pub fn new(
         publisher_type: PublisherType,
+        source_id: String,
         metastore: Arc<dyn Metastore>,
         merge_planner_mailbox: Mailbox<MergePlannerMessage>,
         garbage_collector_mailbox: Mailbox<()>,
     ) -> Publisher {
         Publisher {
             publisher_type,
+            source_id,
             metastore,
             merge_planner_mailbox,
             garbage_collector_mailbox,
@@ -95,6 +98,7 @@ impl Publisher {
                 self.metastore
                     .publish_splits(
                         &publisher_message.index_id,
+                        &self.source_id,
                         &[new_split.split_id()],
                         checkpoint_delta.clone(),
                     )
@@ -236,26 +240,29 @@ mod tests {
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_publish_splits()
-            .withf(|index_id, split_ids, checkpoint_delta| {
+            .withf(|index_id, source_id, split_ids, checkpoint_delta| {
                 index_id == "index"
+                    && source_id == "source"
                     && split_ids[..] == ["split1"]
                     && checkpoint_delta == &CheckpointDelta::from(1..3)
             })
             .times(1)
-            .returning(|_, _, _| Ok(()));
+            .returning(|_, _, _, _| Ok(()));
         mock_metastore
             .expect_publish_splits()
-            .withf(|index_id, split_ids, checkpoint_delta| {
+            .withf(|index_id, source_id, split_ids, checkpoint_delta| {
                 index_id == "index"
+                    && source_id == "source"
                     && split_ids[..] == ["split2"]
                     && checkpoint_delta == &CheckpointDelta::from(3..7)
             })
             .times(1)
-            .returning(|_, _, _| Ok(()));
+            .returning(|_, _, _, _| Ok(()));
         let (merge_planner_mailbox, _merge_planner_inbox) = create_test_mailbox();
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
+            "source".to_string(),
             Arc::new(mock_metastore),
             merge_planner_mailbox,
             garbage_collector_mailbox,
@@ -320,6 +327,7 @@ mod tests {
         let (garbage_collector_mailbox, _garbage_collector_inbox) = create_test_mailbox();
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
+            "source".to_string(),
             Arc::new(mock_metastore),
             merge_planner_mailbox,
             garbage_collector_mailbox,

@@ -11,19 +11,19 @@
 <h4 align="center">
   <a href="https://quickwit.io/docs/getting-started/quickstart">Quickstart</a> |
   <a href="https://quickwit.io/docs/">Docs</a> |
-  <a href="https://quickwit.io/blog">Tutorials</a> |
+  <a href="https://quickwit.io/docs/tutorials/tutorial-hdfs-logs">Tutorials</a> |
   <a href="https://discord.gg/rpRRTezWhW">Chat</a> |
   <a href="https://quickwit.io/docs/getting-started/installation">Download</a>
 </h4>
 <br/>
 
-### We have just released the first version of Quickwit. Check out our [blog post](https://quickwit.io/blog/quickwit-first-release/) to grasp what we have been doing for the last six months.
+### Quickwit 0.2 is out! Check out our [blog post](https://quickwit.io/blog/quickwit-0.2-release/) to discover the new features.
 
 <br/>
 
 Quickwit is a distributed search engine built from the ground up to offer cost-efficiency and high reliability. By mere mortals for mere mortals, Quickwit's architecture is as simple as possible <sup>[1](#footnote1)</sup>.
 
-Quickwit is written in Rust and built on top of the mighty [tantivy](https://github.com/tantivy-search/tantivy) library. We designed it to index big datasets.
+Quickwit is written in Rust and built on top of the mighty [tantivy](https://github.com/quickwit-inc/tantivy) library. We designed it to index large datasets.
 
 ## Why Quickwit?
 

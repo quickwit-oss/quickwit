@@ -1,6 +1,8 @@
 {
   "checkpoint": {
-    "0000000000": "0000000042"
+    "kafka-source": {
+      "0000000000": "0000000042"
+    }
   },
   "create_timestamp": 1789,
   "doc_mapping": {
@@ -75,5 +77,6 @@
       "source_type": "kafka"
     }
   ],
-  "version": "0"
+  "update_timestamp": 1789,
+  "version": "1"
 }

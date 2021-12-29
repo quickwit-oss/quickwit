@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use itertools::Itertools;
-use quickwit_metastore::checkpoint::Checkpoint;
+use quickwit_metastore::checkpoint::SourceCheckpoint;
 use thiserror::Error;
 
 use super::Source;
@@ -32,7 +32,7 @@ pub trait SourceFactory: 'static + Send + Sync {
     async fn create_source(
         &self,
         params: serde_json::Value,
-        checkpoint: Checkpoint,
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Box<dyn Source>>;
 }
 
@@ -42,7 +42,7 @@ pub trait TypedSourceFactory: Send + Sync + 'static {
     type Params: serde::de::DeserializeOwned + Send + Sync + 'static;
     async fn typed_create_source(
         params: Self::Params,
-        checkpoint: quickwit_metastore::checkpoint::Checkpoint,
+        checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
     ) -> anyhow::Result<Self::Source>;
 }
 
@@ -51,7 +51,7 @@ impl<T: TypedSourceFactory> SourceFactory for T {
     async fn create_source(
         &self,
         params: serde_json::Value,
-        checkpoint: quickwit_metastore::checkpoint::Checkpoint,
+        checkpoint: quickwit_metastore::checkpoint::SourceCheckpoint,
     ) -> anyhow::Result<Box<dyn Source>> {
         let typed_params: T::Params = serde_json::from_value(params)?;
         let file_source = Self::typed_create_source(typed_params, checkpoint).await?;
@@ -92,7 +92,7 @@ impl SourceLoader {
     pub async fn load_source(
         &self,
         source_config: SourceConfig,
-        checkpoint: Checkpoint,
+        checkpoint: SourceCheckpoint,
     ) -> Result<Box<dyn Source>, SourceLoaderError> {
         let source_factory = self
             .type_to_factory
@@ -133,7 +133,7 @@ mod tests {
             params: json!({"items": [], "batch_num_docs": 3}),
         };
         source_loader
-            .load_source(source_config, Checkpoint::default())
+            .load_source(source_config, SourceCheckpoint::default())
             .await?;
         Ok(())
     }
@@ -147,7 +147,7 @@ mod tests {
             params: json!({"items": []}),
         };
         let source_result = source_loader
-            .load_source(source_config, Checkpoint::default())
+            .load_source(source_config, SourceCheckpoint::default())
             .await;
         assert!(matches!(
             source_result,
@@ -164,7 +164,7 @@ mod tests {
             params: json!({"item": [], "batch_num_docs": 3}), //< item is misspelled
         };
         let source_result = source_loader
-            .load_source(source_config, Checkpoint::default())
+            .load_source(source_config, SourceCheckpoint::default())
             .await;
         assert!(matches!(
             source_result,

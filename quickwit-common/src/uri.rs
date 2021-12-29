@@ -48,23 +48,15 @@ impl Uri {
         };
 
         if protocol == FILE_PROTOCOL {
-            let current_dir =
-                env::current_dir().context("Could not fetch the current directory.")?;
-
             if path.starts_with('~') {
                 // We only accept `~` (alias to the home directory) and `~/path/to/something`.
                 // If there is something following the `~` that is not `/`, we bail out.
-                if path
-                    .chars()
-                    .nth(1)
-                    .map(|second_character| second_character != '/')
-                    .unwrap_or(false)
-                {
+                if path.len() > 1 && !path.starts_with("~/") {
                     bail!("This path syntax `{}` is not supported.", uri);
                 }
 
                 let home_dir_path = home::home_dir()
-                    .context("Could not fetch the home directory.")?
+                    .context("Failed to resolve home directory.")?
                     .to_string_lossy()
                     .to_string();
 
@@ -72,6 +64,10 @@ impl Uri {
             }
 
             if !path.starts_with('/') {
+                let current_dir = env::current_dir().context(
+                    "Failed to resolve current working directory: dir does not exist or \
+                     insufficient permissions.",
+                )?;
                 path = current_dir.join(path).to_string_lossy().to_string();
             }
 

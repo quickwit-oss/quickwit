@@ -1,6 +1,8 @@
 {
   "checkpoint": {
-    "0000000000": "0000000042"
+    "kafka-source": {
+      "0000000000": "0000000042"
+    }
   },
   "create_timestamp": 1789,
   "doc_mapping": {
@@ -38,27 +40,29 @@
     ],
     "store_source": true,
     "tag_fields": [
-      "tenant_id",
-      "log_level"
+      "log_level",
+      "tenant_id"
     ]
   },
   "index_id": "my-index",
   "index_uri": "s3://quickwit-indexes/my-index",
   "indexing_settings": {
-    "commit_timeout_secs": 60,
+    "commit_timeout_secs": 301,
+    "demux_enabled": true,
     "demux_field": "tenant_id",
+    "merge_enabled": true,
     "merge_policy": {
-      "demux_factor": 8,
-      "max_merge_factor": 12,
-      "merge_factor": 10
+      "demux_factor": 7,
+      "max_merge_factor": 11,
+      "merge_factor": 9
     },
     "resources": {
-      "heap_size": 2000000000,
-      "num_threads": 1
+      "heap_size": 3,
+      "num_threads": 3
     },
     "sort_field": "timestamp",
     "sort_order": "asc",
-    "split_num_docs_target": 10000000,
+    "split_num_docs_target": 10000001,
     "timestamp_field": "timestamp"
   },
   "search_settings": {
@@ -66,5 +70,13 @@
       "message"
     ]
   },
-  "version": "0"
+  "sources": [
+    {
+      "params": {},
+      "source_id": "kafka-source",
+      "source_type": "kafka"
+    }
+  ],
+  "update_timestamp": 1789,
+  "version": "1"
 }
