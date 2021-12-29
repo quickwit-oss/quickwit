@@ -15,9 +15,9 @@ version: 0
 #
 # Path to directory where data is persisted. Default to `./qwdata`.
 #
-#data_dir: /path/to/data
+#data_dir_path: /path/to/data
 #
-# Metastore URI. Default to `data_dir/indexes` which is a file backed metastore
+# Metastore URI. Default to `{data_dir_path}/indexes` which is a file backed metastore
 # and mostly convenient for testing. A cluster would require a metastore backed by S3 or
 # postgreqsl.
 #
@@ -30,7 +30,6 @@ version: 0
 #default_index_root_uri: s3://your-bucket/indexes
 #
 #
-
 #
 # -------------------------------- Indexer settings --------------------------------
 #

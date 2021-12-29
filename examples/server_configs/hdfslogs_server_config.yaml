@@ -1,5 +1,0 @@
-version: 0
-metastore_uri: s3://path-to-your-bucket/
-searcher:
-  data_dir_path: file://~/quickwit/datadir
-  host_key_path: file://~/quickwit/datadir
