@@ -203,6 +203,7 @@ We are fetching 100 000 u64 ids in 0.012 seconds. That's 8 million rows per seco
 
 Let's do another example with a more exciting query that will match `log4j` or `log4shell` and count events per day:
 
+```SQL
 SELECT
     count(*),
     toDate(fromUnixTimestamp64Milli(created_at)) AS date
