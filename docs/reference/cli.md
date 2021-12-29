@@ -59,7 +59,6 @@ The cli is structured into highlevel commands with subcommands.
 
 
 
-
 # index
 Index operation commands such as `create`, `index`, or `search`...
 
@@ -366,7 +365,6 @@ Starts a service. Currently, the only services available are `indexer` and `sear
 ### service run searcher
 
 Starts a web server listening that exposes the [Quickwit REST API](search-api.md). 
-The `default_index_root_uri` option in quickwit.yaml, specifies the parent folder of all indexes targeted by the API (e.g. s3://your-bucket/indexes). 
 The node can optionally join a cluster using the `peer_seed` parameter (quickwit.yaml). 
 This list of node addresses is used to discover the remaining peer nodes in the cluster through the use of a gossip protocol (SWIM).
   
@@ -377,7 +375,7 @@ Behind the scenes, Quickwit need to open the following port for cluster formatio
     TCP and UDP port (default is 7280) for cluster membership protocol
     TCP port + 1 (default is 7281) for gRPC address for the distributed search
 
-In this case, if ports are already taken, the serve command will fail.
+If ports are already taken, the serve command will fail.
 
 :::
 `quickwit service run searcher [args]`
@@ -416,6 +414,25 @@ quickwit service run indexer
 # source
 Manages sources.
 
+### source delete
+
+Deletes a source.  
+`quickwit source delete [args]`
+
+*Synopsis*
+
+```bash
+quickwit source delete
+    --index <index>
+    --source <source>
+    --config <config>
+```
+
+*Options*
+
+`--index` ID of the target index.    
+`--source` ID of the target source.    
+`--config` Quickwit config file.    
 ### source describe
 
 Describes a source.  
@@ -428,7 +445,6 @@ quickwit source describe
     --index <index>
     --source <source>
     --config <config>
-    [--data-dir <data-dir>]
 ```
 
 *Options*
@@ -436,7 +452,6 @@ quickwit source describe
 `--index` ID of the target index.    
 `--source` ID of the target source.    
 `--config` Quickwit config file.    
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.    
 ### source list
 
 Lists the sources of an index.  
@@ -448,14 +463,13 @@ Lists the sources of an index.
 quickwit source list
     --index <index>
     --config <config>
-    [--data-dir <data-dir>]
 ```
 
 *Options*
 
 `--index` ID of the target index.    
 `--config` Quickwit config file.    
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.    
+
 
 
 
