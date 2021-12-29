@@ -102,7 +102,7 @@ You can check it's working by using the `search` command and looking for `tantiv
 ## Start a searcher
 
 ```bash
-quickwit service run searcher
+./quickwit service run searcher
 ```
 
 This command will start an HTTP server with a [REST API](../reference/search-api.md). We are now
