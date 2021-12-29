@@ -119,11 +119,11 @@ fn markdown_for_subcommand(
 
     if let Some(about) = long_about_opt {
         if !about.trim().is_empty() {
-            println!("{}", about);
+            println!("{}  ", about);
         }
     } else if let Some(about) = subcommand.get_about() {
         if !about.trim().is_empty() {
-            println!("{}", about);
+            println!("{}  ", about);
         }
     }
 
@@ -171,7 +171,7 @@ fn markdown_for_subcommand(
                 "".to_string()
             };
             println!(
-                "`--{}` {}{}",
+                "`--{}` {}{}    ", // space is line break
                 arg.get_name(),
                 arg.get_about().unwrap_or_default(),
                 default
@@ -248,7 +248,7 @@ async fn main() -> anyhow::Result<()> {
         .license("AGPLv3.0")
         .setting(AppSettings::DisableHelpSubcommand);
 
-    generate_markdown_from_clap(&app);
+    // generate_markdown_from_clap(&app);
 
     let matches = app.get_matches();
 
