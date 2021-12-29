@@ -19,14 +19,14 @@
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_metastore::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
+use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::models::{IndexerMessage, RawDocBatch};
 use crate::source::{Source, SourceContext, TypedSourceFactory};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct VecSourceParams {
     pub items: Vec<String>,
     pub batch_num_docs: usize,
@@ -47,7 +47,7 @@ impl TypedSourceFactory for VecSourceFactory {
     type Params = VecSourceParams;
     async fn typed_create_source(
         params: VecSourceParams,
-        checkpoint: Checkpoint,
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
         let partition = PartitionId::from(params.partition.as_str());
         let next_item_idx = match checkpoint.position_for_partition(&partition) {
@@ -104,7 +104,7 @@ impl Source for VecSource {
     }
 
     fn name(&self) -> String {
-        "vec-source".to_string()
+        "VecSource".to_string()
     }
 
     fn observable_state(&self) -> serde_json::Value {
@@ -136,12 +136,12 @@ mod tests {
             partition: "partition".to_string(),
         };
         let vec_source =
-            VecSourceFactory::typed_create_source(params, Checkpoint::default()).await?;
+            VecSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
             batch_sink: mailbox,
         };
-        assert_eq!(vec_source_actor.name(), "vec-source");
+        assert_eq!(vec_source_actor.name(), "VecSource");
         let (_vec_source_mailbox, vec_source_handle) =
             universe.spawn_actor(vec_source_actor).spawn_async();
         let (actor_termination, last_observation) = vec_source_handle.join().await;
@@ -170,7 +170,7 @@ mod tests {
             batch_num_docs: 3,
             partition: "".to_string(),
         };
-        let mut checkpoint = Checkpoint::default();
+        let mut checkpoint = SourceCheckpoint::default();
         checkpoint.try_apply_delta(CheckpointDelta::from(0u64..2u64))?;
 
         let vec_source = VecSourceFactory::typed_create_source(params, checkpoint).await?;

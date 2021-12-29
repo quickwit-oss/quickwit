@@ -17,7 +17,7 @@ path = "src/main.rs"
 async-trait = "0.1"
 anyhow = "1"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
-clap = { version = "3.0.0-beta.5", features = ["yaml"] }
+clap = { version = "=3.0.0-beta.5", features = ["yaml"] }
 quickwit-actors = { version = "0.1.0", path = "../quickwit-actors" }
 quickwit-core = { version = "0.1.0", path = "../quickwit-core" }
 quickwit-directories = { version = "0.1.0", path = "../quickwit-directories" }
@@ -31,9 +31,10 @@ quickwit-search = { version = "0.1", path = "../quickwit-search" }
 quickwit-serve = { version = "0.1", path = "../quickwit-serve" }
 quickwit-telemetry = { version = "0.1", path = "../quickwit-telemetry" }
 quickwit-proto = { version = "0.1", path = "../quickwit-proto" }
-tracing = '0.1'
-tracing-subscriber = "0.2"
-tracing-opentelemetry = "0.15"
+tabled = "0.3"
+tracing = "0.1.29"
+tracing-subscriber = {version="0.3", features=["time", "std", "env-filter"]}
+tracing-opentelemetry = "0.16"
 opentelemetry = { version = "0.16", features = ["rt-tokio"] }
 opentelemetry-jaeger = { version = "0.15", features = ["rt-tokio"] }
 tokio = { version = "1", features = ["full"] }
@@ -45,19 +46,22 @@ tempfile = "3"
 chrono = "0.4"
 humansize = "1.1.1"
 openssl-probe = { version = "0.1.4", optional = true }
-itertools = "0.10.1"
+itertools = "0.10.3"
 colored = "2.0.0"
 futures = "0.3"
 regex = "1.5.4"
+time = "0.3.5"
+console-subscriber = { version = "0.1.0", optional = true }
 
 [dev-dependencies]
-assert_cmd = "1"
+assert_cmd = "2"
 predicates = "2"
 reqwest = { version = "0.11", default-features=false, features = ["json", "rustls-tls"] }
 serial_test = "0.5.1"
 
 [features]
 ci-test = []
+tokio-console = ["console-subscriber"]
 openssl-support = ["openssl-probe"]
 release-feature-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka", "openssl-support"]
 release-feature-vendored-set = ["quickwit-metastore/postgres", "quickwit-indexing/vendored-kafka", "openssl-support"]

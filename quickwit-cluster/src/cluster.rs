@@ -17,9 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -42,48 +40,11 @@ const CLUSTER_ID: &str = "quickwit-cluster";
 
 const CLUSTER_EVENT_TIMEOUT: Duration = Duration::from_millis(200);
 
-/// Reads the key that makes a node unique from the given file.
-/// If the file does not exist, it generates an ID and writes it to the file
-/// so that it can be reused on reboot.
-pub fn read_or_create_host_key(host_key_path: &Path) -> ClusterResult<Uuid> {
-    let host_key;
-
-    if host_key_path.exists() {
-        let host_key_contents =
-            fs::read(host_key_path).map_err(|err| ClusterError::ReadHostKeyError {
-                message: err.to_string(),
-            })?;
-        host_key = Uuid::from_slice(host_key_contents.as_slice()).map_err(|err| {
-            ClusterError::ReadHostKeyError {
-                message: err.to_string(),
-            }
-        })?;
-        info!(host_key=?host_key, host_key_path=?host_key_path, "Read existing host key.");
-    } else {
-        if let Some(dir) = host_key_path.parent() {
-            if !dir.exists() {
-                fs::create_dir_all(dir).map_err(|err| ClusterError::WriteHostKeyError {
-                    message: err.to_string(),
-                })?;
-            }
-        }
-        host_key = Uuid::new_v4();
-        fs::write(host_key_path, host_key.as_bytes()).map_err(|err| {
-            ClusterError::WriteHostKeyError {
-                message: err.to_string(),
-            }
-        })?;
-        info!(host_key=?host_key, host_key_path=?host_key_path, "Create new host key.");
-    }
-
-    Ok(host_key)
-}
-
 /// A member information.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Member {
     /// An ID that makes a member unique.
-    pub host_key: Uuid,
+    pub node_id: String,
 
     /// Listen address.
     pub listen_addr: SocketAddr,
@@ -114,23 +75,25 @@ impl Cluster {
     /// Create a cluster given a host key and a listen address.
     /// When a cluster is created, the thread that monitors cluster events
     /// will be started at the same time.
-    pub fn new(host_key: Uuid, listen_addr: SocketAddr) -> ClusterResult<Self> {
-        info!( host_key=?host_key, listen_addr=?listen_addr, "Create new cluster.");
+    pub fn new(node_id: String, listen_addr: SocketAddr) -> ClusterResult<Self> {
+        info!( node_id=?node_id, listen_addr=?listen_addr, "Create new cluster.");
         let config = ArtilleryClusterConfig {
             cluster_key: CLUSTER_ID.as_bytes().to_vec(),
             listen_addr,
             ..Default::default()
         };
         let (artillery_cluster, swim_event_rx) =
-            ArtilleryCluster::create_and_start(host_key, config).map_err(|err| match err {
-                ArtilleryError::Io(io_err) => ClusterError::UDPPortBindingError {
-                    port: listen_addr.port(),
-                    message: io_err.to_string(),
+            ArtilleryCluster::create_and_start(node_id.clone(), config).map_err(
+                |err| match err {
+                    ArtilleryError::Io(io_err) => ClusterError::UDPPortBindingError {
+                        port: listen_addr.port(),
+                        message: io_err.to_string(),
+                    },
+                    _ => ClusterError::CreateClusterError {
+                        message: err.to_string(),
+                    },
                 },
-                _ => ClusterError::CreateClusterError {
-                    message: err.to_string(),
-                },
-            })?;
+            )?;
 
         let (members_sender, members_receiver) = watch::channel(Vec::new());
 
@@ -144,7 +107,7 @@ impl Cluster {
 
         // Add itself as the initial member of the cluster.
         let member = Member {
-            host_key,
+            node_id,
             listen_addr,
             is_self: true,
         };
@@ -207,8 +170,10 @@ impl Cluster {
 
     /// Specify the address of a running node and join the cluster to which the node belongs.
     pub async fn add_peer_node(&self, peer_addr: SocketAddr) {
-        info!(self_addr = ?self.listen_addr, peer_addr = ?peer_addr, "Adding peer node.");
-        self.artillery_cluster.add_seed_node(peer_addr);
+        if peer_addr != self.listen_addr {
+            info!(self_addr = ?self.listen_addr, peer_addr = ?peer_addr, "Adding peer node.");
+            self.artillery_cluster.add_seed_node(peer_addr);
+        }
     }
 
     /// Leave the cluster.
@@ -248,7 +213,7 @@ fn convert_member(member: ArtilleryMember, self_listen_addr: SocketAddr) -> Memb
     };
 
     Member {
-        host_key: member.host_key(),
+        node_id: member.node_id(),
         listen_addr,
         is_self: member.is_current(),
     }
@@ -258,29 +223,29 @@ fn convert_member(member: ArtilleryMember, self_listen_addr: SocketAddr) -> Memb
 fn log_artillery_event(artillery_member_event: ArtilleryMemberEvent) {
     match artillery_member_event {
         ArtilleryMemberEvent::Joined(artillery_member) => {
-            info!(host_key=?artillery_member.host_key(), remote_host=?artillery_member.remote_host(), "Joined.");
+            info!(node_id=?artillery_member.node_id(), remote_host=?artillery_member.remote_host(), "Joined.");
         }
         ArtilleryMemberEvent::WentUp(artillery_member) => {
-            info!(host_key=?artillery_member.host_key(), remote_host=?artillery_member.remote_host(), "Went up.");
+            info!(node_id=?artillery_member.node_id(), remote_host=?artillery_member.remote_host(), "Went up.");
         }
         ArtilleryMemberEvent::SuspectedDown(artillery_member) => {
-            warn!(host_key=?artillery_member.host_key(), remote_host=?artillery_member.remote_host(), "Suspected down.");
+            warn!(node_id=?artillery_member.node_id(), remote_host=?artillery_member.remote_host(), "Suspected down.");
         }
         ArtilleryMemberEvent::WentDown(artillery_member) => {
-            error!(host_key=?artillery_member.host_key(), remote_host=?artillery_member.remote_host(), "Went down.");
+            error!(node_id=?artillery_member.node_id(), remote_host=?artillery_member.remote_host(), "Went down.");
         }
         ArtilleryMemberEvent::Left(artillery_member) => {
-            info!(host_key=?artillery_member.host_key(), remote_host=?artillery_member.remote_host(), "Left.");
+            info!(node_id=?artillery_member.node_id(), remote_host=?artillery_member.remote_host(), "Left.");
         }
         ArtilleryMemberEvent::Payload(artillery_member, message) => {
-            info!(host_key=?artillery_member.host_key(), remote_host=?artillery_member.remote_host(), message=?message, "Payload.");
+            info!(node_id=?artillery_member.node_id(), remote_host=?artillery_member.remote_host(), message=?message, "Payload.");
         }
     };
 }
 
 /// Creates a local cluster listening on a random port.
 pub fn create_cluster_for_test() -> anyhow::Result<Cluster> {
-    let peer_uuid = Uuid::new_v4();
+    let peer_uuid = Uuid::new_v4().to_string();
     let port = quickwit_common::net::find_available_port()?;
     let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
     let cluster = Cluster::new(peer_uuid, peer_addr)?;
@@ -296,45 +261,29 @@ mod tests {
     use quickwit_swim::prelude::{ArtilleryMember, ArtilleryMemberState};
 
     use super::*;
-    use crate::cluster::{convert_member, read_or_create_host_key, Member};
-
-    #[tokio::test]
-    async fn test_cluster_read_host_key() {
-        let tmp_dir = tempfile::tempdir().unwrap();
-        let host_key_path = tmp_dir.path().join("host_key");
-
-        // Since the directory does not exist, generate UUID on the specified host_key_path.
-        let host_key1 = read_or_create_host_key(host_key_path.as_path()).unwrap();
-
-        // Read the generated UUID.
-        let host_key2 = read_or_create_host_key(host_key_path.as_path()).unwrap();
-
-        assert_eq!(host_key1, host_key2);
-    }
+    use crate::cluster::{convert_member, Member};
 
     #[tokio::test]
     async fn test_cluster_convert_member() {
-        let tmp_dir = tempfile::tempdir().unwrap();
-        let host_key_path = tmp_dir.path().join("host_key");
-        let host_key = read_or_create_host_key(host_key_path.as_path()).unwrap();
+        let node_id = Uuid::new_v4().to_string();
         let remote_host = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
         {
             let artillery_member =
-                ArtilleryMember::new(host_key, remote_host, 0, ArtilleryMemberState::Alive);
+                ArtilleryMember::new(node_id.clone(), remote_host, 0, ArtilleryMemberState::Alive);
 
             let member = convert_member(artillery_member, remote_host);
             let expected_member = Member {
-                host_key,
+                node_id: node_id.clone(),
                 listen_addr: remote_host,
                 is_self: false,
             };
             assert_eq!(member, expected_member);
         }
         {
-            let artillery_member = ArtilleryMember::current(host_key);
+            let artillery_member = ArtilleryMember::current(node_id.clone());
             let member = convert_member(artillery_member, remote_host);
             let expected_member = Member {
-                host_key,
+                node_id,
                 listen_addr: remote_host,
                 is_self: true,
             };

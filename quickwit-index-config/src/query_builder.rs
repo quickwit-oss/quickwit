@@ -44,7 +44,8 @@ pub(crate) fn build_query(
         resolve_fields(&schema, &request.search_fields)?
     };
 
-    let query_parser = QueryParser::new(schema, search_fields, TokenizerManager::default());
+    let mut query_parser = QueryParser::new(schema, search_fields, TokenizerManager::default());
+    query_parser.set_conjunction_by_default();
     let query = query_parser.parse_query(&request.query)?;
     Ok(query)
 }
@@ -110,7 +111,8 @@ mod test {
             end_timestamp: None,
             max_hits: 20,
             start_offset: 0,
-            tags: vec![],
+            sort_order: None,
+            sort_by_field: None,
         };
 
         let default_field_names = vec!["title".to_string(), "desc".to_string()];

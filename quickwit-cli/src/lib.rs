@@ -17,19 +17,25 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::bail;
 use once_cell::sync::Lazy;
 use quickwit_common::run_checklist;
-use quickwit_config::SourceConfig;
+use quickwit_common::uri::Uri;
+use quickwit_config::{QuickwitConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
-use quickwit_metastore::MetastoreUriResolver;
-use quickwit_storage::quickwit_storage_uri_resolver;
+use quickwit_metastore::quickwit_metastore_uri_resolver;
+use quickwit_storage::{load_file, quickwit_storage_uri_resolver};
 use regex::Regex;
+use tabled::{Alignment, Header, Modify, Row, Style, Table, Tabled};
+use tracing::info;
 
+pub mod cli;
 pub mod index;
 pub mod service;
+pub mod source;
 pub mod split;
 pub mod stats;
 
@@ -37,7 +43,10 @@ pub mod stats;
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
 /// This environment variable can be set to send telemetry events to a jaeger instance.
-pub const QUICKWIT_JAEGER_ENABLED_ENV_KEY: &str = "QUICKWIT_JAEGER_ENABLED";
+pub const QW_JAEGER_ENABLED_ENV_KEY: &str = "QW_JAEGER_ENABLED";
+
+/// This environment variable can be set to send data to tokio console.
+pub const QW_TOKIO_CONSOLE_ENABLED_ENV_KEY: &str = "QW_TOKIO_CONSOLE_ENABLED";
 
 /// Regular expression representing a valid duration with unit.
 pub const DURATION_WITH_UNIT_PATTERN: &str = r#"^(\d{1,3})(s|m|h|d)$"#;
@@ -60,6 +69,16 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
     };
 }
 
+async fn load_quickwit_config(
+    uri: Uri,
+    data_dir: Option<PathBuf>,
+) -> anyhow::Result<QuickwitConfig> {
+    let config_content = load_file(&uri).await?;
+    let config = QuickwitConfig::load(&uri, config_content.as_slice(), data_dir).await?;
+    info!(config_uri = %uri, config = ?config, "Loaded Quickwit config.");
+    Ok(config)
+}
+
 /// Runs connectivity checks for a given `metastore_uri` and `index_id`.
 /// Optionaly, it takes a `SourceConfig` that will be checked instead
 /// of the index's sources.
@@ -69,7 +88,7 @@ pub async fn run_index_checklist(
     source_to_check: Option<&SourceConfig>,
 ) -> anyhow::Result<()> {
     let mut checks: Vec<(&str, anyhow::Result<()>)> = Vec::new();
-    let metastore_uri_resolver = MetastoreUriResolver::default();
+    let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver.resolve(metastore_uri).await?;
     checks.push(("metastore", metastore.check_connectivity().await));
 
@@ -84,7 +103,7 @@ pub async fn run_index_checklist(
             check_source_connectivity(source_config).await,
         ));
     } else {
-        for source_config in index_metadata.sources.iter() {
+        for source_config in index_metadata.sources.values() {
             checks.push((
                 source_config.source_id.as_str(),
                 check_source_connectivity(source_config).await,
@@ -123,4 +142,12 @@ mod tests {
         assert!(parse_duration_with_unit("1h30").is_err());
         Ok(())
     }
+}
+
+/// Construct a table for display.
+pub fn make_table<T: Tabled>(header: &str, rows: impl IntoIterator<Item = T>) -> Table {
+    Table::new(rows)
+        .with(Header(header))
+        .with(Modify::new(Row(2..)).with(Alignment::left()))
+        .with(Style::psql())
 }

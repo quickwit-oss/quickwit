@@ -92,7 +92,7 @@ impl Actor for GarbageCollector {
 impl AsyncActor for GarbageCollector {
     async fn initialize(
         &mut self,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         self.process_message((), ctx).await
     }
@@ -100,7 +100,7 @@ impl AsyncActor for GarbageCollector {
     async fn process_message(
         &mut self,
         _: (),
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
         info!("garbage-collect-operation");
         self.counters.num_passes += 1;
@@ -145,15 +145,19 @@ mod tests {
 
     use super::*;
 
-    fn make_split(id: &str) -> Split {
-        Split {
-            split_metadata: SplitMetadata {
-                split_id: id.to_string(),
-                footer_offsets: 5..20,
-                ..Default::default()
-            },
-            ..Default::default()
-        }
+    fn make_splits(split_ids: &[&str], split_state: SplitState) -> Vec<Split> {
+        split_ids
+            .iter()
+            .map(|split_id| Split {
+                split_metadata: SplitMetadata {
+                    split_id: split_id.to_string(),
+                    footer_offsets: 5..20,
+                    ..Default::default()
+                },
+                split_state,
+                update_timestamp: 0i64,
+            })
+            .collect()
     }
 
     #[tokio::test]
@@ -176,11 +180,11 @@ mod tests {
             |index_id, split_state, _time_range, _tags| {
                 assert_eq!(index_id, "foo-index");
                 let splits = match split_state {
-                    SplitState::Staged => vec![make_split("a")],
-                    SplitState::ScheduledForDeletion => {
-                        vec![make_split("a"), make_split("b"), make_split("c")]
+                    SplitState::Staged => make_splits(&["a"], SplitState::Staged),
+                    SplitState::MarkedForDeletion => {
+                        make_splits(&["a", "b", "c"], SplitState::MarkedForDeletion)
                     }
-                    _ => panic!("only Staged and ScheduledForDeletion expected."),
+                    _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
             },
@@ -232,9 +236,11 @@ mod tests {
             |index_id, split_state, _time_range, _tags| {
                 assert_eq!(index_id, "foo-index");
                 let splits = match split_state {
-                    SplitState::Staged => vec![make_split("a")],
-                    SplitState::ScheduledForDeletion => vec![make_split("a"), make_split("b")],
-                    _ => panic!("only Staged and ScheduledForDeletion expected."),
+                    SplitState::Staged => make_splits(&["a"], SplitState::Staged),
+                    SplitState::MarkedForDeletion => {
+                        make_splits(&["a", "b"], SplitState::MarkedForDeletion)
+                    }
+                    _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
                 Ok(splits)
             },

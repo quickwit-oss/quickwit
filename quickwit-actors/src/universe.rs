@@ -88,9 +88,9 @@ impl Universe {
     pub async fn send_message<M>(
         &self,
         mailbox: &Mailbox<M>,
-        msg: M,
+        message: M,
     ) -> Result<(), crate::SendError> {
-        mailbox.send_message(msg).await
+        mailbox.send_message(message).await
     }
 
     /// Inform an actor to process pending message and then stop processing new messages
@@ -139,17 +139,14 @@ mod tests {
 
     #[async_trait]
     impl AsyncActor for ActorWithSchedule {
-        async fn initialize(
-            &mut self,
-            ctx: &ActorContext<Self::Message>,
-        ) -> Result<(), ActorExitStatus> {
+        async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
             self.process_message((), ctx).await
         }
 
         async fn process_message(
             &mut self,
             _: (),
-            ctx: &ActorContext<Self::Message>,
+            ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
             ctx.schedule_self_msg(Duration::from_secs(60), ()).await;

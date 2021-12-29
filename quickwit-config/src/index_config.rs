@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsStr;
 use std::path::Path;
 use std::time::Duration;
@@ -24,15 +25,15 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use byte_unit::Byte;
 use json_comments::StripComments;
+use quickwit_common::uri::Uri;
 use quickwit_index_config::{FieldMappingEntry, SortBy, SortOrder};
-use quickwit_storage::load_file;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DocMapping {
     pub field_mappings: Vec<FieldMappingEntry>,
     #[serde(default)]
-    pub tag_fields: Vec<String>,
+    pub tag_fields: BTreeSet<String>,
     #[serde(default = "DocMapping::default_store_source")]
     pub store_source: bool,
 }
@@ -111,9 +112,13 @@ impl Default for MergePolicy {
     }
 }
 
+fn is_false(val: &bool) -> bool {
+    !*val
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct IndexingSettings {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub demux_enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub demux_field: Option<String>,
@@ -124,9 +129,10 @@ pub struct IndexingSettings {
     pub sort_order: Option<SortOrder>,
     #[serde(default = "IndexingSettings::default_commit_timeout_secs")]
     pub commit_timeout_secs: usize,
-    /// The maximum number of documents allowed in a split.
-    #[serde(default = "IndexingSettings::default_split_max_num_docs")]
-    pub split_max_num_docs: usize,
+    /// A split containing a number of docs greather than or equal to this value is considered
+    /// mature.
+    #[serde(default = "IndexingSettings::default_split_num_docs_target")]
+    pub split_num_docs_target: usize,
     #[serde(default = "IndexingSettings::default_merge_enabled")]
     pub merge_enabled: bool,
     #[serde(default)]
@@ -144,7 +150,7 @@ impl IndexingSettings {
         60
     }
 
-    fn default_split_max_num_docs() -> usize {
+    fn default_split_num_docs_target() -> usize {
         10_000_000
     }
 
@@ -178,7 +184,7 @@ impl Default for IndexingSettings {
             sort_field: None,
             sort_order: None,
             commit_timeout_secs: Self::default_commit_timeout_secs(),
-            split_max_num_docs: Self::default_split_max_num_docs(),
+            split_num_docs_target: Self::default_split_num_docs_target(),
             merge_enabled: Self::default_merge_enabled(),
             merge_policy: MergePolicy::default(),
             resources: IndexingResources::default(),
@@ -186,12 +192,13 @@ impl Default for IndexingSettings {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct SearchSettings {
+    #[serde(default)]
     pub default_search_fields: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SourceConfig {
     pub source_id: String,
     pub source_type: String,
@@ -201,71 +208,82 @@ pub struct SourceConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexConfig {
     pub version: usize,
-    pub index_id: String,
-    pub index_uri: String,
     pub doc_mapping: DocMapping,
     #[serde(default)]
     pub indexing_settings: IndexingSettings,
+    #[serde(default)]
     pub search_settings: SearchSettings,
     #[serde(default)]
     pub sources: Vec<SourceConfig>,
 }
 
 impl IndexConfig {
-    pub async fn from_file(path: &str) -> anyhow::Result<Self> {
-        let parser_fn = match Path::new(path).extension().and_then(OsStr::to_str) {
+    // Parses IndexConfig from given uri and config content.
+    pub async fn load(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
+        let config = IndexConfig::from_uri(uri, file_content).await?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    async fn from_uri(uri: &Uri, file_content: &[u8]) -> anyhow::Result<Self> {
+        let parser_fn = match Path::new(uri.as_ref()).extension().and_then(OsStr::to_str) {
             Some("json") => Self::from_json,
             Some("toml") => Self::from_toml,
             Some("yaml") | Some("yml") => Self::from_yaml,
             Some(extension) => bail!(
-                "Failed to read index config file: file extension `.{}` is not supported. \
+                "Failed to read index config file `{}`: file extension `.{}` is not supported. \
                  Supported file formats and extensions are JSON (.json), TOML (.toml), and YAML \
                  (.yaml or .yml).",
+                uri,
                 extension
             ),
             None => bail!(
-                "Failed to read index config file: file extension is missing. Supported file \
-                 formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml)."
+                "Failed to read index config file `{}`: file extension is missing. Supported file \
+                 formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml).",
+                uri
             ),
         };
-        let file_content = load_file(path).await?;
-        parser_fn(file_content.as_slice())
+        parser_fn(file_content)
     }
 
-    pub fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
+    fn from_json(bytes: &[u8]) -> anyhow::Result<Self> {
         serde_json::from_reader(StripComments::new(bytes))
             .context("Failed to parse JSON index config file.")
     }
 
-    pub fn from_toml(bytes: &[u8]) -> anyhow::Result<Self> {
+    fn from_toml(bytes: &[u8]) -> anyhow::Result<Self> {
         toml::from_slice(bytes).context("Failed to parse TOML index config file.")
     }
 
-    pub fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
+    fn from_yaml(bytes: &[u8]) -> anyhow::Result<Self> {
         serde_yaml::from_slice(bytes).context("Failed to parse YAML index config file.")
     }
 
-    // TODO
-    pub fn validate(&self) -> anyhow::Result<()> {
+    pub fn sources(&self) -> HashMap<String, SourceConfig> {
+        self.sources
+            .iter()
+            .map(|source| (source.source_id.clone(), source.clone()))
+            .collect()
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.sources.len() < self.sources().len() {
+            bail!("Index config contains duplicate sources.")
+        }
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
 
     fn get_resource_path(resource_filename: &str) -> String {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resources")
-            .join("tests")
-            .join("index_config")
-            .join(resource_filename)
-            .to_str()
-            .expect("Invalid resource file name.")
-            .to_string()
+        format!(
+            "{}/resources/tests/index_config/{}",
+            env!("CARGO_MANIFEST_DIR"),
+            resource_filename
+        )
     }
 
     macro_rules! test_parser {
@@ -274,10 +292,13 @@ mod tests {
             async fn $test_function_name() -> anyhow::Result<()> {
                 let index_config_filepath =
                     get_resource_path(&format!("hdfs-logs.{}", stringify!($file_extension)));
-                let index_config = IndexConfig::from_file(&index_config_filepath).await?;
+                let file = std::fs::read_to_string(&index_config_filepath).unwrap();
+                let index_config = IndexConfig::load(
+                    &Uri::try_new(&index_config_filepath).unwrap(),
+                    file.as_bytes(),
+                )
+                .await?;
                 assert_eq!(index_config.version, 0);
-                assert_eq!(index_config.index_id, "hdfs-logs");
-                assert_eq!(index_config.index_uri, "s3://quickwit-indexes/hdfs-logs");
 
                 assert_eq!(index_config.doc_mapping.field_mappings.len(), 5);
                 assert_eq!(index_config.doc_mapping.field_mappings[0].name, "tenant_id");
@@ -290,7 +311,11 @@ mod tests {
                 assert_eq!(index_config.doc_mapping.field_mappings[4].name, "resource");
 
                 assert_eq!(
-                    index_config.doc_mapping.tag_fields,
+                    index_config
+                        .doc_mapping
+                        .tag_fields
+                        .into_iter()
+                        .collect::<Vec<String>>(),
                     vec!["tenant_id".to_string()]
                 );
                 assert_eq!(index_config.doc_mapping.store_source, true);
@@ -314,7 +339,7 @@ mod tests {
                 assert_eq!(index_config.indexing_settings.commit_timeout_secs, 61);
 
                 assert_eq!(
-                    index_config.indexing_settings.split_max_num_docs,
+                    index_config.indexing_settings.split_num_docs_target,
                     10_000_001
                 );
                 assert_eq!(
@@ -365,17 +390,17 @@ mod tests {
     async fn test_index_config_default_values() {
         {
             let index_config_filepath = get_resource_path("minimal-hdfs-logs.yaml");
-            let index_config = IndexConfig::from_file(&index_config_filepath)
+            let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
+
+            let index_config_uri =
+                Uri::try_new(&get_resource_path("minimal-hdfs-logs.yaml")).unwrap();
+            let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
                 .await
                 .unwrap();
-
-            assert_eq!(index_config.index_id, "hdfs-logs");
-            assert_eq!(index_config.index_uri, "s3://quickwit-indexes/hdfs-logs");
 
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 1);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
             assert!(index_config.doc_mapping.store_source);
-
             assert_eq!(index_config.indexing_settings, IndexingSettings::default());
             assert_eq!(
                 index_config.search_settings,
@@ -387,19 +412,19 @@ mod tests {
         }
         {
             let index_config_filepath = get_resource_path("partial-hdfs-logs.yaml");
-            let index_config = IndexConfig::from_file(&index_config_filepath)
+            let file_content = std::fs::read_to_string(&index_config_filepath).unwrap();
+
+            let index_config_uri =
+                Uri::try_new(&get_resource_path("partial-hdfs-logs.yaml")).unwrap();
+            let index_config = IndexConfig::from_uri(&index_config_uri, file_content.as_bytes())
                 .await
                 .unwrap();
 
             assert_eq!(index_config.version, 0);
-            assert_eq!(index_config.index_id, "hdfs-logs");
-            assert_eq!(index_config.index_uri, "s3://quickwit-indexes/hdfs-logs");
-
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 2);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
             assert_eq!(index_config.doc_mapping.field_mappings[1].name, "timestamp");
             assert!(index_config.doc_mapping.store_source);
-
             assert_eq!(
                 index_config.indexing_settings,
                 IndexingSettings {

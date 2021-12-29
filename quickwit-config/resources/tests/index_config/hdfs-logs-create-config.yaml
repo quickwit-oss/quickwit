@@ -1,0 +1,12 @@
+version: 0
+
+doc_mapping:
+  field_mappings:
+    - name: body
+      type: text
+      tokenizer: default
+      record: position
+    - name: timestamp
+      type: i64
+      fast: true
+

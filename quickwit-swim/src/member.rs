@@ -5,7 +5,6 @@ use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
 use serde::*;
-use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Copy)]
 pub enum ArtilleryMemberState {
@@ -26,7 +25,7 @@ pub enum ArtilleryMemberState {
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ArtilleryMember {
     #[serde(rename = "h")]
-    host_key: Uuid,
+    node_id: String,
     #[serde(rename = "r")]
     remote_host: Option<SocketAddr>,
     #[serde(rename = "i")]
@@ -44,13 +43,13 @@ pub struct ArtilleryStateChange {
 
 impl ArtilleryMember {
     pub fn new(
-        host_key: Uuid,
+        node_id: String,
         remote_host: SocketAddr,
         incarnation_number: u64,
         known_state: ArtilleryMemberState,
     ) -> Self {
         ArtilleryMember {
-            host_key,
+            node_id,
             remote_host: Some(remote_host),
             incarnation_number,
             member_state: known_state,
@@ -58,9 +57,9 @@ impl ArtilleryMember {
         }
     }
 
-    pub fn current(host_key: Uuid) -> Self {
+    pub fn current(node_id: String) -> Self {
         ArtilleryMember {
-            host_key,
+            node_id,
             remote_host: None,
             incarnation_number: 0,
             member_state: ArtilleryMemberState::Alive,
@@ -68,8 +67,8 @@ impl ArtilleryMember {
         }
     }
 
-    pub fn host_key(&self) -> Uuid {
-        self.host_key
+    pub fn node_id(&self) -> String {
+        self.node_id.clone()
     }
 
     pub fn remote_host(&self) -> Option<SocketAddr> {
@@ -128,14 +127,14 @@ impl ArtilleryStateChange {
 impl PartialOrd for ArtilleryMember {
     fn partial_cmp(&self, rhs: &ArtilleryMember) -> Option<Ordering> {
         let t1 = (
-            self.host_key.as_bytes(),
+            self.node_id.as_bytes(),
             format!("{:?}", self.remote_host),
             self.incarnation_number,
             self.member_state,
         );
 
         let t2 = (
-            rhs.host_key.as_bytes(),
+            rhs.node_id.as_bytes(),
             format!("{:?}", rhs.remote_host),
             rhs.incarnation_number,
             rhs.member_state,
@@ -155,7 +154,7 @@ impl Debug for ArtilleryMember {
     fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
         fmt.debug_struct("ArtilleryMember")
             .field("incarnation_number", &self.incarnation_number)
-            .field("host", &self.host_key)
+            .field("host", &self.node_id)
             .field("state", &self.member_state)
             .field(
                 "drift_time_ms",
@@ -215,7 +214,7 @@ mod test {
     #[test]
     fn test_member_encode_decode() {
         let member = ArtilleryMember {
-            host_key: uuid::Uuid::new_v4(),
+            node_id: uuid::Uuid::new_v4().to_string(),
             remote_host: Some(FromStr::from_str("127.0.0.1:1337").unwrap()),
             incarnation_number: 123,
             member_state: ArtilleryMemberState::Alive,

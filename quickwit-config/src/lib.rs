@@ -17,11 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod config;
 mod index_config;
-mod server_config;
 
+pub use config::{
+    get_searcher_config_instance, IndexerConfig, QuickwitConfig, SearcherConfig,
+    SEARCHER_CONFIG_INSTANCE,
+};
 pub use index_config::{
     DocMapping, IndexConfig, IndexingResources, IndexingSettings, MergePolicy, SearchSettings,
     SourceConfig,
 };
-pub use server_config::{IndexerConfig, SearcherConfig, ServerConfig};

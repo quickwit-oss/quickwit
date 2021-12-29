@@ -21,6 +21,8 @@ table! {
     indexes (index_id) {
         index_id -> Varchar,
         index_metadata_json -> Text,
+        create_timestamp -> Timestamp,
+        update_timestamp -> Timestamp,
     }
 }
 

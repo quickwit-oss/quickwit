@@ -60,15 +60,26 @@ pub struct Index {
     pub index_id: String,
     // A JSON string containing all of the IndexMetadata.
     pub index_metadata_json: String,
+    /// Timestamp for tracking when the split was created.
+    pub create_timestamp: NaiveDateTime,
+    /// Timestamp for tracking when the split was last updated.
+    pub update_timestamp: NaiveDateTime,
 }
 
 impl Index {
-    /// Make IndexMetadata from stored JSON string.
-    pub fn make_index_metadata(&self) -> anyhow::Result<IndexMetadata> {
-        let index_metadata =
-            serde_json::from_str::<IndexMetadata>(self.index_metadata_json.as_str())
-                .map_err(|err| anyhow::anyhow!(err))?;
-
+    /// Deserializes index metadata from JSON string stored in column and sets appropriate
+    /// timestamps.
+    pub fn index_metadata(&self) -> MetastoreResult<IndexMetadata> {
+        let mut index_metadata = serde_json::from_str::<IndexMetadata>(&self.index_metadata_json)
+            .map_err(|err| MetastoreError::InternalError {
+            message: "Failed to deserialize index metadata.".to_string(),
+            cause: anyhow::anyhow!(err),
+        })?;
+        // `create_timestamp` and `update_timestamp` are stored in dedicated columns but are also
+        // duplicated in [`IndexMetadata`]. We must override the duplicates with the authentic
+        // values upon deserialization.
+        index_metadata.create_timestamp = self.create_timestamp.timestamp();
+        index_metadata.update_timestamp = self.update_timestamp.timestamp();
         Ok(index_metadata)
     }
 }

@@ -51,9 +51,9 @@ use quickwit_indexing::source::SourceConfig;
 use quickwit_indexing::{
     get_tantivy_directory_from_split_bundle, index_data, new_split_id, TestSandbox,
 };
-use quickwit_metastore::checkpoint::Checkpoint;
+use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{
-    IndexMetadata, Metastore, SingleFileMetastore, SplitMetadata, SplitState,
+    FileBackedMetastore, IndexMetadata, Metastore, SplitMetadata, SplitState,
 };
 use quickwit_storage::quickwit_storage_uri_resolver;
 use serde_json::json;
@@ -164,14 +164,14 @@ async fn test_failpoint_uploader_after_panics_right_away() -> anyhow::Result<()>
 
 async fn aux_test_failpoints() -> anyhow::Result<()> {
     quickwit_common::setup_logging_for_tests();
-    let metastore = Arc::new(SingleFileMetastore::for_test());
+    let metastore = Arc::new(FileBackedMetastore::for_test());
     let index_config = default_config_for_tests();
     metastore
         .create_index(IndexMetadata {
             index_id: "test-index".to_string(),
             index_uri: "ram://test-index/".to_string(),
             index_config: Arc::new(index_config),
-            checkpoint: Checkpoint::default(),
+            checkpoint: SourceCheckpoint::default(),
         })
         .await?;
     let params = IndexerParams {

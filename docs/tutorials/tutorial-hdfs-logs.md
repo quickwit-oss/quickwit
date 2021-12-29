@@ -44,7 +44,7 @@ curl -o hdfslogs_index_config.yaml https://raw.githubusercontent.com/quickwit-in
 The index config defines 5 fields: `timestamp`, `severity_text`, `body`, and two object fields
 for the nested values `resource` and `attributes`. 
 It also sets the [default search field](../reference/index-config.md) and a timestamp field. 
-This timestamp field will be used by Quickwit for sorting documents (descending order) and for [splits pruning](../overview/architecture.md) at query time to boost search speed. Check out the [index config docs](../reference/index-config.md) for details.
+This timestamp field will be used by Quickwit for [splits pruning](../overview/architecture.md) at query time to boost search speed. Check out the [index config docs](../reference/index-config.md) for details.
 
 
 ```yaml title="hdfslogs_index_config.yaml"

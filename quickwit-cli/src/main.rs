@@ -18,78 +18,47 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::env;
-use std::fmt::Debug;
 
-use anyhow::{bail, Context};
-use clap::{load_yaml, App, AppSettings, ArgMatches};
+use anyhow::Context;
+use clap::{load_yaml, App, AppSettings};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
-use quickwit_cli::index::IndexCliCommand;
-use quickwit_cli::service::ServiceCliCommand;
-use quickwit_cli::split::SplitCliCommand;
-use quickwit_cli::*;
+use quickwit_cli::cli::CliCommand;
+use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{info, Level};
-use tracing_subscriber::fmt::format::Format;
+use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
-#[derive(Debug, PartialEq)]
-enum CliCommand {
-    Index(IndexCliCommand),
-    Split(SplitCliCommand),
-    Service(ServiceCliCommand),
-}
-
-impl CliCommand {
-    fn default_log_level(&self) -> Level {
-        match self {
-            CliCommand::Index(subcommand) => subcommand.default_log_level(),
-            CliCommand::Split(_) => Level::ERROR,
-            CliCommand::Service(_) => Level::INFO,
-        }
-    }
-
-    fn parse_cli_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let subcommand_opt = matches.subcommand();
-        let (subcommand, submatches) =
-            subcommand_opt.ok_or_else(|| anyhow::anyhow!("Failed to parse sub-matches."))?;
-        match subcommand {
-            "index" => IndexCliCommand::parse_cli_args(submatches).map(CliCommand::Index),
-            "split" => SplitCliCommand::parse_cli_args(submatches).map(CliCommand::Split),
-            "service" => ServiceCliCommand::parse_cli_args(submatches).map(CliCommand::Service),
-            _ => bail!("Subcommand `{}` is not implemented.", subcommand),
-        }
-    }
-
-    pub async fn execute(self) -> anyhow::Result<()> {
-        match self {
-            CliCommand::Index(sub_command) => sub_command.execute().await,
-            CliCommand::Split(sub_command) => sub_command.execute().await,
-            CliCommand::Service(sub_command) => sub_command.execute().await,
-        }
-    }
-}
-
-/// Describes the way events should be formatted in the logs.
-fn event_format(
-) -> Format<tracing_subscriber::fmt::format::Full, tracing_subscriber::fmt::time::ChronoUtc> {
-    tracing_subscriber::fmt::format()
-        .with_target(true)
-        .with_timer(tracing_subscriber::fmt::time::ChronoUtc::with_format(
-            // We do not rely on ChronoUtc::from_rfc3339, because it has a nanosecond precision.
-            "%Y-%m-%dT%H:%M:%S%.3f%:z".to_string(),
-        ))
-}
-
 fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
+    #[cfg(feature = "tokio-console")]
+    {
+        use quickwit_cli::QW_TOKIO_CONSOLE_ENABLED_ENV_KEY;
+        if std::env::var_os(QW_TOKIO_CONSOLE_ENABLED_ENV_KEY).is_some() {
+            console_subscriber::init();
+            return Ok(());
+        }
+    }
     let env_filter = env::var("RUST_LOG")
         .map(|_| EnvFilter::from_default_env())
         .or_else(|_| EnvFilter::try_new(format!("quickwit={}", level)))
         .context("Failed to set up tracing env filter.")?;
     global::set_text_map_propagator(TraceContextPropagator::new());
     let registry = tracing_subscriber::registry().with(env_filter);
-    if std::env::var_os(QUICKWIT_JAEGER_ENABLED_ENV_KEY).is_some() {
+    let event_format = tracing_subscriber::fmt::format()
+        .with_target(true)
+        .with_timer(
+            // We do not rely on the Rfc3339 implementation, because it has a nanosecond precision.
+            // See discussion here: https://github.com/time-rs/time/discussions/418
+            UtcTime::new(
+                time::format_description::parse(
+                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
+                )
+                .expect("Time format invalid"),
+            ),
+        );
+    if std::env::var_os(QW_JAEGER_ENABLED_ENV_KEY).is_some() {
         // TODO: use install_batch once this issue is fixed: https://github.com/open-telemetry/opentelemetry-rust/issues/545
         let tracer = opentelemetry_jaeger::new_pipeline()
             .with_service_name("quickwit")
@@ -97,13 +66,13 @@ fn setup_logging_and_tracing(level: Level) -> anyhow::Result<()> {
             .install_simple()
             .context("Failed to initialize Jaeger exporter.")?;
         registry
-            .with(tracing_subscriber::fmt::layer().event_format(event_format()))
+            .with(tracing_subscriber::fmt::layer().event_format(event_format))
             .with(tracing_opentelemetry::layer().with_tracer(tracer))
             .try_init()
             .context("Failed to set up tracing.")?
     } else {
         registry
-            .with(tracing_subscriber::fmt::layer().event_format(event_format()))
+            .with(tracing_subscriber::fmt::layer().event_format(event_format))
             .try_init()
             .context("Failed to set up tracing.")?
     }
@@ -163,7 +132,7 @@ async fn main() -> anyhow::Result<()> {
 /// Return the about text with telemetry info.
 fn about_text() -> String {
     let mut about_text = String::from(
-        "Index your dataset on object storage & making it searchable from the command line.\n  Find more information at https://quickwit.io/docs\n\n",
+        "Index your dataset on object storage & make it searchable from the command line.\n  Find more information at https://quickwit.io/docs\n\n",
     );
     if quickwit_telemetry::is_telemetry_enabled() {
         about_text += "Telemetry: enabled";
@@ -173,19 +142,17 @@ fn about_text() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::time::Duration;
 
     use clap::{load_yaml, App, AppSettings};
+    use quickwit_cli::cli::CliCommand;
     use quickwit_cli::index::{
         CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, GarbageCollectIndexArgs,
-        IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
+        IndexCliCommand, IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
     };
-    use quickwit_cli::service::{RunIndexerArgs, RunSearcherArgs, ServiceCliCommand};
-    use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs};
-
-    use super::*;
-    use crate::CliCommand;
+    use quickwit_cli::split::{DescribeSplitArgs, ExtractSplitArgs, SplitCliCommand};
+    use quickwit_common::uri::Uri;
 
     #[test]
     fn test_parse_create_args() -> anyhow::Result<()> {
@@ -196,46 +163,57 @@ mod tests {
             .try_get_matches_from(vec!["new", "--index-uri", "file:///indexes/wikipedia"])
             .unwrap_err();
 
-        let expected_index_config_uri = format!(
-            "file://{}{}conf.yaml",
-            std::env::current_dir().unwrap().display(),
-            std::path::MAIN_SEPARATOR
-        );
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "create",
-            "--index-config-uri",
-            "conf.yaml",
-            "--metastore-uri",
-            "file:///indexes",
+            "--index",
+            "wikipedia",
+            "--index-uri",
+            "s3://quickwit-bucket/indexes/wikipedia",
+            "--index-config",
+            "index-conf.yaml",
+            "--config",
+            "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
+        let expected_index_config_uri = Uri::try_new(&format!(
+            "file://{}/index-conf.yaml",
+            std::env::current_dir().unwrap().display()
+        ))
+        .unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
-            metastore_uri: "file:///indexes".to_string(),
+            index_id: "wikipedia".to_string(),
+            index_uri: Some(Uri::try_new("s3://quickwit-bucket/indexes/wikipedia").unwrap()),
+            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
             index_config_uri: expected_index_config_uri.clone(),
             overwrite: false,
+            data_dir: None,
         }));
         assert_eq!(command, expected_cmd);
 
-        const QUICKWIT_METASTORE_URI_ENV_KEY: &str = "QUICKWIT_METASTORE_URI";
-        env::set_var(QUICKWIT_METASTORE_URI_ENV_KEY, "file:///indexes");
         let app = App::from(yaml).setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "create",
-            "--index-config-uri",
-            "conf.yaml",
+            "--index",
+            "wikipedia",
+            "--index-config",
+            "index-conf.yaml",
+            "--config",
+            "/config.yaml",
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
-            metastore_uri: "file:///indexes".to_string(),
+            index_id: "wikipedia".to_string(),
+            index_uri: None,
+            config_uri: Uri::try_new("file:///config.yaml").unwrap(),
             index_config_uri: expected_index_config_uri,
             overwrite: true,
+            data_dir: None,
         }));
         assert_eq!(command, expected_cmd);
-        env::remove_var(QUICKWIT_METASTORE_URI_ENV_KEY);
 
         Ok(())
     }
@@ -247,26 +225,23 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "ingest",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--metastore-uri",
-            "/indexes",
-            "--data-dir-path",
-            "/var/lib/quickwit/data",
+            "--config",
+            "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Ingest(
                 IngestDocsArgs {
-                    metastore_uri,
+                    config_uri,
                     index_id,
                     input_path_opt: None,
-                    data_dir_path,
                     overwrite: false,
+                    data_dir: None,
                 })) if &index_id == "wikipedia"
-                       && &metastore_uri == "file:///indexes"
-                       && data_dir_path == Path::new("/var/lib/quickwit/data")
+                       && config_uri == Uri::try_new("file:///config.yaml").unwrap()
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -274,12 +249,10 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "ingest",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--metastore-uri",
-            "/indexes",
-            "--data-dir-path",
-            "/var/lib/quickwit/data",
+            "--config",
+            "/config.yaml",
             "--overwrite",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
@@ -287,14 +260,13 @@ mod tests {
             command,
             CliCommand::Index(IndexCliCommand::Ingest(
                 IngestDocsArgs {
-                    metastore_uri,
+                    config_uri,
                     index_id,
                     input_path_opt: None,
-                    data_dir_path,
                     overwrite: true,
+                    data_dir: None,
                 })) if &index_id == "wikipedia"
-                        && metastore_uri == "file:///indexes"
-                        && data_dir_path == Path::new("/var/lib/quickwit/data")
+                        && config_uri == Uri::try_new("file:///config.yaml").unwrap()
         ));
         Ok(())
     }
@@ -306,12 +278,12 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "search",
-            "--index-id",
+            "--index",
             "wikipedia",
             "--query",
             "Barack Obama",
-            "--metastore-uri",
-            "file:///indexes",
+            "--config",
+            "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
@@ -324,9 +296,8 @@ mod tests {
                 search_fields: None,
                 start_timestamp: None,
                 end_timestamp: None,
-                tags: None,
-                metastore_uri,
-            })) if &index_id == "wikipedia" && &query == "Barack Obama" && &metastore_uri == "file:///indexes"
+                ..
+            })) if &index_id == "wikipedia" && &query == "Barack Obama"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -334,10 +305,8 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "search",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--metastore-uri",
-            "file:///indexes",
             "--query",
             "Barack Obama",
             "--max-hits",
@@ -348,14 +317,14 @@ mod tests {
             "0",
             "--end-timestamp",
             "1",
-            "--tags",
-            "device:rpi",
-            "city:paris",
             "--search-fields",
             "title",
             "url",
+            "--config",
+            "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
+        let _config_uri = Uri::try_new("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
@@ -366,11 +335,11 @@ mod tests {
                 search_fields: Some(field_names),
                 start_timestamp: Some(0),
                 end_timestamp: Some(1),
-                tags: Some(tags),
-                metastore_uri,
-            })) if &index_id == "wikipedia" && query == "Barack Obama"
-                && field_names == vec!["title".to_string(), "url".to_string()]
-                && tags == vec!["device:rpi".to_string(), "city:paris".to_string()] && &metastore_uri == "file:///indexes"
+                config_uri: _config_uri,
+                data_dir: None,
+            })) if &index_id == "wikipedia"
+                  && query == "Barack Obama"
+                  && field_names == vec!["title".to_string(), "url".to_string()]
         ));
         Ok(())
     }
@@ -382,19 +351,19 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "delete",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--metastore-uri",
-            "file:///indexes",
+            "--config",
+            "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Delete(DeleteIndexArgs {
                 index_id,
-                metastore_uri,
-                dry_run: false
-            })) if &index_id == "wikipedia" && &metastore_uri == "file:///indexes"
+                dry_run: false,
+                ..
+            })) if &index_id == "wikipedia"
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -402,20 +371,20 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "delete",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--metastore-uri",
-            "file:///indexes",
             "--dry-run",
+            "--config",
+            "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Delete(DeleteIndexArgs {
                 index_id,
-                metastore_uri,
-                dry_run: true
-            })) if &index_id == "wikipedia" && &metastore_uri == "file:///indexes"
+                dry_run: true,
+                ..
+            })) if &index_id == "wikipedia"
         ));
         Ok(())
     }
@@ -427,10 +396,10 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "gc",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--metastore-uri",
-            "file:///indexes",
+            "--config",
+            "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
@@ -438,9 +407,9 @@ mod tests {
             CliCommand::Index(IndexCliCommand::GarbageCollect(GarbageCollectIndexArgs {
                 index_id,
                 grace_period,
-                metastore_uri,
-                dry_run: false
-            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(60 * 60) && &metastore_uri == "file:///indexes"
+                dry_run: false,
+                ..
+            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(60 * 60)
         ));
 
         let yaml = load_yaml!("cli.yaml");
@@ -448,79 +417,25 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "gc",
-            "--index-id",
+            "--index",
             "wikipedia",
             "--grace-period",
             "5m",
-            "--metastore-uri",
-            "file:///indexes",
+            "--config",
+            "/config.yaml",
             "--dry-run",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
+        let expected_config_uri = Uri::try_new("file:///config.yaml").unwrap();
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::GarbageCollect(GarbageCollectIndexArgs {
                 index_id,
                 grace_period,
-                metastore_uri,
-                dry_run: true
-            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(5 * 60) && metastore_uri == "file:///indexes"
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_run_searcher_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.try_get_matches_from(vec![
-            "service",
-            "run",
-            "searcher",
-            "--server-config-uri",
-            "conf.toml",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        let expected_server_config_uri = format!(
-            "file://{}{}conf.toml",
-            std::env::current_dir().unwrap().display(),
-            std::path::MAIN_SEPARATOR
-        );
-        assert!(matches!(
-            command,
-            CliCommand::Service(ServiceCliCommand::RunSearcher(RunSearcherArgs {
-                server_config_uri,
-            })) if server_config_uri == expected_server_config_uri
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_run_indexer_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
-        let matches = app.try_get_matches_from(vec![
-            "service",
-            "run",
-            "indexer",
-            "--index-id",
-            "wikipedia",
-            "--server-config-uri",
-            "conf.toml",
-        ])?;
-        let command = CliCommand::parse_cli_args(&matches)?;
-        let expected_server_config_uri = format!(
-            "file://{}{}conf.toml",
-            std::env::current_dir().unwrap().display(),
-            std::path::MAIN_SEPARATOR
-        );
-        println!("{} {:?}", expected_server_config_uri, command);
-        assert!(matches!(
-            command,
-            CliCommand::Service(ServiceCliCommand::RunIndexer(RunIndexerArgs {
-                server_config_uri,
-                index_id,
-            })) if index_id == "wikipedia" && server_config_uri == expected_server_config_uri
+                config_uri,
+                dry_run: true,
+                data_dir: None,
+            })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(5 * 60) && config_uri == expected_config_uri
         ));
         Ok(())
     }
@@ -532,21 +447,18 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "merge",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--metastore-uri",
-            "file:///indexes",
-            "--data-dir-path",
-            "datadir",
+            "--config",
+            "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Merge(MergeOrDemuxArgs {
                 index_id,
-                metastore_uri,
-                data_dir_path,
-            })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+                ..
+            })) if &index_id == "wikipedia"
         ));
         Ok(())
     }
@@ -558,21 +470,18 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "demux",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--metastore-uri",
-            "file:///indexes",
-            "--data-dir-path",
-            "datadir",
+            "--config",
+            "quickwit.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Demux(MergeOrDemuxArgs {
                 index_id,
-                metastore_uri,
-                data_dir_path,
-            })) if &index_id == "wikipedia" && data_dir_path == PathBuf::from("datadir") && &metastore_uri == "file:///indexes"
+                ..
+            })) if &index_id == "wikipedia"
         ));
         Ok(())
     }
@@ -584,18 +493,18 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "describe",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--metastore-uri",
-            "file:///indexes",
+            "--config",
+            "quickwit.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
             command,
             CliCommand::Index(IndexCliCommand::Describe(DescribeIndexArgs {
                 index_id,
-                metastore_uri,
-            })) if &index_id == "wikipedia" && &metastore_uri == "file:///indexes"
+                ..
+            })) if &index_id == "wikipedia"
         ));
         Ok(())
     }
@@ -607,12 +516,12 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "split",
             "describe",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--split-id",
+            "--split",
             "ABC",
-            "--metastore-uri",
-            "file:///indexes",
+            "--config",
+            "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
@@ -620,9 +529,9 @@ mod tests {
             CliCommand::Split(SplitCliCommand::Describe(DescribeSplitArgs {
                 index_id,
                 split_id,
-                metastore_uri,
                 verbose: false,
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes"
+                ..
+            })) if &index_id == "wikipedia" && &split_id == "ABC"
         ));
         Ok(())
     }
@@ -634,14 +543,14 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "split",
             "extract",
-            "--index-id",
+            "--index",
             "wikipedia",
-            "--split-id",
+            "--split",
             "ABC",
             "--target-dir",
             "datadir",
-            "--metastore-uri",
-            "file:///indexes",
+            "--config",
+            "/config.yaml",
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         assert!(matches!(
@@ -649,9 +558,9 @@ mod tests {
             CliCommand::Split(SplitCliCommand::Extract(ExtractSplitArgs {
                 index_id,
                 split_id,
-                metastore_uri,
-                target_dir
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && &metastore_uri == "file:///indexes" && target_dir == PathBuf::from("datadir")
+                target_dir,
+                ..
+            })) if &index_id == "wikipedia" && &split_id == "ABC" && target_dir == PathBuf::from("datadir")
         ));
         Ok(())
     }

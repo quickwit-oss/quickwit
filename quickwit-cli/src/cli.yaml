@@ -12,17 +12,31 @@ subcommands:
                 about: Creates an index.
                 display_order: 1
                 args:
-                    - metastore-uri:
-                        about: Location of the metastore.
-                        long: metastore-uri
-                        value_name: METASTORE URI
+                    - index:
+                        about: ID of the target index.
+                        long: index
+                        value_name: INDEX
                         required: true
-                        env: QUICKWIT_METASTORE_URI
-                    - index-config-uri:
+                    - index-config:
                         about: Location of the index config file.
-                        long: index-config-uri
-                        value_name: INDEX CONFIG URI
+                        long: index-config
+                        value_name: INDEX CONFIG
                         required: true
+                    - index-uri:
+                        about: Index data (or splits) storage URI.
+                        long: index-uri
+                        value_name: INDEX URI
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
+                        required: true
+                    - data-dir:
+                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                        long: data-dir
+                        value_name: DATA DIR
+                        env: QW_DATA_DIR
                     - overwrite:
                         about: Overwrites pre-existing index.
                         long: overwrite
@@ -30,26 +44,26 @@ subcommands:
                 display_order: 2
                 about: Indexes JSON documents read from a file or streamed from stdin.
                 args:
-                    - index-id:
+                    - index:
                         about: ID of the target index.
-                        long: index-id
-                        value_name: INDEX ID
+                        long: index
+                        value_name: INDEX
                         required: true
-                    - metastore-uri:
-                        about: Location of the metastore.
-                        long: metastore-uri
-                        value_name: METASTORE URI
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
                         required: true
-                        env: QUICKWIT_METASTORE_URI
+                    - data-dir:
+                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                        long: data-dir
+                        value_name: DATA DIR
+                        env: QW_DATA_DIR
                     - input-path:
                         about: Location of the input file.
                         long: input-path
                         value_name: INPUT PATH
-                    - data-dir-path:
-                        about: Creates cached and intermediate data structures in this local directory.
-                        long: data-dir-path
-                        value_name: DATA DIR PATH
-                        required: true
                     - overwrite:
                         about: Overwrites pre-existing index.
                         long: overwrite
@@ -57,32 +71,42 @@ subcommands:
                 display_order: 3
                 about: Display descriptive statistics about the index.
                 args:
-                    - index-id:
+                    - index:
                         about: ID of the target index.
-                        long: index-id
-                        value_name: INDEX ID
+                        long: index
+                        value_name: INDEX
                         required: true
-                    - metastore-uri:
-                        about: Location of the metastore.
-                        long: metastore-uri
-                        value_name: METASTORE URI
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
                         required: true
-                        env: QUICKWIT_METASTORE_URI
+                    - data-dir:
+                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                        long: data-dir
+                        value_name: DATA DIR
+                        env: QW_DATA_DIR
             - search:
                 display_order: 4
                 about: Searches an index.
                 args:
-                    - index-id:
+                    - index:
                         about: id of the target index.
-                        long: index-id
-                        value_name: INDEX ID
+                        long: index
+                        value_name: INDEX
                         required: true
-                    - metastore-uri:
-                        about: Location of the metastore.
-                        long: metastore-uri
-                        value_name: METASTORE URI
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
                         required: true
-                        env: QUICKWIT_METASTORE_URI
+                    - data-dir:
+                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                        long: data-dir
+                        value_name: DATA DIR
+                        env: QW_DATA_DIR
                     - query:
                         about: Query expressed in Tantivy syntax.
                         long: query
@@ -111,66 +135,66 @@ subcommands:
                         about: Filters out documents after that timestamp (time-series indexes only).
                         long: end-timestamp
                         value_name: TIMESTAMP
-                    - tags:
-                        about: Restricts search to splits matching the specified tags.
-                        long: tags
-                        value_name: TAG
-                        multiple_values: true
             - merge:
                 display_order: 4
                 about: Merges an index.
                 args:
-                    - index-id:
-                        about: Index ID.
-                        long: index-id
-                        value_name: INDEX ID
+                    - index:
+                        about: INDEX.
+                        long: index
+                        value_name: INDEX
                         required: true
-                    - metastore-uri:
-                        about: Location of the metastore.
-                        long: metastore-uri
-                        value_name: METASTORE URI
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
                         required: true
-                        env: QUICKWIT_METASTORE_URI
-                    - data-dir-path:
-                        about: Creates indexing directories in this local directory.
-                        long: data-dir-path
-                        value_name: DATA DIR PATH
-                        required: true
+                    - data-dir:
+                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                        long: data-dir
+                        value_name: DATA DIR
+                        env: QW_DATA_DIR
             - demux:
                 display_order: 5
                 about: Demuxes an index.
                 args:
-                    - index-id:
+                    - index:
                         about: ID of the target index.
-                        long: index-id
-                        value_name: INDEX ID
+                        long: index
+                        value_name: INDEX
                         required: true
-                    - metastore-uri:
-                        about: Location of the metastore.
-                        long: metastore-uri
-                        value_name: METASTORE URI
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
                         required: true
-                        env: QUICKWIT_METASTORE_URI
-                    - data-dir-path:
-                        about: Creates indexing directories in this local directory.
-                        long: data-dir-path
-                        value_name: DATA DIR PATH
-                        required: true
+                    - data-dir:
+                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                        long: data-dir
+                        value_name: DATA DIR
+                        env: QW_DATA_DIR
             - gc:
                 display_order: 6
                 about: Garbage collects stale staged splits and splits marked for deletion.
                 args:
-                    - index-id:
+                    - index:
                         about: ID of the target index.
-                        long: index-id
-                        value_name: INDEX ID
+                        long: index
+                        value_name: INDEX
                         required: true
-                    - metastore-uri:
-                        about: Location of the metastore.
-                        long: metastore-uri
-                        value_name: METASTORE URI
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
                         required: true
-                        env: QUICKWIT_METASTORE_URI
+                    - data-dir:
+                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                        long: data-dir
+                        value_name: DATA DIR
+                        env: QW_DATA_DIR
                     - grace-period:
                         about: Threshold period after which stale staged splits are garbage collected.
                         long: grace-period
@@ -183,17 +207,22 @@ subcommands:
                 display_order: 7
                 about: Delete an index.
                 args:
-                    - index-id:
+                    - index:
                         about: ID of the target index.
-                        long: index-id
-                        value_name: INDEX ID
+                        long: index
+                        value_name: INDEX
                         required: true
-                    - metastore-uri:
-                        about: Location of the metastore.
-                        long: metastore-uri
-                        value_name: METASTORE URI
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
                         required: true
-                        env: QUICKWIT_METASTORE_URI
+                    - data-dir:
+                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                        long: data-dir
+                        value_name: DATA DIR
+                        env: QW_DATA_DIR
                     - dry-run:
                         about: Executes the command in dry run mode and only displays the list of splits candidate for deletion.
                         long: dry-run
@@ -201,27 +230,73 @@ subcommands:
         settings:
             - ArgRequiredElseHelp
         display_order: 2
-        about: Operations (add, delete, describe...) on splits.
+        about: Operations (list, add, delete, describe...) on splits.
         subcommands:
-            - extract:
-                about: Downloads and extracts a split to a directory. 
+            - list:
+                about: Lists the splits of an index.
                 args:
-                    - index-id:
+                    - index:
                         about: ID of the target index.
-                        long: index-id
-                        value_name: INDEX ID
+                        long: index
+                        value_name: INDEX
                         required: true
-                    - split-id:
+                    - states:
+                        about: |
+                            Comma-separated list of split states to filter on.
+                            Possible values are `staged`, `published`, and `marked`.
+                        long: states
+                        value_name: SPLIT STATES
+                        multiple_occurrences: true
+                        use_delimiter: true
+                    - start-date:
+                        about: Filters out splits containing documents from this timestamp onwards (time-series indexes only).
+                        long: start-date
+                        value_name: START TIMESTAMP
+                    - end-date:
+                        about: Filters out splits containing documents before this timestamp (time-series indexes only).
+                        long: end-date
+                        value_name: END TIMESTAMP
+                    - tags:
+                        about: Comma-separated list of tags, only splits that contain all of the tags will be returned.
+                        long: tags
+                        value_name: TAGS
+                        multiple_occurrences: true
+                        use_delimiter: true
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
+                        required: true
+                    - data-dir:
+                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                        long: data-dir
+                        value_name: DATA DIR
+                        env: QW_DATA_DIR
+            - extract:
+                about: Downloads and extracts a split to a directory.
+                args:
+                    - index:
+                        about: ID of the target index.
+                        long: index
+                        value_name: INDEX
+                        required: true
+                    - split:
                         about: ID of the target split.
-                        long: split-id
-                        value_name: SPLIT ID
+                        long: split
+                        value_name: SPLIT
                         required: true
-                    - metastore-uri:
-                        about: Location of the metastore.
-                        long: metastore-uri
-                        value_name: METASTORE URI
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
                         required: true
-                        env: QUICKWIT_METASTORE_URI
+                    - data-dir:
+                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                        long: data-dir
+                        value_name: DATA DIR
+                        env: QW_DATA_DIR
                     - target-dir:
                         about: Directory to extract the split to.
                         long: target-dir
@@ -230,22 +305,27 @@ subcommands:
             - describe:
                 about: Displays metadata about the split.
                 args:
-                    - index-id:
+                    - index:
                         about: ID of the target index.
-                        long: index-id
-                        value_name: INDEX ID
+                        long: index
+                        value_name: INDEX
                         required: true
-                    - split-id:
+                    - split:
                         about: ID of the target split.
-                        long: split-id
-                        value_name: SPLIT ID
+                        long: split
+                        value_name: SPLIT
                         required: true
-                    - metastore-uri:
-                        about: Location of the metastore.
-                        long: metastore-uri
-                        value_name: METASTORE URI
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
                         required: true
-                        env: QUICKWIT_METASTORE_URI
+                    - data-dir:
+                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                        long: data-dir
+                        value_name: DATA DIR
+                        env: QW_DATA_DIR
                     - verbose:
                         about: Displays additional metadata about the hotcache.
                         long: verbose
@@ -260,23 +340,94 @@ subcommands:
                 about: Starts a service. Currently, the only services available are `indexer` and `searcher`.
                 subcommands:
                     - searcher:
-                        about: Starts a search node, aka a `searcher`
+                        about: Starts a search process, aka a `searcher`.
                         args:
-                            - server-config-uri:
-                                about: Location of the server config.
-                                long: server-config-uri
-                                value_name: SERVER CONFIG URI
+                            - config:
+                                about: Quickwit config file.
+                                long: config
+                                value_name: CONFIG
+                                env: QW_CONFIG
                                 required: true
+                            - data-dir:
+                                about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                                long: data-dir
+                                value_name: DATA DIR
+                                env: QW_DATA_DIR
                     - indexer:
-                        about: Start an indexing server, aka an `indexer`
+                        about: Starts an indexing process, aka an `indexer`.
                         args:
-                            - server-config-uri:
-                                about: Location of the server config.
-                                long: server-config-uri
-                                value_name: SERVER CONFIG URI
+                            - config:
+                                about: Quickwit config file.
+                                long: config
+                                value_name: CONFIG
+                                env: QW_CONFIG
                                 required: true
-                            - index-id:
-                                about: ID of the index to run the indexer for.
-                                long: index-id
+                            - data-dir:
+                                about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+                                long: data-dir
+                                value_name: DATA DIR
+                                env: QW_DATA_DIR
+                            - indexes:
+                                about: IDs of the indexes to run the indexer for.
+                                long: indexes
                                 value_name: INDEX ID
                                 required: true
+                                multiple_values: true
+    - source:
+        about: Manages sources.
+        display_order: 5
+        settings:
+            - ArgRequiredElseHelp
+        subcommands:
+            - delete:
+                about: Deletes a source.
+                args:
+                    - index:
+                        about: ID of the target index.
+                        long: index
+                        value_name: INDEX
+                        required: true
+                    - source:
+                        about: ID of the target source.
+                        long: source
+                        value_name: SOURCE
+                        required: true
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
+                        required: true
+            - describe:
+                about: Describes a source.
+                args:
+                    - index:
+                        about: ID of the target index.
+                        long: index
+                        value_name: INDEX
+                        required: true
+                    - source:
+                        about: ID of the target source.
+                        long: source
+                        value_name: SOURCE
+                        required: true
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
+                        required: true
+            - list:
+                about: Lists the sources of an index.
+                args:
+                    - index:
+                        about: ID of the target index.
+                        long: index
+                        value_name: INDEX
+                        required: true
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
+                        required: true

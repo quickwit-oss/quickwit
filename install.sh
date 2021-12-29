@@ -99,7 +99,6 @@ install_from_archive() {
     local _version="$(get_latest_version)"
     local _archive_content_file="quickwit-${_version}-${_binary_arch}"
     local _file="${_archive_content_file}.tar.gz"
-    local _archive_content_file_="quickwit-${_version}-${_binary_arch}"
     local _url="${PACKAGE_ROOT}/${_version}/${_file}"
 
     printf "%s Downloading Quickwit via %s" "$_prompt" "$_url"
@@ -108,17 +107,15 @@ install_from_archive() {
 
     printf "%s Unpacking archive ..." "$_prompt"
     ensure tar -xzf "$_file"
-    ensure rm "$_file" 
+    chmod 744 "./quickwit-${_version}/quickwit"
+    ensure rm "$_file"
     printf "\n"
 
-    mv "$_archive_content_file" "${PACKAGE_NAME}"
-    chmod 744 "${PACKAGE_NAME}"
-   
     printf "\n"
     printf "%s Install succeeded!\n" "$_prompt"
     printf "%s To start using Quickwit:\n" "$_prompt"
     printf "\n"
-    printf "%s ./quickwit --version \n" "$_indent"
+    printf "%s ./quickwit-${_version}/quickwit --version \n" "$_indent"
     printf "\n"
     printf "%s More information at https://quickwit.io/docs/\n" "$_prompt"
 

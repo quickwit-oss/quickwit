@@ -28,7 +28,7 @@ use backoff::ExponentialBackoff;
 use futures::{StreamExt, TryFutureExt};
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_metastore::checkpoint::{Checkpoint, CheckpointDelta, PartitionId, Position};
+use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
 use rdkafka::consumer::{Consumer, ConsumerContext, Rebalance};
@@ -78,7 +78,7 @@ impl TypedSourceFactory for KafkaSourceFactory {
 
     async fn typed_create_source(
         params: KafkaSourceParams,
-        checkpoint: Checkpoint,
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
         KafkaSource::try_new(params, checkpoint).await
     }
@@ -137,7 +137,7 @@ impl KafkaSource {
     /// Instantiates a new `KafkaSource`.
     pub async fn try_new(
         params: KafkaSourceParams,
-        checkpoint: Checkpoint,
+        checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<KafkaSource> {
         let topic = params.topic;
         let consumer = create_consumer(params.client_log_level, params.client_params)?;
@@ -370,7 +370,9 @@ fn parse_client_params(client_params: serde_json::Value) -> anyhow::Result<Clien
 
 /// Represents a checkpoint with the Kafka native types: `i32` for partition IDs and `i64` for
 /// offsets.
-fn kafka_checkpoint_from_checkpoint(checkpoint: &Checkpoint) -> anyhow::Result<HashMap<i32, i64>> {
+fn kafka_checkpoint_from_checkpoint(
+    checkpoint: &SourceCheckpoint,
+) -> anyhow::Result<HashMap<i32, i64>> {
     let mut kafka_checkpoint = HashMap::with_capacity(checkpoint.num_partitions());
     for (partition_id, position) in checkpoint.iter() {
         let partition_i32 = partition_id.0.parse::<i32>().with_context(|| {
@@ -469,7 +471,7 @@ async fn fetch_watermarks_for_partition_id(
                 .map_err(|err| {
                     debug!(topic = %topic, partition_id = ?partition_id, error = ?err, "Failed to fetch watermarks");
                     if let KafkaError::MetadataFetch(RDKafkaErrorCode::UnknownPartition) = err {
-                        backoff::Error::Transient(err)
+                        backoff::Error::Transient { err, retry_after: None }
                     } else {
                         backoff::Error::Permanent(err)
                     }
@@ -825,7 +827,7 @@ mod kafka_source_tests {
         let source_loader = quickwit_supported_sources();
         {
             let (sink, inbox) = create_test_mailbox();
-            let checkpoint = Checkpoint::default();
+            let checkpoint = SourceCheckpoint::default();
             let source = source_loader
                 .load_source(source_config.clone(), checkpoint)
                 .await?;
@@ -872,7 +874,7 @@ mod kafka_source_tests {
         }
         {
             let (sink, inbox) = create_test_mailbox();
-            let checkpoint = Checkpoint::default();
+            let checkpoint = SourceCheckpoint::default();
             let source = source_loader
                 .load_source(source_config.clone(), checkpoint)
                 .await?;
@@ -921,7 +923,7 @@ mod kafka_source_tests {
         }
         {
             let (sink, inbox) = create_test_mailbox();
-            let checkpoint: Checkpoint = vec![(0, 0), (1, 2)]
+            let checkpoint: SourceCheckpoint = vec![(0, 0), (1, 2)]
                 .into_iter()
                 .map(|(partition_id, offset)| {
                     (PartitionId::from(partition_id), Position::from(offset))

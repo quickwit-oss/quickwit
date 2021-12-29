@@ -22,7 +22,7 @@ use std::fmt;
 use std::ops::Range;
 
 use itertools::Itertools;
-use quickwit_index_config::match_tag_field_name;
+use quickwit_index_config::tag_pruning::match_tag_field_name;
 use quickwit_metastore::SplitMetadata;
 use tracing::debug;
 
@@ -145,7 +145,6 @@ pub trait MergePolicy: Send + Sync + fmt::Debug {
 /// build a demux operation with it, and loop.
 #[derive(Clone, Debug)]
 pub struct StableMultitenantWithTimestampMergePolicy {
-    /// We never merge segments larger than this size.
     pub demux_enabled: bool,
     pub demux_factor: usize,
     pub demux_field_name: Option<String>,
@@ -153,7 +152,12 @@ pub struct StableMultitenantWithTimestampMergePolicy {
     pub merge_enabled: bool,
     pub merge_factor: usize,
     pub max_merge_factor: usize,
-    pub split_max_num_docs: usize,
+    /// The merge policy aims to eventually produce mature splits that have a larger size but
+    /// are within close range of `split_num_docs_target`.
+    ///
+    /// In other words, splits that contain a number of documents greater than or equal to
+    /// `split_num_docs_target` are considered mature and never merged.
+    pub split_num_docs_target: usize,
 }
 
 impl Default for StableMultitenantWithTimestampMergePolicy {
@@ -166,7 +170,7 @@ impl Default for StableMultitenantWithTimestampMergePolicy {
             merge_enabled: true,
             merge_factor: 10,
             max_merge_factor: 12,
-            split_max_num_docs: 10_000_000,
+            split_num_docs_target: 10_000_000,
         }
     }
 }
@@ -242,7 +246,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         }
         // Once a split has been demuxed, we don't want to merge it even in the
         // case where its number of docs is under `max_merge_docs`.
-        split.num_docs >= self.split_max_num_docs || split.demux_num_ops > 0
+        split.num_docs >= self.split_num_docs_target || split.demux_num_ops > 0
     }
 
     /// A mature split for demux is a split that won't undergo demux operation in the future.
@@ -268,7 +272,7 @@ impl StableMultitenantWithTimestampMergePolicy {
             // split will be demuxed.
             return true;
         };
-        if split.num_docs >= self.demux_factor * self.split_max_num_docs {
+        if split.num_docs >= self.demux_factor * self.split_num_docs_target {
             return true;
         }
         let split_tags_contains_less_than_2_demux_values = split
@@ -278,7 +282,7 @@ impl StableMultitenantWithTimestampMergePolicy {
             .count()
             < 2;
         split_tags_contains_less_than_2_demux_values
-            || (split.num_docs < self.split_max_num_docs || split.demux_num_ops > 0)
+            || (split.num_docs < self.split_num_docs_target || split.demux_num_ops > 0)
     }
 
     fn merge_operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation> {
@@ -363,22 +367,23 @@ impl StableMultitenantWithTimestampMergePolicy {
         assert!(
             splits
                 .iter()
-                .all(|split| split.num_docs < self.split_max_num_docs * self.demux_factor),
+                .all(|split| split.num_docs < self.split_num_docs_target * self.demux_factor),
             "Each split size must satisfy `max_merge_docs <= size < demux_factor * max_merge_docs`"
         );
         let mut total_num_docs_left: usize = splits.iter().map(|split| split.num_docs).sum();
-        if splits.is_empty() || total_num_docs_left < self.demux_factor * self.split_max_num_docs {
+        if splits.is_empty() || total_num_docs_left < self.demux_factor * self.split_num_docs_target
+        {
             return Vec::new();
         }
         let mut operations = Vec::new();
         while !splits.is_empty()
-            && total_num_docs_left >= self.demux_factor * self.split_max_num_docs
+            && total_num_docs_left >= self.demux_factor * self.split_num_docs_target
         {
             let mut end_split_idx = 0;
             let mut num_docs_to_demux = 0;
             for (split_idx, split) in splits.iter().enumerate().take(self.demux_factor) {
                 num_docs_to_demux += split.num_docs;
-                if num_docs_to_demux >= self.demux_factor * self.split_max_num_docs {
+                if num_docs_to_demux >= self.demux_factor * self.split_num_docs_target {
                     end_split_idx = split_idx;
                     break;
                 }
@@ -410,7 +415,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         assert!(
             splits
                 .iter()
-                .all(|split| split.num_docs < self.split_max_num_docs),
+                .all(|split| split.num_docs < self.split_num_docs_target),
             "All splits are expected to be smaller than `max_merge_docs`."
         );
         if splits.is_empty() {
@@ -475,7 +480,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         let num_docs_in_merge: usize = splits.iter().map(|split| split.num_docs).sum();
 
         // The resulting split will exceed `max_merge_docs`.
-        if num_docs_in_merge >= self.split_max_num_docs {
+        if num_docs_in_merge >= self.split_num_docs_target {
             return MergeCandidateSize::OneMoreSplitWouldBeTooBig;
         }
 
@@ -490,14 +495,14 @@ impl StableMultitenantWithTimestampMergePolicy {
         assert!(self.min_level_num_docs > 0);
         assert!(self.merge_factor > 1);
         assert!(self.max_merge_factor >= self.merge_factor);
-        assert!(self.split_max_num_docs > self.min_level_num_docs);
+        assert!(self.split_num_docs_target > self.min_level_num_docs);
         let mut levels_start_num_docs = vec![1];
         let mut level_end_doc = self.min_level_num_docs;
-        while level_end_doc < self.split_max_num_docs {
+        while level_end_doc < self.split_num_docs_target {
             levels_start_num_docs.push(level_end_doc);
             level_end_doc *= growth_factor;
         }
-        levels_start_num_docs.push(self.split_max_num_docs);
+        levels_start_num_docs.push(self.split_num_docs_target);
         levels_start_num_docs
     }
 
@@ -612,11 +617,11 @@ mod tests {
         split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs and demux_generation = 0 is mature.
-        split.num_docs = merge_policy.split_max_num_docs + 1;
+        split.num_docs = merge_policy.split_num_docs_target + 1;
         split.demux_num_ops = 0;
         assert!(merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs and demux_generation = 1 is mature.
-        split.num_docs = merge_policy.split_max_num_docs + 1;
+        split.num_docs = merge_policy.split_num_docs_target + 1;
         split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
     }
@@ -639,7 +644,7 @@ mod tests {
         // Split under max_merge_docs and demux_generation = 0 is not mature.
         assert!(!merge_policy.is_mature(&split));
         // Split with docs >= max_merge_docs and demux_generation = 0 is not mature.
-        split.num_docs = merge_policy.split_max_num_docs + 1;
+        split.num_docs = merge_policy.split_num_docs_target + 1;
         split.demux_num_ops = 0;
         assert!(!merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs, demux_generation of 0 and wrong tags is also mature.
@@ -661,11 +666,11 @@ mod tests {
         split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs and demux_generation = 1 is mature.
-        split.num_docs = merge_policy.split_max_num_docs + 1;
+        split.num_docs = merge_policy.split_num_docs_target + 1;
         split.demux_num_ops = 1;
         assert!(merge_policy.is_mature(&split));
         // Split with num docs >= max_merge_docs * demux_factor is mature.
-        split.num_docs = merge_policy.demux_factor * merge_policy.split_max_num_docs;
+        split.num_docs = merge_policy.demux_factor * merge_policy.split_num_docs_target;
         split.demux_num_ops = 0;
         assert!(merge_policy.is_mature(&split));
         // Split with docs > max_merge_docs, demux_generation of 0 and wrong tags is also mature.
@@ -674,7 +679,7 @@ mod tests {
             "other_field:2".to_string(),
         ]);
         split.tags = other_tags;
-        split.num_docs = merge_policy.split_max_num_docs + 1;
+        split.num_docs = merge_policy.split_num_docs_target + 1;
         split.demux_num_ops = 0;
         assert!(merge_policy.is_mature(&split));
     }
@@ -919,7 +924,7 @@ mod tests {
             merge_enabled: true,
             merge_factor: 10,
             max_merge_factor: 12,
-            split_max_num_docs: 10_000_000,
+            split_num_docs_target: 10_000_000,
         };
         let mut demux_candidates = create_splits_with_tags(
             vec![

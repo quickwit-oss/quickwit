@@ -1,4 +1,4 @@
-name: Publish Docker image to Docker Hub (main)
+name: Publish Docker image to Docker Hub (nightly)
 
 on:
   push:
@@ -26,7 +26,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3
         with:
-          images: quickwit/quickwit
+          images: quickwit/quickwit-nightly
+          labels: |
+            org.opencontainers.image.title=Quickwit
+            maintainer=Quickwit, Inc. <hello@quickwit.io>
+            org.opencontainers.image.vendor=Quickwit, Inc.
+            org.opencontainers.image.licenses=AGPL-3.0
       
       - name: Build and push Docker image
         uses: docker/build-push-action@v2

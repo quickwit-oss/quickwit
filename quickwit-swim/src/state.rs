@@ -9,7 +9,6 @@ use mio::net::UdpSocket;
 use mio::{Events, Interest, Poll, Token};
 use serde::*;
 use tracing::{debug, error, info, warn};
-use uuid::Uuid;
 
 use super::cluster_config::ClusterConfig;
 use super::membership::ArtilleryMemberList;
@@ -32,7 +31,7 @@ pub enum ArtilleryMemberEvent {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ArtilleryMessage {
-    sender: Uuid,
+    sender: String,
     cluster_key: Vec<u8>,
     request: Request,
     state_changes: Vec<ArtilleryStateChange>,
@@ -47,7 +46,7 @@ enum Request {
     Ack,
     Ping(EncSocketAddr),
     AckHost(ArtilleryMember),
-    Payload(Uuid, String),
+    Payload(String, String),
 }
 
 #[derive(Debug, Clone)]
@@ -63,13 +62,13 @@ pub enum ArtilleryClusterRequest {
     React(TargetedRequest),
     LeaveCluster,
     Exit,
-    Payload(Uuid, String),
+    Payload(String, String),
 }
 
 const UDP_SERVER: Token = Token(0);
 
 pub struct ArtilleryEpidemic {
-    host_key: Uuid,
+    host_id: String,
     config: ClusterConfig,
     members: ArtilleryMemberList,
     seed_queue: Vec<SocketAddr>,
@@ -86,7 +85,7 @@ pub type ClusterReactor = (Poll, ArtilleryEpidemic);
 
 impl ArtilleryEpidemic {
     pub fn new(
-        host_key: Uuid,
+        host_id: String,
         config: ClusterConfig,
         event_tx: flume::Sender<ArtilleryClusterEvent>,
         internal_tx: flume::Sender<ArtilleryClusterRequest>,
@@ -98,10 +97,10 @@ impl ArtilleryEpidemic {
         poll.registry()
             .register(&mut server_socket, UDP_SERVER, interests)?;
 
-        let me = ArtilleryMember::current(host_key);
+        let me = ArtilleryMember::current(host_id.clone());
 
         let state = ArtilleryEpidemic {
-            host_key,
+            host_id,
             config,
             members: ArtilleryMemberList::new(me.clone()),
             seed_queue: Vec::new(),
@@ -200,7 +199,7 @@ impl ArtilleryEpidemic {
         // It was Ping before
         let should_add_pending = request.request == Heartbeat;
         let message = build_message(
-            &self.host_key,
+            &self.host_id,
             &self.config.cluster_key,
             &request.request,
             &self.state_changes,
@@ -330,6 +329,13 @@ impl ArtilleryEpidemic {
         use Request::*;
 
         if message.cluster_key == self.config.cluster_key {
+            // We want to abort if a new member has the same node_id of an existing member.  
+            // A new member is detected according to its socket address.
+            if !self.members.has_member(&src_addr) && self.members.get_member(&message.sender).is_some() {
+                error!("Cannot add a member with a node-id `{}` already present in the cluster.", message.sender);
+                return;
+            }
+
             self.apply_state_changes(message.state_changes, src_addr);
             remove_potential_seed(&mut self.seed_queue, src_addr);
 
@@ -391,7 +397,7 @@ impl ArtilleryEpidemic {
             self.state_changes.retain(|os| {
                 !state_changes
                     .iter()
-                    .any(|is| is.member().host_key() == os.member().host_key())
+                    .any(|is| is.member().node_id() == os.member().node_id())
             })
         }
 
@@ -399,7 +405,7 @@ impl ArtilleryEpidemic {
             .retain(|op| !to_remove.iter().any(|ip| ip == op));
     }
 
-    fn ensure_node_is_member(&mut self, src_addr: SocketAddr, sender: Uuid) {
+    fn ensure_node_is_member(&mut self, src_addr: SocketAddr, sender: String) {
         if self.members.has_member(&src_addr) {
             return;
         }
@@ -463,14 +469,14 @@ impl ArtilleryEpidemic {
 }
 
 fn build_message(
-    sender: &Uuid,
+    sender: &str,
     cluster_key: &[u8],
     request: &Request,
     state_changes: &[ArtilleryStateChange],
     network_mtu: usize,
 ) -> ArtilleryMessage {
     let mut message = ArtilleryMessage {
-        sender: *sender,
+        sender: sender.to_string(),
         cluster_key: cluster_key.into(),
         request: request.clone(),
         state_changes: Vec::new(),
@@ -478,7 +484,7 @@ fn build_message(
 
     for i in 0..=state_changes.len() {
         message = ArtilleryMessage {
-            sender: *sender,
+            sender: sender.to_string(),
             cluster_key: cluster_key.into(),
             request: request.clone(),
             state_changes: (&state_changes[..i]).to_vec(),
@@ -523,7 +529,7 @@ fn enqueue_state_change(
 ) {
     for member in members {
         for state_change in state_changes.iter_mut() {
-            if state_change.member().host_key() == member.host_key() {
+            if state_change.member().node_id() == member.node_id() {
                 state_change.update(member.clone());
                 return;
             }

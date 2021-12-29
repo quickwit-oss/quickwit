@@ -30,7 +30,7 @@ fmt:
 # `make test-all` starts the Docker services and runs all the tests.
 # `make -k test-all docker-compose-down`, tears down the Docker services after running all the tests.
 test-all: docker-compose-up
-	QUICKWIT_ENV=local cargo test --all-features
+	QW_ENV=local AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features
 
 # This will build and push all custom cross images for cross-compilation.
 # You will need to login into Docker Hub with the `quickwit` account.
@@ -57,3 +57,22 @@ build:
 			cross build --release --features release-feature-vendored-set --target ${TARGET}; \
 		;; \
 	esac
+
+# Usage:
+# `BINARY_FILE=path/to/quickwit/binary BINARY_VERSION=0.1.0 ARCHIVE_NAME=quickwit make archive` 
+# - BINARY_FILE: Path of the quickwit binary file.
+# - BINARY_VERSION: Version of the quickwit binary.
+# - ARCHIVE_NAME: Name of the resulting archive file (without extension).
+.PHONY: archive
+archive:
+	@echo "Archiving release binary & assets"
+	@mkdir -p "./quickwit-${BINARY_VERSION}/config"
+	@mkdir -p "./quickwit-${BINARY_VERSION}/qwdata"
+	@cp ./config/quickwit.yaml "./quickwit-${BINARY_VERSION}/config"
+	@cp ./LICENSE_AGPLv3.0.txt "./quickwit-${BINARY_VERSION}"
+	@cp "${BINARY_FILE}" "./quickwit-${BINARY_VERSION}"
+	@tar -czf "${ARCHIVE_NAME}.tar.gz" "./quickwit-${BINARY_VERSION}"
+	@rm -rf "./quickwit-${BINARY_VERSION}"
+
+workspace-deps-tree:
+	cargo tree --all-features --workspace -f "{p}" --prefix depth | cut -f 1 -d ' ' | python3 scripts/dep-tree.py

@@ -50,7 +50,7 @@ pub enum RegionProvider {
     /// Target a local localstack instance, mocking Amazon S3.
     /// This is mostly useful for integration tests.
     ///
-    /// If the QUICKWIT_ENV environment variable is set to LOCAL,
+    /// If the QW_ENV environment variable is set to LOCAL,
     /// quickwit will try to connect to `localhost:4566`
     /// otherwise, it will try to connect to `localstack:4566`.
     Localstack,

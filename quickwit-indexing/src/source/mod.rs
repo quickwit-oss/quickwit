@@ -31,7 +31,7 @@ use std::path::Path;
 
 use anyhow::bail;
 use async_trait::async_trait;
-pub use file_source::{FileSource, FileSourceFactory, FileSourceParams, STD_IN_SOURCE_ID};
+pub use file_source::{FileSource, FileSourceFactory, FileSourceParams};
 #[cfg(feature = "kafka")]
 pub use kafka_source::{KafkaSource, KafkaSourceFactory, KafkaSourceParams};
 use once_cell::sync::OnceCell;
@@ -43,7 +43,10 @@ pub use void_source::{VoidSource, VoidSourceFactory, VoidSourceParams};
 
 use crate::models::IndexerMessage;
 
-pub type SourceContext = ActorContext<Loop>;
+/// Reserved source id used for the CLI ingest command.
+pub const INGEST_SOURCE_ID: &str = ".cli-ingest-source";
+
+pub type SourceContext = ActorContext<SourceActor>;
 
 /// A source is a trait that is mounted in a light wrapping Actor called `SourceActor`.
 ///
@@ -134,10 +137,7 @@ impl Actor for SourceActor {
 
 #[async_trait]
 impl AsyncActor for SourceActor {
-    async fn initialize(
-        &mut self,
-        ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), ActorExitStatus> {
+    async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         self.source.initialize(ctx).await?;
         self.process_message(Loop(PrivateToken), ctx).await?;
         Ok(())
@@ -146,7 +146,7 @@ impl AsyncActor for SourceActor {
     async fn process_message(
         &mut self,
         _message: Loop,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         self.source.emit_batches(&self.batch_sink, ctx).await?;
         ctx.send_self_message(Loop(PrivateToken)).await?;
@@ -156,7 +156,7 @@ impl AsyncActor for SourceActor {
     async fn finalize(
         &mut self,
         exit_status: &ActorExitStatus,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         self.source.finalize(exit_status, ctx).await?;
         Ok(())
@@ -179,9 +179,6 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
 pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::Result<()> {
     match source_config.source_type.as_ref() {
         "file" => {
-            if source_config.source_id == STD_IN_SOURCE_ID {
-                return Ok(());
-            }
             match source_config.params.get("filepath") {
                 Some(serde_json::Value::String(path)) => {
                     if Path::new(&path).exists() {
@@ -190,14 +187,18 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
                         bail!("File `{}` does not exist.", path)
                     }
                 }
+                None | Some(serde_json::Value::Null) => {
+                    if source_config.source_id == INGEST_SOURCE_ID {
+                        // We are indexing stdin using the ingest source.
+                        return Ok(());
+                    }
+                    bail!("Failed to parse source config params: property `filepath` is missing.")
+                }
                 Some(_) => {
                     bail!(
                         "Failed to parse source config params: property `filepath` is not a \
                          string."
                     )
-                }
-                None => {
-                    bail!("Failed to parse source config params: property `filepath` is missing.")
                 }
             }
         }
@@ -209,6 +210,7 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
             kafka_source::check_connectivity(source_config.params.clone())
         }
         "vec" => Ok(()),
+        "void" => Ok(()),
         unrecognized_source_type => {
             bail!(
                 "Unknown source type `{}` or connectivity check not implemented for this source \
@@ -216,5 +218,53 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
                 unrecognized_source_type
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_check_source_connectivity() -> anyhow::Result<()> {
+        {
+            let source_config = SourceConfig {
+                source_id: "void".to_string(),
+                source_type: "void".to_string(),
+                params: json!(null),
+            };
+            check_source_connectivity(&source_config).await?;
+        }
+        {
+            let source_config = SourceConfig {
+                source_id: "vec".to_string(),
+                source_type: "vec".to_string(),
+                params: json!(null),
+            };
+            check_source_connectivity(&source_config).await?;
+        }
+        {
+            let source_config = SourceConfig {
+                source_id: "file".to_string(),
+                source_type: "file".to_string(),
+                params: json!({
+                    "filepath": "non-existing-file.json"
+                }),
+            };
+            assert!(check_source_connectivity(&source_config).await.is_err());
+        }
+        {
+            let source_config = SourceConfig {
+                source_id: "file".to_string(),
+                source_type: "file".to_string(),
+                params: json!({
+                    "filepath": "data/test_corpus.json"
+                }),
+            };
+            assert!(check_source_connectivity(&source_config).await.is_ok());
+        }
+        Ok(())
     }
 }

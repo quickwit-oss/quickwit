@@ -29,7 +29,7 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tracing::warn;
 
-use crate::{OwnedBytes, Storage, StorageErrorKind, StorageFactory, StorageResult};
+use crate::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageFactory, StorageResult};
 
 /// File system compatible storage implementation.
 #[derive(Clone)]
@@ -165,7 +165,8 @@ impl From<PathBuf> for LocalFileStorage {
 impl Storage for LocalFileStorage {
     async fn check(&self) -> anyhow::Result<()> {
         if !self.root.exists() {
-            anyhow::bail!("Missing path `{}`", self.root.display())
+            // By creating directories, we check if we have the right permissions.
+            fs::create_dir_all(self.root.as_path()).await?
         }
         Ok(())
     }
@@ -217,7 +218,13 @@ impl Storage for LocalFileStorage {
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let full_path = self.root.join(path);
-        let content_bytes = fs::read(full_path).await?;
+        let content_bytes = fs::read(full_path).await.map_err(|err| {
+            StorageError::from(err).add_context(format!(
+                "Failed to read file {}/{}",
+                self.uri(),
+                path.to_string_lossy()
+            ))
+        })?;
         Ok(OwnedBytes::new(content_bytes))
     }
 

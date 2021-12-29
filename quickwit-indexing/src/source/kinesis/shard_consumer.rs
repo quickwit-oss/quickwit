@@ -120,10 +120,7 @@ impl Actor for ShardConsumer {
 
 #[async_trait]
 impl AsyncActor for ShardConsumer {
-    async fn initialize(
-        &mut self,
-        ctx: &ActorContext<Self::Message>,
-    ) -> Result<(), ActorExitStatus> {
+    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.state.next_shard_iterator = get_shard_iterator(
             &*self.kinesis_client,
             &self.stream_name,
@@ -138,7 +135,7 @@ impl AsyncActor for ShardConsumer {
     async fn process_message(
         &mut self,
         _message: Loop,
-        ctx: &ActorContext<Self::Message>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Some(shard_iterator) = self.state.next_shard_iterator.take() {
             let response = get_records(&*self.kinesis_client, shard_iterator).await?;

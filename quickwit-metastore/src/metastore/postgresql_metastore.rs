@@ -23,19 +23,23 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use diesel::dsl::sql;
 use diesel::pg::Pg;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::DatabaseErrorKind;
 use diesel::result::Error::DatabaseError;
-use diesel::sql_types::{Array, Text};
+use diesel::sql_types::{Array, Bool, Text};
 use diesel::{
-    debug_query, sql_query, BoolExpressionMethods, Connection, ExpressionMethods,
-    PgArrayExpressionMethods, PgConnection, QueryDsl, RunQueryDsl,
+    debug_query, sql_query, BoolExpressionMethods, BoxableExpression, Connection,
+    ExpressionMethods, IntoSql, PgConnection, QueryDsl, RunQueryDsl,
 };
+use quickwit_config::SourceConfig;
+use quickwit_index_config::tag_pruning::TagFilterAst;
 use tracing::{debug, error, info, warn};
 
 use crate::metastore::CheckpointDelta;
 use crate::postgresql::model::SELECT_SPLITS_FOR_INDEX;
+use crate::postgresql::schema::splits;
 use crate::postgresql::{model, schema};
 use crate::{
     IndexMetadata, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
@@ -195,9 +199,49 @@ impl PostgresqlMetastore {
         Ok(index_exists)
     }
 
+    fn index_metadata_inner(
+        &self,
+        conn: &PooledConnection<ConnectionManager<PgConnection>>,
+        index_id: &str,
+    ) -> MetastoreResult<IndexMetadata> {
+        let statement = schema::indexes::dsl::indexes.find(index_id);
+        debug!(index_id = %index_id, query = %debug_query::<Pg, _>(&statement).to_string(), "Get index.");
+
+        let index = statement
+            .first::<model::Index>(conn)
+            .map_err(|err| match err {
+                diesel::result::Error::NotFound => MetastoreError::IndexDoesNotExist {
+                    index_id: index_id.to_string(),
+                },
+                _ => MetastoreError::DbError(err),
+            })?;
+        let index_metadata = index.index_metadata()?;
+        Ok(index_metadata)
+    }
+
+    fn update_index(
+        &self,
+        conn: &PooledConnection<ConnectionManager<PgConnection>>,
+        index_metadata: IndexMetadata,
+    ) -> MetastoreResult<()> {
+        let index_id = index_metadata.index_id.clone();
+        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
+            MetastoreError::InternalError {
+                message: "Failed to serialize index metadata.".to_string(),
+                cause: anyhow::anyhow!(err),
+            }
+        })?;
+        let statement = diesel::update(schema::indexes::dsl::indexes.find(&index_id))
+            .set(schema::indexes::dsl::index_metadata_json.eq(index_metadata_json));
+        debug!(index_id = %index_id, query = %debug_query::<Pg, _>(&statement).to_string(), "Update index.");
+        let num_updated_rows = statement.execute(&*conn).map_err(MetastoreError::DbError)?;
+        assert_eq!(num_updated_rows, 1);
+        Ok(())
+    }
+
     /// Publish splits.
     /// Returns the successful split IDs.
-    fn publish_splits(
+    fn mark_splits_as_published_helper(
         &self,
         conn: &PooledConnection<ConnectionManager<PgConnection>>,
         index_id: &str,
@@ -238,7 +282,7 @@ impl PostgresqlMetastore {
                     .and(schema::splits::dsl::split_id.eq_any(split_ids)),
             ),
         )
-        .set((schema::splits::dsl::split_state.eq(SplitState::ScheduledForDeletion.to_string()),))
+        .set((schema::splits::dsl::split_state.eq(SplitState::MarkedForDeletion.to_string()),))
         .returning(schema::splits::dsl::split_id)
         .get_results(conn)?;
 
@@ -250,54 +294,14 @@ impl PostgresqlMetastore {
         &self,
         conn: &PooledConnection<ConnectionManager<PgConnection>>,
         index_id: &str,
+        source_id: &str,
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
-        // Get index metadata.
-        let select_index_statement =
-            schema::indexes::dsl::indexes.filter(schema::indexes::dsl::index_id.eq(index_id));
-        debug!(sql=%debug_query::<Pg, _>(&select_index_statement).to_string());
-        let model_index = select_index_statement
-            .first::<model::Index>(conn)
-            .map_err(|err| match err {
-                diesel::result::Error::NotFound => MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
-                },
-                _ => MetastoreError::InternalError {
-                    message: "Failed to select index".to_string(),
-                    cause: anyhow::anyhow!(err),
-                },
-            })?;
-
-        // Deserialize the checkpoint from the database model.
-        let mut index_metadata =
-            model_index
-                .make_index_metadata()
-                .map_err(|err| MetastoreError::InternalError {
-                    message: "Failed to deserialize index metadata".to_string(),
-                    cause: anyhow::anyhow!(err),
-                })?;
-
-        // Apply checkpoint_delta
+        let mut index_metadata = self.index_metadata_inner(conn, index_id)?;
         index_metadata
             .checkpoint
-            .try_apply_delta(checkpoint_delta)?;
-
-        // Serialize the checkpoint to fit the database model.
-        let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|err| {
-            MetastoreError::InternalError {
-                message: "Failed to serialize index metadata".to_string(),
-                cause: anyhow::anyhow!(err),
-            }
-        })?;
-
-        // Update the index checkpoint.
-        let update_index_statement = diesel::update(schema::indexes::dsl::indexes.find(index_id))
-            .set(schema::indexes::dsl::index_metadata_json.eq(index_metadata_json));
-        debug!(sql=%debug_query::<Pg, _>(&update_index_statement).to_string());
-        update_index_statement
-            .execute(&*conn)
-            .map_err(MetastoreError::DbError)?;
-
+            .try_apply_delta(source_id, checkpoint_delta)?;
+        self.update_index(conn, index_metadata)?;
         Ok(())
     }
 
@@ -307,7 +311,7 @@ impl PostgresqlMetastore {
         index_id: &str,
         state_opt: Option<SplitState>,
         time_range_opt: Option<Range<i64>>,
-        tags_opt: Option<&[Vec<String>]>,
+        tags_opt: Option<TagFilterAst>,
     ) -> MetastoreResult<Vec<Split>> {
         let mut select_statement = schema::splits::dsl::splits
             .filter(schema::splits::dsl::index_id.eq(index_id))
@@ -329,12 +333,7 @@ impl PostgresqlMetastore {
         }
 
         if let Some(tags) = tags_opt {
-            if !tags.is_empty() {
-                for inner_tags in tags {
-                    select_statement = select_statement
-                        .filter(schema::splits::dsl::tags.overlaps_with(inner_tags));
-                }
-            }
+            select_statement = select_statement.filter(tags_filter_expression_helper(tags));
         }
 
         debug!(sql=%debug_query::<Pg, _>(&select_statement).to_string());
@@ -444,15 +443,14 @@ impl Metastore for PostgresqlMetastore {
                 cause: anyhow::anyhow!(err),
             }
         })?;
-        let model_index = model::Index {
-            index_id: index_metadata.index_id.clone(),
-            index_metadata_json,
-        };
         let conn = self.get_conn()?;
         conn.transaction::<_, MetastoreError, _>(|| {
             // Create index.
             let create_index_statement =
-                diesel::insert_into(schema::indexes::dsl::indexes).values(&model_index);
+                diesel::insert_into(schema::indexes::dsl::indexes).values((
+                    schema::indexes::dsl::index_id.eq(index_metadata.index_id.clone()),
+                    schema::indexes::dsl::index_metadata_json.eq(index_metadata_json),
+                ));
             debug!(sql=%debug_query::<Pg, _>(&create_index_statement).to_string());
             create_index_statement
                 .execute(&*conn)
@@ -474,7 +472,7 @@ impl Metastore for PostgresqlMetastore {
                         MetastoreError::DbError(err)
                     }
                 })?;
-            debug!(index_id=?model_index.index_id, "The index has been created");
+            debug!(index_id=?index_metadata.index_id, "The index has been created");
             Ok(())
         })?;
         Ok(())
@@ -572,15 +570,17 @@ impl Metastore for PostgresqlMetastore {
     async fn publish_splits<'a>(
         &self,
         index_id: &str,
+        source_id: &str,
         split_ids: &[&'a str],
         checkpoint_delta: CheckpointDelta,
     ) -> MetastoreResult<()> {
         let conn = self.get_conn()?;
         conn.transaction::<_, MetastoreError, _>(|| {
             // Update the index checkpoint.
-            self.apply_checkpoint_delta(&conn, index_id, checkpoint_delta)?;
+            self.apply_checkpoint_delta(&conn, index_id, source_id, checkpoint_delta)?;
 
-            let published_split_ids = self.publish_splits(&conn, index_id, split_ids)?;
+            let published_split_ids =
+                self.mark_splits_as_published_helper(&conn, index_id, split_ids)?;
 
             // returning `Ok` means `commit` the transaction.
             if published_split_ids.len() == split_ids.len() {
@@ -612,7 +612,8 @@ impl Metastore for PostgresqlMetastore {
         let conn = self.get_conn()?;
         conn.transaction::<_, MetastoreError, _>(|| {
             // Publish splits.
-            let published_split_ids = self.publish_splits(&conn, index_id, new_split_ids)?;
+            let published_split_ids =
+                self.mark_splits_as_published_helper(&conn, index_id, new_split_ids)?;
 
             // Mark splits for deletion
             let marked_split_ids =
@@ -654,10 +655,10 @@ impl Metastore for PostgresqlMetastore {
         index_id: &str,
         state: SplitState,
         time_range_opt: Option<Range<i64>>,
-        tags: &[Vec<String>],
+        tags: Option<TagFilterAst>,
     ) -> MetastoreResult<Vec<Split>> {
         let conn = self.get_conn()?;
-        self.list_splits_helper(&conn, index_id, Some(state), time_range_opt, Some(tags))
+        self.list_splits_helper(&conn, index_id, Some(state), time_range_opt, tags)
     }
 
     async fn list_all_splits(&self, index_id: &str) -> MetastoreResult<Vec<Split>> {
@@ -696,7 +697,7 @@ impl Metastore for PostgresqlMetastore {
         conn.transaction::<_, MetastoreError, _>(|| {
             let deletable_states = [
                 SplitState::Staged.to_string(),
-                SplitState::ScheduledForDeletion.to_string(),
+                SplitState::MarkedForDeletion.to_string(),
             ];
 
             let deleted_split_ids: Vec<String> = diesel::delete(
@@ -730,27 +731,30 @@ impl Metastore for PostgresqlMetastore {
 
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
         let conn = self.get_conn()?;
-        let select_index_statement =
-            schema::indexes::dsl::indexes.filter(schema::indexes::dsl::index_id.eq(index_id));
-        debug!(sql=%debug_query::<Pg, _>(&select_index_statement).to_string());
-        let model_index = select_index_statement
-            .first::<model::Index>(&conn)
-            .map_err(|err| match err {
-                diesel::result::Error::NotFound => MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
-                },
-                _ => MetastoreError::DbError(err),
-            })?;
-
-        let index_metadata =
-            model_index
-                .make_index_metadata()
-                .map_err(|err| MetastoreError::InternalError {
-                    message: "Failed to make index metadata".to_string(),
-                    cause: anyhow::anyhow!(err),
-                })?;
-
+        let index_metadata = self.index_metadata_inner(&conn, index_id)?;
         Ok(index_metadata)
+    }
+
+    async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()> {
+        let conn = self.get_conn()?;
+        conn.transaction::<_, MetastoreError, _>(|| {
+            let mut index_metadata = self.index_metadata_inner(&conn, index_id)?;
+            index_metadata.add_source(source)?;
+            self.update_index(&conn, index_metadata)?;
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    async fn delete_source(&self, index_id: &str, source_id: &str) -> MetastoreResult<()> {
+        let conn = self.get_conn()?;
+        conn.transaction::<_, MetastoreError, _>(|| {
+            let mut index_metadata = self.index_metadata_inner(&conn, index_id)?;
+            index_metadata.delete_source(source_id)?;
+            self.update_index(&conn, index_metadata)?;
+            Ok(())
+        })?;
+        Ok(())
     }
 
     fn uri(&self) -> String {
@@ -758,15 +762,57 @@ impl Metastore for PostgresqlMetastore {
     }
 }
 
-/// A single file metastore factory
-#[derive(Clone)]
-pub struct PostgresqlMetastoreFactory {}
+fn true_expr() -> Box<dyn BoxableExpression<splits::table, Pg, SqlType = Bool>> {
+    Box::new(true.into_sql::<Bool>()) // as FilterExpression<QS>;
+}
 
-impl Default for PostgresqlMetastoreFactory {
-    fn default() -> Self {
-        PostgresqlMetastoreFactory {}
+/// Takes a tag filters AST and returns a sql expression that can be used as
+/// a filter.
+///
+/// Tag string literals are properly bound to avoid SQL injection.
+fn tags_filter_expression_helper(
+    tags: TagFilterAst,
+) -> Box<dyn BoxableExpression<splits::table, Pg, SqlType = Bool>> {
+    match tags {
+        TagFilterAst::And(child_asts) => {
+            let mut child_exprs_it = child_asts.into_iter().map(tags_filter_expression_helper);
+            let mut and_expr = if let Some(first_child_expr) = child_exprs_it.next() {
+                first_child_expr
+            } else {
+                // child_asts is empty.
+                return true_expr();
+            };
+            for child_expr in child_exprs_it {
+                and_expr = Box::new(and_expr.and(child_expr));
+            }
+            and_expr
+        }
+        TagFilterAst::Or(child_asts) => {
+            let mut child_exprs_it = child_asts.into_iter().map(tags_filter_expression_helper);
+            let mut or_expr = if let Some(first_child_expr) = child_exprs_it.next() {
+                first_child_expr
+            } else {
+                // child_asts is empty.
+                return true_expr();
+            };
+            for child_expr in child_exprs_it {
+                or_expr = Box::new(or_expr.or(child_expr));
+            }
+            or_expr
+        }
+        TagFilterAst::Tag { is_present, tag } => Box::new(if is_present {
+            sql::<Bool>("").bind::<Text, _>(tag).sql("= ANY(tags)")
+        } else {
+            sql::<Bool>("NOT (")
+                .bind::<Text, _>(tag)
+                .sql("= ANY(tags))")
+        }),
     }
 }
+
+/// A file-backed metastore factory
+#[derive(Clone, Default)]
+pub struct PostgresqlMetastoreFactory {}
 
 #[async_trait]
 impl MetastoreFactory for PostgresqlMetastoreFactory {
@@ -812,3 +858,68 @@ impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
 
 #[cfg(feature = "postgres")]
 metastore_test_suite_for_postgresql!(crate::PostgresqlMetastore);
+
+#[cfg(test)]
+mod tests {
+    use diesel::debug_query;
+    use diesel::pg::Pg;
+    use quickwit_index_config::tag_pruning::{no_tag, tag, TagFilterAst};
+
+    use super::tags_filter_expression_helper;
+
+    fn test_tags_filter_expression_helper(tags_ast: TagFilterAst, expected: &str) {
+        let tags_expr = tags_filter_expression_helper(tags_ast);
+        let sql = debug_query::<Pg, _>(&tags_expr).to_string();
+        assert_eq!(&sql, expected);
+    }
+
+    #[test]
+    fn test_tags_filter_expression_single_tag() {
+        let tags_ast = tag("my_field:titi");
+        test_tags_filter_expression_helper(tags_ast, "$1= ANY(tags) -- binds: [\"my_field:titi\"]");
+    }
+
+    #[test]
+    fn test_tags_filter_expression_not_tag() {
+        test_tags_filter_expression_helper(
+            no_tag("my_field:titi"),
+            "NOT ($1= ANY(tags)) -- binds: [\"my_field:titi\"]",
+        );
+    }
+
+    #[test]
+    fn test_tags_filter_expression_ands() {
+        let tags_ast = TagFilterAst::And(vec![tag("tag:val1"), tag("tag:val2"), tag("tag:val3")]);
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "$1= ANY(tags) AND $2= ANY(tags) AND $3= ANY(tags) -- binds: [\"tag:val1\", \
+             \"tag:val2\", \"tag:val3\"]",
+        );
+    }
+
+    #[test]
+    fn test_tags_filter_expression_and_or() {
+        let tags_ast = TagFilterAst::Or(vec![
+            TagFilterAst::And(vec![tag("tag:val1"), tag("tag:val2")]),
+            tag("tag:val3"),
+        ]);
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "($1= ANY(tags) AND $2= ANY(tags) OR $3= ANY(tags)) -- binds: [\"tag:val1\", \
+             \"tag:val2\", \"tag:val3\"]",
+        );
+    }
+
+    #[test]
+    fn test_tags_filter_expression_and_or_correct_parenthesis() {
+        let tags_ast = TagFilterAst::And(vec![
+            TagFilterAst::Or(vec![tag("tag:val1"), tag("tag:val2")]),
+            tag("tag:val3"),
+        ]);
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "($1= ANY(tags) OR $2= ANY(tags)) AND $3= ANY(tags) -- binds: [\"tag:val1\", \
+             \"tag:val2\", \"tag:val3\"]",
+        );
+    }
+}

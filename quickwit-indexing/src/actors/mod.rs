@@ -21,6 +21,7 @@ mod indexing_pipeline;
 
 mod garbage_collector;
 mod indexer;
+mod indexing_server;
 mod packager;
 mod publisher;
 mod uploader;
@@ -28,7 +29,8 @@ mod uploader;
 pub use indexing_pipeline::{
     IndexingPipeline, IndexingPipelineHandler, IndexingPipelineMessage, IndexingPipelineParams,
 };
-use tantivy::schema::Field;
+pub use indexing_server::{IndexingPipelineId, IndexingServer, IndexingServerClient};
+use tantivy::schema::{Field, FieldType};
 mod merge_executor;
 mod merge_planner;
 mod merge_split_downloader;
@@ -49,4 +51,6 @@ pub struct NamedField {
     pub name: String,
     /// Tantivy schema field.
     pub field: Field,
+    /// Tantivy schema field type.
+    pub field_type: FieldType,
 }

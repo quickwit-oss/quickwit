@@ -25,20 +25,17 @@ mod grpc_adapter;
 mod http_handler;
 mod rest;
 
-use std::io::Write;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
-use quickwit_cluster::cluster::{read_or_create_host_key, Cluster};
+use quickwit_cluster::cluster::Cluster;
 use quickwit_cluster::service::ClusterServiceImpl;
-use quickwit_config::SearcherConfig;
+use quickwit_config::{QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_metastore::Metastore;
-use quickwit_search::{http_addr_to_swim_addr, ClusterClient, SearchClientPool, SearchServiceImpl};
+use quickwit_search::{ClusterClient, SearchClientPool, SearchServiceImpl};
 use quickwit_storage::{
     LocalFileStorageFactory, RegionProvider, S3CompatibleObjectStorageFactory, StorageUriResolver,
 };
-use termcolor::{self, Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-use tracing::debug;
+use tracing::{debug, info};
 
 pub use crate::args::ServeArgs;
 pub use crate::counters::COUNTERS;
@@ -47,28 +44,6 @@ use crate::grpc::start_grpc_service;
 use crate::grpc_adapter::cluster_adapter::GrpcClusterAdapter;
 use crate::grpc_adapter::search_adapter::GrpcSearchAdapter;
 use crate::rest::start_rest_service;
-
-fn display_help_message(rest_socket_addr: SocketAddr) -> anyhow::Result<()> {
-    // No-color if we are not in a terminal.
-    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
-    write!(&mut stdout, "Server started on ")?;
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
-    writeln!(&mut stdout, "http://{}/", &rest_socket_addr)?;
-    stdout.set_color(&ColorSpec::new())?;
-    writeln!(
-        &mut stdout,
-        "\nYou can query an index with the following command:"
-    )?;
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Blue)))?;
-    writeln!(
-        &mut stdout,
-        "curl 'http://{}/api/v1/my-index/search?query=my+query'",
-        rest_socket_addr
-    )?;
-    stdout.set_color(&ColorSpec::new())?;
-    // TODO add link to the documentation of the query language.
-    Ok(())
-}
 
 /// Builds a storage uri resolver that handles
 /// - s3:// uris. This storage comes with a cache that stores hotcache files.
@@ -88,21 +63,18 @@ fn storage_uri_resolver() -> StorageUriResolver {
 
 /// Starts a search node, aka a `searcher`.
 pub async fn run_searcher(
-    searcher_config: SearcherConfig,
+    quickwit_config: QuickwitConfig,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<()> {
-    let host_key = read_or_create_host_key(&searcher_config.host_key_path)?;
+    SEARCHER_CONFIG_INSTANCE
+        .set(quickwit_config.searcher_config.clone())
+        .expect("could not set searcher config in global once cell");
+    let searcher_config = quickwit_config.searcher_config;
     let cluster = Arc::new(Cluster::new(
-        host_key,
-        searcher_config.discovery_socket_addr()?,
+        quickwit_config.node_id.clone(),
+        searcher_config.gossip_socket_addr()?,
     )?);
-    let rest_socket_addr = searcher_config.rest_socket_addr()?;
-    for peer_socket_addr in searcher_config
-        .peer_socket_addrs()?
-        .into_iter()
-        .filter(|peer_socket_addr| *peer_socket_addr != rest_socket_addr)
-        .map(http_addr_to_swim_addr)
-    {
+    for peer_socket_addr in searcher_config.peer_socket_addrs()? {
         // If the peer address is specified,
         // it joins the cluster in which that node participates.
         debug!(peer_addr = %peer_socket_addr, "Add peer node.");
@@ -125,8 +97,12 @@ pub async fn run_searcher(
     let grpc_cluster_service = GrpcClusterAdapter::from(cluster_service.clone());
     let grpc_server = start_grpc_service(grpc_addr, grpc_search_service, grpc_cluster_service);
 
+    let rest_socket_addr = searcher_config.rest_socket_addr()?;
     let rest_server = start_rest_service(rest_socket_addr, search_service, cluster_service);
-    display_help_message(rest_socket_addr)?;
+    info!(
+        "Searcher ready to accept requests at http://{}/",
+        rest_socket_addr
+    );
     tokio::try_join!(rest_server, grpc_server)?;
     Ok(())
 }
@@ -135,6 +111,7 @@ pub async fn run_searcher(
 mod tests {
     use std::array::IntoIter;
     use std::collections::HashMap;
+    use std::net::SocketAddr;
     use std::ops::Range;
     use std::sync::Arc;
 
@@ -180,7 +157,6 @@ mod tests {
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             partition_by_field: None,
-            tags: vec![],
         };
         let mut metastore = MockMetastore::new();
         metastore
@@ -192,10 +168,7 @@ mod tests {
                 ))
             });
         metastore.expect_list_splits().returning(
-            |_index_id: &str,
-             _split_state: SplitState,
-             _time_range: Option<Range<i64>>,
-             _tags: &[Vec<String>]| {
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
                 Ok(vec![mock_split("split_1"), mock_split("split_2")])
             },
         );
