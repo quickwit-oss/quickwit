@@ -80,7 +80,7 @@ search_settings:
 
 ```bash
 curl -o gh-archive-index-config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/gh-archive/index-config.yaml
-quickwit index create --index gh-archive --index-config gh-archive-index-config.yaml
+./quickwit index create --index gh-archive --index-config gh-archive-index-config.yaml
 ```
 
 ## Indexing events
