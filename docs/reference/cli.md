@@ -370,6 +370,16 @@ The `default_index_root_uri` option in quickwit.yaml, specifies the parent folde
 The node can optionally join a cluster using the `peer_seed` parameter (quickwit.yaml). 
 This list of node addresses is used to discover the remaining peer nodes in the cluster through the use of a gossip protocol (SWIM).
   
+:::note
+Behind the scenes, Quickwit need to open the following port for cluster formation and workload distribution:
+
+    TCP port (default is 7280) for REST API
+    TCP and UDP port (default is 7280) for cluster membership protocol
+    TCP port + 1 (default is 7281) for gRPC address for the distributed search
+
+In this case, if ports are already taken, the serve command will fail.
+
+:::
 `quickwit service run searcher [args]`
 
 *Synopsis*
@@ -446,7 +456,6 @@ quickwit source list
 `--index` ID of the target index.    
 `--config` Quickwit config file.    
 `--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.    
-
 
 
 

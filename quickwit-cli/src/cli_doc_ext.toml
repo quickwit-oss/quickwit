@@ -61,8 +61,16 @@ command = ''' quickwit search --index wikipedia --config ./wikipedia_config.yaml
 [service.run.searcher]
 long_about = """
 Starts a web server listening that exposes the [Quickwit REST API](search-api.md). 
-The `default_index_root_uri` option in quickwit.yaml, specifies the parent folder of all indexes targeted by the API (e.g. s3://your-bucket/indexes). 
 The node can optionally join a cluster using the `peer_seed` parameter (quickwit.yaml). 
 This list of node addresses is used to discover the remaining peer nodes in the cluster through the use of a gossip protocol (SWIM).
 """
 
+note = """
+Behind the scenes, Quickwit need to open the following port for cluster formation and workload distribution:
+
+    TCP port (default is 7280) for REST API
+    TCP and UDP port (default is 7280) for cluster membership protocol
+    TCP port + 1 (default is 7281) for gRPC address for the distributed search
+
+If ports are already taken, the serve command will fail.
+"""
