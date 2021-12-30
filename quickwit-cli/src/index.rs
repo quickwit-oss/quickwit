@@ -590,7 +590,10 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
             "{}/{}",
             quickwit_config.default_index_root_uri, args.index_id
         );
-        info!("`index-uri` is not specified in the index configuration. Setting it to `{}`.", default_index_uri);
+        info!(
+            "`index-uri` is not specified in the index configuration. Setting it to `{}`.",
+            default_index_uri
+        );
         default_index_uri
     };
     let file_content = load_file(&args.index_config_uri).await?;
