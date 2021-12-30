@@ -149,5 +149,5 @@ pub fn make_table<T: Tabled>(header: &str, rows: impl IntoIterator<Item = T>) ->
     Table::new(rows)
         .with(Header(header))
         .with(Modify::new(Row(2..)).with(Alignment::left()))
-        .with(Style::psql())
+        .with(Style::PSQL)
 }
