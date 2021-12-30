@@ -320,7 +320,7 @@ impl IndexingServer {
     ) -> anyhow::Result<IndexingPipelineId> {
         let pipeline_id = IndexingPipelineId {
             index_id,
-            source_id: "vec-source".to_string(),
+            source_id: "void-source".to_string(),
         };
         let mut index_metadata = self.index_metadata(ctx, &pipeline_id.index_id).await?;
         index_metadata.indexing_settings.merge_enabled = merge_enabled;
@@ -550,22 +550,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(client.observe_server().await.num_running_pipelines, 3);
-        assert_eq!(
-            client
-                .observe_pipeline(&merge_pipeline_id)
-                .await
-                .unwrap()
-                .generation,
-            1
-        );
-        assert_eq!(
-            client
-                .observe_pipeline(&merge_pipeline_id)
-                .await
-                .unwrap()
-                .num_spawn_attempts,
-            1
-        );
+        let pipeline_observation = client.observe_pipeline(&merge_pipeline_id).await.unwrap();
+        assert_eq!(pipeline_observation.generation, 1);
+        assert_eq!(pipeline_observation.num_spawn_attempts, 1);
 
         // Test `supervise_pipelines`
         let source_3 = SourceConfig {
