@@ -201,7 +201,7 @@ fn generate_markdown_from_clap(app: &App) {
     let commands = app.get_subcommands();
     for command in commands {
         let command_name = command.get_name(); // index, split, source, service
-        println!("# {}", command_name);
+        println!("## {}", command_name);
         if let Some(about) = command.get_about() {
             if !about.trim().is_empty() {
                 // println!("\n*Description*");
