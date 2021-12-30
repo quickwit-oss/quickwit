@@ -42,7 +42,7 @@ pub struct IndexingStatistics {
     pub total_size_splits: u64,
     /// Pipeline generation.
     pub generation: usize,
-    /// Number of pipeline spawn successive attempts.
+    /// Number of successive pipeline spawn attempts.
     pub num_spawn_attempts: usize,
 }
 
