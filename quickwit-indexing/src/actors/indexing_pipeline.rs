@@ -47,6 +47,8 @@ use crate::source::{quickwit_supported_sources, SourceActor};
 use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
 
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
+
 pub struct IndexingPipelineHandler {
     /// Indexing pipeline
     pub source: ActorHandle<SourceActor>,
@@ -428,9 +430,9 @@ impl IndexingPipeline {
     // ...
     // >=8   5mn
     fn wait_duration_before_retry(retry_count: usize) -> Duration {
-        let mut wait_time_sec = 2_usize.pow(retry_count as u32 + 1);
-        wait_time_sec = wait_time_sec.min(60 * 5);
-        Duration::from_secs(wait_time_sec as u64)
+        // Protect against a `retry_count` that will lead to an overflow.
+        let max_power = (retry_count as u32 + 1).min(31);
+        Duration::from_secs(2u64.pow(max_power) as u64).min(MAX_RETRY_DELAY)
     }
 
     async fn process_spawn(
@@ -443,10 +445,10 @@ impl IndexingPipeline {
         }
         self.previous_generations_statistics.num_spawn_attempts = 1 + retry_count;
         if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
-            let duration_before_retry = Self::wait_duration_before_retry(retry_count);
-            error!(err=?spawn_error, "Error while spawn_pipeline, waiting 1000ms");
+            let retry_delay = Self::wait_duration_before_retry(retry_count);
+            error!(error = ?spawn_error, retry_count = retry_count, retry_delay = ?retry_delay, "Error while spawning indexing pipeline, retrying after some time.");
             ctx.schedule_self_msg(
-                duration_before_retry,
+                retry_delay,
                 IndexingPipelineMessage::Spawn {
                     retry_count: retry_count + 1,
                 },
@@ -612,11 +614,11 @@ mod tests {
         );
         assert_eq!(
             IndexingPipeline::wait_duration_before_retry(8),
-            Duration::from_secs(60 * 5)
+            Duration::from_secs(512)
         );
         assert_eq!(
             IndexingPipeline::wait_duration_before_retry(9),
-            Duration::from_secs(60 * 5)
+            MAX_RETRY_DELAY
         );
     }
 
