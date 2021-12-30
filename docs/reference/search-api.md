@@ -57,10 +57,10 @@ Search for documents matching a query in the given index `<index name>`.
 | ------------------------- | -------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | **query**                  | `String`           | Query text. See the [query language doc](query-language.md) (mandatory)                                          |                                                                                                |
 | **startTimestamp**         | `i64`    		 	    | If set, restrict search to documents with a `timestamp >= start_timestamp`                                                            |                                                                                |
-| **endTimestamp**           | `i64`       		    | If set, restrict search to documents with a `timestamp < end_timestamp``                                                            |                                                                                     |
+| **endTimestamp**           | `i64`       		    | If set, restrict search to documents with a `timestamp < end_timestamp`                                                            |                                                                                     |
 | **startOffset**            | `Integer`     	    | Number of documents to skip                                                                | `0`                                                                                             |
 | **maxHits**                | `Integer`          | Maximum number of hits to return (by default 20)                                                            | `20`                                                                                            |
-| **searchFields**           | `String`      		  | Fields to search on. Comma-separated list, e.g. "field1,field2" |                                                                                             |
+| **searchFields**           | `String`      		  | Fields to search on. Comma-separated list, e.g. "field1,field2" | index_config.search_settings.default_search_fields                                                                                             |
 | **format**                 | `Enum`           	| The output format. Allowed values are "json" or "prettyjson" 						 | `prettyjson`                                                                                            |
 
 
@@ -78,9 +78,7 @@ Search for documents matching a query in the given index `<index name>`.
 GET api/v1/indexes/<index name>/search/stream
 ```
 
-Streams field values from **ALL** documents matching a search query in the given index `<index name>`, in a specified output format.
-
-The output format can be one of the following:
+Streams field values from ALL documents matching a search query in the given index `<index name>`, in a specified output format among the following:
  -  [CSV](https://datatracker.ietf.org/doc/html/rfc4180)
  -  [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary)
 
@@ -104,13 +102,17 @@ The endpoint will return 10 million values if 10 million documents match the que
 |----------|------|-------------|---------------|
 | **query** | `String` | Query text. See the [query language doc](query-language.md) (mandatory) | |
 | **fastField** | `String` | Name of a field to retrieve from documents. This field must be marked as "fast" in the index config. (mandatory)| |
-| **searchFields** | `[String]` | If set, specify the set of fields the search will be performed on | |
+| **searchFields** | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2" | index_config.search_settings.default_search_fields    |
 | **startTimestamp** | `i64` | If set, restrict search to documents with a `timestamp >= start_timestamp` | |
 | **endTimestamp** | `i64` | If set, restrict search to documents with a `timestamp < end_timestamp`` | |
 | **outputFormat** | `String` | Response output format. `csv` or `clickHouseRowBinary`  | `csv` |
 
 
 ### Response
+The response is a chunked transfer encoded stream.
+It returns a list of all the field values from documents matching the query. The field must be marked as "fast" in the index config for this to work. 
+The formatting is based on the specified output format. 
 
-The response is a list of all the field values from documents matching the query. The field must be marked as "fast" in the index config for this to work. The formatting is based on the specified output format. 
+On error a "X-Stream-Error" header will be sent via the the trailers channel with information about the error and the stream will be closed. 
+Depending on the client, the trailer header with error details may not be shown. 
 
