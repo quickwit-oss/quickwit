@@ -19,7 +19,7 @@
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox, HEARTBEAT};
-use serde::{Deserialize, Serialize};
+use quickwit_config::VoidSourceParams;
 
 use crate::models::IndexerMessage;
 use crate::source::{Source, SourceContext, TypedSourceFactory};
@@ -46,9 +46,6 @@ impl Source for VoidSource {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct VoidSourceParams;
-
 pub struct VoidSourceFactory;
 
 #[async_trait]
@@ -68,6 +65,7 @@ impl TypedSourceFactory for VoidSourceFactory {
 #[cfg(test)]
 mod tests {
     use quickwit_actors::{create_test_mailbox, Health, Supervisable, Universe};
+    use quickwit_config::SourceType;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use serde_json::json;
 
@@ -78,8 +76,7 @@ mod tests {
     async fn test_void_source_loading() -> anyhow::Result<()> {
         let source_config = SourceConfig {
             source_id: "void-test-source".to_string(),
-            source_type: "void".to_string(),
-            params: json!(null),
+            source_type: SourceType::void(),
         };
         let source_loader = quickwit_supported_sources();
         let _ = source_loader

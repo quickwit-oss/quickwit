@@ -21,7 +21,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use byte_unit::Byte;
 use quickwit_config::{
-    DocMapping, IndexingResources, IndexingSettings, MergePolicy, SearchSettings, SourceConfig,
+    DocMapping, IndexingResources, IndexingSettings, KafkaSourceParams, MergePolicy,
+    SearchSettings, SourceConfig, SourceType,
 };
 use quickwit_doc_mapper::SortOrder;
 
@@ -165,8 +166,11 @@ pub(crate) fn sample_index_metadata_for_regression() -> IndexMetadata {
     };
     let kafka_source = SourceConfig {
         source_id: "kafka-source".to_string(),
-        source_type: "kafka".to_string(),
-        params: serde_json::json!({}),
+        source_type: SourceType::Kafka(KafkaSourceParams {
+            topic: "kafka-topic".to_string(),
+            client_log_level: None,
+            client_params: serde_json::json!({}),
+        }),
     };
     let mut sources = HashMap::default();
     sources.insert("kafka-source".to_string(), kafka_source);

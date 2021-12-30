@@ -28,6 +28,7 @@ use backoff::ExponentialBackoff;
 use futures::{StreamExt, TryFutureExt};
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
@@ -38,7 +39,6 @@ use rdkafka::topic_partition_list::TopicPartitionList;
 use rdkafka::types::RDKafkaErrorCode;
 use rdkafka::util::Timeout;
 use rdkafka::{ClientContext, Message, Offset};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::task::spawn_blocking;
 use tracing::{debug, info, warn};
@@ -56,17 +56,6 @@ use crate::source::{IndexerMessage, Source, SourceContext, TypedSourceFactory};
 ///
 /// 5MB seems like a good one size fits all value.
 const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
-
-/// Required parameters for instantiating a `KafkaSource`.
-#[derive(Clone, Deserialize, Serialize)]
-pub struct KafkaSourceParams {
-    /// Name of the topic that the source consumes.
-    pub topic: String,
-    /// Kafka client log level. Valid values are `debug`, `info`, `warn`, and `error`.
-    pub client_log_level: Option<String>,
-    /// Kafka client configuration parameters.
-    pub client_params: serde_json::Value,
-}
 
 /// Factory for instantiating a `KafkaSource`.
 pub struct KafkaSourceFactory;

@@ -32,6 +32,8 @@ use quickwit_doc_mapper::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::source_config::SourceConfig;
+
 // Note(fmassot): `DocMapping` is a struct only used for
 // serialization/deserialization of `DocMapper` parameters.
 // This is partly a duplicate of the `DocMapper` and can
@@ -200,13 +202,6 @@ pub struct SearchSettings {
     pub default_search_fields: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SourceConfig {
-    pub source_id: String,
-    pub source_type: String,
-    pub params: serde_json::Value,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexConfig {
     pub version: usize,
@@ -319,9 +314,9 @@ pub fn build_doc_mapper(
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
 
     use super::*;
+    use crate::SourceType;
 
     fn get_resource_path(resource_filename: &str) -> String {
         format!(
@@ -415,12 +410,12 @@ mod tests {
                 {
                     let source = &index_config.sources[0];
                     assert_eq!(source.source_id, "hdfs-logs-kafka-source");
-                    assert_eq!(source.source_type, "kafka");
+                    assert!(matches!(source.source_type, SourceType::Kafka(_)));
                 }
                 {
                     let source = &index_config.sources[1];
                     assert_eq!(source.source_id, "hdfs-logs-kinesis-source");
-                    assert_eq!(source.source_type, "kinesis");
+                    assert!(matches!(source.source_type, SourceType::Kinesis(_)));
                 }
                 Ok(())
             }
@@ -537,13 +532,11 @@ mod tests {
             invalid_index_config.sources = vec![
                 SourceConfig {
                     source_id: "void_1".to_string(),
-                    source_type: "void".to_string(),
-                    params: json!(null),
+                    source_type: SourceType::void(),
                 },
                 SourceConfig {
                     source_id: "void_1".to_string(),
-                    source_type: "void".to_string(),
-                    params: json!(null),
+                    source_type: SourceType::void(),
                 },
             ];
             assert!(invalid_index_config.validate().is_err());

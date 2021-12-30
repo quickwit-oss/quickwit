@@ -19,20 +19,12 @@
 
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_config::VecSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position, SourceCheckpoint};
-use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::models::{IndexerMessage, RawDocBatch};
 use crate::source::{Source, SourceContext, TypedSourceFactory};
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-pub struct VecSourceParams {
-    pub items: Vec<String>,
-    pub batch_num_docs: usize,
-    #[serde(default)]
-    pub partition: String,
-}
 
 pub struct VecSource {
     next_item_idx: usize,

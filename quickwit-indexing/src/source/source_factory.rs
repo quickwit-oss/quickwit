@@ -96,22 +96,17 @@ impl SourceLoader {
     ) -> Result<Box<dyn Source>, SourceLoaderError> {
         let source_factory = self
             .type_to_factory
-            .get(&source_config.source_type)
+            .get(source_config.source_type())
             .ok_or_else(|| SourceLoaderError::UnknownSourceType {
-                requested_source_type: source_config.source_type.clone(),
+                requested_source_type: source_config.source_type().to_string(),
                 available_source_types: self.type_to_factory.keys().join(", "),
             })?;
-        let SourceConfig {
-            source_id,
-            source_type,
-            params,
-        } = source_config;
         source_factory
-            .create_source(params, checkpoint)
+            .create_source(source_config.params(), checkpoint)
             .await
             .map_err(|error| SourceLoaderError::FailedToCreateSource {
-                source_id,
-                source_type,
+                source_type: source_config.source_type().to_string(),
+                source_id: source_config.source_id,
                 error,
             })
     }
@@ -119,7 +114,8 @@ impl SourceLoader {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+
+    use quickwit_config::SourceType;
 
     use super::*;
     use crate::source::quickwit_supported_sources;
@@ -129,47 +125,11 @@ mod tests {
         let source_loader = quickwit_supported_sources();
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
-            source_type: "vec".to_string(),
-            params: json!({"items": [], "batch_num_docs": 3}),
+            source_type: SourceType::void(),
         };
         source_loader
             .load_source(source_config, SourceCheckpoint::default())
             .await?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_source_loader_missing_type() {
-        let source_loader = quickwit_supported_sources();
-        let source_config = SourceConfig {
-            source_id: "test-source".to_string(),
-            source_type: "vec2".to_string(),
-            params: json!({"items": []}),
-        };
-        let source_result = source_loader
-            .load_source(source_config, SourceCheckpoint::default())
-            .await;
-        assert!(matches!(
-            source_result,
-            Err(SourceLoaderError::UnknownSourceType { .. })
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_source_loader_invalid_params() -> anyhow::Result<()> {
-        let source_loader = quickwit_supported_sources();
-        let source_config = SourceConfig {
-            source_id: "test-source".to_string(),
-            source_type: "vec".to_string(),
-            params: json!({"item": [], "batch_num_docs": 3}), //< item is misspelled
-        };
-        let source_result = source_loader
-            .load_source(source_config, SourceCheckpoint::default())
-            .await;
-        assert!(matches!(
-            source_result,
-            Err(SourceLoaderError::FailedToCreateSource { .. })
-        ));
         Ok(())
     }
 }

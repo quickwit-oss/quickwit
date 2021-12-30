@@ -19,13 +19,13 @@
 
 use std::io;
 use std::io::SeekFrom;
-use std::path::PathBuf;
 
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_config::FileSourceParams;
 use quickwit_metastore::checkpoint::{CheckpointDelta, PartitionId, Position};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader};
 use tracing::info;
@@ -124,40 +124,11 @@ impl Source for FileSource {
     }
 }
 
-// TODO handle log directories.
-#[derive(Serialize, Deserialize, Debug)]
-pub struct FileSourceParams {
-    filepath: Option<PathBuf>, //< If None read from stdin.
-}
-
-impl FileSourceParams {
-    pub fn for_file(filepath: impl Into<PathBuf>) -> Self {
-        FileSourceParams {
-            filepath: Some(filepath.into()),
-        }
-    }
-
-    pub fn stdin() -> Self {
-        FileSourceParams { filepath: None }
-    }
-
-    fn canonical_filepath(&self) -> io::Result<Option<PathBuf>> {
-        match &self.filepath {
-            Some(filepath) => {
-                let canonical_filepath = std::fs::canonicalize(filepath)?;
-                Ok(Some(canonical_filepath))
-            }
-            None => Ok(None),
-        }
-    }
-}
-
 pub struct FileSourceFactory;
 
 #[async_trait]
 impl TypedSourceFactory for FileSourceFactory {
     type Source = FileSource;
-
     type Params = FileSourceParams;
 
     // TODO handle checkpoint for files.
@@ -211,7 +182,7 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let (mailbox, inbox) = create_test_mailbox();
-        let params = FileSourceParams::for_file("data/test_corpus.json");
+        let params = FileSourceParams::file("data/test_corpus.json");
         let file_source =
             FileSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
         let file_source_actor = SourceActor {
@@ -252,7 +223,7 @@ mod tests {
             temp_file.write_all("\n".as_bytes())?;
         }
         temp_file.flush()?;
-        let params = FileSourceParams::for_file(temp_path.as_path());
+        let params = FileSourceParams::file(temp_path);
         let source =
             FileSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
         let file_source_actor = SourceActor {
@@ -321,7 +292,7 @@ mod tests {
         }
         temp_file.flush()?;
         let temp_file_path = temp_file.path().canonicalize()?;
-        let params = FileSourceParams::for_file(temp_file_path.clone());
+        let params = FileSourceParams::file(&temp_file_path);
         let mut checkpoint = SourceCheckpoint::default();
         let partition_id = PartitionId::from(temp_file_path.to_string_lossy().to_string());
         let checkpoint_delta = CheckpointDelta::from_partition_delta(
