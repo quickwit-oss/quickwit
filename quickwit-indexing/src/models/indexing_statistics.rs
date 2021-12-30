@@ -40,6 +40,10 @@ pub struct IndexingStatistics {
     pub total_bytes_processed: u64,
     /// Size in bytes of resulting split
     pub total_size_splits: u64,
+    /// Pipeline generation.
+    pub generation: usize,
+    /// Number of successive pipeline spawn attempts.
+    pub num_spawn_attempts: usize,
 }
 
 impl IndexingStatistics {
@@ -56,6 +60,16 @@ impl IndexingStatistics {
         self.num_staged_splits += uploader_counters.num_staged_splits.load(Ordering::SeqCst);
         self.num_uploaded_splits += uploader_counters.num_uploaded_splits.load(Ordering::SeqCst);
         self.num_published_splits += publisher_counters.num_published_splits;
+        self
+    }
+
+    pub fn set_num_spawn_attempts(mut self, num_spawn_attempts: usize) -> Self {
+        self.num_spawn_attempts = num_spawn_attempts;
+        self
+    }
+
+    pub fn set_generation(mut self, generation: usize) -> Self {
+        self.generation = generation;
         self
     }
 }
