@@ -22,6 +22,7 @@ use clap::ArgMatches;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::SourceConfig;
+use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
 use quickwit_storage::load_file;
@@ -188,6 +189,7 @@ async fn add_source_cli(args: AddSourceArgs) -> anyhow::Result<()> {
         source_type: args.source_type,
         params,
     };
+    check_source_connectivity(&source).await?;
     metastore.add_source(&args.index_id, source).await?;
     Ok(())
 }

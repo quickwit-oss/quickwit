@@ -306,8 +306,9 @@ fn previous_position_for_offset(offset: i64) -> Position {
 }
 
 /// Checks if connecting with the given parameters works.
-pub(super) fn check_connectivity(client_params: serde_json::Value) -> anyhow::Result<()> {
-    create_consumer(None, client_params)?;
+pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Result<()> {
+    let consumer = create_consumer(params.client_log_level, params.client_params)?;
+    fetch_partition_ids(consumer, &params.topic).await?;
     Ok(())
 }
 
