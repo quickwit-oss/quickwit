@@ -207,7 +207,12 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
             bail!("Quickwit binary was not compiled with the Kafka source feature.");
 
             #[cfg(feature = "kafka")]
-            kafka_source::check_connectivity(source_config.params.clone())
+            {
+                let kafka_source_params: KafkaSourceParams =
+                    serde_json::from_value(source_config.params.clone())?;
+                kafka_source::check_connectivity(kafka_source_params).await?;
+                Ok(())
+            }
         }
         "vec" => Ok(()),
         "void" => Ok(()),
