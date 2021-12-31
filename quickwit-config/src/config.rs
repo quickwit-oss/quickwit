@@ -126,6 +126,8 @@ pub struct SearcherConfig {
     pub fast_field_cache_capacity: Byte,
     #[serde(default = "SearcherConfig::default_split_footer_cache_capacity")]
     pub split_footer_cache_capacity: Byte,
+    #[serde(default = "SearcherConfig::default_max_num_concurrent_split_streams")]
+    pub max_num_concurrent_split_streams: usize,
 }
 
 impl SearcherConfig {
@@ -139,6 +141,10 @@ impl SearcherConfig {
 
     fn default_split_footer_cache_capacity() -> Byte {
         Byte::from_bytes(500_000_000) // 500M
+    }
+
+    fn default_max_num_concurrent_split_streams() -> usize {
+        100
     }
 
     pub fn rest_socket_addr(&self) -> anyhow::Result<SocketAddr> {
@@ -194,6 +200,7 @@ impl Default for SearcherConfig {
             peer_seeds: Vec::new(),
             fast_field_cache_capacity: Self::default_fast_field_cache_capacity(),
             split_footer_cache_capacity: Self::default_split_footer_cache_capacity(),
+            max_num_concurrent_split_streams: Self::default_max_num_concurrent_split_streams(),
         }
     }
 }
@@ -352,6 +359,7 @@ mod tests {
                         ],
                         fast_field_cache_capacity: Byte::from_str("10G").unwrap(),
                         split_footer_cache_capacity: Byte::from_str("1G").unwrap(),
+                        max_num_concurrent_split_streams: 120,
                     }
                 );
 
