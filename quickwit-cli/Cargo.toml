@@ -8,10 +8,15 @@ description = "Quickwit is a cost-efficient search engine."
 repository = "https://github.com/quickwit-inc/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
+default-run = "quickwit"
 
 [[bin]]
 name = "quickwit"
 path = "src/main.rs"
+
+[[bin]]
+name = "generate_markdown"
+path = "src/generate_markdown.rs"
 
 [dependencies]
 async-trait = "0.1"
@@ -66,3 +71,4 @@ tokio-console = ["console-subscriber"]
 openssl-support = ["openssl-probe"]
 release-feature-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka", "openssl-support"]
 release-feature-vendored-set = ["quickwit-metastore/postgres", "quickwit-indexing/vendored-kafka", "openssl-support"]
+
