@@ -125,7 +125,7 @@ subcommands:
                 about: Merges an index.
                 args:
                     - index:
-                        about: INDEX.
+                        about: ID of the target index.
                         long: index
                         value_name: INDEX
                         required: true

@@ -49,20 +49,20 @@ These timestamp options can particularly be useful in boosting query performance
 
 [[index.search.examples]]
 name = "Searching a index"
-command = '''quickwit search --index wikipedia --config ./wikipedia_config.yaml --query "Barack Obama"'''
+command = '''quickwit search --index wikipedia --config ./quickwit.yaml --query "Barack Obama"'''
 
 [[index.search.examples]]
 name = "Limiting the result set to 50 hits"
-command = '''quickwit search --index wikipedia --config ./wikipedia_config.yaml --query "Barack Obama" --max-hits 50'''
+command = '''quickwit search --index wikipedia --config ./quickwit.yaml --query "Barack Obama" --max-hits 50'''
 
 [[index.search.examples]]
 name = "Looking for matches in the title and url fields only"
-command = ''' quickwit search --index wikipedia --config ./wikipedia_config.yaml --query "Barack Obama" --search-fields title,url'''
+command = ''' quickwit search --index wikipedia --config ./quickwit.yaml --query "Barack Obama" --search-fields title,url'''
 
 
 [service.run.searcher]
 long_about = """
-Starts a web server listening that exposes the [Quickwit REST API](search-api.md). 
+Starts a web server that exposes the [Quickwit REST API](search-api.md). 
 The node can optionally join a cluster using the `peer_seed` parameter (quickwit.yaml). 
 This list of node addresses is used to discover the remaining peer nodes in the cluster through the use of a gossip protocol (SWIM).
 """
@@ -77,9 +77,29 @@ Behind the scenes, Quickwit need to open the following port for cluster formatio
 If ports are already taken, the serve command will fail.
 """
 
+
+[[service.run.searcher.examples]]
+name = "curl request and specify fields to search"
+command = ''' curl -L "http://127.0.0.1:7280/api/v1/wikipedia/search/stream?query=clinton&searchField=body,title" '''
+
+[[service.run.searcher.examples]]
+name = "curl request stream fast field, HTTP1.1 chunked transfer encoding"
+command = ''' curl -L "http://127.0.0.1:7280/api/v1/wikipedia/search/stream?query=tangkhul&searchField=body,title&fastField=number&outputFormat=csv"  '''
+
+[[service.run.searcher.examples]]
+name = "curl request stream fast field as binary, force HTTP2"
+command = ''' curl -L --http2-prior-knowledge "http://127.0.0.1:7280/api/v1/myindex/search/stream?query=clinton&searchField=body,title&fastField=number&outputFormat=clickHouseRowBinary"  '''
+
+
 [service.run.indexer]
 long_about = """
-Starts a web server listening 
-
+Starts a indexing server that consumes the sources from the `quickwit source add` command. The server can be terminated when all sources are consumed.
 """
+
+[[service.run.indexer.examples]]
+name = "Add and consume source"
+command = ''' 
+quickwit source add --id wikipedia_data_1 --index wikipedia --params '{"filepath":"wiki-articles_1.json"}' --type file
+quickwit service run indexer --indexes wikipedia
+'''
 
