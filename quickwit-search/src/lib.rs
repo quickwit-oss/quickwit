@@ -47,7 +47,7 @@ use std::ops::Range;
 use anyhow::Context;
 use itertools::Itertools;
 use quickwit_config::build_doc_mapper;
-use quickwit_index_config::tag_pruning::extract_tags_from_query;
+use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;

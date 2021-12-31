@@ -6,7 +6,7 @@ FILTER = {
 	"quickwit-backward-compat",
 	"quickwit-actors",
 	"quickwit-cli",
-	"quickwit-index-config",
+	"quickwit-doc-mapper",
 	"quickwit-search",
 	"quickwit-common",
 	"quickwit-indexing",

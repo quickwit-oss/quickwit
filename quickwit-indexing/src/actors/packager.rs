@@ -27,7 +27,7 @@ use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity, SyncActor};
 use quickwit_directories::write_hotcache;
-use quickwit_index_config::tag_pruning::append_to_tag_set;
+use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use tantivy::schema::FieldType;
 use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentId, SegmentMeta};
 use tracing::{debug, info, info_span, warn, Span};

@@ -19,7 +19,7 @@ tracing = "0.1.29"
 quickwit-proto = {path="../quickwit-proto"}
 serde_json = "1"
 quickwit-config = {path="../quickwit-config"}
-quickwit-index-config = {path="../quickwit-index-config"}
+quickwit-doc-mapper = {path="../quickwit-doc-mapper"}
 quickwit-storage = {path="../quickwit-storage"}
 quickwit-common = {path="../quickwit-common"}
 quickwit-metastore = {path="../quickwit-metastore"}
@@ -44,7 +44,7 @@ tokio = { version = "1", features = ["full"] }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage", features=["testsuite"]}
 quickwit-core = {path="../quickwit-core"}
 quickwit-indexing= {path="../quickwit-indexing"}
-quickwit-index-config = {path="../quickwit-index-config"}
+quickwit-doc-mapper = {path="../quickwit-doc-mapper"}
 
 [dependencies.quickwit-cluster]
 path = '../quickwit-cluster'

@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_index_config::QueryParserError;
+use quickwit_doc_mapper::QueryParserError;
 use quickwit_metastore::MetastoreError;
 use quickwit_storage::StorageResolverError;
 use serde::{Deserialize, Serialize};

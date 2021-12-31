@@ -23,7 +23,7 @@ quickwit-actors = {path = "../quickwit-actors" }
 quickwit-common = {path = "../quickwit-common" }
 quickwit-config = {path = "../quickwit-config" }
 quickwit-directories = {path = "../quickwit-directories"}
-quickwit-index-config = {path = "../quickwit-index-config", features=["testsuite"]}
+quickwit-doc-mapper = {path = "../quickwit-doc-mapper", features=["testsuite"]}
 quickwit-metastore = {path = "../quickwit-metastore" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
 rdkafka = { version = "0.28", default-features = false, features = ["tokio", "libz", "ssl", "cmake-build"], optional = true }

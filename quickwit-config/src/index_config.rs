@@ -27,7 +27,7 @@ use anyhow::{bail, Context};
 use byte_unit::Byte;
 use json_comments::StripComments;
 use quickwit_common::uri::Uri;
-use quickwit_index_config::{
+use quickwit_doc_mapper::{
     DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, SortBy, SortByConfig, SortOrder,
 };
 use serde::{Deserialize, Serialize};

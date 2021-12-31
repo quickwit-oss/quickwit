@@ -2197,7 +2197,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-core",
  "quickwit-directories",
- "quickwit-index-config",
+ "quickwit-doc-mapper",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",
@@ -2270,7 +2270,7 @@ dependencies = [
  "json_comments",
  "once_cell",
  "quickwit-common",
- "quickwit-index-config",
+ "quickwit-doc-mapper",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2292,7 +2292,7 @@ dependencies = [
  "quickwit-actors",
  "quickwit-common",
  "quickwit-directories",
- "quickwit-index-config",
+ "quickwit-doc-mapper",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-storage",
@@ -2331,7 +2331,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickwit-index-config"
+name = "quickwit-doc-mapper"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -2376,7 +2376,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-directories",
- "quickwit-index-config",
+ "quickwit-doc-mapper",
  "quickwit-metastore",
  "quickwit-storage",
  "rand",
@@ -2414,7 +2414,7 @@ dependencies = [
  "openssl",
  "quickwit-common",
  "quickwit-config",
- "quickwit-index-config",
+ "quickwit-doc-mapper",
  "quickwit-storage",
  "rand",
  "regex",
@@ -2458,7 +2458,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-directories",
- "quickwit-index-config",
+ "quickwit-doc-mapper",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",
@@ -2498,7 +2498,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-core",
  "quickwit-directories",
- "quickwit-index-config",
+ "quickwit-doc-mapper",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",

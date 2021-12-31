@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use quickwit_index_config::DocMapper;
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::Metastore;
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse,

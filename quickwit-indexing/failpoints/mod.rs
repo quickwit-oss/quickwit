@@ -43,7 +43,7 @@ use byte_unit::Byte;
 use fail::FailScenario;
 use quickwit_actors::{create_test_mailbox, ActorExitStatus, Universe};
 use quickwit_common::split_file;
-use quickwit_index_config::{default_config_for_tests, DefaultIndexConfigBuilder};
+use quickwit_doc_mapper::{default_config_for_tests, DefaultIndexConfigBuilder};
 use quickwit_indexing::actors::{IndexerParams, MergeExecutor};
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::{CommitPolicy, IndexingDirectory, MergeScratch, ScratchDirectory};

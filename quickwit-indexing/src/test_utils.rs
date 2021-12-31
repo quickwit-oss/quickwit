@@ -21,7 +21,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use quickwit_config::{build_doc_mapper, IndexerConfig, SourceConfig};
-use quickwit_index_config::DocMapper;
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, Metastore, Split, SplitMetadata, SplitState,
 };

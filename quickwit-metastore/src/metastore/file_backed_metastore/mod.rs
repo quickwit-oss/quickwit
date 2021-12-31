@@ -32,7 +32,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_config::SourceConfig;
-use quickwit_index_config::tag_pruning::TagFilterAst;
+use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 use tracing::error;

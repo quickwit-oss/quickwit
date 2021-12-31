@@ -25,7 +25,7 @@ use itertools::Itertools;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, SearchSettings, SourceConfig,
 };
-use quickwit_index_config::{
+use quickwit_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, SortBy, SortByConfig, SortOrder,
 };
 use serde::{Deserialize, Deserializer, Serialize};

@@ -23,7 +23,7 @@ use byte_unit::Byte;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, MergePolicy, SearchSettings, SourceConfig,
 };
-use quickwit_index_config::SortOrder;
+use quickwit_doc_mapper::SortOrder;
 
 use crate::checkpoint::{
     CheckpointDelta, IndexCheckpoint, PartitionId, Position, SourceCheckpoint,

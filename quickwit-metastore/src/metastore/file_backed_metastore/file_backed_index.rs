@@ -27,7 +27,7 @@ use std::ops::{Range, RangeInclusive};
 use chrono::Utc;
 use itertools::Itertools;
 use quickwit_config::SourceConfig;
-use quickwit_index_config::tag_pruning::TagFilterAst;
+use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoint::CheckpointDelta;

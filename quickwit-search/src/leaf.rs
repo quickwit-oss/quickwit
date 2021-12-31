@@ -27,7 +27,7 @@ use itertools::{Either, Itertools};
 use once_cell::sync::OnceCell;
 use quickwit_config::get_searcher_config_instance;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
-use quickwit_index_config::DocMapper;
+use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::{
     LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets, SplitSearchError,
 };

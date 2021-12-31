@@ -29,7 +29,7 @@ use quickwit_actors::{
     KillSwitch, QueueCapacity, Supervisable,
 };
 use quickwit_config::{build_doc_mapper, IndexingSettings, SourceConfig};
-use quickwit_index_config::DocMapper;
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{IndexMetadata, Metastore, SplitState};
 use quickwit_storage::Storage;
@@ -589,7 +589,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_config::IndexingSettings;
-    use quickwit_index_config::default_doc_mapper_for_tests;
+    use quickwit_doc_mapper::default_doc_mapper_for_tests;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use quickwit_metastore::{MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;

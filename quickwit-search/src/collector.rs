@@ -21,7 +21,7 @@ use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet};
 
 use itertools::Itertools;
-use quickwit_index_config::{DocMapper, SortBy, SortOrder};
+use quickwit_doc_mapper::{DocMapper, SortBy, SortOrder};
 use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest};
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader};
