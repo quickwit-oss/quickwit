@@ -93,12 +93,13 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let yaml = load_yaml!("cli.yaml");
-    let matches = App::from(yaml)
+    let app = App::from(yaml)
         .version(version_text.as_str())
         .about(about_text.as_str())
         .license("AGPLv3.0")
-        .setting(AppSettings::DisableHelpSubcommand)
-        .get_matches();
+        .setting(AppSettings::DisableHelpSubcommand);
+
+    let matches = app.get_matches();
 
     let command = match CliCommand::parse_cli_args(&matches) {
         Ok(command) => command,

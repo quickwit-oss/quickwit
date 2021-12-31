@@ -2214,6 +2214,7 @@ dependencies = [
  "time 0.3.5",
  "tokio",
  "tokio-util",
+ "toml",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",

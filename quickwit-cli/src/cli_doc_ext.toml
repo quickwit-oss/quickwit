@@ -1,0 +1,105 @@
+[index.create]
+long_about = """
+Creates an index at `index-uri`. 
+`index-uri` can either be passed as parameter, or it will take the default_root_index_uri from quickwit `config` in the format `{default_index_root_uri}/{index-id}` (index-id is the index parameter). 
+The command fails if an index already exists unless `overwrite` is passed. 
+When `overwrite` is enabled, the command deletes all the files stored at `index-uri` before creating a new index. 
+The index config defines how a document and fields it contains, are stored and indexed, see the [index config documentation](index-config.md).
+"""
+
+[[index.create.examples]]
+name= "Create a new index with metastore in the local `metastore` folder."
+command = "quickwit index create --index-config-uri ./wikipedia_index_config.yaml  --config=quickwit.yaml"
+
+[index.ingest]
+long_about = """
+Indexes a dataset consisting of newline-delimited JSON objects located at `input-path` or read from *stdin*. 
+The data is appended to the target index specified by `index` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin. 
+Currently, only local datasets are supported. 
+By default, quickwit's indexer will work with a heap of 2 GiB of memory, but this can be set with the `heap-size` option in the indexing_settings.resources section in the config. 
+This does not directly reflect the overall memory usage of `quickwit index ingest`, but doubling this value should give a fair approximation.
+"""
+
+[index.gc]
+note = """
+Intermediate files are created while executing Quickwit commands. 
+These intermediate files are always cleaned at the end of each successfully executed command. 
+However, failed or interrupted commands can leave behind intermediate files that need to be removed. 
+Also note that using very short grace-period (like seconds) can cause removal of intermediate files being operated on especially when using Quickwit concurently on the same index. 
+In practice you can settle with the default value (1 hour) and only specify a lower value if you really know what you are doing.
+"""
+
+[[index.ingest.examples]]
+name = "Indexing a dataset from a file"
+command = "quickwit index ingest --index wikipedia --config=quickwit.yaml --data-dir wikipedia --input-path wikipedia.json"
+
+[[index.ingest.examples]]
+name = "Indexing a dataset from stdin"
+command = "cat hdfs-log.json | quickwit index ingest --index wikipedia --config=quickwit.yaml --data-dir wikipedia"
+
+
+[index.search]
+long_about = """
+Searches the index with the index id `index` and returns the documents matching the query specified with `query`. 
+The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options. 
+It's possible to restrict the search on specified fields using the `search-fields` option. 
+Search can also be limited to a time range using the `start-timestamp` and `end-timestamp` options. 
+These timestamp options can particularly be useful in boosting query performance when using a time series dataset and only need to query a particular window.
+"""
+
+[[index.search.examples]]
+name = "Searching a index"
+command = '''quickwit search --index wikipedia --config ./quickwit.yaml --query "Barack Obama"'''
+
+[[index.search.examples]]
+name = "Limiting the result set to 50 hits"
+command = '''quickwit search --index wikipedia --config ./quickwit.yaml --query "Barack Obama" --max-hits 50'''
+
+[[index.search.examples]]
+name = "Looking for matches in the title and url fields only"
+command = ''' quickwit search --index wikipedia --config ./quickwit.yaml --query "Barack Obama" --search-fields title,url'''
+
+
+[service.run.searcher]
+long_about = """
+Starts a web server that exposes the [Quickwit REST API](search-api.md). 
+The node can optionally join a cluster using the `peer_seed` parameter (quickwit.yaml). 
+This list of node addresses is used to discover the remaining peer nodes in the cluster through the use of a gossip protocol (SWIM).
+"""
+
+note = """
+Behind the scenes, Quickwit need to open the following port for cluster formation and workload distribution:
+
+    TCP port (default is 7280) for REST API
+    TCP and UDP port (default is 7280) for cluster membership protocol
+    TCP port + 1 (default is 7281) for gRPC address for the distributed search
+
+If ports are already taken, the serve command will fail.
+"""
+
+
+[[service.run.searcher.examples]]
+name = "curl request and specify fields to search"
+command = ''' curl -L "http://127.0.0.1:7280/api/v1/wikipedia/search/stream?query=clinton&searchField=body,title" '''
+
+[[service.run.searcher.examples]]
+name = "curl request stream fast field, HTTP1.1 chunked transfer encoding"
+command = ''' curl -L "http://127.0.0.1:7280/api/v1/wikipedia/search/stream?query=tangkhul&searchField=body,title&fastField=number&outputFormat=csv"  '''
+
+[[service.run.searcher.examples]]
+name = "curl request stream fast field as binary, force HTTP2"
+command = ''' curl -L --http2-prior-knowledge "http://127.0.0.1:7280/api/v1/myindex/search/stream?query=clinton&searchField=body,title&fastField=number&outputFormat=clickHouseRowBinary"  '''
+
+
+[service.run.indexer]
+long_about = """
+Starts a indexing server that consumes the sources from the `quickwit source add` command. The server can be terminated when all sources are consumed.
+"""
+
+[[service.run.indexer.examples]]
+name = "Add and consume source"
+command = ''' 
+quickwit source add --id wikipedia_data_1 --index wikipedia --params '{"filepath":"wiki-articles_1.json"}' --type file
+quickwit service run indexer --indexes wikipedia
+'''
+
