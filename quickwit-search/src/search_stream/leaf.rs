@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use futures::{FutureExt, StreamExt};
 use once_cell::sync::OnceCell;
-use quickwit_common::get_from_env;
+use quickwit_config::get_searcher_config_instance;
 use quickwit_index_config::IndexConfig;
 use quickwit_proto::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
@@ -44,25 +44,17 @@ use super::FastFieldCollector;
 use crate::leaf::{open_index, warmup};
 use crate::{Result, SearchError};
 
-const SPLIT_STREAM_CONCURRENCY_ENV_KEY: &str = "CONCURRENT_SPLIT_STREAM";
-const DEFAULT_SPLIT_STREAM_CONCURRENCY: usize = 100;
-
-fn get_split_stream_concurrency() -> usize {
+fn get_max_num_concurrent_split_streams() -> usize {
     static INSTANCE: OnceCell<usize> = OnceCell::new();
-    *INSTANCE.get_or_init(|| {
-        get_from_env(
-            SPLIT_STREAM_CONCURRENCY_ENV_KEY,
-            DEFAULT_SPLIT_STREAM_CONCURRENCY,
-        )
-    })
+    *INSTANCE.get_or_init(|| get_searcher_config_instance().max_num_concurrent_split_streams)
 }
 
 async fn get_split_stream_semaphore() -> SemaphorePermit<'static> {
     static INSTANCE: OnceCell<Arc<Semaphore>> = OnceCell::new();
     INSTANCE
         .get_or_init(|| {
-            let split_stream_concurrency = get_split_stream_concurrency();
-            Arc::new(Semaphore::new(split_stream_concurrency))
+            let max_num_concurrent_split_streams = get_max_num_concurrent_split_streams();
+            Arc::new(Semaphore::new(max_num_concurrent_split_streams))
         })
         .acquire()
         .await
@@ -109,7 +101,7 @@ async fn leaf_search_results_stream(
     splits: Vec<SplitIdAndFooterOffsets>,
     index_config: Arc<dyn IndexConfig>,
 ) -> impl futures::Stream<Item = crate::Result<LeafSearchStreamResponse>> + Sync + Send + 'static {
-    let split_stream_concurrency = get_split_stream_concurrency();
+    let max_num_concurrent_split_streams = get_max_num_concurrent_split_streams();
     futures::stream::iter(splits)
         .map(move |split| {
             leaf_search_stream_single_split(
@@ -120,7 +112,7 @@ async fn leaf_search_results_stream(
             )
             .shared()
         })
-        .buffer_unordered(split_stream_concurrency)
+        .buffer_unordered(max_num_concurrent_split_streams)
 }
 
 /// Apply a leaf search on a single split.
