@@ -125,8 +125,8 @@ message LeafSearchRequest {
   // This ids are resolved from the index_uri defined in the search_request.
   repeated SplitIdAndFooterOffsets split_metadata = 4;
 
-  // `IndexConfig` as json serialized trait.
-  string index_config = 5;
+  // `DocMapper` as json serialized trait.
+  string doc_mapper = 5;
 
   // Index URI. The index URI defines the location of the storage that contains the
   // split files.
@@ -263,8 +263,8 @@ message LeafSearchStreamRequest {
   // This ids are resolved from the index_uri defined in the stream request.
   repeated SplitIdAndFooterOffsets split_metadata = 2;
 
-  // `IndexConfig` as json serialized trait.
-  string index_config = 5;
+  // `DocMapper` as json serialized trait.
+  string doc_mapper = 5;
 
   // Index URI. The index URI defines the location of the storage that contains the
   // split files.

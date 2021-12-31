@@ -34,7 +34,7 @@ use diesel::{
     ExpressionMethods, IntoSql, PgConnection, QueryDsl, RunQueryDsl,
 };
 use quickwit_config::SourceConfig;
-use quickwit_index_config::tag_pruning::TagFilterAst;
+use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use tracing::{debug, error, info, warn};
 
 use crate::metastore::CheckpointDelta;
@@ -863,7 +863,7 @@ metastore_test_suite_for_postgresql!(crate::PostgresqlMetastore);
 mod tests {
     use diesel::debug_query;
     use diesel::pg::Pg;
-    use quickwit_index_config::tag_pruning::{no_tag, tag, TagFilterAst};
+    use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
 
     use super::tags_filter_expression_helper;
 

@@ -231,7 +231,7 @@ mod tests {
         };
         LeafSearchRequest {
             search_request: Some(search_request),
-            index_config: "config".to_string(),
+            doc_mapper: "doc_mapper".to_string(),
             index_uri: "uri".to_string(),
             split_metadata: vec![
                 SplitIdAndFooterOffsets {
@@ -261,7 +261,7 @@ mod tests {
         };
         LeafSearchStreamRequest {
             request: Some(search_request),
-            index_config: "config".to_string(),
+            doc_mapper: "doc_mapper".to_string(),
             index_uri: "uri".to_string(),
             split_metadata: vec![
                 SplitIdAndFooterOffsets {

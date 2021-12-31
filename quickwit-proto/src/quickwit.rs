@@ -79,9 +79,9 @@ pub struct LeafSearchRequest {
     /// This ids are resolved from the index_uri defined in the search_request.
     #[prost(message, repeated, tag = "4")]
     pub split_metadata: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
-    /// `IndexConfig` as json serialized trait.
+    /// `DocMapper` as json serialized trait.
     #[prost(string, tag = "5")]
-    pub index_config: ::prost::alloc::string::String,
+    pub doc_mapper: ::prost::alloc::string::String,
     /// Index URI. The index URI defines the location of the storage that contains the
     /// split files.
     #[prost(string, tag = "6")]
@@ -229,9 +229,9 @@ pub struct LeafSearchStreamRequest {
     /// This ids are resolved from the index_uri defined in the stream request.
     #[prost(message, repeated, tag = "2")]
     pub split_metadata: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
-    /// `IndexConfig` as json serialized trait.
+    /// `DocMapper` as json serialized trait.
     #[prost(string, tag = "5")]
-    pub index_config: ::prost::alloc::string::String,
+    pub doc_mapper: ::prost::alloc::string::String,
     /// Index URI. The index URI defines the location of the storage that contains the
     /// split files.
     #[prost(string, tag = "6")]

@@ -25,9 +25,8 @@ use itertools::Itertools;
 use quickwit_config::{
     DocMapping, IndexingResources, IndexingSettings, SearchSettings, SourceConfig,
 };
-use quickwit_index_config::{
-    DefaultIndexConfig as DefaultDocMapper, DefaultIndexConfigBuilder as DocMapperBuilder,
-    IndexConfig as DocMapper, SortBy, SortByConfig, SortOrder,
+use quickwit_doc_mapper::{
+    DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, SortBy, SortByConfig, SortOrder,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -178,7 +177,7 @@ impl IndexMetadata {
 
     /// Builds and returns the doc mapper associated with index.
     pub fn build_doc_mapper(&self) -> anyhow::Result<Arc<dyn DocMapper>> {
-        let mut builder = DocMapperBuilder::new();
+        let mut builder = DefaultDocMapperBuilder::new();
         builder.default_search_fields = self.search_settings.default_search_fields.clone();
         builder.demux_field = self.indexing_settings.demux_field.clone();
         builder.sort_by = match self.indexing_settings.sort_by() {
@@ -197,7 +196,8 @@ impl IndexMetadata {
 pub(crate) struct UnversionedIndexMetadata {
     pub index_id: String,
     pub index_uri: String,
-    pub index_config: DefaultDocMapper,
+    #[serde(alias = "index_config")]
+    pub doc_mapper: DefaultDocMapper,
     pub checkpoint: SourceCheckpoint,
 }
 
@@ -346,26 +346,26 @@ impl From<UnversionedIndexMetadata> for IndexMetadataV0 {
     fn from(unversioned: UnversionedIndexMetadata) -> Self {
         let doc_mapping = DocMapping {
             field_mappings: unversioned
-                .index_config
+                .doc_mapper
                 .field_mappings
                 .field_mappings()
                 .unwrap_or_else(Vec::new),
-            tag_fields: unversioned.index_config.tag_field_names,
-            store_source: unversioned.index_config.store_source,
+            tag_fields: unversioned.doc_mapper.tag_field_names,
+            store_source: unversioned.doc_mapper.store_source,
         };
-        let (sort_field, sort_order) = match unversioned.index_config.sort_by {
+        let (sort_field, sort_order) = match unversioned.doc_mapper.sort_by {
             SortBy::DocId => (None, None),
             SortBy::FastField { field_name, order } => (Some(field_name), Some(order)),
         };
         let indexing_settings = IndexingSettings {
-            demux_field: unversioned.index_config.demux_field_name,
-            timestamp_field: unversioned.index_config.timestamp_field_name,
+            demux_field: unversioned.doc_mapper.demux_field_name,
+            timestamp_field: unversioned.doc_mapper.timestamp_field_name,
             sort_field,
             sort_order,
             ..Default::default()
         };
         let search_settings = SearchSettings {
-            default_search_fields: unversioned.index_config.default_search_field_names,
+            default_search_fields: unversioned.doc_mapper.default_search_field_names,
         };
         let now_timestamp = utc_now_timestamp();
         Self {

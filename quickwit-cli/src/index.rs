@@ -33,7 +33,7 @@ use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
-use quickwit_index_config::tag_pruning::match_tag_field_name;
+use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingServer};
 use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::source::{FileSourceParams, INGEST_SOURCE_ID};

@@ -20,8 +20,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use quickwit_config::{IndexerConfig, SourceConfig};
-use quickwit_index_config::IndexConfig as DocMapper;
+use quickwit_config::{build_doc_mapper, IndexerConfig, SourceConfig};
+use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, Metastore, Split, SplitMetadata, SplitState,
 };
@@ -69,7 +69,11 @@ impl TestSandbox {
             .iter()
             .map(|search_field| search_field.to_string())
             .collect();
-        let doc_mapper = index_meta.build_doc_mapper()?;
+        let doc_mapper = build_doc_mapper(
+            &index_meta.doc_mapping,
+            &index_meta.search_settings,
+            &index_meta.indexing_settings,
+        )?;
         let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig::for_test()?;
         let metastore_uri_resolver = quickwit_metastore_uri_resolver();

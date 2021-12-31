@@ -39,8 +39,8 @@ tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="48c47f0d3", def
 [dependencies.quickwit-cluster]
 path = '../quickwit-cluster'
 
-[dependencies.quickwit-index-config]
-path = '../quickwit-index-config'
+[dependencies.quickwit-doc-mapper]
+path = '../quickwit-doc-mapper'
 
 [dependencies.tokio]
 version = '1'
