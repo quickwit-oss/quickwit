@@ -151,7 +151,7 @@ CREATE TABLE github_events
     additions UInt32,
     deletions UInt32,
     commit_id String
-) ENGINE = MergeTree ORDER BY (type, repo_name, created_at);
+) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at);
 ```
 
 ### Import events
