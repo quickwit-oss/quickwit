@@ -163,6 +163,55 @@ curl -v 'http://127.0.0.1:7280/api/v1/hdfslogs/search?query=severity_text:ERROR&
 
 It should return 6 hits faster as Quickwit will query fewer splits.
 
+## Distributed search
+
+Now that we have indexed our dataset and can do a local search, let's show how easy it is to start a distibuted search cluster with Quickwit. We will be launching a three nodes cluster.
+First let's download the ssearche node configuration files:
+
+```bash
+for i in {1..3}; do 
+curl -o searcher-$i.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/hdfs-logs/searcher-$i.yaml
+done
+```
+
+Once the configuartion files are downloade, start a searcher node for each of the respective configuration file in a different terminal window.
+
+```bash
+# run this in the first terminal window.
+./quickwit service run searcher --config ./searcher-1.yaml
+```
+
+```bash
+# run this in the second terminal window.
+./quickwit service run searcher --config ./searcher-2.yaml
+```
+
+```bash
+# run this in the third terminal window.
+./quickwit service run searcher --config ./searcher-3.yaml
+```
+
+You will see in your terminal the confirmation that the instance has created or joined a cluster. Example of such a log:
+
+```
+INFO quickwit_cluster::cluster: Create new cluster. node_id="searcher-1" listen_addr=127.0.0.1:7280
+```
+
+:::note
+
+Quickwit will use the configured `rest_listen_port` for serving the HTTP rest API via TCP as well as maintaining the cluster formation via UDP. Also, it will `{rest_listen_port} + 1` for gRPC communication between instances.
+
+:::
+
+Let's execute a simple query that returns only `ERROR` entries on field `severity_text` on one of our searcher node:
+
+```bash
+curl -v 'http://127.0.0.1:7280/api/v1/hdfs_logs/search?query=severity_text:ERROR
+```
+
+Now that you have a search cluster running, ideally, you will want to load balance external requests to it. This can quickly be done using appropriate tool. with a load balancer added, you can now play with your cluster, kill processes randomly, add/remove new instances.
+
+
 ## Clean
 
 Let's do some cleanup by deleting the index:

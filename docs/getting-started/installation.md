@@ -18,6 +18,24 @@ Downloads `.tar.gz`:
 
 Checkout all builds on [github](https://github.com/quickwit-inc/quickwit/releases)
 
+### Note on external dependencies
+
+Quickwit depends on the following external libraries to work properly:
+- `libpq`: the postgres client library.
+- `libssl`: the industry defacto cryptography library. 
+These libraries can be installed on your system using the native package manager. 
+On ubuntu for instance, you can install these dependencies using the following command:
+
+```bash
+apt-get -y update && apt-get -y install libpq-dev libssl-dev
+```
+
+:::note
+
+Quickwit static binary packages are also provide as `musl` builds. These packages don't require you to install any external library and can be automatically picked during installation on your system if the required libc version is not present. You can also download and manually install a static binary package. 
+
+:::
+
 
 ## Install script
 

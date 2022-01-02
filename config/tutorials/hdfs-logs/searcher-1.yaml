@@ -1,7 +1,5 @@
 version: 0
 node_id: searcher-1
-metastore_uri: s3://path/to/bucket/indexes # change this to your S3 bucket
-default_index_root_uri: s3://path/to/bucket/indexes # change this to your S3 bucket
 searcher:
   rest_listen_address: 127.0.0.1
   rest_listen_port: 7280
