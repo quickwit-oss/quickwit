@@ -80,6 +80,8 @@ Now let's create the index with the `create` subcommand (assuming you are inside
 Let's make use of the default configuration file provided in quickwit installation throughout this guide by setting the `QW_CONFIG` environment variable.
 
 ```bash
+# Quickwit commands need a config file.
+# Setting it as an environment variable helps avoid repeating it as a flag.
 export QW_CONFIG=./config/quickwit.yaml
 ```
 
