@@ -21,7 +21,7 @@ Checkout all builds on [github](https://github.com/quickwit-inc/quickwit/release
 ### Note on external dependencies
 
 Quickwit depends on the following external libraries to work correctly:
-- `libpq`: the postgres client library.
+- `libpq`: the Postgres client library.
 - `libssl`: the industry defacto cryptography library. 
 These libraries can be installed on your system using the native package manager. 
 On ubuntu for instance, you can install these dependencies using the following command:
