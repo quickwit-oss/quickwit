@@ -4,7 +4,7 @@ sidebar_position: 2
 ---
 
 
-In this guide, we will index about 40 million log entries (13 GB decompressed) on a local machine. If you want to start a server with indexes on AWS S3, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md).
+In this guide, we will index about 40 million log entries (13 GB decompressed) and start a three-node cluster on a local machine. If you want to start a server with indexes on AWS S3, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md).
 
 
 Here is an example of a log entry:
@@ -210,9 +210,6 @@ Let's execute a simple query that returns only `ERROR` entries on field `severit
 ```bash
 curl -v 'http://127.0.0.1:7280/api/v1/hdfs_logs/search?query=severity_text:ERROR
 ```
-
-Now that you have a search cluster running, ideally, you will want to load balance external requests to it. This can quickly be done using appropriate tool. with a load balancer added, you can now play with your cluster, kill processes randomly, add/remove new instances.
-
 
 ## Clean
 
