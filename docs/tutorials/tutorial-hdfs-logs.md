@@ -167,7 +167,7 @@ It should return 6 hits faster as Quickwit will query fewer splits.
 
 ## Distributed search
 
-Now that we have indexed our dataset and can do a local search, let's show how easy it is to start a distibuted search cluster with Quickwit. We will be launching a three nodes cluster.
+Now that we have indexed our dataset and can do a local search, let's show how easy it is to start a distributed search cluster with Quickwit. We will be launching a three-node cluster.
 First, let's download the Searcher's configuration files:
 
 ```bash
