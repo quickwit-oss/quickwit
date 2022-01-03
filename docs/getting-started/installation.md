@@ -32,7 +32,7 @@ apt-get -y update && apt-get -y install libpq-dev libssl-dev
 
 :::note
 
-Quickwit static binary packages are also provide as `musl` builds. These packages don't require you to install any external library and can be automatically picked during installation on your system if the required libc version is not present. You can also download and manually install a static binary package. 
+Quickwit static binary packages are also provided as `musl` builds. These packages don't require you to install any external library and can be automatically picked during installation on your system if the required libc version is not present. You can also download and manually install a static binary package. 
 
 :::
 
