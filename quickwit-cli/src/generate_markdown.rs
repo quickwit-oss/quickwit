@@ -62,17 +62,14 @@ fn markdown_for_subcommand(
         }
         val_opt
     };
-    let long_about_opt: Option<&str> = subcommand_ext
-        .map(|el| el.get("long_about").map(|el| el.as_str()).flatten())
-        .flatten();
+    let long_about_opt: Option<&str> =
+        subcommand_ext.and_then(|el| el.get("long_about").and_then(|el| el.as_str()));
 
-    let note: Option<&str> = subcommand_ext
-        .map(|el| el.get("note").map(|el| el.as_str()).flatten())
-        .flatten();
+    let note: Option<&str> =
+        subcommand_ext.and_then(|el| el.get("note").and_then(|el| el.as_str()));
 
-    let examples_opt: Option<&Vec<Value>> = subcommand_ext
-        .map(|el| el.get("examples").map(|el| el.as_array()).flatten())
-        .flatten();
+    let examples_opt: Option<&Vec<Value>> =
+        subcommand_ext.and_then(|el| el.get("examples").and_then(|el| el.as_array()));
 
     if let Some(about) = long_about_opt {
         if !about.trim().is_empty() {

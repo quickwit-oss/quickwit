@@ -309,6 +309,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_multiple_nodes() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
         let cluster1 = create_cluster_for_test()?;
         let cluster2 = create_cluster_for_test()?;
         let cluster3 = create_cluster_for_test()?;
@@ -321,7 +322,8 @@ mod tests {
         for cluster in [&cluster1, &cluster2, &cluster3] {
             cluster
                 .wait_for_members(|members| members.len() == 3, ten_secs)
-                .await?;
+                .await
+                .unwrap();
         }
         let members: Vec<SocketAddr> = cluster1
             .members()
@@ -340,12 +342,59 @@ mod tests {
         drop(cluster2);
         cluster1
             .wait_for_members(|members| members.len() == 2, ten_secs)
-            .await?;
+            .await
+            .unwrap();
 
         cluster3.leave().await;
         cluster1
             .wait_for_members(|members| members.len() == 1, ten_secs)
-            .await?;
+            .await
+            .unwrap();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cluster_rejoin_with_different_id_issue_1018() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let cluster1 = create_cluster_for_test()?;
+        let cluster2 = create_cluster_for_test()?;
+
+        cluster2.add_peer_node(cluster1.listen_addr).await;
+
+        let ten_secs = Duration::from_secs(10);
+
+        for cluster in [&cluster1, &cluster2] {
+            cluster
+                .wait_for_members(|members| members.len() == 2, ten_secs)
+                .await
+                .unwrap();
+        }
+        let members: Vec<SocketAddr> = cluster1
+            .members()
+            .iter()
+            .map(|member| member.listen_addr)
+            .sorted()
+            .collect();
+        let mut expected_members = vec![cluster1.listen_addr, cluster2.listen_addr];
+        expected_members.sort();
+        assert_eq!(members, expected_members);
+
+        let cluster2_listen_addr = cluster2.listen_addr;
+        cluster2.leave().await;
+        drop(cluster2);
+        cluster1
+            .wait_for_members(|members| members.len() == 1, ten_secs)
+            .await
+            .unwrap();
+
+        let cluster2 = Cluster::new("newid".to_string(), cluster2_listen_addr)?;
+        cluster2.add_peer_node(cluster1.listen_addr).await;
+
+        cluster1
+            .wait_for_members(|members| members.len() == 2, ten_secs)
+            .await
+            .unwrap();
+
         Ok(())
     }
 }

@@ -29,7 +29,7 @@ pub struct ArtilleryMember {
     #[serde(rename = "r")]
     remote_host: Option<SocketAddr>,
     #[serde(rename = "i")]
-    incarnation_number: u64,
+    pub incarnation_number: u64,
     #[serde(rename = "m")]
     member_state: ArtilleryMemberState,
     #[serde(rename = "t", skip, default = "Instant::now")]
@@ -73,6 +73,10 @@ impl ArtilleryMember {
 
     pub fn remote_host(&self) -> Option<SocketAddr> {
         self.remote_host
+    }
+
+    pub fn set_remote_host(&mut self, addr: SocketAddr) {
+        self.remote_host = Some(addr);
     }
 
     pub fn is_remote(&self) -> bool {

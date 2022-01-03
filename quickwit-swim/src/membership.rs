@@ -1,5 +1,4 @@
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -25,13 +24,6 @@ impl ArtilleryMemberList {
             .iter()
             .filter(|m| m.state() != ArtilleryMemberState::Left)
             .cloned()
-            .collect()
-    }
-
-    pub fn to_map(&self) -> HashMap<String, ArtilleryMember> {
-        self.members
-            .iter()
-            .map(|m| (m.node_id(), (*m).clone()))
             .collect()
     }
 
@@ -133,55 +125,74 @@ impl ArtilleryMemberList {
         None
     }
 
+    fn find_member<'a>(
+        members: &'a mut [ArtilleryMember],
+        node_id: &str,
+        addr: SocketAddr,
+    ) -> Option<&'a mut ArtilleryMember> {
+        // ugly hack for borrowchecker
+        if members.iter().any(|member| member.node_id() == node_id) {
+            members
+                .iter_mut()
+                .find(|member| member.node_id() == node_id)
+        } else {
+            members
+                .iter_mut()
+                .find(|member| member.remote_host() == Some(addr))
+        }
+    }
+
     pub fn apply_state_changes(
         &mut self,
         state_changes: Vec<ArtilleryStateChange>,
         from: &SocketAddr,
     ) -> (Vec<ArtilleryMember>, Vec<ArtilleryMember>) {
-        let mut current_members = self.to_map();
+        let mut current_members = self.members.clone();
 
         let mut changed_nodes = Vec::new();
         let mut new_nodes = Vec::new();
 
-        let my_node_id = self.mut_myself().node_id();
+        let my_node_id = self.current_node_id();
 
         for state_change in state_changes {
-            let new_member_data = state_change.member();
-            let old_member_data = current_members.entry(new_member_data.node_id());
+            let member_change = state_change.member();
 
-            if new_member_data.node_id() == my_node_id {
-                if new_member_data.state() != ArtilleryMemberState::Alive {
+            if member_change.node_id() == my_node_id {
+                if member_change.state() != ArtilleryMemberState::Alive {
                     let myself = self.reincarnate_self();
                     changed_nodes.push(myself.clone());
                 }
+            } else if let Some(existing_member) = Self::find_member(
+                &mut current_members,
+                &member_change.node_id(),
+                member_change.remote_host().unwrap_or(*from),
+            ) {
+                let update_member =
+                    member::most_uptodate_member_data(member_change, existing_member).clone();
+                let new_host = update_member
+                    .remote_host()
+                    .or_else(|| existing_member.remote_host())
+                    .unwrap();
+                let update_member = update_member.member_by_changing_host(new_host);
+
+                if update_member.state() != existing_member.state() {
+                    existing_member.set_state(update_member.state());
+                    existing_member.incarnation_number = update_member.incarnation_number;
+                    if let Some(host) = update_member.remote_host() {
+                        existing_member.set_remote_host(host);
+                    }
+                    changed_nodes.push(update_member);
+                }
             } else {
-                match old_member_data {
-                    Entry::Occupied(mut entry) => {
-                        let new_member =
-                            member::most_uptodate_member_data(new_member_data, entry.get()).clone();
-                        let new_host = new_member
-                            .remote_host()
-                            .or_else(|| entry.get().remote_host())
-                            .unwrap();
-                        let new_member = new_member.member_by_changing_host(new_host);
+                let new_host = member_change.remote_host().unwrap_or(*from);
+                let new_member = member_change.member_by_changing_host(new_host);
 
-                        if new_member.state() != entry.get().state() {
-                            entry.insert(new_member.clone());
-                            changed_nodes.push(new_member);
-                        }
-                    }
-                    Entry::Vacant(entry) => {
-                        let new_host = new_member_data.remote_host().unwrap_or(*from);
-                        let new_member = new_member_data.member_by_changing_host(new_host);
-
-                        entry.insert(new_member.clone());
-                        new_nodes.push(new_member);
-                    }
-                };
+                current_members.push(new_member.clone());
+                new_nodes.push(new_member);
             }
         }
 
-        self.members = current_members.values().cloned().collect();
+        self.members = current_members;
 
         (new_nodes, changed_nodes)
     }
