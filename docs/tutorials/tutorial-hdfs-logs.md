@@ -176,7 +176,7 @@ curl -o searcher-$i.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit
 done
 ```
 
-Once the configuartion files are downloade, start a searcher node for each of the respective configuration file in a different terminal window.
+Once the configuration files are downloaded, start a searcher node for each of the respective configuration files in a different terminal window.
 
 ```bash
 # run this in the first terminal window.
