@@ -113,21 +113,21 @@ mod tests {
     }
 
     #[test]
-    fn test_sedeserialize_index_config() -> anyhow::Result<()> {
-        let deserialized_default_config =
+    fn test_sedeserialize_doc_mapper() -> anyhow::Result<()> {
+        let deserialized_default_doc_mapper =
             serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
-        let expected_default_config = DefaultDocMapperBuilder::new().build()?;
+        let expected_default_doc_mapper = DefaultDocMapperBuilder::new().build()?;
         assert_eq!(
-            format!("{:?}", deserialized_default_config),
-            format!("{:?}", expected_default_config),
+            format!("{:?}", deserialized_default_doc_mapper),
+            format!("{:?}", expected_default_doc_mapper),
         );
 
-        let serialized_config = serde_json::to_string(&deserialized_default_config)?;
-        let deserialized_default_config =
-            serde_json::from_str::<Box<dyn DocMapper>>(&serialized_config)?;
-        let serialized_config_2 = serde_json::to_string(&deserialized_default_config)?;
+        let serialized_doc_mapper = serde_json::to_string(&deserialized_default_doc_mapper)?;
+        let deserialized_default_doc_mapper =
+            serde_json::from_str::<Box<dyn DocMapper>>(&serialized_doc_mapper)?;
+        let serialized_doc_mapper_2 = serde_json::to_string(&deserialized_default_doc_mapper)?;
 
-        assert_eq!(serialized_config, serialized_config_2);
+        assert_eq!(serialized_doc_mapper, serialized_doc_mapper_2);
 
         Ok(())
     }

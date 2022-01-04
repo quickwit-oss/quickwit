@@ -119,7 +119,10 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          QW_ENV=LOCAL cargo +nightly llvm-cov --all-features --workspace --lcov --output-path lcov.info
+          cargo +nightly llvm-cov clean --workspace
+          QW_ENV=LOCAL cargo +nightly llvm-cov --test failpoints --no-report --features fail/failpoints
+          QW_ENV=LOCAL cargo +nightly llvm-cov --no-report --all-features
+          cargo +nightly llvm-cov --no-run --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1

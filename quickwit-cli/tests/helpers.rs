@@ -199,16 +199,8 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
             (metastore_uri.to_string(), storage)
         }
     };
-
-    let index_uri = format!("{}/{}", metastore_uri, index_id);
     let index_config_path = resources_dir_path.join("index_config.yaml");
-    fs::write(
-        &index_config_path,
-        // A poor's man templating engine...
-        DEFAULT_INDEX_CONFIG
-            .replace("#index_id", &index_id)
-            .replace("#index_uri", &index_uri),
-    )?;
+    fs::write(&index_config_path, DEFAULT_INDEX_CONFIG)?;
     let quickwit_config_path = resources_dir_path.join("config.yaml");
     let init_listen_port = find_available_port()?;
     let listen_ports = (0..6)
