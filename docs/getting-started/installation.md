@@ -13,10 +13,31 @@ Version: 0.2.0 - [Release note](https://github.com/quickwit-inc/quickwit/release
 License: [AGPL V3](https://github.com/quickwit-inc/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
 - [Linux ARM64](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-aarch64-unknown-linux-gnu.tar.gz)
+- [Linux ARM64 (static build)](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-aarch64-unknown-linux-musl.tar.gz)
 - [Linux x86_64](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-unknown-linux-gnu.tar.gz)
+- [Linux x86_64 (static build)](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-unknown-linux-musl.tar.gz)
 - [macOS x86_64](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-apple-darwin.tar.gz)
 
+
 Checkout all builds on [github](https://github.com/quickwit-inc/quickwit/releases)
+
+### Note on external dependencies
+
+Quickwit depends on the following external libraries to work correctly:
+- `libpq`: the Postgres client library.
+- `libssl`: the industry defacto cryptography library. 
+These libraries can be installed on your system using the native package manager. 
+On Ubuntu for instance, you can install these dependencies using the following command:
+
+```bash
+apt-get -y update && apt-get -y install libpq-dev libssl-dev
+```
+
+:::note
+
+Quickwit static binary packages are also provided as `musl` builds. These packages don't require you to install any external library and can be automatically picked during installation on your system if the required libc version is not present. You can also download and manually install a static binary package. 
+
+:::
 
 
 ## Install script
