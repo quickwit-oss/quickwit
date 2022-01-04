@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "main"
+      - trigger-coverage-workflow
     paths:
       - "Cargo.lock"
       - "Cargo.toml"
