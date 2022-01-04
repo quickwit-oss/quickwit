@@ -30,7 +30,6 @@ version: 0
 #default_index_root_uri: s3://your-bucket/indexes
 #
 #
-
 #
 # -------------------------------- Indexer settings --------------------------------
 #

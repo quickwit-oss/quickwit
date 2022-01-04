@@ -3,7 +3,7 @@ title: Distributed search on AWS S3
 sidebar_position: 1
 ---
 
-In this guide, we will index some 40 million log entries (13 GB decompressed) on AWS S3 and start a distributed search server.
+In this guide, we will index about 40 million log entries (13 GB decompressed) on AWS S3 using an EC2 instance and launch a three-node distributed search cluster.
 
 Example of a log entry:
 ```json
@@ -27,144 +27,193 @@ Before using Quickwit with an object storage, check out our [advice](../administ
 :::
 
 
-## Prerequisite
-- [Configure your environment](configure-aws-env.md) to let Quickwit access your S3 buckets.
-
-All the following steps can be executed on any instance.
-
 ## Install
+
+First of all, let's create an EC2 instance, install a Quickwit binary, and [configure it](configure-aws-env.md) to let Quickwit access your S3 buckets. This instance will be used for indexing our dataset.
 
 ```bash
 curl -L https://install.quickwit.io | sh
+cd quickwit-v*/
 ```
-
 
 ## Create your index
 
-Let's create an index configured to receive these logs.
-
 ```bash
 # First, download the hdfs logs config from Quickwit repository.
-curl -o hdfslogs_index_config.json https://raw.githubusercontent.com/quickwit-inc/quickwit/main/examples/index_configs/hdfslogs_index_config.json
+curl -o hdfslogs_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/hdfs-logs/index-config.yaml
 ```
 
-The index config defines 5 fields: `timestamp`, `severity_text`, `body`, and two object fields
-for the nested values `resource` and `attributes`. 
-It also sets the [default search field](../reference/index-config.md) and a timestamp field. 
-This timestamp field will be used by Quickwit for [splits pruning](../overview/architecture.md) at query time to boost search speed. Check out the [index config docs](../reference/index-config.md) for details.
+The index config defines four fields: `timestamp`, `severity_text`, `body`, and one object field
+for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`. The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](../overview/architecture.md) at query time to boost search speed. Check out the [index config docs](../reference/index-config.md) for more details.
 
+```yaml title="hdfslogs_index_config.yaml"
+version: 0
 
-```json title="hdfslogs_index_config.json"
-{
-    "store_source": false, // The document source (=json) will not be stored.
-    "default_search_fields": ["body", "severity_text"],
-    "timestamp_field": "timestamp",
-    "field_mappings": [
-        {
-            "name": "timestamp",
-            "type": "i64",
-            "fast": true // Fast field must be present when this is the timestamp field.
-        },
-        {
-            "name": "severity_text",
-            "type": "text",
-            "tokenizer": "raw" // No tokeninization.
-        },
-        {
-            "name": "body",
-            "type": "text",
-            "tokenizer": "default",
-            "record": "position" // Record position will enable phrase query on body field.
-        },
-        {
-            "name": "resource",
-            "type": "object",
-            "field_mappings": [
-                {
-                    "name": "service",
-                    "type": "text",
-                    "tokenizer": "raw"
-                }
-            ]
-        },
-        {
-            "name": "attributes",
-            "type": "object",
-            "field_mappings": [
-                {
-                    "name": "class",
-                    "type": "text",
-                    "tokenizer": "raw"
-                }
-            ]
-        }
-    ]
-}
+doc_mapping:
+  field_mappings:
+    - name: severity_text
+      type: text
+      tokenizer: raw
+    - name: body
+      type: text
+      tokenizer: default
+      record: position
+    - name: resource
+      type: object
+      field_mappings:
+        - name: service
+          type: text
+          tokenizer: raw
+  tag_fields: []
+  store_source: true
+
+indexing_settings:
+  timestamp_field: timestamp
+
+search_settings:
+  default_search_fields: [severity_text, body]
 ```
 
-Now we can create the index with the new command directly on S3:
+Now let the EC2 instance know the S3 bucket path we will be working with. This will make running subsequent  command snippets easier.
 
 ```bash
-quickwit new --index-uri s3://path-to-your-bucket/hdfs_logs --index-config-path ./hdfslogs_index_config.json
+export S3_PATH=s3://{path/to/bucket}/indexes
+```
+
+```bash
+# configuration for our indexer node
+echo "version: 0
+metastore_uri: ${S3_PATH}
+default_index_root_uri: ${S3_PATH}
+" > config.yaml
+```
+
+We can now create the index with the `create` subcommand.
+
+```bash
+./quickwit index create --index hdfslogs --index-config ./hdfslogs_index_config.yaml --config ./config.yaml
 ```
 
 :::note
 
-This step can be executed on your local machine. The `new` command creates the index locally and will then only upload a json file `quickwit.json` to your bucket at `s3://path-to-your-bucket/hdfs_logs/quickwit.json`. 
+This step can also be executed on your local machine. The `create` command creates the index locally and then uploads a json file `metastore.json` to your bucket at `s3://path-to-your-bucket/hdfslogs/metastore.json`. 
 
 :::
 
 ## Index logs
-The dataset is a compressed [ndjson file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.gz). Instead of downloading and indexing the data, we will use pipes to send a decompressed stream to Quickwit directly.
+The dataset is a compressed [ndjson file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.gz). Instead of downloading and indexing the data in separate steps, we will use pipes to send a decompressed stream to Quickwit directly.
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.gz | gunzip | quickwit index --index-uri s3://path-to-your-bucket/hdfs_logs
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.gz | gunzip | ./quickwit index ingest --index hdfslogs --config ./config.yaml
 ```
 
 :::note
 
 4GB of RAM is enough to index this dataset; an instance like `t4g.medium` with 4GB and 2 vCPU indexed this dataset in 20 minutes.   
 
-This step can also be done on your local machine. The `index` command generates locally [splits](../overview/architecture.md) of 5 million documents and will upload them on your bucket. Concretely, each split is represented by a directory in which split index files are saved. Uploading a split is equivalent to uploading 9 files at `s3://path-to-your-bucket/hdfs_logs/{split_id}/`.
+This step can also be done on your local machine. The `ingest` subcommand generates locally [splits](../overview/architecture.md) of 10 million documents and will upload them on your bucket. Concretely, each split is a bundle of index files and metadata files.
 
 :::
 
 
-You can check it's working by using `search` command and look for `ERROR` in `serverity_text` field:
+You can check it's working by using `search` subcommand and look for `ERROR` in `serverity_text` field:
 ```bash
-quickwit search --index-uri s3://path-to-your-bucket/hdfs_logs --query "severity_text:ERROR"
+./quickwit index search --index hdfslogs --config ./config.yaml --query "severity_text:ERROR"
 ```
 
+Now that we have indexed the logs and can search from one instance, It's time to configure and start a search cluster.
 
-## Start your servers
+## Start the cluster
 
-The command `serve` starts an http server which provides a [REST API](../reference/search-api.md).
-Run it on each of your instances.
-
-```bash
-quickwit serve --index-uri s3://path-to-your-bucket/hdfs_logs --peer-seed=ip1,ip2,ip3
-```
-
-You will see in your terminal the confirmation that the instance has joined the cluster. Example of such a log:
-
-```
-INFO quickwit_cluster::cluster: Joined. host_key=019e4c0e-165a-430d-8ef6-7b7a035decac remote_host=Some(172.31.66.143:8081)
-```
-
-:::note
-
-Quickwit by default, opens the 8080 port; it also needs the TCP and UDP 8081 port (8080+1) for cluster formation and
-finally, 8082 (8080+2) for gRPC communication between instances.
+Quickwit needs a port `rest_listen_port` for serving the HTTP rest API via TCP as well as maintaining the cluster formation via UDP. Also, it needs `{rest_listen_port} + 1` for gRPC communication between instances.
 
 In AWS, you can create a security group to group these inbound rules. Check out the [network section](configure-aws-env.md) of our AWS setup guide.
 
-:::
+To make things easier, let's create a security group that opens the TCP/UDP port range [7200-7300]. Next, create three EC2 instances using the previously created security group. Take note of each instance's public IP address. 
 
+Now ssh into the first EC2 instance, install Quickwit, and [configure the environment](configure-aws-env.md) to let Quickwit access the index S3 buckets.
+
+```bash
+curl -L https://install.quickwit.io | sh
+cd quickwit-v*/
+```
+
+Let's create the node configuration file by first running this snippet. Make sure you fill in the correct values before running in the EC2 terminal session. 
+
+```bash
+export S3_PATH=s3://{path/to/bucket}/indexes
+export IP_NODE_1={first-ec2-instance-public-ip}
+export IP_NODE_2={second-ec2-instance-public-ip}
+export IP_NODE_3={third-ec2-instance-public-ip}
+```
+
+```bash
+# configuration for our first node
+echo "version: 0
+node_id: searcher-1
+metastore_uri: ${S3_PATH}
+default_index_root_uri: ${S3_PATH}
+searcher:
+  rest_listen_address: 0.0.0.0
+" > config.yaml
+```
+
+Now let's launch a searcher node for this instance. 
+
+```bash
+# Then start the http server search service.
+./quickwit service run searcher --config ./config.yaml
+```
+
+You will see in the terminal the confirmation that the instance has created a new cluster. Example of such a log:
+
+```
+INFO quickwit_cluster::cluster: Create new cluster. node_id="searcher-1" listen_addr=0.0.0.1:7200
+```
+
+Let's launch the second and third searcher nodes instance by repeating the same previous steps but each time with the respective configuration snippet.
+
+```bash
+# configuration for our second node
+echo "version: 0
+node_id: searcher-2
+metastore_uri: ${S3_PATH}
+default_index_root_uri: ${S3_PATH}
+searcher:
+  rest_listen_address: 0.0.0.0
+  peer_seeds:
+    - ${IP_NODE_1} # searcher-1
+" > config.yaml
+```
+
+```bash
+# configuration for our third node
+echo "version: 0
+node_id: searcher-3
+metastore_uri: ${S3_PATH}
+default_index_root_uri: ${S3_PATH}
+searcher:
+  rest_listen_address: 0.0.0.0
+  peer_seeds:
+    - ${IP_NODE_1} # searcher-1
+" > config.yaml
+```
+
+You will see in the terminal the confirmation that the instance has joined the existing cluster. Example of such a log:
+
+```
+INFO quickwit_cluster::cluster: Joined. node_id="searcher-1" remote_host=Some(18.222.142.42:7100)
+```
+
+Now we can query one of our instance directly by issuing http requests to one of the nodes rest API endpoint.
+
+```
+curl -v "http://${IP_NODE_2}:7280/api/v1/hdfslogs/search?query=severity_text:ERROR"
+```
 
 ## Load balancing incoming requests
 
-Now that you have a search cluster, ideally, you will want to load balance external requests. This can quickly be done
-by adding an AWS load balancer to listen to incoming HTTP or HTTPS traffic and forward it to a target group.
+Now that you have a search cluster, ideally, you will want to load balance external requests. This can quickly be done by adding an AWS load balancer to listen to incoming HTTP or HTTPS traffic and forward it to a target group.
 You can now play with your cluster, kill processes randomly, add/remove new instances, and keep calm.
 
 
@@ -173,7 +222,7 @@ You can now play with your cluster, kill processes randomly, add/remove new inst
 Let's execute a simple query that returns only `ERROR` entries on field `severity_text`:
 
 ```bash
-curl -v 'http://your-load-balancer/api/v1/hdfs_logs/search?query=severity_text:ERROR
+curl -v 'http://your-load-balancer/api/v1/hdfslogs/search?query=severity_text:ERROR
 ```
 
 which returns the json
@@ -217,16 +266,15 @@ curl -v 'http://your-load-balancer/api/v1/hdfs_logs/search?query=severity_text:E
 Returns 6 hits in 0.36 seconds.
 
 
-
 ## Clean
 
 Let's do some cleanup by deleting the index:
 
 ```bash
-quickwit delete --index-uri s3://path-to-your-bucket/hdfs_logs
+./quickwit index delete --index hdfslogs  --config ./config.yaml
 ```
 
-
+Also remember to remove the security group to protect your EC2 instances. You can just remove the instances if you don't need them.
 
 Congratz! You finished this tutorial! 
 
