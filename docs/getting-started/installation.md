@@ -13,8 +13,11 @@ Version: 0.2.0 - [Release note](https://github.com/quickwit-inc/quickwit/release
 License: [AGPL V3](https://github.com/quickwit-inc/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
 - [Linux ARM64](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-aarch64-unknown-linux-gnu.tar.gz)
+- [Linux ARM64 (static build)](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-aarch64-unknown-linux-musl.tar.gz)
 - [Linux x86_64](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-unknown-linux-gnu.tar.gz)
+- [Linux x86_64 (static build)](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-unknown-linux-musl.tar.gz)
 - [macOS x86_64](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-apple-darwin.tar.gz)
+
 
 Checkout all builds on [github](https://github.com/quickwit-inc/quickwit/releases)
 

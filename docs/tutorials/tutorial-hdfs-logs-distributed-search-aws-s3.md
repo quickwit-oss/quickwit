@@ -96,7 +96,7 @@ We can now create the index with the `create` subcommand.
 
 :::note
 
-This step can also be executed on your local machine. The `create` command creates the index locally and then uploads a json file `quickwit.json` to your bucket at `s3://path-to-your-bucket/hdfslogs/quickwit.json`. 
+This step can also be executed on your local machine. The `create` command creates the index locally and then uploads a json file `metastore.json` to your bucket at `s3://path-to-your-bucket/hdfslogs/metastore.json`. 
 
 :::
 
@@ -129,7 +129,7 @@ Quickwit needs a port `rest_listen_port` for serving the HTTP rest API via TCP a
 
 In AWS, you can create a security group to group these inbound rules. Check out the [network section](configure-aws-env.md) of our AWS setup guide.
 
-To make things easier, let's create a security group that opens the TCP/UDP port range [7100-7400]. Next, create three EC2 instances using the previously created security group. Take note of each instance's public IP address. 
+To make things easier, let's create a security group that opens the TCP/UDP port range [7200-7300]. Next, create three EC2 instances using the previously created security group. Take note of each instance's public IP address. 
 
 Now ssh into the first EC2 instance, install Quickwit, and [configure the environment](configure-aws-env.md) to let Quickwit access the index S3 buckets.
 
@@ -155,10 +155,6 @@ metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
 searcher:
   rest_listen_address: 0.0.0.0
-  rest_listen_port: 7100
-  peer_seeds:
-    - ${IP_NODE_2}:7200 # searcher-2
-    - ${IP_NODE_3}:7300 # searcher-3
 " > config.yaml
 ```
 
@@ -185,10 +181,8 @@ metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
 searcher:
   rest_listen_address: 0.0.0.0
-  rest_listen_port: 7200
   peer_seeds:
-    - ${IP_NODE_1}:7100 # searcher-1
-    - ${IP_NODE_3}:7300 # searcher-3
+    - ${IP_NODE_1} # searcher-1
 " > config.yaml
 ```
 
@@ -200,10 +194,8 @@ metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
 searcher:
   rest_listen_address: 0.0.0.0
-  rest_listen_port: 7300
   peer_seeds:
-    - ${IP_NODE_1}:7100 # searcher-1
-    - ${IP_NODE_2}:7200 # searcher-2
+    - ${IP_NODE_1} # searcher-1
 " > config.yaml
 ```
 
@@ -213,10 +205,10 @@ You will see in the terminal the confirmation that the instance has joined the e
 INFO quickwit_cluster::cluster: Joined. node_id="searcher-1" remote_host=Some(18.222.142.42:7100)
 ```
 
-Now we can query one of our instance directly by issuing http requests to the node rest API endpoint.
+Now we can query one of our instance directly by issuing http requests to one of the nodes rest API endpoint.
 
 ```
-curl -v 'http://{second-ec2-instance-public-ip}:7200/api/v1/hdfslogs/search?query=severity_text:ERROR
+curl -v "http://${IP_NODE_2}:7280/api/v1/hdfslogs/search?query=severity_text:ERROR"
 ```
 
 ## Load balancing incoming requests
