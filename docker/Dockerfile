@@ -1,7 +1,7 @@
 FROM alpine:3.15 AS builder
 
-COPY quickwit-v*-unknown-linux-musl.tar.gz ./
-RUN tar -xzf quickwit-v*-$(cat /etc/apk/arch)-unknown-linux-musl.tar.gz
+COPY quickwit-*-unknown-linux-musl.tar.gz ./
+RUN tar -xzf quickwit-*-$(cat /etc/apk/arch)-unknown-linux-musl.tar.gz
 RUN mv ./quickwit-*/* ./
 RUN chmod 744 ./quickwit
 
