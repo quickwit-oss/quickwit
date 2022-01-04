@@ -9,14 +9,14 @@ on:
     - cron: "0 5 * * *"
 
 jobs:
-  # Not native package as Mac-OS build as it takes ci time
+  # Not including native package as Mac-OS build takes ci time.
 
   build-x86_64-unknown-linux-gnu-package:
     name: Build x86_64-unknown-linux-gnu
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - run: echo "ASSET_VERSION=nightly" >> $GITHUB_ENV # we could use $(date '+%Y-%m-%d)
+      - run: echo "ASSET_VERSION=nightly" >> $GITHUB_ENV
       - run: echo "ASSET_FULL_NAME=quickwit-nightly-x86_64-unknown-linux-gnu" >> $GITHUB_ENV
       - uses: actions-rs/toolchain@v1
         with:
@@ -135,6 +135,7 @@ jobs:
       - name: Check out the repo
         uses: actions/checkout@v2
       - run: echo "ASSET_VERSION=nightly" >> $GITHUB_ENV
+      - run: echo "NIGHTLY_DATE=$(date '+%Y-%m-%d')" >> $GITHUB_ENV
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
       - name: Set up Docker Buildx
@@ -170,5 +171,5 @@ jobs:
           context: ./docker/
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          tags: quickwit/quickwit-nightly:latest, quickwit/quickwit-nightly:${{ env.NIGHTLY_DATE }}
