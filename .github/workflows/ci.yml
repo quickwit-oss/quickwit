@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - trigger-ci-workflow
     paths:
       - "Cargo.lock"
       - "Cargo.toml"
