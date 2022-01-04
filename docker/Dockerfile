@@ -1,9 +1,9 @@
 FROM alpine:3.15 AS builder
 
-# Install tools
-RUN apk add --no-cache curl
-RUN curl -L https://install.quickwit.io | sh
-RUN mv  ./quickwit-*/* ./ && ls ./config/
+COPY quickwit-v*-unknown-linux-musl.tar.gz ./
+RUN tar -xzf quickwit-v*-$(cat /etc/apk/arch)-unknown-linux-musl.tar.gz
+RUN mv ./quickwit-*/* ./
+RUN chmod 744 ./quickwit
 
 # Change the default configuration file in order to make the searcher
 # and indexer services accessible from outside of docker.
