@@ -12,7 +12,8 @@ All the API endpoints start with the `api/v1/` prefix. `v1` indicates that we ar
 
 The API uses **JSON** encoded as **UTF-8**. The body of POST and PUT requests must be a JSON object and their `Content-Type` header should be set to `application/json; charset=UTF-8`.
 
-The body of responses is always a JSON object, and their content type is always `application/json; charset=UTF-8.`
+The response for the /search endpoint is always a JSON object, and the content type is always `application/json; charset=UTF-8.`
+The response for the /search/stream endpoint is a HTTP stream. Depending on the client capability it is a HTTP1.1 (chunked transfer encoded stream)[https://en.wikipedia.org/wiki/Chunked_transfer_encoding] or a HTTP2 stream.
 
 ## Parameters
 
@@ -53,16 +54,15 @@ Search for documents matching a query in the given index `<index name>`.
 
 #### Get parameters
 
-| Variable | Type | Description | Default value |
-|----------|------|-------------|---------------|
-| **query** | `String` | Query text. See the [query language doc](query-language.md) (mandatory) | |
-| **searchFields** | `[String]` | If set, specify the set of fields the search will be performed on | |
-| **startTimestamp** | `i64` | If set, restrict search to documents with a `timestamp >= start_timestamp` | |
-| **endTimestamp** | `i64` | If set, restrict search to documents with a `timestamp < end_timestamp`` | |
-| **startOffset** | `Integer` | Number of documents to skip | `0` |
-| **maxHits** | `Integer` | Maximum number of hits to return (by default 20) | `20` |
-| **format** | `String` | Response output format. `json` or `pretyjson`  | `pretyjson` |
-| **tags** | `[String]` | If set, the search is restricted to only splits having one of the tags | |
+| Variable                  | Type                 | Description                                                                                       | Default value                                                                                   |
+| ------------------------- | -------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **query**                  | `String`           | Query text. See the [query language doc](query-language.md) (mandatory)                                          |                                                                                                |
+| **startTimestamp**         | `i64`    		 	    | If set, restrict search to documents with a `timestamp >= start_timestamp`                                                            |                                                                                |
+| **endTimestamp**           | `i64`       		    | If set, restrict search to documents with a `timestamp < end_timestamp`                                                            |                                                                                     |
+| **startOffset**            | `Integer`     	    | Number of documents to skip                                                                | `0`                                                                                             |
+| **maxHits**                | `Integer`          | Maximum number of hits to return (by default 20)                                                            | `20`                                                                                            |
+| **searchFields**           | `String`      		  | Fields to search on. Comma-separated list, e.g. "field1,field2" | index_config.search_settings.default_search_fields                                                                                             |
+| **format**                 | `Enum`           	| The output format. Allowed values are "json" or "prettyjson" 						 | `prettyjson`                                                                                            |
 
 
 ### Response
@@ -71,9 +71,7 @@ Search for documents matching a query in the given index `<index name>`.
 | -------------------- | ------------------------------ | :--------: |
 | **hits**             | Results of the query           | `[hit]` |
 | **numHits**         | Total number of matches        |  `number`  |
-| **numMicrosecs**    | Processing time of the query   |  `number`  |
-
-
+| **elapsedTimeMicros**    | Processing time of the query   |  `number`  |
 
 ### Search stream in an index
 
@@ -81,9 +79,7 @@ Search for documents matching a query in the given index `<index name>`.
 GET api/v1/indexes/<index name>/search/stream
 ```
 
-Streams field values from **ALL** documents matching a search query in the given index `<index name>`, in a specified output format.
-
-The output format can be one of the following:
+Streams field values from ALL documents matching a search query in the given index `<index name>`, in a specified output format among the following:
  -  [CSV](https://datatracker.ietf.org/doc/html/rfc4180)
  -  [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary)
 
@@ -107,13 +103,18 @@ The endpoint will return 10 million values if 10 million documents match the que
 |----------|------|-------------|---------------|
 | **query** | `String` | Query text. See the [query language doc](query-language.md) (mandatory) | |
 | **fastField** | `String` | Name of a field to retrieve from documents. This field must be marked as "fast" in the index config. (mandatory)| |
-| **searchFields** | `[String]` | If set, specify the set of fields the search will be performed on | |
+| **searchFields** | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2" | index_config.search_settings.default_search_fields    |
 | **startTimestamp** | `i64` | If set, restrict search to documents with a `timestamp >= start_timestamp` | |
 | **endTimestamp** | `i64` | If set, restrict search to documents with a `timestamp < end_timestamp`` | |
 | **outputFormat** | `String` | Response output format. `csv` or `clickHouseRowBinary`  | `csv` |
-| **tags** | `[String]` | If set, the search is restricted to only splits having one of the tags | |
 
 
 ### Response
+The response for is a HTTP stream. Depending on the client capability it is a HTTP1.1 (chunked transfer encoded stream)[https://en.wikipedia.org/wiki/Chunked_transfer_encoding] or a HTTP2 stream.
 
-The response is a list of all the field values from documents matching the query. The field must be marked as "fast" in the index config for this to work. The formatting is based on the specified output format. 
+It returns a list of all the field values from documents matching the query. The field must be marked as "fast" in the index config for this to work. 
+The formatting is based on the specified output format. 
+
+On error a "X-Stream-Error" header will be sent via the the trailers channel with information about the error and the stream will be closed via (sender.abort())[https://docs.rs/hyper/latest/hyper/body/struct.Sender.html#method.abort].
+Depending on the client, the trailer header with error details may not be shown. The error will also be logged in quickwit ("Error when streaming search results"). 
+

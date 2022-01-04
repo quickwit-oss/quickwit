@@ -31,7 +31,7 @@ use tantivy::schema::{
 use thiserror::Error;
 
 use super::{default_as_true, FieldMappingType};
-use crate::default_index_config::is_valid_field_mapping_name;
+use crate::default_doc_mapper::is_valid_field_mapping_name;
 
 /// A `FieldMappingEntry` defines how a field is indexed, stored,
 /// and mapped from a JSON document to the related index fields.
@@ -756,7 +756,7 @@ mod tests {
     use tantivy::schema::{Cardinality, Value};
 
     use super::FieldMappingEntry;
-    use crate::default_index_config::FieldMappingType;
+    use crate::default_doc_mapper::FieldMappingType;
     use crate::DocParsingError;
 
     const TEXT_MAPPING_ENTRY_VALUE: &str = r#"

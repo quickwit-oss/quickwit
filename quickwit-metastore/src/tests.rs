@@ -25,7 +25,7 @@ pub mod test_suite {
     use async_trait::async_trait;
     use chrono::Utc;
     use quickwit_config::SourceConfig;
-    use quickwit_index_config::tag_pruning::{no_tag, tag, TagFilterAst};
+    use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use tokio::time::{sleep, Duration};
 
     use crate::checkpoint::{CheckpointDelta, SourceCheckpoint};

@@ -26,7 +26,7 @@ use hyper::header::HeaderValue;
 use hyper::HeaderMap;
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_common::metrics;
-use quickwit_index_config::{SortByField, SortOrder};
+use quickwit_doc_mapper::{SortByField, SortOrder};
 use quickwit_proto::{OutputFormat, SortOrder as ProtoSortOrder};
 use quickwit_search::{SearchResponseRest, SearchService, SearchServiceImpl};
 use serde::{de, Deserialize, Deserializer};

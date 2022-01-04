@@ -27,7 +27,7 @@ use std::ops::Range;
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
 use quickwit_config::SourceConfig;
-use quickwit_index_config::tag_pruning::TagFilterAst;
+use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 
 use crate::checkpoint::CheckpointDelta;
 use crate::{MetastoreResult, Split, SplitMetadata, SplitState};

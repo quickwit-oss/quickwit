@@ -22,6 +22,7 @@ use std::sync::Arc;
 
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
+use quickwit_config::build_doc_mapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse, PartialHit,
@@ -56,7 +57,12 @@ pub async fn root_search(
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let doc_mapper = index_metadata.build_doc_mapper().map_err(|err| {
+    let doc_mapper = build_doc_mapper(
+        &index_metadata.doc_mapping,
+        &index_metadata.search_settings,
+        &index_metadata.indexing_settings,
+    )
+    .map_err(|err| {
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
     })?;
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
@@ -194,7 +200,7 @@ pub(crate) fn job_for_splits(
 
 fn jobs_to_leaf_request(
     request: &SearchRequest,
-    index_config_str: &str,
+    doc_mapper_str: &str,
     index_uri: &str,
     split_metadata_map: &HashMap<String, SplitMetadata>,
     jobs: &[Job],
@@ -211,7 +217,7 @@ fn jobs_to_leaf_request(
                 extract_split_and_footer_offsets(split_metadata_map.get(&job.split_id).unwrap())
             })
             .collect(),
-        index_config: index_config_str.to_string(),
+        doc_mapper: doc_mapper_str.to_string(),
         index_uri: index_uri.to_string(),
     }
 }

@@ -1,9 +1,11 @@
 name: Code coverage
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - "main"
+      - trigger-coverage-workflow
     paths:
       - "Cargo.lock"
       - "Cargo.toml"

@@ -31,10 +31,10 @@ use quickwit_config::{IndexerConfig, SourceConfig};
 use quickwit_metastore::{IndexMetadata, Metastore};
 use quickwit_storage::StorageUriResolver;
 use serde::Serialize;
-use serde_json::json;
 use tokio::sync::oneshot;
 use tracing::{error, info};
 
+use crate::source::VecSourceParams;
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -328,8 +328,8 @@ impl IndexingServer {
 
         let source = SourceConfig {
             source_id: pipeline_id.source_id.clone(),
-            source_type: "void".to_string(),
-            params: json!({}),
+            source_type: "vec".to_string(),
+            params: serde_json::to_value(VecSourceParams::default()).unwrap(),
         };
         self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_metadata, source)
             .await?;
@@ -544,6 +544,16 @@ mod tests {
         client.spawn_pipelines(index_id.clone()).await.unwrap();
         assert_eq!(client.observe_server().await.num_running_pipelines, 2);
 
+        // Test `spawn_merge_pipeline`.
+        let merge_pipeline_id = client
+            .spawn_merge_pipeline(index_id.clone(), true, false)
+            .await
+            .unwrap();
+        assert_eq!(client.observe_server().await.num_running_pipelines, 3);
+        let pipeline_observation = client.observe_pipeline(&merge_pipeline_id).await.unwrap();
+        assert_eq!(pipeline_observation.generation, 1);
+        assert_eq!(pipeline_observation.num_spawn_attempts, 1);
+
         // Test `supervise_pipelines`
         let source_3 = SourceConfig {
             source_id: "test-indexing-server--source-3".to_string(),
@@ -556,7 +566,7 @@ mod tests {
             .unwrap();
         client
             .wait_for_server(
-                |state| state.num_successful_pipelines == 1,
+                |state| state.num_successful_pipelines == 2,
                 Duration::from_secs(5),
             )
             .await

@@ -46,7 +46,8 @@ use std::ops::Range;
 
 use anyhow::Context;
 use itertools::Itertools;
-use quickwit_index_config::tag_pruning::extract_tags_from_query;
+use quickwit_config::build_doc_mapper;
+use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
@@ -162,7 +163,12 @@ pub async fn single_node_search(
     let metas = list_relevant_splits(search_request, metastore).await?;
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();
-    let doc_mapper = index_metadata.build_doc_mapper().map_err(|err| {
+    let doc_mapper = build_doc_mapper(
+        &index_metadata.doc_mapping,
+        &index_metadata.search_settings,
+        &index_metadata.indexing_settings,
+    )
+    .map_err(|err| {
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
     })?;
     let leaf_search_response = leaf_search(

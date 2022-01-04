@@ -76,7 +76,7 @@ mod tests {
                 start_offset: 0,
                 ..Default::default()
             }),
-            index_config: "index_config".to_string(),
+            doc_mapper: "doc_mapper".to_string(),
             index_uri: "uri".to_string(),
             split_metadata: vec![
                 SplitIdAndFooterOffsets {

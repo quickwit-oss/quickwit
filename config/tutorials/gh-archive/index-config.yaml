@@ -4,6 +4,7 @@
 version: 0
 
 doc_mapping:
+  store_source: false
   field_mappings:
     - name: id
       type: u64

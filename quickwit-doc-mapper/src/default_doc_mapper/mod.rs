@@ -17,14 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod default_config;
+mod default_mapper;
 mod field_mapping_entry;
 mod field_mapping_type;
 
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-pub use self::default_config::{DefaultIndexConfig, DefaultIndexConfigBuilder, SortByConfig};
+pub use self::default_mapper::{DefaultDocMapper, DefaultDocMapperBuilder, SortByConfig};
 pub use self::field_mapping_entry::{DocParsingError, FieldMappingEntry};
 pub use self::field_mapping_type::FieldMappingType;
 

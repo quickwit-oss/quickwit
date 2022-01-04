@@ -8,10 +8,15 @@ description = "Quickwit is a cost-efficient search engine."
 repository = "https://github.com/quickwit-inc/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
+default-run = "quickwit"
 
 [[bin]]
 name = "quickwit"
 path = "src/main.rs"
+
+[[bin]]
+name = "generate_markdown"
+path = "src/generate_markdown.rs"
 
 [dependencies]
 async-trait = "0.1"
@@ -25,13 +30,13 @@ quickwit-common = { version = "0.1.0", path = "../quickwit-common" }
 quickwit-config = { version = "0.1.0", path = "../quickwit-config" }
 quickwit-metastore = { version = "0.1.0", path = "../quickwit-metastore" }
 quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
-quickwit-index-config = { version = "0.1.0", path = "../quickwit-index-config" }
+quickwit-doc-mapper = { version = "0.1.0", path = "../quickwit-doc-mapper" }
 quickwit-indexing = { version = "0.1.0", path = "../quickwit-indexing" }
 quickwit-search = { version = "0.1", path = "../quickwit-search" }
 quickwit-serve = { version = "0.1", path = "../quickwit-serve" }
 quickwit-telemetry = { version = "0.1", path = "../quickwit-telemetry" }
 quickwit-proto = { version = "0.1", path = "../quickwit-proto" }
-tabled = "0.3"
+tabled = "0.4"
 tracing = "0.1.29"
 tracing-subscriber = {version="0.3", features=["time", "std", "env-filter"]}
 tracing-opentelemetry = "0.16"
@@ -52,6 +57,7 @@ futures = "0.3"
 regex = "1.5.4"
 time = "0.3.5"
 console-subscriber = { version = "0.1.0", optional = true }
+toml = "0.5.8"
 
 [dev-dependencies]
 assert_cmd = "2"
@@ -65,3 +71,4 @@ tokio-console = ["console-subscriber"]
 openssl-support = ["openssl-probe"]
 release-feature-set = ["quickwit-metastore/postgres", "quickwit-indexing/kafka", "openssl-support"]
 release-feature-vendored-set = ["quickwit-metastore/postgres", "quickwit-indexing/vendored-kafka", "openssl-support"]
+

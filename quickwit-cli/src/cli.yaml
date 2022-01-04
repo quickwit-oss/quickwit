@@ -32,11 +32,6 @@ subcommands:
                         value_name: CONFIG
                         env: QW_CONFIG
                         required: true
-                    - data-dir:
-                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-                        long: data-dir
-                        value_name: DATA DIR
-                        env: QW_DATA_DIR
                     - overwrite:
                         about: Overwrites pre-existing index.
                         long: overwrite
@@ -82,11 +77,6 @@ subcommands:
                         value_name: CONFIG
                         env: QW_CONFIG
                         required: true
-                    - data-dir:
-                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-                        long: data-dir
-                        value_name: DATA DIR
-                        env: QW_DATA_DIR
             - search:
                 display_order: 4
                 about: Searches an index.
@@ -102,11 +92,6 @@ subcommands:
                         value_name: CONFIG
                         env: QW_CONFIG
                         required: true
-                    - data-dir:
-                        about: Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-                        long: data-dir
-                        value_name: DATA DIR
-                        env: QW_DATA_DIR
                     - query:
                         about: Query expressed in Tantivy syntax.
                         long: query
@@ -140,7 +125,7 @@ subcommands:
                 about: Merges an index.
                 args:
                     - index:
-                        about: INDEX.
+                        about: ID of the target index.
                         long: index
                         value_name: INDEX
                         required: true
@@ -379,6 +364,35 @@ subcommands:
         settings:
             - ArgRequiredElseHelp
         subcommands:
+            - add:
+                about: Adds a new source.
+                args:
+                    - index:
+                        about: ID of the target index.
+                        long: index
+                        value_name: INDEX
+                        required: true
+                    - id:
+                        about: ID of the source.
+                        long: id
+                        value_name: SOURCE ID
+                        required: true
+                    - type:
+                        about: "Type of the source. Available types are: `file` and `kafka`."
+                        long: type
+                        value_name: SOURCE TYPE
+                        required: true
+                    - params:
+                        about: Parameters for the source formatted as a JSON object passed inline or via a file. Parameters are source-specific. Please, refer to the source's documentation for more details.
+                        long: params
+                        value_name: PARAMS
+                        required: true
+                    - config:
+                        about: Quickwit config file.
+                        long: config
+                        value_name: CONFIG
+                        env: QW_CONFIG
+                        required: true
             - delete:
                 about: Deletes a source.
                 args:

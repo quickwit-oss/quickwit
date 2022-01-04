@@ -1,5 +1,5 @@
 [package]
-name = "quickwit-index-config"
+name = "quickwit-doc-mapper"
 version = "0.1.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"

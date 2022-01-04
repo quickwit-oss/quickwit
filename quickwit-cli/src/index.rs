@@ -33,7 +33,7 @@ use quickwit_common::uri::Uri;
 use quickwit_common::GREEN_COLOR;
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
-use quickwit_index_config::tag_pruning::match_tag_field_name;
+use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingServer};
 use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::source::{FileSourceParams, INGEST_SOURCE_ID};
@@ -590,7 +590,10 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
             "{}/{}",
             quickwit_config.default_index_root_uri, args.index_id
         );
-        info!("`index-uri` is missing, set it to `{}`.", default_index_uri);
+        info!(
+            "`index-uri` is not specified in the index configuration. Setting it to `{}`.",
+            default_index_uri
+        );
         default_index_uri
     };
     let file_content = load_file(&args.index_config_uri).await?;

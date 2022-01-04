@@ -35,15 +35,15 @@ use super::field_mapping_entry::{DocParsingError, FieldPath};
 use super::{default_as_true, FieldMappingEntry, FieldMappingType};
 use crate::query_builder::build_query;
 use crate::sort_by::{SortBy, SortOrder};
-use crate::{IndexConfig, QueryParserError, SOURCE_FIELD_NAME};
+use crate::{DocMapper, QueryParserError, SOURCE_FIELD_NAME};
 
 /// Name of the raw tokenizer.
 const RAW_TOKENIZER_NAME: &str = "raw";
 
-/// DefaultIndexConfigBuilder is here
-/// to create a valid IndexConfig.
+/// DefaultDocMapperBuilder is here
+/// to create a valid DocMapper.
 #[derive(Default, Serialize, Deserialize, Clone)]
-pub struct DefaultIndexConfigBuilder {
+pub struct DefaultDocMapperBuilder {
     /// Stores the original source document when set to true.
     #[serde(default = "default_as_true")]
     pub store_source: bool,
@@ -83,8 +83,8 @@ impl From<SortByConfig> for SortBy {
     }
 }
 
-impl DefaultIndexConfigBuilder {
-    /// Create a new `DefaultIndexConfigBuilder` for tests.
+impl DefaultDocMapperBuilder {
+    /// Create a new `DefaultDocMapperBuilder` for tests.
     pub fn new() -> Self {
         Self {
             store_source: true,
@@ -97,9 +97,9 @@ impl DefaultIndexConfigBuilder {
         }
     }
 
-    /// Build a valid `DefaultIndexConfig`.
-    /// This will consume your `DefaultIndexConfigBuilder`.
-    pub fn build(self) -> anyhow::Result<DefaultIndexConfig> {
+    /// Build a valid `DefaultDocMapper`.
+    /// This will consume your `DefaultDocMapperBuilder`.
+    pub fn build(self) -> anyhow::Result<DefaultDocMapper> {
         let schema = self.build_schema()?;
         // Resolve default search fields
         let mut default_search_field_names = Vec::new();
@@ -141,7 +141,7 @@ impl DefaultIndexConfigBuilder {
         // Build the root mapping entry, it has an empty name so that we don't prefix all
         // field name with it.
         let field_mappings = FieldMappingEntry::root(FieldMappingType::Object(self.field_mappings));
-        Ok(DefaultIndexConfig {
+        Ok(DefaultDocMapper {
             schema,
             store_source: self.store_source,
             default_search_field_names,
@@ -308,16 +308,16 @@ fn resolve_demux_field(
     Ok(())
 }
 
-impl TryFrom<DefaultIndexConfigBuilder> for DefaultIndexConfig {
+impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
     type Error = anyhow::Error;
 
-    fn try_from(value: DefaultIndexConfigBuilder) -> Result<DefaultIndexConfig, Self::Error> {
+    fn try_from(value: DefaultDocMapperBuilder) -> Result<DefaultDocMapper, Self::Error> {
         value.build()
     }
 }
 
-impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
-    fn from(value: DefaultIndexConfig) -> Self {
+impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
+    fn from(value: DefaultDocMapper) -> Self {
         let sort_by_config = match &value.sort_by {
             SortBy::DocId => None,
             SortBy::FastField { field_name, order } => Some(SortByConfig {
@@ -340,17 +340,14 @@ impl From<DefaultIndexConfig> for DefaultIndexConfigBuilder {
     }
 }
 
-/// Default [`IndexConfig`] implementation
+/// Default [`DocMapper`] implementation
 /// which defines a set of rules to map json fields
 /// to tantivy index fields.
 ///
 /// The mains rules are defined by the field mappings.
 #[derive(Serialize, Deserialize, Clone)]
-#[serde(
-    try_from = "DefaultIndexConfigBuilder",
-    into = "DefaultIndexConfigBuilder"
-)]
-pub struct DefaultIndexConfig {
+#[serde(try_from = "DefaultDocMapperBuilder", into = "DefaultDocMapperBuilder")]
+pub struct DefaultDocMapper {
     /// Store the json source in a text field _source.
     pub store_source: bool,
     /// Default list of field names used for search.
@@ -370,7 +367,7 @@ pub struct DefaultIndexConfig {
     pub demux_field_name: Option<String>,
 }
 
-impl DefaultIndexConfig {
+impl DefaultDocMapper {
     // Return error if a fast field is not present in field paths.
     fn check_fast_field_in_doc(
         &self,
@@ -389,10 +386,10 @@ impl DefaultIndexConfig {
     }
 }
 
-impl std::fmt::Debug for DefaultIndexConfig {
+impl std::fmt::Debug for DefaultDocMapper {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter
-            .debug_struct("DefaultIndexConfig")
+            .debug_struct("DefaultDocMapper")
             .field("store_source", &self.store_source)
             .field(
                 "default_search_field_names",
@@ -406,7 +403,7 @@ impl std::fmt::Debug for DefaultIndexConfig {
 }
 
 #[typetag::serde(name = "default")]
-impl IndexConfig for DefaultIndexConfig {
+impl DocMapper for DefaultDocMapper {
     fn doc_from_json(&self, doc_json: String) -> Result<Document, DocParsingError> {
         let mut document = Document::default();
         let json_obj: JsonValue = serde_json::from_str(&doc_json).map_err(|_| {
@@ -471,10 +468,9 @@ mod tests {
 
     use serde_json::{self, Value as JsonValue};
 
-    use super::DefaultIndexConfig;
+    use super::DefaultDocMapper;
     use crate::{
-        DefaultIndexConfigBuilder, DocParsingError, IndexConfig, SortBy, SortOrder,
-        SOURCE_FIELD_NAME,
+        DefaultDocMapperBuilder, DocMapper, DocParsingError, SortBy, SortOrder, SOURCE_FIELD_NAME,
     };
 
     const JSON_DOC_VALUE: &str = r#"
@@ -509,7 +505,7 @@ mod tests {
 
     #[test]
     fn test_json_deserialize() -> anyhow::Result<()> {
-        let config = crate::default_config_for_tests();
+        let config = crate::default_doc_mapper_for_tests();
         assert!(config.store_source);
         let mut default_search_field_names: Vec<String> = config.default_search_field_names;
         default_search_field_names.sort();
@@ -527,7 +523,7 @@ mod tests {
         let mut config = crate::default_config_with_demux_for_tests();
         let json_config = serde_json::to_string_pretty(&config)?;
         let mut config_after_serialization =
-            serde_json::from_str::<DefaultIndexConfig>(&json_config)?;
+            serde_json::from_str::<DefaultDocMapper>(&json_config)?;
         assert_eq!(config.store_source, config_after_serialization.store_source);
 
         config.default_search_field_names.sort();
@@ -551,7 +547,7 @@ mod tests {
 
     #[test]
     fn test_parsing_document() -> anyhow::Result<()> {
-        let index_config = crate::default_config_for_tests();
+        let index_config = crate::default_doc_mapper_for_tests();
         let document = index_config.doc_from_json(JSON_DOC_VALUE.to_string())?;
         let schema = index_config.schema();
         // 7 property entry + 1 field "_source" + two fields values for "tags" field
@@ -581,7 +577,7 @@ mod tests {
 
     #[test]
     fn test_accept_parsing_document_with_unknown_fields_and_missing_fields() -> anyhow::Result<()> {
-        let index_config = crate::default_config_for_tests();
+        let index_config = crate::default_doc_mapper_for_tests();
         index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -597,7 +593,7 @@ mod tests {
 
     #[test]
     fn test_fail_parsing_document_with_missing_fast_field() {
-        let index_config = crate::default_config_for_tests();
+        let index_config = crate::default_doc_mapper_for_tests();
         let result = index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -617,7 +613,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_cardinality() -> anyhow::Result<()> {
-        let index_config = crate::default_config_for_tests();
+        let index_config = crate::default_doc_mapper_for_tests();
         let result = index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -636,7 +632,7 @@ mod tests {
 
     #[test]
     fn test_fail_to_parse_document_with_wrong_value() -> anyhow::Result<()> {
-        let index_config = crate::default_config_for_tests();
+        let index_config = crate::default_doc_mapper_for_tests();
         let result = index_config.doc_from_json(
             r#"{
                 "timestamp": 1586960586000,
@@ -670,7 +666,7 @@ mod tests {
                 }
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?;
         let expected_msg = "Timestamp field must be a fast field, please add the fast property to \
                             your field `timestamp`."
             .to_string();
@@ -694,7 +690,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?;
         let expected_msg = "Timestamp field cannot be an array, please change your field \
                             `timestamp` from an array to a single value."
             .to_string();
@@ -716,7 +712,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?;
         let expected_msg = "`_source` is a reserved name, change your field name.".to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
@@ -738,7 +734,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?;
         let index_config = builder.build()?;
         let result = index_config.doc_from_json(
             r#"{
@@ -775,7 +771,7 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?;
         let index_config = builder.build()?;
         let schema = index_config.schema();
         const JSON_DOC_VALUE: &str = r#"{
@@ -827,7 +823,7 @@ mod tests {
             ]
         }"#;
         assert_eq!(
-            serde_json::from_str::<DefaultIndexConfigBuilder>(index_config_one)?
+            serde_json::from_str::<DefaultDocMapperBuilder>(index_config_one)?
                 .build()
                 .unwrap_err()
                 .to_string(),
@@ -846,7 +842,7 @@ mod tests {
             ]
         }"#;
         assert_eq!(
-            serde_json::from_str::<DefaultIndexConfigBuilder>(index_config_two)?
+            serde_json::from_str::<DefaultDocMapperBuilder>(index_config_two)?
                 .build()
                 .unwrap_err()
                 .to_string(),
@@ -872,7 +868,7 @@ mod tests {
                 }
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?;
         let expected_msg = "Sort by field must be a fast field, please add the fast property to \
                             your field `timestamp`."
             .to_string();
@@ -898,7 +894,7 @@ mod tests {
                 }
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?.build()?;
         assert!(
             matches!(builder.sort_by(), SortBy::FastField { field_name, order } if field_name == "timestamp" && order == SortOrder::Asc
             )
@@ -921,7 +917,7 @@ mod tests {
                 }
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?.build()?;
         assert!(matches!(builder.sort_by(), SortBy::DocId));
         Ok(())
     }
@@ -942,7 +938,7 @@ mod tests {
                 }
             ]
         }"#;
-        let config = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        let config = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?.build()?;
         assert_eq!(config.tag_field_names().len(), 1);
         assert!(config.tag_field_names().contains(&"demux".to_string()));
         Ok(())
@@ -963,7 +959,7 @@ mod tests {
                 }
             ]
         }"#;
-        let config = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        let config = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?.build()?;
         assert_eq!(config.tag_field_names().len(), 1);
         assert!(config.tag_field_names().contains(&"demux".to_string()));
         Ok(())
@@ -984,7 +980,7 @@ mod tests {
                 }
             ]
         }"#;
-        let config = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?.build()?;
+        let config = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?.build()?;
         assert_eq!(config.tag_field_names().len(), 1);
         assert!(config.tag_field_names().contains(&"demux".to_string()));
         Ok(())
@@ -1004,7 +1000,7 @@ mod tests {
                 }
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?;
         let expected_msg = "Demux field must be a fast field, please add the fast property to \
                             your field `demux`."
             .to_string();
@@ -1028,7 +1024,7 @@ mod tests {
                 }
             ]
         }"#;
-        let builder = serde_json::from_str::<DefaultIndexConfigBuilder>(index_config)?;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(index_config)?;
         let expected_msg = "Demux field must be indexed, please add the indexed property to your \
                             field `demux`."
             .to_string();
