@@ -4,19 +4,17 @@
     "node_id": "my-unique-node-id",
     "metastore_uri": "postgres://username:password@host:port/db",
     "data_dir_path": "/opt/quickwit/data",
+    "listen_address": "0.0.0.0",
+    "rest_listen_port": 1111,
+    "peer_seeds": [
+        "quickwit-searcher-0.local",
+        "quickwit-searcher-1.local"
+    ],
     "indexer": {
-        "rest_listen_address": "0.0.0.0",
-        "rest_listen_port": 1111,
         "split_store_max_num_bytes": "1T",
         "split_store_max_num_splits": 10000
     },
     "searcher": {
-        "rest_listen_address": "0.0.0.0",
-        "rest_listen_port": 11111,
-        "peer_seeds": [
-            "quickwit-searcher-0.local",
-            "quickwit-searcher-1.local"
-        ],
         "fast_field_cache_capacity": "10G",
         "split_footer_cache_capacity": "1G",
         "max_num_concurrent_split_streams": 120
