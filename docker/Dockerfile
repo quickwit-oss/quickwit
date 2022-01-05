@@ -5,11 +5,9 @@ RUN apk add --no-cache curl
 RUN curl -L https://install.quickwit.io | sh
 RUN mv  ./quickwit-*/* ./ && ls ./config/
 
-# Change the default configuration file in order to make the searcher
-# and indexer services accessible from outside of docker.
-RUN sed -i 's/#indexer/indexer/g' ./config/quickwit.yaml \
-    && sed -i 's/#searcher/searcher/g' ./config/quickwit.yaml  \
-    && sed -i 's/#  rest_listen_address: 127.0.0.1/ rest_listen_address: 0.0.0.0/g' ./config/quickwit.yaml
+# Change the default configuration file in order to make the rest,
+# grpc servers and gossip accessible from outside of docker.
+RUN sed -i 's/#listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' ./config/quickwit.yaml
 
 FROM alpine:3.15
 LABEL org.opencontainers.image.title="Quickwit"

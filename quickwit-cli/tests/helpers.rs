@@ -74,16 +74,7 @@ const DEFAULT_QUICKWIT_CONFIG: &str = r#"
     version: 0
     metastore_uri: #metastore_uri
     data_dir_path: #data_dir_path
-
-    indexer:
-      rest_listen_port: #indexer.rest_listen_port
-      grpc_listen_port: #indexer.grpc_listen_port
-      discovery_listen_port: #indexer.discovery_listen_port
-
-    searcher:
-      rest_listen_port: #searcher.rest_listen_port
-      grpc_listen_port: #searcher.grpc_listen_port
-      discovery_listen_port: #searcher.discovery_listen_port
+    rest_listen_port: #rest_listen_port
 "#;
 
 const LOGS_JSON_DOCS: &str = r#"{"event": "foo", "level": "info", "ts": 2, "device": "rpi", "city": "tokio"}
@@ -152,7 +143,7 @@ pub struct TestEnv {
     pub metastore_uri: String,
     /// The index ID.
     pub index_id: String,
-    pub searcher_rest_listen_port: u16,
+    pub rest_listen_port: u16,
     pub storage: Arc<dyn Storage>,
 }
 
@@ -202,11 +193,7 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
     let index_config_path = resources_dir_path.join("index_config.yaml");
     fs::write(&index_config_path, DEFAULT_INDEX_CONFIG)?;
     let quickwit_config_path = resources_dir_path.join("config.yaml");
-    let init_listen_port = find_available_port()?;
-    let listen_ports = (0..6)
-        .map(|i| init_listen_port + i)
-        .map(|port| port.to_string())
-        .collect::<Vec<String>>();
+    let rest_listen_port = find_available_port()?;
     fs::write(
         &quickwit_config_path,
         // A poor's man templating engine reloaded...
@@ -216,12 +203,7 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
                 "#data_dir_path",
                 &data_dir_path.to_str().unwrap().to_string(),
             )
-            .replace("#indexer.rest_listen_port", &listen_ports[0])
-            .replace("#indexer.grpc_listen_port", &listen_ports[1])
-            .replace("#indexer.discovery_listen_port", &listen_ports[2])
-            .replace("#searcher.rest_listen_port", &listen_ports[3])
-            .replace("#searcher.grpc_listen_port", &listen_ports[4])
-            .replace("#searcher.discovery_listen_port", &listen_ports[5]),
+            .replace("#rest_listen_port", &rest_listen_port.to_string()),
     )?;
     let log_docs_path = resources_dir_path.join("logs.json");
     fs::write(&log_docs_path, LOGS_JSON_DOCS)?;
@@ -241,7 +223,7 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
         resource_files,
         metastore_uri,
         index_id,
-        searcher_rest_listen_port: init_listen_port + 3,
+        rest_listen_port,
         storage,
     })
 }

@@ -151,10 +151,9 @@ export IP_NODE_3={third-ec2-instance-public-ip}
 # configuration for our first node
 echo "version: 0
 node_id: searcher-1
+listen_address: 0.0.0.0
 metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
-searcher:
-  rest_listen_address: 0.0.0.0
 " > config.yaml
 ```
 
@@ -179,10 +178,9 @@ echo "version: 0
 node_id: searcher-2
 metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
-searcher:
-  rest_listen_address: 0.0.0.0
-  peer_seeds:
-    - ${IP_NODE_1} # searcher-1
+listen_address: 0.0.0.0
+peer_seeds:
+  - ${IP_NODE_1} # searcher-1
 " > config.yaml
 ```
 
@@ -190,12 +188,11 @@ searcher:
 # configuration for our third node
 echo "version: 0
 node_id: searcher-3
+listen_address: 0.0.0.0
+peer_seeds:
+  - ${IP_NODE_1} # searcher-1
 metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
-searcher:
-  rest_listen_address: 0.0.0.0
-  peer_seeds:
-    - ${IP_NODE_1} # searcher-1
 " > config.yaml
 ```
 

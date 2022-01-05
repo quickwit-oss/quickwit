@@ -69,16 +69,15 @@ pub async fn run_searcher(
     SEARCHER_CONFIG_INSTANCE
         .set(quickwit_config.searcher_config.clone())
         .expect("could not set searcher config in global once cell");
-    let searcher_config = quickwit_config.searcher_config;
     let cluster = Arc::new(Cluster::new(
         quickwit_config.node_id.clone(),
-        searcher_config.gossip_socket_addr()?,
+        quickwit_config.gossip_socket_addr()?,
     )?);
-    for peer_socket_addr in searcher_config.peer_socket_addrs()? {
-        // If the peer address is specified,
+    for seed_socket_addr in quickwit_config.seed_socket_addrs()? {
+        // If the peer seed address is specified,
         // it joins the cluster in which that node participates.
-        debug!(peer_addr = %peer_socket_addr, "Add peer node.");
-        cluster.add_peer_node(peer_socket_addr).await;
+        debug!(peer_seed_addr = %seed_socket_addr, "Add peer seed node.");
+        cluster.add_peer_node(seed_socket_addr).await;
     }
     let storage_uri_resolver = storage_uri_resolver();
     let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
@@ -92,12 +91,12 @@ pub async fn run_searcher(
 
     let cluster_service = Arc::new(ClusterServiceImpl::new(cluster.clone()));
 
-    let grpc_addr = searcher_config.grpc_socket_addr()?;
+    let grpc_addr = quickwit_config.grpc_socket_addr()?;
     let grpc_search_service = GrpcSearchAdapter::from(search_service.clone());
     let grpc_cluster_service = GrpcClusterAdapter::from(cluster_service.clone());
     let grpc_server = start_grpc_service(grpc_addr, grpc_search_service, grpc_cluster_service);
 
-    let rest_socket_addr = searcher_config.rest_socket_addr()?;
+    let rest_socket_addr = quickwit_config.rest_socket_addr()?;
     let rest_server = start_rest_service(rest_socket_addr, search_service, cluster_service);
     info!(
         "Searcher ready to accept requests at http://{}/",

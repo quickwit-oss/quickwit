@@ -58,12 +58,12 @@ fn default_listen_address() -> String {
     "127.0.0.1".to_string()
 }
 
+fn default_rest_listen_port() -> u16 {
+    7280
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct IndexerConfig {
-    #[serde(default = "default_listen_address")]
-    pub rest_listen_address: String,
-    #[serde(default = "IndexerConfig::default_rest_listen_port")]
-    pub rest_listen_port: u16,
     #[serde(default = "IndexerConfig::default_split_store_max_num_bytes")]
     pub split_store_max_num_bytes: Byte,
     #[serde(default = "IndexerConfig::default_split_store_max_num_splits")]
@@ -71,10 +71,6 @@ pub struct IndexerConfig {
 }
 
 impl IndexerConfig {
-    fn default_rest_listen_port() -> u16 {
-        7180
-    }
-
     fn default_split_store_max_num_bytes() -> Byte {
         Byte::from_bytes(100_000_000_000) // 100G
     }
@@ -85,13 +81,9 @@ impl IndexerConfig {
 
     #[doc(hidden)]
     pub fn for_test() -> anyhow::Result<Self> {
-        use quickwit_common::net::find_available_port;
-
         let indexer_config = IndexerConfig {
-            rest_listen_port: find_available_port()?,
             split_store_max_num_bytes: Byte::from_bytes(1_000_000),
             split_store_max_num_splits: 3,
-            ..Default::default()
         };
         Ok(indexer_config)
     }
@@ -100,8 +92,6 @@ impl IndexerConfig {
 impl Default for IndexerConfig {
     fn default() -> Self {
         Self {
-            rest_listen_address: default_listen_address(),
-            rest_listen_port: Self::default_rest_listen_port(),
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
         }
@@ -116,12 +106,6 @@ pub fn get_searcher_config_instance() -> &'static SearcherConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearcherConfig {
-    #[serde(default = "default_listen_address")]
-    pub rest_listen_address: String,
-    #[serde(default = "SearcherConfig::default_rest_listen_port")]
-    pub rest_listen_port: u16,
-    #[serde(default)]
-    pub peer_seeds: Vec<String>,
     #[serde(default = "SearcherConfig::default_fast_field_cache_capacity")]
     pub fast_field_cache_capacity: Byte,
     #[serde(default = "SearcherConfig::default_split_footer_cache_capacity")]
@@ -131,10 +115,6 @@ pub struct SearcherConfig {
 }
 
 impl SearcherConfig {
-    fn default_rest_listen_port() -> u16 {
-        7280
-    }
-
     fn default_fast_field_cache_capacity() -> Byte {
         Byte::from_bytes(1_000_000_000) // 1G
     }
@@ -146,58 +126,11 @@ impl SearcherConfig {
     fn default_max_num_concurrent_split_streams() -> usize {
         100
     }
-
-    pub fn rest_socket_addr(&self) -> anyhow::Result<SocketAddr> {
-        get_socket_addr(&(self.rest_listen_address.as_str(), self.rest_listen_port))
-    }
-
-    pub fn grpc_socket_addr(&self) -> anyhow::Result<SocketAddr> {
-        get_socket_addr(&(self.rest_listen_address.as_str(), self.rest_listen_port + 1))
-    }
-
-    pub fn gossip_socket_addr(&self) -> anyhow::Result<SocketAddr> {
-        // We use the same port number as the rest port but this is UDP
-        get_socket_addr(&(self.rest_listen_address.as_str(), self.rest_listen_port))
-    }
-
-    pub fn peer_socket_addrs(&self) -> anyhow::Result<Vec<SocketAddr>> {
-        // If no port is given, we assume a peer is using the same port as ourself.
-        let default_gossip_port = self.gossip_socket_addr()?.port();
-        let peer_socket_addrs: Vec<SocketAddr> = self
-            .peer_seeds
-            .iter()
-            .flat_map(|peer_seed| {
-                parse_socket_addr_with_default_port(peer_seed, default_gossip_port).map_err(
-                    |_| warn!(address = %peer_seed, "Failed to resolve peer seed address."),
-                )
-            })
-            .collect();
-
-        if !self.peer_seeds.is_empty() && peer_socket_addrs.is_empty() {
-            bail!(
-                "Failed to resolve any of the peer seed addresses: `{}`",
-                self.peer_seeds.join(", ")
-            )
-        }
-        Ok(peer_socket_addrs)
-    }
-}
-
-impl SearcherConfig {
-    pub fn validate(&self) -> anyhow::Result<()> {
-        if self.peer_seeds.is_empty() {
-            warn!("Peer seed list is empty.")
-        }
-        Ok(())
-    }
 }
 
 impl Default for SearcherConfig {
     fn default() -> Self {
         Self {
-            rest_listen_address: default_listen_address(),
-            rest_listen_port: Self::default_rest_listen_port(),
-            peer_seeds: Vec::new(),
             fast_field_cache_capacity: Self::default_fast_field_cache_capacity(),
             split_footer_cache_capacity: Self::default_split_footer_cache_capacity(),
             max_num_concurrent_split_streams: Self::default_max_num_concurrent_split_streams(),
@@ -223,6 +156,12 @@ pub struct QuickwitConfig {
     pub version: usize,
     #[serde(default = "default_node_id")]
     pub node_id: String,
+    #[serde(default = "default_listen_address")]
+    pub listen_address: String,
+    #[serde(default = "default_rest_listen_port")]
+    pub rest_listen_port: u16,
+    #[serde(default)]
+    pub peer_seeds: Vec<String>,
     #[serde(default = "default_metastore_and_index_root_uri")]
     pub metastore_uri: String,
     #[serde(default = "default_metastore_and_index_root_uri")]
@@ -293,14 +232,80 @@ impl QuickwitConfig {
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
+        if self.peer_seeds.is_empty() {
+            warn!("Seed list is empty.")
+        }
+
         if !self.data_dir_path.exists() {
             bail!(
                 "Data dir `{}` does not exist.",
                 self.data_dir_path.display()
             );
         }
-        self.searcher_config.validate()?;
         Ok(())
+    }
+
+    pub fn rest_socket_addr(&self) -> anyhow::Result<SocketAddr> {
+        get_socket_addr(&(self.listen_address.as_str(), self.rest_listen_port))
+    }
+
+    pub fn grpc_socket_addr(&self) -> anyhow::Result<SocketAddr> {
+        get_socket_addr(&(self.listen_address.as_str(), self.rest_listen_port + 1))
+    }
+
+    pub fn gossip_socket_addr(&self) -> anyhow::Result<SocketAddr> {
+        // We use the same port number as the rest port but this is UDP
+        get_socket_addr(&(self.listen_address.as_str(), self.rest_listen_port))
+    }
+
+    pub fn seed_socket_addrs(&self) -> anyhow::Result<Vec<SocketAddr>> {
+        // If no port is given, we assume a seed is using the same port as ourself.
+        let default_gossip_port = self.gossip_socket_addr()?.port();
+        let seed_socket_addrs: Vec<SocketAddr> = self
+            .peer_seeds
+            .iter()
+            .flat_map(|seed| {
+                parse_socket_addr_with_default_port(seed, default_gossip_port)
+                    .map_err(|_| warn!(address = %seed, "Failed to resolve seed address."))
+            })
+            .collect();
+
+        if !self.peer_seeds.is_empty() && seed_socket_addrs.is_empty() {
+            bail!(
+                "Failed to resolve any of the seed addresses: `{}`",
+                self.peer_seeds.join(", ")
+            )
+        }
+        Ok(seed_socket_addrs)
+    }
+
+    #[doc(hidden)]
+    pub fn for_test() -> anyhow::Result<Self> {
+        use quickwit_common::net::find_available_port;
+
+        let indexer_config = Self {
+            rest_listen_port: find_available_port()?,
+            ..Default::default()
+        };
+        Ok(indexer_config)
+    }
+}
+
+impl Default for QuickwitConfig {
+    fn default() -> Self {
+        Self {
+            version: 0,
+            listen_address: default_listen_address(),
+            rest_listen_port: default_rest_listen_port(),
+            peer_seeds: Vec::new(),
+            node_id: default_node_id(),
+            metastore_uri: default_metastore_and_index_root_uri(),
+            default_index_root_uri: default_metastore_and_index_root_uri(),
+            data_dir_path: PathBuf::from(DEFAULT_DATA_DIR_PATH),
+            indexer_config: IndexerConfig::default(),
+            searcher_config: SearcherConfig::default(),
+            storage_config: None,
+        }
     }
 }
 
@@ -333,6 +338,15 @@ mod tests {
                 let file = std::fs::read_to_string(&config_filepath).unwrap();
                 let config = QuickwitConfig::from_uri(&config_uri, file.as_bytes()).await?;
                 assert_eq!(config.version, 0);
+                assert_eq!(config.listen_address, "0.0.0.0".to_string());
+                assert_eq!(config.rest_listen_port, 1111);
+                assert_eq!(
+                    config.peer_seeds,
+                    vec![
+                        "quickwit-searcher-0.local".to_string(),
+                        "quickwit-searcher-1.local".to_string()
+                    ]
+                );
                 assert_eq!(
                     config.metastore_uri,
                     "postgres://username:password@host:port/db"
@@ -341,8 +355,6 @@ mod tests {
                 assert_eq!(
                     config.indexer_config,
                     IndexerConfig {
-                        rest_listen_address: "0.0.0.0".to_string(),
-                        rest_listen_port: 1111,
                         split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
                         split_store_max_num_splits: 10_000,
                     }
@@ -351,12 +363,6 @@ mod tests {
                 assert_eq!(
                     config.searcher_config,
                     SearcherConfig {
-                        rest_listen_address: "0.0.0.0".to_string(),
-                        rest_listen_port: 11111,
-                        peer_seeds: vec![
-                            "quickwit-searcher-0.local".to_string(),
-                            "quickwit-searcher-1.local".to_string()
-                        ],
                         fast_field_cache_capacity: Byte::from_str("10G").unwrap(),
                         split_footer_cache_capacity: Byte::from_str("1G").unwrap(),
                         max_num_concurrent_split_streams: 120,
@@ -449,16 +455,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_searcher_config_validate() {
-        {
-            let searcher_config = SearcherConfig {
-                ..Default::default()
-            };
-            assert!(searcher_config.validate().is_ok());
-        }
-    }
-
     #[tokio::test]
     async fn test_quickwit_config_validate() {
         let config_filepath = get_resource_path("quickwit.toml");
@@ -475,29 +471,28 @@ mod tests {
     #[test]
     fn test_peer_socket_addrs() {
         {
-            let searcher_config = SearcherConfig {
+            let quickwit_config = QuickwitConfig {
                 rest_listen_port: 1789,
-                peer_seeds: Vec::new(),
                 ..Default::default()
             };
-            assert!(searcher_config.peer_socket_addrs().unwrap().is_empty());
+            assert!(quickwit_config.seed_socket_addrs().unwrap().is_empty());
         }
         {
-            let searcher_config = SearcherConfig {
+            let quickwit_config = QuickwitConfig {
                 rest_listen_port: 1789,
                 peer_seeds: vec!["unresolvable-host".to_string()],
                 ..Default::default()
             };
-            assert!(searcher_config.peer_socket_addrs().is_err());
+            assert!(quickwit_config.seed_socket_addrs().is_err());
         }
         {
-            let searcher_config = SearcherConfig {
+            let quickwit_config = QuickwitConfig {
                 rest_listen_port: 1789,
                 peer_seeds: vec!["unresolvable-host".to_string(), "127.0.0.1".to_string()],
                 ..Default::default()
             };
             assert_eq!(
-                searcher_config.peer_socket_addrs().unwrap(),
+                quickwit_config.seed_socket_addrs().unwrap(),
                 vec!["127.0.0.1:1789".parse().unwrap()]
             );
         }
