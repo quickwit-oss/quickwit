@@ -4,9 +4,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 5 * * *"
-  # push: TODO: only here for testing, will be removed before merging
-  #   branches:
-  #     - 'fix-990'
 
 jobs:
   # Not including native package as Mac-OS build takes ci time.
