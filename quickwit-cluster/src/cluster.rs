@@ -243,12 +243,17 @@ fn log_artillery_event(artillery_member_event: ArtilleryMemberEvent) {
     };
 }
 
-/// Creates a local cluster listening on a random port.
-pub fn create_cluster_for_test() -> anyhow::Result<Cluster> {
-    let peer_uuid = Uuid::new_v4().to_string();
+pub fn create_cluster_for_test_with_id(peer_uuid: String) -> anyhow::Result<Cluster> {
     let port = quickwit_common::net::find_available_port()?;
     let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
     let cluster = Cluster::new(peer_uuid, peer_addr)?;
+    Ok(cluster)
+}
+
+/// Creates a local cluster listening on a random port.
+pub fn create_cluster_for_test() -> anyhow::Result<Cluster> {
+    let peer_uuid = Uuid::new_v4().to_string();
+    let cluster = create_cluster_for_test_with_id(peer_uuid)?;
     Ok(cluster)
 }
 
@@ -259,6 +264,7 @@ mod tests {
 
     use itertools::Itertools;
     use quickwit_swim::prelude::{ArtilleryMember, ArtilleryMemberState};
+    use tokio::time::sleep;
 
     use super::*;
     use crate::cluster::{convert_member, Member};
@@ -356,8 +362,8 @@ mod tests {
     #[tokio::test]
     async fn test_cluster_rejoin_with_different_id_issue_1018() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let cluster1 = create_cluster_for_test()?;
-        let cluster2 = create_cluster_for_test()?;
+        let cluster1 = create_cluster_for_test_with_id("cluster1".to_string())?;
+        let cluster2 = create_cluster_for_test_with_id("cluster2".to_string())?;
 
         cluster2.add_peer_node(cluster1.listen_addr).await;
 
@@ -387,13 +393,26 @@ mod tests {
             .await
             .unwrap();
 
+        sleep(Duration::from_secs(3)).await;
+
         let cluster2 = Cluster::new("newid".to_string(), cluster2_listen_addr)?;
         cluster2.add_peer_node(cluster1.listen_addr).await;
 
-        cluster1
-            .wait_for_members(|members| members.len() == 2, ten_secs)
-            .await
-            .unwrap();
+        for _ in 0..4_000 {
+            if cluster1.members().len() > 2 {
+                panic!("too many members");
+            }
+            sleep(Duration::from_millis(1)).await;
+        }
+
+        assert!(!cluster1
+            .members()
+            .iter()
+            .any(|member| (*member).node_id == "cluster2"));
+        assert!(!cluster2
+            .members()
+            .iter()
+            .any(|member| (*member).node_id == "cluster2"));
 
         Ok(())
     }

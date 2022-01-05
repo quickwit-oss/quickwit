@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::fmt::{self, Debug, Formatter};
 use std::io;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,7 +32,7 @@ pub enum ArtilleryMemberEvent {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ArtilleryMessage {
-    sender: String,
+    node_id: String,
     cluster_key: Vec<u8>,
     request: Request,
     state_changes: Vec<ArtilleryStateChange>,
@@ -43,7 +44,7 @@ struct EncSocketAddr(SocketAddr);
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 enum Request {
     Heartbeat,
-    Ack,
+    Ack(String),
     Ping(EncSocketAddr),
     AckHost(ArtilleryMember),
     Payload(String, String),
@@ -79,6 +80,18 @@ pub struct ArtilleryEpidemic {
     request_tx: flume::Sender<ArtilleryClusterRequest>,
     event_tx: flume::Sender<ArtilleryClusterEvent>,
     running: AtomicBool,
+}
+
+impl Debug for ArtilleryEpidemic {
+    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
+        fmt.debug_struct("ArtilleryEpidemic")
+            .field("host_id", &self.host_id)
+            .field("members", &self.members)
+            .field("seed_queue", &self.seed_queue)
+            .field("pending_responses", &self.pending_responses)
+            .field("state_changes", &self.state_changes)
+            .finish()
+    }
 }
 
 pub type ClusterReactor = (Poll, ArtilleryEpidemic);
@@ -160,7 +173,8 @@ impl ArtilleryEpidemic {
                     loop {
                         match state.server_socket.recv_from(&mut buf) {
                             Ok((packet_size, source_address)) => {
-                                let message = serde_json::from_slice(&buf[..packet_size])?;
+                                let message: ArtilleryMessage =
+                                    serde_json::from_slice(&buf[..packet_size])?;
                                 state.request_tx.send(ArtilleryClusterRequest::Respond(
                                     source_address,
                                     message,
@@ -328,64 +342,64 @@ impl ArtilleryEpidemic {
     fn respond_to_message(&mut self, src_addr: SocketAddr, message: ArtilleryMessage) {
         use Request::*;
 
-        if message.cluster_key == self.config.cluster_key {
-            // We want to abort if a new member has the same node_id of an existing member.
-            // A new member is detected according to its socket address.
-            if !self.members.has_member(&src_addr)
-                && self.members.get_member(&message.sender).is_some()
-            {
-                error!(
-                    "Cannot add a member with a node-id `{}` already present in the cluster.",
-                    message.sender
-                );
-                return;
-            }
-
-            self.apply_state_changes(message.state_changes, src_addr);
-            remove_potential_seed(&mut self.seed_queue, src_addr);
-
-            self.ensure_node_is_member(src_addr, message.sender);
-
-            let response = match message.request {
-                Heartbeat => Some(TargetedRequest {
-                    request: Ack,
-                    target: src_addr,
-                }),
-                Ack => {
-                    self.ack_response(src_addr);
-                    self.mark_node_alive(src_addr);
-                    None
-                }
-                Ping(dest_addr) => {
-                    let EncSocketAddr(dest_addr) = dest_addr;
-                    add_to_wait_list(&mut self.wait_list, &dest_addr, &src_addr);
-                    Some(TargetedRequest {
-                        request: Heartbeat,
-                        target: dest_addr,
-                    })
-                }
-                AckHost(member) => {
-                    self.ack_response(member.remote_host().unwrap());
-                    self.mark_node_alive(member.remote_host().unwrap());
-                    None
-                }
-                Payload(peer_id, msg) => {
-                    if let Some(member) = self.members.get_member(&peer_id) {
-                        self.send_member_event(ArtilleryMemberEvent::Payload(member, msg));
-                    } else {
-                        warn!("Got payload request from an unknown peer {}", peer_id);
-                    }
-                    None
-                }
-            };
-
-            if let Some(response) = response {
-                self.request_tx
-                    .send(ArtilleryClusterRequest::React(response))
-                    .unwrap()
-            }
-        } else {
+        if message.cluster_key != self.config.cluster_key {
             error!("Mismatching cluster keys, ignoring message");
+            return;
+        }
+        // We want to abort if a new member has the same node_id of an existing member.
+        // A new member is detected according to its socket address.
+        if !self.members.has_member(&src_addr)
+            && self.members.get_member(&message.node_id).is_some()
+        {
+            error!(
+                "Cannot add a member with a node-id `{}` already present in the cluster.",
+                message.node_id
+            );
+            return;
+        }
+
+        self.apply_state_changes(message.state_changes, src_addr);
+        remove_potential_seed(&mut self.seed_queue, src_addr);
+
+        self.ensure_node_is_member(src_addr, message.node_id);
+
+        let response = match message.request {
+            Heartbeat => Some(TargetedRequest {
+                request: Ack(self.host_id.to_string()),
+                target: src_addr,
+            }),
+            Ack(node_id) => {
+                self.ack_response(src_addr);
+                self.mark_node_alive(src_addr, node_id);
+                None
+            }
+            Ping(dest_addr) => {
+                let EncSocketAddr(dest_addr) = dest_addr;
+                add_to_wait_list(&mut self.wait_list, &dest_addr, &src_addr);
+                Some(TargetedRequest {
+                    request: Heartbeat,
+                    target: dest_addr,
+                })
+            }
+            AckHost(member) => {
+                self.ack_response(member.remote_host().unwrap());
+                self.mark_node_alive(member.remote_host().unwrap(), member.node_id());
+                None
+            }
+            Payload(peer_id, msg) => {
+                if let Some(member) = self.members.get_member(&peer_id) {
+                    self.send_member_event(ArtilleryMemberEvent::Payload(member, msg));
+                } else {
+                    warn!("Got payload request from an unknown peer {}", peer_id);
+                }
+                None
+            }
+        };
+
+        if let Some(response) = response {
+            self.request_tx
+                .send(ArtilleryClusterRequest::React(response))
+                .unwrap()
         }
     }
 
@@ -403,19 +417,19 @@ impl ArtilleryEpidemic {
                 !state_changes
                     .iter()
                     .any(|is| is.member().node_id() == os.member().node_id())
-            })
+            });
         }
 
         self.pending_responses
             .retain(|op| !to_remove.iter().any(|ip| ip == op));
     }
 
-    fn ensure_node_is_member(&mut self, src_addr: SocketAddr, sender: String) {
+    fn ensure_node_is_member(&mut self, src_addr: SocketAddr, node_id: String) {
         if self.members.has_member(&src_addr) {
             return;
         }
 
-        let new_member = ArtilleryMember::new(sender, src_addr, 0, ArtilleryMemberState::Alive);
+        let new_member = ArtilleryMember::new(node_id, src_addr, 0, ArtilleryMemberState::Alive);
 
         self.members.add_member(new_member.clone());
         enqueue_state_change(&mut self.state_changes, &[new_member.clone()]);
@@ -452,8 +466,8 @@ impl ArtilleryEpidemic {
         }
     }
 
-    fn mark_node_alive(&mut self, src_addr: SocketAddr) {
-        if let Some(member) = self.members.mark_node_alive(&src_addr) {
+    fn mark_node_alive(&mut self, src_addr: SocketAddr, node_id: String) {
+        if let Some(member) = self.members.mark_node_alive(&src_addr, node_id) {
             if let Some(wait_list) = self.wait_list.get_mut(&src_addr) {
                 for remote in wait_list.iter() {
                     self.request_tx
@@ -474,14 +488,14 @@ impl ArtilleryEpidemic {
 }
 
 fn build_message(
-    sender: &str,
+    node_id: &str,
     cluster_key: &[u8],
     request: &Request,
     state_changes: &[ArtilleryStateChange],
     network_mtu: usize,
 ) -> ArtilleryMessage {
     let mut message = ArtilleryMessage {
-        sender: sender.to_string(),
+        node_id: node_id.to_string(),
         cluster_key: cluster_key.into(),
         request: request.clone(),
         state_changes: Vec::new(),
@@ -489,7 +503,7 @@ fn build_message(
 
     for i in 0..=state_changes.len() {
         message = ArtilleryMessage {
-            sender: sender.to_string(),
+            node_id: node_id.to_string(),
             cluster_key: cluster_key.into(),
             request: request.clone(),
             state_changes: (&state_changes[..i]).to_vec(),

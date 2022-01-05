@@ -1,4 +1,6 @@
 use std::collections::HashSet;
+use std::fmt;
+use std::fmt::{Debug, Formatter};
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -9,6 +11,14 @@ use crate::member::{self, ArtilleryMember, ArtilleryMemberState, ArtilleryStateC
 pub struct ArtilleryMemberList {
     members: Vec<ArtilleryMember>,
     periodic_index: usize,
+}
+
+impl Debug for ArtilleryMemberList {
+    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
+        fmt.debug_struct("ArtilleryEpidemic")
+            .field("members", &self.members)
+            .finish()
+    }
 }
 
 impl ArtilleryMemberList {
@@ -111,7 +121,24 @@ impl ArtilleryMemberList {
         (suspect_members, down_members)
     }
 
-    pub fn mark_node_alive(&mut self, src_addr: &SocketAddr) -> Option<ArtilleryMember> {
+    // make sure node id is set correctly for the host (in case it changes)
+    pub fn ensure_node_id(&mut self, src_addr: SocketAddr, node_id: &str) {
+        for member in &mut self.members {
+            if member.remote_host() == Some(src_addr) {
+                member.node_id = node_id.to_string();
+            }
+        }
+    }
+    pub fn mark_node_alive(
+        &mut self,
+        src_addr: &SocketAddr,
+        node_id: String,
+    ) -> Option<ArtilleryMember> {
+        self.ensure_node_id(*src_addr, &node_id);
+        // remove self duplicates
+        let my_node_id = self.current_node_id();
+        self.members
+            .retain(|member| !(member.node_id() == my_node_id && member.remote_host().is_some()));
         for member in &mut self.members {
             if member.remote_host() == Some(*src_addr)
                 && member.state() != ArtilleryMemberState::Alive
@@ -176,6 +203,7 @@ impl ArtilleryMemberList {
                 let update_member = update_member.member_by_changing_host(new_host);
 
                 if update_member.state() != existing_member.state() {
+                    existing_member.node_id = member_change.node_id();
                     existing_member.set_state(update_member.state());
                     existing_member.incarnation_number = update_member.incarnation_number;
                     if let Some(host) = update_member.remote_host() {
@@ -233,18 +261,9 @@ impl ArtilleryMemberList {
         self.members.push(member)
     }
 
-    /// `get_member` will return artillery member if the given uuid is matches with any of the
+    /// `get_member` will return artillery member if the given uuid is matched with any of the
     /// member in the cluster.
     pub fn get_member(&self, id: &str) -> Option<ArtilleryMember> {
-        let member: Vec<_> = self
-            .members
-            .iter()
-            .filter(|&m| m.node_id() == *id)
-            .collect();
-
-        if member.is_empty() {
-            return None;
-        }
-        Some(member[0].clone())
+        self.members.iter().find(|&m| m.node_id() == *id).cloned()
     }
 }
