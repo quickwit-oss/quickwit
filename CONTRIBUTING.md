@@ -50,10 +50,8 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 Currently, we use [cross](https://github.com/rust-embedded/cross) to build Quickwit binaries for different architectures.
 For this to work, we've had to customize the docker images cross uses. These customizations can be found in docker files located in `./cross-images` folder. To make cross take into account any change on those 
 docker files, you will need to build and push the images on dockerhub by running `make cross-images`. 
-Also, rather than invoking cross locally to build the binaries, you can build the binaries from our CI pipeline. This has two advantages: 
-- One can easily build and share binaries from his working branch without having to setup cross.
-- We can also make sure our binaries build correctly without going through a release process.
-To build the binaries from our CI, just create a branch from your working branch, name it `make-binaries-from-ci` and push. Once the CI passes, you should find all the binary artifacts under the corresponding `Build release packages` run on the `Artifacts` tab. 
-Please note:
-- The branch `make-binaries-from-ci` can be used by any other contributor, therefore should only be used for creating Quickwit binaries.
-- The artifacts for your CI run are only kept for three days.
+We also have nightly builds that are pushed to dockerhub. This helps continiously check our binaries are still built even with external dependency update. Successful builds let you accessed the artifacts for the next three days. Release builds always have their artifacts attached to the release.
+
+## Testing release (alpha, beta, rc)
+
+The following Quickwit installation command `curl -L https://install.quickwit.io | sh` always installs the latest stable version of quickwit. To make it easier in installing and testing new (alpha, beta, rc) releases, you can manually pull and execute the script as `./install.sh --allow-any-latest-version`. This will force the script to install any latest available release package.
