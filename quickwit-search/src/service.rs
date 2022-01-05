@@ -140,15 +140,10 @@ impl SearchService for SearchServiceImpl {
             .storage_uri_resolver
             .resolve(&leaf_search_request.index_uri)?;
         let split_ids = leaf_search_request.split_metadata;
-        let index_config = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
+        let doc_mapper = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
 
-        let leaf_search_response = leaf_search(
-            &search_request,
-            storage.clone(),
-            &split_ids[..],
-            index_config,
-        )
-        .await?;
+        let leaf_search_response =
+            leaf_search(&search_request, storage.clone(), &split_ids[..], doc_mapper).await?;
 
         Ok(leaf_search_response)
     }
@@ -196,12 +191,12 @@ impl SearchService for SearchServiceImpl {
         let storage = self
             .storage_uri_resolver
             .resolve(&leaf_stream_request.index_uri)?;
-        let index_config = deserialize_doc_mapper(&leaf_stream_request.doc_mapper)?;
+        let doc_mapper = deserialize_doc_mapper(&leaf_stream_request.doc_mapper)?;
         let leaf_receiver = leaf_search_stream(
             stream_request,
             storage.clone(),
             leaf_stream_request.split_metadata,
-            index_config,
+            doc_mapper,
         )
         .await;
         Ok(leaf_receiver)

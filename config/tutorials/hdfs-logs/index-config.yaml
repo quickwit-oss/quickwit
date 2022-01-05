@@ -6,9 +6,6 @@ version: 0
 
 doc_mapping:
   field_mappings:
-    - name: tenant_id
-      type: u64
-      fast: true
     - name: timestamp
       type: i64
       fast: true
