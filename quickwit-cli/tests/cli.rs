@@ -671,7 +671,7 @@ async fn test_all_local_index() -> Result<()> {
     sleep(Duration::from_secs(2)).await;
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
-        test_env.searcher_rest_listen_port, test_env.index_id
+        test_env.rest_listen_port, test_env.index_id
     ))
     .await?
     .text()
@@ -683,7 +683,7 @@ async fn test_all_local_index() -> Result<()> {
 
     let search_stream_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search/stream?query=level:info&outputFormat=csv&fastField=ts",
-        test_env.searcher_rest_listen_port,
+        test_env.rest_listen_port,
         test_env.index_id
     ))
     .await?
@@ -770,7 +770,7 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     sleep(Duration::from_secs(2)).await;
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
-        test_env.searcher_rest_listen_port, test_env.index_id,
+        test_env.rest_listen_port, test_env.index_id,
     ))
     .await?
     .text()
@@ -856,7 +856,7 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     sleep(Duration::from_secs(2)).await;
     let query_response = reqwest::get(format!(
         "http://127.0.0.1:{}/api/v1/{}/search?query=level:info",
-        test_env.searcher_rest_listen_port, test_env.index_id,
+        test_env.rest_listen_port, test_env.index_id,
     ))
     .await?
     .text()

@@ -13,6 +13,16 @@ version: 0
 #
 #node_id: node-1
 #
+# Default REST server host is `127.0.0.1` 
+# and default HTTP port is 7280. 
+#
+#listen_address: 127.0.0.1
+#rest_listen_port: 7280
+#peer_seeds:
+#  - quickwit-searcher-0.local
+#  - quickwit-searcher-1.local
+#
+#
 # Path to directory where data is persisted. Default to `./qwdata`.
 #
 #data_dir: /path/to/data
@@ -33,24 +43,15 @@ version: 0
 #
 # -------------------------------- Indexer settings --------------------------------
 #
-# By default an indexer is only accessible on localhost on http port 7280.
-#
 #indexer:
-#  rest_listen_address: 127.0.0.1
-#  rest_listen_port: 7280
 #  split_store_max_num_bytes: 200G
 #  split_store_max_num_splits: 10000
 #
 # -------------------------------- Searcher settings --------------------------------
 #
-# By default a searcher is only accessible on localhost on http port 7280.
+# 
 #
 #searcher:
-#  rest_listen_address: 127.0.0.1
-#  rest_listen_port: 7280
-#  peer_seeds:
-#    - quickwit-searcher-0.local
-#    - quickwit-searcher-1.local
 #  fast_field_cache_capacity: 10G
 #  split_footer_cache_capacity: 1G
 #  max_num_concurrent_split_streams: 100

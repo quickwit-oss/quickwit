@@ -32,12 +32,10 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && mkdir -p /quickwit/bin \
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
-# Change the default configuration file in order to make the searcher
-# and indexer services accessible from outside of docker.
+# Change the default configuration file in order to make the rest,
+# grpc servers and gossip accessible from outside of docker.
 COPY ./config/quickwit.yaml ./config/quickwit.yaml
-RUN sed -i 's/#indexer/indexer/g' ./config/quickwit.yaml \
-    && sed -i 's/#searcher/searcher/g' ./config/quickwit.yaml  \
-    && sed -i 's/#  rest_listen_address: 127.0.0.1/ rest_listen_address: 0.0.0.0/g' ./config/quickwit.yaml
+RUN sed -i 's/#listen_address: 127.0.0.1/listen_address: 0.0.0.0/g' ./config/quickwit.yaml
 
 FROM debian:bullseye-slim AS quickwit
 
