@@ -134,7 +134,6 @@ async fn list_relevant_splits(
 ) -> crate::Result<Vec<SplitMetadata>> {
     let time_range_opt =
         extract_time_range(search_request.start_timestamp, search_request.end_timestamp);
-    // TODO: will be removed after #issues/823 is solved
     let tags_filter = extract_tags_from_query(&search_request.query)?;
     let split_metas = metastore
         .list_splits(
