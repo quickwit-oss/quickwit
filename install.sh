@@ -49,7 +49,7 @@ EOF
 main() {
     downloader --check
     header
-    install_from_archive
+    install_from_archive "${1:-""}"
 }
 
 install_from_archive() {
@@ -96,7 +96,7 @@ install_from_archive() {
             ;;
     esac
 
-    local _version="$(get_latest_version)"
+    local _version=$(get_latest_version "$1")
     local _archive_content_file="quickwit-${_version}-${_binary_arch}"
     local _file="${_archive_content_file}.tar.gz"
     local _url="${PACKAGE_ROOT}/${_version}/${_file}"
@@ -194,6 +194,12 @@ get_latest_version() {
         | tr -d ',"' | cut -d ':' -f2 | tr -d ' ')
         # Returns a list of [tag_name draft_boolean prerelease_boolean ...]
         # Ex: v0.10.1 false false v0.9.1-rc.1 false true v0.9.0 false false...
+
+    if [ "$1" = "--allow-any-latest-version" ]; then
+        local release_list=($releases)
+        echo "${release_list[0]}"
+        return
+    fi
 
     i=0
     latest=""
