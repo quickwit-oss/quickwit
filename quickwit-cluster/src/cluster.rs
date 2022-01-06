@@ -416,4 +416,84 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_cluster_rejoin_with_different_id_3_nodes_issue_1018() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let cluster1 = create_cluster_for_test_with_id("cluster1".to_string())?;
+        let cluster2 = create_cluster_for_test_with_id("cluster2".to_string())?;
+        let cluster3 = create_cluster_for_test_with_id("cluster3".to_string())?;
+
+        cluster2.add_peer_node(cluster1.listen_addr).await;
+        cluster3.add_peer_node(cluster2.listen_addr).await;
+
+        let ten_secs = Duration::from_secs(10);
+
+        for cluster in [&cluster1, &cluster2] {
+            cluster
+                .wait_for_members(|members| members.len() == 3, ten_secs)
+                .await
+                .unwrap();
+        }
+        let members: Vec<SocketAddr> = cluster1
+            .members()
+            .iter()
+            .map(|member| member.listen_addr)
+            .sorted()
+            .collect();
+        let mut expected_members = vec![
+            cluster1.listen_addr,
+            cluster2.listen_addr,
+            cluster3.listen_addr,
+        ];
+        expected_members.sort();
+        assert_eq!(members, expected_members);
+
+        let cluster2_listen_addr = cluster2.listen_addr;
+        let cluster3_listen_addr = cluster3.listen_addr;
+        drop(cluster2);
+        drop(cluster3);
+        cluster1
+            .wait_for_members(|members| members.len() == 1, ten_secs)
+            .await
+            .unwrap();
+
+        sleep(Duration::from_secs(3)).await;
+
+        let cluster2 = Cluster::new("newid".to_string(), cluster2_listen_addr)?;
+        cluster2.add_peer_node(cluster1.listen_addr).await;
+
+        let cluster3 = Cluster::new("newid2".to_string(), cluster3_listen_addr)?;
+        cluster3.add_peer_node(cluster2.listen_addr).await;
+
+        sleep(Duration::from_secs(10)).await;
+
+        assert!(!cluster1
+            .members()
+            .iter()
+            .any(|member| (*member).node_id == "cluster2"));
+        assert!(!cluster2
+            .members()
+            .iter()
+            .any(|member| (*member).node_id == "cluster2"));
+        assert!(!cluster3
+            .members()
+            .iter()
+            .any(|member| (*member).node_id == "cluster2"));
+
+        assert!(!cluster1
+            .members()
+            .iter()
+            .any(|member| (*member).node_id == "cluster3"));
+        assert!(!cluster2
+            .members()
+            .iter()
+            .any(|member| (*member).node_id == "cluster3"));
+        assert!(!cluster2
+            .members()
+            .iter()
+            .any(|member| (*member).node_id == "cluster3"));
+
+        Ok(())
+    }
 }
