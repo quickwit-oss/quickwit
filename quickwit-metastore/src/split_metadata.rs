@@ -82,7 +82,7 @@ pub struct SplitMetadata {
     /// The set is filled at indexing with values from each field registered
     /// in the [`DocMapping`] `tag_fields` attribute and only when cardinality
     /// of a given field is less or equal to [`MAX_VALUES_PER_TAG_FIELD`].
-    /// A additional special tag of form `{field_name!}` is added to the set
+    /// An additional special tag of the form `{field_name}!` is added to the set
     /// to indicate that this field `field_name` was indeed registered in `tag_fields`.
     /// When cardinality is strictly higher than [`MAX_VALUES_PER_TAG_FIELD`],
     /// no field value is added to the set.
