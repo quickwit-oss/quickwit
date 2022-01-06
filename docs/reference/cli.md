@@ -365,7 +365,7 @@ Starts a service. Currently, the only services available are `indexer` and `sear
 ### service run searcher
 
 Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](search-api.md)
-where `rest_listing_address` and `rest_list_port` are defined in Quickwit config file (quickwit.yaml).
+where `listen_address` and `rest_listen_port` are defined in the Quickwit config file (quickwit.yaml).
 The node can optionally join a cluster using the `seeds` parameter. 
 This list of node addresses is used to discover the remaining peer nodes in the cluster through a gossip protocol (SWIM).
   
