@@ -162,6 +162,26 @@ quickwit index describe
 *Displays descriptive statistics of your index*
 ```bash
 quickwit index describe --index wikipedia --config ./config/quickwit.yaml
+
+1. General infos
+===============================================================================
+Index id:                           wikipedia
+Index uri:                          file:///home/quickwit-indices/qwdata/indexes/wikipedia
+Number of published splits:         1
+Number of published documents:      300000
+Size of published splits:           448 MB
+
+2. Statistics on splits
+===============================================================================
+Document count stats:
+Mean ± σ in [min … max]:            300000 ± 0 in [300000 … 300000]
+Quantiles [1%, 25%, 50%, 75%, 99%]: [300000, 300000, 300000, 300000, 300000]
+
+Size in MB stats:
+Mean ± σ in [min … max]:            448 ± 0 in [448 … 448]
+Quantiles [1%, 25%, 50%, 75%, 99%]: [448, 448, 448, 448, 448]
+
+
 ```
 
 ### index search
