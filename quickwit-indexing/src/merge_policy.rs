@@ -269,7 +269,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         }
         let demux_field_name = self.demux_field_name.as_ref().unwrap();
         // Note: split metadata tags is empty when demux values have a cardinality
-        // is strictly superior to [`MAX_VALUES_PER_TAG_FIELD`]. When inferior,
+        // strictly superior to [`MAX_VALUES_PER_TAG_FIELD`]. When inferior,
         // tags always contains the special tag `field_tag(demux_field_name)`.
         // This is why we have to check first if this special tag is present and then
         // consider the split mature if we have less that one demux value.
