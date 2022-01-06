@@ -26,20 +26,21 @@ In order of prority, it will attempt to read it from:
 - fallback to us-east-1.
 
 ## Network
-Cluster membership and search workload distribution need UDP and TCP communication between instances. You need to authorize UDP and TCP on relevant ports between them to make it work: by default, TCP port 8080 is used by the webserver, TCP and UDP 8081 ports (8080 + 1) are used by the cluster membership protocol, and TCP port 8082 (8080 + 2) is used for gRPC communication.
+Cluster membership and search workload distribution need UDP and TCP communication between instances. You need to authorize UDP and TCP on relevant ports between them to make it work.
+[More details](../reference/ports.md).
 
 
 ## Common errors
 If you put the wrong credentials, you will see this error message with `Unauthorized` in your terminal:
 
 ```bash
-Command failed: Another error occured. `Metastore error`. Cause: `StorageError(kind=Unauthorized, source=Failed to fetch object: s3://quickwit-dev/my-hdfs/quickwit.json)`
+Command failed: Another error occured. `Metastore error`. Cause: `StorageError(kind=Unauthorized, source=Failed to fetch object: s3://quickwit-dev/my-hdfs/metastore.json)`
 ```
 
 If you put the wrong region, you will see this one:
 
 ```bash
-Command failed: Another error occured. `Metastore error`. Cause: `StorageError(kind=InternalError, source=Failed to fetch object: s3://your-bucket/your-index/quickwit.json)`.
+Command failed: Another error occured. `Metastore error`. Cause: `StorageError(kind=InternalError, source=Failed to fetch object: s3://your-bucket/your-index/metastore.json)`.
 ```
 
 :::note
