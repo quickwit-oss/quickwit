@@ -1,6 +1,6 @@
 ---
 title: Search REST API
-position: 3
+position: 5
 ---
 
 ## API version
@@ -110,11 +110,10 @@ The endpoint will return 10 million values if 10 million documents match the que
 
 
 ### Response
-The response for is a HTTP stream. Depending on the client capability it is a HTTP1.1 (chunked transfer encoded stream)[https://en.wikipedia.org/wiki/Chunked_transfer_encoding] or a HTTP2 stream.
+The response is an HTTP stream. Depending on the client's capability, it is an HTTP1.1 (chunked transfer encoded stream)[https://en.wikipedia.org/wiki/Chunked_transfer_encoding] or an HTTP2 stream.
 
 It returns a list of all the field values from documents matching the query. The field must be marked as "fast" in the index config for this to work. 
 The formatting is based on the specified output format. 
 
-On error a "X-Stream-Error" header will be sent via the the trailers channel with information about the error and the stream will be closed via (sender.abort())[https://docs.rs/hyper/latest/hyper/body/struct.Sender.html#method.abort].
+On error, an "X-Stream-Error" header will be sent via the trailers channel with information about the error, and the stream will be closed via (`sender.abort()`)[https://docs.rs/hyper/latest/hyper/body/struct.Sender.html#method.abort].
 Depending on the client, the trailer header with error details may not be shown. The error will also be logged in quickwit ("Error when streaming search results"). 
-
