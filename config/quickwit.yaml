@@ -3,6 +3,8 @@
 # Website: https://quickwit.io
 # Docs: https://quickwit.io/docs/
 #
+# Configure AWS credentials: https://quickwit.io/docs/guides/configure-aws-env
+#
 # -------------------------------- General settings --------------------------------
 #
 # Config file version.
@@ -56,4 +58,5 @@ version: 0
 #  split_footer_cache_capacity: 1G
 #  max_num_concurrent_split_streams: 100
 #
+
 
