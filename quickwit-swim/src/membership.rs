@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use rand::prelude::SliceRandom;
+use tracing::info;
 
 use crate::member::{self, ArtilleryMember, ArtilleryMemberState, ArtilleryStateChange};
 
@@ -200,8 +201,11 @@ impl ArtilleryMemberList {
                     .unwrap();
                 let update_member = update_member.member_by_changing_host(new_host);
 
-                if update_member.state() != existing_member.state() {
+                if existing_member.node_id != member_change.node_id() {
+                    info!(old_node_id=?existing_member.node_id(), new_node_id=?member_change.node_id(), "updating node id from state change.");
                     existing_member.node_id = member_change.node_id();
+                }
+                if update_member.state() != existing_member.state() {
                     existing_member.set_state(update_member.state());
                     existing_member.incarnation_number = update_member.incarnation_number;
                     if let Some(host) = update_member.remote_host() {
