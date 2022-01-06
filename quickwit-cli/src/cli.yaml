@@ -84,7 +84,7 @@ subcommands:
                         env: QW_CONFIG
                         required: true
                     - query:
-                        about: Query expressed in natural query language (barack AND obama) OR "president of united states").
+                        about: Query expressed in natural query language (barack AND obama) OR "president of united states"). Learn more on https://quickwit.io/docs/reference/search-language.
                         long: query
                         value_name: QUERY
                         required: true
@@ -99,7 +99,7 @@ subcommands:
                         value_name: OFFSET
                         default_value: '0'
                     - search-fields:
-                        about: Searches only in those fields.
+                        about: List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2". 
                         long: search-fields
                         value_name: FIELD NAME
                         multiple_values: true

@@ -4,6 +4,8 @@
 
 version: 0
 
+index_id: hdfs-logs
+
 doc_mapping:
   field_mappings:
     - name: timestamp

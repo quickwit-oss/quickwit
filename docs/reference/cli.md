@@ -59,7 +59,6 @@ The CLI is structured into high-level commands with subcommands.
 [comment]: <> (Insert auto generated CLI docs from here.)
 
 
-
 ## index
 Create your index, ingest data, search, describe... every command you need to manage indexes.
 
@@ -77,26 +76,24 @@ When `overwrite` is enabled, the command deletes all the files stored at `index-
 
 ```bash
 quickwit index create
-    --index <index>
     --index-config <index-config>
-    [--index-uri <index-uri>]
     --config <config>
     [--overwrite]
 ```
 
 *Options*
 
-`--index` ID of the target index.    
 `--index-config` Location of the index config file.    
-`--index-uri` Index data (or splits) storage URI.    
 `--config` Quickwit config file.    
 `--overwrite` Overwrites pre-existing index.    
 
 *Examples*
 
-*Create a new index with the default local metastore.*
+*Create a new index.*
 ```bash
-quickwit index create --index wikipedia --index-config wikipedia_index_config.yaml  --config=./config/quickwit.yaml
+curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/wikipedia/index-config.yaml
+quickwit index create --index-config wikipedia_index_config.yaml  --config=./config/quickwit.yaml
+
 ```
 
 ### index ingest
@@ -104,7 +101,7 @@ quickwit index create --index wikipedia --index-config wikipedia_index_config.ya
 Indexes a dataset consisting of newline-delimited JSON objects located at `input-path` or read from *stdin*. 
 The data is appended to the target index of ID `index` unless `overwrite` is passed. `input-path` can be a file or another command output piped into stdin. 
 Currently, only local datasets are supported.
-By default, Quickwit's indexer will work with a heap of 2 GiB of memory, more on [index config page](index-config.md).
+By default, Quickwit's indexer will work with a heap of 2 GiB of memory. Learn how to change `heap-size` in the [index config doc page](index-config.md).
   
 `quickwit index ingest [args]`
 
@@ -131,7 +128,9 @@ quickwit index ingest
 
 *Indexing a dataset from a file*
 ```bash
-quickwit index ingest --index wikipedia --config=./config/quickwit.yaml --input-path wikipedia.json
+curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
+quickwit index ingest --index wikipedia --config=./config/quickwit.yaml --input-path wiki-articles-10000.json
+
 ```
 
 *Indexing a dataset from stdin*
@@ -181,7 +180,6 @@ Size in MB stats:
 Mean ± σ in [min … max]:            448 ± 0 in [448 … 448]
 Quantiles [1%, 25%, 50%, 75%, 99%]: [448, 448, 448, 448, 448]
 
-
 ```
 
 ### index search
@@ -189,7 +187,7 @@ Quantiles [1%, 25%, 50%, 75%, 99%]: [448, 448, 448, 448, 448]
 Searches an index with ID `--index` and returns the documents matching the query specified with `--query`.
 More details on the [query language page](query-language.md).
 The offset of the first hit returned and the number of hits returned can be set with the `start-offset` and `max-hits` options. 
-It's possible to restrict the search on specified fields using the `search-fields` option. 
+It's possible to override the default search fields `search-fields` option to define the list of fields that Quickwit will search into if the user query does not explicitly target a field in the query.
 Search can also be limited to a time range using the `start-timestamp` and `end-timestamp` options. 
 These timestamp options are useful for boosting query performance when using a time series dataset.
   
@@ -213,10 +211,10 @@ quickwit index search
 
 `--index` ID of the target index.    
 `--config` Quickwit config file.    
-`--query` Query expressed in natural query language (barack AND obama) OR "president of united states").    
+`--query` Query expressed in natural query language (barack AND obama) OR "president of united states"). Learn more on https://quickwit.io/docs/reference/search-language.    
 `--max-hits` Maximum number of hits returned. (Default: 20)    
 `--start-offset` Offset in the global result set of the first hit returned. (Default: 0)    
-`--search-fields` Searches only in those fields.    
+`--search-fields` List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2".    
 `--start-timestamp` Filters out documents before that timestamp (time-series indexes only).    
 `--end-timestamp` Filters out documents after that timestamp (time-series indexes only).    
 
@@ -225,16 +223,25 @@ quickwit index search
 *Searching a index*
 ```bash
 quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama"
+# If you have jq installed.
+quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama" | jq '.hits[].title'
+
 ```
 
 *Limiting the result set to 50 hits*
 ```bash
 quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama" --max-hits 50
+# If you have jq installed.
+quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama" --max-hits 50 | jq '.numHits'
+
 ```
 
-*Looking for matches in the title and url fields only*
+*Looking for matches in the title only*
 ```bash
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama" --search-fields title,url
+quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "search" --search-fields title
+# If you have jq installed.
+quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "search" --search-fields title | jq '.hits[].title'
+
 ```
 
 ### index gc
@@ -385,8 +392,8 @@ Starts a service. Currently, the only services available are `indexer` and `sear
 ### service run searcher
 
 Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](search-api.md)
-where `listen_address` and `rest_listen_port` are defined in the Quickwit config file (quickwit.yaml).
-The node can optionally join a cluster using the `seeds` parameter. 
+where `rest_listing_address` and `rest_list_port` are defined in Quickwit config file (quickwit.yaml).
+The node can optionally join a cluster using the `peer_seeds` parameter. 
 This list of node addresses is used to discover the remaining peer nodes in the cluster through a gossip protocol (SWIM).
   
 :::note
@@ -421,25 +428,35 @@ quickwit service run searcher
 quickwit service run searcher --config=./config/quickwit.yaml
 ```
 
-*curl request and specify fields to search*
+*Make a search request on a wikipedia index*
 ```bash
-curl -L "http://127.0.0.1:7280/api/v1/wikipedia/search/stream?query=clinton&searchField=body,title" 
+# To create wikipedia index and ingest data, go to our tutorial https://quickwit.io/docs/get-started/quickstart.
+# Start a searcher.
+quickwit service run searcher --config=./config/quickwit.yaml
+# Make a request.
+curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+obama" 
+
 ```
 
-*curl request stream fast field, HTTP1.1 chunked transfer encoding*
+*Make a search stream request on a Github archive index*
 ```bash
-curl -L "http://127.0.0.1:7280/api/v1/wikipedia/search/stream?query=tangkhul&searchField=body,title&fastField=number&outputFormat=csv"  
-```
+# Create gh-archive index.
+curl -o gh_archive_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/gh-archive/index-config.yaml
+quickwit index create --index-config gh_archive_index_config.yaml --config ./config/quickwit.yaml
+# Download a data sample and ingest it.
+curl https://quickwit-datasets-public.s3.amazonaws.com/gh-archive-2022-01-text-only-10000.json.gz | gunzip | cargo r index ingest --index gh-archive --config=./config/quickwit.yaml
+# Start server.
+quickwit service run searcher --config=./config/quickwit.yaml
+# Finally make the search stream request.
+curl "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j&fastField=id&outputFormat=csv"
+# Make a search stream request with HTTP2.
+curl --http2-prior-knowledge "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j&fastField=id&outputFormat=csv"
 
-*curl request stream fast field as binary, force HTTP2*
-```bash
-curl -L --http2-prior-knowledge "http://127.0.0.1:7280/api/v1/myindex/search/stream?query=clinton&searchField=body,title&fastField=number&outputFormat=clickHouseRowBinary"  
 ```
 
 ### service run indexer
 
 Starts an indexing server that consumes the sources of index IDs passed in `--indexes` argument.
-If all sources of all indexes are exhausted, the server will stop.
   
 `quickwit service run indexer [args]`
 
@@ -460,9 +477,11 @@ quickwit service run indexer
 
 *Examples*
 
-*Start an Indexer*
+*Add a source to an index and start an Indexer*
 ```bash
-quickwit service run indexer --config=./config/quickwit.yaml
+quickwit source add --index wikipedia --source wikipedia-source --type file --params '{"filepath":"wiki-articles-10000.json"}'
+quickwit service run indexer --config=./config/quickwit.yaml --indexes wikipedia
+
 ```
 
 ## source
@@ -478,7 +497,7 @@ Adds a new source.
 ```bash
 quickwit source add
     --index <index>
-    --id <id>
+    --source <source>
     --type <type>
     --params <params>
     --config <config>
@@ -487,7 +506,7 @@ quickwit source add
 *Options*
 
 `--index` ID of the target index.    
-`--id` ID of the source.    
+`--source` ID of the source.    
 `--type` Type of the source. Available types are: `file` and `kafka`.    
 `--params` Parameters for the source formatted as a JSON object passed inline or via a file. Parameters are source-specific. Please, refer to the source's documentation for more details.    
 `--config` Quickwit config file.    
@@ -496,15 +515,13 @@ quickwit source add
 
 *Add a file source to `wikipedia` index*
 ```bash
- 
-quickwit source add --index wikipedia --id wikipedia-source --type file --params '{"filepath":"wiki-articles.json"}'
+quickwit source add --index wikipedia --source wikipedia-source --type file --params '{"filepath":"wiki-articles-10000.json"}'
 
 ```
 
 *Add a Kafka source to `wikipedia` index*
 ```bash
- 
-cat << EOF > wikipedia-source.json
+cat << EOF > wikipedia-kafka-source.json
 {
   "topic": "wikipedia",
   "client_params": {
@@ -514,7 +531,7 @@ cat << EOF > wikipedia-source.json
   }
 }
 EOF
-quickwit source add --index wikipedia --id wikipedia-source --type kafka --params wikipedia-source.json
+quickwit source add --index wikipedia --source wikipedia-source --type kafka --params wikipedia-kafka-source.json
 
 ```
 
@@ -583,6 +600,7 @@ quickwit source list
 
 `--index` ID of the target index.    
 `--config` Quickwit config file.    
+
 
 
 
