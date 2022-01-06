@@ -3,30 +3,40 @@ title: Query language
 position: 6
 ---
 
-WIP on Notion.
+Quickwit uses a query mini-language which is used by providing a `query` parameter to the search endpoints.
 
+### Terms
 
-The query language is used by the `search` CLI command and by the `query` parameter in the REST API search request. 
-It supports currently a very simple simple syntax:
-- simple terms: `Barack Obama` will match documents containing both "barack" and "obama" terms
-- multiple terms: you can chain term with an `OR` to match document containing at least one of the terms
-- negative terms: a term can be excluded by prepending it with a `-`
-- must terms: a term can be made required by prepending it with a `+`.
+The `query` is parsed into a series of terms and operators. There are two types of terms: single terms such as “tantivy” and phrases which is a group of words surrounded by double quotes such as “hello world”.
 
-## Examples with field names
+Multiple terms can be combined together with Boolean operators `AND, OR` to form a more complex query. By default, terms will be combined with the `AND` operator.
 
-You can specify fields to search in the query:
-- `title:barack`
-- `title:(barack OR obama)`
-- `title:barack resource.body:barack` will search for `barack` in both fields
-- `title:"barack obama"` will search for the exact phrase 
+### Fields
 
-You can also omit field names to search into default search fields defined in the `index config`:
-- `barack OR obama` will search for `barack` or `obama` in the default search fields.
+You can specify fields to search in the query by following the syntax `field_name:term`.
 
-## Example of a search query on the REST API
+For example, let's assume an index that contains two fields, `title`, and `body` with `body` the default field. To search for the phrase “Barack Obama” in the title AND “president” in the body, you can enter:
 
 ```
-curl http://0.0.0.0:8080/api/v1/indexes/<index name>/search?query=barack OR obama
+title:"barack obama" AND president
 ```
 
+Note that a query like `title:barack obama` will find only `barack` in the title and `obama` in the default fields. If no default field has been set on the index, this will result in an error.
+
+### Boolean Operators
+
+Quickwit supports `AND`, `+`, `OR`, `NOT` and `-` as Boolean operators (case sensitive). By default, the `AND` is chosen, this means that if you omit it in a query like `title:"barack obama" president` Quickwit will interpret the query as `title:"barack obama" AND president`.
+
+### Grouping boolean operators
+
+Quickwit supports parenthesis to group multiple clauses with or without specifying a field:
+
+```
+title:(obama OR president)
+
+(obama OR president)
+```
+
+### Escaping Special Characters
+
+Special reserved characters are: `+` , `^`, ```, `:`, `{`, `}`, `"`, `[`, `]`, `(`, `)`, `~`, `!`, `\\`, `*`, `SPACE`. Such characters can still appear in query terms, but they need to be escaped by an antislash `\` .
