@@ -217,7 +217,11 @@ fn try_extract_terms(
         .map(|inv_index| inv_index.terms().num_terms())
         .sum::<usize>();
     if num_terms > max_terms {
-        bail!("Too many terms");
+        bail!(
+            "Number of unique terms for tag field {} > {}.",
+            named_field.name,
+            max_terms
+        );
     }
     let mut terms = Vec::with_capacity(num_terms);
     for inv_index in inv_indexes {
@@ -250,20 +254,20 @@ fn create_packaged_split(
 ) -> anyhow::Result<PackagedSplit> {
     info!(split_id = split.split_id.as_str(), "create-packaged-split");
     let split_files = list_split_files(segment_metas, &split.split_scratch_directory);
-    debug!(split_id = split.split_id.as_str(), "create-file-bundle");
     let num_docs = segment_metas
         .iter()
         .map(|segment_meta| segment_meta.num_docs() as u64)
         .sum();
 
-    // Extracts tag values from `_tags` special fields.
+    // Extracts tag values from inverted indexes only when a field cardinality is less
+    // than `MAX_VALUES_PER_TAG_FIELD`.
+    debug!(split_id = split.split_id.as_str(), tag_fields =? tag_fields, "extract-tags-values");
     let index_reader = split
         .index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let mut tags = BTreeSet::default();
-
     for named_field in tag_fields {
         let inverted_indexes = index_reader
             .searcher()
@@ -277,7 +281,7 @@ fn create_packaged_split(
                 append_to_tag_set(&named_field.name, &terms, &mut tags);
             }
             Err(tag_extraction_error) => {
-                warn!(err=?tag_extraction_error,  field_name=%named_field.name, "tag-extraction-error");
+                warn!(err=?tag_extraction_error,  "No field values will be registered in the split metadata.");
             }
         }
     }

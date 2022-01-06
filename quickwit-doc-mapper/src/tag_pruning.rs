@@ -83,15 +83,14 @@ enum TermFilterAst {
 
 /// Records terms into a set of tags.
 ///
-/// If no terms are available for a given field, it is still
-/// beneficial to call this method with an empty array for values.
-///
-/// In that case, we will record a tag marking that the field has been
-/// processed, allowing for pruning of the split.
-pub fn append_to_tag_set(field: &str, values: &[String], tag_set: &mut BTreeSet<String>) {
-    tag_set.insert(field_tag(field));
+/// A special tag `{field_name}!` is always added to the tag set.
+/// It indicates that `{field_name}` is in the list of the
+/// `DocMapper` attribute `tag_fields`.
+/// See [`SplitMetadata`] for more details.
+pub fn append_to_tag_set(field_name: &str, values: &[String], tag_set: &mut BTreeSet<String>) {
+    tag_set.insert(field_tag(field_name));
     for value in values {
-        tag_set.insert(term_tag(field, value));
+        tag_set.insert(term_tag(field_name, value));
     }
 }
 
@@ -205,8 +204,10 @@ fn simplify_ast(ast: UnsimplifiedTagFilterAst) -> Option<TermFilterAst> {
     }
 }
 
-fn field_tag(field: &str) -> String {
-    format!("{}!", field)
+/// Special tag to indicate that a field is listed in the
+/// `DocMapper` `tag_fields` attribute.
+pub fn field_tag(field_name: &str) -> String {
+    format!("{}!", field_name)
 }
 
 fn term_tag(field: &str, value: &str) -> String {
