@@ -157,16 +157,14 @@ impl ArtilleryMemberList {
         node_id: &str,
         addr: SocketAddr,
     ) -> Option<&'a mut ArtilleryMember> {
-        // ugly hack for borrowchecker
-        if members.iter().any(|member| member.node_id() == node_id) {
-            members
-                .iter_mut()
-                .find(|member| member.node_id() == node_id)
-        } else {
-            members
-                .iter_mut()
-                .find(|member| member.remote_host() == Some(addr))
-        }
+        let pos_matching_node_id: Option<usize> = members
+            .iter()
+            .position(|member| member.node_id() == node_id);
+        let pos_matching_address: Option<usize> = members
+            .iter()
+            .position(|member| member.remote_host() == Some(addr));
+        let chosen_position: usize = pos_matching_node_id.or(pos_matching_address)?;
+        Some(&mut members[chosen_position])
     }
 
     pub fn apply_state_changes(
@@ -211,7 +209,9 @@ impl ArtilleryMemberList {
                     }
                     changed_nodes.push(update_member);
                 }
-            } else {
+            } else if member_change.state() != ArtilleryMemberState::Down
+                && member_change.state() != ArtilleryMemberState::Left
+            {
                 let new_host = member_change.remote_host().unwrap_or(*from);
                 let new_member = member_change.member_by_changing_host(new_host);
 
@@ -220,7 +220,13 @@ impl ArtilleryMemberList {
             }
         }
 
-        self.members = current_members;
+        self.members = current_members
+            .into_iter()
+            .filter(|member| {
+                member.state() != ArtilleryMemberState::Down
+                    && member.state() != ArtilleryMemberState::Left
+            })
+            .collect::<Vec<_>>();
 
         (new_nodes, changed_nodes)
     }
@@ -259,6 +265,10 @@ impl ArtilleryMemberList {
 
     pub fn add_member(&mut self, member: ArtilleryMember) {
         self.members.push(member)
+    }
+
+    pub fn remove_member(&mut self, id: &str) {
+        self.members.retain(|member| member.node_id() != id)
     }
 
     /// `get_member` will return artillery member if the given uuid is matched with any of the
