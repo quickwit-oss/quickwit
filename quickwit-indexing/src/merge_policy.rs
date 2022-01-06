@@ -272,7 +272,7 @@ impl StableMultitenantWithTimestampMergePolicy {
         // strictly superior to [`MAX_VALUES_PER_TAG_FIELD`]. When inferior,
         // tags always contains the special tag `field_tag(demux_field_name)`.
         // This is why we have to check first if this special tag is present and then
-        // consider the split mature if we have less that one demux value.
+        // consider the split mature if we have less than two demux value.
         if split.tags.contains(&field_tag(demux_field_name))
             && split
                 .tags
