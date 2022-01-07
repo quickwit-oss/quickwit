@@ -76,6 +76,7 @@ pub fn quickwit_metastore_uri_resolver() -> &'static MetastoreUriResolver {
         #[cfg(feature = "postgres")]
         {
             builder = builder.register("postgres", PostgresqlMetastoreFactory::default());
+            builder = builder.register("postgresql", PostgresqlMetastoreFactory::default());
         }
 
         builder.build()
@@ -130,5 +131,22 @@ mod tests {
             .resolve("s4://bucket/path/to/object")
             .await
             .unwrap();
+    }
+
+    #[cfg(feature = "postgres")]
+    #[tokio::test]
+    async fn test_postgres_and_postgresql_protocol_accepted() {
+        use std::env;
+        let metastore_resolver = quickwit_metastore_uri_resolver();
+        // If the database defined in the env var or the default one is not up, the
+        // test block after making 10 attempts with a timeout of 10s each = 100s.
+        let test_database_url = env::var("TEST_DATABASE_URL").unwrap_or(
+            "postgres://quickwit-dev:quickwit-dev@localhost/quickwit-metastore-dev".to_string(),
+        );
+        let (_uri_protocol, uri_path) = test_database_url.split_once("://").unwrap();
+        for protocol in &["postgres", "postgresql"] {
+            let postgres_uri = format!("{}://{}", protocol, uri_path);
+            metastore_resolver.resolve(&postgres_uri).await.unwrap();
+        }
     }
 }
