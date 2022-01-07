@@ -30,7 +30,7 @@ use colored::Colorize;
 use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType};
 use quickwit_common::uri::Uri;
-use quickwit_common::GREEN_COLOR;
+use quickwit_common::{run_checklist, GREEN_COLOR};
 use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
@@ -58,8 +58,6 @@ pub struct DescribeIndexArgs {
 
 #[derive(Debug, PartialEq)]
 pub struct CreateIndexArgs {
-    pub index_id: String,
-    pub index_uri: Option<Uri>,
     pub index_config_uri: Uri,
     pub config_uri: Uri,
     pub data_dir: Option<PathBuf>,
@@ -167,14 +165,6 @@ impl IndexCliCommand {
     }
 
     fn parse_create_args(matches: &ArgMatches) -> anyhow::Result<Self> {
-        let index_id = matches
-            .value_of("index")
-            .expect("`index` is a required arg.")
-            .to_string();
-        let index_uri = matches
-            .value_of("index-uri")
-            .map(Uri::try_new)
-            .transpose()?;
         let index_config_uri = matches
             .value_of("index-config")
             .map(Uri::try_new)
@@ -187,8 +177,6 @@ impl IndexCliCommand {
         let overwrite = matches.is_present("overwrite");
 
         Ok(Self::Create(CreateIndexArgs {
-            index_id,
-            index_uri,
             config_uri,
             data_dir,
             index_config_uri,
@@ -583,12 +571,15 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
 
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
-    let index_uri = if let Some(index_uri) = args.index_uri {
-        index_uri.as_ref().to_string()
+    let file_content = load_file(&args.index_config_uri).await?;
+    let index_config = IndexConfig::load(&args.index_config_uri, file_content.as_slice()).await?;
+
+    let index_uri = if let Some(index_uri) = index_config.index_uri.as_ref() {
+        index_uri.to_string()
     } else {
         let default_index_uri = format!(
             "{}/{}",
-            quickwit_config.default_index_root_uri, args.index_id
+            quickwit_config.default_index_root_uri, index_config.index_id
         );
         info!(
             "`index-uri` is not specified in the index configuration. Setting it to `{}`.",
@@ -596,13 +587,23 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         );
         default_index_uri
     };
-    let file_content = load_file(&args.index_config_uri).await?;
-    let index_config = IndexConfig::load(&args.index_config_uri, file_content.as_slice()).await?;
+
     if args.overwrite {
-        delete_index(&quickwit_config.metastore_uri, &args.index_id, false).await?;
+        delete_index(
+            &quickwit_config.metastore_uri,
+            &index_config.index_id,
+            false,
+        )
+        .await?;
     }
+
+    // Check index storage.
+    let storage_uri_resolver = quickwit_storage_uri_resolver();
+    let storage = storage_uri_resolver.resolve(&index_uri)?;
+    run_checklist(vec![("storage", storage.check().await)]);
+
     let index_metadata = IndexMetadata {
-        index_id: args.index_id.clone(),
+        index_id: index_config.index_id.clone(),
         index_uri,
         checkpoint: Default::default(),
         sources: index_config.sources(),
@@ -613,7 +614,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         update_timestamp: Utc::now().timestamp(),
     };
     create_index(&quickwit_config.metastore_uri, index_metadata.clone()).await?;
-    println!("Index `{}` successfully created.", args.index_id);
+    println!("Index `{}` successfully created.", index_config.index_id);
 
     Ok(())
 }
