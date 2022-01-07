@@ -1,8 +1,5 @@
 version: 0
 
-index_id: hdfs-logs
-index_uri: s3://quickwit-indexes/hdfs-logs
-
 doc_mapping:
   field_mappings:
     - name: body

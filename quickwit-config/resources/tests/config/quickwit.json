@@ -3,7 +3,7 @@
     "version": 0,
     "node_id": "my-unique-node-id",
     "metastore_uri": "postgres://username:password@host:port/db",
-    "data_dir": "/opt/quickwit/data",
+    "data_dir_path": "/opt/quickwit/data",
     "listen_address": "0.0.0.0",
     "rest_listen_port": 1111,
     "peer_seeds": [

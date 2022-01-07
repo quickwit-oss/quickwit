@@ -73,7 +73,7 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
 const DEFAULT_QUICKWIT_CONFIG: &str = r#"
     version: 0
     metastore_uri: #metastore_uri
-    data_dir: #data_dir
+    data_dir_path: #data_dir_path
     rest_listen_port: #rest_listen_port
 "#;
 
@@ -143,7 +143,6 @@ pub struct TestEnv {
     pub metastore_uri: String,
     /// The index ID.
     pub index_id: String,
-    pub index_uri: Uri,
     pub rest_listen_port: u16,
     pub storage: Arc<dyn Storage>,
 }
@@ -152,6 +151,10 @@ impl TestEnv {
     // For cache reason, it's safer to always create an instance and then make your assertions.
     pub fn metastore(&self) -> FileBackedMetastore {
         FileBackedMetastore::new(self.storage.clone())
+    }
+
+    pub fn index_uri(&self) -> Uri {
+        Uri::try_new(&format!("{}/{}", self.metastore_uri, self.index_id)).unwrap()
     }
 }
 
@@ -187,21 +190,8 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
             (metastore_uri.to_string(), storage)
         }
     };
-    let index_uri = Uri::try_new(&format!("{}/{}", metastore_uri, index_id))?;
     let index_config_path = resources_dir_path.join("index_config.yaml");
-    fs::write(
-        &index_config_path,
-        DEFAULT_INDEX_CONFIG
-            .replace("#index_id", &index_id)
-            .replace("#index_uri", &index_uri.to_string()),
-    )?;
-    let index_config_without_uri_path = resources_dir_path.join("index_config_without_uri.yaml");
-    fs::write(
-        &index_config_without_uri_path,
-        DEFAULT_INDEX_CONFIG
-            .replace("#index_id", &index_id)
-            .replace("index_uri: #index_uri\n", ""),
-    )?;
+    fs::write(&index_config_path, DEFAULT_INDEX_CONFIG)?;
     let quickwit_config_path = resources_dir_path.join("config.yaml");
     let rest_listen_port = find_available_port()?;
     fs::write(
@@ -209,7 +199,10 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
         // A poor's man templating engine reloaded...
         DEFAULT_QUICKWIT_CONFIG
             .replace("#metastore_uri", &metastore_uri)
-            .replace("#data_dir", &data_dir_path.to_str().unwrap().to_string())
+            .replace(
+                "#data_dir_path",
+                &data_dir_path.to_str().unwrap().to_string(),
+            )
             .replace("#rest_listen_port", &rest_listen_port.to_string()),
     )?;
     let log_docs_path = resources_dir_path.join("logs.json");
@@ -220,7 +213,6 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
     let mut resource_files = HashMap::new();
     resource_files.insert("config", quickwit_config_path);
     resource_files.insert("index_config", index_config_path);
-    resource_files.insert("index_config_without_uri", index_config_without_uri_path);
     resource_files.insert("logs", log_docs_path);
     resource_files.insert("wiki", wikipedia_docs_path);
 
@@ -231,7 +223,6 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
         resource_files,
         metastore_uri,
         index_id,
-        index_uri,
         rest_listen_port,
         storage,
     })

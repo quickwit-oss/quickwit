@@ -102,9 +102,9 @@ impl SourceCliCommand {
             .map(String::from)
             .expect("`index` is a required arg.");
         let source_id = matches
-            .value_of("source")
+            .value_of("id")
             .map(String::from)
-            .expect("`source` is a required arg.");
+            .expect("`id` is a required arg.");
         let source_type = matches
             .value_of("type")
             .map(String::from)
@@ -424,7 +424,7 @@ mod tests {
                 "add",
                 "--index",
                 "hdfs-logs",
-                "--source",
+                "--id",
                 "hdfs-logs-source",
                 "--type",
                 "kafka",

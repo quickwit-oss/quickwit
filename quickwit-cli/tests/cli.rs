@@ -40,7 +40,9 @@ use crate::helpers::{create_test_env, make_command, spawn_command};
 fn create_logs_index(test_env: &TestEnv) {
     make_command(
         format!(
-            "index create --index-config {} --config {}",
+            "index create --index {} --index-uri {} --index-config {} --config {}",
+            test_env.index_id,
+            test_env.index_uri(),
             test_env.resource_files["index_config"].display(),
             test_env.resource_files["config"].display(),
         )
@@ -95,8 +97,9 @@ async fn test_cmd_create() -> Result<()> {
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     make_command(
         format!(
-            "index create --index-config {} --config {}",
-            test_env.resource_files["index_config_without_uri"].display(),
+            "index create --index {} --index-config {} --config {}",
+            test_env.index_id,
+            test_env.resource_files["index_config"].display(),
             test_env.resource_files["config"].display(),
         )
         .as_str(),
@@ -132,7 +135,8 @@ fn test_cmd_create_on_existing_index() -> Result<()> {
 
     make_command(
         format!(
-            "index create --index-config {} --config {}",
+            "index create --index {} --index-config {} --config {}",
+            test_env.index_id,
             test_env.resource_files["index_config"].display(),
             test_env.resource_files["config"].display(),
         )
@@ -571,7 +575,9 @@ async fn test_cmd_dry_run_delete_on_s3_localstack() -> Result<()> {
     let test_env = create_test_env(index_id, TestStorageType::S3)?;
     make_command(
         format!(
-            "index create --config {} --index-config {}",
+            "index create --index {} --index-uri {} --config {} --index-config {}",
+            test_env.index_id,
+            test_env.index_uri(),
             test_env.resource_files["config"].display(),
             test_env.resource_files["index_config"].display()
         )
@@ -633,7 +639,9 @@ async fn test_all_local_index() -> Result<()> {
     let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
     make_command(
         format!(
-            "index create --index-config {} --config {}",
+            "index create --index {} --index-uri {} --index-config {} --config {}",
+            test_env.index_id,
+            test_env.index_uri(),
             test_env.resource_files["index_config"].display(),
             test_env.resource_files["config"].display()
         )
@@ -713,7 +721,9 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     let test_env = create_test_env(index_id, TestStorageType::S3)?;
     make_command(
         format!(
-            "index create --index-config {} --config {}",
+            "index create --index {} --index-uri {} --index-config {} --config {}",
+            test_env.index_id,
+            test_env.index_uri(),
             test_env.resource_files["index_config"].display(),
             test_env.resource_files["config"].display()
         )
@@ -800,6 +810,8 @@ async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
     let index_id = append_random_suffix("test-all--cli-API");
     let test_env = create_test_env(index_id, TestStorageType::S3)?;
     let args = CreateIndexArgs {
+        index_id: test_env.index_id.clone(),
+        index_uri: Some(test_env.index_uri()),
         index_config_uri: Uri::try_new(test_env.resource_files["index_config"].to_str().unwrap())
             .unwrap(),
         config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),

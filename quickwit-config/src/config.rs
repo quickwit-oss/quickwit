@@ -167,7 +167,6 @@ pub struct QuickwitConfig {
     #[serde(default = "default_metastore_and_index_root_uri")]
     pub default_index_root_uri: String,
     #[serde(default = "default_data_dir_path")]
-    #[serde(rename = "data_dir")]
     pub data_dir_path: PathBuf,
     #[serde(rename = "indexer")]
     #[serde(default)]
@@ -419,7 +418,7 @@ mod tests {
             let config_yaml = r#"
             version: 0
             metastore_uri: postgres://username:password@host:port/db
-            data_dir: /opt/quickwit/data
+            data_dir_path: /opt/quickwit/data
         "#;
             let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
             assert_eq!(config.version, 0);

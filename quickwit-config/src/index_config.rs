@@ -210,8 +210,6 @@ pub struct SourceConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndexConfig {
     pub version: usize,
-    pub index_id: String,
-    pub index_uri: Option<String>,
     pub doc_mapping: DocMapping,
     #[serde(default)]
     pub indexing_settings: IndexingSettings,
@@ -274,12 +272,6 @@ impl IndexConfig {
         if self.sources.len() > self.sources().len() {
             bail!("Index config contains duplicate sources.")
         }
-
-        self.index_uri
-            .as_ref()
-            .map(|index_uri| Uri::try_new(index_uri))
-            .transpose()?;
-
         // Validation is made by building the doc mapper.
         // Note: this needs a deep refactoring to separate the doc mapping configuration,
         // and doc mapper implementations.
@@ -448,11 +440,6 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(index_config.index_id, "hdfs-logs");
-            assert_eq!(
-                index_config.index_uri,
-                Some("s3://quickwit-indexes/hdfs-logs".to_string())
-            );
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 1);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
             assert!(!index_config.doc_mapping.store_source);
@@ -476,11 +463,6 @@ mod tests {
                 .unwrap();
 
             assert_eq!(index_config.version, 0);
-            assert_eq!(index_config.index_id, "hdfs-logs");
-            assert_eq!(
-                index_config.index_uri,
-                Some("s3://quickwit-indexes/hdfs-logs".to_string())
-            );
             assert_eq!(index_config.doc_mapping.field_mappings.len(), 2);
             assert_eq!(index_config.doc_mapping.field_mappings[0].name, "body");
             assert_eq!(index_config.doc_mapping.field_mappings[1].name, "timestamp");

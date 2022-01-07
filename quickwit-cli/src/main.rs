@@ -168,6 +168,10 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "create",
+            "--index",
+            "wikipedia",
+            "--index-uri",
+            "s3://quickwit-bucket/indexes/wikipedia",
             "--index-config",
             "index-conf.yaml",
             "--config",
@@ -180,6 +184,8 @@ mod tests {
         ))
         .unwrap();
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
+            index_id: "wikipedia".to_string(),
+            index_uri: Some(Uri::try_new("s3://quickwit-bucket/indexes/wikipedia").unwrap()),
             config_uri: Uri::try_new("file:///config.yaml").unwrap(),
             index_config_uri: expected_index_config_uri.clone(),
             overwrite: false,
@@ -191,6 +197,8 @@ mod tests {
         let matches = app.try_get_matches_from(vec![
             "index",
             "create",
+            "--index",
+            "wikipedia",
             "--index-config",
             "index-conf.yaml",
             "--config",
@@ -199,6 +207,8 @@ mod tests {
         ])?;
         let command = CliCommand::parse_cli_args(&matches)?;
         let expected_cmd = CliCommand::Index(IndexCliCommand::Create(CreateIndexArgs {
+            index_id: "wikipedia".to_string(),
+            index_uri: None,
             config_uri: Uri::try_new("file:///config.yaml").unwrap(),
             index_config_uri: expected_index_config_uri,
             overwrite: true,
