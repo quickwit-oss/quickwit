@@ -446,6 +446,9 @@ impl ArtilleryEpidemic {
     }
 
     fn ensure_node_is_member(&mut self, src_addr: SocketAddr, node_id: String) {
+        if node_id == self.host_id {
+            return;
+        }
         if self.members.has_member(&src_addr) {
             return;
         }

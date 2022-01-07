@@ -5,7 +5,6 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use rand::prelude::SliceRandom;
-use tracing::info;
 
 use crate::member::{self, ArtilleryMember, ArtilleryMemberState, ArtilleryStateChange};
 
@@ -122,24 +121,23 @@ impl ArtilleryMemberList {
         (suspect_members, down_members)
     }
 
-    // make sure node id is set correctly for the host (in case it changes)
-    pub fn ensure_node_id(&mut self, src_addr: SocketAddr, node_id: &str) {
-        for member in &mut self.members {
-            if member.remote_host() == Some(src_addr) {
-                member.node_id = node_id.to_string();
-            }
+    // Set node id for the host (in case it has changed).
+    pub fn set_node_id(&mut self, src_addr: SocketAddr, node_id: &str) {
+        if let Some(member) = self.get_mut_member_for_host(src_addr) {
+            member.node_id = node_id.to_string();
         }
     }
+
+    // Returns member if found via host and not alive
     pub fn mark_node_alive(
         &mut self,
         src_addr: &SocketAddr,
         node_id: String,
     ) -> Option<ArtilleryMember> {
-        self.ensure_node_id(*src_addr, &node_id);
-        // remove self duplicates
-        let my_node_id = self.current_node_id();
-        self.members
-            .retain(|member| !(member.node_id() == my_node_id && member.remote_host().is_some()));
+        if self.current_node_id() == node_id {
+            return None;
+        }
+        self.set_node_id(*src_addr, &node_id);
         for member in &mut self.members {
             if member.remote_host() == Some(*src_addr)
                 && member.state() != ArtilleryMemberState::Alive
@@ -201,10 +199,6 @@ impl ArtilleryMemberList {
                     .unwrap();
                 let update_member = update_member.member_by_changing_host(new_host);
 
-                if existing_member.node_id != member_change.node_id() {
-                    info!(old_node_id=?existing_member.node_id(), new_node_id=?member_change.node_id(), "updating node id from state change.");
-                    existing_member.node_id = member_change.node_id();
-                }
                 if update_member.state() != existing_member.state() {
                     existing_member.set_state(update_member.state());
                     existing_member.incarnation_number = update_member.incarnation_number;
@@ -275,9 +269,46 @@ impl ArtilleryMemberList {
         self.members.retain(|member| member.node_id() != id)
     }
 
+    /// `get_mut_member_for_host` will return artillery member if the given host is matched with any
+    /// of the member in the cluster.
+    pub fn get_mut_member_for_host(&mut self, host: SocketAddr) -> Option<&mut ArtilleryMember> {
+        self.members
+            .iter_mut()
+            .find(|m| m.remote_host() == Some(host))
+    }
+
     /// `get_member` will return artillery member if the given uuid is matched with any of the
     /// member in the cluster.
     pub fn get_member(&self, id: &str) -> Option<ArtilleryMember> {
         self.members.iter().find(|&m| m.node_id() == *id).cloned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn membership_test() {
+        let current = ArtilleryMember::current("myid".to_string());
+        let mut members = ArtilleryMemberList::new(current);
+        let address = "127.0.0.1:8080".parse().unwrap();
+        members.add_member(ArtilleryMember::new(
+            "other_node".to_string(),
+            address,
+            0,
+            ArtilleryMemberState::Suspect,
+        ));
+
+        members.mark_node_alive(&address, "myid".to_string());
+
+        assert_eq!(
+            members
+                .available_nodes()
+                .iter()
+                .filter(|node| node.node_id() == "myid")
+                .count(),
+            1
+        );
     }
 }
