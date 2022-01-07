@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::fmt::{self, Debug, Formatter};
 use std::io;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,7 +32,7 @@ pub enum ArtilleryMemberEvent {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ArtilleryMessage {
-    sender: String,
+    node_id: String,
     cluster_key: Vec<u8>,
     request: Request,
     state_changes: Vec<ArtilleryStateChange>,
@@ -42,11 +43,17 @@ struct EncSocketAddr(SocketAddr);
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 enum Request {
-    Heartbeat,
-    Ack,
-    Ping(EncSocketAddr),
+    Heartbeat(Option<String>),
+    Ack(String),
+    Ping(EncSocketAddr, String),
     AckHost(ArtilleryMember),
     Payload(String, String),
+}
+
+impl Request {
+    fn is_heartbeat(&self) -> bool {
+        matches!(self, Request::Heartbeat(_))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +86,18 @@ pub struct ArtilleryEpidemic {
     request_tx: flume::Sender<ArtilleryClusterRequest>,
     event_tx: flume::Sender<ArtilleryClusterEvent>,
     running: AtomicBool,
+}
+
+impl Debug for ArtilleryEpidemic {
+    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
+        fmt.debug_struct("ArtilleryEpidemic")
+            .field("host_id", &self.host_id)
+            .field("members", &self.members)
+            .field("seed_queue", &self.seed_queue)
+            .field("pending_responses", &self.pending_responses)
+            .field("state_changes", &self.state_changes)
+            .finish()
+    }
 }
 
 pub type ClusterReactor = (Poll, ArtilleryEpidemic);
@@ -160,7 +179,8 @@ impl ArtilleryEpidemic {
                     loop {
                         match state.server_socket.recv_from(&mut buf) {
                             Ok((packet_size, source_address)) => {
-                                let message = serde_json::from_slice(&buf[..packet_size])?;
+                                let message: ArtilleryMessage =
+                                    serde_json::from_slice(&buf[..packet_size])?;
                                 state.request_tx.send(ArtilleryClusterRequest::Respond(
                                     source_address,
                                     message,
@@ -177,7 +197,7 @@ impl ArtilleryEpidemic {
                                 // wrong and we terminate with an error.
                                 return Err(ArtilleryError::Unexpected(format!(
                                     "Unexpected error occured in event loop: {}",
-                                    e.to_string()
+                                    e
                                 )));
                             }
                         }
@@ -193,11 +213,9 @@ impl ArtilleryEpidemic {
     }
 
     fn process_request(&mut self, request: &TargetedRequest) {
-        use Request::*;
-
         let timeout = Instant::now() + self.config.ping_timeout;
         // It was Ping before
-        let should_add_pending = request.request == Heartbeat;
+        let should_add_pending = request.request.is_heartbeat();
         let message = build_message(
             &self.host_id,
             &self.config.cluster_key,
@@ -220,10 +238,14 @@ impl ArtilleryEpidemic {
     }
 
     fn enqueue_seed_nodes(&self) {
-        for seed_node in &self.seed_queue {
+        for seed_node in self
+            .seed_queue
+            .iter()
+            .filter(|addr| !self.members.has_member(addr))
+        {
             self.request_tx
                 .send(ArtilleryClusterRequest::React(TargetedRequest {
-                    request: Request::Heartbeat,
+                    request: Request::Heartbeat(None),
                     target: *seed_node,
                 }))
                 .unwrap();
@@ -234,7 +256,7 @@ impl ArtilleryEpidemic {
         if let Some(member) = self.members.next_random_member() {
             self.request_tx
                 .send(ArtilleryClusterRequest::React(TargetedRequest {
-                    request: Request::Heartbeat,
+                    request: Request::Heartbeat(Some(member.node_id())),
                     target: member.remote_host().unwrap(),
                 }))
                 .unwrap();
@@ -265,6 +287,7 @@ impl ArtilleryEpidemic {
         }
 
         for member in down {
+            self.members.remove_member(&member.node_id());
             self.send_member_event(ArtilleryMemberEvent::WentDown(member.clone()));
         }
     }
@@ -277,7 +300,10 @@ impl ArtilleryEpidemic {
             {
                 self.request_tx
                     .send(ArtilleryClusterRequest::React(TargetedRequest {
-                        request: Request::Ping(EncSocketAddr::from_addr(&target_host)),
+                        request: Request::Ping(
+                            EncSocketAddr::from_addr(&target_host),
+                            target.node_id(),
+                        ),
                         target: relay,
                     }))
                     .unwrap();
@@ -328,59 +354,73 @@ impl ArtilleryEpidemic {
     fn respond_to_message(&mut self, src_addr: SocketAddr, message: ArtilleryMessage) {
         use Request::*;
 
-        if message.cluster_key == self.config.cluster_key {
-            // We want to abort if a new member has the same node_id of an existing member.  
-            // A new member is detected according to its socket address.
-            if !self.members.has_member(&src_addr) && self.members.get_member(&message.sender).is_some() {
-                error!("Cannot add a member with a node-id `{}` already present in the cluster.", message.sender);
-                return;
-            }
+        if message.cluster_key != self.config.cluster_key {
+            error!("Mismatching cluster keys, ignoring message");
+            return;
+        }
+        // We want to abort if a new member has the same node_id of an existing member.
+        // A new member is detected according to its socket address.
+        if !self.members.has_member(&src_addr)
+            && self.members.get_member(&message.node_id).is_some()
+        {
+            error!(
+                "Cannot add a member with a node-id `{}` already present in the cluster.",
+                message.node_id
+            );
+            return;
+        }
 
-            self.apply_state_changes(message.state_changes, src_addr);
-            remove_potential_seed(&mut self.seed_queue, src_addr);
+        self.apply_state_changes(message.state_changes, src_addr);
 
-            self.ensure_node_is_member(src_addr, message.sender);
+        self.ensure_node_is_member(src_addr, message.node_id);
 
-            let response = match message.request {
-                Heartbeat => Some(TargetedRequest {
-                    request: Ack,
-                    target: src_addr,
-                }),
-                Ack => {
-                    self.ack_response(src_addr);
-                    self.mark_node_alive(src_addr);
+        let response = match message.request {
+            Heartbeat(ref opt_node_id) => {
+                let should_ignore_wrong_id = opt_node_id
+                    .as_ref()
+                    .map(|node_id| node_id != &self.host_id)
+                    .unwrap_or(false);
+                if should_ignore_wrong_id {
                     None
-                }
-                Ping(dest_addr) => {
-                    let EncSocketAddr(dest_addr) = dest_addr;
-                    add_to_wait_list(&mut self.wait_list, &dest_addr, &src_addr);
+                } else {
                     Some(TargetedRequest {
-                        request: Heartbeat,
-                        target: dest_addr,
+                        request: Ack(self.host_id.to_string()),
+                        target: src_addr,
                     })
                 }
-                AckHost(member) => {
-                    self.ack_response(member.remote_host().unwrap());
-                    self.mark_node_alive(member.remote_host().unwrap());
-                    None
-                }
-                Payload(peer_id, msg) => {
-                    if let Some(member) = self.members.get_member(&peer_id) {
-                        self.send_member_event(ArtilleryMemberEvent::Payload(member, msg));
-                    } else {
-                        warn!("Got payload request from an unknown peer {}", peer_id);
-                    }
-                    None
-                }
-            };
-
-            if let Some(response) = response {
-                self.request_tx
-                    .send(ArtilleryClusterRequest::React(response))
-                    .unwrap()
             }
-        } else {
-            error!("Mismatching cluster keys, ignoring message");
+            Ack(node_id) => {
+                self.ack_response(src_addr);
+                self.mark_node_alive(src_addr, node_id);
+                None
+            }
+            Ping(dest_addr, node_id) => {
+                let EncSocketAddr(dest_addr) = dest_addr;
+                add_to_wait_list(&mut self.wait_list, &dest_addr, &src_addr);
+                Some(TargetedRequest {
+                    request: Heartbeat(Some(node_id)),
+                    target: dest_addr,
+                })
+            }
+            AckHost(member) => {
+                self.ack_response(member.remote_host().unwrap());
+                self.mark_node_alive(member.remote_host().unwrap(), member.node_id());
+                None
+            }
+            Payload(peer_id, msg) => {
+                if let Some(member) = self.members.get_member(&peer_id) {
+                    self.send_member_event(ArtilleryMemberEvent::Payload(member, msg));
+                } else {
+                    warn!("Got payload request from an unknown peer {}", peer_id);
+                }
+                None
+            }
+        };
+
+        if let Some(response) = response {
+            self.request_tx
+                .send(ArtilleryClusterRequest::React(response))
+                .unwrap()
         }
     }
 
@@ -398,19 +438,22 @@ impl ArtilleryEpidemic {
                 !state_changes
                     .iter()
                     .any(|is| is.member().node_id() == os.member().node_id())
-            })
+            });
         }
 
         self.pending_responses
             .retain(|op| !to_remove.iter().any(|ip| ip == op));
     }
 
-    fn ensure_node_is_member(&mut self, src_addr: SocketAddr, sender: String) {
+    fn ensure_node_is_member(&mut self, src_addr: SocketAddr, node_id: String) {
+        if node_id == self.host_id {
+            return;
+        }
         if self.members.has_member(&src_addr) {
             return;
         }
 
-        let new_member = ArtilleryMember::new(sender, src_addr, 0, ArtilleryMemberState::Alive);
+        let new_member = ArtilleryMember::new(node_id, src_addr, 0, ArtilleryMemberState::Alive);
 
         self.members.add_member(new_member.clone());
         enqueue_state_change(&mut self.state_changes, &[new_member.clone()]);
@@ -447,8 +490,8 @@ impl ArtilleryEpidemic {
         }
     }
 
-    fn mark_node_alive(&mut self, src_addr: SocketAddr) {
-        if let Some(member) = self.members.mark_node_alive(&src_addr) {
+    fn mark_node_alive(&mut self, src_addr: SocketAddr, node_id: String) {
+        if let Some(member) = self.members.mark_node_alive(&src_addr, node_id) {
             if let Some(wait_list) = self.wait_list.get_mut(&src_addr) {
                 for remote in wait_list.iter() {
                     self.request_tx
@@ -469,14 +512,14 @@ impl ArtilleryEpidemic {
 }
 
 fn build_message(
-    sender: &str,
+    node_id: &str,
     cluster_key: &[u8],
     request: &Request,
     state_changes: &[ArtilleryStateChange],
     network_mtu: usize,
 ) -> ArtilleryMessage {
     let mut message = ArtilleryMessage {
-        sender: sender.to_string(),
+        node_id: node_id.to_string(),
         cluster_key: cluster_key.into(),
         request: request.clone(),
         state_changes: Vec::new(),
@@ -484,7 +527,7 @@ fn build_message(
 
     for i in 0..=state_changes.len() {
         message = ArtilleryMessage {
-            sender: sender.to_string(),
+            node_id: node_id.to_string(),
             cluster_key: cluster_key.into(),
             request: request.clone(),
             state_changes: (&state_changes[..i]).to_vec(),
@@ -508,10 +551,6 @@ fn add_to_wait_list(wait_list: &mut WaitList, wait_addr: &SocketAddr, notify_add
             entry.insert(vec![*notify_addr]);
         }
     };
-}
-
-fn remove_potential_seed(seed_queue: &mut Vec<SocketAddr>, src_addr: SocketAddr) {
-    seed_queue.retain(|&addr| addr != src_addr)
 }
 
 fn determine_member_event(member: ArtilleryMember) -> ArtilleryMemberEvent {

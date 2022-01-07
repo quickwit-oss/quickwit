@@ -1,5 +1,6 @@
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+use std::fmt;
+use std::fmt::{Debug, Formatter};
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -10,6 +11,14 @@ use crate::member::{self, ArtilleryMember, ArtilleryMemberState, ArtilleryStateC
 pub struct ArtilleryMemberList {
     members: Vec<ArtilleryMember>,
     periodic_index: usize,
+}
+
+impl Debug for ArtilleryMemberList {
+    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
+        fmt.debug_struct("ArtilleryEpidemic")
+            .field("members", &self.members)
+            .finish()
+    }
 }
 
 impl ArtilleryMemberList {
@@ -25,13 +34,6 @@ impl ArtilleryMemberList {
             .iter()
             .filter(|m| m.state() != ArtilleryMemberState::Left)
             .cloned()
-            .collect()
-    }
-
-    pub fn to_map(&self) -> HashMap<String, ArtilleryMember> {
-        self.members
-            .iter()
-            .map(|m| (m.node_id(), (*m).clone()))
             .collect()
     }
 
@@ -119,7 +121,23 @@ impl ArtilleryMemberList {
         (suspect_members, down_members)
     }
 
-    pub fn mark_node_alive(&mut self, src_addr: &SocketAddr) -> Option<ArtilleryMember> {
+    // Set node id for the host (in case it has changed).
+    pub fn set_node_id(&mut self, src_addr: SocketAddr, node_id: &str) {
+        if let Some(member) = self.get_mut_member_for_host(src_addr) {
+            member.node_id = node_id.to_string();
+        }
+    }
+
+    // Returns member if found via host and not alive
+    pub fn mark_node_alive(
+        &mut self,
+        src_addr: &SocketAddr,
+        node_id: String,
+    ) -> Option<ArtilleryMember> {
+        if self.current_node_id() == node_id {
+            return None;
+        }
+        self.set_node_id(*src_addr, &node_id);
         for member in &mut self.members {
             if member.remote_host() == Some(*src_addr)
                 && member.state() != ArtilleryMemberState::Alive
@@ -133,55 +151,80 @@ impl ArtilleryMemberList {
         None
     }
 
+    fn find_member<'a>(
+        members: &'a mut [ArtilleryMember],
+        node_id: &str,
+        addr: SocketAddr,
+    ) -> Option<&'a mut ArtilleryMember> {
+        let pos_matching_node_id: Option<usize> = members
+            .iter()
+            .position(|member| member.node_id() == node_id);
+        let pos_matching_address: Option<usize> = members
+            .iter()
+            .position(|member| member.remote_host() == Some(addr));
+        let chosen_position: usize = pos_matching_node_id.or(pos_matching_address)?;
+        Some(&mut members[chosen_position])
+    }
+
     pub fn apply_state_changes(
         &mut self,
         state_changes: Vec<ArtilleryStateChange>,
         from: &SocketAddr,
     ) -> (Vec<ArtilleryMember>, Vec<ArtilleryMember>) {
-        let mut current_members = self.to_map();
+        let mut current_members = self.members.clone();
 
         let mut changed_nodes = Vec::new();
         let mut new_nodes = Vec::new();
 
-        let my_node_id = self.mut_myself().node_id();
+        let my_node_id = self.current_node_id();
 
         for state_change in state_changes {
-            let new_member_data = state_change.member();
-            let old_member_data = current_members.entry(new_member_data.node_id());
+            let member_change = state_change.member();
 
-            if new_member_data.node_id() == my_node_id {
-                if new_member_data.state() != ArtilleryMemberState::Alive {
+            if member_change.node_id() == my_node_id {
+                if member_change.state() != ArtilleryMemberState::Alive {
                     let myself = self.reincarnate_self();
                     changed_nodes.push(myself.clone());
                 }
-            } else {
-                match old_member_data {
-                    Entry::Occupied(mut entry) => {
-                        let new_member =
-                            member::most_uptodate_member_data(new_member_data, entry.get()).clone();
-                        let new_host = new_member
-                            .remote_host()
-                            .or_else(|| entry.get().remote_host())
-                            .unwrap();
-                        let new_member = new_member.member_by_changing_host(new_host);
+            } else if let Some(existing_member) = Self::find_member(
+                &mut current_members,
+                &member_change.node_id(),
+                member_change.remote_host().unwrap_or(*from),
+            ) {
+                let update_member =
+                    member::most_uptodate_member_data(member_change, existing_member).clone();
+                let new_host = update_member
+                    .remote_host()
+                    .or_else(|| existing_member.remote_host())
+                    .unwrap();
+                let update_member = update_member.member_by_changing_host(new_host);
 
-                        if new_member.state() != entry.get().state() {
-                            entry.insert(new_member.clone());
-                            changed_nodes.push(new_member);
-                        }
+                if update_member.state() != existing_member.state() {
+                    existing_member.set_state(update_member.state());
+                    existing_member.incarnation_number = update_member.incarnation_number;
+                    if let Some(host) = update_member.remote_host() {
+                        existing_member.set_remote_host(host);
                     }
-                    Entry::Vacant(entry) => {
-                        let new_host = new_member_data.remote_host().unwrap_or(*from);
-                        let new_member = new_member_data.member_by_changing_host(new_host);
+                    changed_nodes.push(update_member);
+                }
+            } else if member_change.state() != ArtilleryMemberState::Down
+                && member_change.state() != ArtilleryMemberState::Left
+            {
+                let new_host = member_change.remote_host().unwrap_or(*from);
+                let new_member = member_change.member_by_changing_host(new_host);
 
-                        entry.insert(new_member.clone());
-                        new_nodes.push(new_member);
-                    }
-                };
+                current_members.push(new_member.clone());
+                new_nodes.push(new_member);
             }
         }
 
-        self.members = current_members.values().cloned().collect();
+        self.members = current_members
+            .into_iter()
+            .filter(|member| {
+                member.state() != ArtilleryMemberState::Down
+                    && member.state() != ArtilleryMemberState::Left
+            })
+            .collect::<Vec<_>>();
 
         (new_nodes, changed_nodes)
     }
@@ -222,18 +265,50 @@ impl ArtilleryMemberList {
         self.members.push(member)
     }
 
-    /// `get_member` will return artillery member if the given uuid is matches with any of the
+    pub fn remove_member(&mut self, id: &str) {
+        self.members.retain(|member| member.node_id() != id)
+    }
+
+    /// `get_mut_member_for_host` will return artillery member if the given host is matched with any
+    /// of the member in the cluster.
+    pub fn get_mut_member_for_host(&mut self, host: SocketAddr) -> Option<&mut ArtilleryMember> {
+        self.members
+            .iter_mut()
+            .find(|m| m.remote_host() == Some(host))
+    }
+
+    /// `get_member` will return artillery member if the given uuid is matched with any of the
     /// member in the cluster.
     pub fn get_member(&self, id: &str) -> Option<ArtilleryMember> {
-        let member: Vec<_> = self
-            .members
-            .iter()
-            .filter(|&m| m.node_id() == *id)
-            .collect();
+        self.members.iter().find(|&m| m.node_id() == *id).cloned()
+    }
+}
 
-        if member.is_empty() {
-            return None;
-        }
-        Some(member[0].clone())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn membership_test() {
+        let current = ArtilleryMember::current("myid".to_string());
+        let mut members = ArtilleryMemberList::new(current);
+        let address = "127.0.0.1:8080".parse().unwrap();
+        members.add_member(ArtilleryMember::new(
+            "other_node".to_string(),
+            address,
+            0,
+            ArtilleryMemberState::Suspect,
+        ));
+
+        members.mark_node_alive(&address, "myid".to_string());
+
+        assert_eq!(
+            members
+                .available_nodes()
+                .iter()
+                .filter(|node| node.node_id() == "myid")
+                .count(),
+            1
+        );
     }
 }

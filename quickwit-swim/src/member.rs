@@ -25,11 +25,11 @@ pub enum ArtilleryMemberState {
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct ArtilleryMember {
     #[serde(rename = "h")]
-    node_id: String,
+    pub node_id: String,
     #[serde(rename = "r")]
     remote_host: Option<SocketAddr>,
     #[serde(rename = "i")]
-    incarnation_number: u64,
+    pub incarnation_number: u64,
     #[serde(rename = "m")]
     member_state: ArtilleryMemberState,
     #[serde(rename = "t", skip, default = "Instant::now")]
@@ -73,6 +73,10 @@ impl ArtilleryMember {
 
     pub fn remote_host(&self) -> Option<SocketAddr> {
         self.remote_host
+    }
+
+    pub fn set_remote_host(&mut self, addr: SocketAddr) {
+        self.remote_host = Some(addr);
     }
 
     pub fn is_remote(&self) -> bool {
@@ -160,13 +164,7 @@ impl Debug for ArtilleryMember {
                 "drift_time_ms",
                 &self.last_state_change.elapsed().as_millis(),
             )
-            .field(
-                "remote_host",
-                &self
-                    .remote_host
-                    .map_or(String::from("(current)"), |r| format!("{}", r))
-                    .as_str(),
-            )
+            .field("remote_host", &self.remote_host)
             .finish()
     }
 }
