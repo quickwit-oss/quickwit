@@ -167,11 +167,12 @@ impl TypedSourceFactory for FileSourceFactory {
     ) -> anyhow::Result<FileSource> {
         let mut offset = 0;
         let reader: Box<dyn AsyncRead + Send + Sync + Unpin> =
-            if let Some(filepath) = &params.filepath {
-                let mut file = File::open(&filepath).await.with_context(|| {
-                    format!("Failed to open source file `{}`.", filepath.display())
+            // PartitionId must be created with canonical path.
+            if let Some(canonical_filepath) = &params.canonical_filepath()? {
+                let mut file = File::open(&canonical_filepath).await.with_context(|| {
+                    format!("Failed to open source file `{}`.", canonical_filepath.display())
                 })?;
-                let partition_id = PartitionId::from(filepath.to_string_lossy().to_string());
+                let partition_id = PartitionId::from(canonical_filepath.to_string_lossy().to_string());
                 if let Some(Position::Offset(offset_str)) =
                     checkpoint.position_for_partition(&partition_id).cloned()
                 {
@@ -253,6 +254,12 @@ mod tests {
         }
         temp_file.flush()?;
         let params = FileSourceParams::for_file(temp_path.as_path());
+        let canonical_filepath_str = params
+            .canonical_filepath()?
+            .as_ref()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         let source =
             FileSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
         let file_source_actor = SourceActor {
@@ -279,6 +286,13 @@ mod tests {
         let msg3 = msgs_it.next().unwrap();
         let batch1 = extract_batch_from_indexer_message(msg1.message().unwrap()).unwrap();
         let batch2 = extract_batch_from_indexer_message(msg2.message().unwrap()).unwrap();
+        assert_eq!(
+            format!("{:?}", &batch1.checkpoint_delta),
+            format!(
+                "∆({}:{})",
+                canonical_filepath_str, "(00000000000000000000..00000000000000500010]"
+            )
+        );
         assert_eq!(
             &extract_position_delta(&batch1.checkpoint_delta).unwrap(),
             "00000000000000000000..00000000000000500010"
