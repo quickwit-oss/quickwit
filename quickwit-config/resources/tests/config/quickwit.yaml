@@ -6,7 +6,7 @@ peer_seeds:
   - quickwit-searcher-0.local
   - quickwit-searcher-1.local
 metastore_uri: postgres://username:password@host:port/db
-data_dir_path: /opt/quickwit/data
+data_dir: /opt/quickwit/data
 indexer:
   split_store_max_num_bytes: 1T
   split_store_max_num_splits: 10000
