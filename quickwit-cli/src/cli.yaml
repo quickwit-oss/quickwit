@@ -12,20 +12,11 @@ subcommands:
                 about: Creates an index.
                 display_order: 1
                 args:
-                    - index:
-                        about: ID of the target index.
-                        long: index
-                        value_name: INDEX
-                        required: true
                     - index-config:
                         about: Location of the index config file.
                         long: index-config
                         value_name: INDEX CONFIG
                         required: true
-                    - index-uri:
-                        about: Index data (or splits) storage URI.
-                        long: index-uri
-                        value_name: INDEX URI
                     - config:
                         about: Quickwit config file.
                         long: config
@@ -372,9 +363,9 @@ subcommands:
                         long: index
                         value_name: INDEX
                         required: true
-                    - id:
+                    - source:
                         about: ID of the source.
-                        long: id
+                        long: source
                         value_name: SOURCE ID
                         required: true
                     - type:
