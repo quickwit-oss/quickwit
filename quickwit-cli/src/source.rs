@@ -183,16 +183,22 @@ async fn add_source_cli(args: AddSourceArgs) -> anyhow::Result<()> {
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri)
         .await?;
-    let mut params = sniff_params(&args.params).await?;
-    params.insert("source_type".to_string(), Value::String(args.source_type));
-    let source_type_value = Value::Object(params);
-    let source_type: SourceType = serde_json::from_value(source_type_value)?;
-
+    let params = sniff_params(&args.params).await?;
+    let mut source_type_json: Map<String, Value> = Map::new();
+    source_type_json.insert("source_type".to_string(), Value::String(args.source_type));
+    source_type_json.insert("params".to_string(), Value::Object(params));
+    let source_type: SourceType = serde_json::from_value(Value::Object(source_type_json))?;
+    if let SourceType::File(file_source_params) = &source_type {
+        if file_source_params.filepath.is_none() {
+            bail!("Source of type `file` must contain a `filepath`")
+        }
+    }
     let source = SourceConfig {
         source_id: args.source_id.clone(),
         source_type,
     };
     check_source_connectivity(&source).await?;
+
     metastore.add_source(&args.index_id, source).await?;
     println!(
         "Source `{}` successfully created for index `{}`.",
@@ -419,9 +425,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(
-            sniff_params("ram:///tmp/params.json").await.unwrap().contains_key("bar")
-        );
+        assert!(sniff_params("ram:///tmp/params.json")
+            .await
+            .unwrap()
+            .contains_key("bar"));
     }
 
     #[test]

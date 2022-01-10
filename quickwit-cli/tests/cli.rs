@@ -214,6 +214,7 @@ fn test_cmd_ingest_simple() -> Result<()> {
     .stdout(predicate::str::contains("Indexed"))
     .stdout(predicate::str::contains("documents in"))
     .stdout(predicate::str::contains("Now, you can query the index"));
+    println!("piped input");
     Ok(())
 }
 

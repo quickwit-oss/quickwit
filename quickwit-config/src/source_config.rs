@@ -17,10 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::io;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use quickwit_common::uri::Uri;
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SourceConfig {
@@ -42,15 +43,14 @@ impl SourceConfig {
 
     // TODO: Remove after source factory refactor.
     pub fn params(&self) -> serde_json::Value {
-        let params = match &self.source_type {
+        match &self.source_type {
             SourceType::File(params) => serde_json::to_value(params),
             SourceType::Kafka(params) => serde_json::to_value(params),
             SourceType::Kinesis(params) => serde_json::to_value(params),
             SourceType::Vec(params) => serde_json::to_value(params),
             SourceType::Void(params) => serde_json::to_value(params),
         }
-        .unwrap();
-        params
+        .unwrap()
     }
 }
 
@@ -85,9 +85,25 @@ impl SourceType {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileSourceParams {
     /// Path of the file to read. Assume stdin if None.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    #[serde(deserialize_with = "absolute_filepath_from_str")]
     pub filepath: Option<PathBuf>, //< If None read from stdin.
+}
+
+// Deserializing a filepath string into an absolute filepath.
+fn absolute_filepath_from_str<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
+where D: Deserializer<'de> {
+    let filepath_opt: Option<String> = Deserialize::deserialize(deserializer)?;
+    if let Some(filepath) = filepath_opt {
+        let uri = Uri::try_new(&filepath).map_err(D::Error::custom)?;
+        Ok(uri.filepath().map(|path| path.to_path_buf()))
+    } else {
+        Ok(None)
+    }
 }
 
 impl FileSourceParams {
@@ -100,35 +116,30 @@ impl FileSourceParams {
     pub fn stdin() -> Self {
         FileSourceParams { filepath: None }
     }
-
-    pub fn canonical_filepath(&self) -> io::Result<Option<PathBuf>> {
-        match &self.filepath {
-            Some(filepath) => {
-                let canonical_filepath = filepath.canonicalize()?;
-                Ok(Some(canonical_filepath))
-            }
-            None => Ok(None),
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct KafkaSourceParams {
     /// Name of the topic that the source consumes.
     pub topic: String,
     /// Kafka client log level. Possible values are `debug`, `info`, `warn`, and `error`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub client_log_level: Option<String>,
     /// Kafka client configuration parameters.
+    #[serde(default = "serde_json::Value::default")]
+    #[serde(skip_serializing_if = "serde_json::Value::is_null")]
     pub client_params: serde_json::Value,
 }
 
 #[doc(hidden)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct KinesisSourceParams {
-    stream_name: String
+    stream_name: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VecSourceParams {
     pub items: Vec<String>,
     pub batch_num_docs: usize,
@@ -137,4 +148,27 @@ pub struct VecSourceParams {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VoidSourceParams;
+
+#[cfg(test)]
+mod tests {
+    use quickwit_common::uri::Uri;
+
+    use crate::FileSourceParams;
+
+    #[test]
+    fn test_file_source_params_serialization() {
+        {
+            let json = r#"{
+                "filepath": "source-path.json"
+            }"#;
+            let file_params = serde_yaml::from_str::<FileSourceParams>(json).unwrap();
+            let uri = Uri::try_new("source-path.json").unwrap();
+            assert_eq!(
+                file_params.filepath.unwrap().as_path(),
+                uri.filepath().unwrap()
+            )
+        }
+    }
+}

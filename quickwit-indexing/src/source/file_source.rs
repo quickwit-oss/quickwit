@@ -82,11 +82,7 @@ impl Source for FileSource {
         }
         if !docs.is_empty() {
             let mut checkpoint_delta = CheckpointDelta::default();
-            if let Some(filepath) = self
-                .params
-                .canonical_filepath()
-                .context("Failed to canonicalize file path.")?
-            {
+            if let Some(filepath) = &self.params.filepath {
                 let filepath_str = filepath
                     .to_str()
                     .context("Path is invalid utf-8")?
@@ -224,6 +220,12 @@ mod tests {
         }
         temp_file.flush()?;
         let params = FileSourceParams::file(temp_path);
+        let filepath = params
+            .filepath
+            .as_ref()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         let source =
             FileSourceFactory::typed_create_source(params, SourceCheckpoint::default()).await?;
         let file_source_actor = SourceActor {
@@ -250,6 +252,13 @@ mod tests {
         let msg3 = msgs_it.next().unwrap();
         let batch1 = extract_batch_from_indexer_message(msg1.message().unwrap()).unwrap();
         let batch2 = extract_batch_from_indexer_message(msg2.message().unwrap()).unwrap();
+        assert_eq!(
+            format!("{:?}", &batch1.checkpoint_delta),
+            format!(
+                "∆({}:{})",
+                filepath, "(00000000000000000000..00000000000000500010]"
+            )
+        );
         assert_eq!(
             &extract_position_delta(&batch1.checkpoint_delta).unwrap(),
             "00000000000000000000..00000000000000500010"

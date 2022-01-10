@@ -33,6 +33,7 @@ use quickwit_doc_mapper::{
 use serde::{Deserialize, Serialize};
 
 use crate::source_config::SourceConfig;
+use crate::SourceType;
 
 // Note(fmassot): `DocMapping` is a struct only used for
 // serialization/deserialization of `DocMapper` parameters.
@@ -40,6 +41,7 @@ use crate::source_config::SourceConfig;
 // be viewed as a temporary hack for 0.2 release before
 // refactoring.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DocMapping {
     pub field_mappings: Vec<FieldMappingEntry>,
     #[serde(default)]
@@ -49,6 +51,7 @@ pub struct DocMapping {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct IndexingResources {
     #[serde(default = "IndexingResources::default_num_threads")]
     pub num_threads: usize,
@@ -83,6 +86,7 @@ impl Default for IndexingResources {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct MergePolicy {
     #[serde(default = "MergePolicy::default_demux_factor")]
     pub demux_factor: usize,
@@ -121,6 +125,7 @@ fn is_false(val: &bool) -> bool {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
     #[serde(default, skip_serializing_if = "is_false")]
     pub demux_enabled: bool,
@@ -197,12 +202,14 @@ impl Default for IndexingSettings {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SearchSettings {
     #[serde(default)]
     pub default_search_fields: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IndexConfig {
     pub version: usize,
     pub index_id: String,
@@ -270,6 +277,18 @@ impl IndexConfig {
             bail!("Index config contains duplicate sources.")
         }
 
+        // We want to forbid file source with no filepath.
+        for source in self.sources.iter() {
+            if let SourceType::File(file_source_params) = &source.source_type {
+                if file_source_params.filepath.is_none() {
+                    bail!(
+                        "Source `{}` of type `file` must contain a `filepath`",
+                        source.source_id
+                    )
+                }
+            }
+        }
+
         // Validation is made by building the doc mapper.
         // Note: this needs a deep refactoring to separate the doc mapping configuration,
         // and doc mapper implementations.
@@ -316,7 +335,7 @@ pub fn build_doc_mapper(
 mod tests {
 
     use super::*;
-    use crate::SourceType;
+    use crate::{FileSourceParams, SourceType};
 
     fn get_resource_path(resource_filename: &str) -> String {
         format!(
@@ -545,6 +564,20 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("Index config contains duplicate sources."));
+        }
+        {
+            // Add source file params with no filepath.
+            let mut invalid_index_config = index_config.clone();
+            invalid_index_config.sources = vec![SourceConfig {
+                source_id: "file_params_1".to_string(),
+                source_type: SourceType::File(FileSourceParams { filepath: None }),
+            }];
+            assert!(invalid_index_config.validate().is_err());
+            assert!(invalid_index_config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("must contain a `filepath`"));
         }
         {
             // Add a demux field not declared in the mapping.
