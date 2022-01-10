@@ -40,13 +40,13 @@ cd quickwit-v*/
 
 ```bash
 # First, download the hdfs logs config from Quickwit repository.
-curl -o hdfslogs_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/hdfs-logs/index-config.yaml
+curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/hdfs-logs/index-config.yaml
 ```
 
-The index config defines four fields: `timestamp`, `severity_text`, `body`, and one object field
+The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`, `body`, and one object field
 for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`. The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](../overview/architecture.md) at query time to boost search speed. Check out the [index config docs](../reference/index-config.md) for more details.
 
-```yaml title="hdfslogs_index_config.yaml"
+```yaml title="hdfs_logs_index_config.yaml"
 version: 0
 
 doc_mapping:
@@ -54,6 +54,9 @@ doc_mapping:
     - name: severity_text
       type: text
       tokenizer: raw
+    - name: tenant_id
+      type: u64
+      fast: true
     - name: body
       type: text
       tokenizer: default
@@ -64,8 +67,7 @@ doc_mapping:
         - name: service
           type: text
           tokenizer: raw
-  tag_fields: []
-  store_source: true
+  tag_fields: [tenant_id]
 
 indexing_settings:
   timestamp_field: timestamp
@@ -91,20 +93,20 @@ default_index_root_uri: ${S3_PATH}
 We can now create the index with the `create` subcommand.
 
 ```bash
-./quickwit index create --index-config hdfslogs_index_config.yaml --config config.yaml
+./quickwit index create --index-config hdfs_logs_index_config.yaml --config config.yaml
 ```
 
 :::note
 
-This step can also be executed on your local machine. The `create` command creates the index locally and then uploads a json file `metastore.json` to your bucket at `s3://path-to-your-bucket/hdfslogs/metastore.json`. 
+This step can also be executed on your local machine. The `create` command creates the index locally and then uploads a json file `metastore.json` to your bucket at `s3://path-to-your-bucket/hdfs-logs/metastore.json`. 
 
 :::
 
 ## Index logs
-The dataset is a compressed [ndjson file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.gz). Instead of downloading and indexing the data in separate steps, we will use pipes to send a decompressed stream to Quickwit directly.
+The dataset is a compressed [ndjson file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz). Instead of downloading and indexing the data in separate steps, we will use pipes to send a decompressed stream to Quickwit directly.
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.gz | gunzip | ./quickwit index ingest --index hdfslogs --config ./config.yaml
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit index ingest --index hdfs-logs --config ./config.yaml
 ```
 
 :::note
@@ -118,7 +120,7 @@ This step can also be done on your local machine. The `ingest` subcommand genera
 
 You can check it's working by using `search` subcommand and look for `ERROR` in `serverity_text` field:
 ```bash
-./quickwit index search --index hdfslogs --config ./config.yaml --query "severity_text:ERROR"
+./quickwit index search --index hdfs-logs --config ./config.yaml --query "severity_text:ERROR"
 ```
 
 Now that we have indexed the logs and can search from one instance, It's time to configure and start a search cluster.
@@ -205,7 +207,7 @@ INFO quickwit_cluster::cluster: Joined. node_id="searcher-1" remote_host=Some(18
 Now we can query one of our instance directly by issuing http requests to one of the nodes rest API endpoint.
 
 ```
-curl -v "http://${IP_NODE_2}:7280/api/v1/hdfslogs/search?query=severity_text:ERROR"
+curl -v "http://${IP_NODE_2}:7280/api/v1/hdfs-logs/search?query=severity_text:ERROR"
 ```
 
 ## Load balancing incoming requests
@@ -219,7 +221,7 @@ You can now play with your cluster, kill processes randomly, add/remove new inst
 Let's execute a simple query that returns only `ERROR` entries on field `severity_text`:
 
 ```bash
-curl -v 'http://your-load-balancer/api/v1/hdfslogs/search?query=severity_text:ERROR
+curl -v 'http://your-load-balancer/api/v1/hdfs-logs/search?query=severity_text:ERROR
 ```
 
 which returns the json
@@ -268,7 +270,7 @@ Returns 6 hits in 0.36 seconds.
 Let's do some cleanup by deleting the index:
 
 ```bash
-./quickwit index delete --index hdfslogs  --config ./config.yaml
+./quickwit index delete --index hdfs-logs  --config ./config.yaml
 ```
 
 Also remember to remove the security group to protect your EC2 instances. You can just remove the instances if you don't need them.

@@ -38,13 +38,13 @@ Let's create an index configured to receive these logs.
 
 ```bash
 # First, download the hdfs logs config from Quickwit repository.
-curl -o hdfslogs_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/hdfs-logs/index-config.yaml
+curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/hdfs-logs/index-config.yaml
 ```
 
-The index config defines four fields: `timestamp`, `severity_text`, `body`, and one object field
+The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`, `body`, and one object field
 for the nested values `resource.service` . It also sets the `default_search_fields`, the `tag_fields`, and the `timestamp_field`.The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning](../overview/architecture.md) at query time to boost search speed. Check out the [index config docs](../reference/index-config.md) for more details.
 
-```yaml title="hdfslogs_index_config.yaml"
+```yaml title="hdfs_logs_index_config.yaml"
 version: 0
 
 doc_mapping:
@@ -52,6 +52,9 @@ doc_mapping:
     - name: timestamp
       type: i64
       fast: true # Fast field must be present when this is the timestamp field.
+    - name: tenant_id
+      type: u64
+      fast: true
     - name: severity_text
       type: text
       tokenizer: raw # No tokeninization.
@@ -65,8 +68,7 @@ doc_mapping:
         - name: service
           type: text
           tokenizer: raw # Text field referenced as tag must have the `raw` tokenier.
-  tag_fields: [resource.service]
-  store_source: true
+  tag_fields: [tenant_id]
 
 indexing_settings:
   timestamp_field: timestamp
@@ -86,22 +88,22 @@ export QW_CONFIG=./config/quickwit.yaml
 ```
 
 ```bash
-./quickwit index create --index-config hdfslogs_index_config.yaml
+./quickwit index create --index-config hdfs_logs_index_config.yaml
 ```
 
 You're now ready to fill the index.
 
 ## Index logs
-The dataset is a compressed [ndjson file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.gz). Instead of downloading it and then indexing the data, we will use pipes to directly send a decompressed stream to Quickwit.
+The dataset is a compressed [ndjson file](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz). Instead of downloading it and then indexing the data, we will use pipes to directly send a decompressed stream to Quickwit.
 This can take up to 10 min on a modern machine, the perfect time for a coffee break.
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs.logs.quickwit.json.gz | gunzip | ./quickwit index ingest --index hdfslogs
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit index ingest --index hdfs-logs
 ```
 
 You can check it's working by using `search` subcommand and look for `ERROR` in `serverity_text` field:
 ```bash
-./quickwit index search --index hdfslogs  --query "severity_text:ERROR"
+./quickwit index search --index hdfs-logs  --query "severity_text:ERROR"
 ```
 
 :::note
@@ -123,7 +125,7 @@ The command `service run searcher` starts an http server which provides a [REST 
 Let's execute the same query on field `severity_text` but with `cURL`:
 
 ```bash
-curl -v "http://127.0.0.1:7280/api/v1/hdfslogs/search?query=severity_text:ERROR"
+curl "http://127.0.0.1:7280/api/v1/hdfs-logs/search?query=severity_text:ERROR"
 ```
 
 which returns the json
@@ -160,7 +162,7 @@ The index config shows that we can use the timestamp field parameters `startTime
 Let's use these parameters with the following query:
 
 ```bash
-curl -v 'http://127.0.0.1:7280/api/v1/hdfslogs/search?query=severity_text:ERROR&startTimestamp=1442834249&endTimestamp=1442900000'
+curl -v 'http://127.0.0.1:7280/api/v1/hdfs-logs/search?query=severity_text:ERROR&startTimestamp=1442834249&endTimestamp=1442900000'
 ```
 
 It should return 6 hits faster as Quickwit will query fewer splits.
@@ -216,7 +218,7 @@ curl -v 'http://127.0.0.1:7280/api/v1/hdfs_logs/search?query=severity_text:ERROR
 Let's do some cleanup by deleting the index:
 
 ```bash
-./quickwit index delete --index hdfslogs
+./quickwit index delete --index hdfs-logs
 ```
 
 

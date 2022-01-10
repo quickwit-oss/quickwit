@@ -54,25 +54,20 @@ doc_mapping:
     - name: id
       type: u64
       fast: true
-      stored: true
     - name: created_at
       type: i64
       fast: true
-      stored: true
     - name: event_type
       type: text
       tokenizer: raw
-      stored: true
     - name: title
       type: text
       tokenizer: default
       record: position
-      stored: true
     - name: body
       type: text
       tokenizer: default
       record: position
-      stored: true
 search_settings:
   default_search_fields: [title, body]
 }
@@ -89,8 +84,8 @@ The dataset is a compressed [ndjson file](https://quickwit-datasets-public.s3.am
 Let's index it.
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2021-12-text-only.json.gz
-gunzip gh-archive-2021-12-text-only.json.gz | ./quickwit index ingest --index gh-archive
+wget https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2021-12-text-only.json.gz
+gunzip -c gh-archive-2021-12-text-only.json.gz | ./quickwit index ingest --index gh-archive
 ```
 
 You can check it's working by using the `search` command and looking for `tantivy` word:
@@ -110,7 +105,7 @@ ready to fetch some ids with the search stream endpoint. Let's start by streamin
 query and with a `CSV` output format.
 
 ```bash
-curl -v "http://0.0.0.0:8080/api/v1/gh-archive/search/stream?query=tantivy&outputFormat=Csv&fastField=id"
+curl "http://0.0.0.0:7280/api/v1/gh-archive/search/stream?query=tantivy&outputFormat=csv&fastField=id"
 ```
 
 We will use the `Clickhouse` binary output format in the following sections to speed up queries.
@@ -161,8 +156,8 @@ text. So it's better to insert it into Clickhouse, but if you don't have the tim
 `gh-archive-2021-12-text-only.json.gz` used for Quickwit.
 
 ```bash
-curl https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2021-12.json.gz
-gunzip gh-archive-2021-12.json.gz | clickhouse-client -d gh-archive --query="INSERT INTO github_events FORMAT JSONEachRow"
+wget https://quickwit-datasets-public.s3.amazonaws.com/gh-archive/gh-archive-2021-12.json.gz
+gunzip -c gh-archive-2021-12.json.gz | clickhouse-client -d gh-archive --query="INSERT INTO github_events FORMAT JSONEachRow"
 ```
 
 Let's check it's working:

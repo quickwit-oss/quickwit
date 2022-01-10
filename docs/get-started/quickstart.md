@@ -97,7 +97,7 @@ Let's download [a bunch of wikipedia articles (10 000)](https://quickwit-dataset
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 
 # Index our 10k documents.
-./quickwit index ingest --index wikipedia --input-path ./wiki-articles-10000.json
+./quickwit index ingest --index wikipedia --input-path wiki-articles-10000.json
 ```
 
 Wait one second or two and check if it worked by using `search` command:
