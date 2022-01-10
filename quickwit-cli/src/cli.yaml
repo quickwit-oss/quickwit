@@ -3,13 +3,13 @@ settings:
     - ArgRequiredElseHelp
 subcommands:
     - index:
-        about: Index operation commands such as `create`, `index`, or `search`...
+        about: Create your index, ingest data, search, describe... every command you need to manage indexes.
         display_order: 1
         settings:
             - ArgRequiredElseHelp
         subcommands:
             - create:
-                about: Creates an index.
+                about: Creates an index from an index config file.
                 display_order: 1
                 args:
                     - index-config:
@@ -55,7 +55,7 @@ subcommands:
                         long: overwrite
             - describe:
                 display_order: 3
-                about: Display descriptive statistics about the index.
+                about: "Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits."
                 args:
                     - index:
                         about: ID of the target index.
@@ -73,7 +73,7 @@ subcommands:
                 about: Searches an index.
                 args:
                     - index:
-                        about: id of the target index.
+                        about: ID of the target index.
                         long: index
                         value_name: INDEX
                         required: true
@@ -84,7 +84,7 @@ subcommands:
                         env: QW_CONFIG
                         required: true
                     - query:
-                        about: Query expressed in Tantivy syntax.
+                        about: Query expressed in natural query language (barack AND obama) OR "president of united states"). Learn more on https://quickwit.io/docs/reference/search-language.
                         long: query
                         value_name: QUERY
                         required: true
@@ -99,7 +99,7 @@ subcommands:
                         value_name: OFFSET
                         default_value: '0'
                     - search-fields:
-                        about: Searches only in those fields.
+                        about: List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2". 
                         long: search-fields
                         value_name: FIELD NAME
                         multiple_values: true
@@ -177,7 +177,7 @@ subcommands:
                         value_name: GRACE PERIOD
                         default_value: '1h'
                     - dry-run:
-                        about: Executes the command in dry run mode and only displays the list of splits candidate for garbage collection.
+                        about: Executes the command in dry run mode and only displays the list of splits candidates for garbage collection.
                         long: dry-run
             - delete:
                 display_order: 7

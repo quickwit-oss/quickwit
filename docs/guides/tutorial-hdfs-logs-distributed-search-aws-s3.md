@@ -81,7 +81,7 @@ export S3_PATH=s3://{path/to/bucket}/indexes
 ```
 
 ```bash
-# configuration for our indexer node
+# Create Quickwit config file.
 echo "version: 0
 metastore_uri: ${S3_PATH}
 default_index_root_uri: ${S3_PATH}
@@ -91,7 +91,7 @@ default_index_root_uri: ${S3_PATH}
 We can now create the index with the `create` subcommand.
 
 ```bash
-./quickwit index create --index hdfslogs --index-config ./hdfslogs_index_config.yaml --config ./config.yaml
+./quickwit index create --index-config hdfslogs_index_config.yaml --config config.yaml
 ```
 
 :::note

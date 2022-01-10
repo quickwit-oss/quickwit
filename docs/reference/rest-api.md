@@ -61,7 +61,7 @@ Search for documents matching a query in the given index `<index name>`.
 | **endTimestamp**           | `i64`       		    | If set, restrict search to documents with a `timestamp < end_timestamp`                                                            |                                                                                     |
 | **startOffset**            | `Integer`     	    | Number of documents to skip                                                                | `0`                                                                                             |
 | **maxHits**                | `Integer`          | Maximum number of hits to return (by default 20)                                                            | `20`                                                                                            |
-| **searchFields**           | `String`      		  | Fields to search on. Comma-separated list, e.g. "field1,field2" | index_config.search_settings.default_search_fields                                                                                             |
+| **searchFields**           | `String`      		  | Fields to search on if no field name is specified in the query. Comma-separated list, e.g. "field1,field2" | index_config.search_settings.default_search_fields                                                                                             |
 | **format**                 | `Enum`           	| The output format. Allowed values are "json" or "prettyjson" 						 | `prettyjson`                                                                                            |
 
 
