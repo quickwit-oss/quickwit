@@ -162,7 +162,10 @@ impl DefaultDocMapperBuilder {
             for (field_path, field_type) in field_mapping.field_entries() {
                 let field_name = field_path.field_name();
                 if field_name == SOURCE_FIELD_NAME {
-                    bail!("`_source` is a reserved name, change your field name.");
+                    bail!(
+                        "`_source` is a reserved field name, please, use a different name for \
+                         this field."
+                    );
                 }
                 if self.tag_fields.contains(&field_name) {
                     match &field_type {
@@ -713,8 +716,10 @@ mod tests {
         }"#;
 
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
-        let expected_msg = "`_source` is a reserved name, change your field name.".to_string();
-        assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
+        assert_eq!(
+            builder.build().unwrap_err().to_string(),
+            "`_source` is a reserved field name, please, use a different name for this field."
+        );
         Ok(())
     }
 

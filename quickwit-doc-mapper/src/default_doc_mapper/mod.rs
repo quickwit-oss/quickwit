@@ -21,6 +21,7 @@ mod default_mapper;
 mod field_mapping_entry;
 mod field_mapping_type;
 
+use anyhow::bail;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -28,21 +29,79 @@ pub use self::default_mapper::{DefaultDocMapper, DefaultDocMapperBuilder, SortBy
 pub use self::field_mapping_entry::{DocParsingError, FieldMappingEntry};
 pub use self::field_mapping_type::FieldMappingType;
 
-/// Regular expression representing the restriction on a valid field name.
-pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[_a-zA-Z][_\.\-a-zA-Z0-9]*$"#;
+/// Regular expression validating a field mapping name.
+pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[_a-zA-Z][_\.\-a-zA-Z0-9]{0,254}$"#;
 
-/// Validator for a potential `field_mapping_name`.
-/// Returns true if the name can be use for a field mapping name.
+/// Validates a field mapping name.
+/// Returns `Ok(())` if the name can be used for a field mapping. Does not check for reserved field
+/// mapping names such as `_source`.
 ///
-/// A field mapping name must start by a letter `[a-zA-Z]`.
-/// The other characters can be any alphanumic character `[a-ZA-Z0-9]` or `_`, `.`, `-`.
-pub fn is_valid_field_mapping_name(field_mapping_name: &str) -> bool {
+/// A field mapping name:
+/// - may only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, hyphens
+///   `-`, periods `.`, and underscores `_`;
+/// - must start with an uppercase or lowercase ASCII letter `[a-zA-Z]`, or an underscore `_`;
+/// - must not be longer than 255 characters.
+pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<()> {
     static FIELD_MAPPING_NAME_PTN: Lazy<Regex> =
         Lazy::new(|| Regex::new(FIELD_MAPPING_NAME_PATTERN).unwrap());
-    FIELD_MAPPING_NAME_PTN.is_match(field_mapping_name)
+
+    if FIELD_MAPPING_NAME_PTN.is_match(field_mapping_name) {
+        return Ok(());
+    }
+    if field_mapping_name.is_empty() {
+        bail!("Field name is empty.");
+    }
+    if field_mapping_name.len() > 255 {
+        bail!(
+            "Field name `{}` is too long. Field names must not be longer than 255 characters.",
+            field_mapping_name
+        )
+    }
+    let first_char = field_mapping_name.chars().next().unwrap();
+    if !first_char.is_ascii_alphabetic() && first_char != '_' {
+        bail!(
+            "Field name `{}` is invalid. Field names must start with an uppercase or lowercase \
+             ASCII letter, or an underscore `_`.",
+            field_mapping_name
+        )
+    }
+    bail!(
+        "Field name `{}` contains illegal characters. Field names must only contain uppercase and \
+         lowercase ASCII letters, digits, hyphens `-`, periods `.`, and underscores `_`.",
+        field_mapping_name
+    );
 }
 
 /// Function used with serde to initialize boolean value at true if there is no value in json.
 fn default_as_true() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_field_mapping_name() {
+        assert!(validate_field_mapping_name("")
+            .unwrap_err()
+            .to_string()
+            .contains("is empty"));
+        assert!(validate_field_mapping_name(&"a".repeat(256))
+            .unwrap_err()
+            .to_string()
+            .contains("is too long"));
+        assert!(validate_field_mapping_name("0")
+            .unwrap_err()
+            .to_string()
+            .contains("must start with"));
+        assert!(validate_field_mapping_name("_my-field!")
+            .unwrap_err()
+            .to_string()
+            .contains("illegal characters"));
+        assert!(validate_field_mapping_name("my-field").is_ok());
+        assert!(validate_field_mapping_name("my.field").is_ok());
+        assert!(validate_field_mapping_name("my_field").is_ok());
+        assert!(validate_field_mapping_name(&"a".repeat(255)).is_ok());
+    }
 }

@@ -31,7 +31,7 @@ use tantivy::schema::{
 use thiserror::Error;
 
 use super::{default_as_true, FieldMappingType};
-use crate::default_doc_mapper::is_valid_field_mapping_name;
+use crate::default_doc_mapper::validate_field_mapping_name;
 
 /// A `FieldMappingEntry` defines how a field is indexed, stored,
 /// and mapped from a JSON document to the related index fields.
@@ -50,7 +50,7 @@ pub struct FieldMappingEntry {
 impl FieldMappingEntry {
     /// Creates a new [`FieldMappingEntry`].
     pub fn new(name: String, mapping_type: FieldMappingType) -> Self {
-        assert!(is_valid_field_mapping_name(&name));
+        assert!(validate_field_mapping_name(&name).is_ok());
         FieldMappingEntry { name, mapping_type }
     }
 
@@ -512,9 +512,7 @@ impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
                 type_str
             ),
         };
-        if !is_valid_field_mapping_name(&value.name) {
-            bail!("Invalid field name: `{}`.", value.name)
-        }
+        validate_field_mapping_name(&value.name)?;
         Ok(FieldMappingEntry::new(value.name, field_type))
     }
 }
@@ -894,17 +892,17 @@ mod tests {
 
     #[test]
     fn test_deserialize_i64_field_with_invalid_name() {
-        let result = serde_json::from_str::<FieldMappingEntry>(
+        assert!(serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
                 "name": "this is not ok",
                 "type": "i64"
             }
             "#,
-        );
-        assert!(result.is_err());
-        let error = result.unwrap_err();
-        assert_eq!(error.to_string(), "Invalid field name: `this is not ok`.");
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("illegal characters"));
     }
 
     #[test]
@@ -1064,35 +1062,20 @@ mod tests {
 
     #[test]
     fn test_deserialize_u64_field_with_wrong_options() {
-        let cases = vec![
-            (
+        assert_eq!(
+            serde_json::from_str::<FieldMappingEntry>(
                 r#"
             {
                 "name": "my_field_name",
                 "type": "u64",
                 "tokenizer": "basic"
-            }
-            "#,
-                "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are for \
-                 text field only.",
-            ),
-            (
-                r#"
-            {
-                "name": "this is not ok",
-                "type": "i64"
-            }
-            "#,
-                "Invalid field name: `this is not ok`.",
-            ),
-        ];
-
-        for (json_str, err_str) in cases {
-            let result = serde_json::from_str::<FieldMappingEntry>(json_str);
-            assert!(result.is_err());
-            let error = result.unwrap_err();
-            assert_eq!(error.to_string(), err_str,)
-        }
+            }"#
+            )
+            .unwrap_err()
+            .to_string(),
+            "Error when parsing `my_field_name`: `record` and `tokenizer` parameters are for text \
+             field only."
+        );
     }
 
     #[test]
