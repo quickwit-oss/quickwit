@@ -3,7 +3,7 @@ title: CLI Reference
 sidebar_position: 1
 ---
 
-Quickwit command line tool lets you create, ingest, search, start search and indexer servers. For configuration, `quickwit` needs a [config file path](config.md) that you can configure with `QW_CONFIG` environment variable: `export QW_CONFIG=./config/quickwit.yaml`.
+Quickwit command line tool lets you create, ingest, search, start search and indexer servers. For configuration, `quickwit` needs a [config file path](config.md) that you can specify with `QW_CONFIG` environment variable: `export QW_CONFIG=./config/quickwit.yaml`.
 
 This page documents all the available commands, related options, and environment variables.
 
