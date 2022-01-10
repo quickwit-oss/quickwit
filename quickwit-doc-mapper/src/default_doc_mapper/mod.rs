@@ -29,14 +29,18 @@ pub use self::default_mapper::{DefaultDocMapper, DefaultDocMapperBuilder, SortBy
 pub use self::field_mapping_entry::{DocParsingError, FieldMappingEntry};
 pub use self::field_mapping_type::FieldMappingType;
 
-/// Regular expression representing the restriction on a valid field name.
+/// Regular expression validating a field mapping name.
 pub const FIELD_MAPPING_NAME_PATTERN: &str = r#"^[_a-zA-Z][_\.\-a-zA-Z0-9]{0,254}$"#;
 
-/// Validator for a potential `field_mapping_name`.
-/// Returns true if the name can be use for a field mapping name.
+/// Validates a field mapping name.
+/// Returns `Ok(())` if the name can be used for a field mapping. Does not check for reserved field
+/// mapping names such as `_source`.
 ///
-/// A field mapping name must start by a letter `[a-zA-Z]`.
-/// The other characters can be any alphanumic character `[a-ZA-Z0-9]` or `_`, `.`, `-`.
+/// A field mapping name:
+/// - may only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, hyphens
+///   `-`, periods `.`, and underscores `_`;
+/// - must start with an uppercase or lowercase ASCII letter `[a-zA-Z]`, or an underscore `_`;
+/// - must not be longer than 255 characters.
 pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<()> {
     static FIELD_MAPPING_NAME_PTN: Lazy<Regex> =
         Lazy::new(|| Regex::new(FIELD_MAPPING_NAME_PATTERN).unwrap());
@@ -57,7 +61,7 @@ pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<(
     if !first_char.is_ascii_alphabetic() && first_char != '_' {
         bail!(
             "Field name `{}` is invalid. Field names must start with an uppercase or lowercase \
-             ASCII letter or an underscore `_`.",
+             ASCII letter, or an underscore `_`.",
             field_mapping_name
         )
     }
