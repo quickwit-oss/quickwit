@@ -161,7 +161,7 @@ fn generate_markdown_from_clap(app: &App) {
 
         for subcommand in command
             .get_subcommands()
-            .filter(|command| command.get_name() != "demux")
+            .filter(|command| command.get_name() != "demux" && command.get_name() != "merge")
         {
             let commands = vec![command.get_name().to_string()];
             markdown_for_subcommand(subcommand, commands, &doc_extensions);

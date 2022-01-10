@@ -86,7 +86,7 @@ export QW_CONFIG=./config/quickwit.yaml
 ```
 
 ```bash
-./quickwit index create --index hdfslogs --index-config ./hdfslogs_index_config.yaml
+./quickwit index create --index-config hdfslogs_index_config.yaml
 ```
 
 You're now ready to fill the index.

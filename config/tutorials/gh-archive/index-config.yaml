@@ -3,6 +3,8 @@
 #
 version: 0
 
+index_id: gh-archive
+
 doc_mapping:
   store_source: false
   field_mappings:

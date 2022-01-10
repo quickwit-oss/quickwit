@@ -91,7 +91,7 @@ curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-i
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 
 # create, index and search using the container 
-docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index create --index wikipedia --index-config ./qwdata/wikipedia_index_config.yaml
+docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index create --index-config ./qwdata/wikipedia_index_config.yaml
 
 docker run -v "$(pwd)":"/quickwit/qwdata" quickwit/quickwit index ingest --index wikipedia --input-path ./qwdata/wiki-articles-10000.json
 
