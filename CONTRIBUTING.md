@@ -69,7 +69,7 @@ To update it, first run the script:
 cargo run --bin generate_markdown > docs/reference/cli_insert.md
 ```
 
-Then edit manually edit the [doc page](docs/reference/cli.md) to update it.
+Then manually edit the [doc page](docs/reference/cli.md) to update it.
 I put two comments to indicate where you want to insert the new docs and where it ends:`
 ```markdown
 [comment]: <> (Insert auto generated CLI docs from here.)
