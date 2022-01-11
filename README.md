@@ -11,13 +11,13 @@
 <h4 align="center">
   <a href="https://quickwit.io/docs/getting-started/quickstart">Quickstart</a> |
   <a href="https://quickwit.io/docs/">Docs</a> |
-  <a href="https://quickwit.io/docs/tutorials/tutorial-hdfs-logs">Tutorials</a> |
+  <a href="https://quickwit.io/docs/guides/tutorial-hdfs-logs">Tutorials</a> |
   <a href="https://discord.gg/rpRRTezWhW">Chat</a> |
-  <a href="https://quickwit.io/docs/getting-started/installation">Download</a>
+  <a href="https://quickwit.io/docs/get-started/installation">Download</a>
 </h4>
 <br/>
 
-### Quickwit 0.2 is out! Check out our [blog post](https://quickwit.io/blog/quickwit-0.2-release/) to discover the new features.
+### Quickwit 0.2 is out! Check out our [blog post](https://quickwit.io/blog/quickwit-0.2/) to discover the new features.
 
 <br/>
 
@@ -37,8 +37,8 @@ Imagine hosting an arbitrary amount of indices on S3 for $25/TB.month and queryi
 Not only is Quickwit more cost-efficient, but search clusters are also easier to operate. One can add or remove search instances in seconds. You can also effortlessly index a massive amount of historical data using your favorite batch technology. Last but not least, Multi-tenant search is now cheap and painless.
 
 
-- [Get started](https://quickwit.io/docs/getting-started/quickstart)
-- [Look at the feature set](https://quickwit.io/docs/overview/features)
+- [Get started](https://quickwit.io/docs/get-started/quickstart)
+- [Look at the feature set](https://quickwit.io/docs/introduction)
 
 
 <p align="center">
@@ -50,17 +50,17 @@ Not only is Quickwit more cost-efficient, but search clusters are also easier to
 - [Introduction](https://quickwit.io/docs/)
 
 ## Getting started
-- [Quickstart](https://quickwit.io/docs/getting-started/quickstart)
-- [Installation](https://quickwit.io/docs/getting-started/installation)
+- [Quickstart](https://quickwit.io/docs/get-started/quickstart)
+- [Installation](https://quickwit.io/docs/get-started/installation)
 
 ## Overview
-- [Features](https://quickwit.io/docs/overview/features)
-- [Architecture](https://quickwit.io/docs/overview/architecture)
+- [Features](https://quickwit.io/docs/introduction)
+- [Architecture](https://quickwit.io/docs/design/architecture)
 
 ## Tutorials
-- [Search on logs with timestamp pruning](https://quickwit.io/docs/tutorials/tutorial-hdfs-logs)
-- [Setup a distributed search on AWS S3](https://quickwit.io/docs/tutorials/tutorial-hdfs-logs-distributed-search-aws-s3)
-- [Set up your AWS S3 environment](https://quickwit.io/docs/tutorials/configure-aws-env)
+- [Search on logs with timestamp pruning](https://quickwit.io/docs/guides/tutorial-hdfs-logs)
+- [Setup a distributed search on AWS S3](https://quickwit.io/docs/guides/tutorial-hdfs-logs-distributed-search-aws-s3)
+- [Set up your AWS S3 environment](https://quickwit.io/docs/guides/configure-aws-env)
 
 ## Administration
 - [Operating in the cloud](https://quickwit.io/docs/administration/cloud-env)
@@ -68,7 +68,7 @@ Not only is Quickwit more cost-efficient, but search clusters are also easier to
 ## Reference
 - [Quickwit CLI](https://quickwit.io/docs/reference/cli)
 - [Index Config](https://quickwit.io/docs/reference/index-config)
-- [Search API](https://quickwit.io/docs/reference/search-api)
+- [Search API](https://quickwit.io/docs/reference/rest-api)
 - [Query language](https://quickwit.io/docs/reference/query-language)
 - [Telemetry](https://quickwit.io/docs/reference/telemetry)
 
