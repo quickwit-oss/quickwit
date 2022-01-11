@@ -3,7 +3,7 @@ title: Architecture
 sidebar_position: 1
 ---
 
-Quickwit has been designed from the ground up for cost-efficiency, scalability, and cloud-friendly. 
+Quickwit has been designed from the ground up for cost-efficiency and scalability. 
 
 Quickwit core relies on two processes:
 
