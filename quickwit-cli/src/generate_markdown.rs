@@ -159,10 +159,12 @@ fn generate_markdown_from_clap(app: &App) {
             }
         }
 
-        for subcommand in command
-            .get_subcommands()
-            .filter(|command| command.get_name() != "demux" && command.get_name() != "merge")
-        {
+        for subcommand in command.get_subcommands().filter(|subcommand| {
+            subcommand.get_name() != "demux"
+                && subcommand.get_name() != "merge"
+                && subcommand.get_name() != "extract"
+                && !(subcommand.get_name() == "describe" && command_name == "split")
+        }) {
             let commands = vec![command.get_name().to_string()];
             markdown_for_subcommand(subcommand, commands, &doc_extensions);
 

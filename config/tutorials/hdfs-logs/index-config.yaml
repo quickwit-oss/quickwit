@@ -11,6 +11,8 @@ doc_mapping:
     - name: timestamp
       type: i64
       fast: true
+    - name: tenant_id
+      type: u64
     - name: severity_text
       type: text
       tokenizer: raw
