@@ -5,8 +5,9 @@ position: 4
 
 This page describes how to configure an index.
 
-The index configuration lets you define four items:
+In addition to the `index_id`, the index configuration lets you define five items:
 
+- The **index-uri**: it defines where the index files should be stored.
 - The **doc mapping**: it defines how a document and the fields it contains are stored and indexed for a given index.
 - The **indexing settings**: it defines the timestamp field used for sharding, and some more advanced parameters like the merge policy.
 - The **search settings**: it defines the default search fields `default_search_fields`, a list of fields that Quickwit will search into if the user query does not explicitly target a field.
@@ -19,8 +20,13 @@ Configuration is set at index creation and cannot be modified except for the sou
 The index configuration format is YAML. When a key is absent from the configuration file, the default value is used.
 Here is a complete example suited for the HDFS logs dataset:
 
-```
+```yaml
 version: 0 # File format version.
+
+index_id: "hdfs"
+
+index_uri: "s3://my-bucket/hdfs"
+
 doc_mapping:
   field_mappings:
     - name: timestamp
@@ -40,12 +46,38 @@ doc_mapping:
           type: text
           tokenizer: raw
   tag_fields: ["resource.service"]
+
 indexing_settings:
   timestamp_field: timestamp
+
 search_settings:
   default_search_fields: [severity_text, body]
 
+sources:
+ - hdfs: hdfs-log-kafka
+   source_type: kafka
+   params:
+     topic: hdfs-logs
+     client_params:
+       bootstrap.servers: localhost:9092
+       group.id: quickwit-consumer-group
+       security.protocol: SSL
 ```
+
+## Index uri
+
+The index-uri defines where the index files (also called splits) should be stored.
+This parameter expected a [storage uri](storage-uri).
+
+
+The `index-uri` parameter is optional.
+By default, the `index-uri` will be computed by concatenating the `index-id` with the
+`default_index_root_uri` defined in the [Quickwit's config](quickwit-config).
+
+<aside>
+⚠️ The file storage will not work when running quickwit in distributed mode.
+Today, only the s3 storage is available when running several searcher nodes.
+</aside>
 
 ## Doc mapping
 
