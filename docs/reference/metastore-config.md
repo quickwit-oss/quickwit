@@ -67,10 +67,10 @@ You can also configure it to poll the File-Backed Metastore periodically to keep
 
 To configure the polling interval (in seconds only), add a URI fragment to the storage URI like this: `s3://quickwit/my-indexes#polling_interval=30s`
 
-<aside>
-👌 Amazon S3 charges $0.0004 per 1000 GET requests. Polling a metastore every 30 seconds will induce a cost of $0.04 per month and per index.
+:::tip
+Amazon S3 charges $0.0004 per 1000 GET requests. Polling a metastore every 30 seconds will induce a cost of $0.04 per month and per index.
 
-</aside>
+:::
 
 ### Examples
 
@@ -86,9 +86,9 @@ file:///local/indices#polling_interval=30s
 ./quickwit-metastores
 ```
 
-<aside>
-⛔ The file-backed metastore does not allow concurrent writes. For this reason, it should not be used in distributed settings. 
+:::caution
+The file-backed metastore does not allow concurrent writes. For this reason, it should not be used in distributed settings. 
 Running several indexer services on the same file-backed metastore can lead to the corruption of the metastore.
 Running several search services, on the other hand, is perfectly safe.
 
-</aside>
+:::
