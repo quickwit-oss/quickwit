@@ -30,12 +30,12 @@ The following are valid local file system URIs
 - ./quickwit
 ```
 
-<aside>
-⚠️ When using the `file://` protocol, a third `/` is necessary to express an absolute path.
+:::caution
+When using the `file://` protocol, a third `/` is necessary to express an absolute path.
 
 For instance, the following URI `file://home/quickwit/` is interpreted as `./home/quickwit`
 
-</aside>
+:::
 
 ## Amazon S3
 
@@ -70,7 +70,7 @@ The region will be detected using the first successful method in this list (orde
 - `AWS_REGION` environment variable
 - Amazon’s instance metadata API [https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html)
 
-<aside>
-⚠️ Custom endpoints are not supported yet.
+:::caution
+Custom endpoints are not supported yet.
 
-</aside>
+:::
