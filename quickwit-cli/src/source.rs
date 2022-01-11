@@ -188,15 +188,11 @@ async fn add_source_cli(args: AddSourceArgs) -> anyhow::Result<()> {
     source_params_json.insert("source_type".to_string(), Value::String(args.source_type));
     source_params_json.insert("params".to_string(), Value::Object(params));
     let source_params: SourceParams = serde_json::from_value(Value::Object(source_params_json))?;
-    if let SourceParams::File(file_source_params) = &source_params {
-        if file_source_params.filepath.is_none() {
-            bail!("Source of type `file` must contain a `filepath`")
-        }
-    }
     let source = SourceConfig {
         source_id: args.source_id.clone(),
         source_params,
     };
+    source.validate()?;
     check_source_connectivity(&source).await?;
 
     metastore.add_source(&args.index_id, source).await?;

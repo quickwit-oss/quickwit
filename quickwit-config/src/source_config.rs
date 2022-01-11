@@ -19,6 +19,7 @@
 
 use std::path::{Path, PathBuf};
 
+use anyhow::bail;
 use quickwit_common::uri::Uri;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -31,6 +32,35 @@ pub struct SourceConfig {
 }
 
 impl SourceConfig {
+    /// Check the validity of the `SourceConfig` as a "serializable source".
+    ///
+    /// Two remarks:
+    /// - This does not check connectivity. (See `check_connectivity(..)`)
+    /// This just validate configuration, without performing any IO.
+    /// - This is only here to validate user input.
+    /// When ingesting from StdIn, we programmatically create an invalid `SourceConfig`.
+    ///
+    /// TODO refactor #1065
+    pub fn validate(&self) -> anyhow::Result<()> {
+        match &self.source_params {
+            // We want to forbid source_config with no filepath
+            SourceParams::File(file_params) => {
+                if file_params.filepath.is_none() {
+                    bail!(
+                        "Source `{}` of type `file` must contain a `filepath`",
+                        self.source_id
+                    )
+                }
+                Ok(())
+            }
+            SourceParams::Kafka(_) | SourceParams::Kinesis(_) => {
+                // TODO consider any validation opportunity
+                Ok(())
+            }
+            SourceParams::Vec(_) | SourceParams::Void(_) => Ok(()),
+        }
+    }
+
     pub fn source_type(&self) -> &str {
         match self.source_params {
             SourceParams::File(_) => "file",

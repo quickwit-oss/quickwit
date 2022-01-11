@@ -33,7 +33,6 @@ use quickwit_doc_mapper::{
 use serde::{Deserialize, Serialize};
 
 use crate::source_config::SourceConfig;
-use crate::SourceParams;
 
 // Note(fmassot): `DocMapping` is a struct only used for
 // serialization/deserialization of `DocMapper` parameters.
@@ -277,16 +276,8 @@ impl IndexConfig {
             bail!("Index config contains duplicate sources.")
         }
 
-        // We want to forbid file source with no filepath.
         for source in self.sources.iter() {
-            if let SourceParams::File(file_source_params) = &source.source_params {
-                if file_source_params.filepath.is_none() {
-                    bail!(
-                        "Source `{}` of type `file` must contain a `filepath`",
-                        source.source_id
-                    )
-                }
-            }
+            source.validate()?;
         }
 
         // Validation is made by building the doc mapper.
@@ -335,7 +326,7 @@ pub fn build_doc_mapper(
 mod tests {
 
     use super::*;
-    use crate::{FileSourceParams, SourceParams};
+    use crate::SourceParams;
 
     fn get_resource_path(resource_filename: &str) -> String {
         format!(
@@ -429,12 +420,12 @@ mod tests {
                 {
                     let source = &index_config.sources[0];
                     assert_eq!(source.source_id, "hdfs-logs-kafka-source");
-                    assert!(matches!(source.source_type, SourceParams::Kafka(_)));
+                    assert!(matches!(source.source_params, SourceParams::Kafka(_)));
                 }
                 {
                     let source = &index_config.sources[1];
                     assert_eq!(source.source_id, "hdfs-logs-kinesis-source");
-                    assert!(matches!(source.source_type, SourceParams::Kinesis(_)));
+                    assert!(matches!(source.source_params, SourceParams::Kinesis(_)));
                 }
                 Ok(())
             }
@@ -570,7 +561,7 @@ mod tests {
             let mut invalid_index_config = index_config.clone();
             invalid_index_config.sources = vec![SourceConfig {
                 source_id: "file_params_1".to_string(),
-                source_params: SourceParams::File(FileSourceParams { filepath: None }),
+                source_params: SourceParams::stdin(),
             }];
             assert!(invalid_index_config.validate().is_err());
             assert!(invalid_index_config
