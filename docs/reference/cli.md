@@ -3,7 +3,7 @@ title: CLI Reference
 sidebar_position: 1
 ---
 
-Quickwit command line tool lets you create, ingest, search, start search and indexer servers. For configuration, `quickwit` needs a [config file path](config.md) that you can specify with `QW_CONFIG` environment variable: `export QW_CONFIG=./config/quickwit.yaml`.
+Quickwit command line tool lets you create, ingest, search, start search and indexer servers. For configuration, `quickwit` needs a [config file path](quickwit-config.md) that you can specify with `QW_CONFIG` environment variable: `export QW_CONFIG=./config/quickwit.yaml`.
 
 This page documents all the available commands, related options, and environment variables.
 
@@ -68,7 +68,7 @@ Create your index, ingest data, search, describe... every command you need to ma
 
 Creates an index of ID `index` at `index-uri` configured by a [YAML config file](index-config.md) located at `index-config`.
 The index config lets you define the mapping of your document on the index and how each field is stored and indexed.
-If `index-uri` is omitted, `index-uri` will be set to `{default_index_root_uri}/{index}`, more info on [Quickwit config docs](config.md).
+If `index-uri` is omitted, `index-uri` will be set to `{default_index_root_uri}/{index}`, more info on [Quickwit config docs](quickwit-config.md).
 The command fails if an index already exists unless `overwrite` is passed. 
 When `overwrite` is enabled, the command deletes all the files stored at `index-uri` before creating a new index. 
   
@@ -347,7 +347,7 @@ Starts a service. Currently, the only services available are `indexer` and `sear
 `quickwit service run [args]`
 ### service run searcher
 
-Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](search-api.md)
+Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
 where `rest_listing_address` and `rest_list_port` are defined in Quickwit config file (quickwit.yaml).
 The node can optionally join a cluster using the `peer_seeds` parameter. 
 This list of node addresses is used to discover the remaining peer nodes in the cluster through a gossip protocol (SWIM).
