@@ -15,7 +15,7 @@ The API uses **JSON** encoded as **UTF-8**. The body of POST and PUT requests mu
 The response for the /search endpoint is always a JSON object, and the content type is always `application/json; charset=UTF-8.`
 The response for the /search/stream endpoint is a HTTP stream. Depending on the client capability it is a HTTP1.1 [chunked transfer encoded stream](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) or a HTTP2 stream.
 
-## Parameters
+### Parameters
 
 Parameters passed in the URL must be properly URL-encoded, using the UTF-8 encoding for non-ASCII characters.
 
@@ -23,7 +23,7 @@ Parameters passed in the URL must be properly URL-encoded, using the UTF-8 encod
 GET [..]/search?query=barack%20obama
 ```
 
-## Error handling
+### Error handling
 
 Successful requests return a 2xx HTTP status code.
 
@@ -65,7 +65,7 @@ Search for documents matching a query in the given index `<index id>`.
 | **format**                 | `Enum`           	| The output format. Allowed values are "json" or "prettyjson" 						 | `prettyjson`                                                                                            |
 
 
-### Response
+#### Response
 
 | Field                | Description                    |    Type    |
 | -------------------- | ------------------------------ | :--------: |
@@ -109,7 +109,7 @@ The endpoint will return 10 million values if 10 million documents match the que
 | **outputFormat** | `String` | Response output format. `csv` or `clickHouseRowBinary`  | `csv` |
 
 
-### Response
+#### Response
 The response is an HTTP stream. Depending on the client's capability, it is an HTTP1.1 [chunked transfer encoded stream](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) or an HTTP2 stream.
 
 It returns a list of all the field values from documents matching the query. The field must be marked as "fast" in the index config for this to work. 
