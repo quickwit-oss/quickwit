@@ -213,7 +213,7 @@ quickwit index search
 
 `--index` ID of the target index.    
 `--config` Quickwit config file.    
-`--query` Query expressed in natural query language (barack AND obama) OR "president of united states"). Learn more on https://quickwit.io/docs/reference/search-language.    
+`--query` Query expressed in natural query language (barack AND obama) OR "president of united states"). Learn more on [query language](./query-language)     
 `--max-hits` Maximum number of hits returned. (Default: 20)    
 `--start-offset` Offset in the global result set of the first hit returned. (Default: 0)    
 `--search-fields` List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. "field1 field2".    

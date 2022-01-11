@@ -13,9 +13,9 @@ All the API endpoints start with the `api/v1/` prefix. `v1` indicates that we ar
 The API uses **JSON** encoded as **UTF-8**. The body of POST and PUT requests must be a JSON object and their `Content-Type` header should be set to `application/json; charset=UTF-8`.
 
 The response for the /search endpoint is always a JSON object, and the content type is always `application/json; charset=UTF-8.`
-The response for the /search/stream endpoint is a HTTP stream. Depending on the client capability it is a HTTP1.1 (chunked transfer encoded stream)[https://en.wikipedia.org/wiki/Chunked_transfer_encoding] or a HTTP2 stream.
+The response for the /search/stream endpoint is a HTTP stream. Depending on the client capability it is a HTTP1.1 [chunked transfer encoded stream](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) or a HTTP2 stream.
 
-## Parameters
+### Parameters
 
 Parameters passed in the URL must be properly URL-encoded, using the UTF-8 encoding for non-ASCII characters.
 
@@ -23,7 +23,7 @@ Parameters passed in the URL must be properly URL-encoded, using the UTF-8 encod
 GET [..]/search?query=barack%20obama
 ```
 
-## Error handling
+### Error handling
 
 Successful requests return a 2xx HTTP status code.
 
@@ -40,16 +40,16 @@ Failed requests return a 4xx HTTP status code. The response body of failed reque
 ### Search in an index
 
 ```
-GET api/v1/indexes/<index name>/search
+GET api/v1/indexes/<index id>/search
 ```
 
-Search for documents matching a query in the given index `<index name>`.
+Search for documents matching a query in the given index `<index id>`.
 
 #### Path variable
 
 | Variable      | Description   |
 | ------------- | ------------- |
-| **index name** | The index name |
+| **index id** | The index id |
 
 
 #### Get parameters
@@ -65,7 +65,7 @@ Search for documents matching a query in the given index `<index name>`.
 | **format**                 | `Enum`           	| The output format. Allowed values are "json" or "prettyjson" 						 | `prettyjson`                                                                                            |
 
 
-### Response
+#### Response
 
 | Field                | Description                    |    Type    |
 | -------------------- | ------------------------------ | :--------: |
@@ -76,10 +76,10 @@ Search for documents matching a query in the given index `<index name>`.
 ### Search stream in an index
 
 ```
-GET api/v1/indexes/<index name>/search/stream
+GET api/v1/indexes/<index id>/search/stream
 ```
 
-Streams field values from ALL documents matching a search query in the given index `<index name>`, in a specified output format among the following:
+Streams field values from ALL documents matching a search query in the given index `<index id>`, in a specified output format among the following:
  -  [CSV](https://datatracker.ietf.org/doc/html/rfc4180)
  -  [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary)
 
@@ -94,7 +94,7 @@ The endpoint will return 10 million values if 10 million documents match the que
 
 | Variable      | Description   |
 | ------------- | ------------- |
-| **index name** | The index name |
+| **index id** | The index id |
 
 
 #### Get parameters
@@ -109,11 +109,11 @@ The endpoint will return 10 million values if 10 million documents match the que
 | **outputFormat** | `String` | Response output format. `csv` or `clickHouseRowBinary`  | `csv` |
 
 
-### Response
-The response is an HTTP stream. Depending on the client's capability, it is an HTTP1.1 (chunked transfer encoded stream)[https://en.wikipedia.org/wiki/Chunked_transfer_encoding] or an HTTP2 stream.
+#### Response
+The response is an HTTP stream. Depending on the client's capability, it is an HTTP1.1 [chunked transfer encoded stream](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) or an HTTP2 stream.
 
 It returns a list of all the field values from documents matching the query. The field must be marked as "fast" in the index config for this to work. 
 The formatting is based on the specified output format. 
 
-On error, an "X-Stream-Error" header will be sent via the trailers channel with information about the error, and the stream will be closed via (`sender.abort()`)[https://docs.rs/hyper/latest/hyper/body/struct.Sender.html#method.abort].
+On error, an "X-Stream-Error" header will be sent via the trailers channel with information about the error, and the stream will be closed via [`sender.abort()`](https://docs.rs/hyper/0.14.16/hyper/body/struct.Sender.html#method.abort).
 Depending on the client, the trailer header with error details may not be shown. The error will also be logged in quickwit ("Error when streaming search results"). 

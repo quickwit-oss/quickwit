@@ -74,10 +74,12 @@ The `index-uri` parameter is optional.
 By default, the `index-uri` will be computed by concatenating the `index-id` with the
 `default_index_root_uri` defined in the [Quickwit's config](quickwit-config).
 
-<aside>
-⚠️ The file storage will not work when running quickwit in distributed mode.
+
+:::caution
+The file storage will not work when running quickwit in distributed mode.
 Today, only the s3 storage is available when running several searcher nodes.
-</aside>
+:::
+
 
 ## Doc mapping
 
