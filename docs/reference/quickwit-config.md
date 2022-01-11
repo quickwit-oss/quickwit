@@ -27,7 +27,7 @@ A commented example is accessible here: [quickwit.yaml]([link](https://github.co
 
 ## Indexer configuration
 
-This section contains the configuration options for an indexer. The split store is documented in the  [indexing document](indexing.md#split-store).
+This section contains the configuration options for an indexer. The split store is documented in the  [indexing document](../design/indexing.md#split-store).
 
 | Property | Description | Default value |
 | --- | --- | --- |

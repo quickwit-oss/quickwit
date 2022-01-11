@@ -56,7 +56,7 @@ sources:
 quickwit source add --index my-index-id --source my-source-id --type file --params '{"filepath": "path/to/file.json"}'
 ```
 
-Finally, note that the [CLI command](clid.md#index) `quickwit index ingest` allows ingesting data directly from a file or the standard input without creating a source beforehand.
+Finally, note that the [CLI command](cli.md#index) `quickwit index ingest` allows ingesting data directly from a file or the standard input without creating a source beforehand.
 
 ## Kafka source
 
