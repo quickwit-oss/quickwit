@@ -6,7 +6,7 @@ sidebar_position: 1
 
 Quickwit is a distributed search engine designed from the ground up to offer cost-efficiency and high reliability on large data sets.
 
-Quickwit is particularly well-suited for dealing with large, immutable datasets and a low average QPS$^1$. Its benefits are most apparent in a multi-tenancy or multi-index setting.
+Quickwit is particularly well-suited for dealing with large, immutable datasets and relatively low average QPS$^1$. Its benefits are most apparent in multi-tenancy or multi-index settings.
 
 Common use cases for Quickwit include:
 
