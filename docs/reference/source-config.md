@@ -1,6 +1,6 @@
 ---
 title: Source configuration
-position: 4
+position: 5
 ---
 
 Quickwit can insert data into an index from one or multiple sources. When creating an index, sources are declared in the [index config](index-config.md). Additional sources can be added later using the [CLI command](cli.md#source) `quickwit source add`.
