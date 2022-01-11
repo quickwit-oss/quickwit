@@ -185,12 +185,16 @@ async fn add_source_cli(args: AddSourceArgs) -> anyhow::Result<()> {
         .await?;
     let params = sniff_params(&args.params).await?;
     let source = SourceConfig {
-        source_id: args.source_id,
+        source_id: args.source_id.clone(),
         source_type: args.source_type,
         params,
     };
     check_source_connectivity(&source).await?;
     metastore.add_source(&args.index_id, source).await?;
+    println!(
+        "Source `{}` successfully created for index `{}`.",
+        args.source_id, args.index_id
+    );
     Ok(())
 }
 
@@ -202,6 +206,10 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
     metastore
         .delete_source(&args.index_id, &args.source_id)
         .await?;
+    println!(
+        "Source `{}` successfully deleted for index `{}`.",
+        args.source_id, args.index_id
+    );
     Ok(())
 }
 

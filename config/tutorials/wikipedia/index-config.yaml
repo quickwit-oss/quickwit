@@ -4,6 +4,8 @@
 
 version: 0
 
+index_id: wikipedia
+
 doc_mapping:
   field_mappings:
     - name: title

@@ -80,7 +80,7 @@ export QW_CONFIG=./config/quickwit.yaml
 Now we can create the index with the command:
 
 ```bash
-./quickwit index create --index wikipedia --index-config ./wikipedia_index_config.yaml
+./quickwit index create --index-config ./wikipedia_index_config.yaml
 ```
 
 Check that a directory `./qwdata/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../overview/architecture.md#index-metadata).
@@ -155,7 +155,7 @@ Run the following command from within Quickwit's installation directory.
 ```bash
 curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/wikipedia/index-config.yaml
 export QW_CONFIG=./config/quickwit.yaml
-./quickwit index create --index wikipedia --index-config ./wikipedia_index_config.yaml
+./quickwit index create --index-config ./wikipedia_index_config.yaml
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 ./quickwit index ingest --index wikipedia --input-path ./wiki-articles-10000.json
 ./quickwit index search --index wikipedia --query "barack AND obama"
