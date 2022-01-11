@@ -83,13 +83,13 @@ Now we can create the index with the command:
 ./quickwit index create --index-config ./wikipedia_index_config.yaml
 ```
 
-Check that a directory `./qwdata/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../overview/architecture.md#index-metadata).
+Check that a directory `./qwdata/wikipedia` has been created, Quickwit will write index files here and a `quickwit.json` which contains the [index metadata](../design/architecture.md#index).
 You're now ready to fill the index.
 
 
 ## Let's add some documents
 
-Quickwit can index data from many [sources](./sources.md). We will use a new line delimited json [ndjson](http://ndjson.org/) datasets as our data source.
+Quickwit can index data from many [sources](../reference/source-config.md). We will use a new line delimited json [ndjson](http://ndjson.org/) datasets as our data source.
 Let's download [a bunch of wikipedia articles (10 000)](https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json) in [ndjson](http://ndjson.org/) format and index it.
 
 ```bash
@@ -97,7 +97,7 @@ Let's download [a bunch of wikipedia articles (10 000)](https://quickwit-dataset
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 
 # Index our 10k documents.
-./quickwit index ingest --index wikipedia --input-path ./wiki-articles-10000.json
+./quickwit index ingest --index wikipedia --input-path wiki-articles-10000.json
 ```
 
 Wait one second or two and check if it worked by using `search` command:
@@ -111,7 +111,7 @@ It should return 10 hits. Now you're ready to serve our search API.
 
 ## Start the search service
 
-Quickwit provides a search [REST API](../reference/search-api.md) that can be started using the `service` subcommand.
+Quickwit provides a search [REST API](../reference/rest-api.md) that can be started using the `service` subcommand.
 
 ```bash
 ./quickwit service run searcher 
@@ -165,7 +165,7 @@ curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.c
 
 ## Next tutorials
 
-- [Search on logs with timestamp pruning](../tutorials/tutorial-hdfs-logs.md)
-- [Setup a distributed search on AWS S3](../tutorials/tutorial-hdfs-logs-distributed-search-aws-s3.md)
+- [Search on logs with timestamp pruning](../guides/tutorial-hdfs-logs.md)
+- [Setup a distributed search on AWS S3](../guides/tutorial-hdfs-logs-distributed-search-aws-s3.md)
 
 

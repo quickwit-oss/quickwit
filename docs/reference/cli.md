@@ -3,7 +3,7 @@ title: CLI Reference
 sidebar_position: 1
 ---
 
-Quickwit command line tool lets you create, ingest, search, start search and indexer servers. For configuration, `quickwit` needs a [config file path](config.md) that you can specify with `QW_CONFIG` environment variable: `export QW_CONFIG=./config/quickwit.yaml`.
+Quickwit command line tool lets you create, ingest, search, start search and indexer servers. For configuration, `quickwit` needs a [config file path](quickwit-config.md) that you can specify with `QW_CONFIG` environment variable: `export QW_CONFIG=./config/quickwit.yaml`.
 
 This page documents all the available commands, related options, and environment variables.
 
@@ -56,7 +56,9 @@ The CLI is structured into high-level commands with subcommands.
 * `command`: `index`, `split`, `source` and `service`. 
 
 
-[comment]: <> (Insert auto generated CLI docs from here.)
+
+{/* Insert auto generated CLI docs from here. */}
+
 
 
 ## index
@@ -66,7 +68,7 @@ Create your index, ingest data, search, describe... every command you need to ma
 
 Creates an index of ID `index` at `index-uri` configured by a [YAML config file](index-config.md) located at `index-config`.
 The index config lets you define the mapping of your document on the index and how each field is stored and indexed.
-If `index-uri` is omitted, `index-uri` will be set to `{default_index_root_uri}/{index}`, more info on [Quickwit config docs](config.md).
+If `index-uri` is omitted, `index-uri` will be set to `{default_index_root_uri}/{index}`, more info on [Quickwit config docs](quickwit-config.md).
 The command fails if an index already exists unless `overwrite` is passed. 
 When `overwrite` is enabled, the command deletes all the files stored at `index-uri` before creating a new index. 
   
@@ -222,25 +224,25 @@ quickwit index search
 
 *Searching a index*
 ```bash
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama"
+quickwit index search --index wikipedia --query "Barack Obama" --config ./config/quickwit.yaml
 # If you have jq installed.
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama" | jq '.hits[].title'
+quickwit index search --index wikipedia --query "Barack Obama" --config ./config/quickwit.yaml | jq '.hits[].title'
 
 ```
 
 *Limiting the result set to 50 hits*
 ```bash
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama" --max-hits 50
+quickwit index search --index wikipedia --query "Barack Obama" --max-hits 50 --config ./config/quickwit.yaml
 # If you have jq installed.
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama" --max-hits 50 | jq '.numHits'
+quickwit index search --index wikipedia --query "Barack Obama" --max-hits 50 --config ./config/quickwit.yaml | jq '.numHits'
 
 ```
 
 *Looking for matches in the title only*
 ```bash
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "search" --search-fields title
+quickwit index search --index wikipedia --query "search" --search-fields title --config ./config/quickwit.yaml
 # If you have jq installed.
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "search" --search-fields title | jq '.hits[].title'
+quickwit index search --index wikipedia --query "search" --search-fields title --config ./config/quickwit.yaml | jq '.hits[].title'
 
 ```
 
@@ -336,52 +338,6 @@ Possible values are `staged`, `published`, and `marked`.
 `--tags` Comma-separated list of tags, only splits that contain all of the tags will be returned.    
 `--config` Quickwit config file.    
 `--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.    
-### split extract
-
-Downloads and extracts a split to a directory.  
-`quickwit split extract [args]`
-
-*Synopsis*
-
-```bash
-quickwit split extract
-    --index <index>
-    --split <split>
-    --config <config>
-    [--data-dir <data-dir>]
-    --target-dir <target-dir>
-```
-
-*Options*
-
-`--index` ID of the target index.    
-`--split` ID of the target split.    
-`--config` Quickwit config file.    
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.    
-`--target-dir` Directory to extract the split to.    
-### split describe
-
-Displays metadata about the split.  
-`quickwit split describe [args]`
-
-*Synopsis*
-
-```bash
-quickwit split describe
-    --index <index>
-    --split <split>
-    --config <config>
-    [--data-dir <data-dir>]
-    [--verbose]
-```
-
-*Options*
-
-`--index` ID of the target index.    
-`--split` ID of the target split.    
-`--config` Quickwit config file.    
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.    
-`--verbose` Displays additional metadata about the hotcache.    
 ## service
 Launches services.
 
@@ -391,7 +347,7 @@ Starts a service. Currently, the only services available are `indexer` and `sear
 `quickwit service run [args]`
 ### service run searcher
 
-Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](search-api.md)
+Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
 where `rest_listing_address` and `rest_list_port` are defined in Quickwit config file (quickwit.yaml).
 The node can optionally join a cluster using the `peer_seeds` parameter. 
 This list of node addresses is used to discover the remaining peer nodes in the cluster through a gossip protocol (SWIM).
@@ -434,8 +390,7 @@ quickwit service run searcher --config=./config/quickwit.yaml
 # Start a searcher.
 quickwit service run searcher --config=./config/quickwit.yaml
 # Make a request.
-curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+obama" 
-
+curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+obama"
 ```
 
 *Make a search stream request on a Github archive index*
@@ -451,7 +406,6 @@ quickwit service run searcher --config=./config/quickwit.yaml
 curl "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j&fastField=id&outputFormat=csv"
 # Make a search stream request with HTTP2.
 curl --http2-prior-knowledge "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j&fastField=id&outputFormat=csv"
-
 ```
 
 ### service run indexer
@@ -480,7 +434,7 @@ quickwit service run indexer
 *Add a source to an index and start an Indexer*
 ```bash
 quickwit source add --index wikipedia --source wikipedia-source --type file --params '{"filepath":"wiki-articles-10000.json"}'
-quickwit service run indexer --config=./config/quickwit.yaml --indexes wikipedia
+quickwit service run indexer --indexes wikipedia --config=./config/quickwit.yaml
 
 ```
 
@@ -515,8 +469,7 @@ quickwit source add
 
 *Add a file source to `wikipedia` index*
 ```bash
-quickwit source add --index wikipedia --source wikipedia-source --type file --params '{"filepath":"wiki-articles-10000.json"}'
-
+quickwit source add --index wikipedia --source wikipedia-source --type file --params '{"filepath":"wiki-articles-10000.json"}' --config ./config/quickwit.yaml
 ```
 
 *Add a Kafka source to `wikipedia` index*
@@ -531,8 +484,7 @@ cat << EOF > wikipedia-kafka-source.json
   }
 }
 EOF
-quickwit source add --index wikipedia --source wikipedia-source --type kafka --params wikipedia-kafka-source.json
-
+quickwit source add --index wikipedia --source wikipedia-source --type kafka --params wikipedia-kafka-source.json --config ./config/quickwit.yaml
 ```
 
 ### source delete
@@ -559,9 +511,7 @@ quickwit source delete
 
 *Delete a `wikipedia-source` source*
 ```bash
- 
-quickwit source delete --index wikipedia --source wikipedia-source
-
+quickwit source delete --index wikipedia --source wikipedia-source --config ./config/quickwit.yaml
 ```
 
 ### source describe
@@ -583,6 +533,14 @@ quickwit source describe
 `--index` ID of the target index.    
 `--source` ID of the target source.    
 `--config` Quickwit config file.    
+
+*Examples*
+
+*Describe a `wikipedia-source` source*
+```bash
+quickwit source describe --index wikipedia --source wikipedia-source --config ./config/quickwit.yaml
+```
+
 ### source list
 
 Lists the sources of an index.  
@@ -601,10 +559,16 @@ quickwit source list
 `--index` ID of the target index.    
 `--config` Quickwit config file.    
 
+*Examples*
+
+*List `wikipedia` index sources*
+```bash
+quickwit source list --index wikipedia --config ./config/quickwit.yaml
+```
 
 
 
-[comment]: <> (End of auto generated CLI docs.)
+{/* End of auto generated CLI docs. */}
 
 
 ## Environment Variables

@@ -55,25 +55,25 @@ These timestamp options are useful for boosting query performance when using a t
 [[index.search.examples]]
 name = "Searching a index"
 command = '''
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama"
+quickwit index search --index wikipedia --query "Barack Obama" --config ./config/quickwit.yaml
 # If you have jq installed.
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama" | jq '.hits[].title'
+quickwit index search --index wikipedia --query "Barack Obama" --config ./config/quickwit.yaml | jq '.hits[].title'
 '''
 
 [[index.search.examples]]
 name = "Limiting the result set to 50 hits"
 command = '''
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama" --max-hits 50
+quickwit index search --index wikipedia --query "Barack Obama" --max-hits 50 --config ./config/quickwit.yaml
 # If you have jq installed.
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "Barack Obama" --max-hits 50 | jq '.numHits'
+quickwit index search --index wikipedia --query "Barack Obama" --max-hits 50 --config ./config/quickwit.yaml | jq '.numHits'
 '''
 
 [[index.search.examples]]
 name = "Looking for matches in the title only"
 command = '''
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "search" --search-fields title
+quickwit index search --index wikipedia --query "search" --search-fields title --config ./config/quickwit.yaml
 # If you have jq installed.
-quickwit index search --index wikipedia --config ./config/quickwit.yaml --query "search" --search-fields title | jq '.hits[].title'
+quickwit index search --index wikipedia --query "search" --search-fields title --config ./config/quickwit.yaml | jq '.hits[].title'
 '''
 
 [[index.describe.examples]]
@@ -106,7 +106,7 @@ command = '''quickwit index delete --index wikipedia --config ./config/quickwit.
 
 [service.run.searcher]
 long_about = """
-Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](search-api.md)
+Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
 where `rest_listing_address` and `rest_list_port` are defined in Quickwit config file (quickwit.yaml).
 The node can optionally join a cluster using the `peer_seeds` parameter. 
 This list of node addresses is used to discover the remaining peer nodes in the cluster through a gossip protocol (SWIM).
@@ -162,14 +162,14 @@ Starts an indexing server that consumes the sources of index IDs passed in `--in
 name = "Add a source to an index and start an Indexer"
 command = '''
 quickwit source add --index wikipedia --source wikipedia-source --type file --params '{"filepath":"wiki-articles-10000.json"}'
-quickwit service run indexer --config=./config/quickwit.yaml --indexes wikipedia
+quickwit service run indexer --indexes wikipedia --config=./config/quickwit.yaml
 '''
 
 
 [[source.add.examples]]
 name = "Add a file source to `wikipedia` index"
 command = '''
-quickwit source add --index wikipedia --source wikipedia-source --type file --params '{"filepath":"wiki-articles-10000.json"}'
+quickwit source add --index wikipedia --source wikipedia-source --type file --params '{"filepath":"wiki-articles-10000.json"}' --config ./config/quickwit.yaml
 '''
 
 [[source.add.examples]]
@@ -185,11 +185,24 @@ cat << EOF > wikipedia-kafka-source.json
   }
 }
 EOF
-quickwit source add --index wikipedia --source wikipedia-source --type kafka --params wikipedia-kafka-source.json
+quickwit source add --index wikipedia --source wikipedia-source --type kafka --params wikipedia-kafka-source.json --config ./config/quickwit.yaml
 '''
+
+[[source.describe.examples]]
+name = "Describe a `wikipedia-source` source"
+command = '''
+quickwit source describe --index wikipedia --source wikipedia-source --config ./config/quickwit.yaml
+'''
+
+[[source.list.examples]]
+name = "List `wikipedia` index sources"
+command = '''
+quickwit source list --index wikipedia --config ./config/quickwit.yaml
+'''
+
 
 [[source.delete.examples]]
 name = "Delete a `wikipedia-source` source"
-command = ''' 
-quickwit source delete --index wikipedia --source wikipedia-source
+command = '''
+quickwit source delete --index wikipedia --source wikipedia-source --config ./config/quickwit.yaml
 '''
