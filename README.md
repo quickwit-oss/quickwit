@@ -9,7 +9,7 @@
   <img src="docs/assets/images/logo_horizontal.svg" alt="Quickwit" height="100">
 </p>
 <h4 align="center">
-  <a href="https://quickwit.io/docs/getting-started/quickstart">Quickstart</a> |
+  <a href="https://quickwit.io/docs/get-started/quickstart">Quickstart</a> |
   <a href="https://quickwit.io/docs/">Docs</a> |
   <a href="https://quickwit.io/docs/guides/tutorial-hdfs-logs">Tutorials</a> |
   <a href="https://discord.gg/rpRRTezWhW">Chat</a> |
@@ -38,7 +38,7 @@ Not only is Quickwit more cost-efficient, but search clusters are also easier to
 
 
 - [Get started](https://quickwit.io/docs/get-started/quickstart)
-- [Look at the feature set](https://quickwit.io/docs/introduction)
+- [Look at the feature set](https://quickwit.io/docs/introduction#key-features-of-quickwit)
 
 
 <p align="center">
