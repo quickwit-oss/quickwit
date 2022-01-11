@@ -67,7 +67,7 @@ sources:
 ## Index uri
 
 The index-uri defines where the index files (also called splits) should be stored.
-This parameter expected a [storage uri](storage-uri).
+This parameter expects a [storage uri](storage-uri).
 
 
 The `index-uri` parameter is optional.
