@@ -1,6 +1,6 @@
 ---
 title: Quickwit's hosts and ports
-position: 7
+position: 8
 ---
 
 When starting a quickwit search server, one important parameter that can be configured is

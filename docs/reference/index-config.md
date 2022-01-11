@@ -1,6 +1,6 @@
 ---
 title: Index configuration
-position: 3
+position: 4
 ---
 
 This page describes how to configure an index.

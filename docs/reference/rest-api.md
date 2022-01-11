@@ -1,6 +1,6 @@
 ---
 title: Search REST API
-position: 5
+position: 9
 ---
 
 ## API version
