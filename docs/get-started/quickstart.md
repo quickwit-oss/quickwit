@@ -49,7 +49,7 @@ And here is the complete config:
 
 ```yaml title="wikipedia_index_config.yaml"
 version: 0
-
+index_id: wikipedia
 doc_mapping:
   field_mappings:
     - name: title
