@@ -65,7 +65,7 @@ impl TypedSourceFactory for VoidSourceFactory {
 #[cfg(test)]
 mod tests {
     use quickwit_actors::{create_test_mailbox, Health, Supervisable, Universe};
-    use quickwit_config::SourceType;
+    use quickwit_config::SourceParams;
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use serde_json::json;
 
@@ -76,7 +76,7 @@ mod tests {
     async fn test_void_source_loading() -> anyhow::Result<()> {
         let source_config = SourceConfig {
             source_id: "void-test-source".to_string(),
-            source_type: SourceType::void(),
+            source_params: SourceParams::void(),
         };
         let source_loader = quickwit_supported_sources();
         let _ = source_loader

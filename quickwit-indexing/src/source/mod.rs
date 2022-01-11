@@ -36,7 +36,7 @@ pub use file_source::{FileSource, FileSourceFactory};
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox};
-use quickwit_config::{SourceConfig, SourceType};
+use quickwit_config::{SourceConfig, SourceParams};
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
@@ -177,8 +177,8 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
 }
 
 pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::Result<()> {
-    match &source_config.source_type {
-        SourceType::File(params) => {
+    match &source_config.source_params {
+        SourceParams::File(params) => {
             if let Some(filepath) = &params.filepath {
                 if !Path::new(filepath).exists() {
                     bail!("File `{}` does not exist.", filepath.display())
@@ -187,7 +187,7 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
             Ok(())
         }
         #[allow(unused_variables)]
-        SourceType::Kafka(params) => {
+        SourceParams::Kafka(params) => {
             #[cfg(not(feature = "kafka"))]
             bail!("Quickwit binary was not compiled with the `kafka` feature.");
 
@@ -212,28 +212,28 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "void".to_string(),
-                source_type: SourceType::void(),
+                source_params: SourceParams::void(),
             };
             check_source_connectivity(&source_config).await?;
         }
         {
             let source_config = SourceConfig {
                 source_id: "vec".to_string(),
-                source_type: SourceType::Vec(VecSourceParams::default()),
+                source_params: SourceParams::Vec(VecSourceParams::default()),
             };
             check_source_connectivity(&source_config).await?;
         }
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                source_type: SourceType::file("file-does-not-exist.json"),
+                source_params: SourceParams::file("file-does-not-exist.json"),
             };
             assert!(check_source_connectivity(&source_config).await.is_err());
         }
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                source_type: SourceType::file("data/test_corpus.json"),
+                source_params: SourceParams::file("data/test_corpus.json"),
             };
             assert!(check_source_connectivity(&source_config).await.is_ok());
         }

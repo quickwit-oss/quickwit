@@ -21,7 +21,7 @@ use anyhow::{bail, Context};
 use clap::ArgMatches;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::{SourceConfig, SourceType};
+use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
@@ -184,18 +184,18 @@ async fn add_source_cli(args: AddSourceArgs) -> anyhow::Result<()> {
         .resolve(&config.metastore_uri)
         .await?;
     let params = sniff_params(&args.params).await?;
-    let mut source_type_json: Map<String, Value> = Map::new();
-    source_type_json.insert("source_type".to_string(), Value::String(args.source_type));
-    source_type_json.insert("params".to_string(), Value::Object(params));
-    let source_type: SourceType = serde_json::from_value(Value::Object(source_type_json))?;
-    if let SourceType::File(file_source_params) = &source_type {
+    let mut source_params_json: Map<String, Value> = Map::new();
+    source_params_json.insert("source_type".to_string(), Value::String(args.source_type));
+    source_params_json.insert("params".to_string(), Value::Object(params));
+    let source_params: SourceParams = serde_json::from_value(Value::Object(source_params_json))?;
+    if let SourceParams::File(file_source_params) = &source_params {
         if file_source_params.filepath.is_none() {
             bail!("Source of type `file` must contain a `filepath`")
         }
     }
     let source = SourceConfig {
         source_id: args.source_id.clone(),
-        source_type,
+        source_params,
     };
     check_source_connectivity(&source).await?;
 
@@ -529,7 +529,7 @@ mod tests {
             .collect();
         let sources = vec![SourceConfig {
             source_id: "foo-source".to_string(),
-            source_type: SourceType::file("path/to/file"),
+            source_params: SourceParams::file("path/to/file"),
         }];
         let expected_source = vec![SourceRow {
             source_id: "foo-source".to_string(),
@@ -592,11 +592,11 @@ mod tests {
         let sources = [
             SourceConfig {
                 source_id: "foo-source".to_string(),
-                source_type: SourceType::stdin(),
+                source_params: SourceParams::stdin(),
             },
             SourceConfig {
                 source_id: "bar-source".to_string(),
-                source_type: SourceType::stdin(),
+                source_params: SourceParams::stdin(),
             },
         ];
         let expected_sources = [

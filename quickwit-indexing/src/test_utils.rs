@@ -20,7 +20,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use quickwit_config::{build_doc_mapper, IndexerConfig, SourceConfig, SourceType, VecSourceParams};
+use quickwit_config::{build_doc_mapper, IndexerConfig, SourceConfig, SourceParams, VecSourceParams};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, Metastore, Split, SplitMetadata, SplitState,
@@ -114,7 +114,7 @@ impl TestSandbox {
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let source = SourceConfig {
             source_id: self.index_id.clone(),
-            source_type: SourceType::Vec(VecSourceParams {
+            source_params: SourceParams::Vec(VecSourceParams {
                 items: docs,
                 batch_num_docs: 10,
                 partition: format!("add-docs-{}", add_docs_id),

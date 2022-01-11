@@ -115,7 +115,7 @@ impl SourceLoader {
 #[cfg(test)]
 mod tests {
 
-    use quickwit_config::SourceType;
+    use quickwit_config::SourceParams;
 
     use super::*;
     use crate::source::quickwit_supported_sources;
@@ -125,7 +125,7 @@ mod tests {
         let source_loader = quickwit_supported_sources();
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
-            source_type: SourceType::void(),
+            source_params: SourceParams::void(),
         };
         source_loader
             .load_source(source_config, SourceCheckpoint::default())

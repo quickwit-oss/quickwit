@@ -31,7 +31,7 @@ use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType};
 use quickwit_common::uri::Uri;
 use quickwit_common::{run_checklist, GREEN_COLOR};
-use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig, SourceType};
+use quickwit_config::{IndexConfig, IndexerConfig, SourceConfig, SourceParams};
 use quickwit_core::{create_index, delete_index, garbage_collect_index, reset_index};
 use quickwit_doc_mapper::tag_pruning::match_tag_field_name;
 use quickwit_indexing::actors::{IndexingPipeline, IndexingServer};
@@ -625,14 +625,14 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
 
     let config = load_quickwit_config(args.config_uri, args.data_dir).await?;
 
-    let source_type = if let Some(filepath) = args.input_path_opt.as_ref() {
-        SourceType::file(filepath)
+    let source_params = if let Some(filepath) = args.input_path_opt.as_ref() {
+        SourceParams::file(filepath)
     } else {
-        SourceType::stdin()
+        SourceParams::stdin()
     };
     let source = SourceConfig {
         source_id: INGEST_SOURCE_ID.to_string(),
-        source_type,
+        source_params,
     };
     run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();

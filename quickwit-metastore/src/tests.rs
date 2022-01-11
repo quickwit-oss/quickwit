@@ -24,7 +24,7 @@ pub mod test_suite {
 
     use async_trait::async_trait;
     use chrono::Utc;
-    use quickwit_config::{SourceConfig, SourceType};
+    use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use tokio::time::{sleep, Duration};
 
@@ -86,7 +86,7 @@ pub mod test_suite {
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            source_type: SourceType::void(),
+            source_params: SourceParams::void(),
         };
 
         assert_eq!(
@@ -139,7 +139,7 @@ pub mod test_suite {
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            source_type: SourceType::void(),
+            source_params: SourceParams::void(),
         };
 
         let mut index_metadata = IndexMetadata::for_test(index_id, index_uri);

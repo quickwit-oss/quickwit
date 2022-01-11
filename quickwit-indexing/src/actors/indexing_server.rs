@@ -27,7 +27,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, AsyncActor, Health, Mailbox, Observation,
     Supervisable, Universe,
 };
-use quickwit_config::{IndexerConfig, SourceConfig, SourceType, VecSourceParams};
+use quickwit_config::{IndexerConfig, SourceConfig, SourceParams, VecSourceParams};
 use quickwit_metastore::{IndexMetadata, Metastore};
 use quickwit_storage::StorageUriResolver;
 use serde::Serialize;
@@ -327,7 +327,7 @@ impl IndexingServer {
 
         let source = SourceConfig {
             source_id: pipeline_id.source_id.clone(),
-            source_type: SourceType::Vec(VecSourceParams::default()),
+            source_params: SourceParams::Vec(VecSourceParams::default()),
         };
         self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_metadata, source)
             .await?;
@@ -505,7 +505,7 @@ mod tests {
         // Test `spawn_pipeline`.
         let source_1 = SourceConfig {
             source_id: "test-indexing-server--source-1".to_string(),
-            source_type: SourceType::void(),
+            source_params: SourceParams::void(),
         };
         let pipeline_id1 = client
             .spawn_pipeline(index_id.clone(), source_1.clone())
@@ -534,7 +534,7 @@ mod tests {
 
         let source_2 = SourceConfig {
             source_id: "test-indexing-server--source-2".to_string(),
-            source_type: SourceType::void(),
+            source_params: SourceParams::void(),
         };
         metastore.add_source(&index_id, source_2).await.unwrap();
         client.spawn_pipelines(index_id.clone()).await.unwrap();
@@ -553,7 +553,7 @@ mod tests {
         // Test `supervise_pipelines`
         let source_3 = SourceConfig {
             source_id: "test-indexing-server--source-3".to_string(),
-            source_type: SourceType::Vec(VecSourceParams {
+            source_params: SourceParams::Vec(VecSourceParams {
                 items: Vec::new(),
                 batch_num_docs: 10,
                 partition: "0".to_string(),

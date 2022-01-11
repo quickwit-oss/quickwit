@@ -33,7 +33,7 @@ use quickwit_doc_mapper::{
 use serde::{Deserialize, Serialize};
 
 use crate::source_config::SourceConfig;
-use crate::SourceType;
+use crate::SourceParams;
 
 // Note(fmassot): `DocMapping` is a struct only used for
 // serialization/deserialization of `DocMapper` parameters.
@@ -279,7 +279,7 @@ impl IndexConfig {
 
         // We want to forbid file source with no filepath.
         for source in self.sources.iter() {
-            if let SourceType::File(file_source_params) = &source.source_type {
+            if let SourceParams::File(file_source_params) = &source.source_params {
                 if file_source_params.filepath.is_none() {
                     bail!(
                         "Source `{}` of type `file` must contain a `filepath`",
@@ -335,7 +335,7 @@ pub fn build_doc_mapper(
 mod tests {
 
     use super::*;
-    use crate::{FileSourceParams, SourceType};
+    use crate::{FileSourceParams, SourceParams};
 
     fn get_resource_path(resource_filename: &str) -> String {
         format!(
@@ -429,12 +429,12 @@ mod tests {
                 {
                     let source = &index_config.sources[0];
                     assert_eq!(source.source_id, "hdfs-logs-kafka-source");
-                    assert!(matches!(source.source_type, SourceType::Kafka(_)));
+                    assert!(matches!(source.source_type, SourceParams::Kafka(_)));
                 }
                 {
                     let source = &index_config.sources[1];
                     assert_eq!(source.source_id, "hdfs-logs-kinesis-source");
-                    assert!(matches!(source.source_type, SourceType::Kinesis(_)));
+                    assert!(matches!(source.source_type, SourceParams::Kinesis(_)));
                 }
                 Ok(())
             }
@@ -551,11 +551,11 @@ mod tests {
             invalid_index_config.sources = vec![
                 SourceConfig {
                     source_id: "void_1".to_string(),
-                    source_type: SourceType::void(),
+                    source_params: SourceParams::void(),
                 },
                 SourceConfig {
                     source_id: "void_1".to_string(),
-                    source_type: SourceType::void(),
+                    source_params: SourceParams::void(),
                 },
             ];
             assert!(invalid_index_config.validate().is_err());
@@ -570,7 +570,7 @@ mod tests {
             let mut invalid_index_config = index_config.clone();
             invalid_index_config.sources = vec![SourceConfig {
                 source_id: "file_params_1".to_string(),
-                source_type: SourceType::File(FileSourceParams { filepath: None }),
+                source_params: SourceParams::File(FileSourceParams { filepath: None }),
             }];
             assert!(invalid_index_config.validate().is_err());
             assert!(invalid_index_config

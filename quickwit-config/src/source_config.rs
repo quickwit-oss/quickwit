@@ -27,28 +27,28 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub struct SourceConfig {
     pub source_id: String,
     #[serde(flatten)]
-    pub source_type: SourceType,
+    pub source_params: SourceParams,
 }
 
 impl SourceConfig {
     pub fn source_type(&self) -> &str {
-        match self.source_type {
-            SourceType::File(_) => "file",
-            SourceType::Kafka(_) => "kafka",
-            SourceType::Kinesis(_) => "kinesis",
-            SourceType::Vec(_) => "vec",
-            SourceType::Void(_) => "void",
+        match self.source_params {
+            SourceParams::File(_) => "file",
+            SourceParams::Kafka(_) => "kafka",
+            SourceParams::Kinesis(_) => "kinesis",
+            SourceParams::Vec(_) => "vec",
+            SourceParams::Void(_) => "void",
         }
     }
 
     // TODO: Remove after source factory refactor.
     pub fn params(&self) -> serde_json::Value {
-        match &self.source_type {
-            SourceType::File(params) => serde_json::to_value(params),
-            SourceType::Kafka(params) => serde_json::to_value(params),
-            SourceType::Kinesis(params) => serde_json::to_value(params),
-            SourceType::Vec(params) => serde_json::to_value(params),
-            SourceType::Void(params) => serde_json::to_value(params),
+        match &self.source_params {
+            SourceParams::File(params) => serde_json::to_value(params),
+            SourceParams::Kafka(params) => serde_json::to_value(params),
+            SourceParams::Kinesis(params) => serde_json::to_value(params),
+            SourceParams::Vec(params) => serde_json::to_value(params),
+            SourceParams::Void(params) => serde_json::to_value(params),
         }
         .unwrap()
     }
@@ -56,7 +56,7 @@ impl SourceConfig {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "source_type", content = "params")]
-pub enum SourceType {
+pub enum SourceParams {
     #[serde(rename = "file")]
     File(FileSourceParams),
     #[serde(rename = "kafka")]
@@ -70,7 +70,7 @@ pub enum SourceType {
     Void(VoidSourceParams),
 }
 
-impl SourceType {
+impl SourceParams {
     pub fn file<P: AsRef<Path>>(filepath: P) -> Self {
         Self::File(FileSourceParams::file(filepath))
     }
