@@ -57,8 +57,8 @@ The CLI is structured into high-level commands with subcommands.
 
 
 
+{/* Insert auto generated CLI docs from here. */}
 
-[comment]: <> (Insert auto generated CLI docs from here.)
 
 
 ## index
@@ -568,7 +568,7 @@ quickwit source list --index wikipedia --config ./config/quickwit.yaml
 
 
 
-[comment]: <> (End of auto generated CLI docs.)
+{/* End of auto generated CLI docs. */}
 
 
 ## Environment Variables
