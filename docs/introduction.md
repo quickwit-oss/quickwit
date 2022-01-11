@@ -18,7 +18,7 @@ Common use cases for Quickwit include:
 
 Quickwit is designed to search straight from object storage allowing true decoupled compute and storage. Here is a non-exhaustive list of Quickwit’s key features:
 
-- **Scalable distributed search:** Host an arbitrary amount of indices on S3 and query them with a pool of search servers and with sub-second latency.
+- **Scalable distributed search:** Host an arbitrary number of indexes on Amazon S3 and answer search queries in less than a second with a small pool of stateless search instances.
 - **Stream indexing:** Ingest TB of data from your favorite distributed event streaming service. As of today, Quickwit supports Apache Kafka natively. The next releases will bring support for more platforms.
 - **Fault-tolerant architecture that won't lose data:** Quickwit achieves **exactly-once** processing for indexing and safely stores your data on highly reliable object storage services such as Amazon S3.
 - **Cloud-native, easy to operate:** Thanks to true decoupled compute and storage, search instances are stateless, add or remove search nodes within seconds.
