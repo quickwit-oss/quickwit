@@ -14,7 +14,7 @@ Moreover, Quickwit leverages existing infrastructure by relying on battled-teste
 
 ### Index storage
 
-Quickwit stores indexed data on Amazon S3. In a single-server deployment, this can also be your local disk. We plan to support HDFS or any other cloud storage.
+Quickwit stores indexed data on Amazon S3. In a single-server deployment, this can also be your local disk. We plan to support other cloud storage, as well as HDFS.
 
 ### Metastore
 
