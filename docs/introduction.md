@@ -21,7 +21,7 @@ Quickwit allows true decoupled compute and storage and we designed it to search 
 - **Scalable distributed search:** Host an arbitrary amount of indices on S3 and query them with a pool of search servers and with sub-second latency.
 - **Stream indexing:** Plug in your distributed event streaming platform and ingest TB of data. As of today, Quickwit supports Kafka natively.
 - **Fault-tolerant architecture that won't lose data:** Quickwit ensures **exactly-once** semantics for indexing and your data can be safely stored on highly reliable deep storage like S3.
-- **Cloud-native, easy to operate:** Thanks to true decoupled compute and storage, search instances are stateless, you can add or remove search instances in seconds.
+- **Cloud-native, easy to operate:** Thanks to true decoupled compute and storage, search instances are stateless, add or remove search nodes within seconds.
 - **Sub-second full-text search on cloud / distributed storage:** Quickwit Search re-designed indexing and index data structure to open it in less than 60ms on Amazon S3**.**
 - **Time-based sharding:** Quickwit shards data by time when enabled. And you can use a second dimension to shard data thanks to our [tags feature](../design/querying.md). Time-based queries only access splits (a data piece of the index) that match the time range of the query which leads to significant performance improvements.
 - **Painless multi-tenant search:** Create indexes for each tenant without hurting query performance. Or group tenants into one index and use tagging to prune irrelevant splits for your tenant query to improve significantly performance.
