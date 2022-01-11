@@ -46,7 +46,7 @@ for the nested values `resource.service` . It also sets the `default_search_fiel
 
 ```yaml title="hdfs_logs_index_config.yaml"
 version: 0
-
+index_id: hdfs-logs
 doc_mapping:
   field_mappings:
     - name: timestamp
@@ -99,6 +99,11 @@ This can take up to 10 min on a modern machine, the perfect time for a coffee br
 
 ```bash
 curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants.json.gz | gunzip | ./quickwit index ingest --index hdfs-logs
+```
+
+If you are in a hurry, use the sample dataset that contains 10 000 documents:
+```bash
+curl https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json | ./quickwit index ingest --index hdfs-logs
 ```
 
 You can check it's working by using `search` subcommand and look for `ERROR` in `serverity_text` field:
@@ -210,7 +215,7 @@ Quickwit will use the configured `rest_listen_port` for serving the HTTP rest AP
 Let's execute a simple query that returns only `ERROR` entries on field `severity_text` on one of our searcher node:
 
 ```bash
-curl -v 'http://127.0.0.1:7280/api/v1/hdfs_logs/search?query=severity_text:ERROR
+curl 'http://127.0.0.1:7280/api/v1/hdfs-logs/search?query=severity_text:ERROR'
 ```
 
 ## Clean
