@@ -24,7 +24,7 @@ pub mod test_suite {
 
     use async_trait::async_trait;
     use chrono::Utc;
-    use quickwit_config::SourceConfig;
+    use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use tokio::time::{sleep, Duration};
 
@@ -86,8 +86,7 @@ pub mod test_suite {
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            source_type: "void".to_string(),
-            params: serde_json::json!({}),
+            source_params: SourceParams::void(),
         };
 
         assert_eq!(
@@ -112,7 +111,7 @@ pub mod test_suite {
         assert_eq!(sources.len(), 1);
         assert!(sources.contains_key(source_id));
         assert_eq!(sources.get(source_id).unwrap().source_id, source_id);
-        assert_eq!(sources.get(source_id).unwrap().source_type, "void");
+        assert_eq!(sources.get(source_id).unwrap().source_type(), "void");
 
         assert!(matches!(
             metastore
@@ -140,8 +139,7 @@ pub mod test_suite {
 
         let source = SourceConfig {
             source_id: source_id.to_string(),
-            source_type: "void".to_string(),
-            params: serde_json::json!({}),
+            source_params: SourceParams::void(),
         };
 
         let mut index_metadata = IndexMetadata::for_test(index_id, index_uri);

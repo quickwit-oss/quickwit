@@ -157,7 +157,7 @@ impl IndexMetadata {
         if let Entry::Occupied(_) = entry {
             return Err(MetastoreError::SourceAlreadyExists {
                 source_id: source_id.clone(),
-                source_type: source.source_type,
+                source_type: source.source_type().to_string(),
             });
         }
         entry.or_insert(source);

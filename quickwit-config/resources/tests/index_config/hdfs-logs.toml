@@ -36,7 +36,7 @@ default_search_fields = [ "severity_text", "body" ]
 [[sources]]
 source_id = "hdfs-logs-kafka-source"
 source_type = "kafka"
-params = { "bootstrap.servers" = "host:9092", "topic" = "cloudera-cluster-logs" }
+params = { "topic" = "cloudera-cluster-logs", "client_params" = { "bootstrap.servers" = "host:9092" } }
 
 [[sources]]
 source_id = "hdfs-logs-kinesis-source"

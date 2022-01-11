@@ -1,7 +1,9 @@
 {
   "index": {
     "checkpoint": {
-      "0000000000": "0000000042"
+      "kafka-source": {
+        "0000000000": "0000000042"
+      }
     },
     "create_timestamp": 1789,
     "doc_mapping": {
@@ -71,13 +73,16 @@
     },
     "sources": [
       {
-        "params": {},
+        "params": {
+          "client_params": {},
+          "topic": "kafka-topic"
+        },
         "source_id": "kafka-source",
         "source_type": "kafka"
       }
     ],
     "update_timestamp": 1789,
-    "version": "0"
+    "version": "1"
   },
   "splits": [
     {

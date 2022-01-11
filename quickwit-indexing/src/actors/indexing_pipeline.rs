@@ -590,10 +590,10 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::Universe;
+    use quickwit_config::{IndexingSettings, SourceParams};
     use quickwit_doc_mapper::default_doc_mapper_for_tests;
     use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
     use quickwit_storage::RamStorage;
-    use serde_json::json;
 
     use super::{IndexingPipeline, *};
     use crate::models::IndexingDirectory;
@@ -673,8 +673,7 @@ mod tests {
         let universe = Universe::new();
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
-            source_type: "file".to_string(),
-            params: json!({ "filepath": PathBuf::from("data/test_corpus.json") }),
+            source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
         let indexing_pipeline_params = IndexingPipelineParams {
             index_id: index_id.to_string(),
@@ -755,8 +754,7 @@ mod tests {
         let universe = Universe::new();
         let source = SourceConfig {
             source_id: "test-source".to_string(),
-            source_type: "file".to_string(),
-            params: json!({ "filepath": PathBuf::from("data/test_corpus.json") }),
+            source_params: SourceParams::file(PathBuf::from("data/test_corpus.json")),
         };
         let pipeline_params = IndexingPipelineParams {
             index_id: "test-index".to_string(),

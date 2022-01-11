@@ -31,15 +31,15 @@ use std::path::Path;
 
 use anyhow::bail;
 use async_trait::async_trait;
-pub use file_source::{FileSource, FileSourceFactory, FileSourceParams};
+pub use file_source::{FileSource, FileSourceFactory};
 #[cfg(feature = "kafka")]
-pub use kafka_source::{KafkaSource, KafkaSourceFactory, KafkaSourceParams};
+pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, AsyncActor, Mailbox};
-use quickwit_config::SourceConfig;
+use quickwit_config::{SourceConfig, SourceParams};
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
-pub use vec_source::{VecSource, VecSourceFactory, VecSourceParams};
-pub use void_source::{VoidSource, VoidSourceFactory, VoidSourceParams};
+pub use vec_source::{VecSource, VecSourceFactory};
+pub use void_source::{VoidSource, VoidSourceFactory};
 
 use crate::models::IndexerMessage;
 
@@ -177,58 +177,33 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
 }
 
 pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::Result<()> {
-    match source_config.source_type.as_ref() {
-        "file" => {
-            match source_config.params.get("filepath") {
-                Some(serde_json::Value::String(path)) => {
-                    if Path::new(&path).exists() {
-                        Ok(())
-                    } else {
-                        bail!("File `{}` does not exist.", path)
-                    }
-                }
-                None | Some(serde_json::Value::Null) => {
-                    if source_config.source_id == INGEST_SOURCE_ID {
-                        // We are indexing stdin using the ingest source.
-                        return Ok(());
-                    }
-                    bail!("Failed to parse source config params: property `filepath` is missing.")
-                }
-                Some(_) => {
-                    bail!(
-                        "Failed to parse source config params: property `filepath` is not a \
-                         string."
-                    )
+    match &source_config.source_params {
+        SourceParams::File(params) => {
+            if let Some(filepath) = &params.filepath {
+                if !Path::new(filepath).exists() {
+                    bail!("File `{}` does not exist.", filepath.display())
                 }
             }
+            Ok(())
         }
-        "kafka" => {
+        #[allow(unused_variables)]
+        SourceParams::Kafka(params) => {
             #[cfg(not(feature = "kafka"))]
-            bail!("Quickwit binary was not compiled with the Kafka source feature.");
+            bail!("Quickwit binary was not compiled with the `kafka` feature.");
 
             #[cfg(feature = "kafka")]
             {
-                let kafka_source_params: KafkaSourceParams =
-                    serde_json::from_value(source_config.params.clone())?;
-                kafka_source::check_connectivity(kafka_source_params).await?;
+                kafka_source::check_connectivity(params.clone()).await?;
                 Ok(())
             }
         }
-        "vec" => Ok(()),
-        "void" => Ok(()),
-        unrecognized_source_type => {
-            bail!(
-                "Unknown source type `{}` or connectivity check not implemented for this source \
-                 type.",
-                unrecognized_source_type
-            );
-        }
+        _ => Ok(()),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use quickwit_config::VecSourceParams;
 
     use super::*;
 
@@ -237,36 +212,28 @@ mod tests {
         {
             let source_config = SourceConfig {
                 source_id: "void".to_string(),
-                source_type: "void".to_string(),
-                params: json!(null),
+                source_params: SourceParams::void(),
             };
             check_source_connectivity(&source_config).await?;
         }
         {
             let source_config = SourceConfig {
                 source_id: "vec".to_string(),
-                source_type: "vec".to_string(),
-                params: json!(null),
+                source_params: SourceParams::Vec(VecSourceParams::default()),
             };
             check_source_connectivity(&source_config).await?;
         }
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                source_type: "file".to_string(),
-                params: json!({
-                    "filepath": "non-existing-file.json"
-                }),
+                source_params: SourceParams::file("file-does-not-exist.json"),
             };
             assert!(check_source_connectivity(&source_config).await.is_err());
         }
         {
             let source_config = SourceConfig {
                 source_id: "file".to_string(),
-                source_type: "file".to_string(),
-                params: json!({
-                    "filepath": "data/test_corpus.json"
-                }),
+                source_params: SourceParams::file("data/test_corpus.json"),
             };
             assert!(check_source_connectivity(&source_config).await.is_ok());
         }

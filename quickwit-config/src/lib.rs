@@ -19,6 +19,7 @@
 
 mod config;
 mod index_config;
+mod source_config;
 
 pub use config::{
     get_searcher_config_instance, IndexerConfig, QuickwitConfig, SearcherConfig,
@@ -26,5 +27,9 @@ pub use config::{
 };
 pub use index_config::{
     build_doc_mapper, DocMapping, IndexConfig, IndexingResources, IndexingSettings, MergePolicy,
-    SearchSettings, SourceConfig,
+    SearchSettings,
+};
+pub use source_config::{
+    FileSourceParams, KafkaSourceParams, SourceConfig, SourceParams, VecSourceParams,
+    VoidSourceParams,
 };

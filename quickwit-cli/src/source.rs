@@ -21,12 +21,12 @@ use anyhow::{bail, Context};
 use clap::ArgMatches;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::SourceConfig;
+use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, IndexMetadata};
 use quickwit_storage::load_file;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tabled::{Table, Tabled};
 
 use crate::{load_quickwit_config, make_table};
@@ -184,12 +184,17 @@ async fn add_source_cli(args: AddSourceArgs) -> anyhow::Result<()> {
         .resolve(&config.metastore_uri)
         .await?;
     let params = sniff_params(&args.params).await?;
+    let mut source_params_json: Map<String, Value> = Map::new();
+    source_params_json.insert("source_type".to_string(), Value::String(args.source_type));
+    source_params_json.insert("params".to_string(), Value::Object(params));
+    let source_params: SourceParams = serde_json::from_value(Value::Object(source_params_json))?;
     let source = SourceConfig {
         source_id: args.source_id.clone(),
-        source_type: args.source_type,
-        params,
+        source_params,
     };
+    source.validate()?;
     check_source_connectivity(&source).await?;
+
     metastore.add_source(&args.index_id, source).await?;
     println!(
         "Source `{}` successfully created for index `{}`.",
@@ -244,12 +249,12 @@ where
         .with_context(|| format!("Source `{}` does not exist.", source_id))?;
 
     let source_rows = vec![SourceRow {
-        source_id: source.source_id,
-        source_type: source.source_type,
+        source_id: source.source_id.clone(),
+        source_type: source.source_type().to_string(),
     }];
     let source_table = make_table("Source", source_rows);
 
-    let params_rows = flatten_json(source.params)
+    let params_rows = flatten_json(source.params())
         .into_iter()
         .map(|(key, value)| ParamsRow { key, value })
         .sorted_by(|left, right| left.key.cmp(&right.key));
@@ -279,8 +284,8 @@ where I: IntoIterator<Item = SourceConfig> {
     let rows = sources
         .into_iter()
         .map(|source| SourceRow {
+            source_type: source.source_type().to_string(),
             source_id: source.source_id,
-            source_type: source.source_type,
         })
         .sorted_by(|left, right| left.source_id.cmp(&right.source_id));
     make_table("Sources", rows)
@@ -346,14 +351,14 @@ fn flatten_json(value: Value) -> Vec<(String, Value)> {
 
 /// Tries to read a JSON object from a string, assuming the string is an inline JSON object or a
 /// path to a file holding a JSON object.
-async fn sniff_params(params: &str) -> anyhow::Result<Value> {
-    if let Ok(object @ Value::Object(_)) = serde_json::from_str(params) {
-        return Ok(object);
+async fn sniff_params(params: &str) -> anyhow::Result<Map<String, Value>> {
+    if let Ok(Value::Object(values)) = serde_json::from_str(params) {
+        return Ok(values);
     }
     let params_uri = Uri::try_new(params)?;
     let params_bytes = load_file(&params_uri).await?;
-    if let Ok(object @ Value::Object(_)) = serde_json::from_slice(params_bytes.as_slice()) {
-        return Ok(object);
+    if let Ok(Value::Object(values)) = serde_json::from_slice(params_bytes.as_slice()) {
+        return Ok(values);
     }
     bail!("Failed to parse JSON object from `{}`.", params)
 }
@@ -402,10 +407,10 @@ mod tests {
         sniff_params("0").await.unwrap_err();
         sniff_params("[]").await.unwrap_err();
 
-        assert!(matches!(
-            sniff_params(r#"{"foo": 0}"#).await.unwrap(),
-            Value::Object(map) if map.contains_key("foo")
-        ));
+        assert!(sniff_params(r#"{"foo": 0}"#)
+            .await
+            .unwrap()
+            .contains_key("foo"));
 
         let storage = quickwit_storage_uri_resolver()
             .resolve("ram:///tmp")
@@ -416,10 +421,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(matches!(
-            sniff_params("ram:///tmp/params.json").await.unwrap(),
-            Value::Object(map) if map.contains_key("bar")
-        ));
+        assert!(sniff_params("ram:///tmp/params.json")
+            .await
+            .unwrap()
+            .contains_key("bar"));
     }
 
     #[test]
@@ -520,8 +525,7 @@ mod tests {
             .collect();
         let sources = vec![SourceConfig {
             source_id: "foo-source".to_string(),
-            source_type: "file".to_string(),
-            params: json!({"filepath": "path/to/file"}),
+            source_params: SourceParams::file("path/to/file"),
         }];
         let expected_source = vec![SourceRow {
             source_id: "foo-source".to_string(),
@@ -584,13 +588,11 @@ mod tests {
         let sources = [
             SourceConfig {
                 source_id: "foo-source".to_string(),
-                source_type: "file".to_string(),
-                params: json!({}),
+                source_params: SourceParams::stdin(),
             },
             SourceConfig {
                 source_id: "bar-source".to_string(),
-                source_type: "file".to_string(),
-                params: json!({}),
+                source_params: SourceParams::stdin(),
             },
         ];
         let expected_sources = [

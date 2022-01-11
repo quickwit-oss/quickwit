@@ -32,12 +32,15 @@ use quickwit_doc_mapper::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::source_config::SourceConfig;
+
 // Note(fmassot): `DocMapping` is a struct only used for
 // serialization/deserialization of `DocMapper` parameters.
 // This is partly a duplicate of the `DocMapper` and can
 // be viewed as a temporary hack for 0.2 release before
 // refactoring.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DocMapping {
     pub field_mappings: Vec<FieldMappingEntry>,
     #[serde(default)]
@@ -47,6 +50,7 @@ pub struct DocMapping {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct IndexingResources {
     #[serde(default = "IndexingResources::default_num_threads")]
     pub num_threads: usize,
@@ -81,6 +85,7 @@ impl Default for IndexingResources {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct MergePolicy {
     #[serde(default = "MergePolicy::default_demux_factor")]
     pub demux_factor: usize,
@@ -119,6 +124,7 @@ fn is_false(val: &bool) -> bool {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct IndexingSettings {
     #[serde(default, skip_serializing_if = "is_false")]
     pub demux_enabled: bool,
@@ -195,19 +201,14 @@ impl Default for IndexingSettings {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SearchSettings {
     #[serde(default)]
     pub default_search_fields: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SourceConfig {
-    pub source_id: String,
-    pub source_type: String,
-    pub params: serde_json::Value,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IndexConfig {
     pub version: usize,
     pub index_id: String,
@@ -275,6 +276,10 @@ impl IndexConfig {
             bail!("Index config contains duplicate sources.")
         }
 
+        for source in self.sources.iter() {
+            source.validate()?;
+        }
+
         // Validation is made by building the doc mapper.
         // Note: this needs a deep refactoring to separate the doc mapping configuration,
         // and doc mapper implementations.
@@ -319,9 +324,9 @@ pub fn build_doc_mapper(
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
 
     use super::*;
+    use crate::SourceParams;
 
     fn get_resource_path(resource_filename: &str) -> String {
         format!(
@@ -415,12 +420,12 @@ mod tests {
                 {
                     let source = &index_config.sources[0];
                     assert_eq!(source.source_id, "hdfs-logs-kafka-source");
-                    assert_eq!(source.source_type, "kafka");
+                    assert!(matches!(source.source_params, SourceParams::Kafka(_)));
                 }
                 {
                     let source = &index_config.sources[1];
                     assert_eq!(source.source_id, "hdfs-logs-kinesis-source");
-                    assert_eq!(source.source_type, "kinesis");
+                    assert!(matches!(source.source_params, SourceParams::Kinesis(_)));
                 }
                 Ok(())
             }
@@ -537,13 +542,11 @@ mod tests {
             invalid_index_config.sources = vec![
                 SourceConfig {
                     source_id: "void_1".to_string(),
-                    source_type: "void".to_string(),
-                    params: json!(null),
+                    source_params: SourceParams::void(),
                 },
                 SourceConfig {
                     source_id: "void_1".to_string(),
-                    source_type: "void".to_string(),
-                    params: json!(null),
+                    source_params: SourceParams::void(),
                 },
             ];
             assert!(invalid_index_config.validate().is_err());
@@ -552,6 +555,20 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("Index config contains duplicate sources."));
+        }
+        {
+            // Add source file params with no filepath.
+            let mut invalid_index_config = index_config.clone();
+            invalid_index_config.sources = vec![SourceConfig {
+                source_id: "file_params_1".to_string(),
+                source_params: SourceParams::stdin(),
+            }];
+            assert!(invalid_index_config.validate().is_err());
+            assert!(invalid_index_config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("must contain a `filepath`"));
         }
         {
             // Add a demux field not declared in the mapping.

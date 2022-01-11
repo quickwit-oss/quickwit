@@ -20,7 +20,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use quickwit_config::{build_doc_mapper, IndexerConfig, SourceConfig};
+use quickwit_config::{
+    build_doc_mapper, IndexerConfig, SourceConfig, SourceParams, VecSourceParams,
+};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{
     quickwit_metastore_uri_resolver, IndexMetadata, Metastore, Split, SplitMetadata, SplitState,
@@ -29,7 +31,6 @@ use quickwit_storage::{Storage, StorageUriResolver};
 
 use crate::actors::{IndexingServer, IndexingServerClient};
 use crate::models::IndexingStatistics;
-use crate::source::VecSourceParams;
 
 /// Creates a Test environment.
 ///
@@ -115,12 +116,11 @@ impl TestSandbox {
         let add_docs_id = self.add_docs_id.fetch_add(1, Ordering::SeqCst);
         let source = SourceConfig {
             source_id: self.index_id.clone(),
-            source_type: "vec".to_string(),
-            params: serde_json::to_value(VecSourceParams {
+            source_params: SourceParams::Vec(VecSourceParams {
                 items: docs,
                 batch_num_docs: 10,
                 partition: format!("add-docs-{}", add_docs_id),
-            })?,
+            }),
         };
         let pipeline_id = self
             .client

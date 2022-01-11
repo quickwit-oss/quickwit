@@ -73,7 +73,10 @@
     },
     "sources": [
       {
-        "params": {},
+        "params": {
+          "client_params": {},
+          "topic": "kafka-topic"
+        },
         "source_id": "kafka-source",
         "source_type": "kafka"
       }

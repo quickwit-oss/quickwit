@@ -48,8 +48,9 @@ sources:
   - source_id: hdfs-logs-kafka-source
     source_type: kafka
     params:
-      bootstrap.servers: host:9092
       topic: cloudera-cluster-logs
+      client_params:
+        bootstrap.servers: host:9092
 
   - source_id: hdfs-logs-kinesis-source
     source_type: kinesis
