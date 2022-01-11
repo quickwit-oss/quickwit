@@ -8,7 +8,7 @@ Quickwit has been designed from the ground up for cost-efficiency and scalabilit
 Quickwit core relies on two processes:
 
 - The Searchers for executing search queries from the REST API.
-- And the Indexers that index data from data sources.
+- The Indexers that index data from data sources.
 
 Moreover, Quickwit leverages existing infrastructure by relying on battled-tested technologies for index storage, metadata storage, and ingestion:
 
