@@ -103,10 +103,13 @@ pub async fn root_search(
 
     if !leaf_search_response.failed_splits.is_empty() {
         error!(failed_splits = ?leaf_search_response.failed_splits, "Leaf search response contains at least one failed split.");
-        return Err(SearchError::InternalError(format!(
-            "{:?}",
-            leaf_search_response.failed_splits
-        )));
+        let errors: String = leaf_search_response
+            .failed_splits
+            .iter()
+            .map(|splits| format!("{}", splits))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(SearchError::InternalError(errors));
     }
 
     // Create a hash map of PartialHit with split as a key.
