@@ -1,6 +1,6 @@
 [package]
 name = 'quickwit-search'
-version = '0.1.0'
+version = "0.2.0"
 authors = ['Quickwit, inc <hello@quickwit.io>']
 edition = '2021'
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
@@ -63,8 +63,8 @@ path = '../quickwit-metastore'
 path = '../quickwit-storage'
 
 [dev-dependencies]
-quickwit-proto = { version = "0.1", path = "../quickwit-proto" }
-quickwit-indexing = { version = "0.1.0", path = "../quickwit-indexing" }
+quickwit-proto = { version = "0.2", path = "../quickwit-proto" }
+quickwit-indexing = { version = "0.2.0", path = "../quickwit-indexing" }
 quickwit-metastore = {path = "../quickwit-metastore", features=["testsuite"]}
 serde_json = "1"
 assert-json-diff = "2"
