@@ -12,7 +12,7 @@ For instance:
 - The different sources checkpoints.
 - Some extra information such as the index creation time.
 
-The metastore is entirely defined by a single URI. One can set it by editing the `metastore_uri` parameter of the [Quickwit configuration file](https://www.notion.so/Quickwit-configuration-MERGED-3fab5a181a9a43cba83db2fb25b46729) (often named `quickwit.yaml`).
+The metastore is entirely defined by a single URI. One can set it by editing the `metastore_uri` parameter of the [Quickwit configuration file](./quickwit-config.md) (often named `quickwit.yaml`).
 
 Currently, Quickwit offers two implementations:
 
@@ -48,7 +48,7 @@ Likewise, if you upgrade Quickwit to a version that includes some changes in the
 
 For convenience, Quickwit also makes it possible to store its metadata in files using a file-backed metastore. In that case, Quickwit will write one file per index.
 
-The metastore is then configured by passing a [Storage URI](https://www.notion.so/Storage-URI-APPROVED-176d8befb8d144fb820bcd0df077a728) that will serve as the root of the metastore storage.
+The metastore is then configured by passing a [Storage URI](./storage-uri.md) that will serve as the root of the metastore storage.
 
 The metadata file associated with a given index will then be stored under 
 
@@ -57,7 +57,7 @@ The metadata file associated with a given index will then be stored under
 For the moment, Quickwit supports two types of storage types:
 
 - a local file system URI (e.g., `file:///opt/toto`). It is also valid to pass a file path directly (without file://). `/var/quickwit`. Relative paths will be resolved with respect to the current working directory.
-- S3-compatible storage URI (e.g. `s3://my-bucket/some-path`] ). See the [Storage URI](https://www.notion.so/Storage-URI-APPROVED-176d8befb8d144fb820bcd0df077a728) documentation to configure S3 or S3-compatible storage.
+- S3-compatible storage URI (e.g. `s3://my-bucket/some-path`] ). See the [Storage URI](./storage-uri.md) documentation to configure S3 or S3-compatible storage.
 
 ### Polling configuration
 
@@ -67,10 +67,10 @@ You can also configure it to poll the File-Backed Metastore periodically to keep
 
 To configure the polling interval (in seconds only), add a URI fragment to the storage URI like this: `s3://quickwit/my-indexes#polling_interval=30s`
 
-<aside>
-👌 Amazon S3 charges $0.0004 per 1000 GET requests. Polling a metastore every 30 seconds will induce a cost of $0.04 per month and per index.
+:::tip
+Amazon S3 charges $0.0004 per 1000 GET requests. Polling a metastore every 30 seconds will induce a cost of $0.04 per month and per index.
 
-</aside>
+:::
 
 ### Examples
 
@@ -86,9 +86,9 @@ file:///local/indices#polling_interval=30s
 ./quickwit-metastores
 ```
 
-<aside>
-⛔ The file-backed metastore does not allow concurrent writes. For this reason, it should not be used in distributed settings. 
+:::caution
+The file-backed metastore does not allow concurrent writes. For this reason, it should not be used in distributed settings. 
 Running several indexer services on the same file-backed metastore can lead to the corruption of the metastore.
 Running several search services, on the other hand, is perfectly safe.
 
-</aside>
+:::

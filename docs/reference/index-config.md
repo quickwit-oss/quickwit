@@ -74,22 +74,22 @@ The `index-uri` parameter is optional.
 By default, the `index-uri` will be computed by concatenating the `index-id` with the
 `default_index_root_uri` defined in the [Quickwit's config](quickwit-config).
 
-<aside>
-⚠️ The file storage will not work when running quickwit in distributed mode.
+
+:::caution
+The file storage will not work when running quickwit in distributed mode.
 Today, only the s3 storage is available when running several searcher nodes.
-</aside>
+:::
+
 
 ## Doc mapping
 
 The doc mapping defines how a document and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, date, i64, u64, f64).
 
-```markdown
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `field_mappings` | Collection of field mapping, each having its own data type (text, binary, date, i64, u64, f64).   | [] |
 | `tag_fields` | Collection of fields already defined in `field_mappings` whose values will be stored in a dedicated `tags` (1) | [] |
 | `store_source` | Whether or not the original JSON document is stored or not in the index.   | false |
-```
 
 (1) [Learn more on the tags usage](../design/querying.md).
 
@@ -117,33 +117,27 @@ record: position
 
 **Parameters for text field**
 
-```markdown
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `tokenizer` | Name of the `Tokenizer`, choices between `raw`, `default` and `stem_en` | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
-```
 
 **Description of available tokenizers**
 
-```markdown
 | Tokenizer     | Description   |
 | ------------- | ------------- |
 | `raw`         | Does not process nor tokenize text  |
 | `default`     | Chops the text on according to whitespace and punctuation, removes tokens that are too long, and lowercases tokens |
 | `stem_en`     |  Like `default`, but also applies stemming on the resulting tokens  |
-```
 
 **Description of record options**
 
-```markdown
 | Record option | Description   |
 | ------------- | ------------- |
 | `basic`       |  Records only the `DocId`s |
 | `freq`        |  Records the document ids as well as the term frequency  |
 | `position`    |  Records the document id, the term frequency and the positions of occurences.  |
-```
 
 Indexing with position is required to run phrase queries.
 
@@ -165,13 +159,11 @@ fast: true
 
 **Parameters for i64, u64 and f64 field**
 
-```markdown
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`      | Whether value is stored in a fast field | `false` |
-```
 
 #### `date` type
 
@@ -189,13 +181,11 @@ fast: true
 
 **Parameters for date field**
 
-```markdown
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`      | Whether value is stored in a fast field | `false` |
-```
 
 #### `bytes` type
 The `bytes` type accepts a binary value as a `Base64` encoded string.
@@ -212,13 +202,11 @@ fast: true
 
 **Parameters for bytes field**
 
-```markdown
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`     | Whether value is stored in a fast field | `false` |
-```
 
 ### Composite types
 
@@ -259,7 +247,6 @@ Fields with `null` or missing fields in your JSON document will be silently igno
 
 This section describes indexing settings for a given index.
 
-```markdown
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `timestamp_field`      | Timestamp field used for sharding documents in splits (1).   | None |
@@ -269,7 +256,6 @@ This section describes indexing settings for a given index.
 | `merge_policy.max_merge_factor`      | Maximum number of splits to merge.   | 12 |
 | `resources.num_threads`      | Number of threads per source.   | 1 |
 | `resources.heap_size`      | Indexer heap size per source per index.   | 2_000_000_000 |
-```
 
 (1) [Learn more on time sharding]( ../design/architecture.md)
 
@@ -283,11 +269,9 @@ Indexer works with a default heap of 2 GiB of memory. This does not directly ref
 
 This section describes search settings for a given index.
 
-```markdown
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `search_default_fields`      | Default list of fields that will be used for search.   | None |
-```
 
 ## Sources
 

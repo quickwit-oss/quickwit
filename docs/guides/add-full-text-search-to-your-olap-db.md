@@ -1,5 +1,5 @@
 ---
-title: Add full-text search to Clickhouse
+title: Full-text search on Clickhouse
 sidebar_position: 2
 ---
 
