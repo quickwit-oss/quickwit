@@ -309,7 +309,7 @@ fn merge_leaf_responses(
     }
     let num_attempted_splits = leaf_responses
         .iter()
-        .map(|leaf_response| leaf_response.num_hits)
+        .map(|leaf_response| leaf_response.num_attempted_splits)
         .sum();
     let num_hits: u64 = leaf_responses
         .iter()
