@@ -228,7 +228,7 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     )?;
     let filtered_splits_table = make_list_splits_table(filtered_splits);
 
-    println!("{}", filtered_splits_table.to_string());
+    println!("{filtered_splits_table}");
 
     Ok(())
 }
