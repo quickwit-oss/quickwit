@@ -278,7 +278,7 @@ pub async fn leaf_search(
         .failed_splits
         .extend(errors.iter().map(|(split_id, err)| SplitSearchError {
             split_id: split_id.to_string(),
-            error: format!("{:?}", err),
+            error: format!("{}", err),
             retryable_error: true,
         }));
     Ok(merged_search_response)

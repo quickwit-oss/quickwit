@@ -28,11 +28,11 @@ use warp::hyper::StatusCode;
 pub enum ApiError {
     #[error("InvalidArgument: {0}.")]
     InvalidArgument(String),
-    // TODO rely on some an error serialization in the messsage
+    // TODO rely on some an error serialization in the message
     // to rebuild a structured SearchError, (the tonic Code is pretty useless)
     // and build a meaningful ApiError instead of this
     // silly wrapping.
-    #[error("Search error. {0}.")]
+    #[error("Search error. {0}")]
     SearchError(#[from] SearchError),
     #[error("Cluster error. {0}.")]
     ClusterError(#[from] ClusterError),

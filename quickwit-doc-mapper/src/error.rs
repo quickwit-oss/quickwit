@@ -21,10 +21,9 @@ use thiserror::Error;
 
 // TODO improve me and my error messages :)
 
-#[derive(Error, Debug)]
-#[error("Invalid query syntax: `{0}`")]
-
 /// Failed to parse query.
+#[derive(Error, Debug)]
+#[error("{0}")]
 pub struct QueryParserError(#[from] anyhow::Error);
 
 impl From<tantivy::query::QueryParserError> for QueryParserError {
