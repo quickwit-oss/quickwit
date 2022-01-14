@@ -23,6 +23,8 @@ mod quickwit;
 #[macro_use]
 extern crate serde;
 
+use std::fmt::{self, Display};
+
 pub use cluster::*;
 pub use quickwit::*;
 
@@ -39,5 +41,11 @@ impl From<SearchStreamRequest> for SearchRequest {
             sort_by_field: None,
             sort_order: None,
         }
+    }
+}
+
+impl Display for SplitSearchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}, split_id: {})", self.error, self.split_id)
     }
 }
