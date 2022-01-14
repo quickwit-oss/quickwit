@@ -30,7 +30,7 @@ pub enum StorageErrorKind {
     DoesNotExist,
     /// The request credentials do not allow for this operation.
     Unauthorized,
-    /// A third-party service forbids this operation.
+    /// A third-party service forbids this operation, or is misconfigured.
     Service,
     /// Any generic internal error.
     InternalError,

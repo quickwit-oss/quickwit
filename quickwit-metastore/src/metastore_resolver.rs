@@ -71,12 +71,12 @@ pub fn quickwit_metastore_uri_resolver() -> &'static MetastoreUriResolver {
         let mut builder = MetastoreUriResolver::builder()
             .register("ram", FileBackedMetastoreFactory::default())
             .register("file", FileBackedMetastoreFactory::default())
-            .register("s3", FileBackedMetastoreFactory::default())
-            .register("s3+localstack", FileBackedMetastoreFactory::default());
+            .register("s3", FileBackedMetastoreFactory::default());
         #[cfg(feature = "postgres")]
         {
-            builder = builder.register("postgres", PostgresqlMetastoreFactory::default());
-            builder = builder.register("postgresql", PostgresqlMetastoreFactory::default());
+            builder = builder
+                .register("postgres", PostgresqlMetastoreFactory::default())
+                .register("postgresql", PostgresqlMetastoreFactory::default());
         }
 
         builder.build()
@@ -113,13 +113,9 @@ mod tests {
     use crate::quickwit_metastore_uri_resolver;
 
     #[tokio::test]
-    async fn test_metastore_resolver_should_not_raise_errors_on_file_and_s3() -> anyhow::Result<()>
-    {
+    async fn test_metastore_resolver_should_not_raise_errors_on_file() -> anyhow::Result<()> {
         let metastore_resolver = quickwit_metastore_uri_resolver();
         metastore_resolver.resolve("file://").await?;
-        metastore_resolver
-            .resolve("s3://bucket/path/to/object")
-            .await?;
         Ok(())
     }
 

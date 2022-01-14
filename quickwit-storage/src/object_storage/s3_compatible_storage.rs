@@ -21,10 +21,12 @@ use std::fmt::{self, Debug};
 use std::io;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use ec2_instance_metadata::{InstanceMetadata, InstanceMetadataClient};
 use futures::{stream, StreamExt};
 use once_cell::sync::OnceCell;
 use quickwit_common::{chunk_range, into_u64_range};
@@ -39,7 +41,7 @@ use rusoto_s3::{
 };
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
-use tracing::warn;
+use tracing::{error, info, warn};
 
 use super::error::RusotoErrorWrapper;
 use crate::object_storage::MultiPartPolicy;
@@ -51,6 +53,95 @@ const CREDENTIAL_TIMEOUT: u64 = 5;
 
 /// An timeout for idle sockets being kept-alive.
 const POOL_IDLE_TIMEOUT: u64 = 10;
+
+/// Returns the region to use for the S3 object storage.
+///
+/// This function test different methods in turn to get the region.
+/// One of this method runs a GET request on an EC2 API Endpoint.
+/// If this endpoint is inaccessible, this can block for a few seconds.
+///
+/// For this reason, this function needs to be called in a lazy manner.
+/// We cannot call it once when we create the
+/// `S3CompatibleObjectStorageFactory` for instance, as it would
+/// impact the start of quickwit in context where S3 is not used..
+///
+/// This function caches its results.
+fn sniff_s3_region() -> anyhow::Result<Region> {
+    static CACHED_S3_DEFAULT_REGION: OnceCell<Region> = OnceCell::new();
+    CACHED_S3_DEFAULT_REGION
+        .get_or_try_init(|| {
+            // If an environment variable is attempting to set the region, but is
+            // erroneous, we stop here and return an error.
+            //
+            // If no env variable attempts to set the region, we attempt to sniff the
+            // region from AWS API.
+            if let Some(region) = region_from_env_variable()? {
+                return Ok(region);
+            }
+            region_from_ec2_instance()
+        })
+        .map(|region| region.clone())
+}
+
+fn region_from_str(region_str: &str) -> anyhow::Result<Region> {
+    // Try to interpret the string as a regular AWS S3 Region like `us-east-1`.
+    if let Ok(region) = Region::from_str(region_str) {
+        return Ok(region);
+    }
+    // Maybe this is a custom endpoint (for MinIO for instance).
+    // We require custom endpoints to explicitely state the http/https protocol`.
+    if !region_str.starts_with("http") {
+        anyhow::bail!(
+            "Invalid aws region. Quickwit expects an aws region code like `us-east-1` or a \
+             http:// endpoint"
+        );
+    }
+    Ok(Region::Custom {
+        name: "qw-custom-endpoint".to_string(),
+        endpoint: region_str.to_string(),
+    })
+}
+
+fn s3_region_env_var() -> Option<String> {
+    for env_var_key in ["QW_S3_ENDPOINT", "AWS_DEFAULT_REGION", "AWS_REGION"] {
+        if let Ok(env_var) = std::env::var(env_var_key) {
+            info!(
+                env_var_key = env_var_key,
+                env_var = env_var.as_str(),
+                "Found AWS Region from environment variable"
+            );
+            return Some(env_var);
+        }
+    }
+    None
+}
+
+fn region_from_env_variable() -> anyhow::Result<Option<Region>> {
+    if let Some(region_str) = s3_region_env_var() {
+        match region_from_str(&region_str) {
+            Ok(region) => Ok(Some(region)),
+            Err(err) => {
+                error!(err=?err, "Failed to parse region set from env_var.");
+                Err(err)
+            }
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+// Sniffes the EC2 region from the EC2 instance API.
+//
+// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html
+fn region_from_ec2_instance() -> anyhow::Result<Region> {
+    let instance_metadata_client: InstanceMetadataClient =
+        ec2_instance_metadata::InstanceMetadataClient::new();
+    let instance_metadata: InstanceMetadata = instance_metadata_client
+        .get()
+        .context("Failed to get AWS instance metadata API.")?;
+    Region::from_str(instance_metadata.region)
+        .context("Failed to parse Region fetched from AWS instance metadata API")
+}
 
 /// S3 Compatible object storage implementation.
 pub struct S3CompatibleObjectStorage {
@@ -101,7 +192,16 @@ impl S3CompatibleObjectStorage {
     }
 
     /// Creates an object storage given a region and an uri.
-    pub fn from_uri(region: Region, uri: &str) -> crate::StorageResult<S3CompatibleObjectStorage> {
+    pub fn from_uri(uri: &str) -> crate::StorageResult<S3CompatibleObjectStorage> {
+        let region = sniff_s3_region().map_err(|err| StorageErrorKind::Service.with_error(err))?;
+        Self::from_uri_and_region(region, uri)
+    }
+
+    /// Creates an object storage given a region and an uri.
+    pub fn from_uri_and_region(
+        region: Region,
+        uri: &str,
+    ) -> crate::StorageResult<S3CompatibleObjectStorage> {
         let (bucket, path) = parse_uri(uri).ok_or_else(|| {
             crate::StorageErrorKind::Io.with_error(anyhow::anyhow!("Invalid uri: {}", uri))
         })?;
@@ -135,7 +235,7 @@ pub fn parse_uri(uri: &str) -> Option<(String, PathBuf)> {
     static URI_PTN: OnceCell<Regex> = OnceCell::new();
     URI_PTN
         .get_or_init(|| {
-            // s3://bucket/path/to/object or s3+localstack://bucket/path/to/object
+            // s3://bucket/path/to/object
             Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<path>.+))?").unwrap()
         })
         .captures(uri)
@@ -625,6 +725,7 @@ mod tests {
     }
 
     use quickwit_common::chunk_range;
+    use rusoto_core::Region;
 
     use super::{compute_md5, parse_uri};
 
@@ -639,7 +740,7 @@ mod tests {
             Some(("bucket".to_string(), PathBuf::from("path")))
         );
         assert_eq!(
-            parse_uri("s3+localstack://bucket/path/to/object"),
+            parse_uri("s3://bucket/path/to/object"),
             Some(("bucket".to_string(), PathBuf::from("path/to/object")))
         );
         assert_eq!(
@@ -651,5 +752,21 @@ mod tests {
             Some(("bucket".to_string(), PathBuf::from("")))
         );
         assert_eq!(parse_uri("mem://bucket/path/to"), None);
+    }
+
+    #[test]
+    fn test_region_from_str() {
+        assert_eq!(
+            super::region_from_str("us-east-1").unwrap(),
+            Region::UsEast1
+        );
+        assert_eq!(
+            super::region_from_str("http://localhost:4566").unwrap(),
+            Region::Custom {
+                name: "qw-custom-endpoint".to_string(),
+                endpoint: "http://localhost:4566".to_string()
+            }
+        );
+        assert!(super::region_from_str("us-eat-1").is_err());
     }
 }

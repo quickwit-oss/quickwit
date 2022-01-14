@@ -709,7 +709,7 @@ async fn test_all_local_index() -> Result<()> {
 #[tokio::test]
 #[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_all_with_s3_localstack_cli() -> Result<()> {
+async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
     let index_id = append_random_suffix("test-all--cli-s3-localstack");
     let test_env = create_test_env(index_id, TestStorageType::S3)?;
     make_command(
@@ -723,11 +723,11 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
     .assert()
     .success();
 
-    let index_metadata = test_env
+    test_env
         .metastore()
         .index_metadata(&test_env.index_id)
-        .await;
-    assert_eq!(index_metadata.is_ok(), true);
+        .await
+        .unwrap();
 
     ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
 
@@ -797,7 +797,7 @@ async fn test_all_with_s3_localstack_cli() -> Result<()> {
 #[tokio::test]
 #[serial]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_all_with_s3_localstack_internal_api() -> Result<()> {
+async fn test_cmd_all_with_s3_localstack_internal_api() -> Result<()> {
     let index_id = append_random_suffix("test-all--cli-API");
     let test_env = create_test_env(index_id, TestStorageType::S3)?;
     let args = CreateIndexArgs {
