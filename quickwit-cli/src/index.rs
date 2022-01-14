@@ -543,12 +543,12 @@ fn print_descriptive_stats(values: &[usize]) {
     let min_val = values.iter().min().unwrap();
     let max_val = values.iter().max().unwrap();
     println!(
-        "{:<35} {} ± {} in [{} … {}]",
+        "{:<35} {:>2} ± {} in [{} … {}]",
         "Mean ± σ in [min … max]:".color(GREEN_COLOR),
-        format!("{:>2}", mean_val),
-        format!("{}", std_val),
-        format!("{}", min_val),
-        format!("{}", max_val),
+        mean_val,
+        std_val,
+        min_val,
+        max_val,
     );
     let q1 = percentile(values, 1);
     let q25 = percentile(values, 50);
@@ -558,11 +558,11 @@ fn print_descriptive_stats(values: &[usize]) {
     println!(
         "{:<35} [{}, {}, {}, {}, {}]",
         "Quantiles [1%, 25%, 50%, 75%, 99%]:".color(GREEN_COLOR),
-        format!("{}", q1),
-        format!("{}", q25),
-        format!("{}", q50),
-        format!("{}", q75),
-        format!("{}", q99),
+        q1,
+        q25,
+        q50,
+        q75,
+        q99,
     );
 }
 
