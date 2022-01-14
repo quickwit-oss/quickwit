@@ -56,14 +56,14 @@ const POOL_IDLE_TIMEOUT: u64 = 10;
 
 /// Returns the region to use for the S3 object storage.
 ///
-/// This function test different methods in turn to get the region.
+/// This function tests different methods in turn to get the region.
 /// One of this method runs a GET request on an EC2 API Endpoint.
 /// If this endpoint is inaccessible, this can block for a few seconds.
 ///
 /// For this reason, this function needs to be called in a lazy manner.
 /// We cannot call it once when we create the
 /// `S3CompatibleObjectStorageFactory` for instance, as it would
-/// impact the start of quickwit in context where S3 is not used..
+/// impact the start of quickwit in a context where S3 is not used.
 ///
 /// This function caches its results.
 fn sniff_s3_region() -> anyhow::Result<Region> {
@@ -92,7 +92,7 @@ fn region_from_str(region_str: &str) -> anyhow::Result<Region> {
     // We require custom endpoints to explicitely state the http/https protocol`.
     if !region_str.starts_with("http") {
         anyhow::bail!(
-            "Invalid aws region. Quickwit expects an aws region code like `us-east-1` or a \
+            "Invalid AWS region. Quickwit expects an AWS region code like `us-east-1` or a \
              http:// endpoint"
         );
     }
@@ -108,7 +108,7 @@ fn s3_region_env_var() -> Option<String> {
             info!(
                 env_var_key = env_var_key,
                 env_var = env_var.as_str(),
-                "Found AWS Region from environment variable"
+                "Setting AWS Region from environment variable."
             );
             return Some(env_var);
         }
@@ -121,7 +121,7 @@ fn region_from_env_variable() -> anyhow::Result<Option<Region>> {
         match region_from_str(&region_str) {
             Ok(region) => Ok(Some(region)),
             Err(err) => {
-                error!(err=?err, "Failed to parse region set from env_var.");
+                error!(err=?err, "Failed to parse region set from environment variable.");
                 Err(err)
             }
         }
@@ -140,7 +140,7 @@ fn region_from_ec2_instance() -> anyhow::Result<Region> {
         .get()
         .context("Failed to get AWS instance metadata API.")?;
     Region::from_str(instance_metadata.region)
-        .context("Failed to parse Region fetched from AWS instance metadata API")
+        .context("Failed to parse region fetched from AWS instance metadata API")
 }
 
 /// S3 Compatible object storage implementation.
