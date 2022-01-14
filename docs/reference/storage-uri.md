@@ -7,7 +7,7 @@ In Quickwit, Storage URIs refer to different kinds of storage.
 
 Generally speaking, you can use a storage URI or a regular file path wherever you would have expected a file path.
 
- 
+
 For instance
 
 - when configuring the index storage. (Passed as the `index_uri` in the index command line.)
@@ -26,7 +26,7 @@ The following are valid local file system URIs
 - /var/quickwit
 - file:///var/quickwit
 - /home/quickwit/data
-- ~/data 
+- ~/data
 - ./quickwit
 ```
 
@@ -64,13 +64,20 @@ Quickwit will detect the S3 credentials using the first successful method in thi
 
 ### Region
 
-The region will be detected using the first successful method in this list (order matters)
-
+The region or custom endpoint will be detected using the first successful method in this list (order matters)
 - `AWS_DEFAULT_REGION` environment variable
 - `AWS_REGION` environment variable
 - Amazon’s instance metadata API [https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html)
 
-:::caution
-Custom endpoints are not supported yet.
+### S3-compatible Objective storage like Minio
 
-:::
+
+Quickwit can target other S3-compatible storage like MinIO.
+This is done by setting an endpoint url in the `QW_S3_ENDPOINT` environment variable.
+
+In this case, the region will be ignored.
+
+For instance:
+```bash
+export QW_S3_ENDPOINT=http://localhost:9000/
+```

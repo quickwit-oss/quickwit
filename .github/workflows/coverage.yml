@@ -12,6 +12,7 @@ on:
       - "quickwit-*/**"
 
 env:
+  QW_S3_ENDPOINT: "http://localstack:4566"
   AWS_DEFAULT_REGION  : "localhost"
   AWS_ACCESS_KEY_ID   : "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
