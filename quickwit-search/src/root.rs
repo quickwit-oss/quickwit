@@ -103,10 +103,13 @@ pub async fn root_search(
 
     if !leaf_search_response.failed_splits.is_empty() {
         error!(failed_splits = ?leaf_search_response.failed_splits, "Leaf search response contains at least one failed split.");
-        return Err(SearchError::InternalError(format!(
-            "{:?}",
-            leaf_search_response.failed_splits
-        )));
+        let errors: String = leaf_search_response
+            .failed_splits
+            .iter()
+            .map(|splits| format!("{}", splits))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(SearchError::InternalError(errors));
     }
 
     // Create a hash map of PartialHit with split as a key.
@@ -285,6 +288,90 @@ mod tests {
                 partial_hit: Some(req),
             })
             .collect_vec()
+    }
+
+    #[tokio::test]
+    async fn test_root_search_offset_out_of_bounds_1085() -> anyhow::Result<()> {
+        let search_request = quickwit_proto::SearchRequest {
+            index_id: "test-idx".to_string(),
+            query: "test".to_string(),
+            search_fields: vec!["body".to_string()],
+            start_timestamp: None,
+            end_timestamp: None,
+            max_hits: 10,
+            start_offset: 10,
+            ..Default::default()
+        };
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+                Ok(vec![mock_split("split1"), mock_split("split2")])
+            },
+        );
+        let mut mock_search_service2 = MockSearchService::new();
+        mock_search_service2.expect_leaf_search().returning(
+            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+                Ok(quickwit_proto::LeafSearchResponse {
+                    num_hits: 3,
+                    partial_hits: vec![
+                        mock_partial_hit("split1", 3, 1),
+                        mock_partial_hit("split1", 2, 2),
+                        mock_partial_hit("split1", 1, 3),
+                    ],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 1,
+                })
+            },
+        );
+        mock_search_service2.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+                Ok(quickwit_proto::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+        let mut mock_search_service1 = MockSearchService::new();
+        mock_search_service1.expect_leaf_search().returning(
+            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+                Ok(quickwit_proto::LeafSearchResponse {
+                    num_hits: 2,
+                    partial_hits: vec![
+                        mock_partial_hit("split2", 3, 1),
+                        mock_partial_hit("split2", 1, 3),
+                    ],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 1,
+                })
+            },
+        );
+        mock_search_service1.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+                Ok(quickwit_proto::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+        let client_pool = Arc::new(
+            SearchClientPool::from_mocks(vec![
+                Arc::new(mock_search_service1),
+                Arc::new(mock_search_service2),
+            ])
+            .await?,
+        );
+        let cluster_client = ClusterClient::new(client_pool.clone());
+        let search_response =
+            root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
+        assert_eq!(search_response.num_hits, 5);
+        assert_eq!(search_response.hits.len(), 0);
+        Ok(())
     }
 
     #[tokio::test]

@@ -2,6 +2,7 @@
 
 members = [
   "quickwit-actors",
+  "quickwit-common",
   "quickwit-cli",
   "quickwit-cluster",
   "quickwit-config",

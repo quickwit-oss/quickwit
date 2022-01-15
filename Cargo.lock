@@ -2159,7 +2159,7 @@ checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quickwit-actors"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2173,7 +2173,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2222,7 +2222,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cluster"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2244,7 +2244,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-common"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "colored",
@@ -2263,7 +2263,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-config"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "byte-unit",
@@ -2281,7 +2281,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2310,7 +2310,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-directories"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2332,7 +2332,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-doc-mapper"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -2355,7 +2355,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-indexing"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -2397,7 +2397,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-metastore"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2428,7 +2428,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-proto"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "prost",
  "prost-build",
@@ -2439,7 +2439,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-search"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -2480,7 +2480,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-serve"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -2520,7 +2520,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-storage"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2551,7 +2551,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-swim"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "bincode",
  "flume",
@@ -2568,7 +2568,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-telemetry"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "encoding_rs",

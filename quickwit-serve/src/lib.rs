@@ -32,9 +32,7 @@ use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_config::{QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_metastore::Metastore;
 use quickwit_search::{ClusterClient, SearchClientPool, SearchServiceImpl};
-use quickwit_storage::{
-    LocalFileStorageFactory, RegionProvider, S3CompatibleObjectStorageFactory, StorageUriResolver,
-};
+use quickwit_storage::quickwit_storage_uri_resolver;
 use tracing::{debug, info};
 
 pub use crate::args::ServeArgs;
@@ -44,22 +42,6 @@ use crate::grpc::start_grpc_service;
 use crate::grpc_adapter::cluster_adapter::GrpcClusterAdapter;
 use crate::grpc_adapter::search_adapter::GrpcSearchAdapter;
 use crate::rest::start_rest_service;
-
-/// Builds a storage uri resolver that handles
-/// - s3:// uris. This storage comes with a cache that stores hotcache files.
-/// - s3+localstack://
-/// - file:// uris.
-fn storage_uri_resolver() -> StorageUriResolver {
-    let s3_storage = S3CompatibleObjectStorageFactory::default();
-    StorageUriResolver::builder()
-        .register(LocalFileStorageFactory::default())
-        .register(s3_storage)
-        .register(S3CompatibleObjectStorageFactory::new(
-            RegionProvider::Localstack,
-            "s3+localstack",
-        ))
-        .build()
-}
 
 /// Starts a search node, aka a `searcher`.
 pub async fn run_searcher(
@@ -79,7 +61,7 @@ pub async fn run_searcher(
         debug!(peer_seed_addr = %seed_socket_addr, "Add peer seed node.");
         cluster.add_peer_node(seed_socket_addr).await;
     }
-    let storage_uri_resolver = storage_uri_resolver();
+    let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
     let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
     let cluster_client = ClusterClient::new(client_pool.clone());
     let search_service = Arc::new(SearchServiceImpl::new(

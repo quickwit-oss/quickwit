@@ -427,11 +427,11 @@ mod tests {
         cluster2.add_peer_node(cluster1.listen_addr).await;
         cluster3.add_peer_node(cluster2.listen_addr).await;
 
-        let ten_secs = Duration::from_secs(10);
+        let wait_period = Duration::from_secs(15);
 
         for cluster in [&cluster1, &cluster2] {
             cluster
-                .wait_for_members(|members| members.len() == 3, ten_secs)
+                .wait_for_members(|members| members.len() == 3, wait_period)
                 .await
                 .unwrap();
         }
@@ -454,7 +454,7 @@ mod tests {
         drop(cluster2);
         drop(cluster3);
         cluster1
-            .wait_for_members(|members| members.len() == 1, ten_secs)
+            .wait_for_members(|members| members.len() == 1, wait_period)
             .await
             .unwrap();
 

@@ -1,6 +1,6 @@
 [package]
 name = 'quickwit-indexing'
-version = '0.1.0'
+version = "0.2.0"
 authors = ['Quickwit, Inc. <hello@quickwit.io>']
 edition = '2021'
 license = 'AGPL-3.0-or-later'  # For a commercial, license, contact hello@quickwit.io
@@ -25,7 +25,7 @@ quickwit-config = {path = "../quickwit-config" }
 quickwit-directories = {path = "../quickwit-directories"}
 quickwit-doc-mapper = {path = "../quickwit-doc-mapper", features=["testsuite"]}
 quickwit-metastore = {path = "../quickwit-metastore" }
-quickwit-storage = { version = "0.1.0", path = "../quickwit-storage" }
+quickwit-storage = { version = "0.2.0", path = "../quickwit-storage" }
 rdkafka = { version = "0.28", default-features = false, features = ["tokio", "libz", "ssl", "cmake-build"], optional = true }
 openssl = { version = "0.10.36", default-features = false, optional = true}
 libz-sys = {version = "1.1.3", optional = true}
@@ -54,7 +54,7 @@ kinesis-external-service = []
 bytes = "1"
 mockall = "0.11"
 proptest = "1"
-quickwit-common = {path="../quickwit-common", version="0.1"}
+quickwit-common = {path="../quickwit-common", version="0.2"}
 quickwit-metastore = {path = "../quickwit-metastore", features=["testsuite"]}
 quickwit-storage = {path = "../quickwit-storage", features=["testsuite"]}
 rand = '0.8'

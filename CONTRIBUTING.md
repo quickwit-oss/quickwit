@@ -28,7 +28,7 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 1. Install Docker (https://docs.docker.com/engine/install/) and Docker Compose (https://docs.docker.com/compose/install/)
 2. Install awslocal https://github.com/localstack/awscli-local
 3. Start the external services with `make docker-compose-up`
-5. Run `QW_ENV=LOCAL cargo test --all-features`
+5. Run `QW_S3_ENDPOINT=http://localhost:4566 cargo test --all-features`
 
 ## Running services such as Amazon Kinesis or S3, Kafka, or PostgreSQL locally.
 1. Ensure Docker and Docker Compose are correctly installed on your machine (see above)
@@ -48,8 +48,8 @@ The process is simple and fast. Upon your first pull request, you will be prompt
 ## Building binaries
 
 Currently, we use [cross](https://github.com/rust-embedded/cross) to build Quickwit binaries for different architectures.
-For this to work, we've had to customize the docker images cross uses. These customizations can be found in docker files located in `./cross-images` folder. To make cross take into account any change on those 
-docker files, you will need to build and push the images on dockerhub by running `make cross-images`. 
+For this to work, we've had to customize the docker images cross uses. These customizations can be found in docker files located in `./cross-images` folder. To make cross take into account any change on those
+docker files, you will need to build and push the images on dockerhub by running `make cross-images`.
 We also have nightly builds that are pushed to dockerhub. This helps continiously check our binaries are still built even with external dependency update. Successful builds let you accessed the artifacts for the next three days. Release builds always have their artifacts attached to the release.
 
 ## Testing release (alpha, beta, rc)

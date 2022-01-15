@@ -21,6 +21,7 @@ jobs:
   ci-passes:
     name: CI passes
     runs-on: ubuntu-latest
+    # See https://github.com/quickwit-inc/quickwit-builder
     container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
     needs:
       - lint

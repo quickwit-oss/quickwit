@@ -30,7 +30,7 @@ fmt:
 # `make test-all` starts the Docker services and runs all the tests.
 # `make -k test-all docker-compose-down`, tears down the Docker services after running all the tests.
 test-all: docker-compose-up
-	QW_ENV=local AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features
+	QW_S3_ENDPOINT=http://localhost:4566 AWS_ACCESS_KEY_ID=ignored AWS_SECRET_ACCESS_KEY=ignored cargo test --all-features
 
 # This will build and push all custom cross images for cross-compilation.
 # You will need to login into Docker Hub with the `quickwit` account.
@@ -59,7 +59,7 @@ build:
 	esac
 
 # Usage:
-# `BINARY_FILE=path/to/quickwit/binary BINARY_VERSION=0.1.0 ARCHIVE_NAME=quickwit make archive` 
+# `BINARY_FILE=path/to/quickwit/binary BINARY_VERSION=0.1.0 ARCHIVE_NAME=quickwit make archive`
 # - BINARY_FILE: Path of the quickwit binary file.
 # - BINARY_VERSION: Version of the quickwit binary.
 # - ARCHIVE_NAME: Name of the resulting archive file (without extension).

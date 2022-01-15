@@ -12,6 +12,7 @@ on:
       - "quickwit-*/**"
 
 env:
+  QW_S3_ENDPOINT: "http://localstack:4566"
   AWS_DEFAULT_REGION  : "localhost"
   AWS_ACCESS_KEY_ID   : "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
@@ -115,13 +116,13 @@ jobs:
         run: pip install awscli-local
 
       - name: Prepare LocalStack S3
-        run: ./quickwit-cli/tests/prepare_tests.sh 
+        run: ./quickwit-cli/tests/prepare_tests.sh
 
       - name: Generate code coverage
         run: |
           cargo +nightly llvm-cov clean --workspace
-          QW_ENV=LOCAL cargo +nightly llvm-cov --test failpoints --no-report --features fail/failpoints
-          QW_ENV=LOCAL cargo +nightly llvm-cov --no-report --all-features
+          cargo +nightly llvm-cov --test failpoints --no-report --features fail/failpoints
+          cargo +nightly llvm-cov --no-report --all-features
           cargo +nightly llvm-cov --no-run --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov

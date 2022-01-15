@@ -289,10 +289,14 @@ impl Collector for QuickwitCollector {
         // We compute the overall [0..start_offset + max_hits) documents ...
         let num_hits = self.start_offset + self.max_hits;
         let mut merged_leaf_response = merge_leaf_responses(segment_fruits, num_hits);
-        // ... and drop the first [..start_offets) hits.
+        // ... and drop the first [..start_offsets) hits.
         merged_leaf_response
             .partial_hits
-            .drain(0..self.start_offset)
+            .drain(
+                0..self
+                    .start_offset
+                    .min(merged_leaf_response.partial_hits.len()),
+            )
             .count(); //< we just use count as a way to consume the entire iterator.
         Ok(merged_leaf_response)
     }
@@ -309,7 +313,7 @@ fn merge_leaf_responses(
     }
     let num_attempted_splits = leaf_responses
         .iter()
-        .map(|leaf_response| leaf_response.num_hits)
+        .map(|leaf_response| leaf_response.num_attempted_splits)
         .sum();
     let num_hits: u64 = leaf_responses
         .iter()

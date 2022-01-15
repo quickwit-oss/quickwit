@@ -29,7 +29,7 @@ use predicates::str;
 use quickwit_common::net::find_available_port;
 use quickwit_common::uri::Uri;
 use quickwit_metastore::FileBackedMetastore;
-use quickwit_storage::{LocalFileStorage, RegionProvider, S3CompatibleObjectStorage, Storage};
+use quickwit_storage::{LocalFileStorage, S3CompatibleObjectStorage, Storage};
 use tempfile::{tempdir, TempDir};
 
 const PACKAGE_BIN_NAME: &str = "quickwit";
@@ -90,8 +90,6 @@ const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "http
 {"body": "biz", "title": "modern", "url": "https://wiki.com?id=13"}
 "#;
 
-const AWS_DEFAULT_REGION_ENV: &str = "AWS_DEFAULT_REGION";
-
 /// Creates a quickwit-cli command with provided list of arguments.
 pub fn make_command(arguments: &str) -> Command {
     let mut cmd = Command::cargo_bin(PACKAGE_BIN_NAME).unwrap();
@@ -99,7 +97,6 @@ pub fn make_command(arguments: &str) -> Command {
         quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
         "disable-for-tests",
     )
-    .env(AWS_DEFAULT_REGION_ENV, "us-east-1")
     .args(arguments.split_whitespace());
     cmd
 }
@@ -110,7 +107,6 @@ pub fn make_command_with_list_of_args(arguments: &[&str]) -> Command {
         quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
         "disable-for-tests",
     )
-    .env(AWS_DEFAULT_REGION_ENV, "us-east-1")
     .args(arguments.iter());
     cmd
 }
@@ -123,8 +119,6 @@ pub fn spawn_command(arguments: &str) -> io::Result<Child> {
             quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
             "disable-for-tests",
         )
-        .env(AWS_DEFAULT_REGION_ENV, "us-east-1")
-        .stdout(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
 }
@@ -179,15 +173,13 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
             (metastore_uri, storage)
         }
         TestStorageType::S3 => {
-            let metastore_uri = "s3+localstack://quickwit-integration-tests/indexes";
-            let storage: Arc<dyn Storage> = Arc::new(S3CompatibleObjectStorage::from_uri(
-                RegionProvider::Localstack.get_region(),
-                metastore_uri,
-            )?);
+            let metastore_uri = "s3://quickwit-integration-tests/indexes";
+            let storage: Arc<dyn Storage> =
+                Arc::new(S3CompatibleObjectStorage::from_uri(metastore_uri)?);
             (metastore_uri.to_string(), storage)
         }
     };
-    let index_uri = Uri::try_new(&format!("{}/{}", metastore_uri, index_id))?;
+    let index_uri = Uri::try_new(&format!("{metastore_uri}/{index_id}"))?;
     let index_config_path = resources_dir_path.join("index_config.yaml");
     fs::write(
         &index_config_path,
