@@ -741,8 +741,9 @@ async fn test_cmd_all_with_s3_localstack_cli() -> Result<()> {
         .as_str(),
     )
     .assert()
-    .success()
     .stdout(predicate::function(|output: &[u8]| {
+        let utf8 = std::str::from_utf8(output).unwrap();
+        println!("{utf8}");
         let result: Value = serde_json::from_slice(output).unwrap();
         result["numHits"] == Value::Number(Number::from(2i64))
     }));

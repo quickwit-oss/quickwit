@@ -93,10 +93,12 @@ const WIKI_JSON_DOCS: &str = r#"{"body": "foo", "title": "shimroy", "url": "http
 /// Creates a quickwit-cli command with provided list of arguments.
 pub fn make_command(arguments: &str) -> Command {
     let mut cmd = Command::cargo_bin(PACKAGE_BIN_NAME).unwrap();
-    cmd.env(
+    cmd
+    .env(
         quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
         "disable-for-tests",
     )
+    .env("RUST_LOG", "info")
     .args(arguments.split_whitespace());
     cmd
 }

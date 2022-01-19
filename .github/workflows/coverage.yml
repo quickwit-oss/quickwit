@@ -2,6 +2,7 @@ name: Code coverage
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
     branches:
       - "main"
@@ -120,10 +121,11 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          cargo +nightly llvm-cov clean --workspace
-          cargo +nightly llvm-cov --test failpoints --no-report --features fail/failpoints
-          cargo +nightly llvm-cov --no-report --all-features
-          cargo +nightly llvm-cov --no-run --lcov --output-path lcov.info
+          cargo test test_cmd_all_with_s3_localstack_cli --features ci-test
+          # cargo +nightly llvm-cov clean --workspace
+          # cargo +nightly llvm-cov --test failpoints --no-report --features fail/failpoints
+          # cargo +nightly llvm-cov --no-report --all-features
+          # cargo +nightly llvm-cov --no-run --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
