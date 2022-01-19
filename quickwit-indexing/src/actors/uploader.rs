@@ -24,7 +24,7 @@ use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
@@ -33,7 +33,7 @@ use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_storage::SplitPayloadBuilder;
 use tantivy::chrono::Utc;
 use tokio::sync::oneshot::Receiver;
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{info, info_span, warn, Instrument, Span};
 
 use crate::models::{PackagedSplit, PackagedSplitBatch, PublishOperation, PublisherMessage};
@@ -65,6 +65,16 @@ impl Uploader {
             concurrent_upload_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_SPLIT_UPLOAD)),
             counters: Default::default(),
         }
+    }
+
+    async fn acquire_semaphore(
+        &self,
+        ctx: &ActorContext<Self>,
+    ) -> anyhow::Result<OwnedSemaphorePermit> {
+        let _guard = ctx.protect_zone();
+        Semaphore::acquire_owned(self.concurrent_upload_permits.clone())
+            .await
+            .context("The uploader semaphore is closed. (This should never happen.)")
     }
 }
 
@@ -197,10 +207,7 @@ impl AsyncActor for Uploader {
         // For instance, when sending a message on a downstream actor with a saturated
         // mailbox.
         // This is meant to be fixed with ParallelActors.
-        let permit_guard = {
-            let _guard = ctx.protect_zone();
-            Semaphore::acquire_owned(self.concurrent_upload_permits.clone()).await
-        };
+        let permit_guard = self.acquire_semaphore(ctx).await?;
         let kill_switch = ctx.kill_switch().clone();
         let split_ids = batch.split_ids();
         if kill_switch.is_dead() {
