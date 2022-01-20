@@ -23,8 +23,7 @@ jobs:
   test:
     name: coverage
     runs-on: ubuntu-latest
-    # container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
-    container: python:bullseye
+    container: localstack/localstack:latest # that's just for the CLI
     services:
       localstack:
         image: localstack/localstack:latest
@@ -48,8 +47,8 @@ jobs:
           toolchain: stable
           components: clippy, rustfmt
 
-      - name: Install awslocal
-        run: pip install awscli-local
+      # - name: Install awslocal
+      #   run: pip install awscli-local
 
       - name: Prepare LocalStack S3
         run: ./quickwit-cli/tests/prepare_tests.sh
