@@ -98,7 +98,7 @@ pub fn make_command(arguments: &str) -> Command {
         quickwit_telemetry::DISABLE_TELEMETRY_ENV_KEY,
         "disable-for-tests",
     )
-    .env("RUST_LOG", "info")
+    .env("RUST_LOG", "debug")
     .args(arguments.split_whitespace());
     cmd
 }

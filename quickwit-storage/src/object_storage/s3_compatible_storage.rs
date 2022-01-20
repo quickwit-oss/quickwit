@@ -76,6 +76,7 @@ fn sniff_s3_region() -> anyhow::Result<Region> {
             // If no env variable attempts to set the region, we attempt to sniff the
             // region from AWS API.
             if let Some(region) = region_from_env_variable()? {
+                info!(region=?region);
                 return Ok(region);
             }
             region_from_ec2_instance()
@@ -205,6 +206,7 @@ impl S3CompatibleObjectStorage {
         let (bucket, path) = parse_uri(uri).ok_or_else(|| {
             crate::StorageErrorKind::Io.with_error(anyhow::anyhow!("Invalid uri: {}", uri))
         })?;
+        info!(bucket=?bucket, path=%path.display());
         let s3_compatible_storage = S3CompatibleObjectStorage::new(region, &bucket)
             .map_err(|err| crate::StorageErrorKind::Service.with_error(anyhow::anyhow!(err)))?;
         Ok(s3_compatible_storage.with_prefix(&path))
