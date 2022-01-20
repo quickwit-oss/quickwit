@@ -13,7 +13,7 @@ on:
       - "quickwit-*/**"
 
 env:
-  QW_S3_ENDPOINT: "http://localstack:4566"
+  QW_S3_ENDPOINT: "http://localhost:4566"
   AWS_DEFAULT_REGION  : "localhost"
   AWS_ACCESS_KEY_ID   : "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
@@ -23,7 +23,7 @@ jobs:
   test:
     name: coverage
     runs-on: ubuntu-latest
-    container: localstack/localstack:latest # that's just for the CLI
+    # container: localstack/localstack:latest # that's just for the CLI
     services:
       localstack:
         image: localstack/localstack:latest
@@ -40,15 +40,15 @@ jobs:
           --health-retries 5
 
     steps:
+      - name: Install awslocal
+        run: pip install awscli-local
+
       - uses: actions/checkout@v2
 
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           components: clippy, rustfmt
-
-      # - name: Install awslocal
-      #   run: pip install awscli-local
 
       - name: Prepare LocalStack S3
         run: ./quickwit-cli/tests/prepare_tests.sh
