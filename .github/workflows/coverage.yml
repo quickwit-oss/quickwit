@@ -23,7 +23,8 @@ jobs:
   test:
     name: coverage
     runs-on: ubuntu-latest
-    container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
+    # container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
+    container: python:bullseye
     services:
       localstack:
         image: localstack/localstack:latest
