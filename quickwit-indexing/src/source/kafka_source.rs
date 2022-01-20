@@ -656,10 +656,11 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "kafka-external-service"))]
-mod kafka_source_tests {
+#[cfg(all(test, feature = "kafka-broker-tests"))]
+mod kafka_broker_tests {
     use quickwit_actors::{create_test_mailbox, Universe};
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_config::SourceParams;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;
@@ -802,18 +803,18 @@ mod kafka_source_tests {
         create_topic(&admin_client, &topic, 3).await?;
 
         let source_config = SourceConfig {
-            source_id: "kafka-test-source".to_string(),
-            source_type: "kafka".to_string(),
-            params: json!({
-                "topic": topic,
-                "client_log_level": "info",
-                "client_params": json!({
+            source_id: "test-kafka-source".to_string(),
+            source_params: SourceParams::Kafka(KafkaSourceParams {
+                topic: topic.clone(),
+                client_log_level: None,
+                client_params: json!({
                     "bootstrap.servers": bootstrap_servers,
                     "group.id": group_id,
                     "enable.partition.eof": true,
                 }),
             }),
         };
+
         let source_loader = quickwit_supported_sources();
         {
             let (sink, inbox) = create_test_mailbox();

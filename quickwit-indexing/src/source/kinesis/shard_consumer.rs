@@ -189,7 +189,7 @@ impl AsyncActor for ShardConsumer {
     }
 }
 
-#[cfg(all(test, feature = "kinesis-external-service"))]
+#[cfg(all(test, feature = "kinesis-localstack-tests"))]
 mod kinesis_localstack_tests {
     use quickwit_actors::{create_test_mailbox, Universe};
 
