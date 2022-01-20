@@ -31,87 +31,20 @@ jobs:
           - "4571:4571"
           - "8080:8080"
         env:
-          # `kinesalite` provides a more accurate implementation than
-          # the default Kinesis provider (`kinesis-mock`).
-          KINESIS_PROVIDER: kinesalite
-          SERVICES: kinesis,s3
+          SERVICES: s3
         options: >-
           --health-cmd "curl -k https://localhost:4566"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
-      postgres:
-        image: postgres:latest
-        ports:
-          - "5432:5432"
-        env:
-          POSTGRES_USER: quickwit-dev
-          POSTGRES_PASSWORD: quickwit-dev
-          POSTGRES_DB: quickwit-metastore-dev
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      kafka-broker:
-        image: confluentinc/cp-kafka:6.2.0
-        ports:
-          - "9092:9092"
-          - "9101:9101"
-        env:
-          KAFKA_BROKER_ID: 1
-          KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
-          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:29092,PLAINTEXT_HOST://localhost:9092
-          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-          KAFKA_JMX_PORT: 9101
-          KAFKA_JMX_HOSTNAME: localhost
-        options: >-
-          --health-cmd "cub kafka-ready -b localhost:9092 1 5"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      zookeeper:
-        image: confluentinc/cp-zookeeper:6.2.0
-        ports:
-          - "2181:2181"
-        env:
-          ZOOKEEPER_CLIENT_PORT: 2181
-          ZOOKEEPER_TICK_TIME: 2000
-        options: >-
-          --health-cmd "cub zk-ready localhost:2181 5"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v2
 
-      - uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-            target
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
-            ${{ runner.os }}-cargo-test
-
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
-          components: clippy, llvm-tools-preview, rustfmt
-
-      - name: Install cargo-llvm-cov
-        run: |
-          curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | \
-          tar xzf - -C ~/.cargo/bin
+          toolchain: stable
+          components: clippy, rustfmt
 
       - name: Install awslocal
         run: pip install awscli-local
@@ -119,17 +52,7 @@ jobs:
       - name: Prepare LocalStack S3
         run: ./quickwit-cli/tests/prepare_tests.sh
 
-      - name: Generate code coverage
+      - name: Run faulty test
         run: |
           cargo test test_cmd_all_with_s3_localstack_cli --features ci-test
-          # cargo +nightly llvm-cov clean --workspace
-          # cargo +nightly llvm-cov --test failpoints --no-report --features fail/failpoints
-          # cargo +nightly llvm-cov --no-report --all-features
-          # cargo +nightly llvm-cov --no-run --lcov --output-path lcov.info
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
-          files: lcov.info
-          fail_ci_if_error: true
