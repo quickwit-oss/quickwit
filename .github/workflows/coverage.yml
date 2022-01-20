@@ -12,7 +12,7 @@ on:
       - "quickwit-*/**"
 
 env:
-  QW_S3_ENDPOINT: "http://localstack:4566"
+  QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
   AWS_DEFAULT_REGION  : "localhost"
   AWS_ACCESS_KEY_ID   : "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
@@ -22,6 +22,8 @@ jobs:
   test:
     name: coverage
     runs-on: ubuntu-latest
+    # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
+    # container: ---
     services:
       localstack:
         image: localstack/localstack:latest
