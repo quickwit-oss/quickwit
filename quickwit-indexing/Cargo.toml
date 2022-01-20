@@ -45,10 +45,10 @@ arc-swap = "1.4"
 
 [features]
 kafka = ["rdkafka"]
-kafka-broker-external-service = []
+kafka-broker-tests = []
 vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored"]
 kinesis = ["rusoto_core", "rusoto_kinesis"]
-kinesis-external-service = []
+kinesis-localstack-tests = []
 
 [dev-dependencies]
 bytes = "1"

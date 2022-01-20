@@ -265,7 +265,7 @@ pub(crate) mod tests {
     }
 }
 
-#[cfg(all(test, feature = "kinesis-external-service"))]
+#[cfg(all(test, feature = "kinesis-localstack-tests"))]
 mod kinesis_localstack_tests {
     use std::time::Duration;
 
