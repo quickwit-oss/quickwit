@@ -153,9 +153,8 @@ pub async fn root_search(
 
     // Merge the fetched docs.
     let hits = fetch_docs_responses
-        .iter()
-        .map(|response| response.hits.clone())
-        .flatten()
+        .into_iter()
+        .flat_map(|response| response.hits)
         .sorted_by(|hit1, hit2| {
             let value1 = if let Some(partial_hit) = &hit1.partial_hit {
                 partial_hit.sorting_field_value
@@ -220,9 +219,8 @@ fn jobs_to_leaf_request(
         search_request: Some(request_with_offset_0),
         split_metadata: jobs
             .iter()
-            .map(|job| {
-                extract_split_and_footer_offsets(split_metadata_map.get(&job.split_id).unwrap())
-            })
+            .filter_map(|job| split_metadata_map.get(&job.split_id))
+            .map(extract_split_and_footer_offsets)
             .collect(),
         doc_mapper: doc_mapper_str.to_string(),
         index_uri: index_uri.to_string(),
@@ -238,12 +236,12 @@ fn jobs_to_fetch_docs_request(
 ) -> FetchDocsRequest {
     let partial_hits = jobs
         .iter()
-        .map(|job| partial_hits_map.remove(&job.split_id).unwrap())
+        .filter_map(|job| partial_hits_map.remove(&job.split_id))
         .flatten()
         .collect_vec();
     let splits_footer_and_offsets = jobs
         .iter()
-        .map(|job| split_metadata_map.get(&job.split_id).unwrap())
+        .filter_map(|job| split_metadata_map.get(&job.split_id))
         .map(extract_split_and_footer_offsets)
         .collect_vec();
 
