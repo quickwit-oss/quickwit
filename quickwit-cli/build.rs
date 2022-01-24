@@ -19,13 +19,17 @@
 
 use std::process::Command;
 
+const UNKNOWN: &str = "unknown";
+
 fn main() {
-    let git_commit_hash = Command::new("git")
-        .args(&["rev-parse", "HEAD"])
-        .output()
-        .map_or("unknown".to_string(), |output| {
-            let hash = String::from_utf8(output.stdout).unwrap();
-            String::from(&hash[..7])
-        });
-    println!("cargo:rustc-env=GIT_COMMIT_HASH={}", git_commit_hash);
+    println!("cargo:rustc-env=GIT_COMMIT_HASH={}", git_rev_parse_head());
+}
+
+fn git_rev_parse_head() -> String {
+    let mut stdout = match Command::new("git").args(&["rev-parse", "HEAD"]).output() {
+        Ok(output) if output.status.success() => output.stdout,
+        _ => return UNKNOWN.to_string(),
+    };
+    stdout.truncate(7);
+    String::from_utf8(stdout).unwrap_or_else(|_| UNKNOWN.to_string())
 }
