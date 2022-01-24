@@ -65,6 +65,10 @@ pub async fn root_search(
     .map_err(|err| {
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
     })?;
+
+    // try to build query against current schema
+    let _query = doc_mapper.query(doc_mapper.schema(), search_request)?;
+
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))
     })?;
@@ -1022,6 +1026,66 @@ mod tests {
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 1);
         assert_eq!(search_response.hits.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_root_search_invalid_queries() -> anyhow::Result<()> {
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+                Ok(vec![mock_split("split")])
+            },
+        );
+
+        let client_pool =
+            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?);
+        let cluster_client = ClusterClient::new(client_pool.clone());
+
+        assert!(root_search(
+            &quickwit_proto::SearchRequest {
+                index_id: "test-idx".to_string(),
+                query: "invalid_body:\"test\"".to_string(),
+                search_fields: vec!["body".to_string()],
+                start_timestamp: None,
+                end_timestamp: None,
+                max_hits: 10,
+                start_offset: 0,
+                ..Default::default()
+            },
+            &metastore,
+            &cluster_client,
+            &client_pool,
+        )
+        .await
+        .is_err());
+
+        assert!(root_search(
+            &quickwit_proto::SearchRequest {
+                index_id: "test-idx".to_string(),
+                query: "test".to_string(),
+                search_fields: vec!["invalid_body".to_string()],
+                start_timestamp: None,
+                end_timestamp: None,
+                max_hits: 10,
+                start_offset: 0,
+                ..Default::default()
+            },
+            &metastore,
+            &cluster_client,
+            &client_pool,
+        )
+        .await
+        .is_err());
+
         Ok(())
     }
 }
