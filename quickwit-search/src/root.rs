@@ -215,18 +215,13 @@ fn jobs_to_leaf_request(
     request_with_offset_0.start_offset = 0;
     request_with_offset_0.max_hits += request.start_offset;
 
-    // collect split_id and footer offsets
-    let split_metadata: Vec<_> = jobs
-        .iter()
-        .filter_map(|job| split_metadata_map.get(&job.split_id))
-        .map(extract_split_and_footer_offsets)
-        .collect();
-    // we expect job's metadata existence (thus metadata_map does not miss any split_id)
-    debug_assert_eq!(jobs.len(), split_metadata.len());
-
     LeafSearchRequest {
         search_request: Some(request_with_offset_0),
-        split_metadata,
+        split_metadata: jobs
+            .iter()
+            .map(|job| split_metadata_map.get(&job.split_id).expect(&job.split_id))
+            .map(extract_split_and_footer_offsets)
+            .collect(),
         doc_mapper: doc_mapper_str.to_string(),
         index_uri: index_uri.to_string(),
     }
@@ -239,21 +234,15 @@ fn jobs_to_fetch_docs_request(
     partial_hits_map: &mut HashMap<String, Vec<PartialHit>>,
     jobs: &[Job],
 ) -> FetchDocsRequest {
-    let partial_hits_map_size = partial_hits_map.len();
     let partial_hits = jobs
         .iter()
-        .filter_map(|job| partial_hits_map.remove(&job.split_id))
-        .flatten()
+        .flat_map(|job| partial_hits_map.remove(&job.split_id).expect(&job.split_id))
         .collect_vec();
-    debug_assert_eq!(partial_hits_map_size - partial_hits_map.len(), jobs.len());
-
     let splits_footer_and_offsets = jobs
         .iter()
-        .filter_map(|job| split_metadata_map.get(&job.split_id))
+        .map(|job| split_metadata_map.get(&job.split_id).expect(&job.split_id))
         .map(extract_split_and_footer_offsets)
         .collect_vec();
-    // we expect job's metadata existence (thus metadata_map does not miss any split_id)
-    debug_assert_eq!(jobs.len(), splits_footer_and_offsets.len());
 
     FetchDocsRequest {
         partial_hits,
