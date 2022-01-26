@@ -65,6 +65,10 @@ pub async fn root_search(
     .map_err(|err| {
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
     })?;
+
+    // try to build query against current schema
+    let _query = doc_mapper.query(doc_mapper.schema(), search_request)?;
+
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))
     })?;
@@ -149,9 +153,8 @@ pub async fn root_search(
 
     // Merge the fetched docs.
     let hits = fetch_docs_responses
-        .iter()
-        .map(|response| response.hits.clone())
-        .flatten()
+        .into_iter()
+        .flat_map(|response| response.hits)
         .sorted_by(|hit1, hit2| {
             let value1 = if let Some(partial_hit) = &hit1.partial_hit {
                 partial_hit.sorting_field_value
@@ -216,9 +219,8 @@ fn jobs_to_leaf_request(
         search_request: Some(request_with_offset_0),
         split_metadata: jobs
             .iter()
-            .map(|job| {
-                extract_split_and_footer_offsets(split_metadata_map.get(&job.split_id).unwrap())
-            })
+            .map(|job| split_metadata_map.get(&job.split_id).expect(&job.split_id))
+            .map(extract_split_and_footer_offsets)
             .collect(),
         doc_mapper: doc_mapper_str.to_string(),
         index_uri: index_uri.to_string(),
@@ -234,12 +236,11 @@ fn jobs_to_fetch_docs_request(
 ) -> FetchDocsRequest {
     let partial_hits = jobs
         .iter()
-        .map(|job| partial_hits_map.remove(&job.split_id).unwrap())
-        .flatten()
+        .flat_map(|job| partial_hits_map.remove(&job.split_id).expect(&job.split_id))
         .collect_vec();
     let splits_footer_and_offsets = jobs
         .iter()
-        .map(|job| split_metadata_map.get(&job.split_id).unwrap())
+        .map(|job| split_metadata_map.get(&job.split_id).expect(&job.split_id))
         .map(extract_split_and_footer_offsets)
         .collect_vec();
 
@@ -1022,6 +1023,66 @@ mod tests {
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
         assert_eq!(search_response.num_hits, 1);
         assert_eq!(search_response.hits.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_root_search_invalid_queries() -> anyhow::Result<()> {
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+                Ok(vec![mock_split("split")])
+            },
+        );
+
+        let client_pool =
+            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?);
+        let cluster_client = ClusterClient::new(client_pool.clone());
+
+        assert!(root_search(
+            &quickwit_proto::SearchRequest {
+                index_id: "test-idx".to_string(),
+                query: r#"invalid_body:"test""#.to_string(),
+                search_fields: vec!["body".to_string()],
+                start_timestamp: None,
+                end_timestamp: None,
+                max_hits: 10,
+                start_offset: 0,
+                ..Default::default()
+            },
+            &metastore,
+            &cluster_client,
+            &client_pool,
+        )
+        .await
+        .is_err());
+
+        assert!(root_search(
+            &quickwit_proto::SearchRequest {
+                index_id: "test-idx".to_string(),
+                query: "test".to_string(),
+                search_fields: vec!["invalid_body".to_string()],
+                start_timestamp: None,
+                end_timestamp: None,
+                max_hits: 10,
+                start_offset: 0,
+                ..Default::default()
+            },
+            &metastore,
+            &cluster_client,
+            &client_pool,
+        )
+        .await
+        .is_err());
+
         Ok(())
     }
 }
