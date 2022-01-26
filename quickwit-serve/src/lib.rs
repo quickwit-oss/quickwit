@@ -62,7 +62,7 @@ pub async fn run_searcher(
         cluster.add_peer_node(seed_socket_addr).await;
     }
     let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
-    let client_pool = Arc::new(SearchClientPool::new(cluster.clone()).await?);
+    let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await;
     let cluster_client = ClusterClient::new(client_pool.clone());
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore,
@@ -90,8 +90,6 @@ pub async fn run_searcher(
 
 #[cfg(test)]
 mod tests {
-    use std::array::IntoIter;
-    use std::collections::HashMap;
     use std::net::SocketAddr;
     use std::ops::Range;
     use std::sync::Arc;
@@ -101,11 +99,7 @@ mod tests {
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::search_service_server::SearchServiceServer;
     use quickwit_proto::OutputFormat;
-    use quickwit_search::{
-        create_search_service_client, root_search_stream, MockSearchService, SearchError,
-        SearchService,
-    };
-    use tokio::sync::RwLock;
+    use quickwit_search::{root_search_stream, MockSearchService, SearchError, SearchService};
     use tokio_stream::wrappers::UnboundedReceiverStream;
     use tonic::transport::Server;
 
@@ -164,7 +158,7 @@ mod tests {
         )))?;
         mock_search_service
             .expect_leaf_search_stream()
-            .withf(|request| request.split_metadata.len() == 2) // First request.
+            .withf(|request| request.split_offsets.len() == 2) // First request.
             .return_once(
                 |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
                     Ok(UnboundedReceiverStream::new(result_receiver))
@@ -172,7 +166,7 @@ mod tests {
             );
         mock_search_service
             .expect_leaf_search_stream()
-            .withf(|request| request.split_metadata.len() == 1) // Retry request on the failing split.
+            .withf(|request| request.split_offsets.len() == 1) // Retry request on the failing split.
             .return_once(
                 |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
                     Err(SearchError::InternalError(
@@ -185,11 +179,7 @@ mod tests {
 
         let grpc_addr: SocketAddr = format!("127.0.0.1:{}", 10000).parse()?;
         start_test_server(grpc_addr, Arc::new(mock_search_service)).await?;
-        let client = create_search_service_client(grpc_addr).await?;
-        let clients: HashMap<_, _> = IntoIter::new([(grpc_addr, client)]).collect();
-        let client_pool = Arc::new(SearchClientPool {
-            clients: Arc::new(RwLock::new(clients)),
-        });
+        let client_pool = SearchClientPool::for_addrs(&[grpc_addr]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
         let result: Result<Vec<_>, SearchError> = stream.try_collect().await;

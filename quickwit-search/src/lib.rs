@@ -22,7 +22,6 @@
 #![allow(clippy::bool_assert_comparison)]
 
 mod client;
-mod client_pool;
 mod cluster_client;
 mod collector;
 mod error;
@@ -32,6 +31,7 @@ mod leaf;
 mod rendezvous_hasher;
 mod retry;
 mod root;
+mod search_client_pool;
 mod search_response_rest;
 mod search_stream;
 mod service;
@@ -53,14 +53,13 @@ use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooter
 use quickwit_storage::StorageUriResolver;
 use tantivy::DocAddress;
 
-pub use crate::client::{create_search_service_client, SearchServiceClient};
-pub use crate::client_pool::search_client_pool::SearchClientPool;
-pub use crate::client_pool::ClientPool;
+pub use crate::client::SearchServiceClient;
 pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::leaf_search;
 pub use crate::root::root_search;
+pub use crate::search_client_pool::SearchClientPool;
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};

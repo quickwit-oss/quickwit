@@ -42,7 +42,7 @@ pub struct SearchServiceImpl {
     metastore: Arc<dyn Metastore>,
     storage_uri_resolver: StorageUriResolver,
     cluster_client: ClusterClient,
-    client_pool: Arc<SearchClientPool>,
+    client_pool: SearchClientPool,
 }
 
 /// Trait representing a search service.
@@ -93,7 +93,7 @@ impl SearchServiceImpl {
         metastore: Arc<dyn Metastore>,
         storage_uri_resolver: StorageUriResolver,
         cluster_client: ClusterClient,
-        client_pool: Arc<SearchClientPool>,
+        client_pool: SearchClientPool,
     ) -> Self {
         SearchServiceImpl {
             metastore,
@@ -132,11 +132,11 @@ impl SearchService for SearchServiceImpl {
         let search_request = leaf_search_request
             .search_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
-        info!(index=?search_request.index_id, splits=?leaf_search_request.split_metadata, "leaf_search");
+        info!(index=?search_request.index_id, splits=?leaf_search_request.split_offsets, "leaf_search");
         let storage = self
             .storage_uri_resolver
             .resolve(&leaf_search_request.index_uri)?;
-        let split_ids = leaf_search_request.split_metadata;
+        let split_ids = leaf_search_request.split_offsets;
         let doc_mapper = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
 
         let leaf_search_response =
@@ -156,7 +156,7 @@ impl SearchService for SearchServiceImpl {
         let fetch_docs_response = fetch_docs(
             fetch_docs_request.partial_hits,
             storage,
-            &fetch_docs_request.split_metadata,
+            &fetch_docs_request.split_offsets,
         )
         .await?;
 
@@ -184,7 +184,7 @@ impl SearchService for SearchServiceImpl {
         let stream_request = leaf_stream_request
             .request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
-        info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_metadata, "leaf_search");
+        info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_offsets, "leaf_search");
         let storage = self
             .storage_uri_resolver
             .resolve(&leaf_stream_request.index_uri)?;
@@ -192,7 +192,7 @@ impl SearchService for SearchServiceImpl {
         let leaf_receiver = leaf_search_stream(
             stream_request,
             storage.clone(),
-            leaf_stream_request.split_metadata,
+            leaf_stream_request.split_offsets,
             doc_mapper,
         )
         .await;

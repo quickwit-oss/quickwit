@@ -123,7 +123,7 @@ message LeafSearchRequest {
 
   // Index split ids to apply the query on.
   // This ids are resolved from the index_uri defined in the search_request.
-  repeated SplitIdAndFooterOffsets split_metadata = 4;
+  repeated SplitIdAndFooterOffsets split_offsets = 4;
 
   // `DocMapper` as json serialized trait.
   string doc_mapper = 5;
@@ -204,7 +204,7 @@ message FetchDocsRequest {
   // Split footer offsets. They are required for fetch docs to
   // fetch the document content in two reads, when the footer is not
   // cached.
-  repeated SplitIdAndFooterOffsets split_metadata = 3;
+  repeated SplitIdAndFooterOffsets split_offsets = 3;
 
   // Index URI. The index URI defines the location of the storage that contains the
   // split files.
@@ -261,7 +261,7 @@ message LeafSearchStreamRequest {
 
   // Index split ids to apply the query on.
   // This ids are resolved from the index_uri defined in the stream request.
-  repeated SplitIdAndFooterOffsets split_metadata = 2;
+  repeated SplitIdAndFooterOffsets split_offsets = 2;
 
   // `DocMapper` as json serialized trait.
   string doc_mapper = 5;
