@@ -19,6 +19,7 @@
 
 use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResponse};
 use tokio::sync::mpsc::error::SendError;
+use tracing::warn;
 
 use super::RetryPolicy;
 
@@ -56,99 +57,37 @@ impl
                 });
                 Some(request)
             }
-            Err(_) => Some(request),
+            Err(SendError(_)) => {
+                // The receiver channel was dropped.
+                // There is no need to retry.
+                warn!(
+                    "Receiver channel closed during stream search request. The client probably \
+                     closed the connection?"
+                );
+                None
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::{
-        LeafSearchRequest, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
-        SplitSearchError,
-    };
+    use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResponse};
+    use tokio::sync::mpsc::error::SendError;
 
-    use crate::retry::search::LeafSearchRetryPolicy;
+    use crate::retry::search_stream::LeafSearchStreamRetryPolicy;
     use crate::retry::RetryPolicy;
-    use crate::SearchError;
 
-    fn mock_leaf_search_request() -> LeafSearchRequest {
-        LeafSearchRequest {
-            search_request: Some(SearchRequest {
-                index_id: "test-idx".to_string(),
-                query: "test".to_string(),
-                search_fields: vec!["body".to_string()],
-                start_timestamp: None,
-                end_timestamp: None,
-                max_hits: 10,
-                start_offset: 0,
-                ..Default::default()
-            }),
-            doc_mapper: "doc_mapper".to_string(),
-            index_uri: "uri".to_string(),
-            split_offsets: vec![
-                SplitIdAndFooterOffsets {
-                    split_id: "split_1".to_string(),
-                    split_footer_end: 100,
-                    split_footer_start: 0,
-                },
-                SplitIdAndFooterOffsets {
-                    split_id: "split_2".to_string(),
-                    split_footer_end: 100,
-                    split_footer_start: 0,
-                },
-            ],
-        }
-    }
-
-    #[test]
-    fn test_should_retry_on_error() -> anyhow::Result<()> {
-        let retry_policy = LeafSearchRetryPolicy {};
-        let request = mock_leaf_search_request();
-        let result = Result::<LeafSearchResponse, SearchError>::Err(SearchError::InternalError(
-            "test".to_string(),
-        ));
-        let retry_req_opt = retry_policy.retry_request(request, result.as_ref());
-        assert!(retry_req_opt.is_some());
-        Ok(())
-    }
-
-    #[test]
-    fn test_should_not_retry_if_result_is_ok_and_no_failing_splits() -> anyhow::Result<()> {
-        let retry_policy = LeafSearchRetryPolicy {};
-        let request = mock_leaf_search_request();
-        let leaf_response = LeafSearchResponse {
-            num_hits: 0,
-            partial_hits: vec![],
-            failed_splits: vec![],
-            num_attempted_splits: 1,
-        };
-        let result = Result::<LeafSearchResponse, SearchError>::Ok(leaf_response);
-        let retry_req_opt = retry_policy.retry_request(request, result.as_ref());
+    #[tokio::test]
+    async fn test_retry_policy_search_stream_should_not_retry_on_send_error() {
+        let retry_policy = LeafSearchStreamRetryPolicy {};
+        let leaf_search_stream_req = LeafSearchStreamRequest::default();
+        let leaf_search_stream_res = LeafSearchStreamResponse::default();
+        let leaf_search_stream_send_error = Err(SendError(Ok(leaf_search_stream_res)));
+        let retry_req_opt = retry_policy.retry_request(
+            leaf_search_stream_req,
+            leaf_search_stream_send_error.as_ref(),
+        );
         assert!(retry_req_opt.is_none());
-        Ok(())
-    }
-
-    #[test]
-    fn test_should_retry_on_failed_splits() -> anyhow::Result<()> {
-        let retry_policy = LeafSearchRetryPolicy {};
-        let request = mock_leaf_search_request();
-        let mut expected_retry_request = request.clone();
-        expected_retry_request.split_offsets.remove(0);
-        let split_error = SplitSearchError {
-            error: "error".to_string(),
-            split_id: "split_2".to_string(),
-            retryable_error: true,
-        };
-        let leaf_response = LeafSearchResponse {
-            num_hits: 0,
-            partial_hits: vec![],
-            failed_splits: vec![split_error],
-            num_attempted_splits: 1,
-        };
-        let result = Result::<LeafSearchResponse, SearchError>::Ok(leaf_response);
-        let retry_request_opt = retry_policy.retry_request(request, result.as_ref());
-        assert_eq!(retry_request_opt, Some(expected_retry_request));
-        Ok(())
     }
 }

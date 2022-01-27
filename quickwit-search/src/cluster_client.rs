@@ -120,12 +120,14 @@ impl ClusterClient {
                     &client,
                     &retry_request.split_offsets[0].split_id,
                 );
-                // Propagates the error if we cannot get a new client and stops the task.
-                if let Err(error) = retry_client_res {
-                    let _ = result_sender.send(Err(SearchError::from(error)));
-                    return;
-                }
-                let mut retry_client = retry_client_res.unwrap();
+                let mut retry_client = match retry_client_res {
+                    Ok(retry_client) => retry_client,
+                    Err(error) => {
+                        // Propagates the error if we cannot get a new client and stops the task.
+                        let _ = result_sender.send(Err(SearchError::from(error)));
+                        return;
+                    }
+                };
                 debug!(
                     "Leaf search stream response error. Retry once to execute {:?} with {:?}",
                     retry_request, client
