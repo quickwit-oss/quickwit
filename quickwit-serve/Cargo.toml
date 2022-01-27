@@ -5,7 +5,7 @@ authors = ['Quickwit <hello@quickwit.io>']
 edition = '2021'
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit's search service"
-repository = "https://github.com/quickwit-inc/quickwit"
+repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 

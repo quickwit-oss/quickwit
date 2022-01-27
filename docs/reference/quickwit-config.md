@@ -9,7 +9,7 @@ This page documents the Quickwit configuration properties. It is divided into th
 - Indexer properties: defined in `[indexer]` section of the configuration file.
 - Searcher properties: defined in `[searcher]` section of the configuration file.
 
-A commented example is accessible here: [quickwit.yaml](https://github.com/quickwit-inc/quickwit/blob/d9c4fda658baa3bd7291f8abdff8c4b4b56c232f/config/quickwit.yaml).
+A commented example is accessible here: [quickwit.yaml](https://github.com/quickwit-oss/quickwit/blob/d9c4fda658baa3bd7291f8abdff8c4b4b56c232f/config/quickwit.yaml).
 
 ## Common configuration
 

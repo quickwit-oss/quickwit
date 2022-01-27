@@ -53,6 +53,10 @@ pub async fn root_search_stream(
     .map_err(|err| {
         SearchError::InternalError(format!("Failed to build doc mapper. Cause: {}", err))
     })?;
+
+    // try to build query against current schema
+    let _query = doc_mapper.query(doc_mapper.schema(), &search_request)?;
+
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))
     })?;
@@ -275,6 +279,65 @@ mod tests {
         let result: Result<Vec<_>, SearchError> = stream.try_collect().await;
         assert_eq!(result.is_err(), true);
         assert_eq!(result.unwrap_err().to_string(), "Internal error: `error`.");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_root_search_stream_with_invalid_query() -> anyhow::Result<()> {
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .returning(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-idx",
+                    "file:///path/to/index/test-idx",
+                ))
+            });
+        metastore.expect_list_splits().returning(
+            |_index_id: &str, _split_state: SplitState, _time_range: Option<Range<i64>>, _tags| {
+                Ok(vec![mock_split("split")])
+            },
+        );
+
+        let client_pool =
+            SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
+
+        assert!(root_search_stream(
+            quickwit_proto::SearchStreamRequest {
+                index_id: "test-idx".to_string(),
+                query: r#"invalid_field:"test""#.to_string(),
+                search_fields: vec!["body".to_string()],
+                start_timestamp: None,
+                end_timestamp: None,
+                fast_field: "timestamp".to_string(),
+                output_format: OutputFormat::Csv as i32,
+                partition_by_field: Some("timestamp".to_string()),
+            },
+            &metastore,
+            ClusterClient::new(client_pool.clone()),
+            &client_pool,
+        )
+        .await
+        .is_err());
+
+        assert!(root_search_stream(
+            quickwit_proto::SearchStreamRequest {
+                index_id: "test-idx".to_string(),
+                query: "test".to_string(),
+                search_fields: vec!["invalid_field".to_string()],
+                start_timestamp: None,
+                end_timestamp: None,
+                fast_field: "timestamp".to_string(),
+                output_format: OutputFormat::Csv as i32,
+                partition_by_field: Some("timestamp".to_string()),
+            },
+            &metastore,
+            ClusterClient::new(client_pool.clone()),
+            &client_pool
+        )
+        .await
+        .is_err());
+
         Ok(())
     }
 }

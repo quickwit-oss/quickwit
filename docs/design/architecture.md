@@ -24,7 +24,7 @@ In a clustered deployment, the metastore is typically a traditional RDBMS like P
 
 ### Distributed message queues
 
-Quickwit indexers connect directly to external message queues like Kafka and guarantee the exactly-once semantics. If you need support for other distributed queues, please vote for yours [here](https://github.com/quickwit-inc/quickwit/issues/1000).
+Quickwit indexers connect directly to external message queues like Kafka and guarantee the exactly-once semantics. If you need support for other distributed queues, please vote for yours [here](https://github.com/quickwit-oss/quickwit/issues/1000).
 
 ## Architecture diagram
 

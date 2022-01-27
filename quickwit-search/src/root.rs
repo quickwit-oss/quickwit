@@ -1086,7 +1086,7 @@ mod tests {
         assert!(root_search(
             &quickwit_proto::SearchRequest {
                 index_id: "test-idx".to_string(),
-                query: r#"invalid_body:"test""#.to_string(),
+                query: r#"invalid_field:"test""#.to_string(),
                 search_fields: vec!["body".to_string()],
                 start_timestamp: None,
                 end_timestamp: None,
@@ -1105,7 +1105,7 @@ mod tests {
             &quickwit_proto::SearchRequest {
                 index_id: "test-idx".to_string(),
                 query: "test".to_string(),
-                search_fields: vec!["invalid_body".to_string()],
+                search_fields: vec!["invalid_field".to_string()],
                 start_timestamp: None,
                 end_timestamp: None,
                 max_hits: 10,

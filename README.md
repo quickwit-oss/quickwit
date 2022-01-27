@@ -1,4 +1,4 @@
-[![codecov](https://codecov.io/gh/quickwit-inc/quickwit/branch/main/graph/badge.svg?token=06SRGAV5SS)](https://codecov.io/gh/quickwit-inc/quickwit)
+[![codecov](https://codecov.io/gh/quickwit-oss/quickwit/branch/main/graph/badge.svg?token=06SRGAV5SS)](https://codecov.io/gh/quickwit-oss/quickwit)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
 [![License: AGPL V3](https://img.shields.io/badge/license-AGPL%20V3-blue)](LICENCE.md)
 [![Join the discord chat](https://shields.io/discord/908281611840282624?label=chat%20on%20discord)](https://discord.gg/rpRRTezWhW)
@@ -23,7 +23,7 @@
 
 Quickwit is a distributed search engine built from the ground up to offer cost-efficiency and high reliability. By mere mortals for mere mortals, Quickwit's architecture is as simple as possible <sup>[1](#footnote1)</sup>.
 
-Quickwit is written in Rust and built on top of the mighty [tantivy](https://github.com/quickwit-inc/tantivy) library. We designed it to index large datasets.
+Quickwit is written in Rust and built on top of the mighty [tantivy](https://github.com/quickwit-oss/tantivy) library. We designed it to index large datasets.
 
 ## Why Quickwit?
 

@@ -9,17 +9,17 @@ We notably provide musl builds to provide static binaries with no dependencies.
 
 ## Download
 
-Version: 0.2.0 - [Release note](https://github.com/quickwit-inc/quickwit/releases/tag/v0.2.0)
-License: [AGPL V3](https://github.com/quickwit-inc/quickwit/blob/main/LICENSE.md)
+Version: 0.2.0 - [Release note](https://github.com/quickwit-oss/quickwit/releases/tag/v0.2.0)
+License: [AGPL V3](https://github.com/quickwit-oss/quickwit/blob/main/LICENSE.md)
 Downloads `.tar.gz`:
-- [Linux ARM64](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-aarch64-unknown-linux-gnu.tar.gz)
-- [Linux ARM64 (static build)](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-aarch64-unknown-linux-musl.tar.gz)
-- [Linux x86_64](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-unknown-linux-gnu.tar.gz)
-- [Linux x86_64 (static build)](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-unknown-linux-musl.tar.gz)
-- [macOS x86_64](https://github.com/quickwit-inc/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-apple-darwin.tar.gz)
+- [Linux ARM64](https://github.com/quickwit-oss/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-aarch64-unknown-linux-gnu.tar.gz)
+- [Linux ARM64 (static build)](https://github.com/quickwit-oss/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-aarch64-unknown-linux-musl.tar.gz)
+- [Linux x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-unknown-linux-gnu.tar.gz)
+- [Linux x86_64 (static build)](https://github.com/quickwit-oss/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-unknown-linux-musl.tar.gz)
+- [macOS x86_64](https://github.com/quickwit-oss/quickwit/releases/download/v0.2.0/quickwit-v0.2.0-x86_64-apple-darwin.tar.gz)
 
 
-Checkout all builds on [github](https://github.com/quickwit-inc/quickwit/releases)
+Checkout all builds on [github](https://github.com/quickwit-oss/quickwit/releases)
 
 ### Note on external dependencies
 
@@ -49,7 +49,7 @@ The script detects the architecture and then downloads the correct binary archiv
 curl -L https://install.quickwit.io | sh
 ```
 
-All this script does is download the correct binary archive for your machine and extract it in the current working directory. This means you can download any desired archive from [github](https://github.com/quickwit-inc/quickwit/releases) that match your OS architecture and manually extract it anywhere.
+All this script does is download the correct binary archive for your machine and extract it in the current working directory. This means you can download any desired archive from [github](https://github.com/quickwit-oss/quickwit/releases) that match your OS architecture and manually extract it anywhere.
 
 Once installed or extracted, all Quickwit's installation files can be found in a directory named `quickwit-{version}` where `version` is the corresponding version of Quickwit. This directory has the following layout:
 
@@ -87,7 +87,7 @@ To get the full gist of this, let's run a minified version of the - [Quickstart 
 mkdir data && cd data
 
 # download wikipedia dataset files
-curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/wikipedia/index-config.yaml
+curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/wikipedia/index-config.yaml
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json
 
 # create, index and search using the container 
