@@ -43,7 +43,7 @@ cross-images:
 		docker push quickwit/cross:$$tag; \
 	done
 
-# TODO: to be replaced by https://github.com/quickwit-inc/quickwit/issues/237
+# TODO: to be replaced by https://github.com/quickwit-oss/quickwit/issues/237
 TARGET ?= x86_64-unknown-linux-gnu
 .PHONY: build
 build:

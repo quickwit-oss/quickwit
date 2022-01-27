@@ -12,8 +12,8 @@
 set -u
 
 # If PACKAGE_ROOT is unset or empty, default it.
-PACKAGE_ROOT="${PACKAGE_ROOT:-"https://github.com/quickwit-inc/quickwit/releases/download"}"
-PACKAGE_RELEASE_API="${PACKAGE_RELEASE_API:-"https://api.github.com/repos/quickwit-inc/quickwit/releases"}"
+PACKAGE_ROOT="${PACKAGE_ROOT:-"https://github.com/quickwit-oss/quickwit/releases/download"}"
+PACKAGE_RELEASE_API="${PACKAGE_RELEASE_API:-"https://api.github.com/repos/quickwit-oss/quickwit/releases"}"
 PACKAGE_NAME="quickwit"
 _divider="--------------------------------------------------------------------------------"
 _prompt=">>>"

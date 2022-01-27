@@ -5,7 +5,7 @@ authors = ['Quickwit, Inc. <hello@quickwit.io>']
 edition = '2021'
 license = 'AGPL-3.0-or-later'  # For a commercial, license, contact hello@quickwit.io
 description = "Quickwit indexing"
-repository = "https://github.com/quickwit-inc/quickwit"
+repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
@@ -34,7 +34,7 @@ rusoto_kinesis = { version = "0.47", default-features = false, features = ["rust
 serde = "1"
 serde_json = "1"
 serde_yaml = "0.8"
-tantivy = { git= "https://github.com/quickwit-inc/tantivy", rev="48c47f0d3", default-features=false, features = ["mmap", "lz4-compression"] }
+tantivy = { git= "https://github.com/quickwit-oss/tantivy", rev="48c47f0d3", default-features=false, features = ["mmap", "lz4-compression"] }
 tempfile = "3.2"
 thiserror = "1"
 tokio = { version = "1", features = ["sync"] }
