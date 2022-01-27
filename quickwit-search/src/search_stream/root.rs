@@ -17,24 +17,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::collections::HashSet;
 
 use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
 use quickwit_config::build_doc_mapper;
-use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_metastore::Metastore;
 use quickwit_proto::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
 use tokio_stream::StreamMap;
 use tracing::*;
 
-use crate::client_pool::Job;
 use crate::cluster_client::ClusterClient;
-use crate::root::job_for_splits;
-use crate::{
-    extract_split_and_footer_offsets, list_relevant_splits, ClientPool, SearchClientPool,
-    SearchError, SearchServiceClient,
-};
+use crate::root::SearchJob;
+use crate::{list_relevant_splits, SearchClientPool, SearchError, SearchServiceClient};
 
 /// Perform a distributed search stream.
 #[instrument(skip(metastore, cluster_client, client_pool))]
@@ -42,14 +37,14 @@ pub async fn root_search_stream(
     search_stream_request: SearchStreamRequest,
     metastore: &dyn Metastore,
     cluster_client: ClusterClient,
-    client_pool: &Arc<SearchClientPool>,
+    client_pool: &SearchClientPool,
 ) -> crate::Result<impl futures::Stream<Item = crate::Result<Bytes>>> {
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
 
     let search_request = SearchRequest::from(search_stream_request.clone());
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
-    let split_metadata_list = list_relevant_splits(&search_request, metastore).await?;
+    let split_metadatas = list_relevant_splits(&search_request, metastore).await?;
     let doc_mapper = build_doc_mapper(
         &index_metadata.doc_mapping,
         &index_metadata.search_settings,
@@ -62,16 +57,10 @@ pub async fn root_search_stream(
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))
     })?;
 
-    // Create a hash map of SplitMetadata with split id as a key.
-    let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
-        .into_iter()
-        .map(|metadata| (metadata.split_id().to_string(), metadata))
-        .collect();
-    let leaf_search_jobs: Vec<Job> =
-        job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
-    let assigned_leaf_search_jobs: Vec<(SearchServiceClient, Vec<Job>)> = client_pool
-        .assign_jobs(leaf_search_jobs.clone(), &HashSet::default())
-        .await?;
+    let leaf_search_jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
+
+    let assigned_leaf_search_jobs: Vec<(SearchServiceClient, Vec<SearchJob>)> =
+        client_pool.assign_jobs(leaf_search_jobs, &HashSet::default())?;
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
 
     let mut stream_map: StreamMap<usize, _> = StreamMap::new();
@@ -80,11 +69,10 @@ pub async fn root_search_stream(
             &search_stream_request,
             &doc_mapper_str,
             &index_metadata.index_uri,
-            &split_metadata_map,
-            &client_jobs,
+            client_jobs,
         );
         let leaf_stream = cluster_client
-            .leaf_search_stream((leaf_request, client))
+            .leaf_search_stream(leaf_request, client)
             .await;
         stream_map.insert(leaf_ord, leaf_stream);
     }
@@ -97,17 +85,11 @@ fn jobs_to_leaf_request(
     request: &SearchStreamRequest,
     doc_mapper_str: &str,
     index_uri: &str,
-    split_metadata_map: &HashMap<String, SplitMetadata>,
-    jobs: &[Job],
+    jobs: Vec<SearchJob>,
 ) -> LeafSearchStreamRequest {
     LeafSearchStreamRequest {
         request: Some(request.clone()),
-        split_metadata: jobs
-            .iter()
-            .map(|job| {
-                extract_split_and_footer_offsets(split_metadata_map.get(&job.split_id).unwrap())
-            })
-            .collect(),
+        split_offsets: jobs.into_iter().map(Into::into).collect(),
         doc_mapper: doc_mapper_str.to_string(),
         index_uri: index_uri.to_string(),
     }
@@ -116,6 +98,7 @@ fn jobs_to_leaf_request(
 #[cfg(test)]
 mod tests {
     use std::ops::Range;
+    use std::sync::Arc;
 
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
@@ -168,8 +151,7 @@ mod tests {
         );
         // The test will hang on indefinitely if we don't drop the receiver.
         drop(result_sender);
-        let client_pool =
-            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
+        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
 
         let cluster_client = ClusterClient::new(client_pool.clone());
         let result: Vec<Bytes> =
@@ -226,8 +208,7 @@ mod tests {
         );
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
-        let client_pool =
-            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
+        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
         let result: Vec<_> = stream.try_collect().await?;
@@ -272,7 +253,7 @@ mod tests {
         result_sender.send(Err(SearchError::InternalError("error".to_string())))?;
         mock_search_service
             .expect_leaf_search_stream()
-            .withf(|request| request.split_metadata.len() == 2) // First request.
+            .withf(|request| request.split_offsets.len() == 2) // First request.
             .return_once(
                 |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
                     Ok(UnboundedReceiverStream::new(result_receiver))
@@ -280,7 +261,7 @@ mod tests {
             );
         mock_search_service
             .expect_leaf_search_stream()
-            .withf(|request| request.split_metadata.len() == 1) // Retry request on the failed split.
+            .withf(|request| request.split_offsets.len() == 1) // Retry request on the failed split.
             .return_once(
                 |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
                     Err(SearchError::InternalError("error".to_string()))
@@ -288,8 +269,7 @@ mod tests {
             );
         // The test will hang on indefinitely if we don't drop the sender.
         drop(result_sender);
-        let client_pool =
-            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
+        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let stream = root_search_stream(request, &metastore, cluster_client, &client_pool).await?;
         let result: Result<Vec<_>, SearchError> = stream.try_collect().await;

@@ -78,7 +78,7 @@ pub struct LeafSearchRequest {
     /// Index split ids to apply the query on.
     /// This ids are resolved from the index_uri defined in the search_request.
     #[prost(message, repeated, tag = "4")]
-    pub split_metadata: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
     /// `DocMapper` as json serialized trait.
     #[prost(string, tag = "5")]
     pub doc_mapper: ::prost::alloc::string::String,
@@ -175,7 +175,7 @@ pub struct FetchDocsRequest {
     /// fetch the document content in two reads, when the footer is not
     /// cached.
     #[prost(message, repeated, tag = "3")]
-    pub split_metadata: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
     /// Index URI. The index URI defines the location of the storage that contains the
     /// split files.
     #[prost(string, tag = "4")]
@@ -228,7 +228,7 @@ pub struct LeafSearchStreamRequest {
     /// Index split ids to apply the query on.
     /// This ids are resolved from the index_uri defined in the stream request.
     #[prost(message, repeated, tag = "2")]
-    pub split_metadata: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
     /// `DocMapper` as json serialized trait.
     #[prost(string, tag = "5")]
     pub doc_mapper: ::prost::alloc::string::String,

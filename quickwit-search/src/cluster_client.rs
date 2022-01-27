@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
-
 use futures::StreamExt;
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse,
@@ -39,25 +37,30 @@ use crate::{SearchClientPool, SearchError, SearchServiceClient};
 /// to retry on other `SearchServiceClient`.
 #[derive(Clone)]
 pub struct ClusterClient {
-    client_pool: Arc<SearchClientPool>,
+    client_pool: SearchClientPool,
 }
 
 impl ClusterClient {
     /// Instantiates [`ClusterClient`].
-    pub fn new(client_pool: Arc<SearchClientPool>) -> Self {
+    pub fn new(client_pool: SearchClientPool) -> Self {
         Self { client_pool }
     }
 
     /// Fetches docs with retry on another node client.
     pub async fn fetch_docs(
         &self,
-        placed_request: (FetchDocsRequest, SearchServiceClient),
+        request: FetchDocsRequest,
+        mut client: SearchServiceClient,
     ) -> crate::Result<FetchDocsResponse> {
-        let (request, mut client) = placed_request;
         let mut result = client.fetch_docs(request.clone()).await;
         let retry_policy = DefaultRetryPolicy {};
-        if let Some(retry_request) = retry_policy.retry_request(&request, result.as_ref()) {
-            client = retry_client(&self.client_pool, &client, &retry_request).await?;
+        if let Some(retry_request) = retry_policy.retry_request(request, result.as_ref()) {
+            assert!(!retry_request.split_offsets.is_empty());
+            client = retry_client(
+                &self.client_pool,
+                &client,
+                &retry_request.split_offsets[0].split_id,
+            )?;
             debug!(
                 "Fetch docs response error: `{:?}`. Retry once to execute {:?} with {:?}",
                 result, retry_request, client
@@ -70,13 +73,18 @@ impl ClusterClient {
     /// Leaf search with retry on another node client.
     pub async fn leaf_search(
         &self,
-        placed_request: (LeafSearchRequest, SearchServiceClient),
+        req: LeafSearchRequest,
+        mut client: SearchServiceClient,
     ) -> crate::Result<LeafSearchResponse> {
-        let (request, mut client) = placed_request;
-        let mut result = client.leaf_search(request.clone()).await;
+        let mut result = client.leaf_search(req.clone()).await;
         let retry_policy = LeafSearchRetryPolicy {};
-        if let Some(retry_request) = retry_policy.retry_request(&request, result.as_ref()) {
-            client = retry_client(&self.client_pool, &client, &retry_request).await?;
+        if let Some(retry_request) = retry_policy.retry_request(req, result.as_ref()) {
+            assert!(!retry_request.split_offsets.is_empty());
+            client = retry_client(
+                &self.client_pool,
+                &client,
+                &retry_request.split_offsets[0].split_id,
+            )?;
             debug!(
                 "Leaf search response error: `{:?}`. Retry once to execute {:?} with {:?}",
                 result, retry_request, client
@@ -90,9 +98,9 @@ impl ClusterClient {
     /// Leaf search stream with retry on another node client.
     pub async fn leaf_search_stream(
         &self,
-        placed_request: (LeafSearchStreamRequest, SearchServiceClient),
+        req: LeafSearchStreamRequest,
+        mut client: SearchServiceClient,
     ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>> {
-        let (request, mut client) = placed_request;
         // We need a dedicated channel to send results with retry. First we send only the successful
         // responses and and ignore errors. If there are some errors, we make one retry and
         // in this case we send all results.
@@ -100,21 +108,24 @@ impl ClusterClient {
         let client_pool = self.client_pool.clone();
         let retry_policy = LeafSearchStreamRetryPolicy {};
         tokio::spawn(async move {
-            let result_stream = client.leaf_search_stream(request.clone()).await;
+            let result_stream = client.leaf_search_stream(req.clone()).await;
             // Forward only responses and not errors to the sender as we will make one retry on
             // errors.
             let forward_result =
                 forward_leaf_search_stream(result_stream, result_sender.clone(), false).await;
-            if let Some(retry_request) =
-                retry_policy.retry_request(&request, forward_result.as_ref())
-            {
-                let retry_client_opt = retry_client(&client_pool, &client, &retry_request).await;
+            if let Some(retry_request) = retry_policy.retry_request(req, forward_result.as_ref()) {
+                assert!(!retry_request.split_offsets.is_empty());
+                let retry_client_res = retry_client(
+                    &client_pool,
+                    &client,
+                    &retry_request.split_offsets[0].split_id,
+                );
                 // Propagates the error if we cannot get a new client and stops the task.
-                if let Err(error) = retry_client_opt {
+                if let Err(error) = retry_client_res {
                     let _ = result_sender.send(Err(SearchError::from(error)));
                     return;
                 }
-                let mut retry_client = retry_client_opt.unwrap();
+                let mut retry_client = retry_client_res.unwrap();
                 debug!(
                     "Leaf search stream response error. Retry once to execute {:?} with {:?}",
                     retry_request, client
@@ -187,14 +198,15 @@ async fn forward_leaf_search_stream(
 mod tests {
     use std::collections::HashSet;
     use std::net::SocketAddr;
+    use std::sync::Arc;
 
     use quickwit_proto::{
         PartialHit, SearchRequest, SearchStreamRequest, SplitIdAndFooterOffsets, SplitSearchError,
     };
 
     use super::*;
-    use crate::client_pool::Job;
-    use crate::{ClientPool, MockSearchService};
+    use crate::root::SearchJob;
+    use crate::MockSearchService;
 
     fn mock_partial_hit(split_id: &str, sorting_field_value: u64, doc_id: u32) -> PartialHit {
         PartialHit {
@@ -210,7 +222,7 @@ mod tests {
             partial_hits: vec![],
             index_id: "id".to_string(),
             index_uri: "uri".to_string(),
-            split_metadata: vec![SplitIdAndFooterOffsets {
+            split_offsets: vec![SplitIdAndFooterOffsets {
                 split_id: split_id.to_string(),
                 split_footer_end: 100,
                 split_footer_start: 0,
@@ -233,7 +245,7 @@ mod tests {
             search_request: Some(search_request),
             doc_mapper: "doc_mapper".to_string(),
             index_uri: "uri".to_string(),
-            split_metadata: vec![
+            split_offsets: vec![
                 SplitIdAndFooterOffsets {
                     split_id: "split_1".to_string(),
                     split_footer_start: 0,
@@ -263,7 +275,7 @@ mod tests {
             request: Some(search_request),
             doc_mapper: "doc_mapper".to_string(),
             index_uri: "uri".to_string(),
-            split_metadata: vec![
+            split_offsets: vec![
                 SplitIdAndFooterOffsets {
                     split_id: "split_1".to_string(),
                     split_footer_start: 0,
@@ -287,19 +299,11 @@ mod tests {
             .return_once(|_: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse { hits: vec![] })
             });
-        let client_pool =
-            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?);
-        let first_client = client_pool
-            .assign_job(
-                Job {
-                    split_id: "split_1".to_string(),
-                    cost: 0,
-                },
-                &HashSet::new(),
-            )
-            .await?;
+        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
+        let first_client =
+            client_pool.assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())?;
         let cluster_client = ClusterClient::new(client_pool);
-        let result = cluster_client.fetch_docs((request, first_client)).await;
+        let result = cluster_client.fetch_docs(request, first_client).await;
         assert!(result.is_ok());
         Ok(())
     }
@@ -319,17 +323,14 @@ mod tests {
             .return_once(|_: quickwit_proto::FetchDocsRequest| {
                 Ok(quickwit_proto::FetchDocsResponse { hits: vec![] })
             });
-        let client_pool = Arc::new(
+        let client_pool =
             SearchClientPool::from_mocks(vec![Arc::new(mock_service_1), Arc::new(mock_service_2)])
-                .await?,
-        );
-        let client_hashmap = client_pool.clients.read().await;
+                .await?;
+        let client_hashmap = client_pool.clients();
         let first_grpc_addr: SocketAddr = "127.0.0.1:10000".parse()?;
-        let first_client = client_hashmap.get(&first_grpc_addr).unwrap();
+        let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
         let cluster_client = ClusterClient::new(client_pool.clone());
-        let result = cluster_client
-            .fetch_docs((request, first_client.clone()))
-            .await;
+        let result = cluster_client.fetch_docs(request, first_client).await;
         assert!(result.is_ok());
         Ok(())
     }
@@ -343,15 +344,12 @@ mod tests {
             .returning(|_: quickwit_proto::FetchDocsRequest| {
                 Err(SearchError::InternalError("error".to_string()))
             });
-        let client_pool =
-            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_service_1)]).await?);
-        let client_hashmap = client_pool.clients.read().await;
+        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service_1)]).await?;
+        let client_hashmap = client_pool.clients();
         let first_grpc_addr: SocketAddr = "127.0.0.1:10000".parse()?;
-        let first_client = client_hashmap.get(&first_grpc_addr).unwrap();
+        let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
         let cluster_client = ClusterClient::new(client_pool.clone());
-        let result = cluster_client
-            .fetch_docs((request, first_client.clone()))
-            .await;
+        let result = cluster_client.fetch_docs(request, first_client).await;
         assert!(result.is_err());
         Ok(())
     }
@@ -370,19 +368,11 @@ mod tests {
                     num_attempted_splits: 1,
                 })
             });
-        let client_pool =
-            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?);
-        let first_client = client_pool
-            .assign_job(
-                Job {
-                    split_id: "split_1".to_string(),
-                    cost: 0,
-                },
-                &HashSet::new(),
-            )
-            .await?;
+        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
+        let first_client =
+            client_pool.assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())?;
         let cluster_client = ClusterClient::new(client_pool);
-        let result = cluster_client.leaf_search((request, first_client)).await;
+        let result = cluster_client.leaf_search(request, first_client).await;
         assert!(result.is_ok());
         Ok(())
     }
@@ -393,7 +383,7 @@ mod tests {
         let mut mock_service = MockSearchService::new();
         mock_service
             .expect_leaf_search()
-            .withf(|request| request.split_metadata[0].split_id == "split_1")
+            .withf(|request| request.split_offsets[0].split_id == "split_1")
             .return_once(|_: LeafSearchRequest| {
                 Ok(LeafSearchResponse {
                     num_hits: 1,
@@ -408,7 +398,7 @@ mod tests {
             });
         mock_service
             .expect_leaf_search()
-            .withf(|request| request.split_metadata[0].split_id == "split_2")
+            .withf(|request| request.split_offsets[0].split_id == "split_2")
             .return_once(|_: LeafSearchRequest| {
                 Ok(LeafSearchResponse {
                     num_hits: 1,
@@ -421,19 +411,12 @@ mod tests {
                     num_attempted_splits: 1,
                 })
             });
-        let client_pool =
-            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?);
+        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
         let first_client = client_pool
-            .assign_job(
-                Job {
-                    split_id: "split_1".to_string(),
-                    cost: 0,
-                },
-                &HashSet::new(),
-            )
-            .await?;
+            .assign_job(SearchJob::for_test("split_1", 0), &HashSet::new())
+            .unwrap();
         let cluster_client = ClusterClient::new(client_pool);
-        let result = cluster_client.leaf_search((request, first_client)).await;
+        let result = cluster_client.leaf_search(request, first_client).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().num_hits, 2);
         Ok(())
@@ -515,10 +498,9 @@ mod tests {
         mock_service_2
             .expect_leaf_search_stream()
             .return_once(|_| Ok(UnboundedReceiverStream::new(result_receiver)));
-        let client_pool = Arc::new(
+        let client_pool =
             SearchClientPool::from_mocks(vec![Arc::new(mock_service_1), Arc::new(mock_service_2)])
-                .await?,
-        );
+                .await?;
         result_sender.send(Ok(LeafSearchStreamResponse {
             data: Vec::new(),
             split_id: "split_1".to_string(),
@@ -527,12 +509,12 @@ mod tests {
             "last split error".to_string(),
         )))?;
         drop(result_sender);
-        let client_hashmap = client_pool.clients.read().await;
+        let client_hashmap = client_pool.clients();
         let first_grpc_addr: SocketAddr = "127.0.0.1:10000".parse()?;
-        let first_client = client_hashmap.get(&first_grpc_addr).unwrap();
-        let cluster_client = ClusterClient::new(client_pool.clone());
+        let first_client = client_hashmap.get(&first_grpc_addr).unwrap().clone();
+        let cluster_client = ClusterClient::new(client_pool);
         let result = cluster_client
-            .leaf_search_stream((request, first_client.clone()))
+            .leaf_search_stream(request, first_client)
             .await;
         let results: Vec<_> = result.collect().await;
         assert_eq!(results.len(), 2);

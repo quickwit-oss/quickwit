@@ -22,12 +22,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use futures::{StreamExt, TryStreamExt};
-use http::Uri;
 use opentelemetry::global;
 use opentelemetry::propagation::Injector;
 use quickwit_proto::LeafSearchStreamResponse;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tonic::transport::{Channel, Endpoint};
+use tonic::transport::Channel;
 use tonic::Request;
 use tracing::*;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -228,23 +227,4 @@ impl SearchServiceClient {
             SearchServiceClientImpl::Local(service) => service.fetch_docs(request).await,
         }
     }
-}
-
-/// Create a SearchServiceClient with SocketAddr as an argument.
-/// It will try to reconnect to the node automatically.
-pub async fn create_search_service_client(
-    grpc_addr: SocketAddr,
-) -> anyhow::Result<SearchServiceClient> {
-    let uri = Uri::builder()
-        .scheme("http")
-        .authority(grpc_addr.to_string().as_str())
-        .path_and_query("/")
-        .build()?;
-    // Create a channel with connect_lazy to automatically reconnect to the node.
-    let channel = Endpoint::from(uri).connect_lazy();
-    let client = SearchServiceClient::from_grpc_client(
-        quickwit_proto::search_service_client::SearchServiceClient::new(channel),
-        grpc_addr,
-    );
-    Ok(client)
 }

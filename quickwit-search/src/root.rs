@@ -17,31 +17,93 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
-use futures::{StreamExt, TryStreamExt};
-use itertools::Itertools;
+use futures::future::try_join_all;
 use quickwit_config::build_doc_mapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse, PartialHit,
-    SearchRequest, SearchResponse,
+    FetchDocsRequest, FetchDocsResponse, Hit, LeafSearchRequest, LeafSearchResponse, PartialHit,
+    SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
 };
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
 use tokio::task::spawn_blocking;
 use tracing::{debug, error, instrument};
 
-use crate::client_pool::Job;
 use crate::cluster_client::ClusterClient;
 use crate::collector::make_merge_collector;
+use crate::search_client_pool::Job;
 use crate::{
-    extract_split_and_footer_offsets, list_relevant_splits, ClientPool, SearchClientPool,
-    SearchError,
+    extract_split_and_footer_offsets, list_relevant_splits, SearchClientPool, SearchError,
+    SearchServiceClient,
 };
 
-pub const MAX_CONCURRENT_LEAF_TASKS: usize = if cfg!(test) { 2 } else { 10 };
+#[derive(Debug, PartialEq)]
+pub(crate) struct SearchJob {
+    cost: u32,
+    offsets: SplitIdAndFooterOffsets,
+}
+
+impl SearchJob {
+    #[cfg(test)]
+    pub fn for_test(split_id: &str, cost: u32) -> SearchJob {
+        SearchJob {
+            cost,
+            offsets: SplitIdAndFooterOffsets {
+                split_id: split_id.to_string(),
+                ..Default::default()
+            },
+        }
+    }
+}
+
+impl From<SearchJob> for SplitIdAndFooterOffsets {
+    fn from(search_job: SearchJob) -> Self {
+        search_job.offsets
+    }
+}
+
+impl<'a> From<&'a SplitMetadata> for SearchJob {
+    fn from(split_metadata: &'a SplitMetadata) -> Self {
+        SearchJob {
+            cost: compute_split_cost(split_metadata),
+            offsets: extract_split_and_footer_offsets(split_metadata),
+        }
+    }
+}
+
+impl Job for SearchJob {
+    fn split_id(&self) -> &str {
+        &self.offsets.split_id
+    }
+
+    fn cost(&self) -> u32 {
+        self.cost
+    }
+}
+
+pub(crate) struct FetchDocsJob {
+    offsets: SplitIdAndFooterOffsets,
+    pub partial_hits: Vec<PartialHit>,
+}
+
+impl Job for FetchDocsJob {
+    fn split_id(&self) -> &str {
+        &self.offsets.split_id
+    }
+
+    fn cost(&self) -> u32 {
+        self.partial_hits.len() as u32
+    }
+}
+
+impl From<FetchDocsJob> for SplitIdAndFooterOffsets {
+    fn from(fetch_docs_job: FetchDocsJob) -> SplitIdAndFooterOffsets {
+        fetch_docs_job.offsets
+    }
+}
 
 /// Performs a distributed search.
 /// 1. Sends leaf request over gRPC to multiple leaf nodes.
@@ -53,10 +115,12 @@ pub async fn root_search(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
     cluster_client: &ClusterClient,
-    client_pool: &Arc<SearchClientPool>,
+    client_pool: &SearchClientPool,
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
+
     let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+
     let doc_mapper = build_doc_mapper(
         &index_metadata.doc_mapping,
         &index_metadata.search_settings,
@@ -72,30 +136,37 @@ pub async fn root_search(
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {}", err))
     })?;
-    let split_metadata_list = list_relevant_splits(search_request, metastore).await?;
-    let split_metadata_map: HashMap<String, SplitMetadata> = split_metadata_list
-        .into_iter()
-        .map(|metadata| (metadata.split_id().to_string(), metadata))
+
+    let split_metadatas: Vec<SplitMetadata> =
+        list_relevant_splits(search_request, metastore).await?;
+
+    let split_offsets_map: HashMap<String, SplitIdAndFooterOffsets> = split_metadatas
+        .iter()
+        .map(|metadata| {
+            (
+                metadata.split_id().to_string(),
+                extract_split_and_footer_offsets(metadata),
+            )
+        })
         .collect();
-    let jobs: Vec<Job> = job_for_splits(&split_metadata_map.keys().collect(), &split_metadata_map);
-    let assigned_leaf_search_jobs = client_pool.assign_jobs(jobs, &HashSet::default()).await?;
+
+    let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
+    let assigned_leaf_search_jobs = client_pool.assign_jobs(jobs, &HashSet::default())?;
     debug!(assigned_leaf_search_jobs=?assigned_leaf_search_jobs, "Assigned leaf search jobs.");
-    let leaf_search_responses: Vec<LeafSearchResponse> =
-        futures::stream::iter(assigned_leaf_search_jobs.into_iter())
+    let leaf_search_responses: Vec<LeafSearchResponse> = try_join_all(
+        assigned_leaf_search_jobs
+            .into_iter()
             .map(|(client, client_jobs)| {
                 let leaf_request = jobs_to_leaf_request(
                     search_request,
                     &doc_mapper_str,
                     &index_metadata.index_uri,
-                    &split_metadata_map,
-                    &client_jobs,
+                    client_jobs,
                 );
-                cluster_client.leaf_search((leaf_request, client))
-            })
-            .buffer_unordered(MAX_CONCURRENT_LEAF_TASKS)
-            .try_collect()
-            .await?;
-
+                cluster_client.leaf_search(leaf_request, client)
+            }),
+    )
+    .await?;
     let merge_collector = make_merge_collector(search_request);
     let leaf_search_response =
         spawn_blocking(move || merge_collector.merge_fruits(leaf_search_responses))
@@ -116,60 +187,49 @@ pub async fn root_search(
         return Err(SearchError::InternalError(errors));
     }
 
-    // Create a hash map of PartialHit with split as a key.
-    let mut partial_hits_map: HashMap<String, Vec<PartialHit>> = HashMap::new();
-    for partial_hit in leaf_search_response.partial_hits.iter() {
-        partial_hits_map
-            .entry(partial_hit.split_id.clone())
-            .or_insert_with(Vec::new)
-            .push(partial_hit.clone());
-    }
+    let client_fetch_docs_task: Vec<(SearchServiceClient, Vec<FetchDocsJob>)> =
+        assign_client_fetch_doc_tasks(
+            &leaf_search_response.partial_hits,
+            &split_offsets_map,
+            client_pool,
+        )?;
 
-    let fetch_docs_req_jobs = partial_hits_map
-        .keys()
-        .map(|split_id| Job {
-            split_id: split_id.clone(),
-            cost: 1,
-        })
-        .collect_vec();
-    let assigned_doc_fetch_jobs = client_pool
-        .assign_jobs(fetch_docs_req_jobs, &HashSet::new())
-        .await?;
-    let fetch_docs_responses: Vec<FetchDocsResponse> =
-        futures::stream::iter(assigned_doc_fetch_jobs.into_iter())
-            .map(|(client, client_jobs)| {
-                let doc_request = jobs_to_fetch_docs_request(
-                    &search_request.index_id,
-                    &index_metadata.index_uri,
-                    &split_metadata_map,
-                    &mut partial_hits_map,
-                    &client_jobs,
-                );
-                cluster_client.fetch_docs((doc_request, client))
-            })
-            .buffer_unordered(MAX_CONCURRENT_LEAF_TASKS)
-            .try_collect()
-            .await?;
+    let fetch_docs_resp_futures =
+        client_fetch_docs_task
+            .into_iter()
+            .map(|(client, fetch_docs_jobs)| {
+                let partial_hits: Vec<PartialHit> = fetch_docs_jobs
+                    .iter()
+                    .flat_map(|fetch_doc_job| fetch_doc_job.partial_hits.iter().cloned())
+                    .collect();
+                let split_offsets: Vec<SplitIdAndFooterOffsets> = fetch_docs_jobs
+                    .into_iter()
+                    .map(|fetch_doc_job| fetch_doc_job.into())
+                    .collect();
+                let fetch_docs_req = FetchDocsRequest {
+                    partial_hits,
+                    index_id: search_request.index_id.to_string(),
+                    split_offsets,
+                    index_uri: index_metadata.index_uri.to_string(),
+                };
+                cluster_client.fetch_docs(fetch_docs_req, client)
+            });
+
+    let fetch_docs_resps: Vec<FetchDocsResponse> = try_join_all(fetch_docs_resp_futures).await?;
 
     // Merge the fetched docs.
-    let hits = fetch_docs_responses
+    let mut hits: Vec<Hit> = fetch_docs_resps
         .into_iter()
         .flat_map(|response| response.hits)
-        .sorted_by(|hit1, hit2| {
-            let value1 = if let Some(partial_hit) = &hit1.partial_hit {
-                partial_hit.sorting_field_value
-            } else {
-                0
-            };
-            let value2 = if let Some(partial_hit) = &hit2.partial_hit {
-                partial_hit.sorting_field_value
-            } else {
-                0
-            };
-            // Sort by descending order.
-            value2.cmp(&value1)
-        })
-        .collect_vec();
+        .collect();
+    hits.sort_by_key(|hit| {
+        Reverse(
+            hit.partial_hit
+                .as_ref()
+                .map(|hit| hit.sorting_field_value)
+                .unwrap_or(0),
+        )
+    });
 
     let elapsed = start_instant.elapsed();
 
@@ -181,73 +241,61 @@ pub async fn root_search(
     })
 }
 
+fn assign_client_fetch_doc_tasks(
+    partial_hits: &[PartialHit],
+    split_offsets_map: &HashMap<String, SplitIdAndFooterOffsets>,
+    client_pool: &SearchClientPool,
+) -> crate::Result<Vec<(SearchServiceClient, Vec<FetchDocsJob>)>> {
+    // Group the partial hits per split
+    let mut partial_hits_map: HashMap<String, Vec<PartialHit>> = HashMap::new();
+    for partial_hit in partial_hits.iter() {
+        partial_hits_map
+            .entry(partial_hit.split_id.clone())
+            .or_insert_with(Vec::new)
+            .push(partial_hit.clone());
+    }
+
+    let mut fetch_docs_req_jobs: Vec<FetchDocsJob> = Vec::new();
+    for (split_id, partial_hits) in partial_hits_map {
+        let offsets = split_offsets_map
+            .get(&split_id)
+            .ok_or_else(|| {
+                crate::SearchError::InternalError(format!(
+                    "Received partial hit from an Unknown split {split_id}"
+                ))
+            })?
+            .clone();
+        let fetch_docs_job = FetchDocsJob {
+            offsets,
+            partial_hits,
+        };
+        fetch_docs_req_jobs.push(fetch_docs_job);
+    }
+
+    let assigned_jobs: Vec<(SearchServiceClient, Vec<FetchDocsJob>)> =
+        client_pool.assign_jobs(fetch_docs_req_jobs, &HashSet::new())?;
+    Ok(assigned_jobs)
+}
+
 // Measure the cost associated to searching in a given split metadata.
 fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
     // TODO: Have a smarter cost, by smoothing the number of docs.
     1
 }
 
-pub(crate) fn job_for_splits(
-    split_ids: &HashSet<&String>,
-    split_metadata_map: &HashMap<String, SplitMetadata>,
-) -> Vec<Job> {
-    // Create a job for fetching docs and assign the splits that the node is responsible for based
-    // on the job.
-    let leaf_search_jobs: Vec<Job> = split_metadata_map
-        .iter()
-        .filter(|(split_id, _)| split_ids.contains(split_id))
-        .map(|(split_id, metadata)| Job {
-            split_id: split_id.to_string(),
-            cost: compute_split_cost(metadata),
-        })
-        .collect();
-    leaf_search_jobs
-}
-
 fn jobs_to_leaf_request(
     request: &SearchRequest,
     doc_mapper_str: &str,
     index_uri: &str,
-    split_metadata_map: &HashMap<String, SplitMetadata>,
-    jobs: &[Job],
+    jobs: Vec<SearchJob>,
 ) -> LeafSearchRequest {
     let mut request_with_offset_0 = request.clone();
     request_with_offset_0.start_offset = 0;
     request_with_offset_0.max_hits += request.start_offset;
-
     LeafSearchRequest {
         search_request: Some(request_with_offset_0),
-        split_metadata: jobs
-            .iter()
-            .map(|job| split_metadata_map.get(&job.split_id).expect(&job.split_id))
-            .map(extract_split_and_footer_offsets)
-            .collect(),
+        split_offsets: jobs.into_iter().map(|job| job.offsets).collect(),
         doc_mapper: doc_mapper_str.to_string(),
-        index_uri: index_uri.to_string(),
-    }
-}
-
-fn jobs_to_fetch_docs_request(
-    index_id: &str,
-    index_uri: &str,
-    split_metadata_map: &HashMap<String, SplitMetadata>,
-    partial_hits_map: &mut HashMap<String, Vec<PartialHit>>,
-    jobs: &[Job],
-) -> FetchDocsRequest {
-    let partial_hits = jobs
-        .iter()
-        .flat_map(|job| partial_hits_map.remove(&job.split_id).expect(&job.split_id))
-        .collect_vec();
-    let splits_footer_and_offsets = jobs
-        .iter()
-        .map(|job| split_metadata_map.get(&job.split_id).expect(&job.split_id))
-        .map(extract_split_and_footer_offsets)
-        .collect_vec();
-
-    FetchDocsRequest {
-        partial_hits,
-        index_id: index_id.to_string(),
-        split_metadata: splits_footer_and_offsets,
         index_uri: index_uri.to_string(),
     }
 }
@@ -255,6 +303,7 @@ fn jobs_to_fetch_docs_request(
 #[cfg(test)]
 mod tests {
     use std::ops::Range;
+    use std::sync::Arc;
 
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
@@ -288,7 +337,7 @@ mod tests {
                     + r#"", "body" : "test 1", "url" : "http://127.0.0.1/1"}"#,
                 partial_hit: Some(req),
             })
-            .collect_vec()
+            .collect()
     }
 
     #[tokio::test]
@@ -360,13 +409,11 @@ mod tests {
                 })
             },
         );
-        let client_pool = Arc::new(
-            SearchClientPool::from_mocks(vec![
-                Arc::new(mock_search_service1),
-                Arc::new(mock_search_service2),
-            ])
-            .await?,
-        );
+        let client_pool = SearchClientPool::from_mocks(vec![
+            Arc::new(mock_search_service1),
+            Arc::new(mock_search_service2),
+        ])
+        .await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
@@ -423,8 +470,7 @@ mod tests {
                 })
             },
         );
-        let client_pool =
-            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?);
+        let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_search_service)]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
@@ -498,13 +544,11 @@ mod tests {
                 })
             },
         );
-        let client_pool = Arc::new(
-            SearchClientPool::from_mocks(vec![
-                Arc::new(mock_search_service1),
-                Arc::new(mock_search_service2),
-            ])
-            .await?,
-        );
+        let client_pool = SearchClientPool::from_mocks(vec![
+            Arc::new(mock_search_service1),
+            Arc::new(mock_search_service2),
+        ])
+        .await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
@@ -571,12 +615,12 @@ mod tests {
             .expect_leaf_search()
             .times(2)
             .returning(|leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                let split_ids = leaf_search_req
-                    .split_metadata
+                let split_ids: Vec<&str> = leaf_search_req
+                    .split_offsets
                     .iter()
-                    .map(|metadata| metadata.split_id.to_string())
-                    .collect_vec();
-                if split_ids == vec!["split1".to_string()] {
+                    .map(|metadata| metadata.split_id.as_str())
+                    .collect();
+                if split_ids == ["split1"] {
                     Ok(quickwit_proto::LeafSearchResponse {
                         num_hits: 2,
                         partial_hits: vec![
@@ -586,7 +630,7 @@ mod tests {
                         failed_splits: Vec::new(),
                         num_attempted_splits: 1,
                     })
-                } else if split_ids == vec!["split2".to_string()] {
+                } else if split_ids == ["split2"] {
                     // RETRY REQUEST!
                     Ok(quickwit_proto::LeafSearchResponse {
                         num_hits: 1,
@@ -605,13 +649,11 @@ mod tests {
                 })
             },
         );
-        let client_pool = Arc::new(
-            SearchClientPool::from_mocks(vec![
-                Arc::new(mock_search_service1),
-                Arc::new(mock_search_service2),
-            ])
-            .await?,
-        );
+        let client_pool = SearchClientPool::from_mocks(vec![
+            Arc::new(mock_search_service1),
+            Arc::new(mock_search_service2),
+        ])
+        .await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
@@ -648,7 +690,7 @@ mod tests {
         let mut mock_search_service1 = MockSearchService::new();
         mock_search_service1
             .expect_leaf_search()
-            .withf(|leaf_search_req| leaf_search_req.split_metadata[0].split_id == "split2")
+            .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split2")
             .return_once(|_| {
                 println!("request from service1 split2?");
                 // requests from split 2 arrive here - simulate failure.
@@ -666,7 +708,7 @@ mod tests {
             });
         mock_search_service1
             .expect_leaf_search()
-            .withf(|leaf_search_req| leaf_search_req.split_metadata[0].split_id == "split1")
+            .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split1")
             .return_once(|_| {
                 println!("request from service1 split1?");
                 // RETRY REQUEST from split1
@@ -690,7 +732,7 @@ mod tests {
         let mut mock_search_service2 = MockSearchService::new();
         mock_search_service2
             .expect_leaf_search()
-            .withf(|leaf_search_req| leaf_search_req.split_metadata[0].split_id == "split2")
+            .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split2")
             .return_once(|_| {
                 println!("request from service2 split2?");
                 // retry for split 2 arrive here, simulate success.
@@ -703,7 +745,7 @@ mod tests {
             });
         mock_search_service2
             .expect_leaf_search()
-            .withf(|leaf_search_req| leaf_search_req.split_metadata[0].split_id == "split1")
+            .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split1")
             .return_once(|_| {
                 println!("request from service2 split1?");
                 // requests from split 1 arrive here - simulate failure, then success.
@@ -726,13 +768,11 @@ mod tests {
                 })
             },
         );
-        let client_pool = Arc::new(
-            SearchClientPool::from_mocks(vec![
-                Arc::new(mock_search_service1),
-                Arc::new(mock_search_service2),
-            ])
-            .await?,
-        );
+        let client_pool = SearchClientPool::from_mocks(vec![
+            Arc::new(mock_search_service1),
+            Arc::new(mock_search_service2),
+        ])
+        .await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
@@ -803,7 +843,7 @@ mod tests {
             },
         );
         let client_pool =
-            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?);
+            SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
@@ -861,7 +901,7 @@ mod tests {
             },
         );
         let client_pool =
-            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?);
+            SearchClientPool::from_mocks(vec![Arc::new(mock_search_service1)]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await;
@@ -937,13 +977,11 @@ mod tests {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
-        let client_pool = Arc::new(
-            SearchClientPool::from_mocks(vec![
-                Arc::new(mock_search_service1),
-                Arc::new(mock_search_service2),
-            ])
-            .await?,
-        );
+        let client_pool = SearchClientPool::from_mocks(vec![
+            Arc::new(mock_search_service1),
+            Arc::new(mock_search_service2),
+        ])
+        .await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
@@ -1011,13 +1049,11 @@ mod tests {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
-        let client_pool = Arc::new(
-            SearchClientPool::from_mocks(vec![
-                Arc::new(mock_search_service1),
-                Arc::new(mock_search_service2),
-            ])
-            .await?,
-        );
+        let client_pool = SearchClientPool::from_mocks(vec![
+            Arc::new(mock_search_service1),
+            Arc::new(mock_search_service2),
+        ])
+        .await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
         let search_response =
             root_search(&search_request, &metastore, &cluster_client, &client_pool).await?;
@@ -1044,7 +1080,7 @@ mod tests {
         );
 
         let client_pool =
-            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?);
+            SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
         let cluster_client = ClusterClient::new(client_pool.clone());
 
         assert!(root_search(

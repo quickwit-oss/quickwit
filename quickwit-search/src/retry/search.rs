@@ -31,7 +31,7 @@ impl RetryPolicy<LeafSearchRequest, LeafSearchResponse, SearchError> for LeafSea
     // Build a retry request on failing split ids only.
     fn retry_request(
         &self,
-        request: &LeafSearchRequest,
+        mut request: LeafSearchRequest,
         result: Result<&LeafSearchResponse, &SearchError>,
     ) -> Option<LeafSearchRequest> {
         match result {
@@ -39,16 +39,15 @@ impl RetryPolicy<LeafSearchRequest, LeafSearchResponse, SearchError> for LeafSea
                 if response.failed_splits.is_empty() {
                     return None;
                 }
-                let mut request_clone = request.clone();
-                request_clone.split_metadata.retain(|split_metadata| {
+                request.split_offsets.retain(|split_metadata| {
                     response
                         .failed_splits
                         .iter()
                         .any(|failed_split| failed_split.split_id == split_metadata.split_id)
                 });
-                Some(request_clone)
+                Some(request)
             }
-            Err(_) => Some(request.clone()),
+            Err(_) => Some(request),
         }
     }
 }
@@ -78,7 +77,7 @@ mod tests {
             }),
             doc_mapper: "doc_mapper".to_string(),
             index_uri: "uri".to_string(),
-            split_metadata: vec![
+            split_offsets: vec![
                 SplitIdAndFooterOffsets {
                     split_id: "split_1".to_string(),
                     split_footer_end: 100,
@@ -100,10 +99,8 @@ mod tests {
         let result = Result::<LeafSearchResponse, SearchError>::Err(SearchError::InternalError(
             "test".to_string(),
         ));
-        let retry = retry_policy
-            .retry_request(&request, result.as_ref())
-            .is_some();
-        assert!(retry);
+        let retry_request_opt = retry_policy.retry_request(request, result.as_ref());
+        assert!(retry_request_opt.is_some());
         Ok(())
     }
 
@@ -118,10 +115,8 @@ mod tests {
             num_attempted_splits: 1,
         };
         let result = Result::<LeafSearchResponse, SearchError>::Ok(leaf_response);
-        let retry = retry_policy
-            .retry_request(&request, result.as_ref())
-            .is_some();
-        assert!(!retry);
+        let retry_request_opt = retry_policy.retry_request(request, result.as_ref());
+        assert!(retry_request_opt.is_none());
         Ok(())
     }
 
@@ -130,7 +125,7 @@ mod tests {
         let retry_policy = LeafSearchRetryPolicy {};
         let request = mock_leaf_search_request();
         let mut expected_retry_request = request.clone();
-        expected_retry_request.split_metadata.remove(0);
+        expected_retry_request.split_offsets.remove(0);
         let split_error = SplitSearchError {
             error: "error".to_string(),
             split_id: "split_2".to_string(),
@@ -143,9 +138,8 @@ mod tests {
             num_attempted_splits: 1,
         };
         let result = Result::<LeafSearchResponse, SearchError>::Ok(leaf_response);
-        let retry_request = retry_policy.retry_request(&request, result.as_ref());
-        assert!(retry_request.is_some());
-        assert_eq!(retry_request.unwrap(), expected_retry_request);
+        let retry_request_opt = retry_policy.retry_request(request, result.as_ref());
+        assert_eq!(retry_request_opt, Some(expected_retry_request));
         Ok(())
     }
 }
