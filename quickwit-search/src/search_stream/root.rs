@@ -300,8 +300,7 @@ mod tests {
         );
 
         let client_pool =
-            Arc::new(SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?);
-        let cluster_client = ClusterClient::new(client_pool.clone());
+            SearchClientPool::from_mocks(vec![Arc::new(MockSearchService::new())]).await?;
 
         assert!(root_search_stream(
             quickwit_proto::SearchStreamRequest {
@@ -315,8 +314,8 @@ mod tests {
                 partition_by_field: Some("timestamp".to_string()),
             },
             &metastore,
-            cluster_client.clone(),
-            &client_pool
+            ClusterClient::new(client_pool.clone()),
+            &client_pool,
         )
         .await
         .is_err());
@@ -333,7 +332,7 @@ mod tests {
                 partition_by_field: Some("timestamp".to_string()),
             },
             &metastore,
-            cluster_client,
+            ClusterClient::new(client_pool.clone()),
             &client_pool
         )
         .await
