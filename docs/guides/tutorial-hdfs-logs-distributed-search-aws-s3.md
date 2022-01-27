@@ -40,7 +40,7 @@ cd quickwit-v*/
 
 ```bash
 # First, download the hdfs logs config from Quickwit repository.
-curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/hdfs-logs/index-config.yaml
+curl -o hdfs_logs_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/hdfs-logs/index-config.yaml
 ```
 
 The index config defines five fields: `timestamp`, `tenant_id`, `severity_text`, `body`, and one object field

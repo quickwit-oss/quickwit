@@ -40,7 +40,7 @@ Let's create an index configured to receive Wikipedia articles.
 
 ```bash
 # First, download the Wikipedia config from Quickwit repository.
-curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/wikipedia/index-config.yaml
+curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/wikipedia/index-config.yaml
 ```
 
 The index config defines three text fields: `title`, `body` and `url`. It also sets two default search fields `body` and `title`. These fields will be used for search if you do not target a specific field in your query. Please note that by default, text fields are [indexed and tokenized](../reference/index-config.md).
@@ -153,7 +153,7 @@ Congrats! You can level up with the following tutorials to discover all Quickwit
 Run the following command from within Quickwit's installation directory.
 
 ```bash
-curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/wikipedia/index-config.yaml
+curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/wikipedia/index-config.yaml
 export QW_CONFIG=./config/quickwit.yaml
 ./quickwit index create --index-config ./wikipedia_index_config.yaml
 curl -o wiki-articles-10000.json https://quickwit-datasets-public.s3.amazonaws.com/wiki-articles-10000.json

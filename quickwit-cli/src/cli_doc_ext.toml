@@ -10,7 +10,7 @@ When `overwrite` is enabled, the command deletes all the files stored at `index-
 [[index.create.examples]]
 name= "Create a new index."
 command = '''
-curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/wikipedia/index-config.yaml
+curl -o wikipedia_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/wikipedia/index-config.yaml
 quickwit index create --index-config wikipedia_index_config.yaml  --config=./config/quickwit.yaml
 '''
 
@@ -141,7 +141,7 @@ curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+obama"
 name = "Make a search stream request on a Github archive index"
 command = '''
 # Create gh-archive index.
-curl -o gh_archive_index_config.yaml https://raw.githubusercontent.com/quickwit-inc/quickwit/main/config/tutorials/gh-archive/index-config.yaml
+curl -o gh_archive_index_config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/gh-archive/index-config.yaml
 quickwit index create --index-config gh_archive_index_config.yaml --config ./config/quickwit.yaml
 # Download a data sample and ingest it.
 curl https://quickwit-datasets-public.s3.amazonaws.com/gh-archive-2022-01-text-only-10000.json.gz | gunzip | cargo r index ingest --index gh-archive --config=./config/quickwit.yaml

@@ -4,7 +4,7 @@ Code contribution are welcome of course, but also
 bug reports, feature request, and evangelizing are as valuable.
 
 # Submitting a PR
-Check if your issue is already listed [github](https://github.com/quickwit-inc/quickwit/issues).
+Check if your issue is already listed [github](https://github.com/quickwit-oss/quickwit/issues).
 If it is not, create your own issue.
 
 Please add the following phrase at the end of your commit.  `Closes #<Issue Number>`.
@@ -21,7 +21,7 @@ It is also distributed under a commercial license by Quickwit, Inc.
 
 Contributors are required to sign a Contributor License Agreement.
 The process is simple and fast. Upon your first pull request, you will be prompted to
-[sign our CLA by visiting this link](https://cla-assistant.io/quickwit-inc/quickwit).
+[sign our CLA by visiting this link](https://cla-assistant.io/quickwit-oss/quickwit).
 
 # Development
 ## Setup & run tests
