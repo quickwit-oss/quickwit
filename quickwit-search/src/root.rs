@@ -169,11 +169,15 @@ pub async fn root_search(
 
     // create a collector which merges responses into one
     let merge_collector = make_merge_collector(search_request);
-    let leaf_search_response = merge_collector
-        .merge_fruits(leaf_search_responses)
-        .map_err(|merge_error: TantivyError| {
-            crate::SearchError::InternalError(format!("{}", merge_error))
-        })?;
+
+    // merging might be heavy cpu-bound task and take time.
+    // It should be executed by Tokio's blocking threads.
+    let leaf_search_response =
+        spawn_blocking(move || merge_collector.merge_fruits(leaf_search_responses))
+            .await?
+            .map_err(|merge_error: TantivyError| {
+                crate::SearchError::InternalError(format!("{}", merge_error))
+            })?;
     debug!(leaf_search_response = ?leaf_search_response, "Merged leaf search response.");
 
     if !leaf_search_response.failed_splits.is_empty() {

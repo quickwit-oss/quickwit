@@ -269,14 +269,13 @@ pub async fn leaf_search(
     // create a collector which merges responses into one
     let merge_collector = make_merge_collector(request);
 
-    let mut merged_search_response = {
-        let span = info_span!("merge_search_responses");
-        let _enter = span.enter();
-
-        merge_collector
-            .merge_fruits(split_search_responses)
-            .context("Failed to merge split search responses.")?
-    };
+    // merging might be heavy cpu-bound task and take time.
+    // It should be executed by Tokio's blocking threads.
+    let mut merged_search_response =
+        spawn_blocking(move || merge_collector.merge_fruits(split_search_responses))
+            .instrument(info_span!("merge_search_responses"))
+            .await
+            .context("Failed to merge split search responses.")??;
 
     merged_search_response
         .failed_splits
