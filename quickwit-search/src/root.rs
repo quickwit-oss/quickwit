@@ -29,6 +29,7 @@ use quickwit_proto::{
 };
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
+use tokio::task::spawn_blocking;
 use tracing::{debug, error, instrument};
 
 use crate::cluster_client::ClusterClient;

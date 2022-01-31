@@ -38,6 +38,7 @@ use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::query::Query;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
+use tokio::task::spawn_blocking;
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, GenericQuickwitCollector};
