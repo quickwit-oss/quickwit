@@ -342,7 +342,7 @@ fn merge_leaf_responses(
 ///
 /// TODO we could possibly optimize the sort away (but I doubt it matters).
 fn top_k_partial_hits(mut partial_hits: Vec<PartialHit>, num_hits: usize) -> Vec<PartialHit> {
-    partial_hits.sort_by(|left, right| {
+    partial_hits.sort_unstable_by(|left, right| {
         let left_key = partial_hit_sorting_key(left);
         let right_key = partial_hit_sorting_key(right);
         left_key.cmp(&right_key)

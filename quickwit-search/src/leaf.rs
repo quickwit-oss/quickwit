@@ -38,7 +38,6 @@ use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::query::Query;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
-use tokio::task::spawn_blocking;
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, GenericQuickwitCollector};
@@ -267,12 +266,17 @@ pub async fn leaf_search(
                 Err(err) => Either::Right(err),
             });
 
+    // create a collector which merges responses into one
     let merge_collector = make_merge_collector(request);
-    let mut merged_search_response =
-        spawn_blocking(move || merge_collector.merge_fruits(split_search_responses))
-            .instrument(info_span!("merge_search_responses"))
-            .await
-            .context("Failed to merge split search responses.")??;
+
+    let mut merged_search_response = {
+        let span = info_span!("merge_search_responses");
+        let _enter = span.enter();
+
+        merge_collector
+            .merge_fruits(split_search_responses)
+            .context("Failed to merge split search responses.")?
+    };
 
     merged_search_response
         .failed_splits

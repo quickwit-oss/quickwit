@@ -29,7 +29,6 @@ use quickwit_proto::{
 };
 use tantivy::collector::Collector;
 use tantivy::TantivyError;
-use tokio::task::spawn_blocking;
 use tracing::{debug, error, instrument};
 
 use crate::cluster_client::ClusterClient;
@@ -167,13 +166,14 @@ pub async fn root_search(
             }),
     )
     .await?;
+
+    // create a collector which merges responses into one
     let merge_collector = make_merge_collector(search_request);
-    let leaf_search_response =
-        spawn_blocking(move || merge_collector.merge_fruits(leaf_search_responses))
-            .await?
-            .map_err(|merge_error: TantivyError| {
-                crate::SearchError::InternalError(format!("{}", merge_error))
-            })?;
+    let leaf_search_response = merge_collector
+        .merge_fruits(leaf_search_responses)
+        .map_err(|merge_error: TantivyError| {
+            crate::SearchError::InternalError(format!("{}", merge_error))
+        })?;
     debug!(leaf_search_response = ?leaf_search_response, "Merged leaf search response.");
 
     if !leaf_search_response.failed_splits.is_empty() {
@@ -222,7 +222,7 @@ pub async fn root_search(
         .into_iter()
         .flat_map(|response| response.hits)
         .collect();
-    hits.sort_by_key(|hit| {
+    hits.sort_unstable_by_key(|hit| {
         Reverse(
             hit.partial_hit
                 .as_ref()
