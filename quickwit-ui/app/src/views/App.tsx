@@ -26,11 +26,12 @@ import IndexesView from './IndexesView';
 import ClusterMembersView from './ClusterMembersView';
 import { theme } from '../utils/theme';
 import IndexView from './IndexView';
+import { FullBoxContainer } from '../components/LayoutUtils';
 
 function App() {
   return (
     <ThemeProvider theme={theme}>
-      <Box sx={{ display: 'flex', height: '100%'}}>
+      <FullBoxContainer sx={{flexDirection: 'row', p: 0}}>
         <CssBaseline />
         <TopBar />
         <SideBar />
@@ -41,7 +42,7 @@ function App() {
           <Route path="indexes/:indexId" element={<IndexView />} />
           <Route path="cluster/members" element={<ClusterMembersView />} />
         </Routes>
-      </Box>
+      </FullBoxContainer>
     </ThemeProvider>
   );
 }

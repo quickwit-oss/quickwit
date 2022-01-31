@@ -17,9 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Box, Breadcrumbs, Typography } from '@mui/material';
+import { Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 import { JsonEditor } from '../components/JsonEditor';
+import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../components/LayoutUtils';
 import Loader from '../components/Loader';
 import { Client } from '../services/client';
 import { Member } from '../utils/models';
@@ -55,12 +56,16 @@ function ClusterView() {
   }
 
   return (
-    <Box sx={{ flexGrow: 1, p: 3, marginTop: '48px', height: 'calc(100% - 48px)', display: 'flex', flexDirection: 'column'}}>
-      <Breadcrumbs aria-label="breadcrumb" sx={{ paddingBottom: 3, paddingLeft: 1 }}>
-        <Typography color="text.primary">Cluster members</Typography>
-      </Breadcrumbs>
-      { renderResult() }
-    </Box>
+    <ViewUnderAppBarBox>
+      <FullBoxContainer>
+        <QBreadcrumbs aria-label="breadcrumb">
+          <Typography color="text.primary">Cluster members</Typography>
+        </QBreadcrumbs>
+        <FullBoxContainer sx={{ px: 0 }}>
+          { renderResult() }
+        </FullBoxContainer>
+      </FullBoxContainer>
+    </ViewUnderAppBarBox>
   );
 }
 

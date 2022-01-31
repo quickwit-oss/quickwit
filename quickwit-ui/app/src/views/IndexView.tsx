@@ -26,6 +26,7 @@ import { IndexMetadata } from '../utils/models';
 import { TabContext, TabList, TabPanel } from '@mui/lab';
 import { IndexSummary } from '../components/IndexSummary';
 import { JsonEditor } from '../components/JsonEditor';
+import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../components/LayoutUtils';
 
 export type ErrorResult = {
   error: string;
@@ -114,15 +115,17 @@ function IndexView() {
   }, [fetchIndexMetadata]);
 
   return (
-    <Box sx={{ flexGrow: 1, p: 3, marginTop: '48px'}}>
-      <Breadcrumbs aria-label="breadcrumb" sx={{ paddingBottom: 2, paddingLeft: 1 }}>
-        <Link underline="hover" color="inherit" href="/indexes">
-          <Typography color="text.primary">Indexes</Typography>
-        </Link>
-        <Typography color="text.primary">{indexId}</Typography>
-      </Breadcrumbs>
-      { renderFetchIndexResult() }
-    </Box>
+    <ViewUnderAppBarBox>
+      <FullBoxContainer>
+        <QBreadcrumbs aria-label="breadcrumb">
+          <Link underline="hover" color="inherit" href="/indexes">
+            <Typography color="text.primary">Indexes</Typography>
+          </Link>
+          <Typography color="text.primary">{indexId}</Typography>
+        </QBreadcrumbs>
+        { renderFetchIndexResult() }
+      </FullBoxContainer>
+    </ViewUnderAppBarBox>
   );
 }
 

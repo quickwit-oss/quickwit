@@ -25,7 +25,7 @@ import { SearchComponentProps } from "../utils/SearchComponentProps";
 
 export function QueryEditorActionBar(props: SearchComponentProps) {
   return (
-    <Toolbar sx={{ px: 2 }} disableGutters>
+    <Box sx={{ display: 'flex'}}>
       <Box sx={{ flexGrow: 1 }}>
         <Button
           onClick={() => props.runSearch()}
@@ -40,6 +40,6 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
       { props.indexMetadata?.indexing_settings.timestamp_field && <TimeRangeSelect 
         { ...props } /> 
       }
-    </Toolbar>
+    </Box>
   )
 }

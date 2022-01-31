@@ -52,21 +52,21 @@ const TopBar = () => {
         >
           Quickwit
         </Typography>
-          <Link href="https://quickwit.io/docs" target="_blank" sx={{px: 2}}>
-              Docs
-          </Link>
-          <Link href="https://discord.gg/rpRRTezWhW" target="_blank">
-            <IconButton size="large">
-              <SvgIcon>
-                <Discord />
-              </SvgIcon>
-            </IconButton>
-          </Link>
-          <Link href="https://github.com/quickwit-inc/quickwit" target="_blank">
-            <IconButton size="large">
-              <GitHubIcon />
-            </IconButton>
-          </Link>
+        <Link href="https://quickwit.io/docs" target="_blank" sx={{ px: 2 }}>
+            Docs
+        </Link>
+        <Link href="https://discord.gg/rpRRTezWhW" target="_blank">
+          <IconButton size="large">
+            <SvgIcon>
+              <Discord />
+            </SvgIcon>
+          </IconButton>
+        </Link>
+        <Link href="https://github.com/quickwit-inc/quickwit" target="_blank">
+          <IconButton size="large">
+            <GitHubIcon />
+          </IconButton>
+        </Link>
       </Toolbar>
     </StyledAppBar>
   );

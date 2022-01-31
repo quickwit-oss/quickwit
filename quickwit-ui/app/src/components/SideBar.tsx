@@ -27,14 +27,14 @@ import {
   Link as RouterLink,
   LinkProps as RouterLinkProps,
 } from 'react-router-dom';
-import { ListSubheader } from '@mui/material';
+import { ListSubheader, Typography } from '@mui/material';
 import { CodeSSlash } from "@styled-icons/remix-line/CodeSSlash"
 import { GroupWork } from '@styled-icons/material-outlined/GroupWork';
 import { Database } from '@styled-icons/feather/Database';
 
 interface ListItemLinkProps {
   icon?: React.ReactElement;
-  primary: string;
+  primary: React.ReactElement;
   to: string;
 }
 
@@ -71,17 +71,17 @@ const SideBarWrapper = styled('div')({
   
 const SideBar = () => {
   return (
-    <SideBarWrapper sx={{ px: 1, py: 2 }}>
+    <SideBarWrapper sx={{ px: 0, py: 2 }}>
       <List dense={ true } sx={{ py: 0 }}>
         <ListSubheader sx={{lineHeight: '25px'}}>
-          Discover
+          <Typography variant="body1">Discover</Typography>
         </ListSubheader>
-        <ListItemLink to="/search" primary="Query editor" icon={<CodeSSlash size="18px" />} />
+        <ListItemLink to="/search" primary={<Typography variant="body1">Query editor</Typography>} icon={<CodeSSlash size="18px" />} />
         <ListSubheader sx={{lineHeight: '25px', paddingTop: '10px'}}>
-          Admin
+          <Typography variant="body1">Admin</Typography>
         </ListSubheader>
-          <ListItemLink to="/indexes" primary="Indexes" icon={<Database size="18px" />} />
-          <ListItemLink to="/cluster/members" primary="Cluster" icon={<GroupWork size="18px" />} />
+          <ListItemLink to="/indexes" primary={<Typography variant="body1">Indexes</Typography>} icon={<Database size="18px" />} />
+          <ListItemLink to="/cluster/members" primary={<Typography variant="body1">Cluster</Typography>} icon={<GroupWork size="18px" />} />
       </List>
     </SideBarWrapper>
   );

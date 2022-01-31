@@ -17,9 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Box } from '@mui/system';
 import { useEffect, useState } from 'react';
 import { IndexSideBar } from '../components/IndexSideBar';
+import { ViewUnderAppBarBox, FullBoxContainer } from '../components/LayoutUtils';
 import { QueryEditorActionBar } from '../components/QueryActionBar';
 import { QueryEditor } from '../components/QueryEditor/QueryEditor';
 import SearchResult from '../components/SearchResult/SearchResult';
@@ -64,9 +64,9 @@ function SearchView() {
   }, [searchRequest]);
 
   return (
-      <Box flexDirection="row" display="flex" sx={{marginTop: '48px', height: 'calc(100% - 48px)', width: '100%'}}>
+      <ViewUnderAppBarBox sx={{ flexDirection: 'row'}}>
         <IndexSideBar indexMetadata={indexMetadata} onIndexMetadataUpdate={onIndexMetadataUpdate}/>
-        <Box sx={{ py: 1, px: 1, height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}>
+        <FullBoxContainer>
           <QueryEditorActionBar
             searchRequest={searchRequest}
             onSearchRequestUpdate={onSearchRequestUpdate}
@@ -83,9 +83,54 @@ function SearchView() {
             queryRunning={queryRunning}
             searchResponse={searchResponse}
             indexMetadata={indexMetadata} />
-        </Box>
-      </Box>
+        </FullBoxContainer>
+      </ViewUnderAppBarBox>
   );
 }
 
 export default SearchView;
+
+function parseUrl(historySearch: string): SearchRequest {
+  const searchParams = new URLSearchParams(historySearch);
+  const startTimestampString = searchParams.get("startTimestamp");
+  let startTimestamp = null;
+  if (startTimestampString != null) {
+    startTimestamp = parseInt(startTimestampString);
+  }
+  const endTimestampString = searchParams.get("endTimestamp");
+  let endTimestamp = null;
+  if (endTimestampString != null) {
+    endTimestamp = parseInt(endTimestampString);
+  }
+  const debug = (searchParams.get("debug") === "true");
+  const cacheLevelString = searchParams.get("cacheLevel");
+  let cacheLevel = 0;
+  if (cacheLevelString != null) {
+    cacheLevel = parseInt(cacheLevelString);
+    if (Number.isNaN(cacheLevel)) {
+      cacheLevel = 0;
+    }
+  }
+  return {
+    indexId: null,
+    query: searchParams.get("query") || "",
+    numHits: 10,
+    startTimestamp: startTimestamp,
+    endTimestamp: endTimestamp,
+  };
+}
+
+function toUrlQueryParams(request: SearchRequest): URLSearchParams {
+  const params = new URLSearchParams();
+  params.append("query", request.query);
+  if (request.startTimestamp) {
+    params.append(
+      "startTimestamp",
+      request.startTimestamp.toString()
+    );
+  }
+  if (request.endTimestamp) {
+    params.append("endTimestamp", request.endTimestamp.toString());
+  }
+  return params;
+}

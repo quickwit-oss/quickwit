@@ -18,7 +18,17 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import { createTheme } from "@mui/material";
-import SoehneMonoWebWoff2 from "./../assets/fonts/soehne-mono-web-kraftig.woff2";
+import SoehneMonoKraftigWoff2 from "./../assets/fonts/soehne-mono-web-kraftig.woff2";
+import SoehneMonoDreiviertelfettWoff2 from "./../assets/fonts/soehne-mono-web-dreiviertelfett.woff2";
+import SoehneHalbfettWoff2 from "./../assets/fonts/soehne-web-halbfett.woff2";
+import SoehneBuchWoff2 from "./../assets/fonts/soehne-web-buch.woff2";
+
+export const QUICKWIT_BLUE = '#004BD9';
+export const QUICKWIT_RED = '#FF0026';
+export const QUICKWIT_GREEN = '#00D588';
+export const QUICKWIT_GREY = '#CBD1DE';
+export const QUICKWIT_BLACK = '#1F232A';
+
 
 // Update the Typography's var@iant prop options
 declare module '@mui/material/Typography' {
@@ -67,17 +77,41 @@ export const theme = createTheme({
   },
   typography: {
     fontSize: 12,
-    fontFamily: 'Soehne, Arial',
+    fontFamily: 'SoehneMono, Arial',
+    body1: {
+      fontSize: '0.8rem',
+    },
   },
   components: {
     MuiCssBaseline: {
       styleOverrides: `
         @font-face {
+          font-family: 'SoehneMono';
+          font-style: normal;
+          font-display: swap;
+          font-weight: 500;
+          src: local('SoehneMonoKraftig'), local('SoehneMonoKraftig'), url(${SoehneMonoKraftigWoff2}) format('woff2');
+        }
+        @font-face {
+          font-family: 'SoehneMono';
+          font-style: normal;
+          font-display: swap;
+          font-weight: 700;
+          src: local('SoehneMonoDreiviertelfett'), local('SoehneMonoDreiviertelfett'), url(${SoehneMonoDreiviertelfettWoff2}) format('woff2');
+        }
+        @font-face {
+          font-family: 'Soehne';
+          font-style: bold;
+          font-display: swap;
+          font-weight: 600;
+          src: local('SoehneHalbfett'), local('SoehneHalbfett'), url(${SoehneHalbfettWoff2}) format('woff2');
+        }
+        @font-face {
           font-family: 'Soehne';
           font-style: normal;
           font-display: swap;
-          font-weight: 400;
-          src: local('SoehneMonoWeb'), local('SoehneMonoWeb-Dreiviertelfett'), url(${SoehneMonoWebWoff2}) format('woff2');
+          font-weight: 300;
+          src: local('SoehneBuch'), local('SoehneBuch'), url(${SoehneBuchWoff2}) format('woff2');
         }
       `,
     },

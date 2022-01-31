@@ -60,7 +60,7 @@ export default function SearchResult(props: SearchResultProps) {
     return <></>
   }
   return (
-    <Box sx={{ px: 2, pt: 2, flexGrow: '1', flexBasis: '0%', overflow: 'hidden'}} >
+    <Box sx={{ pt: 1, flexGrow: '1', flexBasis: '0%', overflow: 'hidden'}} >
       <Box sx={{ height: '100%', flexDirection: 'column', flexGrow: 1, display: 'flex'}}>
         <Box sx={{ flexShrink: 0, display: 'flex', flexGrow: 0, flexBasis: 'auto' }}>
           <HitCount searchResponse={props.searchResponse} />

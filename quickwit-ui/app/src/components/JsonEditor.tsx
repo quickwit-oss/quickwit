@@ -22,7 +22,7 @@ import { Box } from "@mui/system";
 
 export function JsonEditor({content}: {content: any}) {
   return (
-    <Box sx={{ height: '100%', py: 2}} >
+    <Box sx={{ height: '100%'}} >
       <Editor
         language='json'
         value={JSON.stringify(content, null, 2)}

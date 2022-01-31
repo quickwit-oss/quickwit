@@ -115,8 +115,8 @@ export function IndexSideBar(props: IndexMetadataProps) {
   const fields = (props.indexMetadata == null) ? [] : get_all_fields(props.indexMetadata.doc_mapping);
   return (
     <IndexBarWrapper>
-      <Box sx={{ p: 3 }}>
-        <Typography variant='subtitle1' mb={1}>
+      <Box sx={{ px: 3, py: 2}}>
+        <Typography variant='body1' mb={1}>
           Index ID
         </Typography>
         <IndexAutocomplete { ...props }/>
@@ -135,9 +135,7 @@ export function IndexSideBar(props: IndexMetadataProps) {
             return <ListItem
               key={ field.name }
               secondaryAction={
-                <IconButton edge="end" aria-label="add">
-                  {/* <AddCircleOutline /> */}
-                </IconButton>
+                <IconButton edge="end" aria-label="add"></IconButton>
               }
               sx={{paddingLeft: '10px'}}
             >

@@ -23,6 +23,7 @@ import Editor, { useMonaco } from "@monaco-editor/react";
 import { LANGUAGE_CONFIG, LanguageFeatures, createIndexCompletionProvider } from './config';
 import { SearchComponentProps } from '../../utils/SearchComponentProps';
 import { get_all_fields } from '../../utils/models';
+import { QUICKWIT_BLUE } from '../../utils/theme';
 
 export function QueryEditor(props: SearchComponentProps) {
   const monaco = useMonaco();
@@ -75,10 +76,11 @@ export function QueryEditor(props: SearchComponentProps) {
       base: 'vs',
       inherit: true,
       rules: [
-        { token: 'comment', foreground: 'ffa500', fontStyle: 'italic underline' },
-        { token: 'directive', foreground: '#7900f5' }
+        { token: 'comment', foreground: '#1F232A', fontStyle: 'italic' },
+        { token: 'keyword', foreground: QUICKWIT_BLUE }
       ],
       colors: {
+        'editor.comment.foreground': '#CBD1DE',
         'editor.foreground': '#000000',
         'editor.background': '#F8F9FB',
         'editorLineNumber.foreground': 'black',
@@ -89,7 +91,7 @@ export function QueryEditor(props: SearchComponentProps) {
   const defaultValue = `// Select an index and type your query. Example: field_name:"phrase query"
 `;
   return (
-    <Box sx={{ height: '85px', px: 2}} >
+    <Box sx={{ height: '100px', py: 1}} >
       <Editor
         beforeMount={handleEditorWillMount}
         onMount={handleEditorDidMount}

@@ -17,21 +17,25 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Box } from "@mui/material";
+import { Table, TableBody, TableContainer, Box } from "@mui/material";
+import { styled } from "@mui/system";
 import { IndexMetadata, SearchResponse } from "../../utils/models";
 import { Row } from "./Row";
 
+
+const TableBox = styled(Box)`
+display: flex;
+flex-direction: column;
+overflow: auto;
+flex: 1 1 100%;
+height: 100%;
+`
+
 export function ResultTable({searchResponse, indexMetadata}: {searchResponse: SearchResponse, indexMetadata: IndexMetadata}) {
   return (
-    <Box sx={{display: 'flex', flexDirection: 'column', overflow: 'auto', flex: '1 1 100%', height: '100%'}}>
-      <TableContainer component={Paper} sx={{ overflow: "initial" }}>
-        <Table size="small" sx={{width: '100%', maxWidth: '100%', border: 'none', borderCollapse: 'collapse', borderSpacing: 0 }}>
-          <TableHead>
-            <TableRow>
-            <TableCell sx={{ width: '24px' }} />
-            <TableCell>Document</TableCell>
-            </TableRow>
-          </TableHead>
+    <TableBox>
+      <TableContainer>
+        <Table size="small">
           <TableBody>
             { searchResponse.hits.map((hit, index) =>
                 <Row key={index} row={hit} timestampField={indexMetadata.indexing_settings.timestamp_field} />
@@ -39,6 +43,6 @@ export function ResultTable({searchResponse, indexMetadata}: {searchResponse: Se
           </TableBody>
         </Table>
       </TableContainer> 
-    </Box>
+    </TableBox>
   );
 }

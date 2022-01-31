@@ -23,6 +23,7 @@ import IndexesTable from '../components/IndexesTable';
 import { Client } from '../services/client';
 import Loader from '../components/Loader';
 import { IndexMetadata } from '../utils/models';
+import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../components/LayoutUtils';
 
 export type ErrorResult = {
   error: string;
@@ -37,7 +38,9 @@ function IndexesView() {
     if (loading || indexesMetadata === undefined) {
       return <Loader />;
     } else if (indexesMetadata.length > 0) {
-      return <IndexesTable indexesMetadata={indexesMetadata} />
+      return <FullBoxContainer sx={{ px: 0 }}>
+          <IndexesTable indexesMetadata={indexesMetadata} />
+        </FullBoxContainer>
     } else {
       return <Box>
           You have no index registered in your metastore.
@@ -61,12 +64,14 @@ function IndexesView() {
   }, [quickwitClient]);
 
   return (
-    <Box sx={{ flexGrow: 1, p: 3, marginTop: '48px'}}>
-      <Breadcrumbs aria-label="breadcrumb" sx={{ paddingBottom: 5, paddingLeft: 1 }}>
-        <Typography color="text.primary">Indexes</Typography>
-      </Breadcrumbs>
-      { renderFetchIndexesResult() }
-    </Box>
+    <ViewUnderAppBarBox>
+      <FullBoxContainer>
+        <QBreadcrumbs aria-label="breadcrumb">
+          <Typography color="text.primary">Indexes</Typography>
+        </QBreadcrumbs>
+        { renderFetchIndexesResult() }
+      </FullBoxContainer>
+    </ViewUnderAppBarBox>
   );
 }
 
