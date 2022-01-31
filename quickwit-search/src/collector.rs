@@ -284,12 +284,6 @@ impl Collector for QuickwitCollector {
         &self,
         segment_fruits: Vec<LeafSearchResponse>,
     ) -> tantivy::Result<Self::Fruit> {
-        if segment_fruits.is_empty() {
-            return Ok(LeafSearchResponse {
-                ..Default::default()
-            });
-        }
-
         // We want the hits in [start_offset..start_offset + max_hits).
         // All leaves will return their top [0..max_hits) documents.
         // We compute the overall [0..start_offset + max_hits) documents ...
@@ -310,7 +304,7 @@ impl Collector for QuickwitCollector {
 
 /// Merges a set of Leaf Results.
 fn merge_leaf_responses(
-    mut leaf_responses: Vec<LeafSearchResponse>,
+    leaf_responses: Vec<LeafSearchResponse>,
     max_hits: usize,
 ) -> LeafSearchResponse {
     // Optimization: No merging needed if there is only one result.
@@ -326,8 +320,9 @@ fn merge_leaf_responses(
         .map(|leaf_response| leaf_response.num_hits)
         .sum();
     let failed_splits = leaf_responses
-        .iter_mut()
-        .flat_map(|leaf_response| std::mem::take(&mut leaf_response.failed_splits))
+        .iter()
+        .flat_map(|leaf_response| leaf_response.failed_splits.iter())
+        .cloned()
         .collect_vec();
     let all_partial_hits = leaf_responses
         .into_iter()
