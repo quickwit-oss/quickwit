@@ -31,7 +31,7 @@ use tonic::transport::Endpoint;
 use tracing::*;
 
 use crate::rendezvous_hasher::sort_by_rendez_vous_hash;
-use crate::{swim_addr_to_grpc_addr, SearchServiceClient};
+use crate::{swim_addr_to_grpc_addr, Cost, SearchServiceClient};
 
 /// Create a SearchServiceClient with SocketAddr as an argument.
 /// It will try to reconnect to the node automatically.
@@ -64,7 +64,7 @@ pub trait Job {
     ///
     /// A list of job will be assigned to leaf nodes in a way that spread
     /// the sum of cost evenly.
-    fn cost(&self) -> u32;
+    fn cost(&self) -> Cost;
 }
 
 /// Search client pool implementation.
@@ -73,7 +73,9 @@ pub struct SearchClientPool {
     /// Search clients.
     /// A hash map with gRPC's SocketAddr as the key and SearchServiceClient as the value.
     /// It is not the cluster listen address.
-    clients: Arc<RwLock<HashMap<SocketAddr, SearchServiceClient>>>,
+    clients: Arc<RwLock<HashMap<SocketAddr, SearchServiceClient>>>, /* TODO: it's possible to
+                                                                     * use arc_swap here instead
+                                                                     * of RWLock */
 }
 
 /// Update the client pool given a new list of members.
@@ -183,7 +185,7 @@ impl SearchClientPool {
     }
 }
 
-fn job_order_key<J: Job>(job: &J) -> (Reverse<u32>, &str) {
+fn job_order_key<J: Job>(job: &J) -> (Reverse<Cost>, &str) {
     (Reverse(job.cost()), job.split_id())
 }
 
@@ -249,6 +251,7 @@ impl SearchClientPool {
 
         for job in jobs {
             sort_by_rendez_vous_hash(&mut nodes, job.split_id());
+
             // choose one of the the first two nodes based on least loaded
             let chosen_node_index: usize = if nodes.len() >= 2 {
                 if nodes[0].load > nodes[1].load {

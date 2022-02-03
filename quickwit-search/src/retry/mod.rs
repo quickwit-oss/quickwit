@@ -23,7 +23,7 @@ pub mod search_stream;
 use std::collections::HashSet;
 
 use crate::search_client_pool::Job;
-use crate::{SearchClientPool, SearchServiceClient};
+use crate::{Cost, SearchClientPool, SearchServiceClient};
 
 /// A retry policy to evaluate if a request should be retried.
 /// A retry can be made either on an error or on a partial success.
@@ -51,7 +51,7 @@ impl<'a> Job for &'a str {
         self
     }
 
-    fn cost(&self) -> u32 {
+    fn cost(&self) -> Cost {
         1
     }
 }

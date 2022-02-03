@@ -36,19 +36,19 @@ use crate::cluster_client::ClusterClient;
 use crate::collector::make_merge_collector;
 use crate::search_client_pool::Job;
 use crate::{
-    extract_split_and_footer_offsets, list_relevant_splits, SearchClientPool, SearchError,
+    extract_split_and_footer_offsets, list_relevant_splits, Cost, SearchClientPool, SearchError,
     SearchServiceClient,
 };
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct SearchJob {
-    cost: u32,
+    cost: Cost,
     offsets: SplitIdAndFooterOffsets,
 }
 
 impl SearchJob {
     #[cfg(test)]
-    pub fn for_test(split_id: &str, cost: u32) -> SearchJob {
+    pub fn for_test(split_id: &str, cost: Cost) -> SearchJob {
         SearchJob {
             cost,
             offsets: SplitIdAndFooterOffsets {
@@ -79,7 +79,7 @@ impl Job for SearchJob {
         &self.offsets.split_id
     }
 
-    fn cost(&self) -> u32 {
+    fn cost(&self) -> Cost {
         self.cost
     }
 }
@@ -94,8 +94,8 @@ impl Job for FetchDocsJob {
         &self.offsets.split_id
     }
 
-    fn cost(&self) -> u32 {
-        self.partial_hits.len() as u32
+    fn cost(&self) -> Cost {
+        self.partial_hits.len() as Cost
     }
 }
 
@@ -283,9 +283,8 @@ fn assign_client_fetch_doc_tasks(
 }
 
 // Measure the cost associated to searching in a given split metadata.
-fn compute_split_cost(_split_metadata: &SplitMetadata) -> u32 {
-    // TODO: Have a smarter cost, by smoothing the number of docs.
-    1
+fn compute_split_cost(split_metadata: &SplitMetadata) -> Cost {
+    split_metadata.num_docs as Cost
 }
 
 fn jobs_to_leaf_request(
