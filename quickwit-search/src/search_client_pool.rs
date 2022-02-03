@@ -33,6 +33,10 @@ use tracing::*;
 use crate::rendezvous_hasher::sort_by_rendez_vous_hash;
 use crate::{swim_addr_to_grpc_addr, Cost, SearchServiceClient};
 
+// allow load of a node to exceed 25% threshold
+const LOAD_MARGIN: f64 = 0.25;
+const MIN_LOAD_THRESHOLD: u64 = 16;
+
 /// Create a SearchServiceClient with SocketAddr as an argument.
 /// It will try to reconnect to the node automatically.
 async fn create_search_service_client(
@@ -73,7 +77,7 @@ pub struct SearchClientPool {
     /// Search clients.
     /// A hash map with gRPC's SocketAddr as the key and SearchServiceClient as the value.
     /// It is not the cluster listen address.
-    clients: Arc<RwLock<HashMap<SocketAddr, SearchServiceClient>>>, /* TODO: it's possible to
+    clients: Arc<RwLock<HashMap<SocketAddr, SearchServiceClient>>>, /* TODO possible to
                                                                      * use arc_swap here instead
                                                                      * of RWLock */
 }
@@ -249,8 +253,15 @@ impl SearchClientPool {
             job_order_key(left).cmp(&job_order_key(right))
         });
 
+        // Compute load (per node) threshold
+        let total_cost: Cost = jobs.iter().map(|v| v.cost()).sum();
+        let load_per_node_threshold =
+            ((total_cost as f64 / nodes.len() as f64) * (1.0 + LOAD_MARGIN)).ceil() as u64;
+        let load_per_node_threshold = load_per_node_threshold.max(MIN_LOAD_THRESHOLD);
+
         for job in jobs {
             sort_by_rendez_vous_hash(&mut nodes, job.split_id());
+
             // choose one of the the first two nodes based on least loaded
             let chosen_node_index: usize = if nodes.len() >= 2 {
                 if nodes[0].load > nodes[1].load {
@@ -264,6 +275,18 @@ impl SearchClientPool {
 
             // update node load for next round
             nodes[chosen_node_index].load += job.cost() as u64;
+
+            // check if node's load exceeds the threshold -> remove node from list
+            //
+            // note: computing load per node might result in saturation (in case cost data is
+            // malform). In this way, all nodes might be removed from list. Thus, having condition
+            // len > 1 to ensure that there is (at least) one node could serve remaining jobs
+            if nodes.len() > 1 && nodes[chosen_node_index].load > load_per_node_threshold {
+                // Removes an element from the vector and returns it.
+                // The removed element is replaced by the last element of the vector.
+                // O(1) complexity
+                nodes.swap_remove(chosen_node_index);
+            }
 
             let chosen_leaf_grpc_addr: SocketAddr = nodes[chosen_node_index].peer_grpc_addr;
             splits_groups
