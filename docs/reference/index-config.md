@@ -257,7 +257,7 @@ This section describes indexing settings for a given index.
 | `resources.num_threads`      | Number of threads per source.   | 1 |
 | `resources.heap_size`      | Indexer heap size per source per index.   | 2_000_000_000 |
 
-(1) [Learn more on time sharding]( ../design/architecture.md)
+(1) [Learn more on time sharding](./../design/architecture.md)
 
 
 ### Indexer memory usage
