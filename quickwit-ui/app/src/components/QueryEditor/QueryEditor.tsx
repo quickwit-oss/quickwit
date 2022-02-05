@@ -23,18 +23,19 @@ import Editor, { useMonaco } from "@monaco-editor/react";
 import { LANGUAGE_CONFIG, LanguageFeatures, createIndexCompletionProvider } from './config';
 import { SearchComponentProps } from '../../utils/SearchComponentProps';
 import { get_all_fields } from '../../utils/models';
-import { QUICKWIT_BLUE } from '../../utils/theme';
+import { QUICKWIT_BLUE, QUICKWIT_LIGHT_GREY } from '../../utils/theme';
 
 export function QueryEditor(props: SearchComponentProps) {
   const monaco = useMonaco();
   const editorRef = useRef(null);
   const runSearchRef = useRef(props.runSearch);
-
+  const defaultValue = props.searchRequest.query === null ? `// Select an index and type your query. Example: field_name:"phrase query"` : props.searchRequest.query;
+  
   function handleEditorDidMount(editor: any, monaco: any) {
     editorRef.current = editor; 
     editor.addAction({
-      id: 'EXECUTE',
-      label: "Execute command",
+      id: 'SEARCH',
+      label: "Run search",
       keybindings: [
         monaco.KeyCode.F9,
         monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
@@ -58,8 +59,7 @@ export function QueryEditor(props: SearchComponentProps) {
           LANGUAGE_CONFIG,
         );
         if (props.indexMetadata != null) {
-          const fields = get_all_fields(props.indexMetadata.doc_mapping);
-          monaco.languages.registerCompletionItemProvider(languageId, createIndexCompletionProvider(fields));
+          monaco.languages.registerCompletionItemProvider(languageId, createIndexCompletionProvider(props.indexMetadata));
         }
       }
     }
@@ -70,6 +70,12 @@ export function QueryEditor(props: SearchComponentProps) {
       runSearchRef.current = props.runSearch;
     }
   }, [monaco, props.runSearch]);
+
+  function handleEditorChange(value: any) {
+    console.log("here is the current model value:", value);
+    const updatedSearchRequest = Object.assign({}, props.searchRequest, {query: value});
+    props.onSearchRequestUpdate(updatedSearchRequest);
+  }
 
   function handleEditorWillMount(monaco: any) {
     monaco.editor.defineTheme('quickwit-light', {
@@ -82,19 +88,18 @@ export function QueryEditor(props: SearchComponentProps) {
       colors: {
         'editor.comment.foreground': '#CBD1DE',
         'editor.foreground': '#000000',
-        'editor.background': '#F8F9FB',
+        'editor.background': QUICKWIT_LIGHT_GREY,
         'editorLineNumber.foreground': 'black',
         'editor.lineHighlightBackground': '#DFE0E1',
       },
     });
   }
-  const defaultValue = `// Select an index and type your query. Example: field_name:"phrase query"
-`;
   return (
     <Box sx={{ height: '100px', py: 1}} >
       <Editor
         beforeMount={handleEditorWillMount}
         onMount={handleEditorDidMount}
+        onChange={handleEditorChange}
         language={props.searchRequest.indexId + '-query-language'}
         value={defaultValue}
         options={{

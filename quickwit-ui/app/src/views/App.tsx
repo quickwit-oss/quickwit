@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import TopBar from '../components/TopBar';
-import { Box, CssBaseline, ThemeProvider } from '@mui/material';
+import { CssBaseline, ThemeProvider } from '@mui/material';
 import SideBar from '../components/SideBar';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import SearchView from './SearchView';
@@ -27,22 +27,25 @@ import ClusterMembersView from './ClusterMembersView';
 import { theme } from '../utils/theme';
 import IndexView from './IndexView';
 import { FullBoxContainer } from '../components/LayoutUtils';
+import { LocalStorageProvider } from '../providers/LocalStorageProvider';
 
 function App() {
   return (
     <ThemeProvider theme={theme}>
-      <FullBoxContainer sx={{flexDirection: 'row', p: 0}}>
-        <CssBaseline />
-        <TopBar />
-        <SideBar />
-        <Routes>
-          <Route path="/" element={<Navigate to="/search" />} />
-          <Route path="search" element={<SearchView />} />
-          <Route path="indexes" element={<IndexesView />} />
-          <Route path="indexes/:indexId" element={<IndexView />} />
-          <Route path="cluster/members" element={<ClusterMembersView />} />
-        </Routes>
-      </FullBoxContainer>
+      <LocalStorageProvider>
+        <FullBoxContainer sx={{flexDirection: 'row', p: 0}}>
+          <CssBaseline />
+          <TopBar />
+          <SideBar />
+          <Routes>
+            <Route path="/" element={<Navigate to="/search" />} />
+            <Route path="search" element={<SearchView />} />
+            <Route path="indexes" element={<IndexesView />} />
+            <Route path="indexes/:indexId" element={<IndexView />} />
+            <Route path="cluster/members" element={<ClusterMembersView />} />
+          </Routes>
+        </FullBoxContainer>
+      </LocalStorageProvider>
     </ThemeProvider>
   );
 }

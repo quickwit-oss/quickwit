@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { FieldMapping } from "../../utils/models";
+import { DocMapping, FieldMapping, get_all_fields, IndexMetadata } from "../../utils/models";
 
 export enum CompletionItemKind {
   Field = 3,
@@ -123,7 +123,8 @@ export function LanguageFeatures(): any {
   };
 }
 
-export const createIndexCompletionProvider = (fields: FieldMapping[]) => {
+export const createIndexCompletionProvider = (indexMetadata: IndexMetadata) => {
+  const fields = get_all_fields(indexMetadata.doc_mapping);
   const completionProvider = {
     provideCompletionItems(model: any, position: any) {
       const word = model.getWordUntilPosition(position)
@@ -135,14 +136,16 @@ export const createIndexCompletionProvider = (fields: FieldMapping[]) => {
         endColumn: word.endColumn,
       }
 
-      const fieldSuggestions = fields.map(field => {
-        return {
-          label: field.name,
-          kind: CompletionItemKind.Field,
-          insertText: field.name + ':',
-          range: range,
-        }
-      });
+      const fieldSuggestions = fields
+        .filter(field => field.name !== indexMetadata.indexing_settings.timestamp_field)
+        .map(field => {
+          return {
+            label: field.name,
+            kind: CompletionItemKind.Field,
+            insertText: field.name + ':',
+            range: range,
+          }
+        });
 
       return {
         suggestions: fieldSuggestions.concat([
@@ -164,4 +167,28 @@ export const createIndexCompletionProvider = (fields: FieldMapping[]) => {
   }
 
   return completionProvider
+}
+
+
+export const setErrorMarker = (
+  monaco: any,
+  editor: any,
+  startlineNumber: number,
+  startColumnNumber: number,
+  message: string,
+) => {
+  const model = editor.getModel()
+
+  if (model) {
+    monaco.editor.setModelMarkers(model, "QuestDBLanguageName", [
+      {
+        message,
+        severity: monaco.MarkerSeverity.Error,
+        startLineNumber: startlineNumber,
+        endLineNumber: startlineNumber,
+        startColumn: startColumnNumber,
+        endColumn: startColumnNumber,
+      },
+    ])
+  }
 }

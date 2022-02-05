@@ -21,14 +21,44 @@ import { KeyboardArrowDown } from "@mui/icons-material";
 import ChevronRight from "@mui/icons-material/ChevronRight";
 import { Box, IconButton, TableCell, TableRow } from "@mui/material";
 import { styled } from "@mui/system";
-import { useState } from "react";
+import React, { useState } from "react";
+import { DocMapping, Entry, flattenEntries, RawDoc } from "../../utils/models";
+import { QUICKWIT_GREY, QUICKWIT_INTERMEDIATE_GREY } from "../../utils/theme";
+import { JsonEditor } from "../JsonEditor";
 
 interface RowProps {
   timestampField: null | string;
-  row: any;
+  row: RawDoc;
+  doc_mapping: DocMapping;
 }
 
-const BreakWordBox = styled(Box)({
+const EntryName = styled('dt')`
+display: inline;
+background-color: ${QUICKWIT_INTERMEDIATE_GREY};
+color: #343741;
+padding: 2px 1px 2px 4px;
+margin-right: 4px;
+word-break: normal;
+border-radius: 3px;
+`;
+
+const EntryValue = styled('dd')`
+display: inline;
+margin: 0;
+padding: 0;
+margin-inline-end: 5px;
+`;
+
+function EntryFormatter(entry: Entry) {
+  return (
+    <>
+      <EntryName>{entry.key}:</EntryName>
+      <EntryValue>{entry.value}</EntryValue>
+    </>
+  )
+}
+
+const BreakWordBox = styled('dl')({
   verticalAlign: 'top',
   display: 'inline-block',
   color: '#464646',
@@ -37,10 +67,12 @@ const BreakWordBox = styled(Box)({
   whiteSpace: 'pre-wrap',
   margin: 1,
   overflow: 'hidden',
+  lineHeight: '1.8em',
 });
 
 export function Row(props: RowProps) {
   const [open, setOpen] = useState(false);
+  const flatten_entries = flattenEntries(props.doc_mapping, props.row);
   return (
     <>
       <TableRow>
@@ -53,22 +85,15 @@ export function Row(props: RowProps) {
             {open ? <KeyboardArrowDown /> : <ChevronRight />}
           </IconButton>
         </TableCell>
-        <TableCell sx={{ m: 1 }}>
-          <BreakWordBox sx={{ maxHeight: '100px' }}>
-            {JSON.stringify(props.row, null, 0)}
-          </BreakWordBox>
+        <TableCell>
+          {!open && <BreakWordBox sx={{ maxHeight: '100px' }}>
+              { flatten_entries.map((entry) => <React.Fragment key={entry.key}>{EntryFormatter(entry)}</React.Fragment>) }
+            </BreakWordBox>
+          }
+          {open && 
+              <JsonEditor content={props.row} />
+          }
         </TableCell>
-      </TableRow>
-      <TableRow sx={{ margin: 0, padding: 0 }}>
-        {open && <>
-            <TableCell />
-            <TableCell sx={{ m: 1 }}>
-                <BreakWordBox>
-                  {JSON.stringify(props.row, null, 2)}
-                </BreakWordBox>
-            </TableCell>
-          </>
-        }
       </TableRow>
     </>
   );

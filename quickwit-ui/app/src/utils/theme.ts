@@ -27,6 +27,8 @@ export const QUICKWIT_BLUE = '#004BD9';
 export const QUICKWIT_RED = '#FF0026';
 export const QUICKWIT_GREEN = '#00D588';
 export const QUICKWIT_GREY = '#CBD1DE';
+export const QUICKWIT_INTERMEDIATE_GREY = 'rgba(203,209,222,0.5)';
+export const QUICKWIT_LIGHT_GREY = '#F8F9FB';
 export const QUICKWIT_BLACK = '#1F232A';
 
 

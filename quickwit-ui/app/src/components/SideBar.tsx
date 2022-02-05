@@ -31,6 +31,9 @@ import { ListSubheader, Typography } from '@mui/material';
 import { CodeSSlash } from "@styled-icons/remix-line/CodeSSlash"
 import { GroupWork } from '@styled-icons/material-outlined/GroupWork';
 import { Database } from '@styled-icons/feather/Database';
+import { useLocalStorage } from '../providers/LocalStorageProvider';
+import { toUrlSearchRequestParams } from '../utils/urls';
+import { APP_BAR_HEIGHT_PX } from './LayoutUtils';
 
 interface ListItemLinkProps {
   icon?: React.ReactElement;
@@ -62,21 +65,27 @@ function ListItemLink(props: ListItemLinkProps) {
 
 const SideBarWrapper = styled('div')({
   display: 'flex',
-  marginTop: '48px',
-  height: 'calc(100% - 48px)',
+  marginTop: `${APP_BAR_HEIGHT_PX}`,
+  height: `calc(100% - ${APP_BAR_HEIGHT_PX})`,
   flex: '0 0 180px',
   flexDirection: 'column',
   borderRight: '1px solid rgba(0, 0, 0, 0.12)',
 });
   
 const SideBar = () => {
+  const lastSearchRequest = useLocalStorage().lastSearchRequest;
+  let searchUrl = '/search';
+  if (lastSearchRequest.indexId || lastSearchRequest.query) {
+    searchUrl = '/search?' + toUrlSearchRequestParams(lastSearchRequest).toString();
+  }
+  console.log('lastSearchRequest', lastSearchRequest);
   return (
     <SideBarWrapper sx={{ px: 0, py: 2 }}>
       <List dense={ true } sx={{ py: 0 }}>
         <ListSubheader sx={{lineHeight: '25px'}}>
           <Typography variant="body1">Discover</Typography>
         </ListSubheader>
-        <ListItemLink to="/search" primary={<Typography variant="body1">Query editor</Typography>} icon={<CodeSSlash size="18px" />} />
+        <ListItemLink to={searchUrl} primary={<Typography variant="body1">Query editor</Typography>} icon={<CodeSSlash size="18px" />} />
         <ListSubheader sx={{lineHeight: '25px', paddingTop: '10px'}}>
           <Typography variant="body1">Admin</Typography>
         </ListSubheader>

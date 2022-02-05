@@ -27,6 +27,7 @@ import { TabContext, TabList, TabPanel } from '@mui/lab';
 import { IndexSummary } from '../components/IndexSummary';
 import { JsonEditor } from '../components/JsonEditor';
 import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../components/LayoutUtils';
+import ApiUrlFooter from '../components/ApiUrlFooter';
 
 export type ErrorResult = {
   error: string;
@@ -36,11 +37,10 @@ const CustomTabPanel = styled(TabPanel)`
 padding-left: 0;
 padding-right: 0;
 height: 100%;
-`
+`;
 
 function IndexView() {
   let { indexId } = useParams();
-
   const [loading, setLoading] = useState(false)
   const [, setLoadingError] = useState<ErrorResult | null>(null)
   const [tabIndex, setTabIndex] = useState('1');
@@ -125,6 +125,7 @@ function IndexView() {
         </QBreadcrumbs>
         { renderFetchIndexResult() }
       </FullBoxContainer>
+      { ApiUrlFooter('api/v1/indexes/' + indexId) }
     </ViewUnderAppBarBox>
   );
 }

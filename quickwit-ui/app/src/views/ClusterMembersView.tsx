@@ -19,12 +19,14 @@
 
 import { Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
+import ApiUrlFooter from '../components/ApiUrlFooter';
 import { JsonEditor } from '../components/JsonEditor';
 import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../components/LayoutUtils';
 import Loader from '../components/Loader';
 import { Client } from '../services/client';
 import { Member } from '../utils/models';
 import { ErrorResult } from './IndexesView';
+
 
 function ClusterView() {
   const [loading, setLoading] = useState(false);
@@ -65,6 +67,7 @@ function ClusterView() {
           { renderResult() }
         </FullBoxContainer>
       </FullBoxContainer>
+      { ApiUrlFooter('api/v1/cluster/members') }
     </ViewUnderAppBarBox>
   );
 }

@@ -24,6 +24,7 @@ import { Client } from '../services/client';
 import Loader from '../components/Loader';
 import { IndexMetadata } from '../utils/models';
 import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../components/LayoutUtils';
+import ApiUrlFooter from '../components/ApiUrlFooter';
 
 export type ErrorResult = {
   error: string;
@@ -71,6 +72,7 @@ function IndexesView() {
         </QBreadcrumbs>
         { renderFetchIndexesResult() }
       </FullBoxContainer>
+      { ApiUrlFooter('api/v1/indexes') }
     </ViewUnderAppBarBox>
   );
 }

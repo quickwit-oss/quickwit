@@ -35,10 +35,15 @@ export function ResultTable({searchResponse, indexMetadata}: {searchResponse: Se
   return (
     <TableBox>
       <TableContainer>
-        <Table size="small">
+        <Table size="small" >
           <TableBody>
             { searchResponse.hits.map((hit, index) =>
-                <Row key={index} row={hit} timestampField={indexMetadata.indexing_settings.timestamp_field} />
+                <Row
+                  key={index}
+                  row={hit}
+                  timestampField={indexMetadata.indexing_settings.timestamp_field}
+                  doc_mapping={indexMetadata.doc_mapping}
+                />
             )}
           </TableBody>
         </Table>

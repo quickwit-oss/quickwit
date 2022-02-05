@@ -17,25 +17,34 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import ApiUrlFooter from '../components/ApiUrlFooter';
 import { IndexSideBar } from '../components/IndexSideBar';
 import { ViewUnderAppBarBox, FullBoxContainer } from '../components/LayoutUtils';
 import { QueryEditorActionBar } from '../components/QueryActionBar';
 import { QueryEditor } from '../components/QueryEditor/QueryEditor';
 import SearchResult from '../components/SearchResult/SearchResult';
+import { useLocalStorage } from '../providers/LocalStorageProvider';
 import { Client } from '../services/client';
 import { EMPTY_SEARCH_REQUEST, IndexMetadata, SearchRequest, SearchResponse } from '../utils/models';
+import { hasSearchParams, parseSearchUrl, toUrlSearchRequestParams } from '../utils/urls';
 
 function SearchView() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [indexMetadata, setIndexMetadata] = useState<null | IndexMetadata>(null);
-  const [searchRequest, setSearchRequest] = useState<SearchRequest>(EMPTY_SEARCH_REQUEST);
   const [searchResponse, setSearchResponse] = useState<null | SearchResponse>(null);
   const [queryRunning, setQueryRunning] = useState(false);
-  const quickwitClient = new Client();
+  const [searchRequest, setSearchRequest] = useState<SearchRequest>(hasSearchParams(location.search) ? parseSearchUrl(location.search) : EMPTY_SEARCH_REQUEST);
+  const updateLastSearchRequest = useLocalStorage().updateLastSearchRequest;
+  const quickwitClient = useMemo(() => new Client(), []);
   const runSearch = () => {
-    console.log('Run search with:', searchRequest);
+    console.log('Run search...', searchRequest);
     setQueryRunning(true);
     quickwitClient.search(searchRequest).then((response) => {
+      navigate('/search?' + toUrlSearchRequestParams(searchRequest).toString());
+      updateLastSearchRequest(searchRequest);
       setSearchResponse(response);
       setQueryRunning(false);
     }, (error) => {
@@ -50,7 +59,8 @@ function SearchView() {
     setSearchRequest(searchRequest);
   }
   useEffect(() => {
-    if (indexMetadata == null) {
+    // TODO: fix this shit.
+    if (indexMetadata === null || indexMetadata.index_id === null || indexMetadata.index_id === undefined) {
       return;
     }
     setSearchRequest(previousRequest => {
@@ -58,79 +68,46 @@ function SearchView() {
     });
   }, [indexMetadata]);
   useEffect(() => {
-    if (searchRequest.indexId == null) {
+    console.log('searchRequest', searchRequest);
+    // Fix this shit.
+    if (searchRequest.indexId == null || searchRequest.indexId == '') {
       return;
     }
-  }, [searchRequest]);
+    if (indexMetadata === null || indexMetadata === undefined) {
+      console.log('update meta', searchRequest.indexId);
+      quickwitClient.getIndex(searchRequest.indexId).then((fetchedIndexMetadata) => {
+        console.log("set meta", searchRequest);
+        setIndexMetadata(fetchedIndexMetadata);
+      });
+    }
+  }, [searchRequest, quickwitClient]);
 
   return (
       <ViewUnderAppBarBox sx={{ flexDirection: 'row'}}>
         <IndexSideBar indexMetadata={indexMetadata} onIndexMetadataUpdate={onIndexMetadataUpdate}/>
-        <FullBoxContainer>
-          <QueryEditorActionBar
-            searchRequest={searchRequest}
-            onSearchRequestUpdate={onSearchRequestUpdate}
-            runSearch={runSearch}
-            indexMetadata={indexMetadata}
-            queryRunning={queryRunning} />
-          <QueryEditor
-            searchRequest={searchRequest}
-            onSearchRequestUpdate={onSearchRequestUpdate}
-            runSearch={runSearch}
-            indexMetadata={indexMetadata}
-            queryRunning={queryRunning} />
-          <SearchResult
-            queryRunning={queryRunning}
-            searchResponse={searchResponse}
-            indexMetadata={indexMetadata} />
+        <FullBoxContainer sx={{ padding: 0}}>
+          <FullBoxContainer>
+            <QueryEditorActionBar
+              searchRequest={searchRequest}
+              onSearchRequestUpdate={onSearchRequestUpdate}
+              runSearch={runSearch}
+              indexMetadata={indexMetadata}
+              queryRunning={queryRunning} />
+            <QueryEditor
+              searchRequest={searchRequest}
+              onSearchRequestUpdate={onSearchRequestUpdate}
+              runSearch={runSearch}
+              indexMetadata={indexMetadata}
+              queryRunning={queryRunning} />
+            <SearchResult
+              queryRunning={queryRunning}
+              searchResponse={searchResponse}
+              indexMetadata={indexMetadata} />
+          </FullBoxContainer>
+          { ApiUrlFooter('api/v1/search?' + toUrlSearchRequestParams(searchRequest).toString()) }
         </FullBoxContainer>
       </ViewUnderAppBarBox>
   );
 }
 
 export default SearchView;
-
-function parseUrl(historySearch: string): SearchRequest {
-  const searchParams = new URLSearchParams(historySearch);
-  const startTimestampString = searchParams.get("startTimestamp");
-  let startTimestamp = null;
-  if (startTimestampString != null) {
-    startTimestamp = parseInt(startTimestampString);
-  }
-  const endTimestampString = searchParams.get("endTimestamp");
-  let endTimestamp = null;
-  if (endTimestampString != null) {
-    endTimestamp = parseInt(endTimestampString);
-  }
-  const debug = (searchParams.get("debug") === "true");
-  const cacheLevelString = searchParams.get("cacheLevel");
-  let cacheLevel = 0;
-  if (cacheLevelString != null) {
-    cacheLevel = parseInt(cacheLevelString);
-    if (Number.isNaN(cacheLevel)) {
-      cacheLevel = 0;
-    }
-  }
-  return {
-    indexId: null,
-    query: searchParams.get("query") || "",
-    numHits: 10,
-    startTimestamp: startTimestamp,
-    endTimestamp: endTimestamp,
-  };
-}
-
-function toUrlQueryParams(request: SearchRequest): URLSearchParams {
-  const params = new URLSearchParams();
-  params.append("query", request.query);
-  if (request.startTimestamp) {
-    params.append(
-      "startTimestamp",
-      request.startTimestamp.toString()
-    );
-  }
-  if (request.endTimestamp) {
-    params.append("endTimestamp", request.endTimestamp.toString());
-  }
-  return params;
-}

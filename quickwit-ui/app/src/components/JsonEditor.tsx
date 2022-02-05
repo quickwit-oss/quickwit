@@ -19,26 +19,43 @@
 
 import Editor from "@monaco-editor/react";
 import { Box } from "@mui/system";
+import { useCallback } from "react";
 
 export function JsonEditor({content}: {content: any}) {
+  // setting editor height based on lines height and count to stretch and fit its content
+  const setEditorCalculatedHeight = useCallback((editor) => {
+    const editorElement = editor.getDomNode();
+
+    if (!editorElement) {
+      return;
+    }
+
+    // TODO: use enum for the lineHeight option index.
+    const lineHeight = editor.getOption(58);
+    const lineCount = editor.getModel()?.getLineCount() || 1;
+    const height = editor.getTopForLineNumber(lineCount + 1) + 2 * lineHeight;
+
+    editorElement.style.height = `${height}px`;
+    editor.layout();
+  }, []);
+
   return (
-    <Box sx={{ height: '100%'}} >
-      <Editor
-        language='json'
-        value={JSON.stringify(content, null, 2)}
-        options={{
-          readOnly: true,
-          fontFamily: 'monospace',
-          minimap: {
-            enabled: false,
-          },
-          renderLineHighlight: "gutter",
-          fontSize: 12,
-          fixedOverflowWidgets: true,
-          scrollBeyondLastLine: false,
+    <Editor
+      language='json'
+      value={JSON.stringify(content, null, 2)}
+      options={{
+        readOnly: true,
+        fontFamily: 'monospace',
+        minimap: {
+          enabled: false,
+        },
+        renderLineHighlight: "gutter",
+        fontSize: 12,
+        fixedOverflowWidgets: true,
+        scrollBeyondLastLine: false,
+        automaticLayout: true,
       }}
       theme='quickwit-light'
-      />
-    </Box>
+    />
   )
 }

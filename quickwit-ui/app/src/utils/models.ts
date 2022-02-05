@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-type RawDoc = Record<string, any>
+export type RawDoc = Record<string, any>
 
 export type FieldMapping = {
   name: string;
@@ -25,15 +25,51 @@ export type FieldMapping = {
   field_mappings?: FieldMapping[];
 }
 
-function get_fields(field_mappings: FieldMapping[]): FieldMapping[] {
-  let fields: FieldMapping[] = [];
+export type FlattenField = {
+  path: string[];
+  name: string;
+  type: string;
+}
+
+export type Entry = {
+  key: string;
+  value: any;
+}
+
+function getValueFromPath(path: string[], raw_doc: RawDoc): any {
+  let value = raw_doc;
+  for (let key of path) {
+    if (key in value) {
+      value = value[key];
+    } else {
+      return null;
+    }
+  }
+  return value;
+}
+
+export function flattenEntries(doc_mapping: DocMapping, raw_doc: RawDoc): Entry[] {
+  const flatten_fields = getFlattenFields(doc_mapping.field_mappings);
+  const records = [];
+
+  for (let flatten_field of flatten_fields) {
+    const value = getValueFromPath(flatten_field.path, raw_doc);
+    if (value !== null) {
+      records.push({key: flatten_field.name, value: value});
+    }
+  }
+  return records;
+}
+
+function getFlattenFields(field_mappings: FieldMapping[]): FlattenField[] {
+  let fields: FlattenField[] = [];
   for (let field_mapping of field_mappings) {
     if (field_mapping.type === 'object' && field_mapping.field_mappings !== undefined) {
-      for (let child_field of get_fields(field_mapping.field_mappings)) {
-        fields.push({name: field_mapping.name + '.' + child_field.name, type: child_field.type})
+      for (let child_field of getFlattenFields(field_mapping.field_mappings)) {
+        fields.push({name: field_mapping.name + '.' + child_field.name, path: [field_mapping.name].concat(child_field.path), type: child_field.type})
       }
     } else {
-      fields.push(field_mapping);
+      fields.push({name: field_mapping.name, path: [field_mapping.name], type: field_mapping.type});
     }
   }
    
@@ -41,7 +77,7 @@ function get_fields(field_mappings: FieldMapping[]): FieldMapping[] {
 }
 
 export function get_all_fields(doc_mapping: DocMapping) {
-  return get_fields(doc_mapping.field_mappings);
+  return getFlattenFields(doc_mapping.field_mappings);
 } 
 
 export type DocMapping = {
