@@ -91,19 +91,19 @@ function IndexView() {
             <IndexSummary indexMetadata={indexMetadata} />
           </CustomTabPanel>
           <CustomTabPanel value="2">
-            <JsonEditor content={indexMetadata.sources} />
+            <JsonEditor content={indexMetadata.sources} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="3">
-            <JsonEditor content={indexMetadata.doc_mapping} />
+            <JsonEditor content={indexMetadata.doc_mapping} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="4">
-            <JsonEditor content={indexMetadata.indexing_settings} />
+            <JsonEditor content={indexMetadata.indexing_settings} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="5">
-            <JsonEditor content={indexMetadata.search_settings} />
+            <JsonEditor content={indexMetadata.search_settings} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="6">
-            <JsonEditor content={[]} />
+            <JsonEditor content={[]} resizeOnMount={false} />
           </CustomTabPanel>
         </TabContext>
       </Box>

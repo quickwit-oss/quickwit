@@ -119,3 +119,20 @@ export const theme = createTheme({
     },
   },
 });
+
+
+export const EditorTheme = {
+  base: 'vs',
+  inherit: true,
+  rules: [
+    { token: 'comment', foreground: '#1F232A', fontStyle: 'italic' },
+    { token: 'keyword', foreground: QUICKWIT_BLUE }
+  ],
+  colors: {
+    'editor.comment.foreground': '#CBD1DE',
+    'editor.foreground': '#000000',
+    'editor.background': QUICKWIT_LIGHT_GREY,
+    'editorLineNumber.foreground': 'black',
+    'editor.lineHighlightBackground': '#DFE0E1',
+  },
+};

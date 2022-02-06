@@ -18,12 +18,15 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import Editor from "@monaco-editor/react";
-import { Box } from "@mui/system";
 import { useCallback } from "react";
+import { QUICKWIT_BLUE, QUICKWIT_LIGHT_GREY } from "../utils/theme";
 
-export function JsonEditor({content}: {content: any}) {
+export function JsonEditor({content, resizeOnMount}: {content: any, resizeOnMount: boolean}) {
   // setting editor height based on lines height and count to stretch and fit its content
-  const setEditorCalculatedHeight = useCallback((editor) => {
+  const onMount = useCallback((editor) => {
+    if (!resizeOnMount) {
+      return;
+    } 
     const editorElement = editor.getDomNode();
 
     if (!editorElement) {
@@ -39,10 +42,30 @@ export function JsonEditor({content}: {content: any}) {
     editor.layout();
   }, []);
 
+  function beforeMount(monaco: any) {
+    monaco.editor.defineTheme('quickwit-light', {
+      base: 'vs',
+      inherit: true,
+      rules: [
+        { token: 'comment', foreground: '#1F232A', fontStyle: 'italic' },
+        { token: 'keyword', foreground: QUICKWIT_BLUE }
+      ],
+      colors: {
+        'editor.comment.foreground': '#CBD1DE',
+        'editor.foreground': '#000000',
+        'editor.background': QUICKWIT_LIGHT_GREY,
+        'editorLineNumber.foreground': 'black',
+        'editor.lineHighlightBackground': '#DFE0E1',
+      },
+    });
+  }
+
   return (
     <Editor
       language='json'
       value={JSON.stringify(content, null, 2)}
+      beforeMount={beforeMount}
+      onMount={onMount}
       options={{
         readOnly: true,
         fontFamily: 'monospace',

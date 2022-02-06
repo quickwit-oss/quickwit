@@ -91,7 +91,7 @@ export function Row(props: RowProps) {
             </BreakWordBox>
           }
           {open && 
-              <JsonEditor content={props.row} />
+              <JsonEditor content={props.row} resizeOnMount={true} />
           }
         </TableCell>
       </TableRow>

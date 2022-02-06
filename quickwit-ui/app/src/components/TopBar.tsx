@@ -23,7 +23,8 @@ import Typography from '@mui/material/Typography';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import { IconButton, Link, styled, SvgIcon } from '@mui/material';
 import { Discord } from '@styled-icons/fa-brands/Discord';
-import { ReactComponent as Logo } from '../assets/img/logo.svg';
+import { ReactComponent as Logo } from '../assets/img/quickwit-logo.svg';
+import { Box } from '@mui/system';
 
 const StyledAppBar = styled(AppBar)(({ theme })=>({
   zIndex: theme.zIndex.drawer + 1,
@@ -41,17 +42,9 @@ const TopBar = () => {
   return (
     <StyledAppBar position="fixed" elevation={0} color="neutral">
       <Toolbar variant="dense">
-        <IconButton>
-          <SvgIcon>
-            <Logo width="24" height="24" color="red"></Logo>
-          </SvgIcon>
-        </IconButton>
-        <Typography
-          variant="h6"
-          sx={{ flexGrow: 1 }}
-        >
-          Quickwit
-        </Typography>
+        <Box sx={{ flexGrow: 1, p: 0, m: 0, display: 'flex', alignItems: 'center' }}>
+          <Logo height='25px'></Logo>
+        </Box>
         <Link href="https://quickwit.io/docs" target="_blank" sx={{ px: 2 }}>
             Docs
         </Link>

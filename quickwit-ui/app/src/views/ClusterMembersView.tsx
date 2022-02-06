@@ -53,7 +53,7 @@ function ClusterView() {
     if (loading || members == null) {
       return <Loader />;
     } else {
-      return <JsonEditor content={members} />
+      return <JsonEditor content={members} resizeOnMount={false} />
     }
   }
 
