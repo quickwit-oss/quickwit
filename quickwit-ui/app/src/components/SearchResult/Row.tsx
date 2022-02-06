@@ -64,7 +64,6 @@ const BreakWordBox = styled('dl')({
   color: '#464646',
   wordBreak: 'break-all',
   wordWrap: 'break-word',
-  whiteSpace: 'pre-wrap',
   margin: 1,
   overflow: 'hidden',
   lineHeight: '1.8em',

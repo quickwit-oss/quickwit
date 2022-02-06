@@ -22,13 +22,14 @@ import { useEffect, useRef } from 'react';
 import Editor, { useMonaco } from "@monaco-editor/react";
 import { LANGUAGE_CONFIG, LanguageFeatures, createIndexCompletionProvider } from './config';
 import { SearchComponentProps } from '../../utils/SearchComponentProps';
-import { get_all_fields } from '../../utils/models';
-import { QUICKWIT_BLUE, QUICKWIT_LIGHT_GREY } from '../../utils/theme';
+import { getAllFields } from '../../utils/models';
+import { EDITOR_THEME, QUICKWIT_BLUE, QUICKWIT_LIGHT_GREY } from '../../utils/theme';
 
 export function QueryEditor(props: SearchComponentProps) {
   const monaco = useMonaco();
   const editorRef = useRef(null);
   const runSearchRef = useRef(props.runSearch);
+  const searchRequestRef = useRef(props.searchRequest);
   const defaultValue = props.searchRequest.query === null ? `// Select an index and type your query. Example: field_name:"phrase query"` : props.searchRequest.query;
   
   function handleEditorDidMount(editor: any, monaco: any) {
@@ -41,14 +42,14 @@ export function QueryEditor(props: SearchComponentProps) {
         monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
       ],
       run: () => {
-        runSearchRef.current();
+        runSearchRef.current(searchRequestRef.current);
       },
     })
   }
 
   useEffect(() => {
-    if (monaco && props.searchRequest.indexId !== '' && props.indexMetadata !== null) {
-      // let's update the language
+    searchRequestRef.current = props.searchRequest;
+    if (monaco && props.searchRequest.indexId !== '' && props.index !== null) {
       const languageId = props.searchRequest.indexId + '-query-language';
       if (!monaco.languages.getLanguages().some(({ id }: {id :string }) => id === languageId)) {
         console.log('register language', languageId);
@@ -58,12 +59,12 @@ export function QueryEditor(props: SearchComponentProps) {
           languageId,
           LANGUAGE_CONFIG,
         );
-        if (props.indexMetadata != null) {
-          monaco.languages.registerCompletionItemProvider(languageId, createIndexCompletionProvider(props.indexMetadata));
+        if (props.index != null) {
+          monaco.languages.registerCompletionItemProvider(languageId, createIndexCompletionProvider(props.index.metadata));
         }
       }
     }
-  }, [monaco, props.searchRequest, props.indexMetadata]);
+  }, [monaco, props.searchRequest, props.index]);
 
   useEffect(() => {
     if (monaco) {
@@ -72,28 +73,14 @@ export function QueryEditor(props: SearchComponentProps) {
   }, [monaco, props.runSearch]);
 
   function handleEditorChange(value: any) {
-    console.log("here is the current model value:", value);
     const updatedSearchRequest = Object.assign({}, props.searchRequest, {query: value});
     props.onSearchRequestUpdate(updatedSearchRequest);
   }
 
   function handleEditorWillMount(monaco: any) {
-    monaco.editor.defineTheme('quickwit-light', {
-      base: 'vs',
-      inherit: true,
-      rules: [
-        { token: 'comment', foreground: '#1F232A', fontStyle: 'italic' },
-        { token: 'keyword', foreground: QUICKWIT_BLUE }
-      ],
-      colors: {
-        'editor.comment.foreground': '#CBD1DE',
-        'editor.foreground': '#000000',
-        'editor.background': QUICKWIT_LIGHT_GREY,
-        'editorLineNumber.foreground': 'black',
-        'editor.lineHighlightBackground': '#DFE0E1',
-      },
-    });
+    monaco.editor.defineTheme('quickwit-light', EDITOR_THEME);
   }
+
   return (
     <Box sx={{ height: '100px', py: 1}} >
       <Editor

@@ -121,7 +121,7 @@ export const theme = createTheme({
 });
 
 
-export const EditorTheme = {
+export const EDITOR_THEME = {
   base: 'vs',
   inherit: true,
   rules: [

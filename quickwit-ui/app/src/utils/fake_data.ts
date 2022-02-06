@@ -143,6 +143,329 @@ export const INDEXES_METADATA = [
   }
 ];
 
+
+export const INDEXES_SPLITS: Record<string, any[]> = {
+  wikipedia: [
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641859978,
+      "version": "1",
+      "split_id": "01FS37NK2XY711CSC0D65AK4P3",
+      "num_docs": 10000,
+      "size_in_bytes": 11252193,
+      "time_range": null,
+      "create_timestamp": 1641859978,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 11601989,
+        "end": 11610209
+      }
+    },
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641861230,
+      "version": "1",
+      "split_id": "01FS38VRZGPCMG5XMCV2CPQ273",
+      "num_docs": 10000,
+      "size_in_bytes": 11252193,
+      "time_range": null,
+      "create_timestamp": 1641861230,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 11601989,
+        "end": 11610255
+      }
+    },
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641861308,
+      "version": "1",
+      "split_id": "01FS38Y8PFYY9HBWK52RBYGPJK",
+      "num_docs": 10000,
+      "size_in_bytes": 11252193,
+      "time_range": null,
+      "create_timestamp": 1641861308,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 11601989,
+        "end": 11610282
+      }
+    },
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641861510,
+      "version": "1",
+      "split_id": "01FS3942PM6K8950RGNWNDG7W7",
+      "num_docs": 10000,
+      "size_in_bytes": 11252193,
+      "time_range": null,
+      "create_timestamp": 1641861510,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 11601989,
+        "end": 11610151
+      }
+    }
+  ],
+  'hdfs-logs': [
+    {
+      "split_state": "MarkedForDeletion",
+      "update_timestamp": 1641862663,
+      "version": "1",
+      "split_id": "01FS3A271HE2ZRSJNG8P2ST480",
+      "num_docs": 7497246,
+      "size_in_bytes": 2649462846,
+      "time_range": {
+        "start": 1440670432,
+        "end": 1475371512
+      },
+      "create_timestamp": 1641862543,
+      "tags": [
+        "tenant_id!",
+        "tenant_id:1",
+        "tenant_id:10",
+        "tenant_id:100",
+        "tenant_id:11",
+        "tenant_id:12",
+        "tenant_id:13",
+        "tenant_id:14",
+        "tenant_id:15",
+        "tenant_id:16",
+        "tenant_id:17",
+        "tenant_id:18",
+        "tenant_id:19",
+        "tenant_id:2",
+        "tenant_id:20",
+        "tenant_id:21",
+        "tenant_id:22",
+        "tenant_id:23",
+        "tenant_id:24",
+        "tenant_id:25",
+        "tenant_id:26",
+        "tenant_id:27",
+        "tenant_id:28",
+        "tenant_id:29",
+        "tenant_id:3",
+        "tenant_id:30",
+        "tenant_id:31",
+        "tenant_id:32",
+        "tenant_id:9",
+        "tenant_id:90",
+        "tenant_id:91",
+        "tenant_id:92",
+        "tenant_id:93",
+        "tenant_id:94",
+        "tenant_id:95",
+        "tenant_id:96",
+        "tenant_id:97",
+        "tenant_id:98",
+        "tenant_id:99"
+      ],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 990930338,
+        "end": 992212969
+      }
+    }
+  ],
+  "gh-archive": [
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641860248,
+      "version": "1",
+      "split_id": "01FS37TSHQ1ZA1XYRNK63ZBB55",
+      "num_docs": 32253,
+      "size_in_bytes": 103946490,
+      "time_range": {
+        "start": 1638316800000,
+        "end": 1638320680000
+      },
+      "create_timestamp": 1641860247,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 54734832,
+        "end": 54760094
+      }
+    },
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641860292,
+      "version": "1",
+      "split_id": "01FS37WMBRA4HXPP33NA51G5HZ",
+      "num_docs": 36194,
+      "size_in_bytes": 95418883,
+      "time_range": {
+        "start": 1638320435000,
+        "end": 1638326556000
+      },
+      "create_timestamp": 1641860291,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 53230438,
+        "end": 53254068
+      }
+    },
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641860729,
+      "version": "1",
+      "split_id": "01FS38AE5DPKZNP4TXW5WN79NJ",
+      "num_docs": 1117673,
+      "size_in_bytes": 2172044415,
+      "time_range": {
+        "start": 1638316800000,
+        "end": 1638460693000
+      },
+      "create_timestamp": 1641860715,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 1203735687,
+        "end": 1204165496
+      }
+    },
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641860790,
+      "version": "1",
+      "split_id": "01FS38C8VQPMYBWW3DE6ECFZ81",
+      "num_docs": 1395589,
+      "size_in_bytes": 2109015377,
+      "time_range": {
+        "start": 1638458065000,
+        "end": 1638752796000
+      },
+      "create_timestamp": 1641860777,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 1222428735,
+        "end": 1222849608
+      }
+    },
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641860846,
+      "version": "1",
+      "split_id": "01FS38E3J0CNZHX0HJGR232XJB",
+      "num_docs": 826921,
+      "size_in_bytes": 2047454692,
+      "time_range": {
+        "start": 1638752400000,
+        "end": 1638859718000
+      },
+      "create_timestamp": 1641860834,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 1075020996,
+        "end": 1075408654
+      }
+    },
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641860923,
+      "version": "1",
+      "split_id": "01FS38FY99D10ZNDEGWY6MF663",
+      "num_docs": 1167524,
+      "size_in_bytes": 1891650603,
+      "time_range": {
+        "start": 1638857045000,
+        "end": 1639011044000
+      },
+      "create_timestamp": 1641860900,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 1055395394,
+        "end": 1055761190
+      }
+    },
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641860967,
+      "version": "1",
+      "split_id": "01FS38HRZPME0HKMVDK4XJJPQ0",
+      "num_docs": 684107,
+      "size_in_bytes": 1528866958,
+      "time_range": {
+        "start": 1639008558000,
+        "end": 1639084576000
+      },
+      "create_timestamp": 1641860955,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 811811738,
+        "end": 812136276
+      }
+    },
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641861025,
+      "version": "1",
+      "split_id": "01FS38KKNPD3YEW5YSS5DQP3F5",
+      "num_docs": 840388,
+      "size_in_bytes": 1572298978,
+      "time_range": {
+        "start": 1639083624000,
+        "end": 1639176807000
+      },
+      "create_timestamp": 1641861014,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 769697698,
+        "end": 770027923
+      }
+    },
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641861141,
+      "version": "1",
+      "split_id": "01FS38S3RQ2Y2SBJP0XWX88HP6",
+      "num_docs": 124314,
+      "size_in_bytes": 248611059,
+      "time_range": {
+        "start": 1639512189000,
+        "end": 1639519199000
+      },
+      "create_timestamp": 1641861136,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 89492373,
+        "end": 89552579
+      }
+    },
+    {
+      "split_state": "Published",
+      "update_timestamp": 1641861141,
+      "version": "1",
+      "split_id": "01FS38Q92FJYM6DSWM6FXRNBV6",
+      "num_docs": 892763,
+      "size_in_bytes": 2106541432,
+      "time_range": {
+        "start": 1639414805000,
+        "end": 1639514652000
+      },
+      "create_timestamp": 1641861134,
+      "tags": [],
+      "demux_num_ops": 0,
+      "footer_offsets": {
+        "start": 1094082935,
+        "end": 1094502065
+      }
+    }
+  ]
+};
+
 export const WIKIPEDIA_SEARCH_RESPONSE: SearchResponse = {
   count: 3,
   hits: [

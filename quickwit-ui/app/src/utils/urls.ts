@@ -11,16 +11,23 @@ export function parseSearchUrl(historySearch: string): SearchRequest {
   const searchParams = new URLSearchParams(historySearch);
   const startTimestampString = searchParams.get("startTimestamp");
   let startTimestamp = null;
-  if (startTimestampString != null) {
-    startTimestamp = parseInt(startTimestampString);
+  let startTimeStampParsedInt = parseInt(startTimestampString || "");
+  if (!isNaN(startTimeStampParsedInt)) {
+    startTimestamp = startTimeStampParsedInt
   }
-  const endTimestampString = searchParams.get("endTimestamp");
   let endTimestamp = null;
-  if (endTimestampString != null) {
-    endTimestamp = parseInt(endTimestampString);
+  const endTimestampString = searchParams.get("endTimestamp");
+  let endTimestampParsedInt = parseInt(endTimestampString || "");
+  if (!isNaN(endTimestampParsedInt)) {
+    endTimestamp = endTimestampParsedInt
+  }
+  let indexId = null;
+  const indexIdParam = searchParams.get("indexId");
+  if (indexIdParam !== null && indexIdParam.length > 0) {
+    indexId = searchParams.get("indexId");
   }
   return {
-    indexId: searchParams.get("indexId"),
+    indexId: indexId,
     query: searchParams.get("query") || "",
     numHits: 10,
     startTimestamp: startTimestamp,

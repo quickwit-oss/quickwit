@@ -21,7 +21,7 @@ import { Autocomplete, Chip, CircularProgress, IconButton, List, ListItem, ListI
 import { Box } from '@mui/system';
 import React, { useEffect, useMemo, useState } from 'react';
 import styled from '@emotion/styled';
-import { EMPTY_INDEX_METADATA, FieldMapping, get_all_fields, IndexMetadata } from '../utils/models';
+import { EMPTY_INDEX_METADATA, FieldMapping, getAllFields, IndexMetadata } from '../utils/models';
 import { ChevronRight, KeyboardArrowDown } from '@mui/icons-material';
 import { Client } from '../services/client';
 
@@ -37,7 +37,7 @@ function IndexAutocomplete(props: IndexMetadataProps) {
   const [open, setOpen] = React.useState(false);
   const [options, setOptions] = React.useState<readonly IndexMetadata[]>([]);
   const [value, setValue] = React.useState<IndexMetadata | null>(null);
-  const loading = open && options.length === 0;
+  const loading = open && options.length <= 1;
   const quickwitClient = useMemo(() => new Client(), []);
 
   useEffect(() => {
@@ -56,31 +56,36 @@ function IndexAutocomplete(props: IndexMetadataProps) {
 
   useEffect(() => {
     if (!open) {
-      if (props.indexMetadata !== null) {
-        console.log('set meta', props.indexMetadata);
+      if (props.indexMetadata !== null && options.length === 0) {
         setOptions([props.indexMetadata]);
-      } else {
       }
     }
   }, [open]);
+
   useEffect(() => {
     if (props.indexMetadata !== null) {
       setValue(props.indexMetadata);
+    } else {
+      setValue(null);
     }
   }, [props.indexMetadata]);
-  console.log('meta auto', props.indexMetadata);
+
   return (
     <Autocomplete
       size="small"
       sx={{ width: 210 }}
       open={open}
       value={value}
-      onChange={(event, value) => {
-        setValue(value);
-        if (value == null || value.index_id == null) {
-          props.onIndexMetadataUpdate(EMPTY_INDEX_METADATA);
+      onChange={(event, updatedValue) => {
+        if (updatedValue === null) {
+          setValue(null);
         } else {
-          props.onIndexMetadataUpdate(value);
+          setValue(updatedValue);
+        }
+        if (updatedValue == null || updatedValue.index_id == null) {
+          props.onIndexMetadataUpdate(null);
+        } else {
+          props.onIndexMetadataUpdate(updatedValue);
         }
       }}
       onOpen={() => {
@@ -114,7 +119,7 @@ function IndexAutocomplete(props: IndexMetadataProps) {
 
 export interface IndexMetadataProps {
   indexMetadata: null | IndexMetadata,
-  onIndexMetadataUpdate(indexMetadata: IndexMetadata): void;
+  onIndexMetadataUpdate(indexMetadata: IndexMetadata | null): void;
 }
 
 function fieldTypeLabel(fieldMapping: FieldMapping): string {
@@ -123,7 +128,7 @@ function fieldTypeLabel(fieldMapping: FieldMapping): string {
 
 export function IndexSideBar(props: IndexMetadataProps) {
   const [open, setOpen] = useState(true);
-  const fields = (props.indexMetadata == null) ? [] : get_all_fields(props.indexMetadata.doc_mapping);
+  const fields = (props.indexMetadata === null) ? [] : getAllFields(props.indexMetadata.doc_mapping);
   return (
     <IndexBarWrapper>
       <Box sx={{ px: 3, py: 2}}>

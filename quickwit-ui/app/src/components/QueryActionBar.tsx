@@ -28,16 +28,16 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
     <Box sx={{ display: 'flex'}}>
       <Box sx={{ flexGrow: 1 }}>
         <Button
-          onClick={() => props.runSearch()}
+          onClick={() => props.runSearch(props.searchRequest)}
           variant="contained"
           startIcon={<PlayArrowIcon />}
           disableElevation
           sx={{ flexGrow: 1}}
-          disabled={props.queryRunning || props.searchRequest.indexId === ''}>
+          disabled={props.queryRunning || props.searchRequest.indexId === null}>
           Run
         </Button>
       </Box>
-      { props.indexMetadata?.indexing_settings.timestamp_field && <TimeRangeSelect 
+      { props.index?.metadata.indexing_settings.timestamp_field && <TimeRangeSelect 
         { ...props } /> 
       }
     </Box>

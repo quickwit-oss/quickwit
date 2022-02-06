@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { DocMapping, FieldMapping, get_all_fields, IndexMetadata } from "../../utils/models";
+import { DocMapping, FieldMapping, getAllFields, IndexMetadata } from "../../utils/models";
 
 export enum CompletionItemKind {
   Field = 3,
@@ -124,7 +124,7 @@ export function LanguageFeatures(): any {
 }
 
 export const createIndexCompletionProvider = (indexMetadata: IndexMetadata) => {
-  const fields = get_all_fields(indexMetadata.doc_mapping);
+  const fields = getAllFields(indexMetadata.doc_mapping);
   const completionProvider = {
     provideCompletionItems(model: any, position: any) {
       const word = model.getWordUntilPosition(position)

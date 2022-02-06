@@ -20,7 +20,7 @@
 import { Typography } from "@mui/material";
 import { Box } from "@mui/system";
 import NumberFormat from "react-number-format";
-import { IndexMetadata, SearchResponse } from "../../utils/models";
+import { Index, IndexMetadata, SearchResponse } from "../../utils/models";
 import Loader from "../Loader";
 import { ResultTable } from "./ResultTable";
 
@@ -48,7 +48,7 @@ function HitCount({searchResponse}: {searchResponse: SearchResponse}) {
 
 interface SearchResultProps {
   queryRunning: boolean;
-  indexMetadata: null | IndexMetadata;
+  index: null | Index;
   searchResponse: null | SearchResponse;
 }
 
@@ -56,7 +56,7 @@ export default function SearchResult(props: SearchResultProps) {
   if (props.queryRunning) {
     return <Loader />
   }
-  if (props.searchResponse == null || props.indexMetadata == null) {
+  if (props.searchResponse == null || props.index == null) {
     return <></>
   }
   return (
@@ -66,7 +66,7 @@ export default function SearchResult(props: SearchResultProps) {
           <HitCount searchResponse={props.searchResponse} />
         </Box>
         <Box sx={{ pt: 2, flexGrow: 1, flexBasis: '0%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <ResultTable searchResponse={props.searchResponse} indexMetadata={props.indexMetadata}/>
+          <ResultTable searchResponse={props.searchResponse} indexMetadata={props.index.metadata}/>
         </Box>
       </Box>
     </Box>

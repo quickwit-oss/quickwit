@@ -17,8 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { GH_ARCHIVE_SEARCH_RESPONSE, HDFS_LOGS_SEARCH_RESPONSE, INDEXES_METADATA, WIKIPEDIA_SEARCH_RESPONSE } from "../utils/fake_data";
-import { IndexMetadata, MemberList, SearchRequest, SearchResponse } from "../utils/models";
+import { GH_ARCHIVE_SEARCH_RESPONSE, HDFS_LOGS_SEARCH_RESPONSE, INDEXES_METADATA, INDEXES_SPLITS as INDEXES_SPLITS_METADATA, WIKIPEDIA_SEARCH_RESPONSE } from "../utils/fake_data";
+import { Index, IndexMetadata, MemberList, SearchRequest, SearchResponse, SplitMetadata } from "../utils/models";
 
 export class Client {
   private readonly _host: string
@@ -91,10 +91,15 @@ export class Client {
     };
   }
 
-  async getIndex(indexId: string): Promise<IndexMetadata> {
+  async getIndex(indexId: string): Promise<Index> {
     // TODO: call the API.
     await new Promise(resolve => setTimeout(resolve, 300));
-    return INDEXES_METADATA.filter(metadata => metadata.index_id === indexId)[0];
+    const metadata = INDEXES_METADATA.filter(metadata => metadata.index_id === indexId)[0];
+    const splits: SplitMetadata[] = INDEXES_SPLITS_METADATA[metadata.index_id];
+    return {
+      metadata: metadata,
+      splits: splits
+    }
   }
 
   async listIndexes(): Promise<IndexMetadata[]> {

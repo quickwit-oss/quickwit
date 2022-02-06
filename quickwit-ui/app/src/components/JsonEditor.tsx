@@ -19,7 +19,7 @@
 
 import Editor from "@monaco-editor/react";
 import { useCallback } from "react";
-import { QUICKWIT_BLUE, QUICKWIT_LIGHT_GREY } from "../utils/theme";
+import { EDITOR_THEME } from "../utils/theme";
 
 export function JsonEditor({content, resizeOnMount}: {content: any, resizeOnMount: boolean}) {
   // setting editor height based on lines height and count to stretch and fit its content
@@ -43,21 +43,7 @@ export function JsonEditor({content, resizeOnMount}: {content: any, resizeOnMoun
   }, []);
 
   function beforeMount(monaco: any) {
-    monaco.editor.defineTheme('quickwit-light', {
-      base: 'vs',
-      inherit: true,
-      rules: [
-        { token: 'comment', foreground: '#1F232A', fontStyle: 'italic' },
-        { token: 'keyword', foreground: QUICKWIT_BLUE }
-      ],
-      colors: {
-        'editor.comment.foreground': '#CBD1DE',
-        'editor.foreground': '#000000',
-        'editor.background': QUICKWIT_LIGHT_GREY,
-        'editorLineNumber.foreground': 'black',
-        'editor.lineHighlightBackground': '#DFE0E1',
-      },
-    });
+    monaco.editor.defineTheme('quickwit-light', EDITOR_THEME);
   }
 
   return (

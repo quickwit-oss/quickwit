@@ -33,8 +33,10 @@ import { AccessTime, ChevronRight, DateRange } from "@mui/icons-material";
 import { default as dayjs } from 'dayjs';
 import relativeTime from "dayjs/plugin/relativeTime"
 import { DateTimePicker } from "@mui/lab";
-import { SearchRequest } from "../utils/models";
+import { guessTimeUnit, SearchRequest, TimeUnit } from "../utils/models";
 import { SearchComponentProps } from "../utils/SearchComponentProps";
+import DateAdapter from '@mui/lab/AdapterDayjs';
+import LocalizationProvider from '@mui/lab/LocalizationProvider';
 
 dayjs.extend(relativeTime)
 
@@ -54,10 +56,45 @@ interface TimeRangeSelectState {
   width: number;
 }
 
+function getDateTimeFormat(timeUnit: TimeUnit): string {
+  if (timeUnit ==  TimeUnit.SECOND) {
+    return "YYYY/MM/DD HH:mm:ss";
+  }
+  return "YYYY/MM/DD HH:mm:ss:SSS";
+}
+
+function convertFromMilliSecond(value: number | null, targetTimeUnit: TimeUnit): number | null {
+  if (value === null) {
+    return null;
+  } 
+  if (targetTimeUnit === TimeUnit.MICRO_SECOND) {
+    return value * 1e3;
+  } else if (targetTimeUnit === TimeUnit.MILLI_SECOND) {
+    return value;
+  } else if (targetTimeUnit === TimeUnit.SECOND) {
+    return Math.round(value / 1000);
+  }
+  return null;
+}
+
+function convertToMilliSecond(value: number | null, valueTimeUnit: TimeUnit): number | null {
+  if (value === null) {
+    return null;
+  } 
+  if (valueTimeUnit === TimeUnit.MICRO_SECOND) {
+    return Math.round(value / 1e3);
+  } else if (valueTimeUnit === TimeUnit.MILLI_SECOND) {
+    return value;
+  } else if (valueTimeUnit === TimeUnit.SECOND) {
+    return value * 1e3;
+  }
+  return null
+}
+
 export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
-  const initialState = {width: 310, anchor: null, customDatesPanelOpen: false};
+  const initialState = {width: 220, anchor: null, customDatesPanelOpen: false};
   const [state, setState] = useState<TimeRangeSelectState>(initialState);
-  const [searchRequest, ] = useState<SearchRequest>(props.searchRequest);
+  const timeUnit = props.index === null ? TimeUnit.MILLI_SECOND : guessTimeUnit(props.index);
 
   const handleOpenClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     setState((prevState) => {
@@ -65,15 +102,15 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
     });
   };
 
-  /*const handleApplyCustomDates = (request: SearchRequest) => {
-    setState(initialState);
-  };*/
-
   const handleOpenCustomDatesPanelClick = () => {
     setState((prevState) => {
-      return { ...prevState, customDatesPanelOpen: true, width: 620 };
+      return { ...prevState, customDatesPanelOpen: true, width: 500 };
     });
   };
+
+  useEffect(() => {
+    setState(initialState);
+  }, [props.queryRunning])
 
   const handleClose = () => {
     setState(initialState);
@@ -81,7 +118,9 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
 
   const handleTimeRangeChoiceClick = (secondsBeforeNow: number) => {
     setState(initialState);
-    //const startTimestamp = Math.round(Date.now() / 1000) - secondsBeforeNow;
+    const startTimestampInMilliSec = Date.now() - secondsBeforeNow * 1000;
+    const startTimestamp = convertFromMilliSecond(startTimestampInMilliSec, timeUnit);
+    props.runSearch({...props.searchRequest, startTimestamp: startTimestamp, endTimestamp: null});
   };
 
   const open = Boolean(state.anchor);
@@ -94,9 +133,9 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
         disableElevation
         onClick={handleOpenClick}
         startIcon={<AccessTime />}
-        disabled={props.queryRunning || searchRequest.indexId == null}
+        disabled={props.queryRunning || props.searchRequest.indexId == null}
       >
-        <DateTimeRangeLabel startTimestamp={searchRequest.startTimestamp} endTimestamp={searchRequest.endTimestamp} />
+        <DateTimeRangeLabel timeUnit={timeUnit} startTimestamp={props.searchRequest.startTimestamp} endTimestamp={props.searchRequest.endTimestamp} />
       </Button>
       <Popover
         id={id}
@@ -133,17 +172,17 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
                   </ListItem>
                 })}
                 <ListItem button onClick={handleOpenCustomDatesPanelClick}>
-                  <ListItemIcon style={{alignItems: "center"}}>
+                  <ListItemIcon sx={{alignItems: "left", minWidth: 'inherit', paddingRight: '8px'}}>
                     <DateRange />
                   </ListItemIcon>
-                  <ListItemText primary="Customize dates" />
-                  <ListItemIcon style={{alignItems: "center"}}>
+                  <ListItemText primary="Custom dates" sx={{ paddingRight: '16px' }} />
+                  <ListItemIcon sx={{ minWidth: 'inherit' }}>
                     <ChevronRight />
                   </ListItemIcon>
                 </ListItem>
               </List>
             </Box>
-            {state.customDatesPanelOpen && (
+            {state.anchor !== null && state.customDatesPanelOpen && (
               <CustomDatesPanel
                 { ...props }
               />
@@ -158,11 +197,14 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
 function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
+  const timeUnit = props.index === null ? TimeUnit.MILLI_SECOND : guessTimeUnit(props.index);
+  const dateTimeFormat = getDateTimeFormat(timeUnit);
+
   useEffect(() => {
-    const initStartTimestamp = props.searchRequest.startTimestamp,
-    initEndTimeStamp = props.searchRequest.endTimestamp;
-    setStartDate(initStartTimestamp ? new Date(initStartTimestamp * 1000) : null);
-    setEndDate(initEndTimeStamp ? new Date(initEndTimeStamp * 1000) : null);
+    const initStartTimestamp = convertToMilliSecond(props.searchRequest.startTimestamp, timeUnit);
+    const initEndTimeStamp = convertToMilliSecond(props.searchRequest.endTimestamp, timeUnit);
+    setStartDate(initStartTimestamp ? new Date(initStartTimestamp) : null);
+    setEndDate(initEndTimeStamp ? new Date(initEndTimeStamp) : null);
   }, [props.searchRequest]);
   const handleReset = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -172,79 +214,84 @@ function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
   };
   const handleApply = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
-    const startTimestamp = startDate ? startDate.getTime() / 1000 : null;
-    const endTimestamp = endDate ? endDate.getTime() / 1000 : null;
-    props.onSearchRequestUpdate({...props.searchRequest, startTimestamp: startTimestamp, endTimestamp: endTimestamp});
+    const startTimestamp = convertFromMilliSecond(startDate ? startDate.getTime() : null, timeUnit);
+    const endTimestamp = convertFromMilliSecond(endDate ? endDate.getTime() : null, timeUnit);
+    props.runSearch({...props.searchRequest, startTimestamp: startTimestamp, endTimestamp: endTimestamp});
   };
 
   return (
-    <Box display="flex" flexDirection="column" width="50%" p={2}>
-      <Box flexGrow={1}>
-        <Box pb={1.5}>
-          <DateTimePicker
-            label="Start Date"
-            value={startDate}
-            onChange={(newValue) => setStartDate(newValue ? new Date(newValue) : null)}
-            renderInput={(params) => <TextField {...params} />}
-          />
+    <LocalizationProvider dateAdapter={DateAdapter}>
+      <Box display="flex" flexDirection="column" p={2} sx={{ minWidth: '300px'}}>
+        <Box flexGrow={1}>
+          <Box pb={1.5}>
+            <DateTimePicker
+              label="Start Date"
+              value={startDate}
+              inputFormat={dateTimeFormat}
+              onChange={(newValue) => setStartDate(newValue ? new Date(newValue) : null)}
+              renderInput={(params) => <TextField {...params} sx={{width: '100%'}} />}
+            />
+          </Box>
+          <Box>
+            <DateTimePicker
+              label="End Date"
+              value={endDate}
+              inputFormat={dateTimeFormat}
+              onChange={(newValue) => setEndDate(newValue ? new Date(newValue) : null)}
+              renderInput={(params) => <TextField {...params} sx={{width: '100%'}} />}
+            />
+          </Box>
         </Box>
-        <Box>
-          <DateTimePicker
-            label="End Date"
-            value={endDate}
-            onChange={(newValue) => setEndDate(newValue ? new Date(newValue) : null)}
-            renderInput={(params) => <TextField {...params} />}
-          />
+        <Box display="flex">
+          <Button
+            variant="outlined"
+            color="primary"
+            onClick={handleReset}
+            disableElevation
+            style={{marginRight: 10}}
+          >
+            Reset
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleApply}
+            disableElevation
+          >
+            Apply
+          </Button>
         </Box>
       </Box>
-      <Box display="flex">
-        <Button
-          variant="outlined"
-          color="primary"
-          onClick={handleReset}
-          disableElevation
-          style={{marginRight: 10}}
-        >
-          Reset
-        </Button>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={handleApply}
-          disableElevation
-        >
-          Apply
-        </Button>
-      </Box>
-    </Box>
+    </LocalizationProvider>
   );
 }
 
 interface DateTimeRangeLabelProps {
   startTimestamp: number | null;
   endTimestamp: number | null;
+  timeUnit: TimeUnit;
 }
 
 function DateTimeRangeLabel(props: DateTimeRangeLabelProps): JSX.Element {
-  const [startTimestamp, setStartTimestamp] = useState(props.startTimestamp);
-  const [endTimestamp, setEndTimestamp] = useState(props.endTimestamp);
-  
+  const [startTimestamp, setStartTimestamp] = useState(convertToMilliSecond(props.startTimestamp, props.timeUnit));
+  const [endTimestamp, setEndTimestamp] = useState(convertToMilliSecond(props.endTimestamp, props.timeUnit));
+  const dateTimeFormat = getDateTimeFormat(props.timeUnit);
+
   useEffect(() => {
-    setStartTimestamp(props.startTimestamp);
-    setEndTimestamp(props.endTimestamp);
+    setStartTimestamp(convertToMilliSecond(props.startTimestamp, props.timeUnit));
+    setEndTimestamp(convertToMilliSecond(props.endTimestamp, props.timeUnit));
   }, [props.startTimestamp, props.endTimestamp])
 
-
   function Label() {
-    if (startTimestamp != null && endTimestamp != null) {
+    if (startTimestamp !== null && endTimestamp !== null) {
       return <>
-        {dayjs.unix(startTimestamp).format("YYYY/MM/DD HH:mm:ss")} -{" "}
-        {dayjs.unix(endTimestamp).format("YYYY/MM/DD HH:mm:ss")}
+        {dayjs(startTimestamp).format(dateTimeFormat)} -{" "}
+        {dayjs(endTimestamp).format(dateTimeFormat)}
       </>
-    } else if (startTimestamp != null && endTimestamp == null) {
-      return <>Since {dayjs.unix(startTimestamp).fromNow(true)}</>
+    } else if (startTimestamp !== null && endTimestamp === null) {
+      return <>Since {dayjs(startTimestamp).fromNow(true)}</>
     } else if (startTimestamp == null && endTimestamp != null) {
-      return <>Before {dayjs.unix(endTimestamp).format("YYYY/MM/DD HH:mm:ss")}</>
+      return <>Before {dayjs(endTimestamp).format(dateTimeFormat)}</>
     }
     return <>No date range</>
   }

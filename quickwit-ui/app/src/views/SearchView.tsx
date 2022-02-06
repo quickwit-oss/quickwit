@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ApiUrlFooter from '../components/ApiUrlFooter';
 import { IndexSideBar } from '../components/IndexSideBar';
@@ -27,24 +27,28 @@ import { QueryEditor } from '../components/QueryEditor/QueryEditor';
 import SearchResult from '../components/SearchResult/SearchResult';
 import { useLocalStorage } from '../providers/LocalStorageProvider';
 import { Client } from '../services/client';
-import { EMPTY_SEARCH_REQUEST, IndexMetadata, SearchRequest, SearchResponse } from '../utils/models';
+import { EMPTY_SEARCH_REQUEST, Index, IndexMetadata, SearchRequest, SearchResponse } from '../utils/models';
 import { hasSearchParams, parseSearchUrl, toUrlSearchRequestParams } from '../utils/urls';
 
 function SearchView() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [indexMetadata, setIndexMetadata] = useState<null | IndexMetadata>(null);
+  const [index, setIndex] = useState<null | Index>(null);
+  const prevIndexIdRef = useRef<string | null>();
   const [searchResponse, setSearchResponse] = useState<null | SearchResponse>(null);
   const [queryRunning, setQueryRunning] = useState(false);
   const [searchRequest, setSearchRequest] = useState<SearchRequest>(hasSearchParams(location.search) ? parseSearchUrl(location.search) : EMPTY_SEARCH_REQUEST);
   const updateLastSearchRequest = useLocalStorage().updateLastSearchRequest;
   const quickwitClient = useMemo(() => new Client(), []);
-  const runSearch = () => {
-    console.log('Run search...', searchRequest);
+  const runSearch = (updatedSearchRequest: SearchRequest) => {
+    console.log('Run search...', updatedSearchRequest);
+    if (updatedSearchRequest !== null) {
+      setSearchRequest(updatedSearchRequest);
+    }
     setQueryRunning(true);
-    quickwitClient.search(searchRequest).then((response) => {
-      navigate('/search?' + toUrlSearchRequestParams(searchRequest).toString());
-      updateLastSearchRequest(searchRequest);
+    quickwitClient.search(updatedSearchRequest).then((response) => {
+      navigate('/search?' + toUrlSearchRequestParams(updatedSearchRequest).toString());
+      updateLastSearchRequest(updatedSearchRequest);
       setSearchResponse(response);
       setQueryRunning(false);
     }, (error) => {
@@ -52,59 +56,58 @@ function SearchView() {
       console.error('Error when running search request', error);
     });
   }
-  const onIndexMetadataUpdate = (indexMetadata: IndexMetadata) => {
-    setIndexMetadata(indexMetadata);
+  const onIndexMetadataUpdate = (indexMetadata: IndexMetadata | null) => {
+    setSearchRequest(previousRequest => {
+      return {...previousRequest, indexId: indexMetadata === null ? null : indexMetadata.index_id}; 
+    });
   }
   const onSearchRequestUpdate = (searchRequest: SearchRequest) => {
     setSearchRequest(searchRequest);
   }
   useEffect(() => {
-    // TODO: fix this shit.
-    if (indexMetadata === null || indexMetadata.index_id === null || indexMetadata.index_id === undefined) {
-      return;
-    }
-    setSearchRequest(previousRequest => {
-      return {...previousRequest, indexId: indexMetadata.index_id}; 
-    });
-  }, [indexMetadata]);
+    prevIndexIdRef.current = index === null ? null : index.metadata.index_id;
+  }, [index]);
   useEffect(() => {
-    console.log('searchRequest', searchRequest);
-    // Fix this shit.
-    if (searchRequest.indexId == null || searchRequest.indexId == '') {
+    if (searchRequest.indexId === null || searchRequest.indexId === undefined) {
       return;
     }
-    if (indexMetadata === null || indexMetadata === undefined) {
-      console.log('update meta', searchRequest.indexId);
-      quickwitClient.getIndex(searchRequest.indexId).then((fetchedIndexMetadata) => {
-        console.log("set meta", searchRequest);
-        setIndexMetadata(fetchedIndexMetadata);
-      });
+    if (index !== null && index.metadata.index_id === searchRequest.indexId) {
+      return;
     }
+    // If index id is changing, it's better to reset timestamps as the time unit may be different
+    // between indexes.
+    if (prevIndexIdRef.current !== null && prevIndexIdRef.current !== index?.metadata.index_id) {
+      searchRequest.startTimestamp = null;
+      searchRequest.endTimestamp = null;
+    }
+    quickwitClient.getIndex(searchRequest.indexId).then((fetchedIndex) => {
+      setIndex(fetchedIndex);
+    });
   }, [searchRequest, quickwitClient]);
 
   return (
       <ViewUnderAppBarBox sx={{ flexDirection: 'row'}}>
-        <IndexSideBar indexMetadata={indexMetadata} onIndexMetadataUpdate={onIndexMetadataUpdate}/>
+        <IndexSideBar indexMetadata={index === null ? null : index.metadata} onIndexMetadataUpdate={onIndexMetadataUpdate}/>
         <FullBoxContainer sx={{ padding: 0}}>
           <FullBoxContainer>
             <QueryEditorActionBar
               searchRequest={searchRequest}
               onSearchRequestUpdate={onSearchRequestUpdate}
               runSearch={runSearch}
-              indexMetadata={indexMetadata}
+              index={index}
               queryRunning={queryRunning} />
             <QueryEditor
               searchRequest={searchRequest}
               onSearchRequestUpdate={onSearchRequestUpdate}
               runSearch={runSearch}
-              indexMetadata={indexMetadata}
+              index={index}
               queryRunning={queryRunning} />
             <SearchResult
               queryRunning={queryRunning}
               searchResponse={searchResponse}
-              indexMetadata={indexMetadata} />
+              index={index} />
           </FullBoxContainer>
-          { ApiUrlFooter('api/v1/search?' + toUrlSearchRequestParams(searchRequest).toString()) }
+          { ApiUrlFooter(`api/v1/indexes/${index?.metadata.index_id}/search?${toUrlSearchRequestParams(searchRequest).toString()}`) }
         </FullBoxContainer>
       </ViewUnderAppBarBox>
   );

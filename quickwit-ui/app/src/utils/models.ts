@@ -76,7 +76,33 @@ function getFlattenFields(field_mappings: FieldMapping[]): FlattenField[] {
   return fields;
 }
 
-export function get_all_fields(doc_mapping: DocMapping) {
+export function guessTimeUnit(index: Index): TimeUnit {
+  if (index.splits.length === 0 || index.metadata.indexing_settings.timestamp_field === null) {
+    return TimeUnit.MILLI_SECOND;
+  }
+  // Not possible in theory as guessTimeUnit function is 
+  // called only on index with a timestamp field.
+  if (index.splits[0].time_range === null) {
+    return TimeUnit.MILLI_SECOND;
+  }
+  let range_start_values = index.splits.map(split => split.time_range === null ? 0 : split.time_range.start);
+  const time_range_start_max = Math.max(...range_start_values);
+  // We expect a split time range to be between year between 1971 and 2070. 
+  const seconds_in_one_hundred_years = 3600 * 24 * 365 * 100;
+  if (time_range_start_max < seconds_in_one_hundred_years) {
+    return TimeUnit.SECOND
+  }
+  if (time_range_start_max < seconds_in_one_hundred_years * 1000) {
+    return TimeUnit.MILLI_SECOND
+  }
+  if (time_range_start_max < seconds_in_one_hundred_years * 1000 * 1000) {
+    return TimeUnit.MICRO_SECOND
+  }
+  console.warn('Cannot guess correctly time unit, value `time_range_start_max` is too high, set to micro seconds', time_range_start_max);
+  return TimeUnit.MICRO_SECOND
+}
+
+export function getAllFields(doc_mapping: DocMapping) {
   return getFlattenFields(doc_mapping.field_mappings);
 } 
 
@@ -148,6 +174,30 @@ export const EMPTY_INDEX_METADATA: IndexMetadata = {
   }
 };
 
+export type SplitMetadata = {
+  split_id: string;
+  split_state: string;
+  num_docs: number;
+  size_in_bytes: number;
+  time_range: null | Range;
+  update_timestamp: number;
+  version: number;
+  create_timestamp: number;
+  tags: string[];
+  demux_num_ops: number;
+  footer_offsets: Range;
+}
+
+export type Range = {
+  start: number;
+  end: number;
+}
+
+export type Index = {
+  metadata: IndexMetadata;
+  splits: SplitMetadata[];
+}
+
 export type Member = {
   id: string;
   listen_address: string;
@@ -156,4 +206,10 @@ export type Member = {
 
 export type MemberList = {
   members: Member[];
+}
+
+export enum TimeUnit {
+  MICRO_SECOND,
+  MILLI_SECOND,
+  SECOND,
 }

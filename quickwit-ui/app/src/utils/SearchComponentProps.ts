@@ -17,12 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { IndexMetadata, SearchRequest } from "./models";
+import { Index, IndexMetadata, SearchRequest } from "./models";
 
 export interface SearchComponentProps {
   searchRequest: SearchRequest;
   queryRunning: boolean;
-  indexMetadata: null | IndexMetadata;
+  index: null | Index;
   onSearchRequestUpdate(searchRequest: SearchRequest): void;
-  runSearch(): void;
+  runSearch(searchRequest: SearchRequest): void;
 }

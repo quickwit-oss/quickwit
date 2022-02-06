@@ -22,7 +22,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Client } from '../services/client';
 import Loader from '../components/Loader';
 import { useParams } from 'react-router-dom';
-import { IndexMetadata } from '../utils/models';
+import { Index } from '../utils/models';
 import { TabContext, TabList, TabPanel } from '@mui/lab';
 import { IndexSummary } from '../components/IndexSummary';
 import { JsonEditor } from '../components/JsonEditor';
@@ -44,7 +44,7 @@ function IndexView() {
   const [loading, setLoading] = useState(false)
   const [, setLoadingError] = useState<ErrorResult | null>(null)
   const [tabIndex, setTabIndex] = useState('1');
-  const [indexMetadata, setIndexMetadata] = useState<IndexMetadata>()
+  const [index, setIndex] = useState<Index>()
   const quickwitClient = useMemo(() => new Client(), []);
 
   const handleTabIndexChange = (event: React.SyntheticEvent, newValue: string) => {
@@ -58,10 +58,10 @@ function IndexView() {
       return;
     } else {
       quickwitClient.getIndex(indexId).then(
-        (indexMetadata) => {
+        (fetchedIndex) => {
           setLoadingError(null);
           setLoading(false);
-          setIndexMetadata(indexMetadata);
+          setIndex(fetchedIndex);
         },
         (error) => {
           setLoading(false);
@@ -72,7 +72,7 @@ function IndexView() {
   }, [indexId, quickwitClient]);
 
   const renderFetchIndexResult = () => {
-    if (loading || indexMetadata === undefined) {
+    if (loading || index === undefined) {
       return <Loader />;
     } else {
       return <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100% - 48px)' }}>
@@ -88,19 +88,19 @@ function IndexView() {
             </TabList>
           </Box>
           <CustomTabPanel value="1">
-            <IndexSummary indexMetadata={indexMetadata} />
+            <IndexSummary indexMetadata={index.metadata} />
           </CustomTabPanel>
           <CustomTabPanel value="2">
-            <JsonEditor content={indexMetadata.sources} resizeOnMount={false} />
+            <JsonEditor content={index.metadata.sources} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="3">
-            <JsonEditor content={indexMetadata.doc_mapping} resizeOnMount={false} />
+            <JsonEditor content={index.metadata.doc_mapping} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="4">
-            <JsonEditor content={indexMetadata.indexing_settings} resizeOnMount={false} />
+            <JsonEditor content={index.metadata.indexing_settings} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="5">
-            <JsonEditor content={indexMetadata.search_settings} resizeOnMount={false} />
+            <JsonEditor content={index.metadata.search_settings} resizeOnMount={false} />
           </CustomTabPanel>
           <CustomTabPanel value="6">
             <JsonEditor content={[]} resizeOnMount={false} />
