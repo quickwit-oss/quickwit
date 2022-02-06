@@ -55,14 +55,20 @@ export function JsonEditor({content, resizeOnMount}: {content: any, resizeOnMoun
       options={{
         readOnly: true,
         fontFamily: 'monospace',
+        overviewRulerBorder: false,
         minimap: {
           enabled: false,
+        },
+        scrollbar: {
+          alwaysConsumeMouseWheel: false,
         },
         renderLineHighlight: "gutter",
         fontSize: 12,
         fixedOverflowWidgets: true,
         scrollBeyondLastLine: false,
         automaticLayout: true,
+        wordWrap: 'on',
+        wrappingIndent: 'indent',
       }}
       theme='quickwit-light'
     />

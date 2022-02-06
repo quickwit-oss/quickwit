@@ -23,7 +23,6 @@ import { QUICKWIT_LIGHT_GREY } from '../utils/theme';
 
 const Footer = styled(Box)`
 display: flex;
-width: 100%;
 height: 25px;
 padding: 0px 5px;
 position: absolute;
