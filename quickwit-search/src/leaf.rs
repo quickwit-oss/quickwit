@@ -267,10 +267,10 @@ pub async fn leaf_search(
                 Err(err) => Either::Right(err),
             });
 
-    // Create a collector which merges responses into one
+    // Creates a collector which merges responses into one
     let merge_collector = make_merge_collector(request);
 
-    // Merging might be heavy cpu-bound task and take time.
+    // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
     let mut merged_search_response =
         spawn_blocking(move || merge_collector.merge_fruits(split_search_responses))
