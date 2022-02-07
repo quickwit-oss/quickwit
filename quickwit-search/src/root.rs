@@ -167,7 +167,12 @@ pub async fn root_search(
             }),
     )
     .await?;
+
+    // Creates a collector which merges responses into one
     let merge_collector = make_merge_collector(search_request);
+
+    // Merging is a cpu-bound task.
+    // It should be executed by Tokio's blocking threads.
     let leaf_search_response =
         spawn_blocking(move || merge_collector.merge_fruits(leaf_search_responses))
             .await?
@@ -222,7 +227,7 @@ pub async fn root_search(
         .into_iter()
         .flat_map(|response| response.hits)
         .collect();
-    hits.sort_by_key(|hit| {
+    hits.sort_unstable_by_key(|hit| {
         Reverse(
             hit.partial_hit
                 .as_ref()
