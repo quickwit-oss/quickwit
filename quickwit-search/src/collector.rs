@@ -324,10 +324,10 @@ fn merge_leaf_responses(
         .flat_map(|leaf_response| leaf_response.failed_splits.iter())
         .cloned()
         .collect_vec();
-    let all_partial_hits = leaf_responses
+    let all_partial_hits: Vec<PartialHit> = leaf_responses
         .into_iter()
         .flat_map(|leaf_response| leaf_response.partial_hits)
-        .collect_vec();
+        .collect();
     // TODO optimize
     let top_k_partial_hits = top_k_partial_hits(all_partial_hits, max_hits);
     LeafSearchResponse {
