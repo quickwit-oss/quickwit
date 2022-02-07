@@ -41,10 +41,10 @@ A Quickwit index stores documents and makes it possible to query them efficientl
 A document is a collection of fields. Fields can be stored in different data structures:
 
 - an inverted index, which enables fast full-text search.
-- a columnar storage called `fast field`. It is the equivalent of doc values in [Lucene]([https://lucene.apache.org/](https://lucene.apache.org/)). Fast fields are required to compute aggregates over the documents matching a query. They can also allow some advanced types of filtering.
+- a columnar storage called `fast field`. It is the equivalent of doc values in [Lucene](https://lucene.apache.org/). Fast fields are required to compute aggregates over the documents matching a query. They can also allow some advanced types of filtering.
 - a row-storage called the doc store. It makes it possible to get the content of the matching documents.
 
-You can configure your index to control how to map your JSON object to a Quickwit document and, for each field, define whether it should be stored, indexed, or be a fast field. [Learn how to configure your index](../reference/index-config.pd)
+You can configure your index to control how to map your JSON object to a Quickwit document and, for each field, define whether it should be stored, indexed, or be a fast field. [Learn how to configure your index](../reference/index-config.md)
 
 ### Splits
 
@@ -94,7 +94,7 @@ Thanks to the hotcache, opening a split on Amazon S3 only takes 60ms. It makes i
 
 **Cluster discovery**
 
-Quickwit uses a gossip protocol to manage membership and broadcast messages to the cluster provided by [artillery project](https://github.com/bastion-rs/artillery/). The gossip protocol is based on [SWIM: Scalable Weakly-consistent Infection-style Process Group Membership Protocol]([https://www.cs.cornell.edu/projects/Quicksilver/public_pdfs/SWIM.pdf](https://www.cs.cornell.edu/projects/Quicksilver/public_pdfs/SWIM.pdf)) with a few minor adaptations.
+Quickwit uses a gossip protocol to manage membership and broadcast messages to the cluster provided by [artillery project](https://github.com/bastion-rs/artillery/). The gossip protocol is based on [SWIM: Scalable Weakly-consistent Infection-style Process Group Membership Protocol](https://www.cs.cornell.edu/projects/Quicksilver/public_pdfs/SWIM.pdf) with a few minor adaptations.
 
 **Rendezvous hashing**
 

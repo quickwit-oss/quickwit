@@ -1,6 +1,7 @@
 name: Publish custom cross images
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
