@@ -247,8 +247,10 @@ impl SearchClientPool {
             }
         }
 
-        // Sort job
-        jobs.sort_by(|left, right| {
+        // Sort job by cost desc, split_id asc.
+        // by keeping split_id in comparision, we minimize cost for next rendez_vous sort when
+        // two consecutive split_id(s) are the same.
+        jobs.sort_unstable_by(|left, right| {
             // sort_by_key does not work here unfortunately
             job_order_key(left).cmp(&job_order_key(right))
         });
@@ -262,37 +264,26 @@ impl SearchClientPool {
         for job in jobs {
             sort_by_rendez_vous_hash(&mut nodes, job.split_id());
 
-            // choose one of the the first two nodes based on least loaded
-            let chosen_node_index: usize = if nodes.len() >= 2 {
-                if nodes[0].load > nodes[1].load {
-                    1
-                } else {
-                    0
-                }
-            } else {
-                0
-            };
-
             // update node load for next round
-            nodes[chosen_node_index].load += job.cost() as u64;
+            nodes[0].load += job.cost() as u64;
+
+            let chosen_leaf_grpc_addr: SocketAddr = nodes[0].peer_grpc_addr;
+            splits_groups
+                .entry(chosen_leaf_grpc_addr)
+                .or_insert_with(Vec::new)
+                .push(job);
 
             // check if node's load exceeds the threshold -> remove node from list
             //
             // note: computing load per node might result in saturation (in case cost data is
             // malform). In this way, all nodes might be removed from list. Thus, having condition
             // len > 1 to ensure that there is (at least) one node could serve remaining jobs
-            if nodes.len() > 1 && nodes[chosen_node_index].load > load_per_node_threshold {
+            if nodes.len() > 1 && nodes[0].load > load_per_node_threshold {
                 // Removes an element from the vector and returns it.
                 // The removed element is replaced by the last element of the vector.
                 // O(1) complexity
-                nodes.swap_remove(chosen_node_index);
+                nodes.swap_remove(0);
             }
-
-            let chosen_leaf_grpc_addr: SocketAddr = nodes[chosen_node_index].peer_grpc_addr;
-            splits_groups
-                .entry(chosen_leaf_grpc_addr)
-                .or_insert_with(Vec::new)
-                .push(job);
         }
 
         let mut client_to_jobs = Vec::new();
