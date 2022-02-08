@@ -130,7 +130,7 @@ mod tests {
             Ok(SuccessfullSplitIds(successful_split_ids)).as_ref(),
         );
         assert!(retry_req_opt.is_some());
-        assert!(retry_req_opt.as_ref().unwrap().split_offsets.len() == 1);
-        assert!(retry_req_opt.as_ref().unwrap().split_offsets[0].split_id == "split_2".to_string());
+        assert_eq!(retry_req_opt.as_ref().unwrap().split_offsets.len(), 1);
+        assert_eq!(&retry_req_opt.as_ref().unwrap().split_offsets[0].split_id == "split_2");
     }
 }
