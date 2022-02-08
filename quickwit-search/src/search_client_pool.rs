@@ -247,8 +247,9 @@ impl SearchClientPool {
             }
         }
 
-        // Sort job by cost desc, split_id asc.
-        // by keeping split_id in comparision, we minimize cost for next rendez_vous sort when
+        // sort jobs by cost desc, split_id asc.
+        //
+        // By keeping split_id in comparision, we minimize cost for next rendez_vous sort when
         // two consecutive split_id(s) are the same.
         jobs.sort_unstable_by(|left, right| {
             // sort_by_key does not work here unfortunately
