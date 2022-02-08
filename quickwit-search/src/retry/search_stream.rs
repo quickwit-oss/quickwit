@@ -72,10 +72,12 @@ impl
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResponse};
+    use quickwit_proto::{
+        LeafSearchStreamRequest, LeafSearchStreamResponse, SplitIdAndFooterOffsets,
+    };
     use tokio::sync::mpsc::error::SendError;
 
-    use crate::retry::search_stream::LeafSearchStreamRetryPolicy;
+    use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfullSplitIds};
     use crate::retry::RetryPolicy;
 
     #[tokio::test]
@@ -89,5 +91,49 @@ mod tests {
             leaf_search_stream_send_error.as_ref(),
         );
         assert!(retry_req_opt.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_retry_policy_search_stream_should_not_retry_on_successful_response() {
+        let retry_policy = LeafSearchStreamRetryPolicy {};
+        let leaf_search_stream_req = LeafSearchStreamRequest::default();
+        let successful_split_ids: Vec<String> = Vec::new();
+        let retry_req_opt = retry_policy.retry_request(
+            leaf_search_stream_req,
+            Ok(SuccessfullSplitIds(successful_split_ids)).as_ref(),
+        );
+        assert!(retry_req_opt.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_retry_policy_search_stream_should_retry_on_failed_splits() {
+        let splits = vec![
+            SplitIdAndFooterOffsets {
+                split_id: "split_1".to_string(),
+                split_footer_end: 100,
+                split_footer_start: 0,
+            },
+            SplitIdAndFooterOffsets {
+                split_id: "split_2".to_string(),
+                split_footer_end: 100,
+                split_footer_start: 0,
+            },
+        ];
+
+        let retry_policy = LeafSearchStreamRetryPolicy {};
+        let mut leaf_search_stream_req = LeafSearchStreamRequest::default();
+        leaf_search_stream_req.split_offsets.push(splits[0].clone());
+        leaf_search_stream_req.split_offsets.push(splits[1].clone());
+        let successful_split_ids: Vec<String> = vec![splits[0].split_id.clone()];
+        let retry_req_opt = retry_policy.retry_request(
+            leaf_search_stream_req,
+            Ok(SuccessfullSplitIds(successful_split_ids)).as_ref(),
+        );
+        assert!(retry_req_opt.is_some());
+        assert_eq!(retry_req_opt.as_ref().unwrap().split_offsets.len(), 1);
+        assert_eq!(
+            &retry_req_opt.as_ref().unwrap().split_offsets[0].split_id,
+            "split_2"
+        );
     }
 }
