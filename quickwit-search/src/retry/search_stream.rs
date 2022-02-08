@@ -132,7 +132,7 @@ mod tests {
         assert!(retry_req_opt.is_some());
         assert_eq!(retry_req_opt.as_ref().unwrap().split_offsets.len(), 1);
         assert_eq!(
-            &retry_req_opt.as_ref().unwrap().split_offsets[0].split_id, 
+            &retry_req_opt.as_ref().unwrap().split_offsets[0].split_id,
             "split_2"
         );
     }
