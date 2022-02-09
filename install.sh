@@ -186,7 +186,6 @@ semverLT() {
 
 # Returns the tag of the latest stable release (in terms of semver and not of release date)
 get_latest_version() {
-    need_cmd sed
     GREP_SEMVER_REGEXP='v\([0-9]*\)[.]\([0-9]*\)[.]\([0-9]*\)$' # i.e. v[number].[number].[number]
     temp_file='temp_file' # temp_file needed because the grep would start before the download is over
     curl -s "${PACKAGE_RELEASE_API}" > "$temp_file" || return 1
@@ -200,7 +199,7 @@ get_latest_version() {
     rm -f "$temp_file"
 
     if [ "$1" = "--allow-any-latest-version" ]; then 
-        local first_release=$(echo $releases | sed -e 's/\s.*$//')
+        local first_release=$(echo $releases | { read first rest; echo $first; })
         echo $first_release
         return
     fi
