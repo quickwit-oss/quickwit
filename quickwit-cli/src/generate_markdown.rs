@@ -17,7 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use clap::{load_yaml, App, AppSettings, ArgSettings};
+use quickwit_cli::cli::build_cli;
+use clap::{App, AppSettings, ArgSettings};
 use toml::Value;
 
 #[tokio::main]
@@ -28,10 +29,8 @@ async fn main() -> anyhow::Result<()> {
         env!("GIT_COMMIT_HASH")
     );
 
-    let yaml = load_yaml!("cli.yaml");
-    let app = App::from(yaml)
+    let app = build_cli()
         .version(version_text.as_str())
-        .license("AGPLv3.0")
         .setting(AppSettings::DisableHelpSubcommand);
 
     generate_markdown_from_clap(&app);
@@ -127,7 +126,7 @@ fn markdown_for_subcommand(
             println!(
                 "`--{}` {}{}    ", // space is line break
                 arg.get_name(),
-                arg.get_about().unwrap_or_default(),
+                arg.get_help_heading().unwrap_or_default(),
                 default
             );
         }
