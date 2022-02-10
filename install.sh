@@ -194,10 +194,13 @@ get_latest_version() {
         | tr -d ',"' | cut -d ':' -f2 | tr -d ' ')
         # Returns a list of [tag_name draft_boolean prerelease_boolean ...]
         # Ex: v0.10.1 false false v0.9.1-rc.1 false true v0.9.0 false false...
+    
+    # clean up early
+    rm -f "$temp_file"
 
-    if [ "$1" = "--allow-any-latest-version" ]; then
-        local release_list=($releases)
-        echo "${release_list[0]}"
+    if [ "$1" = "--allow-any-latest-version" ]; then 
+        local first_release=$(echo $releases | { read first rest; echo $first; })
+        echo $first_release
         return
     fi
 
@@ -235,7 +238,6 @@ get_latest_version() {
         fi
     done
 
-    rm -f "$temp_file"
     echo $latest
 }
 
