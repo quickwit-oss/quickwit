@@ -18,14 +18,13 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::bail;
-use clap::{App, ArgMatches, AppSettings};
+use clap::{App, AppSettings, ArgMatches};
 use tracing::Level;
 
 use crate::index::{build_index_command, IndexCliCommand};
 use crate::service::{build_service_command, ServiceCliCommand};
 use crate::source::{build_source_command, SourceCliCommand};
 use crate::split::{build_split_command, SplitCliCommand};
-
 
 pub fn build_cli<'a>() -> App<'a> {
     App::new("Quickwit")

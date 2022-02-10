@@ -17,8 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_cli::cli::build_cli;
 use clap::{App, AppSettings, ArgSettings};
+use quickwit_cli::cli::build_cli;
 use toml::Value;
 
 #[tokio::main]

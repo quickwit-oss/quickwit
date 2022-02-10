@@ -23,7 +23,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context};
 use chrono::{NaiveDate, NaiveDateTime};
-use clap::{arg, App, ArgMatches, AppSettings};
+use clap::{arg, App, AppSettings, ArgMatches};
 use humansize::{file_size_opts, FileSize};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
@@ -91,7 +91,7 @@ pub fn build_split_command<'a>() -> App<'a> {
             )
         .setting(AppSettings::ArgRequiredElseHelp)
 }
-        
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct ListSplitArgs {
     pub config_uri: Uri,

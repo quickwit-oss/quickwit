@@ -25,7 +25,7 @@ use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
 use chrono::Utc;
-use clap::{arg, App, ArgMatches, AppSettings};
+use clap::{arg, App, AppSettings, ArgMatches};
 use colored::Colorize;
 use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType};

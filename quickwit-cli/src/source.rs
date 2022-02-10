@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::{bail, Context};
-use clap::{arg, App, ArgMatches, AppSettings};
+use clap::{arg, App, AppSettings, ArgMatches};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{SourceConfig, SourceParams};
@@ -73,7 +73,7 @@ pub fn build_source_command<'a>() -> App<'a> {
             )
         .setting(AppSettings::ArgRequiredElseHelp)
 }
-        
+
 #[derive(Debug, PartialEq)]
 pub struct AddSourceArgs {
     pub config_uri: Uri,

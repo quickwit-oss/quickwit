@@ -20,7 +20,7 @@
 use std::path::PathBuf;
 
 use anyhow::bail;
-use clap::{arg, App, ArgMatches, AppSettings};
+use clap::{arg, App, AppSettings, ArgMatches};
 use quickwit_common::run_checklist;
 use quickwit_common::uri::Uri;
 use quickwit_indexing::actors::IndexingServer;
