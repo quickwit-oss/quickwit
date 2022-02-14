@@ -163,9 +163,9 @@ pub struct QuickwitConfig {
     #[serde(default)]
     pub peer_seeds: Vec<String>,
     #[serde(rename = "metastore_uri")]
-    _metastore_uri: Option<String>,
+    metastore_uri: Option<String>,
     #[serde(rename = "default_index_root_uri")]
-    _default_index_root_uri: Option<String>,
+    default_index_root_uri: Option<String>,
     #[serde(default = "default_data_dir_path")]
     #[serde(rename = "data_dir")]
     pub data_dir_path: PathBuf,
@@ -293,17 +293,11 @@ impl QuickwitConfig {
 }
 
 impl QuickwitConfig {
-    pub fn metastore_uri(self: &Self) -> anyhow::Result<String> {
-        match &self._metastore_uri {
-            Some(metastore_uri) => Ok((&metastore_uri).to_string()),
-            None => Ok(default_metastore_and_index_root_uri(&self.data_dir_path)),
-        }
+    pub fn metastore_uri(self: &Self) -> String {
+        self.metastore_uri.as_ref().unwrap_or(&default_metastore_and_index_root_uri(&self.data_dir_path)).to_string()
     }
-    pub fn default_index_root_uri(self: &Self) -> anyhow::Result<String> {
-        match &self._default_index_root_uri {
-            Some(index_root_uri) => Ok((&index_root_uri).to_string()),
-            None => Ok(default_metastore_and_index_root_uri(&self.data_dir_path)),
-        }
+    pub fn default_index_root_uri(self: &Self) -> String {
+        self.default_index_root_uri.as_ref().unwrap_or(&default_metastore_and_index_root_uri(&self.data_dir_path)).to_string()
     }
 }
 
@@ -315,8 +309,8 @@ impl Default for QuickwitConfig {
             rest_listen_port: default_rest_listen_port(),
             peer_seeds: Vec::new(),
             node_id: default_node_id(),
-            _metastore_uri: None,
-            _default_index_root_uri: None,
+            metastore_uri: None,
+            default_index_root_uri: None,
             data_dir_path: PathBuf::from(DEFAULT_DATA_DIR_PATH),
             indexer_config: IndexerConfig::default(),
             searcher_config: SearcherConfig::default(),
@@ -364,7 +358,7 @@ mod tests {
                     ]
                 );
                 assert_eq!(
-                    config.metastore_uri().unwrap(),
+                    config.metastore_uri(),
                     "postgres://username:password@host:port/db"
                 );
 
@@ -425,7 +419,7 @@ mod tests {
             assert_eq!(config.version, 0);
             assert_eq!(config.node_id, "1");
             assert_eq!(
-                config.metastore_uri().unwrap(),
+                config.metastore_uri(),
                 "postgres://username:password@host:port/db"
             );
             assert!(config.storage_config.is_none());
@@ -439,7 +433,7 @@ mod tests {
             let config = serde_yaml::from_str::<QuickwitConfig>(config_yaml).unwrap();
             assert_eq!(config.version, 0);
             assert_eq!(
-                config.metastore_uri().unwrap(),
+                config.metastore_uri(),
                 "postgres://username:password@host:port/db"
             );
             assert_eq!(
@@ -461,7 +455,7 @@ mod tests {
             assert_eq!(config.version, 0);
             assert!(config.node_id.starts_with("node-"));
             assert_eq!(
-                config.metastore_uri().unwrap(),
+                config.metastore_uri(),
                 format!(
                     "file://{}/qwdata/indexes",
                     env::current_dir().unwrap().display()

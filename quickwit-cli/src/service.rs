@@ -121,7 +121,7 @@ async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
 
     let config = load_quickwit_config(args.config_uri, args.data_dir_path).await?;
     let metastore = quickwit_metastore_uri_resolver()
-        .resolve(&config.metastore_uri)
+        .resolve(&config.metastore_uri())
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     let client = IndexingServer::spawn(
@@ -148,7 +148,7 @@ async fn run_searcher_cli(args: RunSearcherArgs) -> anyhow::Result<()> {
     let config = load_quickwit_config(args.config_uri, args.data_dir_path).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&config.metastore_uri)
+        .resolve(&config.metastore_uri())
         .await?;
     run_checklist(vec![("metastore", metastore.check_connectivity().await)]);
     run_searcher(config, metastore).await?;

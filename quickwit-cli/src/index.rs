@@ -350,7 +350,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri)
+        .resolve(&quickwit_config.metastore_uri())
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let splits = metastore
@@ -579,7 +579,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     } else {
         let default_index_uri = format!(
             "{}/{}",
-            quickwit_config.default_index_root_uri, index_config.index_id
+            quickwit_config.default_index_root_uri(), index_config.index_id
         );
         info!(
             "`index-uri` is not specified in the index configuration. Setting it to `{}`.",
@@ -590,7 +590,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
 
     if args.overwrite {
         delete_index(
-            &quickwit_config.metastore_uri,
+            &quickwit_config.metastore_uri(),
             &index_config.index_id,
             false,
         )
@@ -613,7 +613,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         create_timestamp: Utc::now().timestamp(),
         update_timestamp: Utc::now().timestamp(),
     };
-    create_index(&quickwit_config.metastore_uri, index_metadata.clone()).await?;
+    create_index(&quickwit_config.metastore_uri(), index_metadata.clone()).await?;
     println!("Index `{}` successfully created.", index_config.index_id);
 
     Ok(())
@@ -634,10 +634,10 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         source_id: INGEST_SOURCE_ID.to_string(),
         source_params,
     };
-    run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source)).await?;
+    run_index_checklist(&config.metastore_uri(), &args.index_id, Some(&source)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&config.metastore_uri)
+        .resolve(&config.metastore_uri())
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
@@ -687,7 +687,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri)
+        .resolve(&quickwit_config.metastore_uri())
         .await?;
     let search_request = SearchRequest {
         index_id: args.index_id,
@@ -720,13 +720,13 @@ pub async fn merge_or_demux_cli(
 ) -> anyhow::Result<()> {
     debug!(args = ?args, merge_enabled = merge_enabled, demux_enabled = demux_enabled, "run-merge-operations");
     let config = load_quickwit_config(args.config_uri, args.data_dir).await?;
-    run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;
+    run_index_checklist(&config.metastore_uri(), &args.index_id, None).await?;
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&config.metastore_uri)
+        .resolve(&config.metastore_uri())
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     let client = IndexingServer::spawn(
@@ -752,7 +752,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
 
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
     let affected_files =
-        delete_index(&quickwit_config.metastore_uri, &args.index_id, args.dry_run).await?;
+        delete_index(&quickwit_config.metastore_uri(), &args.index_id, args.dry_run).await?;
     if args.dry_run {
         if affected_files.is_empty() {
             println!("Only the index will be deleted since it does not contains any data file.");
@@ -777,7 +777,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
 
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
     let deleted_files = garbage_collect_index(
-        &quickwit_config.metastore_uri,
+        &quickwit_config.metastore_uri(),
         &args.index_id,
         args.grace_period,
         args.dry_run,
