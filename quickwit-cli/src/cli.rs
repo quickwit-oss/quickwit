@@ -33,6 +33,7 @@ pub fn build_cli<'a>() -> App<'a> {
         .subcommand(build_split_command())
         .subcommand(build_index_command())
         .setting(AppSettings::DisableHelpSubcommand)
+        .setting(AppSettings::ArgRequiredElseHelp)
 }
 
 #[derive(Debug, PartialEq)]
