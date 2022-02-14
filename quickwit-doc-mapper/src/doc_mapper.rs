@@ -113,7 +113,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sedeserialize_doc_mapper() -> anyhow::Result<()> {
+    fn test_serdeserialize_doc_mapper() -> anyhow::Result<()> {
         let deserialized_default_doc_mapper =
             serde_json::from_str::<Box<dyn DocMapper>>(JSON_DEFAULT_DOC_MAPPER)?;
         let expected_default_doc_mapper = DefaultDocMapperBuilder::new().build()?;
