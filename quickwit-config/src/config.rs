@@ -162,9 +162,7 @@ pub struct QuickwitConfig {
     pub rest_listen_port: u16,
     #[serde(default)]
     pub peer_seeds: Vec<String>,
-    #[serde(rename = "metastore_uri")]
     metastore_uri: Option<String>,
-    #[serde(rename = "default_index_root_uri")]
     default_index_root_uri: Option<String>,
     #[serde(default = "default_data_dir_path")]
     #[serde(rename = "data_dir")]
