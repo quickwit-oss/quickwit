@@ -158,7 +158,7 @@ pub enum TestStorageType {
 pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
     let tempdir = tempdir()?;
     let data_dir_path = tempdir.path().join("data");
-    let indexes_dir_path = tempdir.path().join("indexes");
+    let indexes_dir_path = data_dir_path.join("indexes");
     let resources_dir_path = tempdir.path().join("resources");
 
     for dir_path in [&data_dir_path, &indexes_dir_path, &resources_dir_path] {
