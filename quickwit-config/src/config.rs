@@ -292,10 +292,16 @@ impl QuickwitConfig {
 
 impl QuickwitConfig {
     pub fn metastore_uri(self: &Self) -> String {
-        self.metastore_uri.as_ref().unwrap_or(&default_metastore_and_index_root_uri(&self.data_dir_path)).to_string()
+        self.metastore_uri
+            .as_ref()
+            .unwrap_or(&default_metastore_and_index_root_uri(&self.data_dir_path))
+            .to_string()
     }
     pub fn default_index_root_uri(self: &Self) -> String {
-        self.default_index_root_uri.as_ref().unwrap_or(&default_metastore_and_index_root_uri(&self.data_dir_path)).to_string()
+        self.default_index_root_uri
+            .as_ref()
+            .unwrap_or(&default_metastore_and_index_root_uri(&self.data_dir_path))
+            .to_string()
     }
 }
 

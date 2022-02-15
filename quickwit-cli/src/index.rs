@@ -579,7 +579,8 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     } else {
         let default_index_uri = format!(
             "{}/{}",
-            quickwit_config.default_index_root_uri(), index_config.index_id
+            quickwit_config.default_index_root_uri(),
+            index_config.index_id
         );
         info!(
             "`index-uri` is not specified in the index configuration. Setting it to `{}`.",
@@ -751,8 +752,12 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
 
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
-    let affected_files =
-        delete_index(&quickwit_config.metastore_uri(), &args.index_id, args.dry_run).await?;
+    let affected_files = delete_index(
+        &quickwit_config.metastore_uri(),
+        &args.index_id,
+        args.dry_run,
+    )
+    .await?;
     if args.dry_run {
         if affected_files.is_empty() {
             println!("Only the index will be deleted since it does not contains any data file.");
