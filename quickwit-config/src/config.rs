@@ -150,7 +150,7 @@ pub struct StorageConfig {
     pub s3_config: S3Config,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitConfig {
     pub version: usize,
@@ -320,6 +320,25 @@ impl Default for QuickwitConfig {
             searcher_config: SearcherConfig::default(),
             storage_config: None,
         }
+    }
+}
+
+impl std::fmt::Debug for QuickwitConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter
+            .debug_struct("QuickwitConfig")
+            .field("version", &self.version)
+            .field("node_id", &self.node_id)
+            .field("listen_address", &self.listen_address)
+            .field("rest_listen_port", &self.rest_listen_port)
+            .field("peer_seeds", &self.peer_seeds)
+            .field("data_dir_path", &self.data_dir_path)
+            .field("metastore_uri", &self.metastore_uri())
+            .field("default_index_root_uri", &self.default_index_root_uri())
+            .field("indexer_config", &self.indexer_config)
+            .field("searcher_config", &self.searcher_config)
+            .field("storage_config", &self.storage_config)
+            .finish()
     }
 }
 
