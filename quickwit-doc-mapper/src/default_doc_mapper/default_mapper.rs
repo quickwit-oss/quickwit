@@ -32,7 +32,7 @@ use tantivy::Document;
 use tracing::info;
 
 use super::field_mapping_entry::{DocParsingError, FieldPath};
-use super::{default_as_true, FieldMappingEntry, FieldMappingType};
+use super::{FieldMappingEntry, FieldMappingType};
 use crate::query_builder::build_query;
 use crate::sort_by::{SortBy, SortOrder};
 use crate::{DocMapper, QueryParserError, SOURCE_FIELD_NAME};
@@ -45,7 +45,7 @@ const RAW_TOKENIZER_NAME: &str = "raw";
 #[derive(Default, Serialize, Deserialize, Clone)]
 pub struct DefaultDocMapperBuilder {
     /// Stores the original source document when set to true.
-    #[serde(default = "default_as_true")]
+    #[serde(default)]
     pub store_source: bool,
     /// Name of the fields that are searched by default, unless overridden.
     pub default_search_fields: Vec<String>,
@@ -87,7 +87,7 @@ impl DefaultDocMapperBuilder {
     /// Create a new `DefaultDocMapperBuilder` for tests.
     pub fn new() -> Self {
         Self {
-            store_source: true,
+            store_source: false,
             default_search_fields: vec![],
             timestamp_field: None,
             sort_by: None,
@@ -755,12 +755,13 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_document_with_tag_fields() -> anyhow::Result<()> {
+    fn test_parse_document_with_tag_fields() {
         let doc_mapper = r#"{
             "type": "default",
             "default_search_fields": [],
             "timestamp_field": null,
             "tag_fields": ["city"],
+            "store_source": true,
             "field_mappings": [
                 {
                     "name": "city",
@@ -776,14 +777,16 @@ mod tests {
             ]
         }"#;
 
-        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper)?;
-        let doc_mapper = builder.build()?;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let doc_mapper = builder.build().unwrap();
         let schema = doc_mapper.schema();
         const JSON_DOC_VALUE: &str = r#"{
             "city": "tokio",
             "image": "YWJj"
         }"#;
-        let document = doc_mapper.doc_from_json(JSON_DOC_VALUE.to_string())?;
+        let document = doc_mapper
+            .doc_from_json(JSON_DOC_VALUE.to_string())
+            .unwrap();
 
         // 2 properties, + 1 value for "_source"
         assert_eq!(document.len(), 3);
@@ -811,7 +814,6 @@ mod tests {
                 assert!(is_value_in_expected_values);
             }
         });
-        Ok(())
     }
 
     #[test]
@@ -1035,5 +1037,27 @@ mod tests {
             .to_string();
         assert_eq!(builder.build().unwrap_err().to_string(), expected_msg);
         Ok(())
+    }
+
+    // See #1132
+    #[test]
+    fn test_by_default_store_source_is_false_and_fields_are_stored_individually() {
+        let doc_mapper = r#"{
+            "default_search_fields": [],
+            "field_mappings": [
+                {
+                    "name": "my-field",
+                    "type": "u64",
+                    "indexed": true
+                }
+            ]
+        }"#;
+        let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
+        let default_doc_mapper = builder.build().unwrap();
+        assert!(!default_doc_mapper.store_source);
+        let schema = default_doc_mapper.schema();
+        let field = schema.get_field("my-field").unwrap();
+        let field_entry = schema.get_field_entry(field);
+        assert!(field_entry.is_stored());
     }
 }
