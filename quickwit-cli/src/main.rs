@@ -20,10 +20,9 @@
 use std::env;
 
 use anyhow::Context;
-use clap::{load_yaml, App, AppSettings};
 use opentelemetry::global;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
-use quickwit_cli::cli::CliCommand;
+use quickwit_cli::cli::{build_cli, CliCommand};
 use quickwit_cli::QW_JAEGER_ENABLED_ENV_KEY;
 use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::{info, Level};
@@ -92,12 +91,9 @@ async fn main() -> anyhow::Result<()> {
         env!("GIT_COMMIT_HASH")
     );
 
-    let yaml = load_yaml!("cli.yaml");
-    let app = App::from(yaml)
+    let app = build_cli()
         .version(version_text.as_str())
-        .about(about_text.as_str())
-        .license("AGPLv3.0")
-        .setting(AppSettings::DisableHelpSubcommand);
+        .about(about_text.as_str());
 
     let matches = app.get_matches();
 
@@ -146,8 +142,8 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Duration;
 
-    use clap::{load_yaml, App, AppSettings};
-    use quickwit_cli::cli::CliCommand;
+    use clap::AppSettings;
+    use quickwit_cli::cli::{build_cli, CliCommand};
     use quickwit_cli::index::{
         CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, GarbageCollectIndexArgs,
         IndexCliCommand, IngestDocsArgs, MergeOrDemuxArgs, SearchIndexArgs,
@@ -157,14 +153,13 @@ mod tests {
 
     #[test]
     fn test_parse_create_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
 
         let _ = app
             .try_get_matches_from(vec!["new", "--index-uri", "file:///indexes/wikipedia"])
             .unwrap_err();
 
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "create",
@@ -187,7 +182,7 @@ mod tests {
         }));
         assert_eq!(command, expected_cmd);
 
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "create",
@@ -211,8 +206,7 @@ mod tests {
 
     #[test]
     fn test_parse_ingest_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "ingest",
@@ -235,8 +229,7 @@ mod tests {
                        && config_uri == Uri::try_new("file:///config.yaml").unwrap()
         ));
 
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "ingest",
@@ -264,8 +257,7 @@ mod tests {
 
     #[test]
     fn test_parse_search_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "search",
@@ -291,8 +283,7 @@ mod tests {
             })) if &index_id == "wikipedia" && &query == "Barack Obama"
         ));
 
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "search",
@@ -337,8 +328,7 @@ mod tests {
 
     #[test]
     fn test_parse_delete_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "delete",
@@ -357,8 +347,7 @@ mod tests {
             })) if &index_id == "wikipedia"
         ));
 
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "delete",
@@ -382,8 +371,7 @@ mod tests {
 
     #[test]
     fn test_parse_garbage_collect_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "gc",
@@ -403,8 +391,7 @@ mod tests {
             })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(60 * 60)
         ));
 
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "gc",
@@ -433,8 +420,7 @@ mod tests {
 
     #[test]
     fn test_parse_merge_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "merge",
@@ -456,8 +442,7 @@ mod tests {
 
     #[test]
     fn test_parse_demux_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "demux",
@@ -479,8 +464,7 @@ mod tests {
 
     #[test]
     fn test_parse_describe_index_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "index",
             "describe",
@@ -502,8 +486,7 @@ mod tests {
 
     #[test]
     fn test_parse_split_describe_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "split",
             "describe",
@@ -529,8 +512,7 @@ mod tests {
 
     #[test]
     fn test_parse_split_extract_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "split",
             "extract",
