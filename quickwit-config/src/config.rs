@@ -43,7 +43,7 @@ fn default_data_dir_path() -> PathBuf {
 // For a given index `index-id`, it means that we have the metastore file
 // in  `./qwdata/indexes/{index-id}/metastore.json` and splits in
 // dir `./qwdata/indexes/{index-id}/splits`.
-fn default_metastore_and_index_root_uri(data_dir_path: &PathBuf) -> String {
+fn default_metastore_and_index_root_uri(data_dir_path: &Path) -> String {
     Uri::try_new(&data_dir_path.join("indexes").to_string_lossy())
         .expect("Default data dir `./qwdata` value is invalid.")
         .as_ref()
@@ -291,13 +291,13 @@ impl QuickwitConfig {
 }
 
 impl QuickwitConfig {
-    pub fn metastore_uri(self: &Self) -> String {
+    pub fn metastore_uri(&self) -> String {
         self.metastore_uri
             .as_ref()
             .unwrap_or(&default_metastore_and_index_root_uri(&self.data_dir_path))
             .to_string()
     }
-    pub fn default_index_root_uri(self: &Self) -> String {
+    pub fn default_index_root_uri(&self) -> String {
         self.default_index_root_uri
             .as_ref()
             .unwrap_or(&default_metastore_and_index_root_uri(&self.data_dir_path))
