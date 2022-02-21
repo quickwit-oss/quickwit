@@ -20,12 +20,15 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 
 use quickwit_swim::prelude::{
     ArtilleryError, ArtilleryMember, ArtilleryMemberEvent, ArtilleryMemberState,
     Cluster as ArtilleryCluster, ClusterConfig as ArtilleryClusterConfig,
 };
+use scuttlebutt::server::ScuttleServer;
+use scuttlebutt::{FailureDetectorConfig, ScuttleButt};
 use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_stream::wrappers::WatchStream;
@@ -34,6 +37,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::error::{ClusterError, ClusterResult};
+use crate::service::ClusterService;
 
 /// The ID that makes the cluster unique.
 const CLUSTER_ID: &str = "quickwit-cluster";
@@ -55,11 +59,13 @@ pub struct Member {
 
 /// This is an implementation of a cluster using the SWIM protocol.
 pub struct Cluster {
+    pub node_id: String,
     /// A socket address that represents itself.
     pub listen_addr: SocketAddr,
 
     /// The actual cluster that implement the SWIM protocol.
-    artillery_cluster: ArtilleryCluster,
+    // artillery_cluster: ArtilleryCluster,
+    scuttlebutt_server: ScuttleServer,
 
     /// A receiver(channel) for exchanging members in a cluster.
     members: watch::Receiver<Vec<Member>>,
@@ -75,32 +81,28 @@ impl Cluster {
     /// Create a cluster given a host key and a listen address.
     /// When a cluster is created, the thread that monitors cluster events
     /// will be started at the same time.
-    pub fn new(node_id: String, listen_addr: SocketAddr) -> ClusterResult<Self> {
-        info!( node_id=?node_id, listen_addr=?listen_addr, "Create new cluster.");
-        let config = ArtilleryClusterConfig {
-            cluster_key: CLUSTER_ID.as_bytes().to_vec(),
-            listen_addr,
-            ..Default::default()
-        };
-        let (artillery_cluster, swim_event_rx) =
-            ArtilleryCluster::create_and_start(node_id.clone(), config).map_err(
-                |err| match err {
-                    ArtilleryError::Io(io_err) => ClusterError::UDPPortBindingError {
-                        port: listen_addr.port(),
-                        message: io_err.to_string(),
-                    },
-                    _ => ClusterError::CreateClusterError {
-                        message: err.to_string(),
-                    },
-                },
-            )?;
+    pub fn new(
+        node_id: String,
+        listen_addr: SocketAddr,
+        seed_nodes: &[String],
+    ) -> ClusterResult<Self> {
+        info!(node_id=?node_id, listen_addr=?listen_addr, "Create new cluster.");
+
+        let scuttlebutt_server = ScuttleServer::spawn(
+            listen_addr.to_string(),
+            seed_nodes.into(),
+            FailureDetectorConfig::default(),
+        );
+        let scuttlebutt = scuttlebutt_server.scuttlebutt();
+        // let cluster_membership_change_rx = scuttlebutt_server.list_members(request)
 
         let (members_sender, members_receiver) = watch::channel(Vec::new());
 
         // Create cluster.
         let cluster = Cluster {
+            node_id: node_id.clone(),
             listen_addr,
-            artillery_cluster,
+            scuttlebutt_server: scuttlebutt_server,
             members: members_receiver,
             stop: Arc::new(AtomicBool::new(false)),
         };
@@ -111,46 +113,40 @@ impl Cluster {
             listen_addr,
             is_self: true,
         };
-        let initial_members: Vec<Member> = vec![member];
+        let initial_members: Vec<Member> = vec![member.clone()];
         if members_sender.send(initial_members).is_err() {
             error!("Failed to add itself as the initial member of the cluster.");
         }
 
         // Prepare to start a task that will monitor cluster events.
-        let task_listen_addr = cluster.listen_addr;
+        // let task_listen_addr = cluster.listen_addr;
         let task_stop = cluster.stop.clone();
 
-        // Start to monitor the cluster events.
-        tokio::task::spawn_blocking(move || {
+        tokio::task::spawn(async move {
+            // TODO: change this pooling into event based receiver stream
+            // that only care about changes
             loop {
-                match swim_event_rx.recv_timeout(CLUSTER_EVENT_TIMEOUT) {
-                    Ok((artillery_members, artillery_member_event)) => {
-                        log_artillery_event(artillery_member_event);
-                        let updated_memberlist: Vec<Member> = artillery_members
-                            .into_iter()
-                            .filter(|member| match member.state() {
-                                ArtilleryMemberState::Alive | ArtilleryMemberState::Suspect => true,
-                                ArtilleryMemberState::Down | ArtilleryMemberState::Left => false,
-                            })
-                            .map(|member| convert_member(member, task_listen_addr))
-                            .collect();
-                        debug!(updated_memberlist=?updated_memberlist);
-                        if members_sender.send(updated_memberlist).is_err() {
-                            // Somehow the cluster has been dropped.
-                            error!("Failed to send a member list.");
-                            break;
-                        }
-                    }
-                    Err(flume::RecvTimeoutError::Disconnected) => {
-                        debug!("channel disconnected");
-                        break;
-                    }
-                    Err(flume::RecvTimeoutError::Timeout) => {
-                        if task_stop.load(Ordering::Relaxed) {
-                            debug!("receive a stop signal");
-                            break;
-                        }
-                    }
+                // thread::sleep(CLUSTER_EVENT_TIMEOUT);
+                if task_stop.load(Ordering::Relaxed) {
+                    debug!("receive a stop signal");
+                    break;
+                }
+                let mut live_members = scuttlebutt
+                    .lock()
+                    .await
+                    .live_nodes()
+                    .map(|node_id| Member {
+                        node_id: node_id.to_string(),
+                        listen_addr: node_id.parse().unwrap(),
+                        is_self: listen_addr.to_string() == node_id,
+                    })
+                    .collect::<Vec<_>>();
+                live_members.push(member.clone());
+
+                if members_sender.send(live_members).is_err() {
+                    // Somehow the cluster has been dropped.
+                    error!("Failed to send a member list.");
+                    break;
                 }
             }
         });
@@ -168,18 +164,19 @@ impl Cluster {
         self.members.borrow().clone()
     }
 
-    /// Specify the address of a running node and join the cluster to which the node belongs.
-    pub async fn add_peer_node(&self, peer_addr: SocketAddr) {
-        if peer_addr != self.listen_addr {
-            info!(self_addr = ?self.listen_addr, peer_addr = ?peer_addr, "Adding peer node.");
-            self.artillery_cluster.add_seed_node(peer_addr);
-        }
-    }
-
     /// Leave the cluster.
     pub async fn leave(&self) {
         info!(self_addr = ?self.listen_addr, "Leaving the cluster.");
-        self.artillery_cluster.leave_cluster();
+        // TODO: ask if we need to implement leave/join
+        // self.scuttlebutt_server.leave().await;
+        self.stop.store(true, Ordering::Relaxed);
+    }
+
+    /// Leave the cluster.
+    pub async fn shutdown(self) {
+        info!(self_addr = ?self.listen_addr, "Leaving the cluster.");
+        // TODO: handle error
+        let _ = self.scuttlebutt_server.shutdown().await;
         self.stop.store(true, Ordering::Relaxed);
     }
 
@@ -243,17 +240,20 @@ fn log_artillery_event(artillery_member_event: ArtilleryMemberEvent) {
     };
 }
 
-pub fn create_cluster_for_test_with_id(peer_uuid: String) -> anyhow::Result<Cluster> {
+pub fn create_cluster_for_test_with_id(
+    peer_uuid: String,
+    seeds: &[String],
+) -> anyhow::Result<Cluster> {
     let port = quickwit_common::net::find_available_port()?;
     let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
-    let cluster = Cluster::new(peer_uuid, peer_addr)?;
+    let cluster = Cluster::new(peer_uuid, peer_addr, seeds)?;
     Ok(cluster)
 }
 
 /// Creates a local cluster listening on a random port.
-pub fn create_cluster_for_test() -> anyhow::Result<Cluster> {
+pub fn create_cluster_for_test(seeds: &[String]) -> anyhow::Result<Cluster> {
     let peer_uuid = Uuid::new_v4().to_string();
-    let cluster = create_cluster_for_test_with_id(peer_uuid)?;
+    let cluster = create_cluster_for_test_with_id(peer_uuid, seeds)?;
     Ok(cluster)
 }
 
@@ -299,7 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_single_node() -> anyhow::Result<()> {
-        let cluster = create_cluster_for_test()?;
+        let cluster = create_cluster_for_test(&[])?;
 
         let members: Vec<SocketAddr> = cluster
             .members()
@@ -316,18 +316,16 @@ mod tests {
     #[tokio::test]
     async fn test_cluster_multiple_nodes() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let cluster1 = create_cluster_for_test()?;
-        let cluster2 = create_cluster_for_test()?;
-        let cluster3 = create_cluster_for_test()?;
+        let cluster1 = create_cluster_for_test(&[])?;
+        let node_1 = cluster1.listen_addr.to_string();
+        let cluster2 = create_cluster_for_test(&[node_1.clone()])?;
+        let cluster3 = create_cluster_for_test(&[node_1])?;
 
-        cluster2.add_peer_node(cluster1.listen_addr).await;
-        cluster3.add_peer_node(cluster1.listen_addr).await;
-
-        let ten_secs = Duration::from_secs(10);
+        let twenty_secs = Duration::from_secs(20);
 
         for cluster in [&cluster1, &cluster2, &cluster3] {
             cluster
-                .wait_for_members(|members| members.len() == 3, ten_secs)
+                .wait_for_members(|members| members.len() == 3, twenty_secs)
                 .await
                 .unwrap();
         }
@@ -345,15 +343,16 @@ mod tests {
         expected_members.sort();
         assert_eq!(members, expected_members);
 
-        drop(cluster2);
+        cluster2.shutdown().await;
+        // drop(cluster2);
         cluster1
-            .wait_for_members(|members| members.len() == 2, ten_secs)
+            .wait_for_members(|members| members.len() == 2, twenty_secs)
             .await
             .unwrap();
 
-        cluster3.leave().await;
+        cluster3.shutdown().await;
         cluster1
-            .wait_for_members(|members| members.len() == 1, ten_secs)
+            .wait_for_members(|members| members.len() == 1, twenty_secs)
             .await
             .unwrap();
         Ok(())
@@ -362,16 +361,15 @@ mod tests {
     #[tokio::test]
     async fn test_cluster_rejoin_with_different_id_issue_1018() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let cluster1 = create_cluster_for_test_with_id("cluster1".to_string())?;
-        let cluster2 = create_cluster_for_test_with_id("cluster2".to_string())?;
+        let cluster1 = create_cluster_for_test_with_id("cluster1".to_string(), &[])?;
+        let node_1 = cluster1.listen_addr.to_string();
+        let cluster2 = create_cluster_for_test_with_id("cluster2".to_string(), &[node_1.clone()])?;
 
-        cluster2.add_peer_node(cluster1.listen_addr).await;
-
-        let ten_secs = Duration::from_secs(10);
+        let twenty_secs = Duration::from_secs(20);
 
         for cluster in [&cluster1, &cluster2] {
             cluster
-                .wait_for_members(|members| members.len() == 2, ten_secs)
+                .wait_for_members(|members| members.len() == 2, twenty_secs)
                 .await
                 .unwrap();
         }
@@ -386,17 +384,15 @@ mod tests {
         assert_eq!(members, expected_members);
 
         let cluster2_listen_addr = cluster2.listen_addr;
-        cluster2.leave().await;
-        drop(cluster2);
+        cluster2.shutdown().await;
         cluster1
-            .wait_for_members(|members| members.len() == 1, ten_secs)
+            .wait_for_members(|members| members.len() == 1, twenty_secs)
             .await
             .unwrap();
 
         sleep(Duration::from_secs(3)).await;
 
-        let cluster2 = Cluster::new("newid".to_string(), cluster2_listen_addr)?;
-        cluster2.add_peer_node(cluster1.listen_addr).await;
+        let cluster2 = Cluster::new("newid".to_string(), cluster2_listen_addr, &[node_1])?;
 
         for _ in 0..4_000 {
             if cluster1.members().len() > 2 {
@@ -420,14 +416,13 @@ mod tests {
     #[tokio::test]
     async fn test_cluster_rejoin_with_different_id_3_nodes_issue_1018() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
-        let cluster1 = create_cluster_for_test_with_id("cluster1".to_string())?;
-        let cluster2 = create_cluster_for_test_with_id("cluster2".to_string())?;
-        let cluster3 = create_cluster_for_test_with_id("cluster3".to_string())?;
+        let cluster1 = create_cluster_for_test_with_id("cluster1".to_string(), &[])?;
+        let node_1 = cluster1.listen_addr.to_string();
+        let cluster2 = create_cluster_for_test_with_id("cluster2".to_string(), &[node_1.clone()])?;
+        let node_2 = cluster2.listen_addr.to_string();
+        let cluster3 = create_cluster_for_test_with_id("cluster3".to_string(), &[node_2])?;
 
-        cluster2.add_peer_node(cluster1.listen_addr).await;
-        cluster3.add_peer_node(cluster2.listen_addr).await;
-
-        let wait_period = Duration::from_secs(15);
+        let wait_period = Duration::from_secs(20);
 
         for cluster in [&cluster1, &cluster2] {
             cluster
@@ -460,11 +455,10 @@ mod tests {
 
         sleep(Duration::from_secs(3)).await;
 
-        let cluster2 = Cluster::new("newid".to_string(), cluster2_listen_addr)?;
-        cluster2.add_peer_node(cluster1.listen_addr).await;
+        let cluster2 = Cluster::new("newid".to_string(), cluster2_listen_addr, &[node_1])?;
+        let node_2 = cluster2.listen_addr.to_string();
 
-        let cluster3 = Cluster::new("newid2".to_string(), cluster3_listen_addr)?;
-        cluster3.add_peer_node(cluster2.listen_addr).await;
+        let cluster3 = Cluster::new("newid2".to_string(), cluster3_listen_addr, &[node_2])?;
 
         sleep(Duration::from_secs(10)).await;
 

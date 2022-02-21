@@ -51,16 +51,17 @@ pub async fn run_searcher(
     SEARCHER_CONFIG_INSTANCE
         .set(quickwit_config.searcher_config.clone())
         .expect("could not set searcher config in global once cell");
+
+    let seed_nodes = quickwit_config
+        .seed_socket_addrs()?
+        .iter()
+        .map(|addr| addr.to_string())
+        .collect::<Vec<_>>();
     let cluster = Arc::new(Cluster::new(
         quickwit_config.node_id.clone(),
         quickwit_config.gossip_socket_addr()?,
+        &seed_nodes,
     )?);
-    for seed_socket_addr in quickwit_config.seed_socket_addrs()? {
-        // If the peer seed address is specified,
-        // it joins the cluster in which that node participates.
-        debug!(peer_seed_addr = %seed_socket_addr, "Add peer seed node.");
-        cluster.add_peer_node(seed_socket_addr).await;
-    }
     let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
     let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await;
     let cluster_client = ClusterClient::new(client_pool.clone());

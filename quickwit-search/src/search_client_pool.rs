@@ -319,7 +319,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
-        let cluster = Arc::new(create_cluster_for_test()?);
+        let cluster = Arc::new(create_cluster_for_test(&[])?);
         let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await;
         let clients = client_pool.clients();
         let addrs: Vec<SocketAddr> = clients.into_keys().collect();
@@ -330,10 +330,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_client_pool_multiple_nodes() -> anyhow::Result<()> {
-        let cluster1 = Arc::new(create_cluster_for_test()?);
-        let cluster2 = Arc::new(create_cluster_for_test()?);
+        let cluster1 = Arc::new(create_cluster_for_test(&[])?);
+        let node_1 = cluster1.listen_addr.to_string();
+        let cluster2 = Arc::new(create_cluster_for_test(&[node_1])?);
 
-        cluster2.add_peer_node(cluster1.listen_addr).await;
         cluster1
             .wait_for_members(|members| members.len() == 2, Duration::from_secs(5))
             .await?;
@@ -353,7 +353,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_client_pool_single_node_assign_jobs() -> anyhow::Result<()> {
-        let cluster = Arc::new(create_cluster_for_test()?);
+        let cluster = Arc::new(create_cluster_for_test(&[])?);
         let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await;
         let jobs = vec![
             SearchJob::for_test("split1", 1),
