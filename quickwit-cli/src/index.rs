@@ -821,6 +821,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         start_offset: args.start_offset as u64,
         sort_order: None,
         sort_by_field: None,
+        aggregation_request: None,
     };
     let search_response: SearchResponse =
         single_node_search(&search_request, &*metastore, storage_uri_resolver.clone()).await?;

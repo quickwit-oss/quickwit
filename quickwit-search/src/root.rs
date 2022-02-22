@@ -239,6 +239,7 @@ pub async fn root_search(
     let elapsed = start_instant.elapsed();
 
     Ok(SearchResponse {
+        aggregation: leaf_search_response.intermediate_aggregation_result,
         num_hits: leaf_search_response.num_hits,
         hits,
         elapsed_time_micros: elapsed.as_micros() as u64,
@@ -383,6 +384,7 @@ mod tests {
                     ],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             },
         );
@@ -404,6 +406,7 @@ mod tests {
                     ],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             },
         );
@@ -465,6 +468,7 @@ mod tests {
                     ],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             },
         );
@@ -521,6 +525,7 @@ mod tests {
                     ],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             },
         );
@@ -539,6 +544,7 @@ mod tests {
                     partial_hits: vec![mock_partial_hit("split2", 2, 2)],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             },
         );
@@ -604,6 +610,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             });
 
@@ -634,6 +641,7 @@ mod tests {
                         ],
                         failed_splits: Vec::new(),
                         num_attempted_splits: 1,
+                        ..Default::default()
                     })
                 } else if split_ids == ["split2"] {
                     // RETRY REQUEST!
@@ -642,6 +650,7 @@ mod tests {
                         partial_hits: vec![mock_partial_hit("split2", 2, 2)],
                         failed_splits: Vec::new(),
                         num_attempted_splits: 1,
+                        ..Default::default()
                     })
                 } else {
                     panic!("unexpected request in test {:?}", split_ids);
@@ -709,6 +718,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             });
         mock_search_service1
@@ -725,6 +735,7 @@ mod tests {
                     ],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             });
         mock_search_service1.expect_fetch_docs().returning(
@@ -746,6 +757,7 @@ mod tests {
                     partial_hits: vec![mock_partial_hit("split2", 2, 2)],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             });
         mock_search_service2
@@ -764,6 +776,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             });
         mock_search_service2.expect_fetch_docs().returning(
@@ -830,6 +843,7 @@ mod tests {
                             retryable_error: true,
                         }],
                         num_attempted_splits: 1,
+                        ..Default::default()
                     })
                 } else {
                     Ok(quickwit_proto::LeafSearchResponse {
@@ -837,6 +851,7 @@ mod tests {
                         partial_hits: vec![mock_partial_hit("split1", 2, 2)],
                         failed_splits: Vec::new(),
                         num_attempted_splits: 1,
+                        ..Default::default()
                     })
                 }
             });
@@ -898,6 +913,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             });
         mock_search_service1.expect_fetch_docs().returning(
@@ -951,6 +967,7 @@ mod tests {
                     partial_hits: vec![mock_partial_hit("split1", 2, 2)],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             },
         );
@@ -974,6 +991,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             },
         );
@@ -1032,6 +1050,7 @@ mod tests {
                     partial_hits: vec![mock_partial_hit("split1", 2, 2)],
                     failed_splits: Vec::new(),
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             },
         );

@@ -186,6 +186,7 @@ pub async fn single_node_search(
     .context("Failed to perform fetch docs.")?;
     let elapsed = start_instant.elapsed();
     Ok(SearchResponse {
+        aggregation: None, // TODO AGG
         num_hits: leaf_search_response.num_hits,
         hits: fetch_docs_response.hits,
         elapsed_time_micros: elapsed.as_micros() as u64,

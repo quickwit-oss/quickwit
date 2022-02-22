@@ -34,6 +34,9 @@ pub struct SearchRequest {
     /// Sort by fast field. If unset sort by docid
     #[prost(string, optional, tag = "10")]
     pub sort_by_field: ::core::option::Option<::prost::alloc::string::String>,
+    /// json serialized aggregation_request
+    #[prost(string, optional, tag = "11")]
+    pub aggregation_request: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +55,9 @@ pub struct SearchResponse {
     /// The searcherrors that occured formatted as string.
     #[prost(string, repeated, tag = "4")]
     pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Serialized aggregation response
+    #[prost(string, optional, tag = "5")]
+    pub aggregation: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -160,6 +166,9 @@ pub struct LeafSearchResponse {
     /// num_attempted_splits = num_successful_splits + num_failed_splits.
     #[prost(uint64, tag = "4")]
     pub num_attempted_splits: u64,
+    /// json serialized intermediate aggregation_result.
+    #[prost(string, optional, tag = "5")]
+    pub intermediate_aggregation_result: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

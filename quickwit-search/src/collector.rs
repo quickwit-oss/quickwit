@@ -202,6 +202,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
             })
             .collect();
         LeafSearchResponse {
+            intermediate_aggregation_result: None, // TODO AGG
             num_hits: self.num_hits,
             partial_hits,
             failed_splits: vec![],
@@ -331,6 +332,7 @@ fn merge_leaf_responses(
     // TODO optimize
     let top_k_partial_hits = top_k_partial_hits(all_partial_hits, max_hits);
     LeafSearchResponse {
+        intermediate_aggregation_result: None, // TODO AGG
         num_hits,
         partial_hits: top_k_partial_hits,
         failed_splits,

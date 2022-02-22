@@ -104,6 +104,7 @@ mod test {
         expected: TestExpectation,
     ) -> anyhow::Result<()> {
         let request = SearchRequest {
+            aggregation_request: None,
             index_id: "test_index".to_string(),
             query: query_str.to_string(),
             search_fields,

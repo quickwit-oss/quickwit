@@ -156,6 +156,7 @@ fn merge_leaf_search_results(
                 .partial_hits
                 .append(&mut retry_response.partial_hits);
             let merged_response = LeafSearchResponse {
+                intermediate_aggregation_result: None, // TODO AGG
                 num_hits: initial_response.num_hits + retry_response.num_hits,
                 num_attempted_splits: initial_response.num_attempted_splits
                     + retry_response.num_attempted_splits,
@@ -368,6 +369,7 @@ mod tests {
                     partial_hits: vec![],
                     failed_splits: vec![],
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             });
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
@@ -396,6 +398,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             });
         mock_service
@@ -411,6 +414,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             });
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
@@ -436,12 +440,14 @@ mod tests {
             partial_hits: vec![mock_partial_hit("split_1", 3, 1)],
             failed_splits: vec![split_error],
             num_attempted_splits: 1,
+            ..Default::default()
         };
         let leaf_response_retry = LeafSearchResponse {
             num_hits: 1,
             partial_hits: vec![mock_partial_hit("split_2", 3, 1)],
             failed_splits: vec![],
             num_attempted_splits: 1,
+            ..Default::default()
         };
         let merged_leaf_search_response =
             merge_leaf_search_results(Ok(leaf_response), Ok(leaf_response_retry)).unwrap();
@@ -464,6 +470,7 @@ mod tests {
             partial_hits: vec![mock_partial_hit("split_1", 3, 1)],
             failed_splits: vec![split_error],
             num_attempted_splits: 1,
+            ..Default::default()
         };
         let merged_result = merge_leaf_search_results(
             Err(SearchError::InternalError("error".to_string())),
