@@ -452,6 +452,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_rest_search_api_route_post() {
+        let rest_search_api_filter = search_post_filter();
+        let (index, req) = warp::test::request()
+            .method("POST")
+            .path("/api/v1/quickwit-demo-index/search?query=*&maxHits=10")
+            .json(&true)
+            .body(r#"{"query": "*", "maxHits":10, "aggregation": {"range":[]} }"#)
+            .filter(&rest_search_api_filter)
+            .await
+            .unwrap();
+        assert_eq!(&index, "quickwit-demo-index");
+        assert_eq!(
+            &req,
+            &super::SearchRequestQueryString {
+                query: "*".to_string(),
+                search_fields: None,
+                start_timestamp: None,
+                max_hits: 10,
+                format: Format::default(),
+                sort_by_field: None,
+                aggregation: Some(json!({"range":[]})),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[tokio::test]
     async fn test_rest_search_api_route_simple() {
         let rest_search_api_filter = search_get_filter();
         let (index, req) = warp::test::request()
