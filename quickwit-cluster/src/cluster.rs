@@ -20,29 +20,18 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
-use quickwit_swim::prelude::{
-    ArtilleryError, ArtilleryMember, ArtilleryMemberEvent, ArtilleryMemberState,
-    Cluster as ArtilleryCluster, ClusterConfig as ArtilleryClusterConfig,
-};
 use scuttlebutt::server::ScuttleServer;
-use scuttlebutt::{FailureDetectorConfig, ScuttleButt};
+use scuttlebutt::FailureDetectorConfig;
 use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
-use crate::error::{ClusterError, ClusterResult};
-use crate::service::ClusterService;
-
-/// The ID that makes the cluster unique.
-const CLUSTER_ID: &str = "quickwit-cluster";
-
-const CLUSTER_EVENT_TIMEOUT: Duration = Duration::from_millis(200);
+use crate::error::ClusterResult;
 
 /// A member information.
 #[derive(Clone, Debug, PartialEq)]
@@ -87,33 +76,30 @@ impl Cluster {
         seed_nodes: &[String],
     ) -> ClusterResult<Self> {
         info!(node_id=?node_id, listen_addr=?listen_addr, "Create new cluster.");
-
         let scuttlebutt_server = ScuttleServer::spawn(
             listen_addr.to_string(),
-            seed_nodes.into(),
+            seed_nodes,
             FailureDetectorConfig::default(),
         );
         let scuttlebutt = scuttlebutt_server.scuttlebutt();
-        // let cluster_membership_change_rx = scuttlebutt_server.list_members(request)
-
         let (members_sender, members_receiver) = watch::channel(Vec::new());
 
         // Create cluster.
         let cluster = Cluster {
             node_id: node_id.clone(),
             listen_addr,
-            scuttlebutt_server: scuttlebutt_server,
+            scuttlebutt_server,
             members: members_receiver,
             stop: Arc::new(AtomicBool::new(false)),
         };
 
         // Add itself as the initial member of the cluster.
-        let member = Member {
+        let me = Member {
             node_id,
             listen_addr,
             is_self: true,
         };
-        let initial_members: Vec<Member> = vec![member.clone()];
+        let initial_members: Vec<Member> = vec![me.clone()];
         if members_sender.send(initial_members).is_err() {
             error!("Failed to add itself as the initial member of the cluster.");
         }
@@ -123,27 +109,28 @@ impl Cluster {
         let task_stop = cluster.stop.clone();
 
         tokio::task::spawn(async move {
-            // TODO: change this pooling into event based receiver stream
-            // that only care about changes
-            loop {
-                // thread::sleep(CLUSTER_EVENT_TIMEOUT);
+            let mut node_change_receiver = scuttlebutt
+                .lock()
+                .await
+                .nodes_change_watcher();
+
+            while let Some(members_set) = node_change_receiver.next().await {
+                let mut members = members_set
+                    .into_iter()
+                    .map(|node_id| Member {
+                        node_id: node_id.to_string(),
+                        listen_addr: node_id.parse().unwrap(),
+                        is_self: false,
+                    })
+                    .collect::<Vec<_>>();
+                members.push(me.clone());
+
                 if task_stop.load(Ordering::Relaxed) {
                     debug!("receive a stop signal");
                     break;
                 }
-                let mut live_members = scuttlebutt
-                    .lock()
-                    .await
-                    .live_nodes()
-                    .map(|node_id| Member {
-                        node_id: node_id.to_string(),
-                        listen_addr: node_id.parse().unwrap(),
-                        is_self: listen_addr.to_string() == node_id,
-                    })
-                    .collect::<Vec<_>>();
-                live_members.push(member.clone());
 
-                if members_sender.send(live_members).is_err() {
+                if members_sender.send(members).is_err() {
                     // Somehow the cluster has been dropped.
                     error!("Failed to send a member list.");
                     break;
@@ -201,44 +188,6 @@ impl Cluster {
     }
 }
 
-/// Convert the Artillery's member into Quickwit's one.
-fn convert_member(member: ArtilleryMember, self_listen_addr: SocketAddr) -> Member {
-    let listen_addr = if let Some(addr) = member.remote_host() {
-        addr
-    } else {
-        self_listen_addr
-    };
-
-    Member {
-        node_id: member.node_id(),
-        listen_addr,
-        is_self: member.is_current(),
-    }
-}
-
-/// Output member event as log.
-fn log_artillery_event(artillery_member_event: ArtilleryMemberEvent) {
-    match artillery_member_event {
-        ArtilleryMemberEvent::Joined(artillery_member) => {
-            info!(node_id=?artillery_member.node_id(), remote_host=?artillery_member.remote_host(), "Joined.");
-        }
-        ArtilleryMemberEvent::WentUp(artillery_member) => {
-            info!(node_id=?artillery_member.node_id(), remote_host=?artillery_member.remote_host(), "Went up.");
-        }
-        ArtilleryMemberEvent::SuspectedDown(artillery_member) => {
-            warn!(node_id=?artillery_member.node_id(), remote_host=?artillery_member.remote_host(), "Suspected down.");
-        }
-        ArtilleryMemberEvent::WentDown(artillery_member) => {
-            error!(node_id=?artillery_member.node_id(), remote_host=?artillery_member.remote_host(), "Went down.");
-        }
-        ArtilleryMemberEvent::Left(artillery_member) => {
-            info!(node_id=?artillery_member.node_id(), remote_host=?artillery_member.remote_host(), "Left.");
-        }
-        ArtilleryMemberEvent::Payload(artillery_member, message) => {
-            info!(node_id=?artillery_member.node_id(), remote_host=?artillery_member.remote_host(), message=?message, "Payload.");
-        }
-    };
-}
 
 pub fn create_cluster_for_test_with_id(
     peer_uuid: String,
@@ -263,39 +212,9 @@ mod tests {
     use std::time::Duration;
 
     use itertools::Itertools;
-    use quickwit_swim::prelude::{ArtilleryMember, ArtilleryMemberState};
     use tokio::time::sleep;
 
     use super::*;
-    use crate::cluster::{convert_member, Member};
-
-    #[tokio::test]
-    async fn test_cluster_convert_member() {
-        let node_id = Uuid::new_v4().to_string();
-        let remote_host = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0);
-        {
-            let artillery_member =
-                ArtilleryMember::new(node_id.clone(), remote_host, 0, ArtilleryMemberState::Alive);
-
-            let member = convert_member(artillery_member, remote_host);
-            let expected_member = Member {
-                node_id: node_id.clone(),
-                listen_addr: remote_host,
-                is_self: false,
-            };
-            assert_eq!(member, expected_member);
-        }
-        {
-            let artillery_member = ArtilleryMember::current(node_id.clone());
-            let member = convert_member(artillery_member, remote_host);
-            let expected_member = Member {
-                node_id,
-                listen_addr: remote_host,
-                is_self: true,
-            };
-            assert_eq!(member, expected_member);
-        }
-    }
 
     #[tokio::test]
     async fn test_cluster_single_node() -> anyhow::Result<()> {
@@ -344,7 +263,6 @@ mod tests {
         assert_eq!(members, expected_members);
 
         cluster2.shutdown().await;
-        // drop(cluster2);
         cluster1
             .wait_for_members(|members| members.len() == 2, twenty_secs)
             .await

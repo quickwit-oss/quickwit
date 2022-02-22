@@ -33,7 +33,7 @@ use quickwit_config::{QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_metastore::Metastore;
 use quickwit_search::{ClusterClient, SearchClientPool, SearchServiceImpl};
 use quickwit_storage::quickwit_storage_uri_resolver;
-use tracing::{debug, info};
+use tracing::info;
 
 pub use crate::args::ServeArgs;
 pub use crate::counters::COUNTERS;

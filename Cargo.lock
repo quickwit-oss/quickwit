@@ -2190,7 +2190,6 @@ dependencies = [
  "itertools",
  "quickwit-common",
  "quickwit-proto",
- "quickwit-swim",
  "scuttlebutt",
  "serde",
  "serde_json",
@@ -3029,13 +3028,14 @@ dependencies = [
 [[package]]
 name = "scuttlebutt"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/scuttlebutt#053c577d86d04c1c4f287af8a1f4b9380a786938"
+source = "git+https://github.com/quickwit-oss/scuttlebutt?rev=c0cdf1a#c0cdf1aff02540ff878e3513c1a328c0eed11a7f"
 dependencies = [
  "anyhow",
  "bytes",
  "rand",
  "serde",
  "tokio",
+ "tokio-stream",
  "tracing",
 ]
 
