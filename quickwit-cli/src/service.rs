@@ -20,7 +20,7 @@
 use std::path::PathBuf;
 
 use anyhow::bail;
-use clap::ArgMatches;
+use clap::{arg, App, AppSettings, ArgMatches};
 use quickwit_common::run_checklist;
 use quickwit_common::uri::Uri;
 use quickwit_indexing::actors::IndexingServer;
@@ -31,6 +31,38 @@ use quickwit_telemetry::payload::TelemetryEvent;
 use tracing::debug;
 
 use crate::load_quickwit_config;
+
+pub fn build_service_command<'a>() -> App<'a> {
+    App::new("service")
+        .about("Launches services.")
+        .subcommand(
+            App::new("run")
+            .about("Starts a service. Currently, the only services available are `indexer` and `searcher`.")
+            .subcommand(
+                App::new("indexer")
+                    .about("Starts an indexing process, aka an `indexer`.")
+                    .args(&[
+                        arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                        arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                            .env("QW_DATA_DIR")
+                            .required(false),
+                        arg!(--indexes <INDEX_ID> "IDs of the indexes to run the indexer for.")
+                            .multiple_values(true),
+                    ])
+                )
+            .subcommand(
+                App::new("searcher")
+                    .about("Starts a search process, aka a `searcher`.")
+                    .args(&[
+                        arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                        arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                            .env("QW_DATA_DIR")
+                            .required(false),
+                    ])
+                )
+            )
+        .setting(AppSettings::ArgRequiredElseHelp)
+}
 
 #[derive(Debug, PartialEq)]
 pub struct RunIndexerArgs {
@@ -158,15 +190,14 @@ async fn run_searcher_cli(args: RunSearcherArgs) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
 
-    use clap::{load_yaml, App, AppSettings};
+    use clap::AppSettings;
 
     use super::*;
-    use crate::cli::CliCommand;
+    use crate::cli::{build_cli, CliCommand};
 
     #[test]
     fn test_parse_run_searcher_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "service",
             "run",
@@ -188,8 +219,7 @@ mod tests {
 
     #[test]
     fn test_parse_run_indexer_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "service",
             "run",

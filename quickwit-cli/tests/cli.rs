@@ -115,7 +115,7 @@ async fn test_cmd_create() -> Result<()> {
     make_command("index create")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("--index-config <INDEX CONFIG>"));
+        .stderr(predicate::str::contains("--index-config <INDEX_CONFIG>"));
     Ok(())
 }
 

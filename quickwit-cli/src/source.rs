@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::{bail, Context};
-use clap::ArgMatches;
+use clap::{arg, App, AppSettings, ArgMatches};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{SourceConfig, SourceParams};
@@ -30,6 +30,49 @@ use serde_json::{Map, Value};
 use tabled::{Table, Tabled};
 
 use crate::{load_quickwit_config, make_table};
+
+pub fn build_source_command<'a>() -> App<'a> {
+    App::new("source")
+        .about("Manages sources.")
+        .subcommand(
+            App::new("add")
+                .about("Adds a new source.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--params <PARAMS> "Parameters for the source formatted as a JSON object passed inline or via a file. Parameters are source-specific. Please, refer to the source's documentation for more details."),
+                    arg!(--source <SOURCE_ID> "ID of the source."),
+                    arg!(--type <TYPE> "Type of the source. Available types are: `file` and `kafka`."),
+                ])
+            )
+        .subcommand(
+            App::new("delete")
+                .about("Deletes a source.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--source <SOURCE_ID> "ID of the source."),
+                ])
+            )
+        .subcommand(
+            App::new("describe")
+                .about("Describes a source.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--source <SOURCE_ID> "ID of the source."),
+                ])
+            )
+        .subcommand(
+            App::new("list")
+                .about("List the sources of an index.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                ])
+            )
+        .setting(AppSettings::ArgRequiredElseHelp)
+}
 
 #[derive(Debug, PartialEq)]
 pub struct AddSourceArgs {
@@ -374,13 +417,13 @@ async fn resolve_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<In
 mod tests {
     use std::path::Path;
 
-    use clap::{load_yaml, App, AppSettings};
+    use clap::AppSettings;
     use quickwit_metastore::checkpoint::{PartitionId, Position};
     use quickwit_storage::{quickwit_storage_uri_resolver, PutPayload};
     use serde_json::json;
 
     use super::*;
-    use crate::cli::CliCommand;
+    use crate::cli::{build_cli, CliCommand};
 
     #[test]
     fn test_flatten_json() {
@@ -429,8 +472,7 @@ mod tests {
 
     #[test]
     fn test_parse_add_source_args() {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app
             .try_get_matches_from(vec![
                 "source",
@@ -460,8 +502,7 @@ mod tests {
 
     #[test]
     fn test_parse_delete_source_args() {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app
             .try_get_matches_from(vec![
                 "source",
@@ -486,8 +527,7 @@ mod tests {
 
     #[test]
     fn test_parse_describe_source_args() {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app
             .try_get_matches_from(vec![
                 "source",
@@ -563,8 +603,7 @@ mod tests {
 
     #[test]
     fn test_parse_list_sources_args() {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app
             .try_get_matches_from(vec![
                 "source",

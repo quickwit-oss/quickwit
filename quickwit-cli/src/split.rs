@@ -23,7 +23,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context};
 use chrono::{NaiveDate, NaiveDateTime};
-use clap::ArgMatches;
+use clap::{arg, App, AppSettings, ArgMatches};
 use humansize::{file_size_opts, FileSize};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
@@ -36,6 +36,61 @@ use tabled::{Table, Tabled};
 use tracing::debug;
 
 use crate::{load_quickwit_config, make_table};
+
+pub fn build_split_command<'a>() -> App<'a> {
+    App::new("split")
+        .about("Operations (list, add, delete, describe...) on splits.")
+        .subcommand(
+            App::new("list")
+                .about("List the splits of an index.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                        .env("QW_DATA_DIR")
+                        .required(false),
+                    arg!(--tags <TAGS> "Comma-separated list of tags, only splits that contain all of the tags will be returned.")
+                        .multiple_occurrences(true)
+                        .use_delimiter(true)
+                        .required(false),
+                    arg!(--states <SPLIT_STATES> "Comma-separated list of split states to filter on. Possible values are `staged`, `published`, and `marked`.")
+                        .multiple_occurrences(true)
+                        .use_delimiter(true)
+                        .required(false),
+                    arg!(--"start-date" <START_TIMESTAMP> "Filters out splits containing documents from this timestamp onwards (time-series indexes only).")
+                        .required(false),
+                    arg!(--"end-date" <END_TIMESTAMP> "Filters out splits containing documents before this timestamp (time-series indexes only).")
+                        .required(false),
+                ])
+            )
+        .subcommand(
+            App::new("extract")
+                .about("Downloads and extracts a split to a directory.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--split <SPLIT> "ID of the target split"),
+                    arg!(--"target-dir" <TARGET_DIR> "Directory to extract the split to."),
+                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                        .env("QW_DATA_DIR")
+                        .required(false),
+                ])
+            )
+        .subcommand(
+            App::new("describe")
+                .about("Displays metadata about the split.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--split <SPLIT> "ID of the target split"),
+                    arg!(--verbose "Displays additional metadata about the hotcache."),
+                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                        .env("QW_DATA_DIR")
+                        .required(false),
+                ])
+            )
+        .setting(AppSettings::ArgRequiredElseHelp)
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct ListSplitArgs {
@@ -414,16 +469,15 @@ mod tests {
     use std::path::PathBuf;
 
     use chrono::NaiveDateTime;
-    use clap::{load_yaml, App, AppSettings};
+    use clap::AppSettings;
     use quickwit_metastore::SplitMetadata;
 
     use super::*;
-    use crate::cli::CliCommand;
+    use crate::cli::{build_cli, CliCommand};
 
     #[test]
     fn test_parse_list_split_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "split",
             "list",
@@ -452,8 +506,7 @@ mod tests {
             && tags == BTreeSet::from(["foo:bar".to_string(), "bar:baz".to_string()])
         ));
 
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "split",
             "list",
@@ -473,8 +526,7 @@ mod tests {
 
     #[test]
     fn test_parse_split_describe_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "split",
             "describe",
@@ -500,8 +552,7 @@ mod tests {
 
     #[test]
     fn test_parse_split_extract_args() -> anyhow::Result<()> {
-        let yaml = load_yaml!("cli.yaml");
-        let app = App::from(yaml).setting(AppSettings::NoBinaryName);
+        let app = build_cli().setting(AppSettings::NoBinaryName);
         let matches = app.try_get_matches_from(vec![
             "split",
             "extract",
