@@ -25,7 +25,7 @@ use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
 use chrono::Utc;
-use clap::ArgMatches;
+use clap::{arg, App, AppSettings, ArgMatches};
 use colored::Colorize;
 use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType};
@@ -48,6 +48,127 @@ use crate::stats::{mean, percentile, std_deviation};
 use crate::{
     load_quickwit_config, parse_duration_with_unit, run_index_checklist, THROUGHPUT_WINDOW_SIZE,
 };
+
+pub fn build_index_command<'a>() -> App<'a> {
+    App::new("index")
+        .about("Create your index, ingest data, search, describe... every command you need to manage indexes.")
+        .subcommand(
+            App::new("create")
+                .about("Creates an index from an index config file.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--"index-config" <INDEX_CONFIG> "Location of the index config file."),
+                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                        .env("QW_DATA_DIR")
+                        .required(false),
+                    arg!(--overwrite "Overwrites pre-existing index.")
+                        .required(false),
+                ])
+            )
+        .subcommand(
+            App::new("ingest")
+                .about("Indexes JSON documents read from a file or streamed from stdin.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                        .env("QW_DATA_DIR")
+                        .required(false),
+                    arg!(--"input-path" <INPUT_PATH> "Location of the input file.")
+                        .required(false),
+                    arg!(--overwrite "Overwrites pre-existing index.")
+                        .required(false),
+                ])
+            )
+        .subcommand(
+            App::new("describe")
+                .about("Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                        .env("QW_DATA_DIR")
+                        .required(false),
+                ])
+            )
+        .subcommand(
+            App::new("search")
+                .about("Searches an index.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                        .env("QW_DATA_DIR")
+                        .required(false),
+                    arg!(--query <QUERY> "Query expressed in natural query language ((barack AND obama) OR \"president of united states\"). Learn more on https://quickwit.io/docs/reference/search-language."),
+                    arg!(--"max-hits" <MAX_HITS> "Maximum number of hits returned.")
+                        .default_value("20")
+                        .required(false),
+                    arg!(--"start-offset" <OFFSET> "Offset in the global result set of the first hit returned.")
+                        .default_value("0")
+                        .required(false),
+                    arg!(--"search-fields" <FIELD_NAME> "List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. \"field1 field2\". ")
+                        .multiple_values(true)
+                        .required(false),
+                    arg!(--"start-timestamp" <TIMESTAMP> "Filters out documents before that timestamp (time-series indexes only).")
+                        .required(false),
+                    arg!(--"end-timestamp" <TIMESTAMP> "Filters out documents after that timestamp (time-series indexes only).")
+                        .required(false),
+                ])
+            )
+        .subcommand(
+            App::new("merge")
+                .about("Merges an index.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                        .env("QW_DATA_DIR")
+                        .required(false),
+                ])
+            )
+        .subcommand(
+            App::new("demux")
+                .about("Demuxes an index.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                        .env("QW_DATA_DIR")
+                        .required(false),
+                ])
+            )
+        .subcommand(
+            App::new("gc")
+                .about("Garbage collects stale staged splits and splits marked for deletion.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                        .env("QW_DATA_DIR")
+                        .required(false),
+                    arg!(--"grace-period" <GRACE_PERIOD> "Threshold period after which stale staged splits are garbage collected.")
+                        .default_value("1h")
+                        .required(false),
+                    arg!(--"dry-run" "Executes the command in dry run mode and only displays the list of splits candidates for garbage collection.")
+                        .required(false),
+                ])
+            )
+        .subcommand(
+            App::new("delete")
+                .about("Delete an index.")
+                .args(&[
+                    arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
+                    arg!(--index <INDEX> "ID of the target index"),
+                    arg!(--"data-dir" <DATA_DIR> "Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.")
+                        .env("QW_DATA_DIR")
+                        .required(false),
+                    arg!(--"dry-run" "Executes the command in dry run mode and only displays the list of splits candidates for deletion.")
+                        .required(false),
+                ])
+            )
+        .setting(AppSettings::ArgRequiredElseHelp)
+}
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct DescribeIndexArgs {
@@ -350,7 +471,7 @@ pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri)
+        .resolve(&quickwit_config.metastore_uri())
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let splits = metastore
@@ -579,7 +700,8 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     } else {
         let default_index_uri = format!(
             "{}/{}",
-            quickwit_config.default_index_root_uri, index_config.index_id
+            quickwit_config.default_index_root_uri(),
+            index_config.index_id
         );
         info!(
             "`index-uri` is not specified in the index configuration. Setting it to `{}`.",
@@ -590,7 +712,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
 
     if args.overwrite {
         delete_index(
-            &quickwit_config.metastore_uri,
+            &quickwit_config.metastore_uri(),
             &index_config.index_id,
             false,
         )
@@ -613,7 +735,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
         create_timestamp: Utc::now().timestamp(),
         update_timestamp: Utc::now().timestamp(),
     };
-    create_index(&quickwit_config.metastore_uri, index_metadata.clone()).await?;
+    create_index(&quickwit_config.metastore_uri(), index_metadata.clone()).await?;
     println!("Index `{}` successfully created.", index_config.index_id);
 
     Ok(())
@@ -634,10 +756,10 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         source_id: INGEST_SOURCE_ID.to_string(),
         source_params,
     };
-    run_index_checklist(&config.metastore_uri, &args.index_id, Some(&source)).await?;
+    run_index_checklist(&config.metastore_uri(), &args.index_id, Some(&source)).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&config.metastore_uri)
+        .resolve(&config.metastore_uri())
         .await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
@@ -687,7 +809,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&quickwit_config.metastore_uri)
+        .resolve(&quickwit_config.metastore_uri())
         .await?;
     let search_request = SearchRequest {
         index_id: args.index_id,
@@ -720,13 +842,13 @@ pub async fn merge_or_demux_cli(
 ) -> anyhow::Result<()> {
     debug!(args = ?args, merge_enabled = merge_enabled, demux_enabled = demux_enabled, "run-merge-operations");
     let config = load_quickwit_config(args.config_uri, args.data_dir).await?;
-    run_index_checklist(&config.metastore_uri, &args.index_id, None).await?;
+    run_index_checklist(&config.metastore_uri(), &args.index_id, None).await?;
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
-        .resolve(&config.metastore_uri)
+        .resolve(&config.metastore_uri())
         .await?;
     let storage_resolver = quickwit_storage_uri_resolver().clone();
     let client = IndexingServer::spawn(
@@ -751,8 +873,12 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
 
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
-    let affected_files =
-        delete_index(&quickwit_config.metastore_uri, &args.index_id, args.dry_run).await?;
+    let affected_files = delete_index(
+        &quickwit_config.metastore_uri(),
+        &args.index_id,
+        args.dry_run,
+    )
+    .await?;
     if args.dry_run {
         if affected_files.is_empty() {
             println!("Only the index will be deleted since it does not contains any data file.");
@@ -777,7 +903,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
 
     let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
     let deleted_files = garbage_collect_index(
-        &quickwit_config.metastore_uri,
+        &quickwit_config.metastore_uri(),
         &args.index_id,
         args.grace_period,
         args.dry_run,

@@ -69,6 +69,7 @@ doc_mapping:
           type: text
           tokenizer: raw # Text field referenced as tag must have the `raw` tokenier.
   tag_fields: [tenant_id]
+  store_source: false
 
 indexing_settings:
   timestamp_field: timestamp
@@ -178,7 +179,7 @@ Now that we have indexed our dataset and can do a local search, let's show how e
 First, let's download the Searcher's configuration files:
 
 ```bash
-for i in {1..3}; do 
+for i in {1..3}; do
 curl -o searcher-$i.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/hdfs-logs/searcher-$i.yaml
 done
 ```
@@ -227,7 +228,7 @@ Let's do some cleanup by deleting the index:
 ```
 
 
-Congratz! You finished this tutorial! 
+Congratz! You finished this tutorial!
 
 
 To continue your Quickwit journey, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md) or dig into the [search REST API](../reference/rest-api.md) or [query language](../reference/query-language.md).

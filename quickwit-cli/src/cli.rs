@@ -18,13 +18,23 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::bail;
-use clap::ArgMatches;
+use clap::{App, AppSettings, ArgMatches};
 use tracing::Level;
 
-use crate::index::IndexCliCommand;
-use crate::service::ServiceCliCommand;
-use crate::source::SourceCliCommand;
-use crate::split::SplitCliCommand;
+use crate::index::{build_index_command, IndexCliCommand};
+use crate::service::{build_service_command, ServiceCliCommand};
+use crate::source::{build_source_command, SourceCliCommand};
+use crate::split::{build_split_command, SplitCliCommand};
+
+pub fn build_cli<'a>() -> App<'a> {
+    App::new("Quickwit")
+        .subcommand(build_source_command())
+        .subcommand(build_service_command())
+        .subcommand(build_split_command())
+        .subcommand(build_index_command())
+        .setting(AppSettings::DisableHelpSubcommand)
+        .setting(AppSettings::ArgRequiredElseHelp)
+}
 
 #[derive(Debug, PartialEq)]
 pub enum CliCommand {

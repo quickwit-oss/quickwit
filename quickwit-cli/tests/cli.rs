@@ -109,18 +109,13 @@ async fn test_cmd_create() -> Result<()> {
         .await
         .unwrap();
     assert_eq!(index_metadata.index_id, test_env.index_id);
-    assert_eq!(
-        index_metadata.index_uri,
-        Uri::try_new(&format!("./qwdata/indexes/{}", test_env.index_id))
-            .unwrap()
-            .as_ref()
-    );
+    assert_eq!(index_metadata.index_uri, test_env.index_uri.as_ref());
 
     // Attempt to create with ill-formed new command.
     make_command("index create")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("--index-config <INDEX CONFIG>"));
+        .stderr(predicate::str::contains("--index-config <INDEX_CONFIG>"));
     Ok(())
 }
 
