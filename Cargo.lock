@@ -633,6 +633,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "diff"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e25ea47919b1560c4e3b7fe0aaab9becf5b84a10325ddf7db0f0ba5e1026499"
+
+[[package]]
 name = "difflib"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -764,14 +770,14 @@ dependencies = [
 
 [[package]]
 name = "fastdivide"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a99a2d53cf90642500986ad22e5083b09e42d44c408f5f112e2a4a0925a643c"
+checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 
 [[package]]
 name = "fastfield_codecs"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=d7465149#d7465149570f91168c9b449cc16c9a6b8ce0cdf9"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -1827,9 +1833,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "output_vt100"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "628223faebab4e3e40667ee0b2336d34a5b960ff60ea743ddfdbcf7770bcfb66"
+dependencies = [
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "ownedbytes"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=d7465149#d7465149570f91168c9b449cc16c9a6b8ce0cdf9"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -1965,6 +1980,18 @@ checksum = "338c7be2905b732ae3984a2f40032b5e94fd8f52505b186c7d4d68d193445df7"
 dependencies = [
  "predicates-core",
  "termtree",
+]
+
+[[package]]
+name = "pretty_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76d5b548b725018ab5496482b45cb8bef21e9fed1858a6d674e3a8a0f0bb5d50"
+dependencies = [
+ "ansi_term",
+ "ctor",
+ "diff",
+ "output_vt100",
 ]
 
 [[package]]
@@ -3420,7 +3447,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.17.0-dev"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=d7465149#d7465149570f91168c9b449cc16c9a6b8ce0cdf9"
 dependencies = [
  "async-trait",
  "base64",
@@ -3449,6 +3476,7 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "ownedbytes",
+ "pretty_assertions",
  "rayon",
  "regex",
  "rust-stemmers",
@@ -3470,12 +3498,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.1.1"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=d7465149#d7465149570f91168c9b449cc16c9a6b8ce0cdf9"
 
 [[package]]
 name = "tantivy-common"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=d7465149#d7465149570f91168c9b449cc16c9a6b8ce0cdf9"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -3495,7 +3523,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.15.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=d7465149#d7465149570f91168c9b449cc16c9a6b8ce0cdf9"
 dependencies = [
  "combine",
  "once_cell",
