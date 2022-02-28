@@ -162,9 +162,7 @@ impl IndexerState {
                 timestamp_opt: None,
             };
         };
-        let timestamp_opt = document
-            .get_first(timestamp_field)
-            .and_then(Value::i64_value);
+        let timestamp_opt = document.get_first(timestamp_field).and_then(Value::as_i64);
         assert!(
             timestamp_opt.is_some(),
             "We should always have a timestamp here as doc parsing returns a `RequiredFastField` \

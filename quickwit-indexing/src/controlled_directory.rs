@@ -24,9 +24,10 @@ use std::{fmt, io};
 
 use arc_swap::ArcSwap;
 use quickwit_actors::{KillSwitch, Progress, ProtectedZoneGuard};
-use tantivy::common::{AntiCallToken, TerminatingWrite};
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
-use tantivy::directory::{FileHandle, WatchCallback, WatchHandle, WritePtr};
+use tantivy::directory::{
+    AntiCallToken, FileHandle, TerminatingWrite, WatchCallback, WatchHandle, WritePtr,
+};
 use tantivy::Directory;
 
 /// Buffer capacity.

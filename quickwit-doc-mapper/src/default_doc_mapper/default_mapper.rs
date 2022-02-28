@@ -25,9 +25,7 @@ use quickwit_proto::SearchRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
-use tantivy::schema::{
-    Cardinality, FieldEntry, FieldType, FieldValue, Schema, SchemaBuilder, Value, STORED,
-};
+use tantivy::schema::{Cardinality, FieldEntry, FieldType, Schema, SchemaBuilder, Value, STORED};
 use tantivy::Document;
 use tracing::info;
 
@@ -423,7 +421,7 @@ impl DocMapper for DefaultDocMapper {
                 .schema
                 .get_field(&field_name)
                 .ok_or_else(|| DocParsingError::NoSuchFieldInSchema(field_name.clone()))?;
-            document.add(FieldValue::new(field, field_value))
+            document.add_field_value(field, field_value)
         }
         if self.store_source {
             let source = self.schema.get_field(SOURCE_FIELD_NAME).ok_or_else(|| {
@@ -431,7 +429,7 @@ impl DocMapper for DefaultDocMapper {
             })?;
             // We avoid `document.add_text` here because it systematically performs a copy of the
             // value.
-            document.add(FieldValue::new(source, Value::Str(doc_json)));
+            document.add_text(source, doc_json);
         }
         Ok(document)
     }
@@ -561,7 +559,7 @@ mod tests {
         document.field_values().iter().for_each(|field_value| {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
-                assert_eq!(field_value.value().text().unwrap(), JSON_DOC_VALUE);
+                assert_eq!(field_value.value().as_text(), Some(JSON_DOC_VALUE));
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
@@ -800,7 +798,7 @@ mod tests {
         document.field_values().iter().for_each(|field_value| {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
-                assert_eq!(field_value.value().text().unwrap(), JSON_DOC_VALUE);
+                assert_eq!(field_value.value().as_text(), Some(JSON_DOC_VALUE));
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values

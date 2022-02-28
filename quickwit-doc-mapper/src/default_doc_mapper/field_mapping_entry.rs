@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::schema::{
     BytesOptions, Cardinality, DocParsingError as TantivyDocParser, FieldType, IndexRecordOption,
-    IntOptions, TextFieldIndexing, TextOptions, Value,
+    NumericOptions, TextFieldIndexing, TextOptions, Value,
 };
 use thiserror::Error;
 
@@ -185,7 +185,7 @@ impl FieldMappingEntry {
     fn parse_i64(
         &self,
         json_value: JsonValue,
-        options: &IntOptions,
+        options: &NumericOptions,
         cardinality: &Cardinality,
     ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
         let parsed_values = match json_value {
@@ -229,7 +229,7 @@ impl FieldMappingEntry {
     fn parse_u64(
         &self,
         json_value: JsonValue,
-        options: &IntOptions,
+        options: &NumericOptions,
         cardinality: &Cardinality,
     ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
         let parsed_values = match json_value {
@@ -273,7 +273,7 @@ impl FieldMappingEntry {
     fn parse_f64(
         &self,
         json_value: JsonValue,
-        options: &IntOptions,
+        options: &NumericOptions,
         cardinality: &Cardinality,
     ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
         let parsed_values = match json_value {
@@ -320,7 +320,7 @@ impl FieldMappingEntry {
     fn parse_date(
         &self,
         json_value: JsonValue,
-        options: &IntOptions,
+        options: &NumericOptions,
         cardinality: &Cardinality,
     ) -> Result<Vec<(FieldPath, Value)>, DocParsingError> {
         let parsed_values = match json_value {
@@ -684,9 +684,9 @@ impl FieldMappingEntryForSerialization {
         Ok(FieldMappingType::Object(field_mappings))
     }
 
-    fn int_options(&self) -> anyhow::Result<IntOptions> {
+    fn int_options(&self) -> anyhow::Result<NumericOptions> {
         self.check_no_text_options()?;
-        let mut options = IntOptions::default();
+        let mut options = NumericOptions::default();
         if self.stored {
             options = options.set_stored();
         }
@@ -737,7 +737,7 @@ pub enum DocParsingError {
 impl From<TantivyDocParser> for DocParsingError {
     fn from(value: TantivyDocParser) -> Self {
         match value {
-            TantivyDocParser::NotJson(text) => DocParsingError::NoSuchFieldInSchema(text),
+            TantivyDocParser::InvalidJson(text) => DocParsingError::NoSuchFieldInSchema(text),
             TantivyDocParser::ValueError(text, error) => {
                 DocParsingError::ValueError(text, format!("{:?}", error))
             }
