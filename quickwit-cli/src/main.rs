@@ -312,6 +312,7 @@ mod tests {
             CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
                 index_id,
                 query,
+                aggregation: None,
                 max_hits: 50,
                 start_offset: 100,
                 search_fields: Some(field_names),

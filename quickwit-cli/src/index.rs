@@ -198,6 +198,7 @@ pub struct IngestDocsArgs {
 pub struct SearchIndexArgs {
     pub index_id: String,
     pub query: String,
+    pub aggregation: Option<String>,
     pub max_hits: usize,
     pub start_offset: usize,
     pub search_fields: Option<Vec<String>>,
@@ -342,6 +343,8 @@ impl IndexCliCommand {
             .value_of("query")
             .context("`query` is a required arg.")?
             .to_string();
+        let aggregation = matches.value_of("aggregation").map(|el| el.to_string());
+
         let max_hits = matches.value_of_t::<usize>("max-hits")?;
         let start_offset = matches.value_of_t::<usize>("start-offset")?;
         let search_fields = matches
@@ -365,6 +368,7 @@ impl IndexCliCommand {
         Ok(Self::Search(SearchIndexArgs {
             index_id,
             query,
+            aggregation,
             max_hits,
             start_offset,
             search_fields,
@@ -821,7 +825,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         start_offset: args.start_offset as u64,
         sort_order: None,
         sort_by_field: None,
-        aggregation_request: None,
+        aggregation_request: args.aggregation,
     };
     let search_response: SearchResponse =
         single_node_search(&search_request, &*metastore, storage_uri_resolver.clone()).await?;

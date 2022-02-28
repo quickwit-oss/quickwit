@@ -129,7 +129,7 @@ pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
     /// The aggregation JSON string.
-    pub aggregation: Option<serde_json::Value>,
+    pub aggregations: Option<serde_json::Value>,
     // Fields to search on
     #[serde(default)]
     #[serde(rename(deserialize = "searchField"))]
@@ -185,7 +185,7 @@ async fn search_endpoint<TSearchService: SearchService>(
         max_hits: search_request.max_hits,
         start_offset: search_request.start_offset,
         aggregation_request: search_request
-            .aggregation
+            .aggregations
             .map(|agg| serde_json::to_string(&agg).expect("could not serialize serde_json::Value")),
         sort_order,
         sort_by_field,
@@ -437,6 +437,7 @@ mod tests {
             hits: Vec::new(),
             elapsed_time_micros: 0u64,
             errors: Vec::new(),
+            aggregations: None,
         };
         let search_response_json: serde_json::Value = serde_json::to_value(&search_response)?;
         let expected_search_response_json: serde_json::Value = json!({
@@ -472,7 +473,7 @@ mod tests {
                 max_hits: 10,
                 format: Format::default(),
                 sort_by_field: None,
-                aggregation: Some(json!({"range":[]})),
+                aggregations: Some(json!({"range":[]})),
                 ..Default::default()
             }
         );

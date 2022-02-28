@@ -22,6 +22,7 @@ use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse,
     LeafSearchStreamRequest, LeafSearchStreamResponse,
 };
+use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -155,8 +156,24 @@ fn merge_leaf_search_results(
             initial_response
                 .partial_hits
                 .append(&mut retry_response.partial_hits);
+            let intermediate_aggregation_result = initial_response
+                .intermediate_aggregation_result
+                .map(|res1_str| {
+                    if let Some(res2_str) = retry_response.intermediate_aggregation_result.as_ref()
+                    {
+                        let mut res1: IntermediateAggregationResults =
+                            serde_json::from_str(&res1_str)?;
+                        let res2: IntermediateAggregationResults = serde_json::from_str(&res2_str)?;
+                        res1.merge_fruits(&res2);
+                        serde_json::to_string(&res1)
+                    } else {
+                        Ok(res1_str)
+                    }
+                })
+                .transpose()
+                .map_err(|json_err| SearchError::InternalError(json_err.to_string()))?;
             let merged_response = LeafSearchResponse {
-                intermediate_aggregation_result: None, // TODO AGG
+                intermediate_aggregation_result,
                 num_hits: initial_response.num_hits + retry_response.num_hits,
                 num_attempted_splits: initial_response.num_attempted_splits
                     + retry_response.num_attempted_splits,
