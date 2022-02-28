@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-cluster"
-version = "0.2.0"
+version = "0.2.1"
 authors = ['Quickwit, Inc. <hello@quickwit.io>']
 edition = "2021"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
@@ -13,8 +13,8 @@ documentation = "https://quickwit.io/docs/"
 anyhow = "1.0"
 async-trait = "0.1"
 flume = "0.10"
-quickwit-common = { version = "0.2.0", path = "../quickwit-common"}
-quickwit-swim = { version = "0.2", path = "../quickwit-swim" }
+quickwit-common = { version = "0.2.1", path = "../quickwit-common"}
+quickwit-swim = { version = "0.2.1", path = "../quickwit-swim" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
@@ -24,7 +24,7 @@ tonic = "0.6"
 tracing = "0.1.29"
 uuid = "0.8"
 
-quickwit-proto = { version = "0.2.0", path = "../quickwit-proto"}
+quickwit-proto = { version = "0.2.1", path = "../quickwit-proto"}
 
 [dev-dependencies]
 itertools = '0.10'
