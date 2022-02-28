@@ -7,11 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+### Fixed
+
+### Removed
+
+### Security
+
+## [0.2.1] - 2022-02-28
+
+### Added
 - Query validation against index schema before dispatch to leaf nodes (#1109, @linxGnu)
 - Support for custom S3 endpoint (#1108)
+- Warm up terms and fastfields concurrently (#1147)
 
 ### Fixed
 - Minor bug in leaf search stream (#1110)
+- Default index root URI and metastore URI correctly default to data dir (#1140, @ddelemeny)
 
 ### Removed
 - QW_ENV environment variable
