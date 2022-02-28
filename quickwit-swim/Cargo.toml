@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-swim"
-version = "0.2.0"
+version = "0.2.1"
 authors = ['Quickwit, Inc. <hello@quickwit.io>']
 edition = '2021'
 description = "Fork of artillery-core SWIM implementation"
