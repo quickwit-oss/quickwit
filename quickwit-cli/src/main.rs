@@ -279,6 +279,7 @@ mod tests {
                 search_fields: None,
                 start_timestamp: None,
                 end_timestamp: None,
+                aggregation: None,
                 ..
             })) if &index_id == "wikipedia" && &query == "Barack Obama"
         ));

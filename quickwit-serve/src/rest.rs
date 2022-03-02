@@ -459,7 +459,7 @@ mod tests {
             .method("POST")
             .path("/api/v1/quickwit-demo-index/search?query=*&maxHits=10")
             .json(&true)
-            .body(r#"{"query": "*", "maxHits":10, "aggregation": {"range":[]} }"#)
+            .body(r#"{"query": "*", "maxHits":10, "aggregations": {"range":[]} }"#)
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
@@ -647,7 +647,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `aggregation`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `sortByField`."
+            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `aggregations`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `sortByField`."
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())

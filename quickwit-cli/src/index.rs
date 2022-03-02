@@ -101,6 +101,8 @@ pub fn build_index_command<'a>() -> App<'a> {
                         .env("QW_DATA_DIR")
                         .required(false),
                     arg!(--query <QUERY> "Query expressed in natural query language ((barack AND obama) OR \"president of united states\"). Learn more on https://quickwit.io/docs/reference/search-language."),
+                    arg!(--aggregation <AGG> "JSON serialized aggregation request in tantivy/elasticsearch format.")
+                        .required(false),
                     arg!(--"max-hits" <MAX_HITS> "Maximum number of hits returned.")
                         .default_value("20")
                         .required(false),
