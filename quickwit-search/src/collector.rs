@@ -340,7 +340,7 @@ fn merge_leaf_responses(
             leaf_response
                 .intermediate_aggregation_result
                 .as_ref()
-                .map(|res| serde_json::from_str(&res))
+                .map(|res| serde_json::from_str(res))
         })
         .collect::<Result<Vec<IntermediateAggregationResults>, _>>()?;
 
@@ -428,7 +428,7 @@ pub fn make_collector_for_split(
         aggregation: search_request
             .aggregation_request
             .as_ref()
-            .map(|el| serde_json::from_str(&el).unwrap()),
+            .map(|el| serde_json::from_str(el).unwrap()),
     }
 }
 
@@ -449,7 +449,7 @@ pub fn make_merge_collector(search_request: &SearchRequest) -> QuickwitCollector
         aggregation: search_request
             .aggregation_request
             .as_ref()
-            .map(|el| serde_json::from_str(&el).unwrap()),
+            .map(|el| serde_json::from_str(el).unwrap()),
     }
 }
 

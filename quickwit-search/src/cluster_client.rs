@@ -163,7 +163,7 @@ fn merge_leaf_search_results(
                     {
                         let mut res1: IntermediateAggregationResults =
                             serde_json::from_str(&res1_str)?;
-                        let res2: IntermediateAggregationResults = serde_json::from_str(&res2_str)?;
+                        let res2: IntermediateAggregationResults = serde_json::from_str(res2_str)?;
                         res1.merge_fruits(&res2);
                         serde_json::to_string(&res1)
                     } else {
