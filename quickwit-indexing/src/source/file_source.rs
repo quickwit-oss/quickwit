@@ -49,11 +49,6 @@ pub struct FileSource {
     reader: BufReader<Box<dyn AsyncRead + Send + Sync + Unpin>>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct FilePosition {
-    pub num_bytes: u64,
-}
-
 #[async_trait]
 impl Source for FileSource {
     async fn emit_batches(

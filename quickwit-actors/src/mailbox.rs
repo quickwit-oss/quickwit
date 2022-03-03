@@ -36,7 +36,7 @@ use crate::{QueueCapacity, RecvError, SendError};
 ///
 /// The mailbox can accept:
 /// - regular message. Their type depend on the actor and is defined when
-/// implementing the actor trait.  (See [`Actor::Message`])
+/// implementing the actor trait.  (See [`Actor::Message`](crate::Actor::Message))
 /// - Commands (See [`Command`]). Commands have a higher priority than messages:
 /// whenever a command is available, it is guaranteed to be processed
 /// as soon as possible regardless of the presence of pending regular messages.
