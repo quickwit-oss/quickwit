@@ -29,7 +29,7 @@ use crate::{Actor, ActorContext, ActorHandle, RecvError};
 /// An sync actor is executed on a tokio blocking task.
 ///
 /// It may block and perform CPU heavy computation.
-/// (See also [`AsyncActor`])
+/// (See also [`AsyncActor`](crate::AsyncActor))
 ///
 /// Known pitfalls: Contrary to AsyncActor commands are typically not executed right away.
 /// If both the command and the message channel are exhausted, and a command and N messages arrives,
