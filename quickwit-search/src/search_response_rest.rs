@@ -36,6 +36,9 @@ pub struct SearchResponseRest {
     pub elapsed_time_micros: u64,
     /// Search errors.
     pub errors: Vec<String>,
+    /// Aggregations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aggregations: Option<serde_json::Value>,
 }
 
 impl TryFrom<quickwit_proto::SearchResponse> for SearchResponseRest {
@@ -59,6 +62,11 @@ impl TryFrom<quickwit_proto::SearchResponse> for SearchResponseRest {
             hits,
             elapsed_time_micros: search_response.elapsed_time_micros,
             errors: search_response.errors,
+            aggregations: search_response
+                .aggregation
+                .map(|agg| serde_json::from_str(&agg))
+                .transpose()
+                .map_err(|err| SearchError::InternalError(err.to_string()))?,
         })
     }
 }

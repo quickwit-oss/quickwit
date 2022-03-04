@@ -279,6 +279,7 @@ mod tests {
                 search_fields: None,
                 start_timestamp: None,
                 end_timestamp: None,
+                aggregation: None,
                 ..
             })) if &index_id == "wikipedia" && &query == "Barack Obama"
         ));
@@ -312,6 +313,7 @@ mod tests {
             CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
                 index_id,
                 query,
+                aggregation: None,
                 max_hits: 50,
                 start_offset: 100,
                 search_fields: Some(field_names),

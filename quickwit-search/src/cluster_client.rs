@@ -22,6 +22,7 @@ use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, LeafSearchRequest, LeafSearchResponse,
     LeafSearchStreamRequest, LeafSearchStreamResponse,
 };
+use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -155,7 +156,24 @@ fn merge_leaf_search_results(
             initial_response
                 .partial_hits
                 .append(&mut retry_response.partial_hits);
+            let intermediate_aggregation_result = initial_response
+                .intermediate_aggregation_result
+                .map(|res1_str| {
+                    if let Some(res2_str) = retry_response.intermediate_aggregation_result.as_ref()
+                    {
+                        let mut res1: IntermediateAggregationResults =
+                            serde_json::from_str(&res1_str)?;
+                        let res2: IntermediateAggregationResults = serde_json::from_str(res2_str)?;
+                        res1.merge_fruits(&res2);
+                        serde_json::to_string(&res1)
+                    } else {
+                        Ok(res1_str)
+                    }
+                })
+                .transpose()
+                .map_err(|json_err| SearchError::InternalError(json_err.to_string()))?;
             let merged_response = LeafSearchResponse {
+                intermediate_aggregation_result,
                 num_hits: initial_response.num_hits + retry_response.num_hits,
                 num_attempted_splits: initial_response.num_attempted_splits
                     + retry_response.num_attempted_splits,
@@ -368,6 +386,7 @@ mod tests {
                     partial_hits: vec![],
                     failed_splits: vec![],
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             });
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
@@ -396,6 +415,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             });
         mock_service
@@ -411,6 +431,7 @@ mod tests {
                         retryable_error: true,
                     }],
                     num_attempted_splits: 1,
+                    ..Default::default()
                 })
             });
         let client_pool = SearchClientPool::from_mocks(vec![Arc::new(mock_service)]).await?;
@@ -436,12 +457,14 @@ mod tests {
             partial_hits: vec![mock_partial_hit("split_1", 3, 1)],
             failed_splits: vec![split_error],
             num_attempted_splits: 1,
+            ..Default::default()
         };
         let leaf_response_retry = LeafSearchResponse {
             num_hits: 1,
             partial_hits: vec![mock_partial_hit("split_2", 3, 1)],
             failed_splits: vec![],
             num_attempted_splits: 1,
+            ..Default::default()
         };
         let merged_leaf_search_response =
             merge_leaf_search_results(Ok(leaf_response), Ok(leaf_response_retry)).unwrap();
@@ -464,6 +487,7 @@ mod tests {
             partial_hits: vec![mock_partial_hit("split_1", 3, 1)],
             failed_splits: vec![split_error],
             num_attempted_splits: 1,
+            ..Default::default()
         };
         let merged_result = merge_leaf_search_results(
             Err(SearchError::InternalError("error".to_string())),

@@ -27,11 +27,11 @@ use std::str::from_utf8;
 use anyhow::Result;
 use helpers::{TestEnv, TestStorageType};
 use predicates::prelude::*;
-use quickwit_cli::index::{create_index_cli, CreateIndexArgs};
+use quickwit_cli::index::{create_index_cli, search_index, CreateIndexArgs, SearchIndexArgs};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_metastore::{quickwit_metastore_uri_resolver, Metastore};
-use serde_json::{Number, Value};
+use serde_json::{json, Number, Value};
 use serial_test::serial;
 use tokio::time::{sleep, Duration};
 
@@ -210,6 +210,94 @@ fn test_cmd_ingest_simple() -> Result<()> {
     .stdout(predicate::str::contains("documents in"))
     .stdout(predicate::str::contains("Now, you can query the index"));
     println!("piped input");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_cmd_search_aggregation() -> Result<()> {
+    let index_id = append_random_suffix("test-search-cmd");
+    let test_env = create_test_env(index_id, TestStorageType::LocalFileSystem)?;
+    create_logs_index(&test_env);
+
+    ingest_docs(test_env.resource_files["logs"].as_path(), &test_env);
+
+    let aggregation: Value = json!(
+    {
+      "range_buckets": {
+        "range": {
+          "field": "ts",
+          "ranges": [ { "to": 2f64 }, { "from": 2f64, "to": 5f64 }, { "from": 5f64, "to": 9f64 }, { "from": 9f64 } ]
+        },
+        "aggs": {
+          "average_ts": {
+            "avg": { "field": "ts" }
+          }
+        }
+      }
+    });
+
+    // search with aggregation
+    let args = SearchIndexArgs {
+        index_id: test_env.index_id,
+        query: "paris OR tokio OR london".to_string(),
+        aggregation: Some(serde_json::to_string(&aggregation).unwrap()),
+        max_hits: 10,
+        start_offset: 0,
+        search_fields: Some(vec!["city".to_string()]),
+        start_timestamp: None,
+        end_timestamp: None,
+        config_uri: Uri::try_new(&test_env.resource_files["config"].display().to_string()).unwrap(),
+        data_dir: None,
+    };
+    let search_response = search_index(args).await?;
+
+    let aggregation_res: Value =
+        serde_json::from_str(&search_response.aggregation.unwrap()).unwrap();
+
+    assert_eq!(
+        aggregation_res,
+        json!({
+          "range_buckets": {
+            "buckets": [
+              {
+                "doc_count": 0,
+                "key": "*-2",
+                "average_ts": {
+                  "value": null,
+                },
+                "to": 2.0
+              },
+              {
+                "doc_count": 2,
+                "from": 2.0,
+                "key": "2-5",
+                "average_ts": {
+                  "value": 2.5,
+                },
+                "to": 5.0
+              },
+              {
+                "doc_count": 0,
+                "from": 5.0,
+                "key": "5-9",
+                "average_ts": {
+                  "value": null,
+                },
+                "to": 9.0
+              },
+              {
+                "doc_count": 3,
+                "from": 9.0,
+                "key": "9-*",
+                "average_ts": {
+                  "value": 11.333333333333334
+                }
+              }
+            ]
+          }
+        })
+    );
+
     Ok(())
 }
 

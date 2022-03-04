@@ -23,6 +23,9 @@ use std::collections::{BinaryHeap, HashSet};
 use itertools::Itertools;
 use quickwit_doc_mapper::{DocMapper, SortBy, SortOrder};
 use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest};
+use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
+use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
+use tantivy::aggregation::AggregationSegmentCollector;
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::fastfield::{DynamicFastFieldReader, FastFieldReader};
 use tantivy::schema::{Field, Schema};
@@ -136,6 +139,7 @@ pub struct QuickwitSegmentCollector {
     max_hits: usize,
     segment_ord: u32,
     timestamp_filter_opt: Option<TimestampFilter>,
+    aggregation: Option<AggregationSegmentCollector>,
 }
 
 impl QuickwitSegmentCollector {
@@ -184,6 +188,9 @@ impl SegmentCollector for QuickwitSegmentCollector {
 
         self.num_hits += 1;
         self.collect_top_k(doc_id);
+        if let Some(aggregation_collector) = self.aggregation.as_mut() {
+            aggregation_collector.collect(doc_id, _score);
+        }
     }
 
     fn harvest(self) -> LeafSearchResponse {
@@ -202,6 +209,10 @@ impl SegmentCollector for QuickwitSegmentCollector {
             })
             .collect();
         LeafSearchResponse {
+            intermediate_aggregation_result: self.aggregation.map(|collector| {
+                serde_json::to_string(&collector.harvest())
+                    .expect("could not serialize aggreation to json")
+            }),
             num_hits: self.num_hits,
             partial_hits,
             failed_splits: vec![],
@@ -229,11 +240,16 @@ pub struct QuickwitCollector {
     pub timestamp_field_opt: Option<Field>,
     pub start_timestamp_opt: Option<i64>,
     pub end_timestamp_opt: Option<i64>,
+    pub aggregation: Option<Aggregations>,
 }
 
 impl GenericQuickwitCollector for QuickwitCollector {
     fn fast_field_names(&self) -> HashSet<String> {
-        self.fast_field_names.clone()
+        let mut fast_field_names = self.fast_field_names.clone();
+        if let Some(aggregate) = self.aggregation.as_ref() {
+            fast_field_names.extend(get_fast_field_names(aggregate));
+        }
+        fast_field_names
     }
 }
 
@@ -270,6 +286,13 @@ impl Collector for QuickwitCollector {
             segment_ord,
             max_hits: leaf_max_hits,
             timestamp_filter_opt,
+            aggregation: self
+                .aggregation
+                .as_ref()
+                .map(|aggs| {
+                    AggregationSegmentCollector::from_agg_req_and_reader(aggs, segment_reader)
+                })
+                .transpose()?,
         })
     }
 
@@ -288,7 +311,7 @@ impl Collector for QuickwitCollector {
         // All leaves will return their top [0..max_hits) documents.
         // We compute the overall [0..start_offset + max_hits) documents ...
         let num_hits = self.start_offset + self.max_hits;
-        let mut merged_leaf_response = merge_leaf_responses(segment_fruits, num_hits);
+        let mut merged_leaf_response = merge_leaf_responses(segment_fruits, num_hits)?;
         // ... and drop the first [..start_offsets) hits.
         merged_leaf_response
             .partial_hits
@@ -306,11 +329,29 @@ impl Collector for QuickwitCollector {
 fn merge_leaf_responses(
     leaf_responses: Vec<LeafSearchResponse>,
     max_hits: usize,
-) -> LeafSearchResponse {
+) -> tantivy::Result<LeafSearchResponse> {
     // Optimization: No merging needed if there is only one result.
     if leaf_responses.len() == 1 {
-        return leaf_responses.into_iter().next().unwrap_or_default(); //< default is actually never called
+        return Ok(leaf_responses.into_iter().next().unwrap_or_default()); //< default is actually never called
     }
+    let intermediate_aggregation_results = leaf_responses
+        .iter()
+        .flat_map(|leaf_response| {
+            leaf_response
+                .intermediate_aggregation_result
+                .as_ref()
+                .map(|res| serde_json::from_str(res))
+        })
+        .collect::<Result<Vec<IntermediateAggregationResults>, _>>()?;
+
+    let intermediate_aggregation_result =
+        intermediate_aggregation_results
+            .into_iter()
+            .reduce(|mut res1, res2| {
+                res1.merge_fruits(&res2);
+                res1
+            });
+
     let num_attempted_splits = leaf_responses
         .iter()
         .map(|leaf_response| leaf_response.num_attempted_splits)
@@ -330,12 +371,16 @@ fn merge_leaf_responses(
         .collect();
     // TODO optimize
     let top_k_partial_hits = top_k_partial_hits(all_partial_hits, max_hits);
-    LeafSearchResponse {
+    Ok(LeafSearchResponse {
+        intermediate_aggregation_result: intermediate_aggregation_result
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?,
         num_hits,
         partial_hits: top_k_partial_hits,
         failed_splits,
         num_attempted_splits,
-    }
+    })
 }
 
 /// Mutates partial_hits so that it contains the top-num_hitso hits,
@@ -380,6 +425,10 @@ pub fn make_collector_for_split(
         timestamp_field_opt: doc_mapper.timestamp_field(split_schema),
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,
+        aggregation: search_request
+            .aggregation_request
+            .as_ref()
+            .map(|el| serde_json::from_str(el).unwrap()),
     }
 }
 
@@ -397,6 +446,10 @@ pub fn make_merge_collector(search_request: &SearchRequest) -> QuickwitCollector
         timestamp_field_opt: None,
         start_timestamp_opt: search_request.start_timestamp,
         end_timestamp_opt: search_request.end_timestamp,
+        aggregation: search_request
+            .aggregation_request
+            .as_ref()
+            .map(|el| serde_json::from_str(el).unwrap()),
     }
 }
 

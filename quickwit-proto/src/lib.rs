@@ -40,6 +40,7 @@ impl From<SearchStreamRequest> for SearchRequest {
             start_offset: 0,
             sort_by_field: None,
             sort_order: None,
+            aggregation_request: None,
         }
     }
 }
