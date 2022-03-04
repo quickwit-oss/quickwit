@@ -86,7 +86,8 @@ enum TermFilterAst {
 /// A special tag `{field_name}!` is always added to the tag set.
 /// It indicates that `{field_name}` is in the list of the
 /// `DocMapper` attribute `tag_fields`.
-/// See [`SplitMetadata`] for more details.
+///
+/// See `SplitMetadata` in `quickwit_metastore` for more detail.
 pub fn append_to_tag_set(field_name: &str, values: &[String], tag_set: &mut BTreeSet<String>) {
     tag_set.insert(field_tag(field_name));
     for value in values {

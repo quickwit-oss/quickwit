@@ -17,6 +17,46 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+//! # Sources
+//!
+//! Quickwit gets its data from so-called `Sources`.
+//!
+//! The role of a source is to push message to an indexer mailbox.
+//! Implementers need to focus on the implementation of the [`Source`] trait
+//! and in particular its emit_batches method.
+//! In addition, they need to implement a source factory.
+//!
+//! The source trait will executed in an actor.
+//!
+//! # Checkpoints and exactly-once semantics
+//!
+//! Quickwit is designed to offer exactly-once semantics whenever possible using the following
+//! strategy, using checkpoints.
+//!
+//! Messages are split into partitions, and within a partition messages are totally ordered: they
+//! are marked by a unique position within this partition.
+//!
+//! Sources are required to emit messages in a way that respects this partial order.
+//! If two message belong 2 different partitions, they can be emitted in any order.
+//! If two message belong to the same partition, they  are required to be emitted in the order of
+//! their position.
+//!
+//! The set of documents processed by a source can then be expressed entirely as Checkpoint, that is
+//! simply a mapping `(PartitionId -> Position)`.
+//!
+//! This checkpoint is used in Quickwit to implement exactly-once semantics.
+//! When a new split is published, it is atomically published with an update of the last indexed
+//! checkpoint.
+//!
+//! If the indexing pipeline is restarted, the source will simply be recreated with that checkpoint.
+//!
+//! # Example sources
+//!
+//! Right now two sources are implemented in quickwit.
+//! - the file source: there partition here is a filepath, and the position is a byte-offset within
+//!   that file.
+//! - the kafka source: the partition id is a kafka topic partition id, and the position is a kafka
+//!   offset.
 mod file_source;
 #[cfg(feature = "kafka")]
 mod kafka_source;
@@ -48,7 +88,7 @@ pub const INGEST_SOURCE_ID: &str = ".cli-ingest-source";
 
 pub type SourceContext = ActorContext<SourceActor>;
 
-/// A source is a trait that is mounted in a light wrapping Actor called `SourceActor`.
+/// A Source is a trait that is mounted in a light wrapping Actor called `SourceActor`.
 ///
 /// For this reason, its methods mimics those of Actor.
 /// One key difference is the absence of messages.
@@ -58,14 +98,18 @@ pub type SourceContext = ActorContext<SourceActor>;
 ///
 /// Conceptually, a source execution works as if it was a simple loop
 /// as follow:
+///
 /// ```ignore
-/// source.initialize(ctx)?
+/// # fn whatever() -> anyhow::Result<()>
+/// source.initialize(ctx)?;
 /// let exit_status = loop {
 ///   if let Err(exit_status) = source.emit_batches()? {
 ///      break exit_status;
 ////  }
 /// };
 /// source.finalize(exit_status)?;
+/// # Ok(())
+/// # }
 /// ```
 #[async_trait]
 pub trait Source: Send + Sync + 'static {
@@ -75,7 +119,9 @@ pub trait Source: Send + Sync + 'static {
     }
 
     /// Main part of the source implementation, `emit_batches` can emit 0..n batches.
-    /// It is expected to return relatively fast.
+    ///
+    /// The `batch_sink` is a mailbox that has a bounded capacity.
+    /// In that case, `batch_sink` will block.
     async fn emit_batches(
         &mut self,
         batch_sink: &Mailbox<IndexerMessage>,
