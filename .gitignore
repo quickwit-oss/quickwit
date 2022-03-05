@@ -11,6 +11,6 @@
 **/*.rs.bk
 
 .vscode
-
+.vscode-license
 .cargo
 deps
