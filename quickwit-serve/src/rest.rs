@@ -35,8 +35,8 @@ use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
 
-use crate::http_handler::cluster::cluster_handler;
-use crate::http_handler::health_check::liveness_check_handler;
+use crate::cluster_api::cluster_handler;
+use crate::health_check_api::liveness_check_handler;
 use crate::ApiError;
 
 /// Start REST service given a HTTP address and a search service.

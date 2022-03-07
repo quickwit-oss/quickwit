@@ -24,7 +24,7 @@ use futures::TryStreamExt;
 use opentelemetry::global;
 use opentelemetry::propagation::Extractor;
 use quickwit_proto::{
-    search_service_server as grpc, LeafSearchStreamRequest, LeafSearchStreamResponse,
+    search_service_server as grpc, tonic, LeafSearchStreamRequest, LeafSearchStreamResponse,
 };
 use quickwit_search::{SearchService, SearchServiceImpl};
 use tracing::{instrument, Span};

@@ -53,7 +53,7 @@ pub fn liveness_check_handler() -> impl Filter<Extract = impl warp::Reply, Error
 }
 
 /// Make an HTTP response based on the given service status.
-pub fn make_reply(ok: bool, service_status: ServiceStatus) -> impl warp::Reply {
+fn make_reply(ok: bool, service_status: ServiceStatus) -> impl warp::Reply {
     let mut status_code = if ok {
         StatusCode::OK
     } else {
@@ -74,7 +74,7 @@ pub fn make_reply(ok: bool, service_status: ServiceStatus) -> impl warp::Reply {
 }
 
 /// Check if the service is alive.
-pub fn live_predicate(service_status: ServiceStatus) -> bool {
+fn live_predicate(service_status: ServiceStatus) -> bool {
     matches!(service_status, ServiceStatus::Alive)
 }
 

@@ -19,7 +19,6 @@ http = "0.2"
 mockall = "0.11"
 itertools = '0.10'
 thiserror = "1"
-tonic = "0.6"
 tokio-stream = "0.1"
 tracing = "0.1.29"
 tracing-futures = "0.2.5"

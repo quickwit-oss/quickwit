@@ -19,6 +19,7 @@
 
 use quickwit_doc_mapper::QueryParserError;
 use quickwit_metastore::MetastoreError;
+use quickwit_proto::tonic;
 use quickwit_storage::StorageResolverError;
 use serde::{Deserialize, Serialize};
 use tantivy::TantivyError;

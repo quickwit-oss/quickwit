@@ -21,8 +21,11 @@ mod args;
 mod counters;
 mod error;
 mod grpc;
-mod grpc_adapter;
-mod http_handler;
+
+mod cluster_api;
+mod health_check_api;
+mod search_api;
+
 mod rest;
 
 use std::sync::Arc;
@@ -36,12 +39,12 @@ use quickwit_storage::quickwit_storage_uri_resolver;
 use tracing::{debug, info};
 
 pub use crate::args::ServeArgs;
+use crate::cluster_api::GrpcClusterAdapter;
 pub use crate::counters::COUNTERS;
 pub use crate::error::ApiError;
 use crate::grpc::start_grpc_service;
-use crate::grpc_adapter::cluster_adapter::GrpcClusterAdapter;
-use crate::grpc_adapter::search_adapter::GrpcSearchAdapter;
 use crate::rest::start_rest_service;
+use crate::search_api::GrpcSearchAdapter;
 
 /// Starts a search node, aka a `searcher`.
 pub async fn run_searcher(
@@ -104,6 +107,7 @@ mod tests {
     use tonic::transport::Server;
 
     use super::*;
+    use crate::search_api::GrpcSearchAdapter;
 
     async fn start_test_server(
         address: SocketAddr,

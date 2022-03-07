@@ -27,17 +27,6 @@ use warp::{Filter, Rejection};
 use crate::rest::Format;
 use crate::ApiError;
 
-/// This struct represents the QueryString passed to
-/// the rest API.
-#[derive(Deserialize, Debug, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "camelCase")]
-pub struct ListMembersRequestQueryString {
-    /// The output format requested.
-    #[serde(default)]
-    pub format: Format,
-}
-
 /// Cluster handler.
 pub fn cluster_handler<TClusterService: ClusterService>(
     cluster_service: Arc<TClusterService>,
@@ -45,6 +34,17 @@ pub fn cluster_handler<TClusterService: ClusterService>(
     list_members_filter()
         .and(warp::any().map(move || cluster_service.clone()))
         .and_then(list_members)
+}
+
+/// This struct represents the QueryString passed to
+/// the rest API.
+#[derive(Deserialize, Debug, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
+struct ListMembersRequestQueryString {
+    /// The output format requested.
+    #[serde(default)]
+    pub format: Format,
 }
 
 fn list_members_filter(
