@@ -275,7 +275,7 @@ mod test_split_store {
     async fn test_create_should_error_with_wrong_num_files() -> anyhow::Result<()> {
         let local_dir = tempdir()?;
         let root_path = local_dir.path().join(SPLIT_CACHE_DIR_NAME);
-        fs::create_dir_all(root_path.to_path_buf()).await?;
+        fs::create_dir_all(&root_path).await?;
 
         fs::create_dir_all(&root_path.join("a.split")).await?;
         fs::create_dir_all(&root_path.join("b.split")).await?;
@@ -307,7 +307,7 @@ mod test_split_store {
     async fn test_create_should_error_with_wrong_num_bytes() -> anyhow::Result<()> {
         let local_dir = tempdir()?;
         let root_path = local_dir.path().join(SPLIT_CACHE_DIR_NAME);
-        fs::create_dir_all(root_path.to_path_buf()).await?;
+        fs::create_dir_all(&root_path).await?;
 
         fs::create_dir_all(&root_path.join("a.split")).await?;
         fs::create_dir_all(&root_path.join("b.split")).await?;
@@ -338,7 +338,7 @@ mod test_split_store {
     async fn test_create_should_accept_a_file_size_exeeding_constraint() -> anyhow::Result<()> {
         let local_dir = tempdir()?;
         let root_path = local_dir.path().join(SPLIT_CACHE_DIR_NAME);
-        fs::create_dir_all(root_path.to_path_buf()).await?;
+        fs::create_dir_all(&root_path).await?;
         fs::write(root_path.join("b.split"), b"abcd").await?;
         fs::write(root_path.join("a.split"), b"abcdefgh").await?;
 
@@ -612,7 +612,7 @@ mod test_split_store {
     async fn test_remove_danglings_splits_should_remove_files() -> anyhow::Result<()> {
         let local_dir = tempdir()?;
         let root_path = local_dir.path().join(SPLIT_CACHE_DIR_NAME);
-        fs::create_dir_all(root_path.to_path_buf()).await?;
+        fs::create_dir_all(&root_path).await?;
         fs::create_dir_all(&root_path.join("a.split")).await?;
         fs::create_dir_all(&root_path.join("b.split")).await?;
         fs::create_dir_all(&root_path.join("c.split")).await?;
@@ -674,7 +674,7 @@ mod test_split_store {
             let split_path = temp_dir.path().join("split1");
             fs::create_dir_all(&split_path).await?;
             let file_in_split = split_path.join("myfile");
-            fs::write(file_in_split.to_owned(), b"abcdefgh").await?;
+            fs::write(&file_in_split, b"abcdefgh").await?;
             let split_metadata1 = create_test_split_metadata("split1");
 
             split_store

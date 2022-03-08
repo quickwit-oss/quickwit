@@ -336,10 +336,10 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
         split_file,
         split_data,
     )?;
-    std::fs::create_dir_all(args.target_dir.to_owned())?;
+    std::fs::create_dir_all(&args.target_dir)?;
     for path in bundle_storage.iter_files() {
         let mut out_path = args.target_dir.to_owned();
-        out_path.push(path.to_owned());
+        out_path.push(path);
         println!("Copying {:?}", out_path);
         bundle_storage.copy_to_file(path, &out_path).await?;
     }
@@ -379,7 +379,7 @@ fn filter_splits(
     for split in splits {
         let is_any_tag_not_in_split = tags.iter().any(|tag| {
             let has_many_tags_for_field = tag
-                .split_once(":")
+                .split_once(':')
                 .map(|(field_name, _)| {
                     split
                         .split_metadata

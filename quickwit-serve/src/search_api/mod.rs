@@ -17,5 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub mod cluster;
-pub mod health_check;
+mod grpc_adapter;
+mod rest_handler;
+
+pub use self::grpc_adapter::GrpcSearchAdapter;
+pub use self::rest_handler::{search_get_handler, search_post_handler, search_stream_handler};

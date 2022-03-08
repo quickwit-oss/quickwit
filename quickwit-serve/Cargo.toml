@@ -26,7 +26,6 @@ quickwit-metastore = { version = "0.2.1", path = "../quickwit-metastore" }
 quickwit-telemetry = { version = "0.2.1", path = "../quickwit-telemetry" }
 quickwit-directories = { version = "0.2.1", path = "../quickwit-directories" }
 thiserror = "1"
-tonic = "0.6"
 async-trait = "0.1"
 termcolor = "1"
 bytes = "1"

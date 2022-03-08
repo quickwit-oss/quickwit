@@ -88,8 +88,7 @@ impl FieldMappingEntry {
             }
             FieldMappingType::Object(field_mappings) => field_mappings
                 .iter()
-                .map(|entry| entry.field_entries())
-                .flatten()
+                .flat_map(|entry| entry.field_entries())
                 .map(|(path, entry)| (path.with_parent(&self.name), entry))
                 .collect(),
         }
@@ -521,7 +520,7 @@ impl From<FieldMappingEntry> for FieldMappingEntryForSerialization {
     fn from(value: FieldMappingEntry) -> FieldMappingEntryForSerialization {
         let field_mappings = value
             .field_mappings()
-            .unwrap_or_else(Vec::new)
+            .unwrap_or_default()
             .into_iter()
             .map(FieldMappingEntryForSerialization::from)
             .collect();

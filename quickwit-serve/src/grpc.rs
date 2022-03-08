@@ -21,11 +21,12 @@ use std::net::SocketAddr;
 
 use quickwit_proto::cluster_service_server::ClusterServiceServer;
 use quickwit_proto::search_service_server::SearchServiceServer;
+use quickwit_proto::tonic;
 use tonic::transport::Server;
 use tracing::*;
 
-use crate::grpc_adapter::cluster_adapter::GrpcClusterAdapter;
-use crate::grpc_adapter::search_adapter::GrpcSearchAdapter;
+use crate::cluster_api::GrpcClusterAdapter;
+use crate::search_api::GrpcSearchAdapter;
 
 /// Start gRPC service given a gRPC address and a search service and cluster service.
 pub async fn start_grpc_service(

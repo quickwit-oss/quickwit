@@ -329,10 +329,7 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
         Self {
             store_source: value.store_source,
             timestamp_field: value.timestamp_field_name(),
-            field_mappings: value
-                .field_mappings
-                .field_mappings()
-                .unwrap_or_else(Vec::new),
+            field_mappings: value.field_mappings.field_mappings().unwrap_or_default(),
             demux_field: value.demux_field_name(),
             sort_by: sort_by_config,
             tag_fields: value.tag_field_names.into_iter().collect(),

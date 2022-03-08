@@ -272,7 +272,7 @@ mod tests {
     fn extract_position_delta(checkpoint_delta: &CheckpointDelta) -> Option<String> {
         let checkpoint_delta_str = format!("{:?}", checkpoint_delta);
         let (_left, right) =
-            &checkpoint_delta_str[..checkpoint_delta_str.len() - 2].rsplit_once("(")?;
+            &checkpoint_delta_str[..checkpoint_delta_str.len() - 2].rsplit_once('(')?;
         Some(right.to_string())
     }
 
