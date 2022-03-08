@@ -24,8 +24,8 @@ use quickwit_cluster::service::ClusterService;
 use serde::Deserialize;
 use warp::{Filter, Rejection};
 
-use crate::rest::Format;
-use crate::ApiError;
+use crate::error::ApiError;
+use crate::Format;
 
 /// Cluster handler.
 pub fn cluster_handler<TClusterService: ClusterService>(

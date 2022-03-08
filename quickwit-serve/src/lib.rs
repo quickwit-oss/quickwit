@@ -20,6 +20,7 @@
 mod args;
 mod counters;
 mod error;
+mod format;
 mod grpc;
 
 mod cluster_api;
@@ -30,19 +31,21 @@ mod rest;
 
 use std::sync::Arc;
 
+use format::Format;
 use quickwit_cluster::cluster::Cluster;
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_config::{QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_metastore::Metastore;
-use quickwit_search::{ClusterClient, SearchClientPool, SearchServiceImpl};
+use quickwit_search::{ClusterClient, SearchClientPool, SearchService, SearchServiceImpl};
 use quickwit_storage::quickwit_storage_uri_resolver;
 use tracing::{debug, info};
 
 pub use crate::args::ServeArgs;
 use crate::cluster_api::GrpcClusterAdapter;
 pub use crate::counters::COUNTERS;
-pub use crate::error::ApiError;
 use crate::grpc::start_grpc_service;
+#[cfg(test)]
+use crate::rest::recover_fn;
 use crate::rest::start_rest_service;
 use crate::search_api::GrpcSearchAdapter;
 
@@ -77,7 +80,8 @@ pub async fn run_searcher(
     let cluster_service = Arc::new(ClusterServiceImpl::new(cluster.clone()));
 
     let grpc_addr = quickwit_config.grpc_socket_addr()?;
-    let grpc_search_service = GrpcSearchAdapter::from(search_service.clone());
+    let grpc_search_service =
+        GrpcSearchAdapter::from(search_service.clone() as Arc<dyn SearchService>);
     let grpc_cluster_service = GrpcClusterAdapter::from(cluster_service.clone());
     let grpc_server = start_grpc_service(grpc_addr, grpc_search_service, grpc_cluster_service);
 
@@ -101,7 +105,7 @@ mod tests {
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::search_service_server::SearchServiceServer;
-    use quickwit_proto::OutputFormat;
+    use quickwit_proto::{tonic, OutputFormat};
     use quickwit_search::{root_search_stream, MockSearchService, SearchError, SearchService};
     use tokio_stream::wrappers::UnboundedReceiverStream;
     use tonic::transport::Server;
@@ -113,7 +117,7 @@ mod tests {
         address: SocketAddr,
         search_service: Arc<dyn SearchService>,
     ) -> anyhow::Result<()> {
-        let search_grpc_adpater = GrpcSearchAdapter::from_mock(search_service);
+        let search_grpc_adpater = GrpcSearchAdapter::from(search_service);
         let _ = tokio::spawn(async move {
             Server::builder()
                 .add_service(SearchServiceServer::new(search_grpc_adpater))

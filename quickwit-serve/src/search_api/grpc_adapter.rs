@@ -26,9 +26,12 @@ use opentelemetry::propagation::Extractor;
 use quickwit_proto::{
     search_service_server as grpc, tonic, LeafSearchStreamRequest, LeafSearchStreamResponse,
 };
-use quickwit_search::{SearchService, SearchServiceImpl};
+use quickwit_search::SearchService;
 use tracing::{instrument, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+// The `MetadataMap` thing here is used to extract open telemetry
+// tracing keys from request's headers.
 
 struct MetadataMap<'a>(&'a tonic::metadata::MetadataMap);
 
@@ -54,15 +57,8 @@ impl<'a> Extractor for MetadataMap<'a> {
 #[derive(Clone)]
 pub struct GrpcSearchAdapter(Arc<dyn SearchService>);
 
-impl GrpcSearchAdapter {
-    #[cfg(test)]
-    pub fn from_mock(mock_search_service_arc: Arc<dyn SearchService>) -> Self {
-        GrpcSearchAdapter(mock_search_service_arc)
-    }
-}
-
-impl From<Arc<SearchServiceImpl>> for GrpcSearchAdapter {
-    fn from(search_service_arc: Arc<SearchServiceImpl>) -> Self {
+impl From<Arc<dyn SearchService>> for GrpcSearchAdapter {
+    fn from(search_service_arc: Arc<dyn SearchService>) -> Self {
         GrpcSearchAdapter(search_service_arc)
     }
 }

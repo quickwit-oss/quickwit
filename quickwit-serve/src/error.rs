@@ -56,8 +56,7 @@ impl ApiError {
     }
 
     pub fn message(&self) -> String {
-        // TODO fixme
-        format!("{}", self)
+        self.to_string()
     }
 }
 

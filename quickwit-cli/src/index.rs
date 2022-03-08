@@ -578,7 +578,7 @@ pub async fn show_demux_stats(demux_field_name: &str, splits: &[Split]) {
     println!("===============================================================================");
     let demux_uniq_values: HashSet<String> = splits
         .iter()
-        .map(|split| {
+        .flat_map(|split| {
             split
                 .split_metadata
                 .tags
@@ -586,7 +586,6 @@ pub async fn show_demux_stats(demux_field_name: &str, splits: &[Split]) {
                 .filter(|tag| match_tag_field_name(demux_field_name, tag))
                 .cloned()
         })
-        .flatten()
         .collect();
     println!(
         "{:<35} {}",

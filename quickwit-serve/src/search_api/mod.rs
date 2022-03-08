@@ -18,5 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod grpc_adapter;
+mod rest_handler;
 
 pub use self::grpc_adapter::GrpcSearchAdapter;
+pub use self::rest_handler::{search_get_handler, search_post_handler, search_stream_handler};

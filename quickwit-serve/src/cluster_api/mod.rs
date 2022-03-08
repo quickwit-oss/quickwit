@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod grpc_adapter;
-mod handler;
+mod rest_handler;
 
 pub use grpc_adapter::GrpcClusterAdapter;
-pub use handler::cluster_handler;
+pub use rest_handler::cluster_handler;
