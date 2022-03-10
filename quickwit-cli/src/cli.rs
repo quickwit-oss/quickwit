@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::bail;
-use clap::{AppSettings, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use tracing::Level;
 
 use crate::index::{build_index_command, IndexCliCommand};

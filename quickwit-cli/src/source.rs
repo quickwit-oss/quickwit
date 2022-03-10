@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::{bail, Context};
-use clap::{arg, App, AppSettings, ArgMatches};
+use clap::{arg, ArgMatches, Command};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{SourceConfig, SourceParams};
@@ -31,11 +31,11 @@ use tabled::{Table, Tabled};
 
 use crate::{load_quickwit_config, make_table};
 
-pub fn build_source_command<'a>() -> App<'a> {
-    App::new("source")
+pub fn build_source_command<'a>() -> Command<'a> {
+    Command::new("source")
         .about("Manages sources.")
         .subcommand(
-            App::new("add")
+            Command::new("add")
                 .about("Adds a new source.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -46,7 +46,7 @@ pub fn build_source_command<'a>() -> App<'a> {
                 ])
             )
         .subcommand(
-            App::new("delete")
+            Command::new("delete")
                 .about("Deletes a source.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -55,7 +55,7 @@ pub fn build_source_command<'a>() -> App<'a> {
                 ])
             )
         .subcommand(
-            App::new("describe")
+            Command::new("describe")
                 .about("Describes a source.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -64,14 +64,14 @@ pub fn build_source_command<'a>() -> App<'a> {
                 ])
             )
         .subcommand(
-            App::new("list")
+            Command::new("list")
                 .about("List the sources of an index.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
                     arg!(--index <INDEX> "ID of the target index"),
                 ])
             )
-        .setting(AppSettings::ArgRequiredElseHelp)
+        .arg_required_else_help(true)
 }
 
 #[derive(Debug, PartialEq)]
@@ -222,7 +222,7 @@ impl SourceCliCommand {
 }
 
 async fn add_source_cli(args: AddSourceArgs) -> anyhow::Result<()> {
-    let config = load_quickwit_config(args.config_uri, None).await?;
+    let config = load_quickwit_config(&args.config_uri, None).await?;
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri())
         .await?;
@@ -247,7 +247,7 @@ async fn add_source_cli(args: AddSourceArgs) -> anyhow::Result<()> {
 }
 
 async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
-    let config = load_quickwit_config(args.config_uri, None).await?;
+    let config = load_quickwit_config(&args.config_uri, None).await?;
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri())
         .await?;
@@ -262,7 +262,7 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
 }
 
 async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
-    let quickwit_config = load_quickwit_config(args.config_uri, None).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri(), &args.index_id).await?;
     let source_checkpoint = index_metadata
         .checkpoint
@@ -315,7 +315,7 @@ where
 }
 
 async fn list_sources_cli(args: ListSourcesArgs) -> anyhow::Result<()> {
-    let quickwit_config = load_quickwit_config(args.config_uri, None).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, None).await?;
     let index_metadata = resolve_index(&quickwit_config.metastore_uri(), &args.index_id).await?;
     let table = make_list_sources_table(index_metadata.sources.into_values());
     display_tables(&[table]);
@@ -417,7 +417,6 @@ async fn resolve_index(metastore_uri: &str, index_id: &str) -> anyhow::Result<In
 mod tests {
     use std::path::Path;
 
-    use clap::AppSettings;
     use quickwit_metastore::checkpoint::{PartitionId, Position};
     use quickwit_storage::{quickwit_storage_uri_resolver, PutPayload};
     use serde_json::json;
@@ -472,7 +471,7 @@ mod tests {
 
     #[test]
     fn test_parse_add_source_args() {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app
             .try_get_matches_from(vec![
                 "source",
@@ -502,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_parse_delete_source_args() {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app
             .try_get_matches_from(vec![
                 "source",
@@ -527,7 +526,7 @@ mod tests {
 
     #[test]
     fn test_parse_describe_source_args() {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app
             .try_get_matches_from(vec![
                 "source",
@@ -603,7 +602,7 @@ mod tests {
 
     #[test]
     fn test_parse_list_sources_args() {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app
             .try_get_matches_from(vec![
                 "source",

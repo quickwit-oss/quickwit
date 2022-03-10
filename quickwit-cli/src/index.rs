@@ -25,7 +25,7 @@ use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
 use chrono::Utc;
-use clap::{arg, App, AppSettings, ArgMatches};
+use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
 use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType};
@@ -49,11 +49,11 @@ use crate::{
     load_quickwit_config, parse_duration_with_unit, run_index_checklist, THROUGHPUT_WINDOW_SIZE,
 };
 
-pub fn build_index_command<'a>() -> App<'a> {
-    App::new("index")
+pub fn build_index_command<'a>() -> Command<'a> {
+    Command::new("index")
         .about("Create your index, ingest data, search, describe... every command you need to manage indexes.")
         .subcommand(
-            App::new("create")
+            Command::new("create")
                 .about("Creates an index from an index config file.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -66,7 +66,7 @@ pub fn build_index_command<'a>() -> App<'a> {
                 ])
             )
         .subcommand(
-            App::new("ingest")
+            Command::new("ingest")
                 .about("Indexes JSON documents read from a file or streamed from stdin.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -81,7 +81,7 @@ pub fn build_index_command<'a>() -> App<'a> {
                 ])
             )
         .subcommand(
-            App::new("describe")
+            Command::new("describe")
                 .about("Displays descriptive statistics of an index: number of published splits, number of documents, splits min/max timestamps, size of splits.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -92,7 +92,7 @@ pub fn build_index_command<'a>() -> App<'a> {
                 ])
             )
         .subcommand(
-            App::new("search")
+            Command::new("search")
                 .about("Searches an index.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -119,7 +119,7 @@ pub fn build_index_command<'a>() -> App<'a> {
                 ])
             )
         .subcommand(
-            App::new("merge")
+            Command::new("merge")
                 .about("Merges an index.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -130,7 +130,7 @@ pub fn build_index_command<'a>() -> App<'a> {
                 ])
             )
         .subcommand(
-            App::new("demux")
+            Command::new("demux")
                 .about("Demuxes an index.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -141,7 +141,7 @@ pub fn build_index_command<'a>() -> App<'a> {
                 ])
             )
         .subcommand(
-            App::new("gc")
+            Command::new("gc")
                 .about("Garbage collects stale staged splits and splits marked for deletion.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -157,7 +157,7 @@ pub fn build_index_command<'a>() -> App<'a> {
                 ])
             )
         .subcommand(
-            App::new("delete")
+            Command::new("delete")
                 .about("Delete an index.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -169,7 +169,7 @@ pub fn build_index_command<'a>() -> App<'a> {
                         .required(false),
                 ])
             )
-        .setting(AppSettings::ArgRequiredElseHelp)
+        .arg_required_else_help(true)
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -475,7 +475,7 @@ impl IndexCliCommand {
 pub async fn describe_index_cli(args: DescribeIndexArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "describe");
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri())
         .await?;
@@ -696,7 +696,7 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "create-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Create).await;
 
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let file_content = load_file(&args.index_config_uri).await?;
     let index_config = IndexConfig::load(&args.index_config_uri, file_content.as_slice()).await?;
 
@@ -750,7 +750,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "ingest-docs");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Ingest).await;
 
-    let config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
 
     let source_params = if let Some(filepath) = args.input_path_opt.as_ref() {
         SourceParams::file(filepath)
@@ -810,7 +810,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
 
 pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchResponse> {
     debug!(args = ?args, "search-index");
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
@@ -847,7 +847,7 @@ pub async fn merge_or_demux_cli(
     demux_enabled: bool,
 ) -> anyhow::Result<()> {
     debug!(args = ?args, merge_enabled = merge_enabled, demux_enabled = demux_enabled, "run-merge-operations");
-    let config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     run_index_checklist(&config.metastore_uri(), &args.index_id, None).await?;
     let indexer_config = IndexerConfig {
         ..Default::default()
@@ -878,7 +878,7 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "delete-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::Delete).await;
 
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let affected_files = delete_index(
         &quickwit_config.metastore_uri(),
         &args.index_id,
@@ -907,7 +907,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     debug!(args = ?args, "garbage-collect-index");
     quickwit_telemetry::send_telemetry_event(TelemetryEvent::GarbageCollect).await;
 
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let deleted_files = garbage_collect_index(
         &quickwit_config.metastore_uri(),
         &args.index_id,

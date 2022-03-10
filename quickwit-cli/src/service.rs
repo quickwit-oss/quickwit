@@ -20,7 +20,7 @@
 use std::path::PathBuf;
 
 use anyhow::bail;
-use clap::{arg, App, AppSettings, ArgMatches};
+use clap::{arg, ArgMatches, Command};
 use quickwit_common::run_checklist;
 use quickwit_common::uri::Uri;
 use quickwit_indexing::actors::IndexingServer;
@@ -32,14 +32,14 @@ use tracing::debug;
 
 use crate::load_quickwit_config;
 
-pub fn build_service_command<'a>() -> App<'a> {
-    App::new("service")
+pub fn build_service_command<'a>() -> Command<'a> {
+    Command::new("service")
         .about("Launches services.")
         .subcommand(
-            App::new("run")
+            Command::new("run")
             .about("Starts a service. Currently, the only services available are `indexer` and `searcher`.")
             .subcommand(
-                App::new("indexer")
+                Command::new("indexer")
                     .about("Starts an indexing process, aka an `indexer`.")
                     .args(&[
                         arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -51,7 +51,7 @@ pub fn build_service_command<'a>() -> App<'a> {
                     ])
                 )
             .subcommand(
-                App::new("searcher")
+                Command::new("searcher")
                     .about("Starts a search process, aka a `searcher`.")
                     .args(&[
                         arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -61,7 +61,7 @@ pub fn build_service_command<'a>() -> App<'a> {
                     ])
                 )
             )
-        .setting(AppSettings::ArgRequiredElseHelp)
+        .arg_required_else_help(true)
 }
 
 #[derive(Debug, PartialEq)]
@@ -151,7 +151,7 @@ async fn run_indexer_cli(args: RunIndexerArgs) -> anyhow::Result<()> {
     let telemetry_event = TelemetryEvent::RunService("indexer".to_string());
     quickwit_telemetry::send_telemetry_event(telemetry_event).await;
 
-    let config = load_quickwit_config(args.config_uri, args.data_dir_path).await?;
+    let config = load_quickwit_config(&args.config_uri, args.data_dir_path).await?;
     let metastore = quickwit_metastore_uri_resolver()
         .resolve(&config.metastore_uri())
         .await?;
@@ -177,7 +177,7 @@ async fn run_searcher_cli(args: RunSearcherArgs) -> anyhow::Result<()> {
     let telemetry_event = TelemetryEvent::RunService("searcher".to_string());
     quickwit_telemetry::send_telemetry_event(telemetry_event).await;
 
-    let config = load_quickwit_config(args.config_uri, args.data_dir_path).await?;
+    let config = load_quickwit_config(&args.config_uri, args.data_dir_path).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&config.metastore_uri())
@@ -197,8 +197,8 @@ mod tests {
 
     #[test]
     fn test_parse_run_searcher_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
-        let matches = app.try_get_matches_from(vec![
+        let Command = build_cli().setting(AppSettings::NoBinaryName);
+        let matches = Command.try_get_matches_from(vec![
             "service",
             "run",
             "searcher",
@@ -219,8 +219,8 @@ mod tests {
 
     #[test]
     fn test_parse_run_indexer_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
-        let matches = app.try_get_matches_from(vec![
+        let command = build_cli().no_binary_name(true);
+        let matches = command.try_get_matches_from(vec![
             "service",
             "run",
             "indexer",

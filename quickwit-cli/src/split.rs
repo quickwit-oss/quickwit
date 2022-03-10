@@ -23,7 +23,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context};
 use chrono::{NaiveDate, NaiveDateTime};
-use clap::{arg, App, AppSettings, ArgMatches, Command};
+use clap::{arg, ArgMatches, Command};
 use humansize::{file_size_opts, FileSize};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
@@ -267,7 +267,7 @@ impl SplitCliCommand {
 async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "list-split");
 
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri())
@@ -291,7 +291,7 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
 async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "describe-split");
 
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
@@ -321,7 +321,7 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
 async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "extract-split");
 
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
