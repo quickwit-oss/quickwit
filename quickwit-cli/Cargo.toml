@@ -22,7 +22,7 @@ path = "src/generate_markdown.rs"
 async-trait = "0.1"
 anyhow = "1"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
-clap = { version = "=3.0.14", features = ["yaml", "env"] }
+clap = { version = "= 3.1", features = ["yaml", "env", "derive"] }
 quickwit-actors = { version = "0.2.1", path = "../quickwit-actors" }
 quickwit-core = { version = "0.2.1", path = "../quickwit-core" }
 quickwit-directories = { version = "0.2.1", path = "../quickwit-directories" }
