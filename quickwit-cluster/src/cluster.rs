@@ -43,7 +43,7 @@ pub struct Member {
     /// An ID that makes a member unique.
     pub node_unique_id: String,
     /// timestamp (ms) when node starts.
-    pub generation: i64,
+    pub generation: u64,
     /// advertised UdpServerSocket
     pub gossip_public_address: SocketAddr,
     /// If true, it means self.
@@ -51,7 +51,7 @@ pub struct Member {
 }
 
 impl Member {
-    pub fn new(node_unique_id: String, generation: i64, gossip_public_address: SocketAddr) -> Self {
+    pub fn new(node_unique_id: String, generation: u64, gossip_public_address: SocketAddr) -> Self {
         Self {
             node_unique_id,
             gossip_public_address,

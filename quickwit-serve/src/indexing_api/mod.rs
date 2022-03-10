@@ -17,23 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("cargo:rerun-if-changed=proto/cluster.proto");
-    println!("cargo:rerun-if-changed=proto/search_api.proto");
+mod rest_handler;
 
-    let mut prost_config = prost_build::Config::default();
-    // prost_config.type_attribute("LeafSearchResponse", "#[derive(Default)]");
-    prost_config.protoc_arg("--experimental_allow_proto3_optional");
-    tonic_build::configure()
-        .type_attribute(
-            ".",
-            "#[derive(Serialize, Deserialize)]\n#[serde(rename_all = \"camelCase\")]",
-        )
-        .out_dir("src/")
-        .compile_with_config(
-            prost_config,
-            &["./proto/cluster.proto", "./proto/search_api.proto"],
-            &["./proto"],
-        )?;
-    Ok(())
-}
+pub use rest_handler::indexing_get_handler;

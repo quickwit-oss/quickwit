@@ -117,4 +117,18 @@ impl Format {
             Err(err) => self.make_reply_for_err(err),
         }
     }
+
+    pub(crate) fn make_rest_reply_non_serializable_error<T, E>(
+        self,
+        result: Result<T, E>,
+    ) -> WithStatus<WithHeader<String>>
+    where
+        T: serde::Serialize,
+        E: ServiceError + ToString,
+    {
+        self.make_rest_reply(result.map_err(|err| FormatError {
+            code: err.status_code(),
+            error: err.to_string(),
+        }))
+    }
 }

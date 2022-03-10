@@ -21,88 +21,129 @@ mod args;
 mod counters;
 mod error;
 mod format;
+
 mod grpc;
+mod rest;
 
 mod cluster_api;
 mod health_check_api;
+mod indexing_api;
 mod search_api;
 
-mod rest;
-
+use std::collections::HashSet;
 use std::sync::Arc;
 
-use chrono::Utc;
+use anyhow::bail;
 use format::Format;
-use quickwit_cluster::cluster::{Cluster, Member};
-use quickwit_cluster::service::ClusterServiceImpl;
-use quickwit_config::{QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
-use quickwit_metastore::Metastore;
-use quickwit_search::{ClusterClient, SearchClientPool, SearchService, SearchServiceImpl};
+use quickwit_actors::{Mailbox, Universe};
+use quickwit_cluster::ClusterService;
+use quickwit_config::QuickwitConfig;
+use quickwit_indexing::actors::IndexingServer;
+use quickwit_indexing::start_indexer_service;
+use quickwit_metastore::quickwit_metastore_uri_resolver;
+use quickwit_search::{start_searcher_service, SearchService};
 use quickwit_storage::quickwit_storage_uri_resolver;
-use scuttlebutt::FailureDetectorConfig;
-use tracing::info;
+use warp::{Filter, Rejection};
 
 pub use crate::args::ServeArgs;
-use crate::cluster_api::GrpcClusterAdapter;
 pub use crate::counters::COUNTERS;
-use crate::grpc::start_grpc_service;
 #[cfg(test)]
 use crate::rest::recover_fn;
-use crate::rest::start_rest_service;
-use crate::search_api::GrpcSearchAdapter;
 
-/// Starts a search node, aka a `searcher`.
-pub async fn run_searcher(
-    quickwit_config: QuickwitConfig,
-    metastore: Arc<dyn Metastore>,
+fn require<T: Clone + Send>(
+    val_opt: Option<T>,
+) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
+    warp::any().and_then(move || {
+        let val_opt_clone = val_opt.clone();
+        async move {
+            if let Some(val) = val_opt_clone {
+                Ok(val)
+            } else {
+                Err(warp::reject())
+            }
+        }
+    })
+}
+
+#[derive(Debug, PartialEq, Eq, Copy, Hash, Clone)]
+pub enum QuickwitService {
+    Indexer,
+    Searcher,
+}
+
+impl TryFrom<&str> for QuickwitService {
+    type Error = anyhow::Error;
+
+    fn try_from(service_str: &str) -> Result<Self, Self::Error> {
+        match service_str {
+            "indexer" => Ok(QuickwitService::Indexer),
+            "searcher" => Ok(QuickwitService::Searcher),
+            _ => {
+                bail!("Service `{service_str}` unknown");
+            }
+        }
+    }
+}
+struct QuickwitServices {
+    pub cluster_service: Arc<dyn ClusterService>,
+    pub search_service: Option<Arc<dyn SearchService>>,
+    pub indexer_service: Option<Mailbox<IndexingServer>>,
+}
+
+pub async fn serve_quickwit(
+    config: &QuickwitConfig,
+    services: &HashSet<QuickwitService>,
 ) -> anyhow::Result<()> {
-    SEARCHER_CONFIG_INSTANCE
-        .set(quickwit_config.searcher_config.clone())
-        .expect("could not set searcher config in global once cell");
+    let metastore = quickwit_metastore_uri_resolver()
+        .resolve(&config.metastore_uri())
+        .await?;
+    let storage_resolver = quickwit_storage_uri_resolver().clone();
 
-    let seed_nodes = quickwit_config
-        .seed_socket_addrs()?
-        .iter()
-        .map(|addr| addr.to_string())
-        .collect::<Vec<_>>();
+    let cluster_service = quickwit_cluster::start_cluster_service(config).await?;
 
-    let member = Member::new(
-        quickwit_config.node_id.clone(),
-        Utc::now().timestamp(),
-        quickwit_config.gossip_public_addr()?,
-    );
-    let cluster = Arc::new(Cluster::new(
-        member,
-        quickwit_config.gossip_socket_addr()?,
-        quickwit_config.grpc_socket_addr()?,
-        &seed_nodes,
-        FailureDetectorConfig::default(),
-    )?);
-    let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
-    let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await?;
-    let cluster_client = ClusterClient::new(client_pool.clone());
-    let search_service = Arc::new(SearchServiceImpl::new(
-        metastore,
-        storage_uri_resolver,
-        cluster_client,
-        client_pool,
-    ));
+    let universe = Universe::new();
+    let indexer_service: Option<Mailbox<IndexingServer>> =
+        if services.contains(&QuickwitService::Indexer) {
+            let indexer_service = start_indexer_service(
+                &universe,
+                config,
+                metastore.clone(),
+                storage_resolver.clone(),
+            )
+            .await?;
+            Some(indexer_service)
+        } else {
+            None
+        };
 
-    let cluster_service = Arc::new(ClusterServiceImpl::new(cluster.clone()));
+    let search_service: Option<Arc<dyn SearchService>> =
+        if services.contains(&QuickwitService::Searcher) {
+            let search_service = start_searcher_service(
+                config,
+                metastore.clone(),
+                storage_resolver,
+                cluster_service.clone(),
+            )
+            .await?;
+            Some(search_service)
+        } else {
+            None
+        };
 
-    let grpc_addr = quickwit_config.grpc_socket_addr()?;
-    let grpc_search_service =
-        GrpcSearchAdapter::from(search_service.clone() as Arc<dyn SearchService>);
-    let grpc_cluster_service = GrpcClusterAdapter::from(cluster_service.clone());
-    let grpc_server = start_grpc_service(grpc_addr, grpc_search_service, grpc_cluster_service);
+    let quickwit_services = QuickwitServices {
+        cluster_service,
+        search_service,
+        indexer_service,
+    };
 
-    let rest_socket_addr = quickwit_config.rest_socket_addr()?;
-    let rest_server = start_rest_service(rest_socket_addr, search_service, cluster_service);
-    info!(
-        "Searcher ready to accept requests at http://{}/",
-        rest_socket_addr
-    );
+    let rest_addr = config.rest_socket_addr()?;
+    let grpc_addr = config.grpc_socket_addr()?;
+
+    let grpc_server = grpc::start_grpc_server(grpc_addr, &quickwit_services);
+    let rest_server = rest::start_rest_server(rest_addr, &quickwit_services);
+
     tokio::try_join!(rest_server, grpc_server)?;
+
     Ok(())
 }
 
@@ -117,11 +158,13 @@ mod tests {
     use quickwit_metastore::{IndexMetadata, MockMetastore, SplitState};
     use quickwit_proto::search_service_server::SearchServiceServer;
     use quickwit_proto::{tonic, OutputFormat};
-    use quickwit_search::{root_search_stream, MockSearchService, SearchError, SearchService};
+    use quickwit_search::{
+        root_search_stream, ClusterClient, MockSearchService, SearchClientPool, SearchError,
+        SearchService,
+    };
     use tokio_stream::wrappers::UnboundedReceiverStream;
     use tonic::transport::Server;
 
-    use super::*;
     use crate::search_api::GrpcSearchAdapter;
 
     async fn start_test_server(

@@ -41,7 +41,7 @@ use crate::actors::{
     GarbageCollector, Indexer, MergeExecutor, MergePlanner, NamedField, Packager, Publisher,
     Uploader,
 };
-use crate::models::{IndexingDirectory, IndexingStatistics};
+use crate::models::{IndexingDirectory, IndexingStatistics, Observe};
 use crate::source::{quickwit_supported_sources, SourceActor};
 use crate::split_store::{IndexingSplitStore, IndexingSplitStoreParams};
 use crate::{MergePolicy, StableMultitenantWithTimestampMergePolicy};
@@ -70,9 +70,6 @@ pub struct IndexingPipelineHandler {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Supervise;
-
-#[derive(Debug, Clone, Copy)]
-pub struct Observe;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Spawn {

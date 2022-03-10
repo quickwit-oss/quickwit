@@ -338,16 +338,25 @@ Possible values are `staged`, `published`, and `marked`.
 `--tags` Comma-separated list of tags, only splits that contain all of the tags will be returned.
 `--config` Quickwit config file.
 `--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-## service
-Launches services.
 
-### service run
 
-Starts a service. Currently, the only services available are `indexer` and `searcher`.
-`quickwit service run [args]`
-### service run searcher
+## run
 
-Starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
+Starts quickwit services. By default, both `search` and `indexing` will be started.
+It is however possible to specifically run only one of these services by adding a `--service` parameter.
+
+:::
+`quickwit run [args]`
+
+*Options*
+
+`--service` Selects a specific service to run. (searcher or indexer)
+`--config` Quickwit config file.
+`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
+
+### Searcher service
+
+The searcher service starts a web server at `rest_listing_address:rest_list_port` that exposes the [Quickwit REST API](rest-api.md)
 where `rest_listing_address` and `rest_list_port` are defined in Quickwit config file (quickwit.yaml).
 The node can optionally join a cluster using the `peer_seeds` parameter.
 This list of node addresses is used to discover the remaining peer nodes in the cluster through a gossip protocol (SWIM).
@@ -355,40 +364,26 @@ This list of node addresses is used to discover the remaining peer nodes in the 
 :::note
 Behind the scenes, Quickwit needs to open the following port for cluster formation and workload distribution:
 
-    TCP port (default is 7280) for REST API
-    TCP and UDP port (default is 7280) for cluster membership protocol
-    TCP port + 1 (default is 7281) for gRPC address for the distributed search
+| name        | purpose                                  | protocol | default value |
+|-------------|------------------------------------------|----------|---------------|
+| rest port   | Serves Quickwit's UI and REST API        | TCP      | 7280          |
+| gossip port | Serves for Quickwit's cluster membership | UDP      | rest_port     |
+| grpc port   | Serves Quickwit's gRPC API               | TCP      | rest_port + 1 |
 
 If ports are already taken, the serve command will fail.
-
-:::
-`quickwit service run searcher [args]`
-
-*Synopsis*
-
-```bash
-quickwit service run searcher
-    --config <config>
-    [--data-dir <data-dir>]
-```
-
-*Options*
-
-`--config` Quickwit config file.
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
 
 *Examples*
 
 *Start a Searcher*
 ```bash
-quickwit service run searcher --config=./config/quickwit.yaml
+quickwit run --service searcher --config=./config/quickwit.yaml
 ```
 
 *Make a search request on a wikipedia index*
 ```bash
 # To create wikipedia index and ingest data, go to our tutorial https://quickwit.io/docs/get-started/quickstart.
 # Start a searcher.
-quickwit service run searcher --config=./config/quickwit.yaml
+quickwit run --service searcher --config=./config/quickwit.yaml
 # Make a request.
 curl "http://127.0.0.1:7280/api/v1/wikipedia/search?query=barack+obama"
 ```
@@ -401,42 +396,16 @@ quickwit index create --index-config gh_archive_index_config.yaml --config ./con
 # Download a data sample and ingest it.
 curl https://quickwit-datasets-public.s3.amazonaws.com/gh-archive-2022-01-text-only-10000.json.gz | gunzip | cargo r index ingest --index gh-archive --config=./config/quickwit.yaml
 # Start server.
-quickwit service run searcher --config=./config/quickwit.yaml
+quickwit run --service searcher --config=./config/quickwit.yaml
 # Finally make the search stream request.
 curl "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j&fastField=id&outputFormat=csv"
 # Make a search stream request with HTTP2.
 curl --http2-prior-knowledge "http://127.0.0.1:7280/api/v1/gh-archive/search/stream?query=log4j&fastField=id&outputFormat=csv"
 ```
 
-### service run indexer
+### Indexer service
 
-Starts an indexing server that consumes the sources of index IDs passed in `--indexes` argument.
-
-`quickwit service run indexer [args]`
-
-*Synopsis*
-
-```bash
-quickwit service run indexer
-    --config <config>
-    [--data-dir <data-dir>]
-    --indexes <indexes>
-```
-
-*Options*
-
-`--config` Quickwit config file.
-`--data-dir` Where data is persisted. Override data-dir defined in config file, default is `./qwdata`.
-`--indexes` IDs of the indexes to run the indexer for.
-
-*Examples*
-
-*Add a source to an index and start an Indexer*
-```bash
-quickwit source add --index wikipedia --source wikipedia-source --type file --params '{"filepath":"wiki-articles-10000.json"}'
-quickwit service run indexer --indexes wikipedia --config=./config/quickwit.yaml
-
-```
+The indexer service will list indexes and their associated sources, and run an indexing pipeline for every single source.
 
 ## source
 Manages sources.

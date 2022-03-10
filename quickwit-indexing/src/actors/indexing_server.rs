@@ -33,8 +33,8 @@ use thiserror::Error;
 use tracing::{error, info};
 
 use crate::models::{
-    DetachPipeline, IndexingPipelineId, ObservePipeline, SpawnMergePipeline, SpawnPipeline,
-    SpawnPipelinesForIndex,
+    DetachPipeline, IndexingPipelineId, Observe, ObservePipeline, SpawnMergePipeline,
+    SpawnPipeline, SpawnPipelinesForIndex,
 };
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingStatistics};
 
@@ -347,6 +347,18 @@ impl Handler<SpawnPipeline> for IndexingServer {
 }
 
 #[async_trait]
+impl Handler<Observe> for IndexingServer {
+    type Reply = Self::ObservableState;
+    async fn handle(
+        &mut self,
+        _message: Observe,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::ObservableState, ActorExitStatus> {
+        Ok(self.observable_state())
+    }
+}
+
+#[async_trait]
 impl Handler<SpawnPipelinesForIndex> for IndexingServer {
     type Reply = Result<Vec<IndexingPipelineId>, IndexingServerError>;
     async fn handle(
@@ -390,7 +402,7 @@ mod tests {
         let indexer_config = IndexerConfig::for_test().unwrap();
         let storage_resolver = StorageUriResolver::for_test();
         let indexing_server = IndexingServer::new(
-            data_dir_path.clone(),
+            data_dir_path,
             indexer_config,
             metastore.clone(),
             storage_resolver.clone(),
