@@ -23,7 +23,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context};
 use chrono::{NaiveDate, NaiveDateTime};
-use clap::{arg, App, AppSettings, ArgMatches};
+use clap::{arg, ArgMatches, Command};
 use humansize::{file_size_opts, FileSize};
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
@@ -37,11 +37,11 @@ use tracing::debug;
 
 use crate::{load_quickwit_config, make_table};
 
-pub fn build_split_command<'a>() -> App<'a> {
-    App::new("split")
+pub fn build_split_command<'a>() -> Command<'a> {
+    Command::new("split")
         .about("Operations (list, add, delete, describe...) on splits.")
         .subcommand(
-            App::new("list")
+            Command::new("list")
                 .about("List the splits of an index.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -51,11 +51,11 @@ pub fn build_split_command<'a>() -> App<'a> {
                         .required(false),
                     arg!(--tags <TAGS> "Comma-separated list of tags, only splits that contain all of the tags will be returned.")
                         .multiple_occurrences(true)
-                        .use_delimiter(true)
+                        .use_value_delimiter(true)
                         .required(false),
                     arg!(--states <SPLIT_STATES> "Comma-separated list of split states to filter on. Possible values are `staged`, `published`, and `marked`.")
                         .multiple_occurrences(true)
-                        .use_delimiter(true)
+                        .use_value_delimiter(true)
                         .required(false),
                     arg!(--"start-date" <START_TIMESTAMP> "Filters out splits containing documents from this timestamp onwards (time-series indexes only).")
                         .required(false),
@@ -64,7 +64,7 @@ pub fn build_split_command<'a>() -> App<'a> {
                 ])
             )
         .subcommand(
-            App::new("extract")
+            Command::new("extract")
                 .about("Downloads and extracts a split to a directory.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -77,7 +77,7 @@ pub fn build_split_command<'a>() -> App<'a> {
                 ])
             )
         .subcommand(
-            App::new("describe")
+            Command::new("describe")
                 .about("Displays metadata about the split.")
                 .args(&[
                     arg!(--config <CONFIG> "Quickwit config file").env("QW_CONFIG"),
@@ -89,7 +89,7 @@ pub fn build_split_command<'a>() -> App<'a> {
                         .required(false),
                 ])
             )
-        .setting(AppSettings::ArgRequiredElseHelp)
+        .arg_required_else_help(true)
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -267,7 +267,7 @@ impl SplitCliCommand {
 async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "list-split");
 
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
         .resolve(&quickwit_config.metastore_uri())
@@ -291,7 +291,7 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
 async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "describe-split");
 
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
@@ -321,7 +321,7 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
 async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     debug!(args = ?args, "extract-split");
 
-    let quickwit_config = load_quickwit_config(args.config_uri, args.data_dir).await?;
+    let quickwit_config = load_quickwit_config(&args.config_uri, args.data_dir).await?;
     let storage_uri_resolver = quickwit_storage_uri_resolver();
     let metastore_uri_resolver = quickwit_metastore_uri_resolver();
     let metastore = metastore_uri_resolver
