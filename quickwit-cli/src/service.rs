@@ -190,15 +190,13 @@ async fn run_searcher_cli(args: RunSearcherArgs) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
 
-    use clap::AppSettings;
-
     use super::*;
     use crate::cli::{build_cli, CliCommand};
 
     #[test]
     fn test_parse_run_searcher_args() -> anyhow::Result<()> {
-        let Command = build_cli().setting(AppSettings::NoBinaryName);
-        let matches = Command.try_get_matches_from(vec![
+        let command = build_cli().no_binary_name(true);
+        let matches = command.try_get_matches_from(vec![
             "service",
             "run",
             "searcher",

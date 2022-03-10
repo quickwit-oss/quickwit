@@ -469,7 +469,6 @@ mod tests {
     use std::path::PathBuf;
 
     use chrono::NaiveDateTime;
-    use clap::AppSettings;
     use quickwit_metastore::SplitMetadata;
 
     use super::*;
@@ -477,7 +476,7 @@ mod tests {
 
     #[test]
     fn test_parse_list_split_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "split",
             "list",
@@ -506,7 +505,7 @@ mod tests {
             && tags == BTreeSet::from(["foo:bar".to_string(), "bar:baz".to_string()])
         ));
 
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "split",
             "list",
@@ -526,7 +525,7 @@ mod tests {
 
     #[test]
     fn test_parse_split_describe_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "split",
             "describe",
@@ -552,7 +551,7 @@ mod tests {
 
     #[test]
     fn test_parse_split_extract_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "split",
             "extract",
