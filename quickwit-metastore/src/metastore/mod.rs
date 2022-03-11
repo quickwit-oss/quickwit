@@ -154,13 +154,13 @@ pub trait Metastore: Send + Sync + 'static {
     async fn delete_splits<'a>(&self, index_id: &str, split_ids: &[&'a str])
         -> MetastoreResult<()>;
 
-    /// Adds a new source. Fails with [`MetastoreError::SourceAlreadyExists`] if a source with the
+    /// Adds a new source. Fails with [`SourceAlreadyExists`](crate::MetastoreError::SourceAlreadyExists) if a source with the
     /// same ID is already defined for the index.
     ///
     /// If a checkpoint is already registered for the source, it is kept.
     async fn add_source(&self, index_id: &str, source: SourceConfig) -> MetastoreResult<()>;
 
-    /// Deletes a source. Fails with [`MetastoreError::SourceDoesNotExist`] if the specified source
+    /// Deletes a source. Fails with [`SourceDoesNotExist`](crate::MetastoreError::SourceDoesNotExist) if the specified source
     /// does not exist.
     ///
     /// The checkpoint associated to the source is deleted as well.

@@ -84,7 +84,7 @@ impl Storage for PrefixStorage {
     }
 }
 
-/// Creates a [`PrefixStorage`] using an underlying storage and a prefix.
+/// Creates a [`Storage`] object using an underlying storage and a prefix.
 pub fn add_prefix_to_storage<P: Into<PathBuf>>(
     storage: Arc<dyn Storage>,
     prefix: P,

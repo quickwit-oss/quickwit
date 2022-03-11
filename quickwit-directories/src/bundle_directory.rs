@@ -34,8 +34,8 @@ use tantivy::{Directory, HasLen};
 /// It is the `Directory` equivalent of `BundleStorage`.
 ///
 /// Split Format:
-/// [Files][FilesMetadata][FilesMetadata length 8 byte Little endian][Hotcache][Hotcache length 8
-/// byte Little endian]
+/// `[Files][FilesMetadata][FilesMetadata length 8 byte Little endian][Hotcache][Hotcache length 8
+/// byte Little endian]`
 #[derive(Clone)]
 pub struct BundleDirectory {
     file: FileSlice,
@@ -84,7 +84,7 @@ fn split_footer(file_slice: FileSlice) -> io::Result<(FileSlice, FileSlice)> {
     Ok(body_and_footer_slice.split_from_end(footer_len as usize))
 }
 
-/// Return two slices for given split: [body and bundle meta data] [hotcache]
+/// Return two slices for given split: `[body and bundle meta data] [hotcache]`
 pub fn get_hotcache_from_split(data: OwnedBytes) -> io::Result<OwnedBytes> {
     let split_file = FileSlice::new(Box::new(data));
     let (_, hotcache) = split_footer(split_file)?;

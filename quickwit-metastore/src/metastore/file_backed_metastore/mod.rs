@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 //! Module for [`FileBackedMetastore`]. It is public so that the crate `quickwit-backward-compat`
-//! can import [`FiledBackedIndex`] and run backward-compatibility tests. You should not have to
+//! can import [`FileBackedIndex`] and run backward-compatibility tests. You should not have to
 //! import anything from here directly.
 
 pub mod file_backed_index;
@@ -150,7 +150,9 @@ impl FileBackedMetastore {
     }
 
     async fn read<T, F>(&self, index_id: &str, view: F) -> MetastoreResult<T>
-    where F: FnOnce(&FileBackedIndex) -> MetastoreResult<T> {
+    where
+        F: FnOnce(&FileBackedIndex) -> MetastoreResult<T>,
+    {
         let locked_index = self.get_locked_index(index_id).await?;
         view(&*locked_index)
     }
