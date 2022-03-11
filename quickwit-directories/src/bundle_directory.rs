@@ -76,7 +76,7 @@ pub async fn read_split_footer(
     Ok((split_footer, only_bundle_footer))
 }
 
-/// Return two slices for given split: [body and bundle meta data] [hotcache]
+/// Return two slices for given split: `[body and bundle meta data] [hotcache]`
 fn split_footer(file_slice: FileSlice) -> io::Result<(FileSlice, FileSlice)> {
     let (body_and_footer_slice, footer_len_slice) = file_slice.split_from_end(8);
     let footer_len_bytes = footer_len_slice.read_bytes()?;
