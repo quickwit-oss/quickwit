@@ -26,6 +26,7 @@ use std::sync::{Arc, RwLock};
 
 use http::Uri;
 use quickwit_cluster::cluster::{Cluster, Member};
+use quickwit_proto::tonic;
 use tokio_stream::StreamExt;
 use tonic::transport::Endpoint;
 use tracing::*;

@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use clap::{App, AppSettings, ArgSettings};
+use clap::Command;
 use quickwit_cli::cli::build_cli;
 use toml::Value;
 
@@ -31,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = build_cli()
         .version(version_text.as_str())
-        .setting(AppSettings::DisableHelpSubcommand);
+        .disable_help_subcommand(true);
 
     generate_markdown_from_clap(&app);
 
@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn markdown_for_subcommand(
-    subcommand: &App,
+    subcommand: &Command,
     command_group: Vec<String>,
     doc_extensions: &toml::Value,
 ) {
@@ -94,7 +94,7 @@ fn markdown_for_subcommand(
 
     let arguments = subcommand
         .get_arguments()
-        .filter(|arg| !(arg.get_name() == "help" || arg.get_name() == "version"))
+        .filter(|arg| !(arg.get_id() == "help" || arg.get_id() == "version"))
         .collect::<Vec<_>>();
     if !arguments.is_empty() {
         println!("\n*Synopsis*\n");
@@ -102,12 +102,12 @@ fn markdown_for_subcommand(
         println!("```bash");
         println!("quickwit {}", command_name);
         for arg in &arguments {
-            let is_required = arg.is_set(ArgSettings::Required);
-            let is_bool = !arg.is_set(ArgSettings::TakesValue);
+            let is_required = arg.is_required_set();
+            let is_bool = !arg.is_takes_value_set();
 
-            let mut commando = format!("--{}", arg.get_name());
+            let mut commando = format!("--{}", arg.get_id());
             if !is_bool {
-                commando = format!("{} <{}>", commando, arg.get_name());
+                commando = format!("{} <{}>", commando, arg.get_id());
             }
             if !is_required {
                 commando = format!("[{}]", commando);
@@ -125,7 +125,7 @@ fn markdown_for_subcommand(
             };
             println!(
                 "`--{}` {}{}    ", // space is line break
-                arg.get_name(),
+                arg.get_id(),
                 arg.get_help_heading().unwrap_or_default(),
                 default
             );
@@ -144,11 +144,11 @@ fn markdown_for_subcommand(
     }
 }
 
-fn generate_markdown_from_clap(app: &App) {
+fn generate_markdown_from_clap(command: &Command) {
     let ext_toml = include_str!("cli_doc_ext.toml");
     let doc_extensions: Value = ext_toml.parse::<Value>().unwrap();
 
-    let commands = app.get_subcommands();
+    let commands = command.get_subcommands();
     for command in commands {
         let command_name = command.get_name(); // index, split, source, service
         println!("## {}", command_name);

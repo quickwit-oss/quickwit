@@ -56,7 +56,7 @@ fn contains_port(addr: &str) -> bool {
 /// - IPv4
 /// - IPv4:port
 /// - IPv6
-/// - [IPv6]:port -- IpV6 contains colon. It is customary to require bracket for this reason.
+/// - \[IPv6\]:port -- IpV6 contains colon. It is customary to require bracket for this reason.
 /// - hostname
 /// - hostname:port
 /// with or without a port.

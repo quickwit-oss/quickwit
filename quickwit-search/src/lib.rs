@@ -51,6 +51,8 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{Metastore, SplitMetadata, SplitState};
 use quickwit_proto::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageUriResolver;
+use tantivy::aggregation::agg_result::AggregationResults;
+use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::DocAddress;
 
 pub use crate::client::SearchServiceClient;
@@ -189,6 +191,15 @@ pub async fn single_node_search(
     .context("Failed to perform fetch docs.")?;
     let elapsed = start_instant.elapsed();
     Ok(SearchResponse {
+        aggregation: leaf_search_response
+            .intermediate_aggregation_result
+            .map(|res| {
+                let res: IntermediateAggregationResults = serde_json::from_str(&res)?;
+                let res: AggregationResults = res.into();
+                serde_json::to_string(&res)
+            })
+            .transpose()
+            .map_err(|err| SearchError::InternalError(err.to_string()))?,
         num_hits: leaf_search_response.num_hits,
         hits: fetch_docs_response.hits,
         elapsed_time_micros: elapsed.as_micros() as u64,

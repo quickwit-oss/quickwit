@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use tantivy::schema::{BytesOptions, Cardinality, IntOptions, TextOptions};
+use tantivy::schema::{BytesOptions, Cardinality, NumericOptions, TextOptions};
 
 use super::FieldMappingEntry;
 
@@ -28,13 +28,13 @@ pub enum FieldMappingType {
     /// String mapping type configuration.
     Text(TextOptions, Cardinality),
     /// Signed 64-bit integer mapping type configuration.
-    I64(IntOptions, Cardinality),
+    I64(NumericOptions, Cardinality),
     /// Unsigned 64-bit integer mapping type configuration.
-    U64(IntOptions, Cardinality),
+    U64(NumericOptions, Cardinality),
     /// 64-bit float mapping type configuration.
-    F64(IntOptions, Cardinality),
+    F64(NumericOptions, Cardinality),
     /// RFC 3339 date mapping type configuration.
-    Date(IntOptions, Cardinality),
+    Date(NumericOptions, Cardinality),
     /// Bytes mapping type configuration.
     Bytes(BytesOptions, Cardinality),
     /// Object mapping type configuration.

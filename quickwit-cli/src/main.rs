@@ -142,7 +142,6 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Duration;
 
-    use clap::AppSettings;
     use quickwit_cli::cli::{build_cli, CliCommand};
     use quickwit_cli::index::{
         CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, GarbageCollectIndexArgs,
@@ -153,13 +152,12 @@ mod tests {
 
     #[test]
     fn test_parse_create_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
-
+        let app = build_cli().no_binary_name(true);
         let _ = app
             .try_get_matches_from(vec!["new", "--index-uri", "file:///indexes/wikipedia"])
             .unwrap_err();
 
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "create",
@@ -182,7 +180,7 @@ mod tests {
         }));
         assert_eq!(command, expected_cmd);
 
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "create",
@@ -206,7 +204,7 @@ mod tests {
 
     #[test]
     fn test_parse_ingest_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "ingest",
@@ -229,7 +227,7 @@ mod tests {
                        && config_uri == Uri::try_new("file:///config.yaml").unwrap()
         ));
 
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "ingest",
@@ -257,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_parse_search_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "search",
@@ -279,11 +277,12 @@ mod tests {
                 search_fields: None,
                 start_timestamp: None,
                 end_timestamp: None,
+                aggregation: None,
                 ..
             })) if &index_id == "wikipedia" && &query == "Barack Obama"
         ));
 
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "search",
@@ -312,6 +311,7 @@ mod tests {
             CliCommand::Index(IndexCliCommand::Search(SearchIndexArgs {
                 index_id,
                 query,
+                aggregation: None,
                 max_hits: 50,
                 start_offset: 100,
                 search_fields: Some(field_names),
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn test_parse_delete_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "delete",
@@ -347,7 +347,7 @@ mod tests {
             })) if &index_id == "wikipedia"
         ));
 
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "delete",
@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn test_parse_garbage_collect_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "gc",
@@ -391,7 +391,7 @@ mod tests {
             })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(60 * 60)
         ));
 
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "gc",
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn test_parse_merge_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "merge",
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn test_parse_demux_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "demux",
@@ -464,7 +464,7 @@ mod tests {
 
     #[test]
     fn test_parse_describe_index_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "index",
             "describe",
@@ -486,7 +486,7 @@ mod tests {
 
     #[test]
     fn test_parse_split_describe_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "split",
             "describe",
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn test_parse_split_extract_args() -> anyhow::Result<()> {
-        let app = build_cli().setting(AppSettings::NoBinaryName);
+        let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from(vec![
             "split",
             "extract",

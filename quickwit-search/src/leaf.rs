@@ -127,12 +127,14 @@ pub(crate) async fn warmup(
     query: &dyn Query,
     fast_field_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
-    warm_up_terms(searcher, query)
-        .instrument(debug_span!("warm_up_terms"))
-        .await?;
-    warm_up_fastfields(searcher, fast_field_names)
-        .instrument(debug_span!("warm_up_fastfields"))
-        .await?;
+    let warm_up_terms_future =
+        warm_up_terms(searcher, query).instrument(debug_span!("warm_up_terms"));
+    let warm_up_fastfields_future = warm_up_fastfields(searcher, fast_field_names)
+        .instrument(debug_span!("warm_up_fastfields"));
+    let (warm_up_terms_res, warm_up_fastfields_res) =
+        tokio::join!(warm_up_terms_future, warm_up_fastfields_future);
+    warm_up_terms_res?;
+    warm_up_fastfields_res?;
     Ok(())
 }
 

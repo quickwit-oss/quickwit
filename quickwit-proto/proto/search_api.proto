@@ -82,6 +82,9 @@ message SearchRequest {
   // Sort by fast field. If unset sort by docid
   optional string sort_by_field = 10;
 
+  // json serialized aggregation_request
+  optional string aggregation_request = 11;
+
 }
 
 enum SortOrder {
@@ -102,6 +105,9 @@ message SearchResponse {
 
   // The searcherrors that occured formatted as string.
   repeated string errors = 4;
+
+  // Serialized aggregation response
+  optional string aggregation = 5;
 
 }
 
@@ -191,6 +197,9 @@ message LeafSearchResponse {
   // Total number of splits the leaf(s) were in charge of.
   // num_attempted_splits = num_successful_splits + num_failed_splits.
   uint64 num_attempted_splits = 4;
+
+  // json serialized intermediate aggregation_result.
+  optional string intermediate_aggregation_result = 5;
 
 }
 

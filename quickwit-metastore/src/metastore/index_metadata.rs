@@ -349,7 +349,7 @@ impl From<UnversionedIndexMetadata> for IndexMetadataV0 {
                 .doc_mapper
                 .field_mappings
                 .field_mappings()
-                .unwrap_or_else(Vec::new),
+                .unwrap_or_default(),
             tag_fields: unversioned.doc_mapper.tag_field_names,
             store_source: unversioned.doc_mapper.store_source,
         };

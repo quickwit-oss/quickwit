@@ -17,37 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod cluster;
-mod quickwit;
+mod handler;
 
-#[macro_use]
-extern crate serde;
-
-use std::fmt::{self, Display};
-
-pub use cluster::*;
-pub use quickwit::*;
-pub use tonic;
-
-impl From<SearchStreamRequest> for SearchRequest {
-    fn from(item: SearchStreamRequest) -> Self {
-        Self {
-            index_id: item.index_id,
-            query: item.query,
-            search_fields: item.search_fields,
-            start_timestamp: item.start_timestamp,
-            end_timestamp: item.end_timestamp,
-            max_hits: 0,
-            start_offset: 0,
-            sort_by_field: None,
-            sort_order: None,
-            aggregation_request: None,
-        }
-    }
-}
-
-impl Display for SplitSearchError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({}, split_id: {})", self.error, self.split_id)
-    }
-}
+pub use handler::liveness_check_handler;

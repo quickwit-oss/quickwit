@@ -1,6 +1,6 @@
 [package]
 name = 'quickwit-storage'
-version = "0.2.0"
+version = "0.2.1"
 authors = ['Quickwit, Inc. <hello@quickwit.io>']
 edition = '2021'
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
@@ -10,8 +10,8 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
-quickwit-common = { version = "0.2.0", path = "../quickwit-common" }
-quickwit-config = { version = "0.2.0", path = "../quickwit-config" }
+quickwit-common = { version = "0.2.1", path = "../quickwit-common" }
+quickwit-config = { version = "0.2.1", path = "../quickwit-config" }
 async-trait = '0.1'
 md5 = '0.7'
 anyhow = '1'
@@ -20,7 +20,7 @@ futures = '0.3'
 serde_json = "1"
 base64 = '0.13'
 tracing = "0.1.29"
-tantivy = { git= "https://github.com/quickwit-oss/tantivy", rev="48c47f0d3", default-features=false, features = ["mmap", "lz4-compression"] }
+tantivy = { git= "https://github.com/quickwit-oss/tantivy", rev="1a92b58", default-features=false, features = ["mmap", "lz4-compression", "quickwit"] }
 once_cell = '1'
 regex = '1'
 thiserror = '1'

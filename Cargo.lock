@@ -314,9 +314,9 @@ checksum = "fff857943da45f546682664a79488be82e69e43c1a7a2307679ab9afb3a66d2e"
 
 [[package]]
 name = "clap"
-version = "3.0.14"
+version = "3.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b63edc3f163b3c71ec8aa23f9bd6070f77edbf3d1d198b164afa90ff00e4ec62"
+checksum = "d8c93436c21e4698bacadf42917db28b23017027a4deccb35dbe47a7e7840123"
 dependencies = [
  "atty",
  "bitflags",
@@ -617,6 +617,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "diff"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e25ea47919b1560c4e3b7fe0aaab9becf5b84a10325ddf7db0f0ba5e1026499"
+
+[[package]]
 name = "difflib"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -748,14 +754,14 @@ dependencies = [
 
 [[package]]
 name = "fastdivide"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a99a2d53cf90642500986ad22e5083b09e42d44c408f5f112e2a4a0925a643c"
+checksum = "25c7df09945d65ea8d70b3321547ed414bbc540aad5bac6883d021b970f35b04"
 
 [[package]]
 name = "fastfield_codecs"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=1a92b58#1a92b588e019aa0158db8b2753639e05527c8d28"
 dependencies = [
  "tantivy-bitpacker",
  "tantivy-common",
@@ -1811,9 +1817,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "output_vt100"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "628223faebab4e3e40667ee0b2336d34a5b960ff60ea743ddfdbcf7770bcfb66"
+dependencies = [
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "ownedbytes"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=1a92b58#1a92b588e019aa0158db8b2753639e05527c8d28"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -1949,6 +1964,18 @@ checksum = "338c7be2905b732ae3984a2f40032b5e94fd8f52505b186c7d4d68d193445df7"
 dependencies = [
  "predicates-core",
  "termtree",
+]
+
+[[package]]
+name = "pretty_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76d5b548b725018ab5496482b45cb8bef21e9fed1858a6d674e3a8a0f0bb5d50"
+dependencies = [
+ "ansi_term",
+ "ctor",
+ "diff",
+ "output_vt100",
 ]
 
 [[package]]
@@ -2119,7 +2146,7 @@ checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quickwit-actors"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2133,7 +2160,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2182,7 +2209,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cluster"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2197,14 +2224,13 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic",
  "tracing",
  "uuid 0.8.2",
 ]
 
 [[package]]
 name = "quickwit-common"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "colored",
@@ -2223,7 +2249,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-config"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "byte-unit",
@@ -2241,7 +2267,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2270,7 +2296,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-directories"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2292,7 +2318,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-doc-mapper"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -2315,7 +2341,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-indexing"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -2357,7 +2383,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-metastore"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2388,7 +2414,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-proto"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "prost",
  "prost-build",
@@ -2399,7 +2425,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-search"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -2432,7 +2458,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
- "tonic",
  "tracing",
  "tracing-futures",
  "tracing-opentelemetry",
@@ -2440,7 +2465,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-serve"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -2473,7 +2498,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic",
  "tracing",
  "tracing-opentelemetry",
  "warp",
@@ -2481,7 +2505,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-storage"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2512,7 +2536,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-swim"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bincode",
  "flume",
@@ -2529,7 +2553,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-telemetry"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "encoding_rs",
@@ -3395,7 +3419,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.17.0-dev"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=1a92b58#1a92b588e019aa0158db8b2753639e05527c8d28"
 dependencies = [
  "async-trait",
  "base64",
@@ -3424,6 +3448,7 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "ownedbytes",
+ "pretty_assertions",
  "rayon",
  "regex",
  "rust-stemmers",
@@ -3445,12 +3470,12 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.1.1"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=1a92b58#1a92b588e019aa0158db8b2753639e05527c8d28"
 
 [[package]]
 name = "tantivy-common"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=1a92b58#1a92b588e019aa0158db8b2753639e05527c8d28"
 dependencies = [
  "byteorder",
  "ownedbytes",
@@ -3470,7 +3495,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.15.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=48c47f0d3#48c47f0d39d7e887c061945ca874aae708a33bd5"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=1a92b58#1a92b588e019aa0158db8b2753639e05527c8d28"
 dependencies = [
  "combine",
  "once_cell",
@@ -3508,9 +3533,9 @@ checksum = "13a4ec180a2de59b57434704ccfad967f789b12737738798fa08798cd5824c16"
 
 [[package]]
 name = "textwrap"
-version = "0.14.2"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0066c8d12af8b5acd21e00547c3797fde4e8677254a7ee429176ccebbe93dd80"
+checksum = "b1141d4d61095b28419e22cb0bbf02755f5e54e0526f97f1e3d1d160e60885fb"
 
 [[package]]
 name = "thiserror"

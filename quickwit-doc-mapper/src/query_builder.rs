@@ -104,6 +104,7 @@ mod test {
         expected: TestExpectation,
     ) -> anyhow::Result<()> {
         let request = SearchRequest {
+            aggregation_request: None,
             index_id: "test_index".to_string(),
             query: query_str.to_string(),
             search_fields,
@@ -120,11 +121,30 @@ mod test {
         let query_result = build_query(make_schema(), &request, &default_field_names);
         match expected {
             TestExpectation::Err(sub_str) => {
-                assert_eq!(format!("{:?}", query_result).contains(sub_str), true);
+                assert!(
+                    query_result.is_err(),
+                    "Expected error {sub_str}, but got a success on query parsing {query_str}"
+                );
+                let query_err = query_result.err().unwrap();
+                assert!(
+                    format!("{query_err:?}").contains(sub_str),
+                    "Query error received is {:?}. It should contain {}",
+                    query_err,
+                    sub_str
+                );
             }
             TestExpectation::Ok(sub_str) => {
-                let query = query_result?;
-                assert_eq!(format!("{:?}", query).contains(sub_str), true);
+                assert!(
+                    query_result.is_ok(),
+                    "Expected a success when parsing {sub_str}, but got error"
+                );
+                let query = query_result.unwrap();
+                assert!(
+                    format!("{query:?}").contains(sub_str),
+                    "Error query parsing {:?} should contain {}",
+                    query,
+                    sub_str
+                );
             }
         }
 
@@ -133,11 +153,18 @@ mod test {
 
     #[test]
     fn test_build_query() -> anyhow::Result<()> {
-        check_build_query(
-            "foo:bar",
-            vec![],
-            TestExpectation::Err("Field does not exists: '\"foo\"'"),
-        )?;
+        // check_build_query(
+        //     "foo:bar",
+        //     vec![],
+        //     TestExpectation::Err("Field does not exists: '\"foo\"'"),
+        // )?;
+
+        // check_build_query(
+        //     "server.type:hpc server.mem:4GB",
+        //     vec![],
+        //     TestExpectation::Err("Field does not exists: '\"server.type\"'"),
+        // )?;
+
         check_build_query(
             "title:[a TO b]",
             vec![],
@@ -158,31 +185,21 @@ mod test {
             vec![],
             TestExpectation::Ok("TermQuery"),
         )?;
-
-        check_build_query(
-            "server.type:hpc server.mem:4GB",
-            vec![],
-            TestExpectation::Err("Field does not exists: '\"server.type\"'"),
-        )?;
-
         check_build_query(
             "title:foo desc:bar",
             vec!["url".to_string()],
             TestExpectation::Err("Field does not exists: '\"url\"'"),
         )?;
-
         check_build_query(
             "server.name:\".bar:\" server.mem:4GB",
             vec!["server.name".to_string()],
             TestExpectation::Ok("TermQuery"),
         )?;
-
         check_build_query(
             "server.name:\"for.bar:b\" server.mem:4GB",
             vec![],
             TestExpectation::Ok("TermQuery"),
         )?;
-
         Ok(())
     }
 }

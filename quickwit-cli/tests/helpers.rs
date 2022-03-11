@@ -158,7 +158,7 @@ pub enum TestStorageType {
 pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyhow::Result<TestEnv> {
     let tempdir = tempdir()?;
     let data_dir_path = tempdir.path().join("data");
-    let indexes_dir_path = tempdir.path().join("indexes");
+    let indexes_dir_path = data_dir_path.join("indexes");
     let resources_dir_path = tempdir.path().join("resources");
 
     for dir_path in [&data_dir_path, &indexes_dir_path, &resources_dir_path] {
@@ -201,7 +201,7 @@ pub fn create_test_env(index_id: String, storage_type: TestStorageType) -> anyho
         // A poor's man templating engine reloaded...
         DEFAULT_QUICKWIT_CONFIG
             .replace("#metastore_uri", &metastore_uri)
-            .replace("#data_dir", &data_dir_path.to_str().unwrap().to_string())
+            .replace("#data_dir", data_dir_path.to_str().unwrap())
             .replace("#rest_listen_port", &rest_listen_port.to_string()),
     )?;
     let log_docs_path = resources_dir_path.join("logs.json");

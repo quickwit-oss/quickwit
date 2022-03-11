@@ -70,11 +70,11 @@ pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<
 }
 
 async fn load_quickwit_config(
-    uri: Uri,
+    uri: &Uri,
     data_dir: Option<PathBuf>,
 ) -> anyhow::Result<QuickwitConfig> {
-    let config_content = load_file(&uri).await?;
-    let config = QuickwitConfig::load(&uri, config_content.as_slice(), data_dir).await?;
+    let config_content = load_file(uri).await?;
+    let config = QuickwitConfig::load(uri, config_content.as_slice(), data_dir).await?;
     info!(config_uri = %uri, config = ?config, "Loaded Quickwit config.");
     Ok(config)
 }

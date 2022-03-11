@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_proto::{
-    LeaveClusterRequest, LeaveClusterResponse, ListMembersRequest, ListMembersResponse,
+    tonic, LeaveClusterRequest, LeaveClusterResponse, ListMembersRequest, ListMembersResponse,
     Member as PMember,
 };
 

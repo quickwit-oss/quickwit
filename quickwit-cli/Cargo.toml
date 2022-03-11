@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-cli"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later" # For a commercial, license, contact hello@quickwit.io
@@ -22,20 +22,20 @@ path = "src/generate_markdown.rs"
 async-trait = "0.1"
 anyhow = "1"
 byte-unit = { version = "4", default-features = false, features = ["serde"] }
-clap = { version = "=3.0.14", features = ["yaml", "env"] }
-quickwit-actors = { version = "0.2.0", path = "../quickwit-actors" }
-quickwit-core = { version = "0.2.0", path = "../quickwit-core" }
-quickwit-directories = { version = "0.2.0", path = "../quickwit-directories" }
-quickwit-common = { version = "0.2.0", path = "../quickwit-common" }
-quickwit-config = { version = "0.2.0", path = "../quickwit-config" }
-quickwit-metastore = { version = "0.2.0", path = "../quickwit-metastore" }
-quickwit-storage = { version = "0.2.0", path = "../quickwit-storage" }
-quickwit-doc-mapper = { version = "0.2.0", path = "../quickwit-doc-mapper" }
-quickwit-indexing = { version = "0.2.0", path = "../quickwit-indexing" }
-quickwit-search = { version = "0.2", path = "../quickwit-search" }
-quickwit-serve = { version = "0.2", path = "../quickwit-serve" }
-quickwit-telemetry = { version = "0.2", path = "../quickwit-telemetry" }
-quickwit-proto = { version = "0.2", path = "../quickwit-proto" }
+clap = { version = "= 3.1", features = ["yaml", "env"] }
+quickwit-actors = { version = "0.2.1", path = "../quickwit-actors" }
+quickwit-core = { version = "0.2.1", path = "../quickwit-core" }
+quickwit-directories = { version = "0.2.1", path = "../quickwit-directories" }
+quickwit-common = { version = "0.2.1", path = "../quickwit-common" }
+quickwit-config = { version = "0.2.1", path = "../quickwit-config" }
+quickwit-metastore = { version = "0.2.1", path = "../quickwit-metastore" }
+quickwit-storage = { version = "0.2.1", path = "../quickwit-storage" }
+quickwit-doc-mapper = { version = "0.2.1", path = "../quickwit-doc-mapper" }
+quickwit-indexing = { version = "0.2.1", path = "../quickwit-indexing" }
+quickwit-search = { version = "0.2.1", path = "../quickwit-search" }
+quickwit-serve = { version = "0.2.1", path = "../quickwit-serve" }
+quickwit-telemetry = { version = "0.2.1", path = "../quickwit-telemetry" }
+quickwit-proto = { version = "0.2.1", path = "../quickwit-proto" }
 tabled = "0.4"
 tracing = "0.1.29"
 tracing-subscriber = {version="0.3", features=["time", "std", "env-filter"]}

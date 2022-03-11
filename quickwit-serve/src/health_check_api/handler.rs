@@ -34,7 +34,7 @@ pub enum ServiceStatus {
 }
 
 impl fmt::Display for ServiceStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
     }
 }
@@ -53,7 +53,7 @@ pub fn liveness_check_handler() -> impl Filter<Extract = impl warp::Reply, Error
 }
 
 /// Make an HTTP response based on the given service status.
-pub fn make_reply(ok: bool, service_status: ServiceStatus) -> impl warp::Reply {
+fn make_reply(ok: bool, service_status: ServiceStatus) -> impl warp::Reply {
     let mut status_code = if ok {
         StatusCode::OK
     } else {
@@ -74,16 +74,20 @@ pub fn make_reply(ok: bool, service_status: ServiceStatus) -> impl warp::Reply {
 }
 
 /// Check if the service is alive.
-pub fn live_predicate(service_status: ServiceStatus) -> bool {
+fn live_predicate(service_status: ServiceStatus) -> bool {
     matches!(service_status, ServiceStatus::Alive)
 }
 
-#[tokio::test]
-async fn test_rest_search_api_health_check_livez() {
-    let rest_search_api_filter = liveness_check_handler();
-    let resp = warp::test::request()
-        .path("/health/livez")
-        .reply(&rest_search_api_filter)
-        .await;
-    assert_eq!(resp.status(), 200);
+#[cfg(test)]
+mod tests {
+
+    #[tokio::test]
+    async fn test_rest_search_api_health_check_livez() {
+        let rest_search_api_filter = super::liveness_check_handler();
+        let resp = warp::test::request()
+            .path("/health/livez")
+            .reply(&rest_search_api_filter)
+            .await;
+        assert_eq!(resp.status(), 200);
+    }
 }

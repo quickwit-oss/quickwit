@@ -24,7 +24,7 @@ use std::sync::Arc;
 use futures::{StreamExt, TryStreamExt};
 use opentelemetry::global;
 use opentelemetry::propagation::Injector;
-use quickwit_proto::LeafSearchStreamResponse;
+use quickwit_proto::{tonic, LeafSearchStreamResponse};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Channel;
 use tonic::Request;

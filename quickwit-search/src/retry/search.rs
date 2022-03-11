@@ -113,6 +113,7 @@ mod tests {
             partial_hits: vec![],
             failed_splits: vec![],
             num_attempted_splits: 1,
+            ..Default::default()
         };
         let result = Result::<LeafSearchResponse, SearchError>::Ok(leaf_response);
         let retry_request_opt = retry_policy.retry_request(request, result.as_ref());
@@ -136,6 +137,7 @@ mod tests {
             partial_hits: vec![],
             failed_splits: vec![split_error],
             num_attempted_splits: 1,
+            ..Default::default()
         };
         let result = Result::<LeafSearchResponse, SearchError>::Ok(leaf_response);
         let retry_request_opt = retry_policy.retry_request(request, result.as_ref());
