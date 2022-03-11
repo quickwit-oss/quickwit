@@ -27,7 +27,8 @@ mod rest;
 
 use std::sync::Arc;
 
-use quickwit_cluster::cluster::Cluster;
+use chrono::Utc;
+use quickwit_cluster::cluster::{Cluster, Member};
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_config::{QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_metastore::Metastore;
@@ -57,8 +58,14 @@ pub async fn run_searcher(
         .iter()
         .map(|addr| addr.to_string())
         .collect::<Vec<_>>();
-    let cluster = Arc::new(Cluster::new(
+
+    let member = Member::new(
         quickwit_config.node_id.clone(),
+        Utc::now().timestamp(),
+        quickwit_config.gossip_public_addr()?,
+    );
+    let cluster = Arc::new(Cluster::new(
+        member,
         quickwit_config.gossip_socket_addr()?,
         &seed_nodes,
     )?);

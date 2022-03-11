@@ -32,9 +32,10 @@ use crate::error::ClusterError;
 impl From<Member> for PMember {
     fn from(member: Member) -> Self {
         PMember {
-            id: member.node_id.to_string(),
-            listen_address: member.listen_addr.to_string(),
+            id: member.internal_id(),
+            listen_address: member.gossip_public_address.to_string(),
             is_self: member.is_self,
+            generation: member.generation,
         }
     }
 }
@@ -106,8 +107,9 @@ mod tests {
         let is_self = true;
 
         let member = Member {
-            node_id: host_id.clone(),
-            listen_addr,
+            node_unique_id: host_id.clone(),
+            gossip_public_address: listen_addr,
+            generation: 1,
             is_self,
         };
         println!("member={:?}", member);
@@ -116,8 +118,9 @@ mod tests {
         println!("proto_member={:?}", proto_member);
 
         let expected = PMember {
-            id: host_id,
+            id: format!("{}/{}", host_id, 1),
             listen_address: listen_addr.to_string(),
+            generation: 1,
             is_self,
         };
         println!("expected={:?}", expected);

@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use scuttlebutt::server::ScuttleServer;
-use scuttlebutt::FailureDetectorConfig;
+use scuttlebutt::{FailureDetectorConfig, NodeId};
 use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_stream::wrappers::WatchStream;
@@ -33,17 +33,71 @@ use uuid::Uuid;
 
 use crate::error::ClusterResult;
 
-/// A member information.
+// /// A member information.
+// #[derive(Clone, Debug, PartialEq)]
+// pub struct Member {
+//     /// An ID that makes a member unique.
+//     pub node_id: String,
+
+//     /// Listen address.
+//     pub listen_addr: SocketAddr,
+
+//     /// If true, it means self.
+//     pub is_self: bool,
+// }
+
+// TODO change this to member
 #[derive(Clone, Debug, PartialEq)]
 pub struct Member {
     /// An ID that makes a member unique.
-    pub node_id: String,
-
-    /// Listen address.
-    pub listen_addr: SocketAddr,
-
+    pub node_unique_id: String,
+    /// timestamp (ms) when node starts.
+    pub generation: i64,
+    /// advertised UdpServerSocket
+    pub gossip_public_address: SocketAddr,
     /// If true, it means self.
     pub is_self: bool,
+}
+
+impl Member {
+    pub fn new(node_unique_id: String, generation: i64, gossip_public_address: SocketAddr) -> Self {
+        Self {
+            node_unique_id,
+            gossip_public_address,
+            generation,
+            is_self: true,
+        }
+    }
+
+    pub fn internal_id(&self) -> String {
+        format!("{}/{}", self.node_unique_id, self.generation)
+    }
+}
+
+impl TryFrom<NodeId> for Member {
+    type Error = anyhow::Error;
+
+    fn try_from(node_id: NodeId) -> Result<Self, Self::Error> {
+        let (node_unique_id_str, generation_str) =
+            node_id.id.split_once("/").ok_or(anyhow::anyhow!(""))?;
+
+        let gossip_public_address: SocketAddr = node_id.gossip_public_address.parse()?;
+        Ok(Self {
+            node_unique_id: node_unique_id_str.to_string(),
+            generation: generation_str.parse()?,
+            gossip_public_address,
+            is_self: false,
+        })
+    }
+}
+
+impl From<Member> for NodeId {
+    fn from(member: Member) -> Self {
+        Self::new(
+            member.internal_id(),
+            member.gossip_public_address.to_string(),
+        )
+    }
 }
 
 /// This is an implementation of a cluster using the SWIM protocol.
@@ -53,7 +107,6 @@ pub struct Cluster {
     pub listen_addr: SocketAddr,
 
     /// The actual cluster that implement the SWIM protocol.
-    // artillery_cluster: ArtilleryCluster,
     scuttlebutt_server: ScuttleServer,
 
     /// A receiver(channel) for exchanging members in a cluster.
@@ -70,23 +123,21 @@ impl Cluster {
     /// Create a cluster given a host key and a listen address.
     /// When a cluster is created, the thread that monitors cluster events
     /// will be started at the same time.
-    pub fn new(
-        node_id: String,
-        listen_addr: SocketAddr,
-        seed_nodes: &[String],
-    ) -> ClusterResult<Self> {
-        info!(node_id=?node_id, listen_addr=?listen_addr, "Create new cluster.");
+    pub fn new(me: Member, listen_addr: SocketAddr, seed_nodes: &[String]) -> ClusterResult<Self> {
+        info!(member=?me, listen_addr=?listen_addr, "Create new cluster.");
         let scuttlebutt_server = ScuttleServer::spawn(
-            listen_addr.to_string(),
+            NodeId::from(me.clone()),
             seed_nodes,
+            listen_addr.to_string(),
             FailureDetectorConfig::default(),
         );
         let scuttlebutt = scuttlebutt_server.scuttlebutt();
+
         let (members_sender, members_receiver) = watch::channel(Vec::new());
 
         // Create cluster.
         let cluster = Cluster {
-            node_id: node_id.clone(),
+            node_id: me.internal_id(),
             listen_addr,
             scuttlebutt_server,
             members: members_receiver,
@@ -94,35 +145,21 @@ impl Cluster {
         };
 
         // Add itself as the initial member of the cluster.
-        let me = Member {
-            node_id,
-            listen_addr,
-            is_self: true,
-        };
         let initial_members: Vec<Member> = vec![me.clone()];
         if members_sender.send(initial_members).is_err() {
             error!("Failed to add itself as the initial member of the cluster.");
         }
 
         // Prepare to start a task that will monitor cluster events.
-        // let task_listen_addr = cluster.listen_addr;
         let task_stop = cluster.stop.clone();
-
         tokio::task::spawn(async move {
-            let mut node_change_receiver = scuttlebutt
-                .lock()
-                .await
-                .nodes_change_watcher();
+            let mut node_change_receiver = scuttlebutt.lock().await.live_nodes_watcher();
 
             while let Some(members_set) = node_change_receiver.next().await {
                 let mut members = members_set
                     .into_iter()
-                    .map(|node_id| Member {
-                        node_id: node_id.to_string(),
-                        listen_addr: node_id.parse().unwrap(),
-                        is_self: false,
-                    })
-                    .collect::<Vec<_>>();
+                    .map(Member::try_from)
+                    .collect::<Result<Vec<_>, _>>()?;
                 members.push(me.clone());
 
                 if task_stop.load(Ordering::Relaxed) {
@@ -136,6 +173,7 @@ impl Cluster {
                     break;
                 }
             }
+            Result::<(), anyhow::Error>::Ok(())
         });
 
         Ok(cluster)
@@ -162,8 +200,11 @@ impl Cluster {
     /// Leave the cluster.
     pub async fn shutdown(self) {
         info!(self_addr = ?self.listen_addr, "Leaving the cluster.");
-        // TODO: handle error
-        let _ = self.scuttlebutt_server.shutdown().await;
+        let result = self.scuttlebutt_server.shutdown().await;
+        if let Err(error) = result {
+            error!(self_addr = ?self.listen_addr, error = ?error, "Error while shuting down.");
+        }
+
         self.stop.store(true, Ordering::Relaxed);
     }
 
@@ -188,14 +229,13 @@ impl Cluster {
     }
 }
 
-
 pub fn create_cluster_for_test_with_id(
     peer_uuid: String,
     seeds: &[String],
 ) -> anyhow::Result<Cluster> {
     let port = quickwit_common::net::find_available_port()?;
     let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
-    let cluster = Cluster::new(peer_uuid, peer_addr, seeds)?;
+    let cluster = Cluster::new(Member::new(peer_uuid, 1, peer_addr), peer_addr, seeds)?;
     Ok(cluster)
 }
 
@@ -223,7 +263,7 @@ mod tests {
         let members: Vec<SocketAddr> = cluster
             .members()
             .iter()
-            .map(|member| member.listen_addr)
+            .map(|member| member.gossip_public_address)
             .collect();
         let expected_members = vec![cluster.listen_addr];
         assert_eq!(members, expected_members);
@@ -240,18 +280,18 @@ mod tests {
         let cluster2 = create_cluster_for_test(&[node_1.clone()])?;
         let cluster3 = create_cluster_for_test(&[node_1])?;
 
-        let twenty_secs = Duration::from_secs(20);
+        let wait_secs = Duration::from_secs(40);
 
         for cluster in [&cluster1, &cluster2, &cluster3] {
             cluster
-                .wait_for_members(|members| members.len() == 3, twenty_secs)
+                .wait_for_members(|members| members.len() == 3, wait_secs)
                 .await
                 .unwrap();
         }
         let members: Vec<SocketAddr> = cluster1
             .members()
             .iter()
-            .map(|member| member.listen_addr)
+            .map(|member| member.gossip_public_address)
             .sorted()
             .collect();
         let mut expected_members = vec![
@@ -264,13 +304,13 @@ mod tests {
 
         cluster2.shutdown().await;
         cluster1
-            .wait_for_members(|members| members.len() == 2, twenty_secs)
+            .wait_for_members(|members| members.len() == 2, wait_secs)
             .await
             .unwrap();
 
         cluster3.shutdown().await;
         cluster1
-            .wait_for_members(|members| members.len() == 1, twenty_secs)
+            .wait_for_members(|members| members.len() == 1, wait_secs)
             .await
             .unwrap();
         Ok(())
@@ -283,18 +323,18 @@ mod tests {
         let node_1 = cluster1.listen_addr.to_string();
         let cluster2 = create_cluster_for_test_with_id("cluster2".to_string(), &[node_1.clone()])?;
 
-        let twenty_secs = Duration::from_secs(20);
+        let wait_secs = Duration::from_secs(40);
 
         for cluster in [&cluster1, &cluster2] {
             cluster
-                .wait_for_members(|members| members.len() == 2, twenty_secs)
+                .wait_for_members(|members| members.len() == 2, wait_secs)
                 .await
                 .unwrap();
         }
         let members: Vec<SocketAddr> = cluster1
             .members()
             .iter()
-            .map(|member| member.listen_addr)
+            .map(|member| member.gossip_public_address)
             .sorted()
             .collect();
         let mut expected_members = vec![cluster1.listen_addr, cluster2.listen_addr];
@@ -304,13 +344,17 @@ mod tests {
         let cluster2_listen_addr = cluster2.listen_addr;
         cluster2.shutdown().await;
         cluster1
-            .wait_for_members(|members| members.len() == 1, twenty_secs)
+            .wait_for_members(|members| members.len() == 1, wait_secs)
             .await
             .unwrap();
 
         sleep(Duration::from_secs(3)).await;
 
-        let cluster2 = Cluster::new("newid".to_string(), cluster2_listen_addr, &[node_1])?;
+        let cluster2 = Cluster::new(
+            Member::new("newid".to_string(), 1, cluster2_listen_addr),
+            cluster2_listen_addr,
+            &[node_1],
+        )?;
 
         for _ in 0..4_000 {
             if cluster1.members().len() > 2 {
@@ -319,14 +363,15 @@ mod tests {
             sleep(Duration::from_millis(1)).await;
         }
 
+        sleep(Duration::from_secs(60)).await;
         assert!(!cluster1
             .members()
             .iter()
-            .any(|member| (*member).node_id == "cluster2"));
+            .any(|member| (*member).node_unique_id == "cluster2"));
         assert!(!cluster2
             .members()
             .iter()
-            .any(|member| (*member).node_id == "cluster2"));
+            .any(|member| (*member).node_unique_id == "cluster2"));
 
         Ok(())
     }
@@ -340,18 +385,18 @@ mod tests {
         let node_2 = cluster2.listen_addr.to_string();
         let cluster3 = create_cluster_for_test_with_id("cluster3".to_string(), &[node_2])?;
 
-        let wait_period = Duration::from_secs(20);
+        let wait_secs = Duration::from_secs(40);
 
         for cluster in [&cluster1, &cluster2] {
             cluster
-                .wait_for_members(|members| members.len() == 3, wait_period)
+                .wait_for_members(|members| members.len() == 3, wait_secs)
                 .await
                 .unwrap();
         }
         let members: Vec<SocketAddr> = cluster1
             .members()
             .iter()
-            .map(|member| member.listen_addr)
+            .map(|member| member.gossip_public_address)
             .sorted()
             .collect();
         let mut expected_members = vec![
@@ -364,47 +409,54 @@ mod tests {
 
         let cluster2_listen_addr = cluster2.listen_addr;
         let cluster3_listen_addr = cluster3.listen_addr;
-        drop(cluster2);
-        drop(cluster3);
+        cluster2.shutdown().await;
+        cluster3.shutdown().await;
         cluster1
-            .wait_for_members(|members| members.len() == 1, wait_period)
+            .wait_for_members(|members| members.len() == 1, wait_secs)
             .await
             .unwrap();
 
         sleep(Duration::from_secs(3)).await;
 
-        let cluster2 = Cluster::new("newid".to_string(), cluster2_listen_addr, &[node_1])?;
+        let cluster2 = Cluster::new(
+            Member::new("newid".to_string(), 1, cluster2_listen_addr),
+            cluster2_listen_addr,
+            &[node_1],
+        )?;
         let node_2 = cluster2.listen_addr.to_string();
 
-        let cluster3 = Cluster::new("newid2".to_string(), cluster3_listen_addr, &[node_2])?;
+        let cluster3 = Cluster::new(
+            Member::new("newid2".to_string(), 1, cluster3_listen_addr),
+            cluster3_listen_addr,
+            &[node_2],
+        )?;
 
-        sleep(Duration::from_secs(10)).await;
-
+        sleep(Duration::from_secs(60)).await;
         assert!(!cluster1
             .members()
             .iter()
-            .any(|member| (*member).node_id == "cluster2"));
+            .any(|member| (*member).node_unique_id == "cluster2"));
         assert!(!cluster2
             .members()
             .iter()
-            .any(|member| (*member).node_id == "cluster2"));
+            .any(|member| (*member).node_unique_id == "cluster2"));
         assert!(!cluster3
             .members()
             .iter()
-            .any(|member| (*member).node_id == "cluster2"));
+            .any(|member| (*member).node_unique_id == "cluster2"));
 
         assert!(!cluster1
             .members()
             .iter()
-            .any(|member| (*member).node_id == "cluster3"));
+            .any(|member| (*member).node_unique_id == "cluster3"));
         assert!(!cluster2
             .members()
             .iter()
-            .any(|member| (*member).node_id == "cluster3"));
+            .any(|member| (*member).node_unique_id == "cluster3"));
         assert!(!cluster2
             .members()
             .iter()
-            .any(|member| (*member).node_id == "cluster3"));
+            .any(|member| (*member).node_unique_id == "cluster3"));
 
         Ok(())
     }

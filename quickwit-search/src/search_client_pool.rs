@@ -31,7 +31,7 @@ use tonic::transport::Endpoint;
 use tracing::*;
 
 use crate::rendezvous_hasher::sort_by_rendez_vous_hash;
-use crate::{swim_addr_to_grpc_addr, SearchServiceClient};
+use crate::{scuttlebutt_gossip_addr_to_grpc_addr, SearchServiceClient};
 
 /// Create a SearchServiceClient with SocketAddr as an argument.
 /// It will try to reconnect to the node automatically.
@@ -84,7 +84,7 @@ async fn update_client_map(
     // Create a list of addresses to be removed.
     let members_addresses: HashSet<SocketAddr> = members
         .iter()
-        .map(|member| swim_addr_to_grpc_addr(member.listen_addr))
+        .map(|member| scuttlebutt_gossip_addr_to_grpc_addr(member.gossip_public_address))
         .collect();
     let addrs_to_remove: Vec<SocketAddr> = new_clients
         .keys()
@@ -102,7 +102,7 @@ async fn update_client_map(
 
     // Add clients to the client pool.
     for member in members {
-        let grpc_addr = swim_addr_to_grpc_addr(member.listen_addr);
+        let grpc_addr = scuttlebutt_gossip_addr_to_grpc_addr(member.gossip_public_address);
         if let Entry::Vacant(_entry) = new_clients.entry(grpc_addr) {
             match create_search_service_client(grpc_addr).await {
                 Ok(client) => {
@@ -315,7 +315,7 @@ mod tests {
 
     use super::create_search_service_client;
     use crate::root::SearchJob;
-    use crate::{swim_addr_to_grpc_addr, SearchClientPool};
+    use crate::{scuttlebutt_gossip_addr_to_grpc_addr, SearchClientPool};
 
     #[tokio::test]
     async fn test_search_client_pool_single_node() -> anyhow::Result<()> {
@@ -323,7 +323,7 @@ mod tests {
         let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await;
         let clients = client_pool.clients();
         let addrs: Vec<SocketAddr> = clients.into_keys().collect();
-        let expected_addrs = vec![swim_addr_to_grpc_addr(cluster.listen_addr)];
+        let expected_addrs = vec![scuttlebutt_gossip_addr_to_grpc_addr(cluster.listen_addr)];
         assert_eq!(addrs, expected_addrs);
         Ok(())
     }
@@ -343,8 +343,8 @@ mod tests {
 
         let addrs: Vec<SocketAddr> = clients.into_keys().sorted().collect();
         let mut expected_addrs = vec![
-            swim_addr_to_grpc_addr(cluster1.listen_addr),
-            swim_addr_to_grpc_addr(cluster2.listen_addr),
+            scuttlebutt_gossip_addr_to_grpc_addr(cluster1.listen_addr),
+            scuttlebutt_gossip_addr_to_grpc_addr(cluster2.listen_addr),
         ];
         expected_addrs.sort();
         assert_eq!(addrs, expected_addrs);
@@ -364,7 +364,8 @@ mod tests {
 
         let assigned_jobs = client_pool.assign_jobs(jobs, &HashSet::default())?;
         let expected_assigned_jobs = vec![(
-            create_search_service_client(swim_addr_to_grpc_addr(cluster.listen_addr)).await?,
+            create_search_service_client(scuttlebutt_gossip_addr_to_grpc_addr(cluster.listen_addr))
+                .await?,
             vec![
                 SearchJob::for_test("split4", 4),
                 SearchJob::for_test("split3", 3),
