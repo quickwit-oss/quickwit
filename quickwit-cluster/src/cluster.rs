@@ -65,8 +65,12 @@ impl TryFrom<NodeId> for Member {
     type Error = anyhow::Error;
 
     fn try_from(node_id: NodeId) -> Result<Self, Self::Error> {
-        let (node_unique_id_str, generation_str) =
-            node_id.id.split_once("/").ok_or(anyhow::anyhow!(""))?;
+        let (node_unique_id_str, generation_str) = node_id.id.split_once('/').ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not create a Member instance from NodeId `{}`",
+                node_id.id
+            )
+        })?;
 
         let gossip_public_address: SocketAddr = node_id.gossip_public_address.parse()?;
         Ok(Self {
@@ -110,13 +114,18 @@ impl Cluster {
     /// Create a cluster given a host key and a listen address.
     /// When a cluster is created, the thread that monitors cluster events
     /// will be started at the same time.
-    pub fn new(me: Member, listen_addr: SocketAddr, seed_nodes: &[String]) -> ClusterResult<Self> {
+    pub fn new(
+        me: Member,
+        listen_addr: SocketAddr,
+        seed_nodes: &[String],
+        failure_detector_config: FailureDetectorConfig,
+    ) -> ClusterResult<Self> {
         info!(member=?me, listen_addr=?listen_addr, "Create new cluster.");
         let scuttlebutt_server = ScuttleServer::spawn(
             NodeId::from(me.clone()),
             seed_nodes,
             listen_addr.to_string(),
-            FailureDetectorConfig::default(),
+            failure_detector_config,
         );
         let scuttlebutt = scuttlebutt_server.scuttlebutt();
 
@@ -179,14 +188,13 @@ impl Cluster {
     /// Leave the cluster.
     pub async fn leave(&self) {
         info!(self_addr = ?self.listen_addr, "Leaving the cluster.");
-        // TODO: ask if we need to implement leave/join
-        // self.scuttlebutt_server.leave().await;
+        // TODO: implements leave/join on ScuttleButt
         self.stop.store(true, Ordering::Relaxed);
     }
 
     /// Leave the cluster.
     pub async fn shutdown(self) {
-        info!(self_addr = ?self.listen_addr, "Leaving the cluster.");
+        info!(self_addr = ?self.listen_addr, "Shutting down the cluster.");
         let result = self.scuttlebutt_server.shutdown().await;
         if let Err(error) = result {
             error!(self_addr = ?self.listen_addr, error = ?error, "Error while shuting down.");
@@ -222,8 +230,23 @@ pub fn create_cluster_for_test_with_id(
 ) -> anyhow::Result<Cluster> {
     let port = quickwit_common::net::find_available_port()?;
     let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
-    let cluster = Cluster::new(Member::new(peer_uuid, 1, peer_addr), peer_addr, seeds)?;
+    let failure_detector_config = create_failure_detector_config_for_test();
+    let cluster = Cluster::new(
+        Member::new(peer_uuid, 1, peer_addr),
+        peer_addr,
+        seeds,
+        failure_detector_config,
+    )?;
     Ok(cluster)
+}
+
+/// Creates a failure detector config for tests.
+fn create_failure_detector_config_for_test() -> FailureDetectorConfig {
+    FailureDetectorConfig {
+        phi_threshold: 6.0,
+        initial_interval: Duration::from_millis(400),
+        ..Default::default()
+    }
 }
 
 /// Creates a local cluster listening on a random port.
@@ -255,7 +278,7 @@ mod tests {
         let expected_members = vec![cluster.listen_addr];
         assert_eq!(members, expected_members);
 
-        cluster.leave().await;
+        cluster.shutdown().await;
         Ok(())
     }
 
@@ -267,7 +290,7 @@ mod tests {
         let cluster2 = create_cluster_for_test(&[node_1.clone()])?;
         let cluster3 = create_cluster_for_test(&[node_1])?;
 
-        let wait_secs = Duration::from_secs(40);
+        let wait_secs = Duration::from_secs(10);
 
         for cluster in [&cluster1, &cluster2, &cluster3] {
             cluster
@@ -310,7 +333,7 @@ mod tests {
         let node_1 = cluster1.listen_addr.to_string();
         let cluster2 = create_cluster_for_test_with_id("cluster2".to_string(), &[node_1.clone()])?;
 
-        let wait_secs = Duration::from_secs(40);
+        let wait_secs = Duration::from_secs(10);
 
         for cluster in [&cluster1, &cluster2] {
             cluster
@@ -341,6 +364,7 @@ mod tests {
             Member::new("newid".to_string(), 1, cluster2_listen_addr),
             cluster2_listen_addr,
             &[node_1],
+            create_failure_detector_config_for_test(),
         )?;
 
         for _ in 0..4_000 {
@@ -350,7 +374,6 @@ mod tests {
             sleep(Duration::from_millis(1)).await;
         }
 
-        sleep(Duration::from_secs(60)).await;
         assert!(!cluster1
             .members()
             .iter()
@@ -372,7 +395,7 @@ mod tests {
         let node_2 = cluster2.listen_addr.to_string();
         let cluster3 = create_cluster_for_test_with_id("cluster3".to_string(), &[node_2])?;
 
-        let wait_secs = Duration::from_secs(40);
+        let wait_secs = Duration::from_secs(15);
 
         for cluster in [&cluster1, &cluster2] {
             cluster
@@ -409,6 +432,7 @@ mod tests {
             Member::new("newid".to_string(), 1, cluster2_listen_addr),
             cluster2_listen_addr,
             &[node_1],
+            create_failure_detector_config_for_test(),
         )?;
         let node_2 = cluster2.listen_addr.to_string();
 
@@ -416,9 +440,10 @@ mod tests {
             Member::new("newid2".to_string(), 1, cluster3_listen_addr),
             cluster3_listen_addr,
             &[node_2],
+            create_failure_detector_config_for_test(),
         )?;
 
-        sleep(Duration::from_secs(60)).await;
+        sleep(Duration::from_secs(10)).await;
         assert!(!cluster1
             .members()
             .iter()

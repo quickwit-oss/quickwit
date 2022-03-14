@@ -39,6 +39,7 @@ use quickwit_config::{QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_metastore::Metastore;
 use quickwit_search::{ClusterClient, SearchClientPool, SearchService, SearchServiceImpl};
 use quickwit_storage::quickwit_storage_uri_resolver;
+use scuttlebutt::FailureDetectorConfig;
 use tracing::info;
 
 pub use crate::args::ServeArgs;
@@ -74,6 +75,7 @@ pub async fn run_searcher(
         member,
         quickwit_config.gossip_socket_addr()?,
         &seed_nodes,
+        FailureDetectorConfig::default(),
     )?);
     let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
     let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await;
