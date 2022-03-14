@@ -32,6 +32,7 @@ mod rest;
 use std::sync::Arc;
 
 use chrono::Utc;
+use format::Format;
 use quickwit_cluster::cluster::{Cluster, Member};
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_config::{QuickwitConfig, SEARCHER_CONFIG_INSTANCE};

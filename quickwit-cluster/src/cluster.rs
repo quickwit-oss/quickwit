@@ -33,20 +33,7 @@ use uuid::Uuid;
 
 use crate::error::ClusterResult;
 
-// /// A member information.
-// #[derive(Clone, Debug, PartialEq)]
-// pub struct Member {
-//     /// An ID that makes a member unique.
-//     pub node_id: String,
-
-//     /// Listen address.
-//     pub listen_addr: SocketAddr,
-
-//     /// If true, it means self.
-//     pub is_self: bool,
-// }
-
-// TODO change this to member
+/// A member information.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Member {
     /// An ID that makes a member unique.
