@@ -24,6 +24,7 @@ pub mod test_suite {
 
     use async_trait::async_trait;
     use chrono::Utc;
+    use itertools::Itertools;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use tokio::time::{sleep, Duration};
@@ -994,6 +995,7 @@ pub mod test_suite {
                 .delete_splits("non-existent-index", &["non-existent-split"])
                 .await
                 .unwrap_err();
+            println!("{:?}", result);
             assert!(matches!(result, MetastoreError::IndexDoesNotExist { .. }));
         }
 
@@ -1845,6 +1847,59 @@ pub mod test_suite {
 
         cleanup_index(&metastore, index_id).await;
     }
+
+    #[allow(unused_variables)]
+    pub async fn test_metastore_list_indexes<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id_1 = "index-metadata-list-indexes-1";
+        let index_id_2 = "index-metadata-list-indexes-2";
+        let index_metadata_1 = IndexMetadata::for_test(index_id_1, "ram://indexes/my-index");
+        let index_metadata_2 = IndexMetadata::for_test(index_id_2, "ram://indexes/my-index");
+        let index_ids = vec![index_id_1, index_id_2];
+
+        // Get a non-existent index metadata
+        let result = metastore
+            .list_indexes_metadatas()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|index_metadata| index_ids.contains(&index_metadata.index_id.as_str()))
+            .collect_vec();
+        assert!(result.is_empty());
+
+        metastore
+            .create_index(index_metadata_1.clone())
+            .await
+            .unwrap();
+        metastore
+            .create_index(index_metadata_2.clone())
+            .await
+            .unwrap();
+
+        // Get an index metadata
+        let result = metastore
+            .list_indexes_metadatas()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|index_metadata| index_ids.contains(&index_metadata.index_id.as_str()))
+            .collect_vec();
+        assert_eq!(2, result.len());
+
+        cleanup_index(&metastore, index_id_1).await;
+        cleanup_index(&metastore, index_id_2).await;
+
+        // Check that no index is left.
+        let result = metastore
+            .list_indexes_metadatas()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|index_metadata| index_ids.contains(&index_metadata.index_id.as_str()))
+            .collect_vec();
+        assert!(result.is_empty());
+    }
 }
 
 macro_rules! metastore_test_suite {
@@ -1866,6 +1921,11 @@ macro_rules! metastore_test_suite {
             #[tokio::test]
             async fn test_metastore_index_metadata() {
                 crate::tests::test_suite::test_metastore_index_metadata::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_list_indexes() {
+                crate::tests::test_suite::test_metastore_list_indexes::<$metastore_type>().await;
             }
 
             #[tokio::test]
@@ -1943,6 +2003,11 @@ macro_rules! metastore_test_suite_for_postgresql {
             #[tokio::test]
             async fn test_metastore_index_metadata() {
                 crate::tests::test_suite::test_metastore_index_metadata::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_list_indexes() {
+                crate::tests::test_suite::test_metastore_list_indexes::<$metastore_type>().await;
             }
 
             #[tokio::test]

@@ -31,7 +31,7 @@ use diesel::result::Error::DatabaseError;
 use diesel::sql_types::{Array, Bool, Text};
 use diesel::{
     debug_query, sql_query, BoolExpressionMethods, BoxableExpression, Connection,
-    ExpressionMethods, IntoSql, PgConnection, QueryDsl, RunQueryDsl,
+    ExpressionMethods, IntoSql, PgConnection, QueryDsl, RunQueryDsl, Table,
 };
 use quickwit_config::SourceConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
@@ -433,6 +433,22 @@ impl Metastore for PostgresqlMetastore {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.connection_pool.get_timeout(CONNECTION_POOL_TIMEOUT)?;
         Ok(())
+    }
+
+    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
+        let conn = self.get_conn()?;
+        let select_statement = schema::indexes::dsl::indexes
+            .select(schema::indexes::dsl::indexes::all_columns())
+            .into_boxed();
+
+        let indexes: Vec<model::Index> = select_statement
+            .load(&conn)
+            .map_err(MetastoreError::DbError)?;
+
+        indexes
+            .into_iter()
+            .map(|index| index.index_metadata())
+            .collect()
     }
 
     async fn create_index(&self, index_metadata: IndexMetadata) -> MetastoreResult<()> {
