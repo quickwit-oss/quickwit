@@ -162,10 +162,11 @@ pub struct KafkaSourceParams {
     pub client_params: serde_json::Value,
 }
 
-#[doc(hidden)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct KinesisSourceParams {
-    stream_name: String,
+    pub stream_name: String,
+    pub region: Option<String>,
+    pub endpoint: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
