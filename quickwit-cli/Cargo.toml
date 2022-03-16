@@ -40,7 +40,7 @@ tabled = "0.4"
 tracing = "0.1.29"
 tracing-subscriber = {version="0.3", features=["time", "std", "env-filter"]}
 tracing-opentelemetry = "0.16"
-opentelemetry = { version = "0.16", features = ["rt-tokio"] }
+opentelemetry = { version = "0.17", features = ["rt-tokio"] }
 opentelemetry-jaeger = { version = "0.15", features = ["rt-tokio"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.6", features = ["full"] }
