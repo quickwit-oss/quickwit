@@ -39,7 +39,7 @@ quickwit-proto = { version = "0.2.1", path = "../quickwit-proto" }
 tabled = "0.4"
 tracing = "0.1.29"
 tracing-subscriber = {version="0.3", features=["time", "std", "env-filter"]}
-tracing-opentelemetry = "0.16"
+tracing-opentelemetry = "0.17"
 opentelemetry = { version = "0.17", features = ["rt-tokio"] }
 opentelemetry-jaeger = { version = "0.15", features = ["rt-tokio"] }
 tokio = { version = "1", features = ["full"] }
