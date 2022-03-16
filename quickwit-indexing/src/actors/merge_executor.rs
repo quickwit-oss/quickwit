@@ -774,7 +774,7 @@ pub(crate) fn demux_virtual_split(
 /// Compute split bounds for the current split that is going to be filled
 /// knowing that there are `remaining_num_splits` splits that needs to be filled
 /// and to satisfy [`min_split_num_docs`, `max_split_num_docs`] constraint.
-/// See description of [`demux_values`] algorithm for more details.
+/// See description of [`demux_virtual_split`] algorithm for more details.
 pub fn compute_current_split_bounds(
     remaining_num_docs: usize,
     remaining_num_splits: usize,

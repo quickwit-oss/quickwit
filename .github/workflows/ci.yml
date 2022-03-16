@@ -52,6 +52,14 @@ jobs:
         with:
           command: deny
           args: check Licenses # check that all of deps have an ok license.
+      - name: install cmake
+        run: apt-get -y install cmake
+      - name: cargo doc
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          args: --no-deps --all-features --document-private-items
+
   test:
     name: Run unit tests (no [ignored])
     runs-on: ubuntu-latest
