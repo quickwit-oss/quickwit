@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 //! [`FileBackedIndex`] module. It is public so that the crate `quickwit-backward-compat` can
-//! import [`FiledBackedIndex`] and run backward-compatibility tests. You should not have to import
+//! import [`FileBackedIndex`] and run backward-compatibility tests. You should not have to import
 //! anything from here directly.
 
 use std::collections::HashMap;

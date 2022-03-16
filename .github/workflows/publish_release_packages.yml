@@ -24,7 +24,7 @@ jobs:
           #   asset_name: x86_64-pc-windows.exe
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ./.github/actions/artifact-name
         with: 
           suffix: ${{ matrix.asset_name }}
@@ -56,7 +56,7 @@ jobs:
     name: Build x86_64-unknown-linux-gnu
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ./.github/actions/artifact-name
         with: 
           suffix: x86_64-unknown-linux-gnu
@@ -93,7 +93,7 @@ jobs:
     name: Build x86_64-unknown-linux-musl
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ./.github/actions/artifact-name
         with: 
           suffix: x86_64-unknown-linux-musl
@@ -130,7 +130,7 @@ jobs:
     name: Build aarch64-unknown-linux-gnu
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ./.github/actions/artifact-name
         with: 
           suffix: aarch64-unknown-linux-gnu
@@ -167,7 +167,7 @@ jobs:
     name: Build aarch64-unknown-linux-musl
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ./.github/actions/artifact-name
         with: 
           suffix: aarch64-unknown-linux-musl
@@ -211,7 +211,7 @@ jobs:
       - build-aarch64-unknown-linux-musl-package
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Extract version
         uses: ./.github/actions/artifact-name
         with: 

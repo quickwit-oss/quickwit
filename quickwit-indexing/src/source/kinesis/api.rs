@@ -25,7 +25,7 @@ use rusoto_kinesis::{
 };
 
 /// Gets records from a Kinesis data stream's shard.
-/// https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetRecords.html
+/// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetRecords.html>
 pub(crate) async fn get_records(
     kinesis_client: &(dyn Kinesis + Send + Sync),
     shard_iterator: String,
@@ -43,7 +43,7 @@ pub(crate) async fn get_records(
 
 /// Gets a Kinesis shard iterator. A shard iterator expires 5 minutes after it is returned
 /// to the requester.
-/// https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetShardIterator.html
+/// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetShardIterator.html>
 ///
 /// The returned shard iterator points to the record positioned right after
 /// `from_sequence_number_exclusive` if a value is provided. Otherwise, it points to the first
@@ -74,7 +74,7 @@ pub(crate) async fn get_shard_iterator(
 
 /// Lists the shards in a stream and provides information about each shard. This operation has a
 /// limit of 1000 transactions per second per data stream.
-/// https://docs.aws.amazon.com/kinesis/latest/APIReference/API_ListShards.html
+/// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_ListShards.html>
 pub(crate) async fn list_shards(
     kinesis_client: &dyn Kinesis,
     stream_name: &str,
