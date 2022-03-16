@@ -550,7 +550,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `aggregations`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `sortByField`."
+            "error": "InvalidArgument: unknown field `endUnixTimestamp`, expected one of `query`, `aggregations`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `sortByField`."
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
