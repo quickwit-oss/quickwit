@@ -19,6 +19,7 @@ We recommend picking instances with high network performance to allow faster dow
 A final note on object storage requests costs. These are [quite low](https://aws.amazon.com/s3/pricing/) actually, $0,0004 / 1000 requests for GET and $0.005 / 1000 requests for PUT on AWS S3.
 
 ### PUT requests
+
 During indexing, Quickwit uploads new splits on Amazon S3 and progressively merges them until they reach 10 million documents that we call “mature splits”. Such splits have a typical size between 1GB and 10GB and will usually require 2 PUT requests to be uploaded (1 PUT request / 5GB).
 
 With default indexing parameters `commit_timeout_secs` of 60 seconds and `merge_policy.merge_factor` of 10 and assuming you want to ingest 1 million documents every minute, this will cost you less than $1 / month.
