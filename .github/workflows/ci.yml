@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     container: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions/cache@v2
         with:
           path: |
@@ -52,6 +52,14 @@ jobs:
         with:
           command: deny
           args: check Licenses # check that all of deps have an ok license.
+      - name: install cmake
+        run: apt-get -y install cmake
+      - name: cargo doc
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          args: --no-deps --all-features --document-private-items
+
   test:
     name: Run unit tests (no [ignored])
     runs-on: ubuntu-latest
@@ -75,7 +83,7 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions/cache@v2
         with:
           path: |
@@ -115,7 +123,7 @@ jobs:
   #   container:
   #       image: public.ecr.aws/l6o9a3f9/quickwit-builder:latest
   #   steps:
-  #     - uses: actions/checkout@v2
+  #     - uses: actions/checkout@v3
   #     - name: Create bucket in localstack
   #       run: /usr/local/bin/aws --endpoint-url=http://localstack:4566 s3 mb s3://quickwit-integration-tests
   #     - name: Run all tests.

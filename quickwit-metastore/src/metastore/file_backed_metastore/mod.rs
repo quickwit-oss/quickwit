@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 //! Module for [`FileBackedMetastore`]. It is public so that the crate `quickwit-backward-compat`
-//! can import [`FiledBackedIndex`] and run backward-compatibility tests. You should not have to
+//! can import [`FileBackedIndex`] and run backward-compatibility tests. You should not have to
 //! import anything from here directly.
 
 pub mod file_backed_index;

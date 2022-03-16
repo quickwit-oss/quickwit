@@ -18,8 +18,7 @@ Steps to reproduce the behavior:
 **Expected behavior**
 A clear and concise description of what you expected to happen.
 
-**System configuration:**
-Release version (or git SHA-1), OS, ...
-
-**Additional context**
-Add any other context about the problem here.
+**Configuration:**
+Please provide: 
+1. Output of `quickwit --version`
+2. The index_config.yaml

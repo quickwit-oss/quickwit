@@ -114,7 +114,7 @@ impl AsRef<str> for Uri {
 /// This helper does the same thing as `Path::canonicalize`.
 /// It only differs from `Path::canonicalize` by not checking file existence
 /// during resolution.
-/// https://github.com/rust-lang/cargo/blob/fede83ccf973457de319ba6fa0e36ead454d2e20/src/cargo/util/paths.rs#L61
+/// <https://github.com/rust-lang/cargo/blob/fede83ccf973457de319ba6fa0e36ead454d2e20/src/cargo/util/paths.rs#L61>
 fn normalize_path(path: &Path) -> PathBuf {
     let mut components = path.components().peekable();
     let mut resulting_path_buf =

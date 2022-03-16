@@ -215,14 +215,14 @@ impl<Message> Mailbox<Message> {
 
     /// SendError is returned if the actor has already exited.
     ///
-    /// (See also [Self::send_blocking()])
+    /// (See also [Self::send_message_blocking()])
     pub(crate) async fn send_message(&self, msg: Message) -> Result<(), SendError> {
         self.send_with_priority(CommandOrMessage::Message(msg), Priority::Low)
             .await
     }
 
     /// Send a message to the actor in a blocking fashion.
-    /// When possible, prefer using [Self::send()].
+    /// When possible, prefer using [Self::send_message()].
     pub(crate) fn send_message_blocking(&self, msg: Message) -> Result<(), SendError> {
         self.send_with_priority_blocking(CommandOrMessage::Message(msg), Priority::Low)
     }

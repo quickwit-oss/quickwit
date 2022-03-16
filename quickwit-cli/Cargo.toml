@@ -36,12 +36,12 @@ quickwit-search = { version = "0.2.1", path = "../quickwit-search" }
 quickwit-serve = { version = "0.2.1", path = "../quickwit-serve" }
 quickwit-telemetry = { version = "0.2.1", path = "../quickwit-telemetry" }
 quickwit-proto = { version = "0.2.1", path = "../quickwit-proto" }
-tabled = "0.4"
+tabled = "0.5"
 tracing = "0.1.29"
 tracing-subscriber = {version="0.3", features=["time", "std", "env-filter"]}
-tracing-opentelemetry = "0.16"
-opentelemetry = { version = "0.16", features = ["rt-tokio"] }
-opentelemetry-jaeger = { version = "0.15", features = ["rt-tokio"] }
+tracing-opentelemetry = "0.17"
+opentelemetry = { version = "0.17", features = ["rt-tokio"] }
+opentelemetry-jaeger = { version = "0.16", features = ["rt-tokio"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.6", features = ["full"] }
 atty = "0.2"
@@ -63,7 +63,7 @@ toml = "0.5.8"
 assert_cmd = "2"
 predicates = "2"
 reqwest = { version = "0.11", default-features=false, features = ["json", "rustls-tls"] }
-serial_test = "0.5.1"
+serial_test = "0.6.0"
 
 [features]
 ci-test = []
