@@ -31,8 +31,8 @@ termcolor = "1"
 bytes = "1"
 tokio = { version = "1.16", features = [ "full" ] }
 tokio-stream = "0.1"
-opentelemetry = "0.16"
-tracing-opentelemetry = "0.16"
+opentelemetry = "0.17"
+tracing-opentelemetry = "0.17"
 prometheus = "0.13"
 once_cell = '1'
 
