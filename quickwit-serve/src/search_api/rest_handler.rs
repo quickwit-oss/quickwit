@@ -550,7 +550,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: serde_json::Value = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "error": "InvalidArgument: failed with reason: unknown field `endUnixTimestamp`, expected one of `query`, `aggregations`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `sortByField`."
+            "error": "InvalidArgument: unknown field `endUnixTimestamp`, expected one of `query`, `aggregations`, `searchField`, `startTimestamp`, `endTimestamp`, `maxHits`, `startOffset`, `format`, `sortByField`."
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
@@ -755,8 +755,7 @@ mod tests {
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
         assert_eq!(
             parse_error.to_string(),
-            "failed with reason: unknown variant `click_house_row_binary`, expected `csv` or \
-             `clickHouseRowBinary`"
+            "unknown variant `click_house_row_binary`, expected `csv` or `clickHouseRowBinary`"
         );
     }
 
@@ -773,7 +772,7 @@ mod tests {
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
         assert_eq!(
             parse_error.to_string(),
-            "failed with reason: Expected a non empty string field."
+            "Expected a non empty string field."
         );
     }
 }
