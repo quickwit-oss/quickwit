@@ -31,14 +31,16 @@ mod rest;
 
 use std::sync::Arc;
 
+use chrono::Utc;
 use format::Format;
-use quickwit_cluster::cluster::Cluster;
+use quickwit_cluster::cluster::{Cluster, Member};
 use quickwit_cluster::service::ClusterServiceImpl;
 use quickwit_config::{QuickwitConfig, SEARCHER_CONFIG_INSTANCE};
 use quickwit_metastore::Metastore;
 use quickwit_search::{ClusterClient, SearchClientPool, SearchService, SearchServiceImpl};
 use quickwit_storage::quickwit_storage_uri_resolver;
-use tracing::{debug, info};
+use scuttlebutt::FailureDetectorConfig;
+use tracing::info;
 
 pub use crate::args::ServeArgs;
 use crate::cluster_api::GrpcClusterAdapter;
@@ -57,16 +59,24 @@ pub async fn run_searcher(
     SEARCHER_CONFIG_INSTANCE
         .set(quickwit_config.searcher_config.clone())
         .expect("could not set searcher config in global once cell");
-    let cluster = Arc::new(Cluster::new(
+
+    let seed_nodes = quickwit_config
+        .seed_socket_addrs()?
+        .iter()
+        .map(|addr| addr.to_string())
+        .collect::<Vec<_>>();
+
+    let member = Member::new(
         quickwit_config.node_id.clone(),
+        Utc::now().timestamp(),
+        quickwit_config.gossip_public_addr()?,
+    );
+    let cluster = Arc::new(Cluster::new(
+        member,
         quickwit_config.gossip_socket_addr()?,
+        &seed_nodes,
+        FailureDetectorConfig::default(),
     )?);
-    for seed_socket_addr in quickwit_config.seed_socket_addrs()? {
-        // If the peer seed address is specified,
-        // it joins the cluster in which that node participates.
-        debug!(peer_seed_addr = %seed_socket_addr, "Add peer seed node.");
-        cluster.add_peer_node(seed_socket_addr).await;
-    }
     let storage_uri_resolver = quickwit_storage_uri_resolver().clone();
     let client_pool = SearchClientPool::create_and_keep_updated(cluster.clone()).await;
     let cluster_client = ClusterClient::new(client_pool.clone());

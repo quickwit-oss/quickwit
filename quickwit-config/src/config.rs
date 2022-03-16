@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::env;
 use std::ffi::OsStr;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -255,6 +256,17 @@ impl QuickwitConfig {
     pub fn gossip_socket_addr(&self) -> anyhow::Result<SocketAddr> {
         // We use the same port number as the rest port but this is UDP
         get_socket_addr(&(self.listen_address.as_str(), self.rest_listen_port))
+    }
+
+    /// The node gossip_public_address should ideally be specified via config;
+    /// environment variable interpolation if necessary.
+    /// right now we just try to fetch from environment variable otherwise fallback
+    /// to listen_address.
+    pub fn gossip_public_addr(&self) -> anyhow::Result<SocketAddr> {
+        match env::var("QW_GOSSIP_PUBLIC_ADDRESS") {
+            Ok(addr) => Ok(addr.parse::<SocketAddr>()?),
+            Err(_) => self.gossip_socket_addr(),
+        }
     }
 
     pub fn seed_socket_addrs(&self) -> anyhow::Result<Vec<SocketAddr>> {

@@ -13,6 +13,9 @@ pub struct Member {
     //// If true, it means self.
     #[prost(bool, tag = "3")]
     pub is_self: bool,
+    //// member reincarnation
+    #[prost(int64, tag = "4")]
+    pub generation: i64,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

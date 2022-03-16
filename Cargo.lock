@@ -170,15 +170,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bincode"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "bit-set"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -972,7 +963,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "js-sys",
  "libc",
- "wasi 0.10.0+wasi-snapshot-preview1",
+ "wasi",
  "wasm-bindgen",
 ]
 
@@ -1540,20 +1531,6 @@ dependencies = [
  "log",
  "miow",
  "ntapi",
- "winapi 0.3.9",
-]
-
-[[package]]
-name = "mio"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ba42135c6a5917b9db9cd7b293e5409e1c6b041e6f9825e92e55a894c63b6f8"
-dependencies = [
- "libc",
- "log",
- "miow",
- "ntapi",
- "wasi 0.11.0+wasi-snapshot-preview1",
  "winapi 0.3.9",
 ]
 
@@ -2266,7 +2243,7 @@ dependencies = [
  "itertools",
  "quickwit-common",
  "quickwit-proto",
- "quickwit-swim",
+ "scuttlebutt",
  "serde",
  "serde_json",
  "tempfile",
@@ -2520,6 +2497,7 @@ dependencies = [
  "assert-json-diff",
  "async-trait",
  "bytes",
+ "chrono",
  "futures",
  "futures-util",
  "hyper",
@@ -2539,6 +2517,7 @@ dependencies = [
  "quickwit-search",
  "quickwit-storage",
  "quickwit-telemetry",
+ "scuttlebutt",
  "serde",
  "serde_json",
  "serde_qs",
@@ -2580,23 +2559,6 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "quickwit-swim"
-version = "0.2.1"
-dependencies = [
- "bincode",
- "flume",
- "futures",
- "mio 0.8.1",
- "rand",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "uuid 0.8.2",
 ]
 
 [[package]]
@@ -3102,6 +3064,20 @@ checksum = "d53dcdb7c9f8158937a7981b48accfd39a43af418591a5d008c7b22b5e1b7ca4"
 dependencies = [
  "ring",
  "untrusted",
+]
+
+[[package]]
+name = "scuttlebutt"
+version = "0.1.0"
+source = "git+https://github.com/quickwit-oss/scuttlebutt?rev=56e2e8f#56e2e8ff6dec6e26f4ab4fc31e20adda72cd2594"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "rand",
+ "serde",
+ "tokio",
+ "tokio-stream",
+ "tracing",
 ]
 
 [[package]]
@@ -3637,7 +3613,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6db9e6914ab8b1ae1c260a4ae7a49b6c5611b40328a735b21862567685e73255"
 dependencies = [
  "libc",
- "wasi 0.10.0+wasi-snapshot-preview1",
+ "wasi",
  "winapi 0.3.9",
 ]
 
@@ -3713,7 +3689,7 @@ dependencies = [
  "bytes",
  "libc",
  "memchr",
- "mio 0.7.14",
+ "mio",
  "num_cpus",
  "once_cell",
  "parking_lot",
@@ -4255,12 +4231,6 @@ name = "wasi"
 version = "0.10.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a143597ca7c7793eff794def352d41792a93c481eb1042423ff7ff72ba2c31f"
-
-[[package]]
-name = "wasi"
-version = "0.11.0+wasi-snapshot-preview1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 
 [[package]]
 name = "wasm-bindgen"

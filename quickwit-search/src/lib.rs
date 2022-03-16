@@ -67,10 +67,13 @@ pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 use crate::thread_pool::run_cpu_intensive;
 
-/// Compute the gRPC port from the SWIM port.
-/// Add 1 to the SWIM port to get the gRPC port.
-pub fn swim_addr_to_grpc_addr(swim_addr: SocketAddr) -> SocketAddr {
-    SocketAddr::new(swim_addr.ip(), swim_addr.port() + 1)
+/// Compute the gRPC port from the Scuttlebutt gossip port.
+/// Add 1 to the Scuttlebutt gossip port to get the gRPC port.
+pub fn scuttlebutt_gossip_addr_to_grpc_addr(scuttlebutt_gossip_addr: SocketAddr) -> SocketAddr {
+    SocketAddr::new(
+        scuttlebutt_gossip_addr.ip(),
+        scuttlebutt_gossip_addr.port() + 1,
+    )
 }
 
 /// GlobalDocAddress serves as a hit address.
