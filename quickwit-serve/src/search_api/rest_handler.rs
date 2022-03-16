@@ -755,8 +755,7 @@ mod tests {
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
         assert_eq!(
             parse_error.to_string(),
-            "failed with reason: unknown variant `click_house_row_binary`, expected `csv` or \
-             `clickHouseRowBinary`"
+            "unknown variant `click_house_row_binary`, expected `csv` or `clickHouseRowBinary`"
         );
     }
 
@@ -773,7 +772,7 @@ mod tests {
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
         assert_eq!(
             parse_error.to_string(),
-            "failed with reason: Expected a non empty string field."
+            "Expected a non empty string field."
         );
     }
 }
