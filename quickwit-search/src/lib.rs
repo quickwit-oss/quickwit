@@ -40,6 +40,9 @@ mod thread_pool;
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
 
+/// Type for cost (search job, fetch job, etc).
+pub type Cost = u64;
+
 use std::cmp::Reverse;
 use std::net::SocketAddr;
 use std::ops::Range;

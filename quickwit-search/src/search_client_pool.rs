@@ -32,7 +32,11 @@ use tonic::transport::Endpoint;
 use tracing::*;
 
 use crate::rendezvous_hasher::sort_by_rendez_vous_hash;
-use crate::{swim_addr_to_grpc_addr, SearchServiceClient};
+use crate::{swim_addr_to_grpc_addr, Cost, SearchServiceClient};
+
+// allow load of a node to exceed 25% threshold
+const LOAD_MARGIN: f64 = 0.25;
+const MIN_LOAD_THRESHOLD: u64 = 16;
 
 /// Create a SearchServiceClient with SocketAddr as an argument.
 /// It will try to reconnect to the node automatically.
@@ -65,7 +69,7 @@ pub trait Job {
     ///
     /// A list of job will be assigned to leaf nodes in a way that spread
     /// the sum of cost evenly.
-    fn cost(&self) -> u32;
+    fn cost(&self) -> Cost;
 }
 
 /// Search client pool implementation.
@@ -74,7 +78,9 @@ pub struct SearchClientPool {
     /// Search clients.
     /// A hash map with gRPC's SocketAddr as the key and SearchServiceClient as the value.
     /// It is not the cluster listen address.
-    clients: Arc<RwLock<HashMap<SocketAddr, SearchServiceClient>>>,
+    clients: Arc<RwLock<HashMap<SocketAddr, SearchServiceClient>>>, /* TODO possible to
+                                                                     * use arc_swap here instead
+                                                                     * of RWLock */
 }
 
 /// Update the client pool given a new list of members.
@@ -184,7 +190,7 @@ impl SearchClientPool {
     }
 }
 
-fn job_order_key<J: Job>(job: &J) -> (Reverse<u32>, &str) {
+fn job_order_key<J: Job>(job: &J) -> (Reverse<Cost>, &str) {
     (Reverse(job.cost()), job.split_id())
 }
 
@@ -242,33 +248,44 @@ impl SearchClientPool {
             }
         }
 
-        // Sort job
-        jobs.sort_by(|left, right| {
+        // sort jobs by cost desc, split_id asc.
+        //
+        // By keeping split_id in comparision, we minimize cost for next rendez_vous sort when
+        // two consecutive split_id(s) are the same.
+        jobs.sort_unstable_by(|left, right| {
             // sort_by_key does not work here unfortunately
             job_order_key(left).cmp(&job_order_key(right))
         });
 
+        // Compute load (per node) threshold
+        let total_cost: Cost = jobs.iter().map(|v| v.cost()).sum();
+        let load_per_node_threshold =
+            ((total_cost as f64 / nodes.len() as f64) * (1.0 + LOAD_MARGIN)).ceil() as u64;
+        let load_per_node_threshold = load_per_node_threshold.max(MIN_LOAD_THRESHOLD);
+
         for job in jobs {
             sort_by_rendez_vous_hash(&mut nodes, job.split_id());
-            // choose one of the the first two nodes based on least loaded
-            let chosen_node_index: usize = if nodes.len() >= 2 {
-                if nodes[0].load > nodes[1].load {
-                    1
-                } else {
-                    0
-                }
-            } else {
-                0
-            };
 
             // update node load for next round
-            nodes[chosen_node_index].load += job.cost() as u64;
+            nodes[0].load += job.cost() as u64;
 
-            let chosen_leaf_grpc_addr: SocketAddr = nodes[chosen_node_index].peer_grpc_addr;
+            let chosen_leaf_grpc_addr: SocketAddr = nodes[0].peer_grpc_addr;
             splits_groups
                 .entry(chosen_leaf_grpc_addr)
                 .or_insert_with(Vec::new)
                 .push(job);
+
+            // check if node's load exceeds the threshold -> remove node from list
+            //
+            // note: computing load per node might result in saturation (in case cost data is
+            // malform). In this way, all nodes might be removed from list. Thus, having condition
+            // len > 1 to ensure that there is (at least) one node could serve remaining jobs
+            if nodes.len() > 1 && nodes[0].load > load_per_node_threshold {
+                // Removes an element from the vector and returns it.
+                // The removed element is replaced by the last element of the vector.
+                // O(1) complexity
+                nodes.swap_remove(0);
+            }
         }
 
         let mut client_to_jobs = Vec::new();
