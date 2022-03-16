@@ -67,4 +67,4 @@ quickwit-indexing = { version = "0.2.1", path = "../quickwit-indexing" }
 quickwit-metastore = { version = "0.2.1", path = "../quickwit-metastore", features = ["testsuite"] }
 serde_json = "1"
 assert-json-diff = "2"
-tempfile = "3.2"
+tempfile = "3.3"
