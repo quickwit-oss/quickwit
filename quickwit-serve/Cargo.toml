@@ -56,5 +56,5 @@ version = '1.0'
 features = ['derive']
 
 [dependencies.serde_qs]
-version = '0.8'
+version = '0.9'
 features = ['warp']
