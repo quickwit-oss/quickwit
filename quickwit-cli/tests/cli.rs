@@ -322,7 +322,7 @@ fn test_cmd_search() -> Result<()> {
     .stdout(predicate::function(|output: &[u8]| {
         println!("{}", from_utf8(output).unwrap());
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(2i64))
+        result["num_hits"] == Value::Number(Number::from(2i64))
     }));
 
     // search with tag pruning
@@ -340,7 +340,7 @@ fn test_cmd_search() -> Result<()> {
     .success()
     .stdout(predicate::function(|output: &[u8]| {
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(1i64))
+        result["num_hits"] == Value::Number(Number::from(1i64))
     }));
 
     // search with tag pruning
@@ -358,7 +358,7 @@ fn test_cmd_search() -> Result<()> {
     .success()
     .stdout(predicate::function(|output: &[u8]| {
         let result: Value = serde_json::from_slice(output).unwrap();
-        result["numHits"] == Value::Number(Number::from(0i64))
+        result["num_hits"] == Value::Number(Number::from(0i64))
     }));
 
     Ok(())
@@ -755,10 +755,10 @@ async fn test_all_local_index() -> Result<()> {
 
     let result: Value =
         serde_json::from_str(&query_response).expect("Couldn't deserialize response.");
-    assert_eq!(result["numHits"], Value::Number(Number::from(2i64)));
+    assert_eq!(result["num_hits"], Value::Number(Number::from(2i64)));
 
     let search_stream_response = reqwest::get(format!(
-        "http://127.0.0.1:{}/api/v1/{}/search/stream?query=level:info&outputFormat=csv&fastField=ts",
+        "http://127.0.0.1:{}/api/v1/{}/search/stream?query=level:info&output_format=csv&fast_field=ts",
         test_env.rest_listen_port,
         test_env.index_id
     ))
