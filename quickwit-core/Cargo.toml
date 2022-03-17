@@ -22,7 +22,7 @@ quickwit-metastore = { version = "0.2.1", path = "../quickwit-metastore" }
 quickwit-directories = { version = "0.2.1", path = "../quickwit-directories" }
 quickwit-storage = { version = "0.2.1", path = "../quickwit-storage" }
 tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.6", features = ["full"] }
+tokio-util = { version = "0.7", features = ["full"] }
 rand = "0.8"
 tantivy = { git= "https://github.com/quickwit-oss/tantivy", rev="1a92b58", default-features=false, features = ["mmap", "lz4-compression", "quickwit"] }
 futures = "0.3"
