@@ -46,7 +46,7 @@ version = '1'
 features = ['full']
 
 [dependencies.tokio-util]
-version = '0.6'
+version = '0.7'
 features = ['full']
 
 [dependencies.quickwit-directories]
