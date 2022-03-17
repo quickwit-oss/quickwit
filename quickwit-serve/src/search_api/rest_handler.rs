@@ -36,9 +36,7 @@ use crate::error::ApiError;
 use crate::format::Format;
 
 fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     let string = String::deserialize(deserializer)?;
     Ok(Some(string.into()))
 }
@@ -58,9 +56,7 @@ fn default_max_hits() -> u64 {
 // Conclusion: the best way I found to reject a user query that contains an empty
 // string on an mandatory field is this serializer.
 fn deserialize_not_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     let value = String::deserialize(deserializer)?;
     if value.is_empty() {
         return Err(de::Error::custom("Expected a non empty string field."));
@@ -69,9 +65,7 @@ where
 }
 
 fn from_simple_list<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     let str_sequence = String::deserialize(deserializer)?;
     Ok(Some(
         str_sequence
