@@ -22,8 +22,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use quickwit_common::net::get_socket_addr;
 use scuttlebutt::server::ScuttleServer;
-use scuttlebutt::{FailureDetectorConfig, NodeId};
+use scuttlebutt::{FailureDetectorConfig, NodeId, SerializableClusterState};
+use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_stream::wrappers::WatchStream;
@@ -32,6 +34,8 @@ use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use crate::error::ClusterResult;
+
+const GRPC_ADDRESS_KEY: &str = "grpc_address";
 
 /// A member information.
 #[derive(Clone, Debug, PartialEq)]
@@ -117,6 +121,7 @@ impl Cluster {
     pub fn new(
         me: Member,
         listen_addr: SocketAddr,
+        grpc_addr: SocketAddr,
         seed_nodes: &[String],
         failure_detector_config: FailureDetectorConfig,
     ) -> ClusterResult<Self> {
@@ -125,6 +130,7 @@ impl Cluster {
             NodeId::from(me.clone()),
             seed_nodes,
             listen_addr.to_string(),
+            vec![(GRPC_ADDRESS_KEY, grpc_addr)],
             failure_detector_config,
         );
         let scuttlebutt = scuttlebutt_server.scuttlebutt();
@@ -175,7 +181,7 @@ impl Cluster {
         Ok(cluster)
     }
 
-    /// Return watchstream for monitoring change of `members`
+    /// Return [WatchStream] for monitoring change of `members`
     pub fn member_change_watcher(&self) -> WatchStream<Vec<Member>> {
         WatchStream::new(self.members.clone())
     }
@@ -185,11 +191,62 @@ impl Cluster {
         self.members.borrow().clone()
     }
 
+    /// Return the grpc addresses corresponding to the list of members.
+    pub async fn members_grpc_addresses(
+        &self,
+        members: &[Member],
+    ) -> anyhow::Result<Vec<SocketAddr>> {
+        let scuttlebutt = self.scuttlebutt_server.scuttlebutt();
+        let scuttlebutt_guard = scuttlebutt.lock().await;
+        let mut grpc_addresses = vec![];
+        for member in members {
+            let node_state = scuttlebutt_guard
+                .node_state(&NodeId::from(member.clone()))
+                .unwrap();
+
+            let grpc_address = node_state
+                .get(GRPC_ADDRESS_KEY)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Could not find `{}` key on node `{}` state.",
+                        GRPC_ADDRESS_KEY,
+                        member.internal_id()
+                    )
+                })
+                .map(|addr_str| get_socket_addr(&addr_str))??;
+            grpc_addresses.push(grpc_address);
+        }
+
+        Ok(grpc_addresses)
+    }
+
+    /// Set a key-value pair on the cluster node own state.
+    pub async fn set_key_value<K: ToString, V: ToString>(&self, key: K, value: V) {
+        let scuttlebutt = self.scuttlebutt_server.scuttlebutt();
+        let mut scuttlebutt_guard = scuttlebutt.lock().await;
+        scuttlebutt_guard.self_node_state().set(key, value);
+    }
+
     /// Leave the cluster.
     pub async fn leave(&self) {
         info!(self_addr = ?self.listen_addr, "Leaving the cluster.");
         // TODO: implements leave/join on ScuttleButt
+        // https://github.com/quickwit-oss/scuttlebutt/issues/30
         self.stop.store(true, Ordering::Relaxed);
+    }
+
+    pub async fn state(&self) -> ClusterState {
+        let scuttlebutt = self.scuttlebutt_server.scuttlebutt();
+        let scuttlebutt_guard = scuttlebutt.lock().await;
+
+        let cluster_state = scuttlebutt_guard.cluster_state();
+        let live_nodes = scuttlebutt_guard.live_nodes().cloned().collect::<Vec<_>>();
+        let dead_nodes = scuttlebutt_guard.dead_nodes().cloned().collect::<Vec<_>>();
+        ClusterState {
+            state: SerializableClusterState::from(cluster_state),
+            live_nodes,
+            dead_nodes,
+        }
     }
 
     /// Leave the cluster.
@@ -224,16 +281,31 @@ impl Cluster {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ClusterState {
+    state: SerializableClusterState,
+    live_nodes: Vec<NodeId>,
+    dead_nodes: Vec<NodeId>,
+}
+
+/// Compute the gRPC port from the scuttlebutt listen address for tests.
+pub fn grpc_addr_from_listen_addr_for_test(listen_addr: SocketAddr) -> SocketAddr {
+    SocketAddr::new(listen_addr.ip(), listen_addr.port() + 1)
+}
+
 pub fn create_cluster_for_test_with_id(
     peer_uuid: String,
     seeds: &[String],
 ) -> anyhow::Result<Cluster> {
-    let port = quickwit_common::net::find_available_port()?;
-    let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
+    let listen_addr = SocketAddr::new(
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+        quickwit_common::net::find_available_port()?,
+    );
     let failure_detector_config = create_failure_detector_config_for_test();
     let cluster = Cluster::new(
-        Member::new(peer_uuid, 1, peer_addr),
-        peer_addr,
+        Member::new(peer_uuid, 1, listen_addr),
+        listen_addr,
+        grpc_addr_from_listen_addr_for_test(listen_addr),
         seeds,
         failure_detector_config,
     )?;
@@ -360,9 +432,14 @@ mod tests {
 
         sleep(Duration::from_secs(3)).await;
 
+        let grpc_addr = SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            quickwit_common::net::find_available_port()?,
+        );
         let cluster2 = Cluster::new(
             Member::new("newid".to_string(), 1, cluster2_listen_addr),
             cluster2_listen_addr,
+            grpc_addr,
             &[node_1],
             create_failure_detector_config_for_test(),
         )?;
@@ -428,9 +505,14 @@ mod tests {
 
         sleep(Duration::from_secs(3)).await;
 
+        let grpc_addr = SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            quickwit_common::net::find_available_port()?,
+        );
         let cluster2 = Cluster::new(
             Member::new("newid".to_string(), 1, cluster2_listen_addr),
             cluster2_listen_addr,
+            grpc_addr,
             &[node_1],
             create_failure_detector_config_for_test(),
         )?;
@@ -439,6 +521,7 @@ mod tests {
         let cluster3 = Cluster::new(
             Member::new("newid2".to_string(), 1, cluster3_listen_addr),
             cluster3_listen_addr,
+            grpc_addr,
             &[node_2],
             create_failure_detector_config_for_test(),
         )?;

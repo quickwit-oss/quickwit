@@ -59,4 +59,17 @@ impl grpc::ClusterService for GrpcClusterAdapter {
             .map_err(Into::<tonic::Status>::into)?;
         Ok(tonic::Response::new(leave_cluster_resp))
     }
+
+    async fn cluster_state(
+        &self,
+        request: tonic::Request<quickwit_proto::ClusterStateRequest>,
+    ) -> Result<tonic::Response<quickwit_proto::ClusterStateResponse>, tonic::Status> {
+        let cluster_state_req = request.into_inner();
+        let cluster_state_resp = self
+            .0
+            .cluster_state(cluster_state_req)
+            .await
+            .map_err(Into::<tonic::Status>::into)?;
+        Ok(tonic::Response::new(cluster_state_resp))
+    }
 }

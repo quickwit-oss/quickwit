@@ -161,6 +161,8 @@ pub struct QuickwitConfig {
     pub listen_address: String,
     #[serde(default = "default_rest_listen_port")]
     pub rest_listen_port: u16,
+    pub gossip_listen_port: Option<u16>,
+    pub grpc_listen_port: Option<u16>,
     #[serde(default)]
     pub peer_seeds: Vec<String>,
     metastore_uri: Option<String>,
@@ -249,13 +251,25 @@ impl QuickwitConfig {
         get_socket_addr(&(self.listen_address.as_str(), self.rest_listen_port))
     }
 
+    /// Returns the grpc address with the port
+    /// extracted from config if specified or computed from `rest_listen_port + 1`
     pub fn grpc_socket_addr(&self) -> anyhow::Result<SocketAddr> {
-        get_socket_addr(&(self.listen_address.as_str(), self.rest_listen_port + 1))
+        let grpc_listen_port = match self.grpc_listen_port {
+            Some(grpc_listen_port) => grpc_listen_port,
+            None => self.rest_listen_port + 1,
+        };
+        get_socket_addr(&(self.listen_address.as_str(), grpc_listen_port))
     }
 
+    /// Returns the gossip address with the port
+    /// extracted from config if specified or the same as `rest_listen_port`
     pub fn gossip_socket_addr(&self) -> anyhow::Result<SocketAddr> {
-        // We use the same port number as the rest port but this is UDP
-        get_socket_addr(&(self.listen_address.as_str(), self.rest_listen_port))
+        let gossip_listen_port = match self.gossip_listen_port {
+            Some(grpc_listen_port) => grpc_listen_port,
+            // By default, we use the same port number as the rest port but this is UDP.
+            None => self.rest_listen_port,
+        };
+        get_socket_addr(&(self.listen_address.as_str(), gossip_listen_port))
     }
 
     /// The node gossip_public_address should ideally be specified via config;
@@ -323,6 +337,8 @@ impl Default for QuickwitConfig {
             version: 0,
             listen_address: default_listen_address(),
             rest_listen_port: default_rest_listen_port(),
+            gossip_listen_port: None,
+            grpc_listen_port: None,
             peer_seeds: Vec::new(),
             node_id: default_node_id(),
             metastore_uri: None,
