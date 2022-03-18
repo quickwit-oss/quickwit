@@ -220,7 +220,7 @@ impl Cluster {
         Ok(grpc_addresses)
     }
 
-    /// Set a key-value pair on the cluster node own state.
+    /// Set a key-value pair on the cluster node's state.
     pub async fn set_key_value<K: ToString, V: ToString>(&self, key: K, value: V) {
         let scuttlebutt = self.scuttlebutt_server.scuttlebutt();
         let mut scuttlebutt_guard = scuttlebutt.lock().await;
