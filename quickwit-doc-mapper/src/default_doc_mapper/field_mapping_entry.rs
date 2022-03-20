@@ -45,29 +45,48 @@ pub struct FieldMappingEntry {
     pub name: String,
     /// Property parameters which defines the type and the way the value must be indexed.
     pub mapping_type: FieldMappingType,
+    /// Returns the field entries that must be added to the schema.
+    pub field_entries: Vec<(FieldPath, FieldType)>,
+    /// Returns the fields entries that map to fast fields.
+    pub fast_field_entries: Vec<(FieldPath, FieldType)>,
 }
 
 impl FieldMappingEntry {
     /// Creates a new [`FieldMappingEntry`].
     pub fn new(name: String, mapping_type: FieldMappingType) -> Self {
         assert!(validate_field_mapping_name(&name).is_ok());
-        FieldMappingEntry { name, mapping_type }
+        let field_entries = Self::compute_field_entries(name.as_str(), &mapping_type);
+        let fast_field_entries = Self::compute_fast_field_entries(&field_entries);
+        FieldMappingEntry {
+            name,
+            mapping_type,
+            field_entries,
+            fast_field_entries,
+        }
     }
 
     /// Creates a new root [`FieldMappingEntry`].
     pub fn root(mapping_type: FieldMappingType) -> Self {
+        let name = "".to_string();
+        let field_entries = Self::compute_field_entries(name.as_str(), &mapping_type);
+        let fast_field_entries = Self::compute_fast_field_entries(&field_entries);
         FieldMappingEntry {
-            name: "".to_string(),
+            name,
             mapping_type,
+            field_entries,
+            fast_field_entries,
         }
     }
 
     /// Returns the field entries that must be added to the schema.
     // TODO: can be more efficient to pass a collector in argument (a schema builder)
     // on which we add entry fields.
-    pub fn field_entries(&self) -> Vec<(FieldPath, FieldType)> {
-        let field_path = FieldPath::new(&self.name);
-        match &self.mapping_type {
+    pub fn compute_field_entries(
+        name: &str,
+        mapping_type: &FieldMappingType,
+    ) -> Vec<(FieldPath, FieldType)> {
+        let field_path = FieldPath::new(name);
+        match &mapping_type {
             FieldMappingType::Text(options, _) => {
                 vec![(field_path, FieldType::Str(options.clone()))]
             }
@@ -88,16 +107,18 @@ impl FieldMappingEntry {
             }
             FieldMappingType::Object(field_mappings) => field_mappings
                 .iter()
-                .flat_map(|entry| entry.field_entries())
-                .map(|(path, entry)| (path.with_parent(&self.name), entry))
+                .flat_map(|entry| &entry.field_entries)
+                .map(|(path, entry)| (path.clone().with_parent(name), entry.clone()))
                 .collect(),
         }
     }
 
     /// Returns the fields entries that map to fast fields.
-    pub fn fast_field_entries(&self) -> Vec<(FieldPath, FieldType)> {
-        self.field_entries()
-            .into_iter()
+    pub fn compute_fast_field_entries(
+        field_entries: &[(FieldPath, FieldType)],
+    ) -> Vec<(FieldPath, FieldType)> {
+        field_entries
+            .iter()
             .filter(|(_, field_type)| match field_type {
                 FieldType::U64(options)
                 | FieldType::I64(options)
@@ -106,6 +127,7 @@ impl FieldMappingEntry {
                 FieldType::Bytes(option) => option.is_fast(),
                 _ => false,
             })
+            .cloned()
             .collect_vec()
     }
 
@@ -441,22 +463,23 @@ impl FieldMappingEntry {
 /// Used to build a tantivy valid field name by joining its
 /// components with a special string `__dot__` as currently
 /// tantivy does not support `.`.
-pub struct FieldPath<'a> {
-    components: Vec<&'a str>,
+#[derive(Debug, Clone)]
+pub struct FieldPath {
+    components: Vec<String>,
 }
 
-impl<'a> FieldPath<'a> {
-    pub fn new(path: &'a str) -> Self {
+impl FieldPath {
+    pub fn new(path: &str) -> Self {
         Self {
-            components: vec![path],
+            components: vec![path.to_string()],
         }
     }
 
     /// Returns the FieldPath with the additionnal parent component.
     /// This will consume your `FieldPath`.
-    pub fn with_parent(mut self, parent: &'a str) -> Self {
+    pub fn with_parent(mut self, parent: &str) -> Self {
         if !parent.is_empty() {
-            self.components.insert(0, parent);
+            self.components.insert(0, parent.to_string());
         }
         self
     }
