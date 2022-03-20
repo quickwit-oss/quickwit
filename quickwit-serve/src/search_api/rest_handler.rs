@@ -80,7 +80,6 @@ where D: Deserializer<'de> {
 /// the rest API.
 #[derive(Deserialize, Debug, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
 pub struct SearchRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
@@ -211,7 +210,6 @@ pub fn search_stream_handler<TSearchService: SearchService>(
 /// the REST API.
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
 struct SearchStreamRequestQueryString {
     /// Query text. The query language is that of tantivy.
     pub query: String,
