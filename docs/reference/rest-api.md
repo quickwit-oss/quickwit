@@ -41,31 +41,32 @@ Search for documents matching a query in the given index `<index id>`.
 
 | Variable      | Description   |
 | ------------- | ------------- |
-| **index id** | The index id |
+| **index id**  | The index id  |
 
 
 #### Get parameters
 
-| Variable                  | Type                 | Description                                                                                       | Default value                                                                                   |
-| ------------------------- | -------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| **query**                  | `String`           | Query text. See the [query language doc](query-language.md) (mandatory)                                          |                                                                                                |
-| **startTimestamp**         | `i64`    		 	    | If set, restrict search to documents with a `timestamp >= start_timestamp`                                                            |                                                                                |
-| **endTimestamp**           | `i64`       		    | If set, restrict search to documents with a `timestamp < end_timestamp`                                                            |                                                                                     |
-| **startOffset**            | `Integer`     	    | Number of documents to skip                                                                | `0`                                                                                             |
-| **maxHits**                | `Integer`          | Maximum number of hits to return (by default 20)                                                            | `20`                                                                                            |
-| **searchField**           | `[String]`      		  | Fields to search on if no field name is specified in the query. Comma-separated list, e.g. "field1,field2" | index_config.search_settings.default_search_fields                                                                                             |
-| **format**                 | `Enum`           	| The output format. Allowed values are "json" or "prettyjson" 						 | `prettyjson`                                                                                            |
+| Variable                  | Type                 | Description                                                                                                | Default value                                                                                   |
+| ------------------------- | -------------------- | -------------------------------------------------------------------------------------------------          | ----------------------------------------------------------------------------------------------- |
+| **query**                 | `String`             | Query text. See the [query language doc](query-language.md) (mandatory)                                    |                                                                                                 |
+| **start_timestamp**       | `i64`                | If set, restrict search to documents with a `timestamp >= start_timestamp`                                 |                                                                                                 |
+| **end_timestamp**         | `i64`                | If set, restrict search to documents with a `timestamp < end_timestamp`                                    |                                                                                                 |
+| **start_offset**          | `Integer`            | Number of documents to skip                                                                                | `0`                                                                                             |
+| **max_hits**              | `Integer`            | Maximum number of hits to return (by default 20)                                                           | `20`                                                                                            |
+| **search_field**          | `[String]`           | Fields to search on if no field name is specified in the query. Comma-separated list, e.g. "field1,field2" | index_config.search_settings.default_search_fields                                              |
+| **format**                | `Enum`               | The output format. Allowed values are "json" or "prettyjson"                                               | `prettyjson`                                                                                    |
 
 
 #### Response
 
 The response for the is a JSON object, and the content type is `application/json; charset=UTF-8.`
 
-| Field                | Description                    |    Type    |
-| -------------------- | ------------------------------ | :--------: |
-| **hits**             | Results of the query           | `[hit]` |
-| **num_hits**         | Total number of matches        |  `number`  |
-| **elapsed_time_micros**    | Processing time of the query   |  `number`  |
+| Field                   | Description                    | Type       |
+| --------------------    | ------------------------------ | :--------: |
+| **hits**                | Results of the query           | `[hit]`    |
+| **num_hits**            | Total number of matches        | `number`   |
+| **elapsed_time_micros** | Processing time of the query   | `number`   |
+
 
 ### Search stream in an index
 
@@ -88,19 +89,19 @@ The endpoint will return 10 million values if 10 million documents match the que
 
 | Variable      | Description   |
 | ------------- | ------------- |
-| **index id** | The index id |
+| **index id**  | The index id  |
 
 
 #### Get parameters
 
-| Variable | Type | Description | Default value |
-|----------|------|-------------|---------------|
-| **query** | `String` | Query text. See the [query language doc](query-language.md) (mandatory) | |
-| **fastField** | `String` | Name of a field to retrieve from documents. This field must be marked as "fast" in the index config. (mandatory)| |
-| **searchField** | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2" | index_config.search_settings.default_search_fields    |
-| **startTimestamp** | `i64` | If set, restrict search to documents with a `timestamp >= start_timestamp` | |
-| **endTimestamp** | `i64` | If set, restrict search to documents with a `timestamp < end_timestamp` | |
-| **outputFormat** | `String` | Response output format. `csv` or `clickHouseRowBinary`  | `csv` |
+| Variable            | Type       | Description                                                                                                      | Default value                                      |
+| ----------          | ------     | -------------                                                                                                    | ---------------                                    |
+| **query**           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                          |                                                    |
+| **fast_field**      | `String`   | Name of a field to retrieve from documents. This field must be marked as "fast" in the index config. (mandatory) |                                                    |
+| **search_field**    | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2"                                                  | index_config.search_settings.default_search_fields |
+| **start_timestamp** | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`                                       |                                                    |
+| **end_timestamp**   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`                                          |                                                    |
+| **output_format**   | `String`   | Response output format. `csv` or `clickHouseRowBinary`                                                           | `csv`                                              |
 
 
 #### Response
